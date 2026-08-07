@@ -19,6 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -583,7 +584,7 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		require.Equal(t, "irma-demo.MijnOverheid.fullName", credential.CredentialId)
 		require.Equal(t, "Demo Name", credential.Name)
 		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name)
-		require.True(t, credential.Issuer.Verified, "issuer should be verified")
+		require.Equal(t, clientmodels.TrustLevel_High, credential.Issuer.TrustLevel, "issuer should rank high")
 
 		requireAttrsInOrder(t, credential.Attributes,
 			expectedAttr{
@@ -714,7 +715,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	defer c.Close()
 
 	revocationListUpdateInterval := 3 * time.Second
-	c.InitJobs(revocationListUpdateInterval, 0) // status refresh disabled: not under test here
+	c.InitJobs(revocationListUpdateInterval, 0, 0) // status and trust list refresh disabled: not under test here
 
 	// Give the client some time to init and download the current CRL
 	time.Sleep(4 * time.Second)
@@ -772,7 +773,7 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInf
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "issuer should rank high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -839,7 +840,7 @@ func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "issuer should rank high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -861,7 +862,7 @@ func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "issuer should rank high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -924,7 +925,7 @@ func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "issuer should rank high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -958,7 +959,7 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "issuer should rank high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -1248,12 +1249,66 @@ func createClientWithCustomIssuerTrustChain(
 }
 
 func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	return instantiateClientWithTrustLists(t, issuerChain, locale, nil, nil)
+}
+
+// instantiateClientWithTrustLists is instantiateClient with the wallet's
+// recognized-list set replaced, for tests that publish a LoTE of their own.
+// loteRoot is installed as an extra issuer trust anchor: it is where the wallet
+// looks for the key a list signature has to chain to.
+func instantiateClientWithTrustLists(
+	t *testing.T,
+	issuerChain []byte,
+	locale string,
+	loteRoot *x509.Certificate,
+	trustLists []lote.Source,
+) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	return instantiateClientWithVerifierTrust(t, "", issuerChain, locale, loteRoot, trustLists, testdata.VerifierCACertBytes)
+}
+
+// instantiateClientAtPath is instantiateClientWithTrustLists at a storage path
+// the caller supplies, so a second wallet can be built over the first one's data.
+// That is what proves a persisted document survives a restart and is re-verified
+// when it is read — client.New already takes the path, so this widens nothing
+// outside internal/sessiontest.
+func instantiateClientAtPath(
+	t *testing.T,
+	storagePath string,
+	issuerChain []byte,
+	locale string,
+	loteRoot *x509.Certificate,
+	trustLists []lote.Source,
+) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	require.NotEmpty(t, storagePath, "instantiateClientAtPath needs a path; use instantiateClientWithTrustLists for a fresh one")
+	return instantiateClientWithVerifierTrust(t, storagePath, issuerChain, locale, loteRoot, trustLists, testdata.VerifierCACertBytes)
+}
+
+// instantiateClientWithoutVerifierTrust builds a wallet that trusts no verifier
+// CA, so a verifier the compose services authenticate perfectly well fails this
+// wallet's identity gate. It is how a session test reaches the gate-failure state
+// without tampering with a request on the wire.
+func instantiateClientWithoutVerifierTrust(t *testing.T) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	return instantiateClientWithVerifierTrust(t, "", nil, "en", nil, nil, nil)
+}
+
+// instantiateClientWithVerifierTrust is the full form. An empty storagePath gets
+// a fresh temporary one; verifierCA nil installs no verifier anchor at all.
+func instantiateClientWithVerifierTrust(
+	t *testing.T,
+	storagePath string,
+	issuerChain []byte,
+	locale string,
+	loteRoot *x509.Certificate,
+	trustLists []lote.Source,
+	verifierCA []byte,
+) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
 	path := test.FindTestdataFolder(t)
-	storageFolder := test.CreateTestStorage(t)
-	storagePath := filepath.Join(storageFolder, "client")
+	if storagePath == "" {
+		storagePath = filepath.Join(test.CreateTestStorage(t), "client")
+	}
 	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
 	eudiAppDataPath := filepath.Join(storagePath, "eudi")
 
@@ -1278,18 +1333,41 @@ func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client
 		require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), encIssuer))
 	}
 
-	// Add test verifier CA certificate as trusted chain.
+	if loteRoot != nil {
+		rootPem := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: loteRoot.Raw})
+		encLoteRoot, err := encMiddleware.Encrypt(rootPem)
+		require.NoError(t, err)
+		require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "lote-test-root.pem"), encLoteRoot))
+	}
+
+	// Add test verifier CA certificate as trusted chain. A nil verifierCA leaves
+	// the directory empty, which is what the gate-failure tests want.
 	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
 	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))
-	encVerifierCA, err := encMiddleware.Encrypt(testdata.VerifierCACertBytes)
-	require.NoError(t, err)
-	require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encVerifierCA))
+	if verifierCA != nil {
+		encVerifierCA, err := encMiddleware.Encrypt(verifierCA)
+		require.NoError(t, err)
+		require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encVerifierCA))
+	}
 
 	clientHandler := irmaclient.NewMockClientHandler()
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	client, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey, locale)
+
+	client, err := client.New(client.Config{
+		StoragePath:           storagePath,
+		IrmaConfigurationPath: irmaConfigurationPath,
+		EudiAppDataPath:       eudiAppDataPath,
+		Handler:               clientHandler,
+		SessionHandler:        sessionHandler,
+		Signer:                test.NewSigner(t),
+		AesKey:                aesKey,
+		Locale:                locale,
+		// The one seam for pointing a wallet at a list other than the published
+		// ones. Nil leaves the compiled-in set in force.
+		RecognizedTrustLists: trustLists,
+	})
 	require.NoError(t, err)
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})

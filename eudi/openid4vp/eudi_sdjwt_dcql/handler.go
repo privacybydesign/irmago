@@ -20,6 +20,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/trust"
 )
 
 // isIrmaStyleVct reports whether vct looks like an IRMA scheme credential
@@ -67,6 +68,12 @@ type SdJwtVcDcqlHandler struct {
 	// revocation determines a candidate's Revoked flag. Nil disables the check
 	// (candidates are then never flagged revoked).
 	revocation RevocationChecker
+
+	// trustEvaluator ranks a stored credential's issuer while the disclosure
+	// plan is built, off the evidence issuance recorded. The rung a credential
+	// shows here therefore tracks the recognized lists, exactly as it does in
+	// the credential list.
+	trustEvaluator trust.Evaluator
 }
 
 // NewSdJwtVcDcqlHandler creates a new handler. vctFetcher and issuerFetcher are
@@ -86,6 +93,7 @@ func NewSdJwtVcDcqlHandler(
 	keyBinder sdjwt.KeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
 	revocation RevocationChecker,
+	trustEvaluator trust.Evaluator,
 ) *SdJwtVcDcqlHandler {
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
@@ -95,6 +103,7 @@ func NewSdJwtVcDcqlHandler(
 		issuerFetcher:   issuerFetcher,
 		currentLocale:   currentLocale,
 		revocation:      revocation,
+		trustEvaluator:  trustEvaluator,
 	}
 }
 
@@ -136,6 +145,11 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	locale := h.currentLocale.Get()
 	now := time.Now()
 
+	// One view for every candidate this query yields: the issuers of two
+	// credentials the user is choosing between must be ranked against the same
+	// list state.
+	view := h.trustView()
+
 	hasExhaustedBatch := false
 	for _, batch := range batches {
 		if !isBatchValid(batch, now) {
@@ -167,7 +181,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			CredentialId:                batch.VerifiableCredentialType,
 			Hash:                        batch.Hash,
 			Name:                        credentialDisplayName(batch, locale),
-			Issuer:                      h.issuerTrustedParty(batch, locale),
+			Issuer:                      h.issuerTrustedParty(batch, view, locale),
 			Format:                      clientmodels.Format_SdJwtVc,
 			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
 			Attributes:                  attributes,
@@ -307,13 +321,17 @@ func vctName(vctMeta *typemetadata.VctTypeMetadata, locale string) string {
 // when the metadata is nil. Logo is intentionally not fetched (the unobtainable
 // path stays inside the user's permission-prompt budget); frontend can resolve
 // the logo URL itself if it wants.
+// The issuer of a credential the wallet does not hold carries no evidence, so
+// no channel vouches for it and it ranks low, the same as the issuer of a
+// stored one.
 func issuerTrustedParty(issuerMeta *typemetadata.IssuerMetadata, locale string) clientmodels.TrustedParty {
 	if issuerMeta == nil {
-		return clientmodels.TrustedParty{}
+		return clientmodels.TrustedParty{TrustLevel: clientmodels.TrustLevel_Low}
 	}
 	return clientmodels.TrustedParty{
-		Id:   issuerMeta.Id,
-		Name: clientmodels.Resolve(issuerMeta.Name, locale),
+		Id:         issuerMeta.Id,
+		Name:       clientmodels.Resolve(issuerMeta.Name, locale),
+		TrustLevel: clientmodels.TrustLevel_Low,
 	}
 }
 
@@ -397,6 +415,11 @@ func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.
 func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, clientId string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
+	// One view for every credential this disclosure logs, for the same reason
+	// FindCandidates pins one: the rungs recorded for a single session must come
+	// from a single list state.
+	view := h.trustView()
+
 	// Load all batches with full metadata so buildLogCredential can resolve display names.
 	allBatches, err := h.credentialStore.GetCredentialBatchList()
 	if err != nil {
@@ -447,7 +470,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			}
 		}
 
-		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths))
+		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, view, sel.ClaimPaths))
 	}
 
 	return result, nil
@@ -892,7 +915,7 @@ func toFloat64(v any) (float64, bool) {
 	}
 }
 
-func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clientmodels.LogCredential {
+func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, trustView trust.View, claimPaths [][]any) clientmodels.LogCredential {
 	attrs := make([]clientmodels.Attribute, 0)
 
 	var resolved sdjwt.ProcessedPayload
@@ -926,7 +949,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
 		Name:         credentialDisplayName(batch, locale),
 		Image:        h.credentialImage(batch, locale),
-		Issuer:       h.issuerTrustedParty(batch, locale),
+		Issuer:       h.issuerTrustedParty(batch, trustView, locale),
 		Attributes:   attrs,
 		ExpiryDate:   expiryUnix(batch),
 	}
@@ -1210,14 +1233,35 @@ func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch, loca
 	return services.LoadResolvedLogo(logoManager, services.CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale)
 }
 
-// issuerTrustedParty builds a TrustedParty from the stored issuer display metadata,
-// including the issuer logo if available on disk.
-func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, locale string) clientmodels.TrustedParty {
+// issuerTrustedParty builds a TrustedParty from the stored issuer display
+// metadata, including the issuer logo if available on disk, and ranks the issuer
+// off the evidence issuance recorded — so a credential whose issuer was delisted
+// since shows the demoted rung here too, not just in the credential list.
+//
+// The trust view is passed in rather than taken here: one pass over the wallet's
+// credentials must rank all of them against the same state of the recognized
+// lists, or a refresh landing mid-pass could put two credentials from one issuer
+// on different rungs in a single screen. See trustView.
+func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, view trust.View, locale string) clientmodels.TrustedParty {
 	return clientmodels.TrustedParty{
-		Id:    batch.CredentialIssuer,
-		Name:  clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
-		Image: h.issuerImage(batch, locale),
+		Id:         batch.CredentialIssuer,
+		Name:       clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
+		Image:      h.issuerImage(batch, locale),
+		TrustLevel: view.Issuer(services.BatchIssuerEvidence(batch)).Level,
 	}
+}
+
+// trustView pins the recognized-list state for one pass over the wallet's
+// credentials. Take it once per entry point, never per credential.
+//
+// A handler built without an evaluator falls back to the listless view — the
+// certificate channel alone — rather than crashing on a caller that does not care
+// about trust levels.
+func (h *SdJwtVcDcqlHandler) trustView() trust.View {
+	if h.trustEvaluator == nil {
+		return trust.NewView(nil)
+	}
+	return h.trustEvaluator.Snapshot(context.Background())
 }
 
 // issuerImage loads the issuer logo that resolves for the locale from the

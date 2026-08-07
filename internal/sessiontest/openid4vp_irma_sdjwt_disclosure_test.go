@@ -84,6 +84,13 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
 	require.Empty(t, session.OfferedCredentials)
 
+	// This verifier authenticated with a certificate that validates against the
+	// trust anchors the wallet is configured with, so Yivi itself vouches for
+	// it: the top rung, and the trusted marker in the UI.
+	require.Equal(t, clientmodels.TrustLevel_High, session.Requestor.TrustLevel,
+		"an X.509 verifier under the Yivi anchors reaches the top rung")
+	require.True(t, session.Requestor.TrustLevel.IsTrusted())
+
 	plan := session.DisclosurePlan
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 		IssuanceSteps: []expectedIssuanceStep{

@@ -343,6 +343,33 @@ services:
       start_period: 10s
 
   # TLS reverse proxy for the veramo issuer/verifier services and the EUDI Python issuer.
+  # ---------------------------------------------------------------------------
+  # LoTE publisher: serves the ETSI TS 119 602 trusted list the wallet's
+  # recognized-list channel consumes, signed as a compact JAdES-B-B.
+  #
+  # It signs with the openssl CLI rather than a JWS library, deliberately: the
+  # wallet verifies with jwx, so a Go publisher would test that library against
+  # itself instead of proving the wallet accepts a document a foreign toolchain
+  # produced. See docs/plans/lote-e2e-tests.md.
+  #
+  # Stock python:3-slim (which ships openssl) with the script and its signing
+  # material mounted — no image build, since the publisher is stdlib-only.
+  # Reached by the wallet at https://localhost:8446 through the tls_proxy.
+  # ---------------------------------------------------------------------------
+  lote_publisher:
+    image: python:3-slim
+    volumes:
+      - ./testdata/lote-publisher:/app:ro
+    working_dir: /app
+    command: ["python3", "publish.py"]
+    environment:
+      LOTE_PORT: 9800
+      LOTE_LIST_ID: urn:yivi:trustlist:sessiontest
+    networks:
+      irma-net:
+        aliases:
+          - lote-publisher.localhost
+
   tls_proxy:
     image: nginx:alpine
     depends_on:
@@ -357,6 +384,8 @@ services:
         condition: service_healthy
       statuslist_agent:
         condition: service_started
+      lote_publisher:
+        condition: service_started
     volumes:
       - ./testdata/configurations/certs/nginx-tls-proxy.conf:/etc/nginx/nginx.conf:ro
       - ./testdata/configurations/certs/localhost.crt:/etc/nginx/certs/localhost.crt:ro
@@ -370,6 +399,7 @@ services:
       - 8443:443
       - 8444:444
       - 8445:445
+      - 8446:446
 
   # OpenID4VP verifier for integration tests (eduwallet/veramo-verifier).
   # Uses the shared veramo_postgres server, isolated in its own `verifier` schema.

@@ -29,6 +29,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
+	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
@@ -51,6 +52,7 @@ type Client struct {
 	sessionManager    sessionManager
 	credentialService services.CredentialService
 	revocationService *services.RevocationService
+	trustService      *services.TrustService
 
 	// handler is how the wallet wakes the app when what it has already rendered
 	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
@@ -69,36 +71,72 @@ type Client struct {
 	//Preferences      clientsettings.Preferences
 }
 
-func New(
-	storagePath string,
-	irmaConfigurationPath string,
-	eudiAppDataPath string,
-	handler ClientHandler,
-	sessionHandler clientmodels.SessionHandler,
-	signer irmaclient.Signer,
-	aesKey [32]byte,
-	locale string,
-) (*Client, error) {
+// Config is everything a wallet needs to exist. Fields are named rather than
+// positional deliberately: three of the paths are plain strings, and a caller that
+// transposed two of them would build a wallet that looks fine and stores its data
+// in the wrong place.
+//
+// The zero value of a field takes the documented default, so a caller supplies
+// only what it has an opinion about.
+type Config struct {
+	// StoragePath is where the IRMA client keeps its data. Must exist.
+	StoragePath string
+	// IrmaConfigurationPath is the irma_configuration assets directory the
+	// scheme is seeded from. Must exist.
+	IrmaConfigurationPath string
+	// EudiAppDataPath is where the EUDI storage lives. Created if absent.
+	EudiAppDataPath string
+
+	// Handler is how the wallet wakes the app when what it has already rendered
+	// went stale. Required: the wallet calls it from background jobs without a
+	// nil guard.
+	Handler ClientHandler
+	// SessionHandler receives session state updates. May be nil for a wallet
+	// that runs no sessions.
+	SessionHandler clientmodels.SessionHandler
+	// Signer signs the keyshare protocol's messages.
+	Signer irmaclient.Signer
+	// AesKey encrypts everything at rest, in both storage layers.
+	AesKey [32]byte
+
+	// Locale is the initial UI language. Empty takes
+	// clientmodels.DefaultFallbackLanguage; the app changes it with SetLocale.
+	Locale string
+
+	// RecognizedTrustLists are the recognized trust lists this wallet consults.
+	// Empty consults none, which is what a released wallet does today: Yivi does
+	// not publish its LoTE yet, so every party is ranked by the certificate
+	// channel alone. Integration tests and staging builds name their own.
+	//
+	// When the list is published, the released set belongs here — passed by the
+	// call that builds the wallet — rather than in a package variable, so that
+	// what a wallet consults is fixed by that call.
+	RecognizedTrustLists []lote.Source
+}
+
+// New builds a wallet from cfg. It is the only constructor: everything optional
+// is a documented zero value on Config.
+func New(cfg Config) (*Client, error) {
 	// Required: the wallet calls it from background jobs and from IrmaClient
 	// without a nil guard, so a nil one would panic on a goroutine no caller
 	// can recover from. Fail here instead, where the app can see it.
-	if handler == nil {
+	if cfg.Handler == nil {
 		return nil, fmt.Errorf("handler is required")
 	}
-	if err := common.AssertPathExists(storagePath); err != nil {
+	if err := common.AssertPathExists(cfg.StoragePath); err != nil {
 		return nil, err
 	}
-	if err := common.AssertPathExists(irmaConfigurationPath); err != nil {
+	if err := common.AssertPathExists(cfg.IrmaConfigurationPath); err != nil {
 		return nil, err
 	}
-	if err := common.EnsureDirectoryExists(eudiAppDataPath); err != nil {
+	if err := common.EnsureDirectoryExists(cfg.EudiAppDataPath); err != nil {
 		return nil, err
 	}
 
 	// Load IRMA + EUDI configuration
 	irmaConf, err := irma.NewConfiguration(
-		filepath.Join(storagePath, "irma_configuration"),
-		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
+		filepath.Join(cfg.StoragePath, "irma_configuration"),
+		irma.ConfigurationOptions{Assets: cfg.IrmaConfigurationPath, IgnorePrivateKeys: true},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating configuration failed: %v", err)
@@ -106,15 +144,15 @@ func New(
 
 	eudi.Logger = irma.Logger
 
-	currentLocale := clientmodels.NewCurrentLocale(locale)
+	currentLocale := clientmodels.NewCurrentLocale(cfg.Locale)
 
 	// Create the encryption middleware, used by the IRMA classic clientstorage so all data is encrypted at rest.
-	// The EUDI storage layer derives its own AES middleware (and a separate filename-MAC sub-key) directly from the aesKey.
-	encryptionMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
+	// The EUDI storage layer derives its own AES middleware (and a separate filename-MAC sub-key) directly from the AES key.
+	encryptionMiddleware := encryption.NewAESEncryptionMiddleware(cfg.AesKey)
 
 	// Create the EUDI storage (will be used by both the OpenID4VP and OpenID4VCI clients later)
-	dbPath := filepath.Join(eudiAppDataPath, storage.DbFilename)
-	eudiStorage, err := sqlcipherstorage.New(aesKey, dbPath, eudiAppDataPath)
+	dbPath := filepath.Join(cfg.EudiAppDataPath, storage.DbFilename)
+	eudiStorage, err := sqlcipherstorage.New(cfg.AesKey, dbPath, cfg.EudiAppDataPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate eudi storage: %v", err)
 	}
@@ -125,7 +163,7 @@ func New(
 	}
 
 	// Initialize DB storage
-	s := clientstorage.NewStorage(storagePath, encryptionMiddleware)
+	s := clientstorage.NewStorage(cfg.StoragePath, encryptionMiddleware)
 	irmaStorage := irmaclient.NewIrmaStorage(s, irmaConf)
 
 	// Ensure storage path exists, and populate it with necessary files
@@ -151,7 +189,27 @@ func New(
 	}, statusListCache)
 	revocationService := services.NewRevocationService(statusChecker, credStore)
 
-	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale)
+	// The single home for trust-level evaluation, shared by both EUDI protocols
+	// so an issuer and a verifier are ranked by the same rules, and by the
+	// credential listing paths, which rank a stored credential's issuer on every
+	// read. It reads the recognized lists through the LoTE checker, which holds
+	// them in memory and persists them, and never fetches on a session's path —
+	// see Client.RefreshTrustLists.
+	//
+	// The lists are signed by Yivi and chain to the Yivi root, so they are
+	// validated against the issuer anchors; both trust models pin the same root.
+	//
+	// An empty source set — what a released wallet passes today, since Yivi does
+	// not publish its LoTE yet — leaves the certificate channel alone in force.
+	trustChecker := lote.NewChecker(lote.Config{
+		Sources:     cfg.RecognizedTrustLists,
+		X509Context: &eudiConf.Issuers,
+		Store:       db.NewTrustListStore(eudiStorage.Db()),
+		HTTPClient:  common.HTTPClient,
+	})
+	trustService := services.NewTrustService(trustChecker)
+
+	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale, trustService)
 
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
@@ -171,10 +229,11 @@ func New(
 		sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
 		currentLocale,
 		revocationService,
+		trustService,
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
 
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator, currentLocale)
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator, currentLocale, trustService)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -188,7 +247,7 @@ func New(
 		StatusChecker: statusChecker,
 	}
 
-	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, newIrmaHandler(handler), signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
+	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, newIrmaHandler(cfg.Handler), cfg.Signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
@@ -226,6 +285,7 @@ func New(
 		credentialService,
 		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
 		currentLocale,
+		trustService,
 	)
 
 	if err != nil {
@@ -248,13 +308,14 @@ func New(
 		keyBinder:         irmaKeyBinder,
 		didValidator:      didValidator,
 		scheduler:         scheduler,
-		handler:           handler,
+		handler:           cfg.Handler,
 		currentLocale:     currentLocale,
 		credentialService: credentialService,
 		revocationService: revocationService,
+		trustService:      trustService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
-			SessionHandler: sessionHandler,
+			SessionHandler: cfg.SessionHandler,
 		},
 	}
 
@@ -319,6 +380,33 @@ func (client *Client) Close() error {
 // cancellation.
 func (client *Client) RefreshStatuses(ctx context.Context) error {
 	changed, err := client.revocationService.RefreshStatuses(ctx)
+	if changed > 0 {
+		client.handler.CredentialsChanged()
+	}
+	return err
+}
+
+// RefreshTrustLists re-downloads the recognized trust lists and adopts the ones
+// that hold up. Use this on app resume, or when the UI exposes an explicit
+// refresh action.
+//
+// It is the only path that fetches a list: sessions read whatever the wallet
+// already holds, so a session is never delayed by a list download. A source
+// that fails leaves the list the wallet already held in force, and the returned
+// error names the sources that failed, for the caller's log. Nothing about a
+// failed refresh reaches a session beyond parties capping at a lower rung.
+//
+// A list that comes back saying something different about the parties on it
+// signals ClientHandler.CredentialsChanged, on the calling goroutine — the
+// rung a stored credential's issuer holds is read fresh on every listing, so
+// what the app is showing is out of date. A re-issue carrying the same entries
+// is silent, the same way a re-confirmed credential status is: re-confirmation
+// never wakes the app.
+//
+// InitJobs runs this on a schedule; the app may also call it on resume or from
+// an explicit refresh action.
+func (client *Client) RefreshTrustLists(ctx context.Context) error {
+	changed, err := client.trustService.RefreshLists(ctx)
 	if changed > 0 {
 		client.handler.CredentialsChanged()
 	}
@@ -698,7 +786,7 @@ func (client *Client) GetPreferences() clientsettings.Preferences {
 	return client.irmaClient.Preferences
 }
 
-func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInterval time.Duration) {
+func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInterval, trustListRefreshInterval time.Duration) {
 	// Future TODO: add Context so we can check for cancellation of the job ?
 	_, err := client.scheduler.NewJob(
 		gocron.DurationJob(eudiCrlUpdateInterval),
@@ -728,6 +816,27 @@ func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInte
 		)
 		if err != nil {
 			common.Logger.Warnf("failed to create new cron job for refreshing credential statuses: %v", err)
+		}
+	}
+
+	// Periodically re-download the recognized trust lists. Skipped when the
+	// interval is non-positive. Like the status sweep, this is where the wallet
+	// learns that a party it vouched for was delisted — a stored credential's
+	// issuer rung is read fresh on every listing, so the refresh only has to
+	// wake the app, which RefreshTrustLists does when entry content changed.
+	// Failures are logged and the lists already held stay in force.
+	if trustListRefreshInterval > 0 {
+		_, err = client.scheduler.NewJob(
+			gocron.DurationJob(trustListRefreshInterval),
+			gocron.NewTask(func() {
+				if err := client.RefreshTrustLists(context.Background()); err != nil {
+					common.Logger.Warnf("scheduled trust list refresh failed: %v", err)
+				}
+			}),
+			gocron.WithStartAt(gocron.WithStartImmediately()),
+		)
+		if err != nil {
+			common.Logger.Warnf("failed to create new cron job for refreshing trust lists: %v", err)
 		}
 	}
 }

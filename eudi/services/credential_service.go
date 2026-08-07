@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,6 +20,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/eudi/trust"
 	"gorm.io/datatypes"
 )
 
@@ -46,6 +48,10 @@ type credentialService struct {
 	// revocation supplies the per-batch revocation flags for the credential
 	// list view (see GetCredentialMetadataList).
 	revocation *RevocationService
+	// trustEvaluator ranks a stored credential's issuer at read time. One
+	// snapshot per listing call, so every credential in one list is ranked
+	// against the same state of the world.
+	trustEvaluator trust.Evaluator
 	// currentLocale is read on every call, not snapshotted, so a SetLocale in
 	// between two list calls is reflected without rebuilding the service.
 	currentLocale *clientmodels.CurrentLocale
@@ -57,6 +63,7 @@ func NewCredentialService(
 	fileStorage filesystem.FileSystemStorage,
 	revocation *RevocationService,
 	currentLocale *clientmodels.CurrentLocale,
+	trustEvaluator trust.Evaluator,
 ) CredentialService {
 	return &credentialService{
 		credentialStore:       credentialStore,
@@ -64,6 +71,7 @@ func NewCredentialService(
 		fileStorage:           fileStorage,
 		revocation:            revocation,
 		currentLocale:         currentLocale,
+		trustEvaluator:        trustEvaluator,
 	}
 }
 
@@ -85,6 +93,15 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 	}
 
 	locale := s.currentLocale.Get()
+
+	// One trust view for the whole listing: a refresh landing halfway through
+	// must not rank the first half of the list against one state of the
+	// recognized lists and the second half against another. A service built
+	// without an evaluator ranks nobody rather than failing the read.
+	trustView := trust.NewView(nil)
+	if s.trustEvaluator != nil {
+		trustView = s.trustEvaluator.Snapshot(context.Background())
+	}
 
 	// Convert storage models to client models
 	clientModels := make([]*clientmodels.Credential, len(m))
@@ -129,12 +146,15 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			Image:        credentialImage,
 			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
-				Id:       batch.CredentialIssuer,
-				Name:     issuerName,
-				Image:    issuerImage,
-				Url:      nil,
-				Parent:   nil,
-				Verified: false,
+				Id:    batch.CredentialIssuer,
+				Name:  issuerName,
+				Image: issuerImage,
+				Url:   nil,
+				// Ranked now, not at issuance: the evidence is stored, the
+				// verdict is not, so an issuer delisted since demotes here and a
+				// newly listed one promotes.
+				TrustLevel: trustView.Issuer(BatchIssuerEvidence(batch)).Level,
+				Parent:     nil,
 			},
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,
@@ -229,11 +249,15 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		Hash:                     hash,
 		ProcessedSdJwtPayload:    datatypes.JSON(processedPayload),
 		CredentialIssuer:         first.IssuerSignedJwtPayload.Issuer,
-		IssuerDisplay:            slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
-		CredentialMetadata:       convertCredentialMetadata(credentialConfiguration),
-		BatchSize:                uint(len(verifiedSdJwtVcs)),
-		RemainingCount:           uint(len(verifiedSdJwtVcs)),
-		Instances:                buildInstances(verifiedSdJwtVcs),
+		// The evidence the trust ladder ranks this batch's issuer by on every
+		// later read. Nil for a DID-identified issuer, which is not a gap: the
+		// recognized-list channel names those parties by their DID.
+		IssuerCertificate:  issuerCertificateDer(first),
+		IssuerDisplay:      slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
+		CredentialMetadata: convertCredentialMetadata(credentialConfiguration),
+		BatchSize:          uint(len(verifiedSdJwtVcs)),
+		RemainingCount:     uint(len(verifiedSdJwtVcs)),
+		Instances:          buildInstances(verifiedSdJwtVcs),
 	}
 
 	if first.IssuerSignedJwtPayload.IssuedAt != nil {
@@ -255,6 +279,16 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	}
 
 	return nil
+}
+
+// issuerCertificateDer is the DER of the certificate the issuer signed with, or
+// nil when it identified itself by DID. Stored as the certificate channel's
+// evidence for every later read of this batch.
+func issuerCertificateDer(vc *sdjwtvc.VerifiedSdJwtVc) []byte {
+	if vc.IssuerCertificate == nil {
+		return nil
+	}
+	return vc.IssuerCertificate.Raw
 }
 
 func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJwtVc) (string, []byte, error) {

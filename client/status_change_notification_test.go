@@ -34,16 +34,15 @@ func newClientForStatusRefresh(t *testing.T, signer *statuslist.TestStatusListSi
 	eudiAppDataPath := filepath.Join(storagePath, "eudi")
 
 	handler := &testhelpers.TestClientHandler{T: t}
-	c, err := New(
-		storagePath,
-		filepath.Join(path, "irma_configuration"),
-		eudiAppDataPath,
-		handler,
-		nil,
-		test.NewSigner(t),
-		aesKey,
-		"en",
-	)
+	c, err := New(Config{
+		StoragePath:           storagePath,
+		IrmaConfigurationPath: filepath.Join(path, "irma_configuration"),
+		EudiAppDataPath:       eudiAppDataPath,
+		Handler:               handler,
+		Signer:                test.NewSigner(t),
+		AesKey:                aesKey,
+		Locale:                "en",
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
 
@@ -243,15 +242,13 @@ func TestNewRejectsNilHandler(t *testing.T) {
 	path := test.FindTestdataFolder(t)
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
 
-	_, err := New(
-		storagePath,
-		filepath.Join(path, "irma_configuration"),
-		filepath.Join(storagePath, "eudi"),
-		nil,
-		nil,
-		test.NewSigner(t),
-		aesKey,
-		"en",
-	)
+	_, err := New(Config{
+		StoragePath:           storagePath,
+		IrmaConfigurationPath: filepath.Join(path, "irma_configuration"),
+		EudiAppDataPath:       filepath.Join(storagePath, "eudi"),
+		Signer:                test.NewSigner(t),
+		AesKey:                aesKey,
+		Locale:                "en",
+	})
 	require.ErrorContains(t, err, "handler is required")
 }
