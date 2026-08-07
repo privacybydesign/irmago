@@ -28,9 +28,7 @@ type DidVerifierValidator struct {
 // NewDidVerifierValidator creates a new DID-based verifier validator.
 func NewDidVerifierValidator(allowInsecureDidWeb bool) *DidVerifierValidator {
 	return &DidVerifierValidator{
-		didWebResolver: &didweb.DocumentResolver{
-			AllowInsecure: allowInsecureDidWeb,
-		},
+		didWebResolver: didweb.NewDocumentResolver(allowInsecureDidWeb),
 	}
 }
 
@@ -83,8 +81,8 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 	// 3. domain from did:web
 	// 4. "unknown" (raw did:jwk is never useful to a user)
 	displayName := "unknown"
-	if authRequest.ClientMetadata.ClientName != "" {
-		displayName = authRequest.ClientMetadata.ClientName
+	if authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil {
+		displayName = *authRequest.ClientMetadata.ClientName
 	} else if host := hostFromURL(authRequest.ResponseUri); host != "" {
 		displayName = host
 	} else if domain, ok := didWebDomain(didString); ok {
@@ -184,11 +182,12 @@ func findVerificationKey(doc *did.Document, header map[string]any) (any, error) 
 		if kid != "" && vm.ID != kid {
 			continue
 		}
-		if vm.PublicKeyJwk == nil {
+		pk := vm.PublicKey()
+		if pk == nil {
 			continue
 		}
 
-		jwkKey := *vm.PublicKeyJwk
+		jwkKey := *pk
 		var rawKey any
 		if err := jwk.Export(jwkKey, &rawKey); err != nil {
 			return nil, fmt.Errorf("failed to export raw key from verification method %s: %v", vm.ID, err)

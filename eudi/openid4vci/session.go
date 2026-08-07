@@ -22,6 +22,7 @@ import (
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -37,7 +38,9 @@ type session struct {
 	httpClient               *http.Client
 	handler                  Handler
 	storage                  storage.Storage
+	credentialService        services.CredentialService
 	holderVerifier           *sdjwtvc.HolderVerificationProcessor
+	holderKeyBinder          HolderKeyBinder
 
 	// vctResolver provides cached raw bytes of fetched SD-JWT VC type
 	// metadata documents so the post-issuance integrity check (verifyVctIntegrity)
@@ -56,6 +59,11 @@ type session struct {
 	// immutable VCI baseline rather than against the pre-issuance pass's
 	// output — that pass may have used a different (or stale) VCT.
 	originalCredentialMetadata map[string]*metadata.CredentialMetadata
+
+	// locale is the wallet locale snapshotted at flow start; an in-flight
+	// session keeps resolving text and logos with it even when the app
+	// changes language mid-flow.
+	locale string
 
 	redirectUri string
 
@@ -206,7 +214,7 @@ type fetchedCredential struct {
 	verifiedSdJwtVcs               []*sdjwtvc.VerifiedSdJwtVc
 	requireCryptographicKeyBinding bool
 	publicKeyIdentifiers           []models.PublicHolderBindingKey
-	keyBindingService              services.HolderBindingKeyService
+	keyBindingService              HolderKeyBinder
 }
 
 func (fc *fetchedCredential) cleanupKeys() {
@@ -262,7 +270,7 @@ func (s *session) obtainCredentials(accessToken string) ([]*fetchedCredential, e
 // issuance VCT — the post-issuance VCT may legitimately disagree with it.
 //
 // Logos introduced by the type metadata (top-level display.logo or
-// rendering.simple.logo) are downloaded inline so LoadLogoImage in
+// rendering.simple.logo) are downloaded inline so the logo lookup in
 // buildOfferedCredentials finds them. Failures fall back silently to the
 // existing credential_metadata.
 func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*fetchedCredential) error {
@@ -304,20 +312,8 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 		config.CredentialMetadata = &merged
 		s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId] = config
 
-		for _, display := range merged.Display {
-			if display.Logo == nil {
-				continue
-			}
-			logoData, _, err := downloadRemoteImage(s.httpClient, *display.Logo)
-			if err != nil {
-				eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
-				continue
-			}
-			if err := logoManager.Save(display.Logo.Uri, logoData); err != nil {
-				eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
-			}
-			break
-		}
+		uri := clientmodels.Resolve(metadata.LogoURIsByLanguage(merged.Display), s.locale)
+		services.FetchLogoIfMissing(ctx, logoManager, s.httpClient, uri)
 	}
 	return nil
 }
@@ -365,9 +361,8 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 }
 
 func (s *session) storeCredentials(fetched []*fetchedCredential) error {
-	credentialService := services.NewCredentialService(s.storage)
 	for _, fc := range fetched {
-		err := credentialService.VerifyAndStoreIssuedCredentials(
+		err := s.credentialService.VerifyAndStoreIssuedCredentials(
 			fc.verifiedSdJwtVcs,
 			fc.credentialConfigurationId,
 			*s.credentialIssuerMetadata,
@@ -396,36 +391,26 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		}
 
 		// Use the first credential in the batch as source of attribute values.
-		var payload sdjwtvc.ProcessedSdJwtPayload
+		var payload sdjwt.ProcessedPayload
 		if len(fc.verifiedSdJwtVcs) > 0 {
 			payload = fc.verifiedSdJwtVcs[0].ProcessedSdJwtPayload
 		}
 
 		displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
-		name := metadata.ConvertDisplayToTranslatedString(displays)
+		name := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), s.locale)
 
 		issuerDisplays := metadata.ToTranslateableList(s.credentialIssuerMetadata.Display)
-		issuerName := metadata.ConvertDisplayToTranslatedString(issuerDisplays)
+		issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
 
-		var image *clientmodels.Image
 		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
-		for _, display := range config.CredentialMetadata.Display {
-			if display.Logo != nil {
-				image = eudi.LoadLogoImage(credentialLogoManager, display.Logo.Uri)
-				break
-			}
-		}
+		image := services.LoadResolvedLogo(credentialLogoManager,
+			metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), s.locale)
 
-		var issuerImage *clientmodels.Image
 		issuerLogoManager := s.storage.FileSystem().Issuers().LogoManager()
-		for _, display := range s.credentialIssuerMetadata.Display {
-			if display.Logo != nil {
-				issuerImage = eudi.LoadLogoImage(issuerLogoManager, display.Logo.Uri)
-				break
-			}
-		}
+		issuerImage := services.LoadResolvedLogo(issuerLogoManager,
+			metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale)
 
-		attrs := buildAttributesWithValues(config.CredentialMetadata.Claims, payload)
+		attrs := buildAttributesWithValues(config.CredentialMetadata.Claims, payload, s.locale)
 
 		var batchSize *uint
 		if batch != nil {
@@ -440,8 +425,19 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			expiryDate = jwt.Expiry
 		}
 
+		// The issued JWT's vct claim is authoritative for the credential id —
+		// it is what was signed and what the stored batch is keyed by. The
+		// issuer's well-known document may carry a placeholder (e.g. veramo's
+		// "unknown"), which would leave the issuance log pointing at nothing.
+		credentialId := config.VerifiableCredentialType
+		if len(fc.verifiedSdJwtVcs) > 0 {
+			if vct := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload.VerifiableCredentialType; vct != "" {
+				credentialId = vct
+			}
+		}
+
 		cred := clientmodels.Credential{
-			CredentialId: config.VerifiableCredentialType,
+			CredentialId: credentialId,
 			Name:         name,
 			Issuer: clientmodels.TrustedParty{
 				Id:    s.credentialIssuerMetadata.CredentialIssuer,
@@ -464,12 +460,12 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 }
 
 // buildAttributesWithValues builds an attribute list directly from the credential
-// payload. The claim metadata is consulted only for display-name translations and
-// for ordering: claims declared in metadata appear in declared order, payload-only
-// claims are appended alphabetically. Claims without a metadata display entry
-// produce attributes with DisplayName: nil.
-func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwtvc.ProcessedSdJwtPayload) []clientmodels.Attribute {
-	displayLookup := map[string]clientmodels.TranslatedString{}
+// payload. The claim metadata is consulted only for display-name translations
+// (resolved to the given locale) and for ordering: claims declared in metadata
+// appear in declared order, payload-only claims are appended alphabetically.
+// Claims without a metadata display entry produce attributes with DisplayName: nil.
+func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwt.ProcessedPayload, locale string) []clientmodels.Attribute {
+	displayLookup := map[string]string{}
 	metadataOrder := map[string]int{}
 	for i, c := range claims {
 		key := clientmodels.ClaimPathKey(c.Path)
@@ -477,7 +473,7 @@ func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjw
 		if len(c.Display) == 0 {
 			continue
 		}
-		displayLookup[key] = claimDisplayToTranslatedString(c.Display)
+		displayLookup[key] = clientmodels.Resolve(claimDisplayToTranslatedString(c.Display), locale)
 	}
 
 	return services.BuildAttributesFromPayload(&payload, displayLookup, metadataOrder)
@@ -498,14 +494,15 @@ func claimDisplayToTranslatedString(displays []metadata.Display) clientmodels.Tr
 }
 
 func (s *session) configureIssuerSettings() error {
-	// Determine which grant-type to use (Pre-Authorized Code is preferred over Authorization Code).
-	if s.credentialOffer.Grants.PreAuthorizedCodeGrant != nil {
-		s.issuerSettings.grantType = s.credentialOffer.Grants.PreAuthorizedCodeGrant
-	} else if s.credentialOffer.Grants.AuthorizationCodeGrant != nil {
-		s.issuerSettings.grantType = s.credentialOffer.Grants.AuthorizationCodeGrant
-	} else {
-		return fmt.Errorf("no supported grant type found in credential offer")
+	// Determine which grant-type to use. This can leave grantType nil: the
+	// offer's grants member is OPTIONAL, and deriving the grant type from the
+	// authorization server metadata has to wait until that metadata is fetched
+	// below.
+	grantType, err := selectOfferedGrant(s.credentialOffer.Grants)
+	if err != nil {
+		return err
 	}
+	s.issuerSettings.grantType = grantType
 
 	// Determine authorization server to use and fetch its metadata
 	authorizationServer, err := s.getAuthorizationServer()
@@ -518,6 +515,15 @@ func (s *session) configureIssuerSettings() error {
 	}
 	s.issuerSettings.authorizationServer = authorizationServer
 	s.issuerSettings.authorizationServerMetadata = asMetadata
+
+	if s.issuerSettings.grantType == nil {
+		grantType, err := deriveGrantFromAuthorizationServerMetadata(asMetadata)
+		if err != nil {
+			return err
+		}
+		eudi.Logger.Infof("credential offer has no grants; using the %s grant type advertised by authorization server %s", grantType.GetGrantType(), authorizationServer)
+		s.issuerSettings.grantType = grantType
+	}
 
 	// TODO: verify AS supports the required features and to extract endpoints
 
@@ -582,12 +588,60 @@ func getCredentialRequestPreferences(c metadata.CredentialConfiguration) *sessio
 	return s
 }
 
+// selectOfferedGrant picks the grant to use from the offer's grants member,
+// preferring the Pre-Authorized Code grant over the Authorization Code grant.
+// It returns a nil grant when the offer names no grant type at all, in which
+// case OID4VCI v1.0 § 4.1.1 requires the wallet to determine the grant type
+// from the authorization server metadata instead. An offer that does name grant
+// types, but only ones this wallet does not implement, is an error: the issuer
+// stated which grants it is prepared to process for this offer.
+func selectOfferedGrant(grants *Grants) (Grant, error) {
+	if grants.IsEmpty() {
+		return nil, nil
+	}
+	if grants.PreAuthorizedCodeGrant != nil {
+		return grants.PreAuthorizedCodeGrant, nil
+	}
+	if grants.AuthorizationCodeGrant != nil {
+		return grants.AuthorizationCodeGrant, nil
+	}
+	return nil, fmt.Errorf("no supported grant type found in credential offer, which only offers %s", strings.Join(grants.UnsupportedGrantTypes, ", "))
+}
+
+// deriveGrantFromAuthorizationServerMetadata determines the grant type to use
+// for an offer without a grants member, which OID4VCI v1.0 § 4.1.1 requires the
+// wallet to take from the authorization server metadata. Only the Authorization
+// Code grant can be derived: the Pre-Authorized Code flow needs a
+// pre-authorized_code, and that value exists only in the offer. The derived
+// grant carries no issuer_state and no authorization_server hint, both of which
+// are grant members and therefore also absent.
+func deriveGrantFromAuthorizationServerMetadata(asMetadata *oauth2.AuthorizationServerMetadata) (Grant, error) {
+	if !asMetadata.SupportsGrantType(oauth2.GrantTypeAuthorizationCode) {
+		supported := "none"
+		if len(asMetadata.GrantTypesSupported) > 0 {
+			supported = strings.Join(asMetadata.GrantTypesSupported, ", ")
+		}
+		return nil, fmt.Errorf(
+			"credential offer has no grants and the authorization server does not support the %s grant type, it supports %s",
+			oauth2.GrantTypeAuthorizationCode,
+			supported,
+		)
+	}
+	return &AuthorizationCodeGrant{}, nil
+}
+
 func (s *session) getAuthorizationServer() (string, error) {
 	if len(s.credentialIssuerMetadata.AuthorizationServers) == 0 {
 		// Use the credential issuer as the authorization server if no authorization servers are listed in the metadata
 		return s.credentialOffer.CredentialIssuer, nil
 	} else {
-		credentialOfferedAuthServer := s.issuerSettings.grantType.GetAuthorizationServer()
+		// The authorization_server hint is a grant member, so an offer without
+		// grants gives none: fall back to the first advertised server, the same
+		// way an offered grant without the hint does.
+		var credentialOfferedAuthServer *string
+		if s.issuerSettings.grantType != nil {
+			credentialOfferedAuthServer = s.issuerSettings.grantType.GetAuthorizationServer()
+		}
 
 		// Try to match the authorization server from the offer to the metadata, or just pick the first one if no hint is given in the offer
 		if credentialOfferedAuthServer == nil {
@@ -629,7 +683,8 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	}
 
 	var publicKeyIdentifiers []models.PublicHolderBindingKey
-	keyBindingService := services.NewHolderBindingKeyService(s.storage.Db())
+	// The holder key binder (software or WSCA-backed) is injected via NewClient.
+	keyBindingService := s.holderKeyBinder
 	if requireCryptographicKeyBinding {
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {

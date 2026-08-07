@@ -56,9 +56,8 @@ CN 	= $URI
 
 [ v3_req ]
 subjectAltName = @alt_names
-basicConstraints = critical,CA:true,pathlen:0
-keyUsage = keyCertSign,cRLSign
-#extendedKeyUsage = clientAuth
+basicConstraints = critical,CA:false,pathlen:0
+keyUsage = digitalSignature
 2.1.123.1 = ASN1:UTF8String:$escaped_json
 [ alt_names ]
 URI.0 = https://$URI

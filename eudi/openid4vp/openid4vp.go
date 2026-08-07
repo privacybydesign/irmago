@@ -86,7 +86,15 @@ type ClientMetadata struct {
 	// Defined in RFC 7591 but not part of the OpenID4VP client_metadata spec (which says
 	// unrecognized parameters MUST be ignored). Used as a fallback display name when
 	// response_uri is absent, to avoid showing a raw did:jwk to the user.
-	ClientName string `json:"client_name,omitempty"`
+	ClientName *string `json:"client_name,omitempty"`
+
+	// OPTIONAL. URI of a webpage from the client (verifier) providing information about the client.
+	// Defined in RFC 7591.
+	ClientUri *string `json:"client_uri,omitempty"`
+
+	// OPTIONAL. A URI to the logo of the client (verifier).
+	// Defined in RFC 7591.
+	LogoUri *string `json:"logo_uri,omitempty"`
 
 	// OPTIONAL. A JSON Web Key Set, as defined in [RFC7591], that contains one or more public keys,
 	// such as those used by the Wallet as an input to a key agreement that may be used for encryption
@@ -141,20 +149,6 @@ const (
 	RequestUriMethod_Get  RequestUriMethod = "get"
 	RequestUriMethod_Post RequestUriMethod = "post"
 
-	Key_Audience         string = "aud"
-	Key_Type             string = "type"
-	Key_ClientId         string = "client_id"
-	Key_ClientMetadata   string = "client_metadata"
-	Key_DcqlQuery        string = "dcql_query"
-	Key_IssuedAt         string = "iat"
-	Key_Nonce            string = "nonce"
-	Key_ResponseMode     string = "response_mode"
-	Key_ResponseType     string = "response_type"
-	Key_ResponseUri      string = "response_uri"
-	Key_RequestUriMethod string = "request_uri_method"
-	Key_Scope            string = "scope"
-	Key_State            string = "state"
-
 	ClientIdentifierPrefix_RedirectUri         ClientIdentifierPrefix = "redirect_uri:"
 	ClientIdentifierPrefix_OpenidFederation    ClientIdentifierPrefix = "openid_federation:"
 	ClientIdentifierPrefix_DecentralizedDid    ClientIdentifierPrefix = "decentralized_identifier:"
@@ -169,8 +163,8 @@ type AuthorizationRequest struct {
 	Type     string `json:"type"`
 
 	// REQUIRED:
-	ClientId       string         `json:"client_id"`
-	ClientMetadata ClientMetadata `json:"client_metadata"`
+	ClientId       string          `json:"client_id"`
+	ClientMetadata *ClientMetadata `json:"client_metadata"`
 
 	// OPTIONAL: A query for credentials using DCQL.
 	// MUST NOT exist if `scope` is set, MUST exist if there is no `scope`.

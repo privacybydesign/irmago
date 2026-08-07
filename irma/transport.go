@@ -126,7 +126,12 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 			return err != nil || resp.StatusCode == 0, err
 		},
 		HTTPClient: &http.Client{
-			Timeout:   time.Second * 5,
+			// No Timeout is set here on purpose: http.Client.Timeout covers the
+			// entire request including reading the response body, and its timer
+			// keeps running after Do returns, interrupting io.ReadAll(res.Body).
+			// The per-request context deadline (responseDeadline, set in
+			// jsonRequest and GetBytes) is the single source of truth for the
+			// overall timeout. See issue #606.
 			Transport: innerTransport,
 			Jar:       cookieJar,
 		},

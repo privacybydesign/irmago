@@ -2,14 +2,40 @@
 
 `irmago` is an IRMA implementation in Go. It contains multiple libraries and applications:
 
-* The commandline tool [`yivi`](https://yivi.app/docs/yivi-cli/), which contains an [IRMA server](https://yivi.app/docs/irma-server/); subcommands for manipulating [IRMA schemes](https://yivi.app/docs/schemes/), generating IRMA issuer public/private keypairs, performing test IRMA sessions on the command line; and more.
-* The Go library [`irmaserver`](https://yivi.app/docs/irma-server-lib/) providing a HTTP server that handles IRMA session with the [IRMA mobile app](https://github.com/privacybydesign/irma_mobile), and functions for starting and managing IRMA sessions.
-* The root package `irma` contains generic IRMA functionality used by all other components below, such as parsing [IRMA schemes](https://yivi.app/docs/schemes/), parsing [IRMA metadata attributes](https://irma.app/docs/overview#the-metadata-attribute), and structs representing messages of the IRMA protocol.
+* The commandline tool [`yivi`](https://docs.yivi.app/irma-cli/), which contains an [IRMA server](https://docs.yivi.app/irma-server/); subcommands for manipulating [IRMA schemes](https://docs.yivi.app/schemes/), generating IRMA issuer public/private keypairs, performing test IRMA sessions on the command line; and more.
+* The Go library [`irmaserver`](https://docs.yivi.app/irma-server-lib/) providing a HTTP server that handles IRMA session with the [IRMA mobile app](https://github.com/privacybydesign/irma_mobile), and functions for starting and managing IRMA sessions.
+* The root package `irma` contains generic IRMA functionality used by all other components below, such as parsing [IRMA schemes](https://docs.yivi.app/schemes/), parsing [IRMA metadata attributes](https://docs.yivi.app/technical-overview#the-metadata-attribute), and structs representing messages of the IRMA protocol.
 * The Go package `irmaclient` is a library that serves as the client in the IRMA protocol; it can receive and disclose IRMA attributes and store and read them from storage. It also implements the [keyshare protocol](https://github.com/privacybydesign/irma_keyshare_server) and handles registering to keyshare servers. The [IRMA mobile app](https://github.com/privacybydesign/irma_mobile) uses `irmaclient`.
+* The Go package `client` is a unified wallet client that combines the classic `irmaclient` with support for the European Digital Identity (EUDI) standards. It is built around the `eudi` packages described below and is used by the Yivi app to issue, store and present credentials over both the IRMA and the OpenID4VC protocol families.
+
+## Standards and credential formats
+
+`irmago` has evolved from an IRMA-only implementation into a crypto-agile wallet stack that speaks both the original IRMA protocol and the OpenID for Verifiable Credentials (OpenID4VC) family of standards used by the European Digital Identity (EUDI) ecosystem.
+
+### Supported protocols
+
+* **IRMA** — the original issuance and disclosure protocol based on Idemix attribute-based credentials.
+* **OpenID4VCI** ([OpenID for Verifiable Credential Issuance](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)) — credential issuance supporting both the Pre-Authorized Code flow (with optional transaction code) and the Authorization Code flow with Pushed Authorization Requests (PAR), in-app browser authorization and PKCE. Implemented in `eudi/openid4vci`.
+* **OpenID4VP** ([OpenID for Verifiable Presentations](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)) — credential presentation supporting the `direct_post` and `direct_post.jwt` response modes and credential selection via [DCQL](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l) (Digital Credentials Query Language), including credential sets and optional cryptographic holder binding. Implemented in `eudi/openid4vp`.
+
+### Supported credential formats
+
+* **IRMA / Idemix** (`idemix`) — the classic IRMA credential format.
+* **SD-JWT VC** (`dc+sd-jwt`) — [Selective Disclosure JWT Verifiable Credentials](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/), with selectively disclosable nested and array claims, batch issuance over OpenID4VCI and presentation over OpenID4VP. Implemented in `eudi/credentials/sdjwtvc`.
+
+### Cryptographic agility
+
+The EUDI client's architecture is designed to accommodate multiple signature schemes, holder binding methods and DID methods side by side, so that algorithms and key representations can evolve without changing the surrounding protocol code:
+
+* **Signature algorithms**: holder signing currently uses ES256 (ECDSA over P-256). Issuer-signature verification is algorithm-agile via [`lestrrat-go/jwx`](https://github.com/lestrrat-go/jwx).
+* **Holder binding**: `jwk`, `did:key`, `did:jwk` and COSE key binding.
+* **DID methods**: `did:web`, `did:jwk` and `did:key` resolution for verifying issuers and verifiers.
+
+Sensitive material such as holder binding keys, key metadata and issued credentials is stored encrypted at rest using [SQLCipher](https://www.zetetic.net/sqlcipher/) (see [Prerequisites](#prerequisites)).
 
 ## Documentation
 
-Technical documentation of all components of `irmago` and more can be found at https://yivi.app/docs.
+Technical documentation of all components of `irmago` and more can be found at https://docs.yivi.app.
 
 ## Running (development)
 
@@ -22,7 +48,7 @@ For example, to start a simple IRMA session:
     IP=192.168.1.2 # Replace with your local IP address.
     docker-compose run -p 48680:48680 yivi irma session --disclose pbdf.sidn-pbdf.email.email --url "http://$IP:48680"
 
-You can run the `irma keyshare` services locally using the test configuration in `testdata/configurations`.
+You can run the `yivi irma keyshare` services locally using the test configuration in `testdata/configurations`.
 
     # To run the IRMA keyshare server
     docker-compose run -p 8080:8080 yivi irma keyshare server -c ./testdata/configurations/keyshareserver.yml
@@ -146,13 +172,15 @@ docker pull redis
 docker run --name redis-test-instance -p 6379:6379 -d redis
 ```
 
-You can then start `irma` with the store-type flag set to Redis and the [default configuration file](testdata/configurations/redis.yml).
+You can then start `yivi irma` with the store-type flag set to Redis and the [default configuration file](testdata/configurations/redis.yml).
 
 ```
 yivi irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-empty-password --redis-no-tls
 ```
 
-If you use Redis in Sentinel mode for high availability, you need to consider whether you accept the risk of losing session state in case of a failover. Redis does not guarantee [strong consistency](https://redis.io/docs/management/scaling/#redis-cluster-consistency-guarantees) in these setups. We mitigated this by waiting for a write to have reached the master node and at least one replica. This means that at least two replicas should be configured for every master node to achieve high availability. Even then, there is a small chance of losing session state when a replica fails at the same time as the master node. For example, this might be problematic if you want to guarantee that a credential is not issued twice or if you need a session QR to have a long lifetime but you do want the session to be finished soon after the QR is scanned. If you require IRMA sessions to be highly consistent, you should use the default in-memory store or Redis in standalone mode. If you accept this risk, then you can enable Sentinel mode support by setting the `--redis-accept-inconsistency-risk` flag.
+If you use Redis in Sentinel mode for high availability, you need to consider whether you accept the risk of losing session state in case of a failover. Redis does not guarantee [strong consistency](https://redis.io/docs/management/scaling/#redis-cluster-consistency-guarantees) in these setups. This might be problematic if you want to guarantee that a credential is not issued twice or if you need a session QR to have a long lifetime but you do want the session to be finished soon after the QR is scanned. If you require IRMA sessions to be highly consistent, you should use the default in-memory store or Redis in standalone mode. If you accept this risk, then you can enable Sentinel mode support by setting the `--redis-accept-inconsistency-risk` flag.
+
+If you use a managed Redis service from a cloud provider, please be aware that if you enable high availability or cluster mode, they use Redis Cluster or Redis Sentinel under water. The `irma server` does not automatically detect this, so it does not require you to set the `--redis-accept-inconsistency-risk` flag. However, the same inconsistency risks hold here too.
 
 Besides the `yivi irma server`, Redis can also be configured for the `yivi irma keyshare server` and the `yivi irma keyshare myirmaserver` in the same way as described above. Note that the `yivi irma keyshare server` does not become stateless when using Redis, because it stores the keyshare commitments and authentication challenges in memory. These cannot be stored in Redis, because we require this data to be strongly consistent. Instead, you can use sticky sessions to make sure that the same user is always routed to the same keyshare server instance. The stored commitments and challenges are only relevant for a few seconds, so the risk of losing this data is low. The `yivi irma keyshare myirmaserver` does become stateless when using Redis.
 
@@ -171,6 +199,6 @@ By default, k6 runs a single test iteration using 1 virtual user. These defaults
 ## Contact
 Request access to our IRMA slack channel by mailing to [our support](mailto:support@yivi.app) if you want to become part of the community. In our slack channels, the latest news on IRMA are shared and technical details get discussed.
 
-For responsible disclosure mail to [our responsible disclosure mailbox](mailto:responsible.disclosure@sidn.nl)
+For responsible disclosure mail to [our responsible disclosure mailbox](mailto:support@yivi.app)
 
 <!-- vim: set ts=4 sw=4: -->

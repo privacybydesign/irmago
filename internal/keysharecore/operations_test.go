@@ -40,15 +40,22 @@ func TestPinFunctionality(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test with correct pin
+		expiryLowerBound := time.Now().Unix() + JWTPinExpiryDefault
 		j, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
+		expiryUpperBound := time.Now().Unix() + JWTPinExpiryDefault
 		var claims jwt.StandardClaims
 		_, err = jwt.ParseWithClaims(j, &claims, func(_ *jwt.Token) (any, error) {
 			return &jwtTestKey.PublicKey, nil
 		})
 		assert.NoError(t, err)
 		assert.Equal(t, "auth_tok", claims.Subject)
-		assert.Equal(t, time.Now().Unix()+JWTPinExpiryDefault, claims.ExpiresAt)
+		// The JWT expiry is computed from time.Now() inside validateAuth, so it
+		// must fall within the window captured around that call. Asserting exact
+		// equality against a freshly read time.Now() is flaky when the second
+		// boundary is crossed between generating and checking the JWT.
+		assert.GreaterOrEqual(t, claims.ExpiresAt, expiryLowerBound)
+		assert.LessOrEqual(t, claims.ExpiresAt, expiryUpperBound)
 		assert.Equal(t, JWTIssuerDefault, claims.Issuer)
 
 		// test change pin

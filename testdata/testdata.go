@@ -139,9 +139,13 @@ func CreateTestAuthorizationRequestRequest(issuerCert []byte) string {
 }
 
 func CreateTestAuthorizationRequestJWT(hostname string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *jwt.Token)) string {
+	return CreateTestAuthorizationRequestJWTWithClientId("x509_san_dns:"+hostname, verifierKey, verifierCert, modifyTokenFunc)
+}
+
+func CreateTestAuthorizationRequestJWTWithClientId(clientId string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *jwt.Token)) string {
 	claims := jwt.MapClaims{
 		"aud":       "https://audience",
-		"client_id": "x509_san_dns:" + hostname,
+		"client_id": clientId,
 		"dcql_query": map[string]any{
 			"credentials": []map[string]any{
 				{
@@ -273,7 +277,7 @@ func CreateEndEntityCertificate(t *testing.T, subject pkix.Name, hostname string
 		SerialNumber:          big.NewInt(mathRand.Int63()),
 		Subject:               subject,
 		SubjectKeyId:          generateRandomBytes(10),
-		KeyUsage:              x509.KeyUsageDataEncipherment | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 		IsCA:                  false,
 		NotBefore:             time.Now().Add(time.Duration(-1 * time.Hour)),

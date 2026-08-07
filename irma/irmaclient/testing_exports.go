@@ -5,9 +5,12 @@ import (
 	"testing"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
@@ -15,7 +18,7 @@ import (
 )
 
 // CreateTestSdJwtVc creates a test SD-JWT VC with the given parameters.
-func CreateTestSdJwtVc[T sdjwtvc.LeafClaimDataType](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string, claims map[string]T, x5c []string) (sdjwtvc.SdJwtVc, error) {
+func CreateTestSdJwtVc[T sdjwt.LeafClaimDataType](keyBinder sdjwt.KeyBinder, vct, issuerUrl string, claims map[string]T, x5c []string) (sdjwtvc.SdJwtVc, error) {
 	holderKey, err := keyBinder.CreateKeyPairs(1)
 	if err != nil {
 		return "", fmt.Errorf("failed to create holder keys: %v", err)
@@ -25,34 +28,34 @@ func CreateTestSdJwtVc[T sdjwtvc.LeafClaimDataType](keyBinder sdjwtvc.KeyBinder,
 }
 
 // CreateTestSdJwtVcWithHolderKey creates a test SD-JWT VC with a specific holder key.
-func CreateTestSdJwtVcWithHolderKey[T sdjwtvc.LeafClaimDataType](vct, issuerUrl string, claims map[string]T, x5c []string, cnfHolderKey jwk.Key) (sdjwtvc.SdJwtVc, error) {
-	holderKeyClaim, err := sdjwtvc.HolderKeyClaim(cnfHolderKey)
+func CreateTestSdJwtVcWithHolderKey[T sdjwt.LeafClaimDataType](vct, issuerUrl string, claims map[string]T, x5c []string, cnfHolderKey jwk.Key) (sdjwtvc.SdJwtVc, error) {
+	holderKeyClaim, err := sdjwt.HolderKeyClaim(cnfHolderKey)
 	if err != nil {
 		return "", err
 	}
 
-	sdjwtClaims := []*sdjwtvc.ClaimElement{
+	sdjwtClaims := []*sdjwt.ClaimElement{
 		holderKeyClaim,
-		sdjwtvc.Claim(sdjwtvc.Key_SdAlg, iana.SHA256),
-		sdjwtvc.Claim(sdjwtvc.Key_VerifiableCredentialType, vct),
-		sdjwtvc.Claim(sdjwtvc.Key_Issuer, issuerUrl),
-		sdjwtvc.Claim(sdjwtvc.Key_IssuedAt, eudi_jwt.NewSystemClock().Now().Unix()),
-		sdjwtvc.Claim(sdjwtvc.Key_ExpiryTime, eudi_jwt.NewSystemClock().Now().Unix()+10000),
+		sdjwt.Claim(sdjwt.SdAlgKey, iana.SHA256),
+		sdjwt.Claim(jwt.IssuerKey, issuerUrl),
+		sdjwt.Claim(jwt.IssuedAtKey, eudi_jwt.NewSystemClock().Now().Unix()),
+		sdjwt.Claim(jwt.ExpirationKey, eudi_jwt.NewSystemClock().Now().Unix()+10000),
+		sdjwt.Claim(sdjwtvc.VerifiableCredentialTypeKey, vct),
 	}
 
 	for key, value := range claims {
-		sdjwtClaims = append(sdjwtClaims, sdjwtvc.SdClaim(key, value))
+		sdjwtClaims = append(sdjwtClaims, sdjwt.SdClaim(key, value))
 	}
 
-	return sdjwtvc.NewSdJwtBuilder().
+	return sdjwtvc.NewSdJwtVcBuilder().
 		WithPayload(sdjwtClaims...).
 		WithIssuerCertificateChain(x5c).
-		Build(sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey())
 }
 
 // CreateMultipleSdJwtVcsWithCustomKeyBinder creates multiple test SD-JWT VCs using a custom key binder.
-func CreateMultipleSdJwtVcsWithCustomKeyBinder[T sdjwtvc.LeafClaimDataType](
-	t *testing.T, keyBinder sdjwtvc.KeyBinder, vct string, issuer string, claims map[string]T, num uint,
+func CreateMultipleSdJwtVcsWithCustomKeyBinder[T sdjwt.LeafClaimDataType](
+	t *testing.T, keyBinder sdjwt.KeyBinder, vct string, issuer string, claims map[string]T, num uint,
 ) (SdJwtVcBatchMetadata, []sdjwtvc.SdJwtVc) {
 	result := make([]sdjwtvc.SdJwtVc, num)
 
@@ -63,9 +66,9 @@ func CreateMultipleSdJwtVcsWithCustomKeyBinder[T sdjwtvc.LeafClaimDataType](
 	}
 
 	for i := range num {
-		sdjwt, err := CreateTestSdJwtVc(keyBinder, vct, issuer, claims, certChain)
+		vc, err := CreateTestSdJwtVc(keyBinder, vct, issuer, claims, certChain)
 		require.NoError(t, err)
-		result[i] = sdjwt
+		result[i] = vc
 	}
 
 	// Convert to SdJwtVcKb since the holder doesn't know if a Key Binding JWT is present or not

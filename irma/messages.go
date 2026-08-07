@@ -615,6 +615,6 @@ func WrapErrorPrefix(err error, msg string) error {
 		}
 	}
 
-	// Otherwise just use error.WrapPrefix
-	return errors.WrapPrefix(err, msg, 0)
+	// Otherwise just wrap the error with the prefix
+	return fmt.Errorf("%s: %w", msg, err)
 }
