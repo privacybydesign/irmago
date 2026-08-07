@@ -180,10 +180,8 @@ func samplePidUserData() pidUserData {
 	}
 }
 
-// issuePidViaPythonIssuer drives the full pre-authorized OID4VCI flow against
-// the EUDI Python PID issuer: post an offer-request, parse the offer, accept
-// the pre-auth code (with the tx_code embedded in the response), grant
-// permission, and assert the session reaches Success.
+// issuePidViaPythonIssuer drives the full pre-authorized OID4VCI flow for
+// the PID SD-JWT configuration. Thin wrapper over issueViaPythonIssuer.
 func issuePidViaPythonIssuer(
 	t *testing.T,
 	c *client.Client,
@@ -192,8 +190,34 @@ func issuePidViaPythonIssuer(
 	data pidUserData,
 ) {
 	t.Helper()
+	issueViaPythonIssuer(t, c, sessionId, sessionHandler,
+		eudiPidIssuerPyCredentialConfigID,
+		map[string]any{
+			"family_name": data.FamilyName,
+			"given_name":  data.GivenName,
+			"birthdate":   data.Birthdate,
+		},
+		eudiPidIssuerPyDisplayNameEN,
+	)
+}
 
-	offer := createPidOfferViaPythonIssuer(t, data)
+// issueViaPythonIssuer drives the full pre-authorized OID4VCI flow against
+// the EUDI Python issuer for any enabled credential configuration: post an
+// offer-request, parse the offer, accept the pre-auth code (with the tx_code
+// embedded in the response), grant permission, and assert the session
+// reaches Success.
+func issueViaPythonIssuer(
+	t *testing.T,
+	c *client.Client,
+	sessionId int,
+	sessionHandler *MockSessionHandler,
+	configId string,
+	data map[string]any,
+	expectedCredentialName string,
+) {
+	t.Helper()
+
+	offer := createOfferViaPythonIssuer(t, configId, data)
 
 	startOpenID4VCISession(t, c, sessionId, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
@@ -211,7 +235,7 @@ func issuePidViaPythonIssuer(
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 	require.Len(t, session.OfferedCredentials, 1)
-	require.Equal(t, eudiPidIssuerPyDisplayNameEN, session.OfferedCredentials[0].Name)
+	require.Equal(t, expectedCredentialName, session.OfferedCredentials[0].Name)
 
 	grantPermission(t, c, session.Id)
 
@@ -219,7 +243,7 @@ func issuePidViaPythonIssuer(
 	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_Success)
 }
 
-// pidOfferResponse is what createPidOfferViaPythonIssuer returns to callers.
+// pidOfferResponse is what createOfferViaPythonIssuer returns to callers.
 // The Python issuer's /credentialOfferReq2 returns the offer JSON itself
 // (not a URL), and embeds the tx_code value in `grants.<grant>.tx_code.value`
 // (a non-standard but useful-for-tests extension we read out here).
@@ -228,22 +252,20 @@ type pidOfferResponse struct {
 	TxCode string // value of grants[pre-authorized_code].tx_code.value
 }
 
-// createPidOfferViaPythonIssuer posts an unsigned-JWT-shaped request to the
-// Python issuer's /credentialOfferReq2 endpoint. The endpoint decodes the
-// payload without verifying the signature (see app/preauthorization.py in
-// the upstream repo), so the header and signature segments can be empty.
-func createPidOfferViaPythonIssuer(t *testing.T, data pidUserData) pidOfferResponse {
+// createOfferViaPythonIssuer posts an unsigned-JWT-shaped request to the
+// Python issuer's /credentialOfferReq2 endpoint for the given credential
+// configuration, with `data` holding the user-supplied claims the issuer
+// embeds. The endpoint decodes the payload without verifying the signature
+// (see app/preauthorization.py in the upstream repo), so the header and
+// signature segments can be empty.
+func createOfferViaPythonIssuer(t *testing.T, configId string, data map[string]any) pidOfferResponse {
 	t.Helper()
 
 	requestPayload := map[string]any{
 		"credentials": []map[string]any{
 			{
-				"credential_configuration_id": eudiPidIssuerPyCredentialConfigID,
-				"data": map[string]any{
-					"family_name": data.FamilyName,
-					"given_name":  data.GivenName,
-					"birthdate":   data.Birthdate,
-				},
+				"credential_configuration_id": configId,
+				"data":                        data,
 			},
 		},
 	}

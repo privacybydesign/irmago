@@ -4,5 +4,8 @@
 # Denote all files that are truly binary and should not be modified.
 *.sig binary
 *.png binary
+*.p12 binary
+*.der binary
+*.crl binary
 testdata/storage_regression/**/bbolt_client_db binary
 testdata/storage_regression/**/eudi_client_db binary
