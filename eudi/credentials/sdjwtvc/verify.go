@@ -414,7 +414,10 @@ func parseStatusClaim(token jwt.Token) (*statuslist.StatusClaim, error) {
 func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 	signedJwt []byte,
 ) (jwt.Token, *scheme.AttestationProviderRequestor, error) {
-	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{SdJwtVcTyp, SdJwtVcTyp_Legacy}, v.allowInsecureDidWeb)
+	// Only `dc+sd-jwt` is an IETF SD-JWT VC: `vc+sd-jwt` — the pre-2024 media
+	// type — now denotes an SD-JWT-secured W3C VCDM credential and is handled
+	// by eudi/credentials/vcdmsdjwt (#678/#683).
+	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{SdJwtVcTyp}, v.allowInsecureDidWeb)
 
 	// Create a context for the verification where we can retrieve the requestor info back
 	token, err := jwt.Parse(signedJwt,
