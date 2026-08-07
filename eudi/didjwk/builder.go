@@ -29,8 +29,9 @@ func Resolve(didJwk string) (jwk.Key, error) {
 // Unlike resolving the key and handing it to DocumentBuilder.FromJwk, this keeps the DID
 // exactly as it was given. The DID is the base64url encoding of whatever JSON the other
 // party produced, and re-serializing the parsed key does not necessarily reproduce that
-// same JSON (member order and any members jwx drops both differ), which would yield a
-// document whose id and verification method id no longer match the DID that was resolved.
+// same JSON, since marshalling sorts the JWK members and the spec requires no particular
+// order. Rebuilding the DID would then yield a document whose id and verification method
+// id no longer match the DID that was resolved.
 func ResolveDocument(didJwk string) (*did.Document, error) {
 	didOnly, key, err := resolve(didJwk)
 	if err != nil {
