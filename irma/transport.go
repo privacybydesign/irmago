@@ -332,8 +332,9 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result an
 	return nil
 }
 
-// unexpectedResponseError describes a non-2xx response whose body is not a
-// RemoteError, in terms of the HTTP status and a short excerpt of the body.
+// unexpectedResponseError describes a response other than 200 or 204 whose body
+// is not a RemoteError, in terms of the HTTP status and a short excerpt of the
+// body.
 func unexpectedResponseError(status int, body []byte) error {
 	if snippet := bodySnippet(body); snippet != "" {
 		return errors.Errorf("unexpected response, status %d: %s", status, snippet)
@@ -347,6 +348,14 @@ func unexpectedResponseError(status int, body []byte) error {
 // message. It returns the empty string if nothing printable is left.
 func bodySnippet(body []byte) string {
 	const bodySnippetLength = 100
+
+	// Cap the input first: strings.Map, strings.Fields and []rune over a large
+	// body allocate several multiples of its size to produce at most
+	// bodySnippetLength runes. A UTF-8 rune is at most 4 bytes, so this leaves
+	// enough input to fill the snippet.
+	if len(body) > 4*bodySnippetLength {
+		body = body[:4*bodySnippetLength]
+	}
 
 	printable := strings.Map(func(r rune) rune {
 		if r == utf8.RuneError || !unicode.IsPrint(r) {

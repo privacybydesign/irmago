@@ -15,11 +15,12 @@ import (
 // went wrong.
 func TestJsonRequest_NonRemoteErrorBodyReportsStatus(t *testing.T) {
 	tests := []struct {
-		name     string
-		binary   bool
-		status   int
-		body     []byte
-		contains []string
+		name        string
+		binary      bool
+		status      int
+		body        []byte
+		contains    []string
+		notContains []string
 	}{
 		{
 			name:     "binary transport, plain text 404 body",
@@ -29,18 +30,22 @@ func TestJsonRequest_NonRemoteErrorBodyReportsStatus(t *testing.T) {
 			contains: []string{"unexpected response, status 404", "404 page not found"},
 		},
 		{
-			name:     "binary transport, unprintable body",
-			binary:   true,
-			status:   http.StatusBadGateway,
-			body:     []byte{0x38, 0x00, 0x01, 0x02},
-			contains: []string{"unexpected response, status 502"},
+			name:   "binary transport, unprintable body",
+			binary: true,
+			status: http.StatusBadGateway,
+			body:   []byte{0x00, 0x01, 0x02, 0x03},
+			// Nothing printable is left, so no snippet is appended: the ": " that
+			// separates the status from the snippet must be absent.
+			contains:    []string{"unexpected response, status 502"},
+			notContains: []string{":"},
 		},
 		{
-			name:     "binary transport, empty body",
-			binary:   true,
-			status:   http.StatusNotFound,
-			body:     nil,
-			contains: []string{"unexpected response, status 404"},
+			name:        "binary transport, empty body",
+			binary:      true,
+			status:      http.StatusNotFound,
+			body:        nil,
+			contains:    []string{"unexpected response, status 404"},
+			notContains: []string{":"},
 		},
 		{
 			name:     "json transport, html error page",
@@ -71,6 +76,9 @@ func TestJsonRequest_NonRemoteErrorBodyReportsStatus(t *testing.T) {
 			require.NotNil(t, serr.Err)
 			for _, substr := range test.contains {
 				require.Contains(t, serr.Err.Error(), substr)
+			}
+			for _, substr := range test.notContains {
+				require.NotContains(t, serr.Err.Error(), substr)
 			}
 			require.NotContains(t, serr.Err.Error(), "cbor")
 			require.NotContains(t, serr.Err.Error(), "RemoteError")
