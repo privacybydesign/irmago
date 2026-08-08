@@ -351,8 +351,9 @@ func bodySnippet(body []byte) string {
 
 	// Cap the input first: strings.Map, strings.Fields and []rune over a large
 	// body allocate several multiples of its size to produce at most
-	// bodySnippetLength runes. A UTF-8 rune is at most 4 bytes, so this leaves
-	// enough input to fill the snippet.
+	// bodySnippetLength runes. A UTF-8 rune is at most 4 bytes, so this is enough
+	// input for the snippet in practice; a body whose printable characters are
+	// sparsely spread beyond the cap yields a shorter one, which is fine.
 	if len(body) > 4*bodySnippetLength {
 		body = body[:4*bodySnippetLength]
 	}
