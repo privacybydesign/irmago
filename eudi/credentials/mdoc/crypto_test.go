@@ -42,8 +42,12 @@ func TestECDSAPublicKeyFromCOSERejectsOverWideCoordinate(t *testing.T) {
 }
 
 // TestECDSAPublicKeyFromCOSEAcceptsValidKey guards the width check against
-// rejecting the keys it has to keep accepting, including a coordinate with
-// leading zero bytes (which encodes shorter than 32 bytes).
+// rejecting the keys it has to keep accepting: a real generated P-256 key,
+// whose coordinates coseKeyFromECDSA encodes at the fixed SEC1 width of 32
+// bytes each, round-trips unchanged. A coordinate encoded shorter than 32
+// bytes is not exercised here — nothing in this package produces one — and
+// would be accepted regardless, since the guard only rejects values wider
+// than the curve.
 func TestECDSAPublicKeyFromCOSEAcceptsValidKey(t *testing.T) {
 	valid := validCOSEKey(t)
 
