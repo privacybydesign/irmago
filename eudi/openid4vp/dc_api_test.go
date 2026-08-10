@@ -408,6 +408,10 @@ func TestParseDcApiRequest_Signed_Succeeds(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "x509_san_dns:rp.example.com", request.ClientId)
 	require.Equal(t, "Verifier Example", requestor.Name)
+	// A signed request goes past the identity gate and is then ranked like any
+	// other party. This verifier presented no certificate and no list vouches for
+	// it, so it lands on the bottom rung and still gets to ask.
+	require.Equal(t, clientmodels.TrustLevel_Low, requestor.TrustLevel)
 }
 
 // Appendix A.2: the wallet MUST return an error when the origin the platform
@@ -458,6 +462,45 @@ func TestParseDcApiRequest_Signed_ReportsVerificationFailure(t *testing.T) {
 	})
 
 	require.ErrorContains(t, err, "failed to verify authorization request")
+}
+
+// The identity gate rejecting a verifier means the wallet does not know who it
+// is talking to and nothing was disclosed. A session started over the DC API has
+// to be able to say so too, the same way one started from a request_uri does.
+func TestNewDcApiSession_RejectedVerifier_ReportsPartyValidationFailed(t *testing.T) {
+	client := newTestClient()
+	client.verifierValidator = &mockVerifierValidator{err: fmt.Errorf("bad signature")}
+
+	handler := &testHandler{failureCh: make(chan *clientmodels.SessionError, 1)}
+
+	client.NewDcApiSession(&DcApiRequest{
+		Protocol: DcApiProtocolSigned,
+		Origin:   testOrigin,
+		Data:     signedRequestData(t),
+	}, handler)
+
+	err := awaitOn(t, handler.failureCh, "a failure callback")
+	require.Equal(t, clientmodels.ErrorType_PartyValidationFailed, err.ErrorType,
+		"a rejected verifier must be distinguishable from a network or protocol error")
+}
+
+// Everything else that goes wrong while a DC API request is being parsed is a
+// plain failure: the verifier was never rejected, so reporting it as one would
+// tell the user the request was untrustworthy when it merely did not parse.
+func TestNewDcApiSession_MalformedRequest_ReportsGenericFailure(t *testing.T) {
+	client := newTestClient()
+
+	handler := &testHandler{failureCh: make(chan *clientmodels.SessionError, 1)}
+
+	client.NewDcApiSession(&DcApiRequest{
+		Protocol: DcApiProtocolUnsigned,
+		Origin:   testOrigin,
+		Data:     unsignedRequestData(t, map[string]any{"dcql_query": nil}),
+	}, handler)
+
+	err := awaitOn(t, handler.failureCh, "a failure callback")
+	require.Empty(t, err.ErrorType, "a malformed request is not a rejected party")
+	require.Contains(t, err.WrappedError, "missing a non-empty dcql_query")
 }
 
 func TestSameOrigin(t *testing.T) {
