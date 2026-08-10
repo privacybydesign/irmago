@@ -125,8 +125,9 @@ func testEudiPidPythonIssuerDisclosesToEudiKotlinVerifier(t *testing.T) {
 		},
 		"nonce": "nonce",
 		"jar_mode": "by_reference",
-		"request_uri_method": "post"
-	}`, eudiPidIssuerPyVct)
+		"request_uri_method": "get",
+		"intended_use_id": %q
+	}`, eudiPidIssuerPyVct, eudiVerifierIntendedUseId)
 
 	verifierSession, err := irmaclient.StartTestSessionAtEudiVerifier(eudiPidIssuerPyOpenID4VPVerifierHost, startReq)
 	require.NoError(t, err)

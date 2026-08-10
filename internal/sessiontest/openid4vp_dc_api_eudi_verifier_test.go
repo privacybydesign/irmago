@@ -24,10 +24,10 @@ import (
 // request it signed passes the X.509 trust model, and that it accepts the presentation
 // the wallet returns for it.
 //
-// The DC API endpoints of the verifier only exist from v0.10.0, and only under the
-// ETSI TS 119 472-2 profile, which forces response_mode dc_api.jwt and a client_id
-// prefix of x509_hash. That is why this service is pinned and configured separately
-// from eudi_openid4vp and eudi_openid4vp_jwt in docker-compose.yml.
+// The DC API endpoints of the verifier run the ETSI TS 119 472-2 profile, which forces
+// response_mode dc_api.jwt and a client_id prefix of x509_hash. That is why this runs
+// against a service of its own, eudi_openid4vp_dcapi in docker-compose.yml, rather than
+// against eudi_openid4vp or eudi_openid4vp_jwt.
 
 const (
 	// dcApiVerifierOrigin is the caller origin the platform reports to the wallet. The
@@ -160,8 +160,9 @@ func requireSignedForOrigin(t *testing.T, requestJwt, origin string) {
 func createDcApiEmailAuthRequestRequest(t *testing.T, origin string) string {
 	t.Helper()
 	request, err := json.Marshal(map[string]any{
-		"nonce":  dcApiVerifierNonce,
-		"origin": origin,
+		"nonce":           dcApiVerifierNonce,
+		"origin":          origin,
+		"intended_use_id": eudiVerifierIntendedUseId,
 		"dcql_query": map[string]any{
 			"credentials": []any{map[string]any{
 				"id":     dcApiVerifierQueryId,

@@ -96,6 +96,12 @@ func ParseIssuerPubJwk() jwk.Key {
 	return key
 }
 
+// CreateTestAuthorizationRequestRequest builds a request that starts a session at the
+// EUDI reference verifier. intended_use_id names the intended use the verifier image
+// configures out of the box; request_uri_method is "get" because that is how the client
+// fetches the request object, and the verifier enforces the method from v0.11.0. A
+// verifier that is to validate the presentation also needs test.test.mobilephone in its
+// VERIFIER_ATTESTATIONCLASSIFICATIONS, which the docker-compose services do not list.
 func CreateTestAuthorizationRequestRequest(issuerCert []byte) string {
 	return fmt.Sprintf(`
 {
@@ -130,7 +136,8 @@ func CreateTestAuthorizationRequestRequest(issuerCert []byte) string {
   },
   "nonce": "nonce",
   "jar_mode": "by_reference",
-  "request_uri_method": "post",
+  "request_uri_method": "get",
+  "intended_use_id": "1",
   "issuer_chain": "%s"
 }
 `,

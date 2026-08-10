@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dutch-locale and locale-switch integration tests for every protocol and integration layer.
 - The storage regression tests now assert EUDI activity-log content, pinning the legacy translation-map decoding. Regenerate the regression fixture at the next release: this version changes the stored log text format and the issuance-log credential id.
 - Refactor the SD-JWT implementation to correctly split the SD-JWT and SD-JWT VC specification details into separate packages.
+- All three `eudi_openid4vp*` services in `docker-compose.yml` run v0.11.0 of the EUDI reference verifier, up from v0.6.0 on the two `direct_post` ones (the image was renamed to `eudi-srv-verifier-endpoint` after v0.6.5). v0.11.0 wants every transaction to name an intended use, refuses a presentation whose `vct` it cannot classify, and enforces the `request_uri_method` the transaction was started with, so the test requests name the intended use the image ships and ask for `request_uri_method: get`, which is the only one the client implements.
 
 ## [1.2.0] - 2026-07-22
 ### Added
