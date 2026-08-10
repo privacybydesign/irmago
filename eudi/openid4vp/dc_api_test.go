@@ -857,6 +857,10 @@ func TestParseDcApiRequest_Unsigned_DisplayNameDistinguishesOrigins(t *testing.T
 
 			require.NoError(t, err)
 			require.Equal(t, test.displayName, requestor.Name)
+			// Id is what the app renders next to the name at the low rung, and it
+			// is serialized without omitempty, so leaving it unset ships an empty
+			// identifier rather than no identifier at all.
+			require.Equal(t, test.displayName, requestor.Id)
 		})
 	}
 }
