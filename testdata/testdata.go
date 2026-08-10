@@ -381,6 +381,9 @@ const (
 
 	// Eudi verifier server with direct_post.jwt as the response_mode
 	OpenID4VP_DirectPostJwt_Host = "http://127.0.0.1:8090"
+
+	// Eudi verifier server that serves requests over the Digital Credentials API
+	OpenID4VP_DcApi_Host = "http://127.0.0.1:8091"
 )
 
 func WriteCertAsPemFile(t *testing.T, path string, certs ...*x509.Certificate) {
