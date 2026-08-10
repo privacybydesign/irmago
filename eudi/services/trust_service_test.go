@@ -10,8 +10,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// staticClassifier confers one fixed level on every certificate, standing in
+// for a trust model whose anchors all say the same thing.
+type staticClassifier clientmodels.TrustLevel
+
+func (s staticClassifier) Classify(*x509.Certificate) clientmodels.TrustLevel {
+	return clientmodels.TrustLevel(s)
+}
+
 func TestTrustService_RunsDark(t *testing.T) {
-	view := NewTrustService(nil).Snapshot(context.Background())
+	view := NewTrustService(nil,
+		staticClassifier(clientmodels.TrustLevel_High),
+		staticClassifier(clientmodels.TrustLevel_High)).Snapshot(context.Background())
 
 	certified := view.Verifier(trust.Evidence{Certificate: &x509.Certificate{}})
 	require.Equal(t, clientmodels.TrustLevel_High, certified.Level)
@@ -29,7 +39,7 @@ func TestTrustService_SnapshotSurvivesACancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	view := NewTrustService(nil).Snapshot(ctx)
+	view := NewTrustService(nil, nil, nil).Snapshot(ctx)
 	require.NotNil(t, view)
 	require.Equal(t, clientmodels.TrustLevel_Low, view.Verifier(trust.Evidence{}).Level)
 }

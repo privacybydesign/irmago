@@ -23,13 +23,15 @@ import (
 // evaluation channels key on. Every field is optional: absent evidence is
 // simply a channel that has nothing to say about this party.
 type Evidence struct {
-	// Certificate is the validated end-entity certificate the party
-	// authenticated with, or nil when it identified itself some other way (a
-	// DID, or issuer metadata alone).
+	// Certificate is the end-entity certificate the party presented, or nil
+	// when it identified itself some other way (a DID, or issuer metadata
+	// alone).
 	//
-	// Non-nil means the chain already verified against the Yivi trust anchors
-	// — the gate ran before evaluation and would have failed the session
-	// otherwise — so a certificate here is Yivi vouching for the party.
+	// A certificate here is a claim, not a verdict: the certificate channel
+	// classifies it against the wallet's anchors at evaluation time, and only
+	// a chain that validates to an anchor confers that anchor's level. A leaf
+	// that chains to nothing is evidentially a self-asserted key — it lifts no
+	// rung, and the recognized-list channel can still match the party on it.
 	Certificate *x509.Certificate
 
 	// Identifiers are the party's stable identifiers, most specific first: the
@@ -46,6 +48,12 @@ type Verdict struct {
 	// when no list vouched for the party. It carries the curated display
 	// metadata that outranks what the party asserts about itself.
 	Listing *Listing
+	// CertificateLevel is the certificate channel's own contribution: the
+	// level conferred by the anchor the party's chain validated to, or
+	// unevaluated when no anchored certificate vouches for the party. Display
+	// keys attested-ness off it — a certificate's account of the party counts
+	// as attested only when an anchor stands behind the certificate.
+	CertificateLevel clientmodels.TrustLevel
 }
 
 // Listing is a party's entry on a recognized trust list, produced by the
@@ -59,9 +67,12 @@ type Listing struct {
 	Name clientmodels.TranslatedString
 	// LogoURI is the curated logo, empty when the entry carries none.
 	LogoURI string
-	// OnboardedByYivi marks an entry Yivi itself vouches for. Meaningful only
-	// on Yivi's own list.
-	OnboardedByYivi bool
+	// Level is the rung this listing confers: the level the granting list's
+	// source is configured with. Yivi's own LoTE confers high — being listed
+	// there is being onboarded, so Yivi cannot name a party on its list
+	// without vouching for it — and any other recognized list confers what
+	// its source declares.
+	Level clientmodels.TrustLevel
 }
 
 // Role is which of the two grants a party is being asked about. It exists for
@@ -103,40 +114,40 @@ type ListSnapshot interface {
 	Lookup(role Role, ev Evidence) *Listing
 }
 
-// CertificateView is the certificate channel on its own: a party that
-// authenticated with a certificate validated against the Yivi anchors is
-// vouched for by Yivi and reaches high; anything else reaches low. It draws no
-// distinction between the two roles, because a certificate is issued for one
-// role and the gate already checked it was used in that role.
-type CertificateView struct{}
-
-// Verifier implements [View].
-func (CertificateView) Verifier(ev Evidence) Verdict { return certificateVerdict(ev) }
-
-// Issuer implements [View].
-func (CertificateView) Issuer(ev Evidence) Verdict { return certificateVerdict(ev) }
-
-func certificateVerdict(ev Evidence) Verdict {
-	if ev.Certificate != nil {
-		return Verdict{Level: clientmodels.TrustLevel_High}
-	}
-	return Verdict{Level: clientmodels.TrustLevel_Low}
+// CertificateClassifier is the certificate channel's evidence source: it
+// reports the level conferred by the anchor a leaf certificate's chain
+// validates to right now, or unevaluated when the leaf does not chain to any
+// anchor the wallet holds — a broken chain, a revoked certificate, an unknown
+// root. Classification never errors: a chain that does not hold up is absent
+// evidence, and the party lands where the other channels put it.
+//
+// Implemented by the wallet's TrustModel, which holds the anchor pools and the
+// level each anchored root confers: Yivi's own roots confer high, an anchored
+// third-party CA confers medium (or high, once promoted under contract).
+// Classification is per anchor set, so trust as an issuer and trust as a
+// verifier each consult their own classifier.
+type CertificateClassifier interface {
+	Classify(leaf *x509.Certificate) clientmodels.TrustLevel
 }
 
 // NewView combines the channels into the view a session evaluates against. A
 // nil snapshot leaves only the certificate channel, which is what the wallet
-// runs on before it has ever fetched a list.
-func NewView(lists ListSnapshot) View {
-	return layeredView{lists: lists}
+// runs on before it has ever fetched a list; a nil classifier leaves that
+// role's certificate channel dark, which only a wallet without trust models
+// (in practice: a test) does.
+func NewView(lists ListSnapshot, issuerCerts, verifierCerts CertificateClassifier) View {
+	return layeredView{lists: lists, issuerCerts: issuerCerts, verifierCerts: verifierCerts}
 }
 
 // layeredView is the whole ladder: the certificate channel and the
 // recognized-list channel, each asked independently, the party landing on
-// whichever rung is higher. Independence is the point — a scheme-certified
-// party stays high while the list is down, and a listed party stays medium
-// while it holds no certificate.
+// whichever rung is higher. Independence is the point — a Yivi-certified
+// party stays high while the list is down, and a listed party keeps its
+// listing's rung while it holds no certificate.
 type layeredView struct {
-	lists ListSnapshot
+	lists         ListSnapshot
+	issuerCerts   CertificateClassifier
+	verifierCerts CertificateClassifier
 }
 
 // Verifier implements [View].
@@ -146,7 +157,13 @@ func (v layeredView) Verifier(ev Evidence) Verdict { return v.evaluate(RoleVerif
 func (v layeredView) Issuer(ev Evidence) Verdict { return v.evaluate(RoleIssuer, ev) }
 
 func (v layeredView) evaluate(role Role, ev Evidence) Verdict {
-	verdict := certificateVerdict(ev)
+	verdict := Verdict{
+		Level:            clientmodels.TrustLevel_Low,
+		CertificateLevel: v.classify(role, ev.Certificate),
+	}
+	if Stronger(verdict.CertificateLevel, verdict.Level) {
+		verdict.Level = verdict.CertificateLevel
+	}
 	if v.lists == nil {
 		return verdict
 	}
@@ -155,30 +172,38 @@ func (v layeredView) evaluate(role Role, ev Evidence) Verdict {
 		return verdict
 	}
 	verdict.Listing = listing
-	if granted := listing.level(); levelRank(granted) > levelRank(verdict.Level) {
-		verdict.Level = granted
+	if Stronger(listing.Level, verdict.Level) {
+		verdict.Level = listing.Level
 	}
 	return verdict
 }
 
-// level is the rung the listing earns. Being on a recognized list at all is
-// somebody vouching for the party: medium. Yivi's own list marking the entry as
-// onboarded by Yivi is Yivi vouching for it, which is the same word its scheme
-// certificate gives: high.
-//
-// Whether a marking is Yivi's word is settled before this point — the list
-// channel only carries the marking through from a list Yivi operates — so a
-// marking another operator put on its own list has already been dropped and
-// leaves the party at medium.
-func (l *Listing) level() clientmodels.TrustLevel {
-	if l.OnboardedByYivi {
-		return clientmodels.TrustLevel_High
+// classify is the certificate channel: the level the role's anchor set confers
+// on the party's leaf, or unevaluated when the party presented no certificate,
+// the role has no classifier, or the chain does not hold up.
+func (v layeredView) classify(role Role, leaf *x509.Certificate) clientmodels.TrustLevel {
+	if leaf == nil {
+		return clientmodels.TrustLevel_Unevaluated
 	}
-	return clientmodels.TrustLevel_Medium
+	classifier := v.issuerCerts
+	if role == RoleVerifier {
+		classifier = v.verifierCerts
+	}
+	if classifier == nil {
+		return clientmodels.TrustLevel_Unevaluated
+	}
+	return classifier.Classify(leaf)
+}
+
+// Stronger reports whether a outranks b on the ladder. It is how independent
+// channels combine — the party lands on the strongest rung any channel earns
+// it — and unevaluated ranks below every verdict: it is the absence of one.
+func Stronger(a, b clientmodels.TrustLevel) bool {
+	return levelRank(a) > levelRank(b)
 }
 
 // levelRank orders the rungs so channels can be combined by taking the
-// strongest. Unevaluated ranks below every verdict: it is the absence of one.
+// strongest.
 func levelRank(l clientmodels.TrustLevel) int {
 	switch l {
 	case clientmodels.TrustLevel_Low:

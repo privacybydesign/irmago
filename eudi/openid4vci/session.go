@@ -254,12 +254,14 @@ func (s *session) issuerVerdict(fetched ...*fetchedCredential) trust.Verdict {
 // issuerEvidence is what the wallet knows about the party that signed these
 // credentials.
 //
-// The certificate is the certificate channel's evidence: non-nil only when the
-// issuer identified itself by `x5c` and that chain validated against the
-// wallet's anchors, which is Yivi vouching for it. The identifiers are the names
-// a recognized list keys entries on: what the credentials say signed them (the
-// `iss` claim — a DID for a DID-identified issuer) and the credential issuer's
-// own identifier from its metadata.
+// The certificate is the certificate channel's evidence: the `x5c` leaf the
+// credentials verified against, nil for a DID-identified issuer. It is a
+// claim, not a verdict — the channel classifies it against the wallet's
+// anchors and confers that anchor's level, or nothing for a chain the wallet
+// cannot trace. The identifiers are the names a recognized list keys entries
+// on: what the credentials say signed them (the `iss` claim — a DID for a
+// DID-identified issuer) and the credential issuer's own identifier from its
+// metadata.
 func (s *session) issuerEvidence(fetched ...*fetchedCredential) trust.Evidence {
 	identifiers := []string{}
 	for _, fc := range fetched {

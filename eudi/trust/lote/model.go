@@ -19,7 +19,6 @@ package lote
 import (
 	"crypto/x509"
 	"encoding/asn1"
-	"slices"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -34,11 +33,6 @@ const (
 	ServiceStatusGranted   ServiceStatus = "granted"
 	ServiceStatusWithdrawn ServiceStatus = "withdrawn"
 )
-
-// MarkingOnboardedByYivi marks a service Yivi itself vouches for, and is the
-// one marking the wallet knows about. It is meaningful only on Yivi's own list;
-// see [Source.OperatedByYivi].
-const MarkingOnboardedByYivi = "onboarded-by-yivi"
 
 // organizationIdentifierOID is the X.520 `organizationIdentifier` attribute
 // (id-at-organizationIdentifier, 2.5.4.97) — the subject field an EU
@@ -132,14 +126,12 @@ type Service struct {
 	LogoURI string `json:"logo_uri,omitempty"`
 
 	// Markings are the scheme-specific qualifiers on this grant
-	// (TS 119 612 `AdditionalServiceInformation`). The wallet knows one,
-	// [MarkingOnboardedByYivi]; the rest are carried but not acted on.
+	// (TS 119 612 `AdditionalServiceInformation`). Carried but not acted on:
+	// the wallet currently knows no marking — the rung a grant confers is the
+	// source's ([Source.Confers]), not the entry's. Kept on the wire model so
+	// a document carrying qualifiers parses, and future qualifiers have a
+	// place to land.
 	Markings []string `json:"markings,omitempty"`
-}
-
-// HasMarking reports whether the service carries the given marking.
-func (s *Service) HasMarking(marking string) bool {
-	return slices.Contains(s.Markings, marking)
 }
 
 // DigitalIdentity is the set of identities a service may be recognized by

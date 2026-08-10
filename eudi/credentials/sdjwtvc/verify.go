@@ -32,10 +32,13 @@ type VerifiedSdJwtVc struct {
 	// IssuerCertificate is the end-entity certificate the issuer signed with,
 	// when it identified itself by `x5c` — nil for a DID-identified issuer.
 	//
-	// Non-nil means the chain already validated against the configured trust
-	// anchors: verification fails otherwise, so this cannot carry a certificate
-	// that was not checked. Surfaced because the trust ladder's certificate
-	// channel needs it; the verification itself does not keep it.
+	// A certificate here is a claim, not a verdict: the signature verified
+	// against it and it was presented within its own validity window, but
+	// whether any anchor stands behind it is the trust ladder's question —
+	// its certificate channel classifies this leaf against the wallet's
+	// anchors, and an unanchored issuer ranks low rather than failing.
+	// Surfaced because that channel needs it; the verification itself does
+	// not keep it.
 	IssuerCertificate *x509.Certificate
 
 	rawSdJwtVc SdJwtVc
@@ -425,11 +428,17 @@ func parseStatusClaim(token jwt.Token) (*statuslist.StatusClaim, error) {
 	return &statuslist.StatusClaim{StatusList: &statuslist.Reference{Index: idx, URI: uri}}, nil
 }
 
-// Decode the JWT into a token, verify the signature with the X.509 certificate in the header and verify the certificate is trusted (both against root/intermediate certs and CRLs).
+// Decode the JWT into a token and verify the signature with the X.509
+// certificate in the header. The gate is internal validity: the signature must
+// verify against the `x5c` leaf, presented within its own validity window.
+// Whether any anchor stands behind that certificate is classification rather
+// than the gate — an issuer under a root the wallet does not anchor passes as
+// a legitimate-looking stranger, and the trust ladder ranks it low.
+//
 // Function returns the token, the requestor info from the certificate, and the
-// validated end-entity certificate itself — nil when the issuer identified
-// itself by DID rather than by `x5c`, which is the only difference the trust
-// ladder's certificate channel reads off it.
+// end-entity certificate itself — nil when the issuer identified itself by DID
+// rather than by `x5c`. The certificate is a claim, not a verdict: the trust
+// ladder's certificate channel classifies it against the anchors.
 func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 	signedJwt []byte,
 ) (jwt.Token, *scheme.AttestationProviderRequestor, *x509.Certificate, error) {
@@ -446,18 +455,40 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 		return nil, nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
 	}
 
-	// If the key provider used was a X509KeyProvider, we can get the certificate and verify it against the trusted roots/intermediates and CRLs.
+	// If the key provider used was a X509KeyProvider, we can get the certificate the credential was signed with.
 	if x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider); ok {
 		cert := x509KeyProvider.GetCert()
-		err = eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to verify certificate: %v", err)
+
+		// A certificate presented outside its own validity window is a broken
+		// artifact, like an expired JWT: the gate rejects it. (Classification
+		// of *stored* issuer evidence is expiry-tolerant — see
+		// TrustModel.Classify — but a fresh credential has no business being
+		// signed with an expired certificate.) The moment is the X.509
+		// context's, not the JWT clock's, matching what chain verification
+		// against the same context reads.
+		now := eudi_jwt.VerificationTime(v.verificationContext.X509VerificationContext)
+		if now.Add(ClockSkewInSeconds*time.Second).Before(cert.NotBefore) ||
+			now.Add(-ClockSkewInSeconds*time.Second).After(cert.NotAfter) {
+			return nil, nil, nil, fmt.Errorf("issuer certificate is not valid at the current time (notBefore %s, notAfter %s)",
+				cert.NotBefore.Format(time.RFC3339), cert.NotAfter.Format(time.RFC3339))
 		}
+
+		// Does any anchor the wallet holds stand behind this certificate?
+		// Chain building, revocation and key usage, against the pinned
+		// anchors — classification, not the gate.
+		anchored := eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil) == nil
 
 		// Verify the SD-JWT against the credentials the issuer is authorized to issue
 		// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
 		// until we can issue SD-JWT VCs that fit our scheme
 		if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
+			// This path demands the issuer's authorization artifact (the Yivi
+			// scheme extension), and an authorization is only worth reading
+			// off a certificate an anchor stands behind: grant enforcement
+			// stays a hard gate here.
+			if !anchored {
+				return nil, nil, nil, fmt.Errorf("failed to verify certificate: no trust anchor stands behind the issuer certificate")
+			}
 			requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)

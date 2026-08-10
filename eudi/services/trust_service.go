@@ -15,22 +15,29 @@ import (
 // ladder, for both protocols and both roles.
 //
 // Two channels feed it, independently, and a party lands on whichever rung is
-// higher. The certificate channel puts a party that authenticated with a
-// Yivi-anchored certificate at high. The recognized-list channel puts a party
-// granted on a list the wallet recognizes at medium. Neither can pull the other
-// down: a scheme-certified party stays high with every list unreachable.
+// higher. The certificate channel confers the level of the anchor a party's
+// chain validates to — high under the Yivi roots, medium under an anchored
+// third-party CA, nothing under a root the wallet does not anchor. The
+// recognized-list channel confers the level of the list that grants the party
+// — high on Yivi's own LoTE. Neither can pull the other down: a
+// Yivi-certified party stays high with every list unreachable.
 //
 // Evaluation is fail-soft by construction: nothing on this path returns an
 // error, so a trust level can never fail a session.
 type TrustService struct {
-	checker *lote.Checker
+	checker       *lote.Checker
+	issuerCerts   trust.CertificateClassifier
+	verifierCerts trust.CertificateClassifier
 }
 
-// NewTrustService returns the wallet's trust evaluator. A nil checker runs it
-// dark — certificate channel only, no verdict ever carrying a listing — which
-// is what a wallet with no recognized lists configured does.
-func NewTrustService(checker *lote.Checker) *TrustService {
-	return &TrustService{checker: checker}
+// NewTrustService returns the wallet's trust evaluator. The classifiers are
+// the per-role certificate channels — the wallet's issuer and verifier trust
+// models. A nil checker runs the list channel dark (no verdict ever carrying
+// a listing), which is what a wallet with no recognized lists configured
+// does; a nil classifier runs that role's certificate channel dark, which
+// only a wallet without trust models (in practice: a test) does.
+func NewTrustService(checker *lote.Checker, issuerCerts, verifierCerts trust.CertificateClassifier) *TrustService {
+	return &TrustService{checker: checker, issuerCerts: issuerCerts, verifierCerts: verifierCerts}
 }
 
 // Snapshot pins the state a single session evaluates against, so a list refresh
@@ -40,10 +47,11 @@ func NewTrustService(checker *lote.Checker) *TrustService {
 // state the checker already holds, never a fetch, so there is nothing for a
 // cancellation to cut short and a cancelled context still yields a usable view.
 func (s *TrustService) Snapshot(_ context.Context) trust.View {
-	if s.checker == nil {
-		return trust.NewView(nil)
+	var lists trust.ListSnapshot
+	if s.checker != nil {
+		lists = s.checker.Snapshot()
 	}
-	return trust.NewView(s.checker.Snapshot())
+	return trust.NewView(lists, s.issuerCerts, s.verifierCerts)
 }
 
 // BatchIssuerEvidence is what the wallet recorded at issuance about the issuer

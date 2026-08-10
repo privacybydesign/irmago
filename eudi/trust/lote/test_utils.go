@@ -260,9 +260,11 @@ func NewTestLoteServer(t *testing.T) *TestLoteServer {
 func (s *TestLoteServer) URL() string { return s.server.URL }
 
 // Source returns a Source pointing at this server for the given list
-// identifier. operatedByYivi marks it as Yivi's own list.
-func (s *TestLoteServer) Source(listId string, operatedByYivi bool) Source {
-	return Source{ListId: listId, URL: s.URL(), OperatedByYivi: operatedByYivi}
+// identifier, conferring the given level — TrustLevel_High for a fixture
+// standing in for Yivi's own list, TrustLevel_Medium for any other
+// recognized list.
+func (s *TestLoteServer) Source(listId string, confers clientmodels.TrustLevel) Source {
+	return Source{ListId: listId, URL: s.URL(), Confers: confers}
 }
 
 // Serve signs list with signer and serves it on subsequent requests.

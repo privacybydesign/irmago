@@ -1,7 +1,6 @@
 package openid4vp
 
 import (
-	"crypto/x509"
 	"fmt"
 	"net/url"
 	"strings"
@@ -39,15 +38,14 @@ func (v *DidVerifierValidator) SetAllowInsecureDidWeb(allow bool) {
 
 func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (
 	*AuthorizationRequest,
-	*x509.Certificate,
-	*scheme.RelyingPartyRequestor,
+	*VerifiedRequestor,
 	error,
 ) {
 	// Pre-parse the claims to inspect client_id before signature verification
 	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
 	preToken, _, err := parser.ParseUnverified(requestJwt, &AuthorizationRequest{})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to pre-parse auth request jwt: %v", err)
+		return nil, nil, fmt.Errorf("failed to pre-parse auth request jwt: %v", err)
 	}
 
 	preClaims := preToken.Claims.(*AuthorizationRequest)
@@ -56,7 +54,7 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 	// Resolve the public key from the DID
 	pubKey, didString, err := v.resolvePublicKey(clientId, preToken.Header)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to resolve verifier public key: %v", err)
+		return nil, nil, fmt.Errorf("failed to resolve verifier public key: %v", err)
 	}
 
 	// Parse and verify the JWT with the resolved key
@@ -72,10 +70,12 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 		return pubKey, nil
 	})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to verify auth request jwt: %v", err)
+		return nil, nil, fmt.Errorf("failed to verify auth request jwt: %v", err)
 	}
 
-	// Determine a human-readable display name for the verifier. Priority:
+	// Determine a human-readable display name for the verifier. Everything a
+	// bare DID carries is the verifier's own word, so it all lands in the
+	// self-asserted account. Priority:
 	// 1. client_name from client_metadata (RFC 7591, best-effort)
 	// 2. response_uri hostname
 	// 3. domain from did:web
@@ -89,12 +89,12 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 		displayName = domain
 	}
 
-	requestorInfo := &scheme.RelyingPartyRequestor{}
-	requestorInfo.Organization.LegalName = map[string]string{"en": displayName}
+	selfAsserted := &scheme.RelyingPartyRequestor{}
+	selfAsserted.Organization.LegalName = map[string]string{"en": displayName}
 
 	// We don't validate credential queries using queryValidator.ValidateCredentialQueries(..) on purpose here, because we have no external requestorInfo containing authorized attributes
 
-	return &authRequest, nil, requestorInfo, nil
+	return &authRequest, &VerifiedRequestor{SelfAsserted: selfAsserted}, nil
 }
 
 // hostFromURL parses a URL and returns its hostname (without port), or "" on failure.

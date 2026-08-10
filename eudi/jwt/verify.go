@@ -3,6 +3,7 @@ package eudi_jwt
 import (
 	"crypto/x509"
 	"fmt"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
@@ -41,6 +42,17 @@ func GetX509VerificationOptionsFromTemplate(context X509VerificationContext, hos
 		DNSName:       hostname,
 		KeyUsages:     template.KeyUsages,
 	}
+}
+
+// VerificationTime is the moment certificate validity is checked at: the
+// context's pinned CurrentTime when it has one, the wall clock otherwise —
+// the same reading x509.Verify gives VerifyOptions, so an explicit validity
+// check and a chain verification against the same context cannot disagree.
+func VerificationTime(context X509VerificationContext) time.Time {
+	if t := context.GetVerificationOptionsTemplate().CurrentTime; !t.IsZero() {
+		return t
+	}
+	return time.Now()
 }
 
 // VerifyCertificate verifies the given certificate against the trusted chains and revocation lists in the provided context.

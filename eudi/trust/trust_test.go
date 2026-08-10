@@ -8,36 +8,65 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCertificateView_CertificateEvidenceRanksHigh(t *testing.T) {
-	ev := Evidence{
-		Certificate: &x509.Certificate{},
-		Identifiers: []string{"x509_san_dns:verifier.example.com"},
-	}
+// stubClassifier confers one fixed level on every certificate, standing in for
+// a trust model whose anchors all say the same thing.
+type stubClassifier clientmodels.TrustLevel
 
-	for role, verdict := range map[string]Verdict{
-		"verifier": CertificateView{}.Verifier(ev),
-		"issuer":   CertificateView{}.Issuer(ev),
-	} {
-		require.Equal(t, clientmodels.TrustLevel_High, verdict.Level, role)
-		require.Nil(t, verdict.Listing, "%s: the certificate channel grants no listing", role)
-	}
+func (s stubClassifier) Classify(*x509.Certificate) clientmodels.TrustLevel {
+	return clientmodels.TrustLevel(s)
 }
 
-func TestCertificateView_WithoutCertificateRanksLow(t *testing.T) {
-	ev := Evidence{Identifiers: []string{"did:web:verifier.example.com"}}
+func TestCertificateChannel_ConfersTheAnchorsLevel(t *testing.T) {
+	// The certificate channel confers whatever the anchor the chain validates
+	// to confers — high under a Yivi root, medium under an anchored
+	// third-party CA — and the verdict records the channel's own contribution.
+	ev := Evidence{Certificate: &x509.Certificate{}}
+	view := NewView(nil,
+		stubClassifier(clientmodels.TrustLevel_Medium),
+		stubClassifier(clientmodels.TrustLevel_High))
 
-	for role, verdict := range map[string]Verdict{
-		"verifier": CertificateView{}.Verifier(ev),
-		"issuer":   CertificateView{}.Issuer(ev),
-	} {
-		require.Equal(t, clientmodels.TrustLevel_Low, verdict.Level, role)
-		require.Nil(t, verdict.Listing, role)
-	}
+	issuer := view.Issuer(ev)
+	require.Equal(t, clientmodels.TrustLevel_Medium, issuer.Level)
+	require.Equal(t, clientmodels.TrustLevel_Medium, issuer.CertificateLevel)
+
+	verifier := view.Verifier(ev)
+	require.Equal(t, clientmodels.TrustLevel_High, verifier.Level)
+	require.Equal(t, clientmodels.TrustLevel_High, verifier.CertificateLevel)
+
+	require.Nil(t, issuer.Listing, "the certificate channel grants no listing")
+	require.Nil(t, verifier.Listing, "the certificate channel grants no listing")
 }
 
-func TestCertificateView_EmptyEvidenceRanksLow(t *testing.T) {
+func TestCertificateChannel_UnclassifiableCertificateIsAbsentEvidence(t *testing.T) {
+	// A certificate that chains to no anchor is evidentially a self-asserted
+	// key: it lifts no rung, and the verdict says the channel contributed
+	// nothing — which is what display keys attested-ness off.
+	view := NewView(nil,
+		stubClassifier(clientmodels.TrustLevel_Unevaluated),
+		stubClassifier(clientmodels.TrustLevel_Unevaluated))
+
+	verdict := view.Verifier(Evidence{Certificate: &x509.Certificate{}})
+
+	require.Equal(t, clientmodels.TrustLevel_Low, verdict.Level)
+	require.Equal(t, clientmodels.TrustLevel_Unevaluated, verdict.CertificateLevel)
+}
+
+func TestCertificateChannel_WithoutCertificateRanksLow(t *testing.T) {
+	view := NewView(nil,
+		stubClassifier(clientmodels.TrustLevel_High),
+		stubClassifier(clientmodels.TrustLevel_High))
+
+	verdict := view.Verifier(Evidence{Identifiers: []string{"did:web:verifier.example.com"}})
+
+	require.Equal(t, clientmodels.TrustLevel_Low, verdict.Level,
+		"a classifier is never consulted for a party that presented no certificate")
+	require.Equal(t, clientmodels.TrustLevel_Unevaluated, verdict.CertificateLevel)
+}
+
+func TestNewView_EmptyEvidenceRanksLow(t *testing.T) {
 	// A party the wallet knows nothing about still gets a verdict rather than
 	// an error: no evaluation path may fail a session.
-	require.Equal(t, clientmodels.TrustLevel_Low, CertificateView{}.Verifier(Evidence{}).Level)
-	require.Equal(t, clientmodels.TrustLevel_Low, CertificateView{}.Issuer(Evidence{}).Level)
+	view := NewView(nil, nil, nil)
+	require.Equal(t, clientmodels.TrustLevel_Low, view.Verifier(Evidence{}).Level)
+	require.Equal(t, clientmodels.TrustLevel_Low, view.Issuer(Evidence{}).Level)
 }

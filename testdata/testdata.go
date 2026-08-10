@@ -292,6 +292,11 @@ func CreateEndEntityCertificate(t *testing.T, subject pkix.Name, hostname string
 		},
 	}
 
+	if opts&PkiOption_ExpiredEndEntity != 0 {
+		certTemplate.NotBefore = time.Now().Add(time.Duration(-2 * time.Hour))
+		certTemplate.NotAfter = time.Now().Add(time.Duration(-1 * time.Hour))
+	}
+
 	if opts&PkiOption_InvalidAsnSchemeData != 0 {
 		certTemplate.ExtraExtensions[0].Value = []byte("invalid ASN scheme data")
 	}

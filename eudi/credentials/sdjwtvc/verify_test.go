@@ -105,11 +105,16 @@ func Test_HolderVerificationProcessor_MissingIssuerUrl_Fails(t *testing.T) {
 	errorTestCaseHolder(t, missingIssuerUrl, "missing iss field")
 }
 
-func Test_HolderVerificationProcessor_ValidButUntrusted_SelfSigned_X509Cert_Fails(t *testing.T) {
+func Test_HolderVerificationProcessor_ValidButUntrusted_SelfSigned_X509Cert_PassesUnanchored(t *testing.T) {
+	// A chain the wallet cannot trace to any anchor proves nothing, so the
+	// credential still verifies by signature and the issuer passes as a
+	// legitimate-looking stranger — the trust ladder ranks it low, and the
+	// blog's policy dial (warn, never block) decides what the app does with
+	// that. Anchoring is classification, not the gate.
 	runCertChainTestCase(t, x509TestConfig{
 		IssuerCert: testdata.IssuerCert_irma_app_Bytes,
 		IssUrl:     "https://irma.app",
-		ShouldFail: true,
+		ShouldFail: false,
 	})
 }
 

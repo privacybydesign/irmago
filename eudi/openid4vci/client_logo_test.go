@@ -194,7 +194,7 @@ func TestConvertToTrustedParty_TheIssuersOwnLogoDoesNotReachTheWallet(t *testing
 		},
 	}
 
-	tp := client.convertToTrustedParty(m, "en", trust.CertificateView{})
+	tp := client.convertToTrustedParty(m, "en", trust.NewView(nil, nil, nil))
 
 	require.Equal(t, clientmodels.TrustLevel_Low, tp.TrustLevel)
 	require.Equal(t, "Test Issuer", tp.Name, "the name it chose is the user's to judge, under the warning")

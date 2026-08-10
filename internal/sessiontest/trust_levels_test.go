@@ -2,18 +2,28 @@ package sessiontest
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,12 +52,14 @@ import (
 //     (testdata/eudi/verifier/verifier_scheme_data.json).
 //   - The veramo verifier authenticates with a did:jwk generated at runtime, so
 //     a test that wants to list it reads the DID off a first session's
-//     Requestor.Id rather than hardcoding one (see testListedVerifierRanksMedium).
+//     Requestor.Id rather than hardcoding one (see testVerifierRungsFollowTheLists).
 //
 // A new rung for a party is therefore a new entry on that test's list, not a new
 // counterparty: NewTestDidService for the DID-identified ones,
-// NewTestCertificateService or NewTestSkiService for a certificate, plus
-// lote.MarkingOnboardedByYivi on a source published with operatedByYivi.
+// NewTestCertificateService or NewTestSkiService for a certificate. The rung an
+// entry confers is its source's: a source conferring TrustLevel_High stands in
+// for Yivi's own list, one conferring TrustLevel_Medium for any other
+// recognized list.
 //
 // # Where the rest of the matrix lives
 //
@@ -73,16 +85,18 @@ import (
 //     once when a list is fetched, once when a held one is read — so the expired
 //     degradation case only goes red when both are removed; the held-list check
 //     is the one a wallet that cannot refresh depends on, and it has its own test.
-//  2. The marking is Yivi's word — drop the source.OperatedByYivi condition in
-//     lote.listingOf ⇒ testForeignMarkingStaysMedium, plus eudi/trust/lote
-//     TestChecker_MarkingOnlyCountsOnYivisOwnList and client
-//     TestClient_RefreshTrustLists_MarkedOnYivisListRanksHigh.
+//  2. The rung is the source's word — have lote.listingOf lift entries that
+//     carry a marking (resurrecting entry-level tiers) ⇒
+//     testMarkedEntryOnMediumListStaysMedium, plus eudi/trust/lote
+//     TestChecker_ListingConfersTheSourcesLevel and client
+//     TestClient_RefreshTrustLists_ListingConfersTheSourcesLevel.
 //  3. Fire once, re-sign silently — have lote.entriesDiffer compare whole lists
 //     instead of entities (so a new sequence number counts) ⇒ client
 //     TestTrustListRefreshNotifiesOnContentChange.
 //  4. A rejected party is not a generic error — report the gate failure through
-//     handleFailure in openid4vp ⇒ eudi/openid4vp
-//     TestNewSession_RevokedVerifierCertificate_ReportsPartyValidationFailed.
+//     handleFailure in openid4vp ⇒ testBrokenRequestReportsTypedError, plus
+//     eudi/openid4vp
+//     TestNewSession_ExpiredVerifierCertificate_ReportsPartyValidationFailed.
 //  5. Rank at read, not at issuance — freeze the rung in
 //     credentialService.GetCredentialMetadataList ⇒
 //     testStoredCredentialFollowsTheList, plus client
@@ -96,38 +110,53 @@ const testTrustListId = "urn:yivi:trustlist:sessiontest"
 const testIssuerDid = "did:web:localhost%3A8443:test-issuer:.well-known"
 
 func testSessionHandlerForTrustLevels(t *testing.T) {
-	t.Run("listed issuer ranks medium", testListedIssuerRanksMedium)
-	t.Run("issuer marked on yivi's list ranks high", testMarkedIssuerRanksHigh)
-	t.Run("marking on another operator's list stays medium", testForeignMarkingStaysMedium)
+	t.Run("issuer listed on a medium list ranks medium", testListedIssuerRanksMedium)
+	t.Run("issuer listed on yivi's list ranks high", testIssuerOnYivisListRanksHigh)
+	t.Run("a marked entry on a medium list stays medium", testMarkedEntryOnMediumListStaysMedium)
 	t.Run("issuer listed as verifier only stays low", testIssuerListedInTheWrongRoleStaysLow)
 	t.Run("unreachable list leaves the issuer low and issuing", testUnreachableListLeavesIssuerLow)
 	t.Run("over-ask fails at the top rung", testOverAskFailsAtTopRung)
 	t.Run("stored credential follows the list, logs do not", testStoredCredentialFollowsTheList)
-	t.Run("verifier rungs follow the list", testVerifierRungsFollowTheList)
+	t.Run("verifier rungs follow the lists", testVerifierRungsFollowTheLists)
 	t.Run("disclosure candidates rank the issuer too", testDisclosureCandidatesRankTheIssuer)
-	t.Run("a verifier that fails the gate reports the typed error", testGateFailureReportsTypedError)
+	t.Run("an unknown-CA verifier ranks low and proceeds", testUnknownCaVerifierRanksLowAndProceeds)
+	t.Run("an unknown-CA verifier listed on yivi's list ranks high", testUnknownCaVerifierListedOnYivisListRanksHigh)
+	t.Run("a third-party CA verifier ranks medium", testThirdPartyCaVerifierRanksMedium)
+	t.Run("a broken request reports the typed error", testBrokenRequestReportsTypedError)
 	t.Run("certificate keying needs both halves", testCertificateKeyingNeedsBothHalves)
 	t.Run("an issuer keyed on its certificate ranks and renders", testIssuerKeyedOnItsCertificate)
 }
 
-// testVerifierRungsFollowTheList walks one verifier up all three rungs, so the
-// rung and the name the wallet reports are shown to follow the recognized list
+// testVerifierRungsFollowTheLists walks one verifier up all three rungs, so the
+// rung and the name the wallet reports are shown to follow the recognized lists
 // rather than the request. The first, unvouched-for run discloses successfully,
 // which is the verifier side of fail-soft: a low rung is rendered, never enforced.
 //
-// The list is published as Yivi's own, which is what lets the last stage mean
-// anything — an unmarked entry stays medium on Yivi's list too, so the source
-// flag alone lifts nobody. (That the marking is ignored on a *foreign* list is
-// testForeignMarkingStaysMedium's job, on the issuer side.)
+// The wallet consults two lists — one that is not Yivi's own (conferring
+// medium) and Yivi's own (conferring high) — because the rung is the source's
+// word: the same verifier climbs from medium to high not by its entry changing
+// but by which list carries it.
 //
 // The veramo verifier's did:jwk is generated at runtime, so the test learns the
 // identifier from the first session instead of hardcoding it.
-func testVerifierRungsFollowTheList(t *testing.T) {
+func testVerifierRungsFollowTheLists(t *testing.T) {
+	const mediumListId = testTrustListId + ":medium"
+	const yiviListId = testTrustListId + ":yivi"
+
 	signer := lote.NewTestLoteSigner(t)
-	server := lote.NewTestLoteServer(t)
+	mediumServer := lote.NewTestLoteServer(t)
+	yiviServer := lote.NewTestLoteServer(t)
+
+	// Both lists start current and empty: a wallet that consults a list on
+	// which nobody is granted vouches for nobody.
+	mediumServer.Serve(t, signer, lote.NewTestList(mediumListId, 1))
+	yiviServer.Serve(t, signer, lote.NewTestList(yiviListId, 1))
 
 	c, _, sessionHandler := instantiateClientWithTrustLists(t, nil, "en", signer.RootCert,
-		[]lote.Source{server.Source(testTrustListId, true)})
+		[]lote.Source{
+			mediumServer.Source(mediumListId, clientmodels.TrustLevel_Medium),
+			yiviServer.Source(yiviListId, clientmodels.TrustLevel_High),
+		})
 	defer c.Close()
 
 	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, testCredentialSdJwt, testCredentialClaims)
@@ -141,27 +170,27 @@ func testVerifierRungsFollowTheList(t *testing.T) {
 	verifierDid := unlisted.Requestor.Id
 	require.NotEmpty(t, verifierDid, "a verifier without a certificate is identified by its DID")
 
-	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
+	mediumServer.Serve(t, signer, lote.NewTestList(mediumListId, 2,
 		lote.NewTestEntity("Curated Verifier BV", "",
 			lote.NewTestDidService(trust.RoleVerifier, verifierDid))))
 	require.NoError(t, c.RefreshTrustLists(context.Background()))
 
 	listed := discloseToVeramoVerifier(t, c, 3, sessionHandler)
 	require.Equal(t, clientmodels.TrustLevel_Medium, listed.Requestor.TrustLevel,
-		"the same verifier, now granted on a recognized list, ranks medium")
+		"the same verifier, granted on a recognized list that is not Yivi's, ranks medium")
 	require.Equal(t, "Curated Verifier BV", listed.Requestor.Name,
 		"the curated name on the entry outranks the name the verifier gives itself")
 
-	// Marked on Yivi's own list: Yivi vouching for the party, the top rung.
-	server.Serve(t, signer, lote.NewTestList(testTrustListId, 2,
+	// Listed on Yivi's own list: Yivi vouching for the party, the top rung.
+	yiviServer.Serve(t, signer, lote.NewTestList(yiviListId, 2,
 		lote.NewTestEntity("Curated Verifier BV", "",
-			lote.NewTestDidService(trust.RoleVerifier, verifierDid, lote.MarkingOnboardedByYivi))))
+			lote.NewTestDidService(trust.RoleVerifier, verifierDid))))
 	require.NoError(t, c.RefreshTrustLists(context.Background()))
 
-	marked := discloseToVeramoVerifier(t, c, 4, sessionHandler)
-	require.Equal(t, clientmodels.TrustLevel_High, marked.Requestor.TrustLevel,
-		"the onboarded-by-Yivi marking on Yivi's own list reaches the top rung")
-	require.True(t, marked.Requestor.TrustLevel.IsTrusted())
+	onYivisList := discloseToVeramoVerifier(t, c, 4, sessionHandler)
+	require.Equal(t, clientmodels.TrustLevel_High, onYivisList.Requestor.TrustLevel,
+		"an entry on Yivi's own list reaches the top rung: being listed is being onboarded")
+	require.True(t, onYivisList.Requestor.TrustLevel.IsTrusted())
 }
 
 // testDisclosureCandidatesRankTheIssuer covers the second place a stored
@@ -174,7 +203,7 @@ func testDisclosureCandidatesRankTheIssuer(t *testing.T) {
 	server := lote.NewTestLoteServer(t)
 
 	c, _, sessionHandler := instantiateClientWithTrustLists(t, nil, "en", signer.RootCert,
-		[]lote.Source{server.Source(testTrustListId, false)})
+		[]lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_Medium)})
 	defer c.Close()
 
 	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, testCredentialSdJwt, testCredentialClaims)
@@ -192,19 +221,122 @@ func testDisclosureCandidatesRankTheIssuer(t *testing.T) {
 		"and the two read paths agree")
 }
 
-// testGateFailureReportsTypedError is the fifth state of the matrix, the one that
-// is not a rung: a verifier the wallet cannot authenticate is a session failure
-// the app must be able to name, so it can say the request was not trustworthy
-// rather than showing a generic error.
+// testUnknownCaVerifierRanksLowAndProceeds is the "X.509 → unknown CA" row of
+// the matrix: a chain the wallet cannot trace to any anchor proves nothing, so
+// its holder is a legitimate-looking stranger — low, with the certificate's
+// contents counted as self-asserted — and the session reaches the permission
+// screen behind the warning rather than failing.
 //
 // The verifier here is the same EUDI service every other test talks to, signing
-// its request exactly as always; only this wallet trusts no verifier CA, so the
-// chain does not validate.
-func testGateFailureReportsTypedError(t *testing.T) {
-	c, _, sessionHandler := instantiateClientWithoutVerifierTrust(t)
+// its request exactly as always; only this wallet anchors no verifier CA, so
+// nobody vouches for it.
+func testUnknownCaVerifierRanksLowAndProceeds(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, clientHandler, sessionHandler := instantiateClientWithoutVerifierTrust(t)
 	defer c.Close()
+	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
+	require.NoError(t, clientHandler.AwaitEnrollmentResult())
 
 	session := startOpenID4VPSessionWithAuthRequest(t, c, 1, sessionHandler, createEmailAuthRequestRequest()).ClientSession
+	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	require.Equal(t, clientmodels.TrustLevel_Low, session.Requestor.TrustLevel,
+		"a certificate no anchor stands behind is evidentially a self-asserted key")
+	require.Nil(t, session.Requestor.Image,
+		"nothing an unanchored certificate carries may render a logo")
+}
+
+// testUnknownCaVerifierListedOnYivisListRanksHigh is the escape hatch the list
+// channel is built to carry: a party whose certificate the wallet cannot trace
+// to any anchor still reaches the top rung through an entry on Yivi's own list
+// keyed on that very certificate — max(certificate, list) with the certificate
+// channel silent.
+func testUnknownCaVerifierListedOnYivisListRanksHigh(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	const curatedName = "Listed Stranger BV"
+	verifierLeaf := eudiVerifierLeaf(t)
+
+	signer := lote.NewTestLoteSigner(t)
+	server := lote.NewTestLoteServer(t)
+	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
+		lote.NewTestEntity(curatedName, subjectOrganizationIdentifier(t, verifierLeaf),
+			lote.NewTestSkiService(trust.RoleVerifier, verifierLeaf))))
+
+	// The full form with verifierCA nil: the wallet anchors no verifier CA at
+	// all, so the list entry is the only thing that can speak for the verifier.
+	c, clientHandler, sessionHandler := instantiateClientWithVerifierTrust(t, "", nil, "en", signer.RootCert,
+		[]lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_High)}, nil)
+	defer c.Close()
+	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
+	require.NoError(t, clientHandler.AwaitEnrollmentResult())
+	require.NoError(t, c.RefreshTrustLists(context.Background()))
+
+	session := startOpenID4VPSessionWithAuthRequest(t, c, 1, sessionHandler, createEmailAuthRequestRequest()).ClientSession
+	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	require.Equal(t, clientmodels.TrustLevel_High, session.Requestor.TrustLevel,
+		"a list entry lifts a party whose certificate channel is silent all the way to high")
+	require.Equal(t, curatedName, session.Requestor.Name,
+		"and the curated name is what the user sees")
+}
+
+// testThirdPartyCaVerifierRanksMedium is the blog's medium: somebody vouches,
+// but not Yivi. The same verifier CA every other test installs as a stand-in
+// for the Yivi CA is pinned here as a third-party anchor conferring medium, so
+// the same verifier, the same request and the same certificate land one rung
+// lower — with the name its CA attested, not a warning-screen name.
+func testThirdPartyCaVerifierRanksMedium(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, clientHandler, sessionHandler := instantiateClientWithExtraAnchors(t, "", nil, "en", nil, nil,
+		nil, // no verifier CA installed at high...
+		[]eudi.ExtraTrustAnchor{{PEM: testdata.VerifierCACertBytes, Confers: clientmodels.TrustLevel_Medium}})
+	defer c.Close()
+	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
+	require.NoError(t, clientHandler.AwaitEnrollmentResult())
+
+	session := startOpenID4VPSessionWithAuthRequest(t, c, 1, sessionHandler, createEmailAuthRequestRequest()).ClientSession
+	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	require.Equal(t, clientmodels.TrustLevel_Medium, session.Requestor.TrustLevel,
+		"an anchored third-party CA confers medium: somebody vouches, but not Yivi")
+	require.Equal(t, "Yivi B.V.", session.Requestor.Name,
+		"shown under the organisation name its CA attested")
+}
+
+// testBrokenRequestReportsTypedError is the state that is not a rung: a
+// verifier the wallet cannot authenticate at all — here an unresolvable DID —
+// is a session failure the app must be able to name, so it can say the request
+// was not trustworthy rather than showing a generic error.
+func testBrokenRequestReportsTypedError(t *testing.T) {
+	c, _, sessionHandler := instantiateClient(t, nil, "en")
+	defer c.Close()
+
+	// An authorization request whose client_id names a did:web nothing serves:
+	// the wallet cannot resolve who it is talking to, and nothing else about
+	// the request can make up for that.
+	requestJwt := unresolvableDidAuthRequest(t)
+	requestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, requestJwt)
+	}))
+	defer requestServer.Close()
+
+	startOpenID4VPDisclosureSession(t, c, 1, "openid4vp://?request_uri="+url.QueryEscape(requestServer.URL))
+	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, clientmodels.Status_Error, session.Status)
 	require.NotNil(t, session.Error)
@@ -213,6 +345,18 @@ func testGateFailureReportsTypedError(t *testing.T) {
 	require.Nil(t, session.DisclosurePlan, "nothing may be offered for disclosure")
 	require.Equal(t, clientmodels.TrustLevel_Unevaluated, session.Requestor.TrustLevel,
 		"a party that failed the gate has no rung: it was never evaluated")
+}
+
+// unresolvableDidAuthRequest signs an authorization request as a did:web
+// verifier whose document nobody serves.
+func unresolvableDidAuthRequest(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	return testdata.CreateTestAuthorizationRequestJWTWithClientId(
+		"decentralized_identifier:did:web:localhost%3A1", key, &x509.Certificate{},
+		func(token *jwt.Token) { delete(token.Header, "x5c") },
+	)
 }
 
 // testStoredCredentialFollowsTheList is the transition behaviour end to end: a
@@ -231,7 +375,7 @@ func testStoredCredentialFollowsTheList(t *testing.T) {
 	server := lote.NewTestLoteServer(t)
 
 	c, _, sessionHandler := instantiateClientWithTrustLists(t, nil, "en", signer.RootCert,
-		[]lote.Source{server.Source(testTrustListId, false)})
+		[]lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_Medium)})
 	defer c.Close()
 
 	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, testCredentialSdJwt, testCredentialClaims)
@@ -265,35 +409,37 @@ func testStoredCredentialFollowsTheList(t *testing.T) {
 // ----------------------------------------------------------------------------
 
 // testListedIssuerRanksMedium is the recognized-list channel on the issuer
-// side: an entry granting the issuer, carrying no marking, is somebody
-// vouching for the party.
+// side: an entry on a recognized list that is not Yivi's own is somebody
+// vouching for the party, but not Yivi.
 func testListedIssuerRanksMedium(t *testing.T) {
-	c, sessionHandler := clientWithIssuerList(t, false, lote.NewTestDidService(trust.RoleIssuer, testIssuerDid))
+	c, sessionHandler := clientWithIssuerList(t, clientmodels.TrustLevel_Medium,
+		lote.NewTestDidService(trust.RoleIssuer, testIssuerDid))
 	defer c.Close()
 
 	requireIssuedAtLevel(t, c, sessionHandler, clientmodels.TrustLevel_Medium)
 }
 
-// testMarkedIssuerRanksHigh is the top rung through the list: Yivi's own list
-// marking an entry as onboarded is Yivi vouching for the party, the same word
-// its scheme certificate would give.
-func testMarkedIssuerRanksHigh(t *testing.T) {
-	c, sessionHandler := clientWithIssuerList(t, true,
-		lote.NewTestDidService(trust.RoleIssuer, testIssuerDid, lote.MarkingOnboardedByYivi))
+// testIssuerOnYivisListRanksHigh is the top rung through the list: every entry
+// on Yivi's own list is Yivi vouching for the party — being listed is being
+// onboarded — the same word its scheme certificate would give.
+func testIssuerOnYivisListRanksHigh(t *testing.T) {
+	c, sessionHandler := clientWithIssuerList(t, clientmodels.TrustLevel_High,
+		lote.NewTestDidService(trust.RoleIssuer, testIssuerDid))
 	defer c.Close()
 
 	requireIssuedAtLevel(t, c, sessionHandler, clientmodels.TrustLevel_High)
 }
 
-// testForeignMarkingStaysMedium guards the rule that the marking is Yivi's word
-// to give: the same bytes on a list Yivi does not operate is that operator
-// claiming Yivi onboarded someone, and it must not lift the party.
+// testMarkedEntryOnMediumListStaysMedium guards the rule that the rung is the
+// source's word, never the entry's: an entry decorating itself with a marking
+// (here the retired onboarded-by-yivi bytes) on a list that confers medium
+// stays medium.
 //
-// Mutation check for that rule — dropping the "only on Yivi's own list"
-// condition makes this read high.
-func testForeignMarkingStaysMedium(t *testing.T) {
-	c, sessionHandler := clientWithIssuerList(t, false,
-		lote.NewTestDidService(trust.RoleIssuer, testIssuerDid, lote.MarkingOnboardedByYivi))
+// Mutation check for that rule — resurrecting entry-level lifting in
+// lote.listingOf makes this read high.
+func testMarkedEntryOnMediumListStaysMedium(t *testing.T) {
+	c, sessionHandler := clientWithIssuerList(t, clientmodels.TrustLevel_Medium,
+		lote.NewTestDidService(trust.RoleIssuer, testIssuerDid, "onboarded-by-yivi"))
 	defer c.Close()
 
 	requireIssuedAtLevel(t, c, sessionHandler, clientmodels.TrustLevel_Medium)
@@ -302,8 +448,8 @@ func testForeignMarkingStaysMedium(t *testing.T) {
 // testIssuerListedInTheWrongRoleStaysLow pins that trust as a verifier is not
 // trust as an issuer: the same party, the same list, the wrong grant.
 func testIssuerListedInTheWrongRoleStaysLow(t *testing.T) {
-	c, sessionHandler := clientWithIssuerList(t, true,
-		lote.NewTestDidService(trust.RoleVerifier, testIssuerDid, lote.MarkingOnboardedByYivi))
+	c, sessionHandler := clientWithIssuerList(t, clientmodels.TrustLevel_High,
+		lote.NewTestDidService(trust.RoleVerifier, testIssuerDid))
 	defer c.Close()
 
 	requireIssuedAtLevel(t, c, sessionHandler, clientmodels.TrustLevel_Low)
@@ -318,7 +464,7 @@ func testIssuerListedInTheWrongRoleStaysLow(t *testing.T) {
 func testUnreachableListLeavesIssuerLow(t *testing.T) {
 	signer := lote.NewTestLoteSigner(t)
 	server := lote.NewTestLoteServer(t)
-	source := server.Source(testTrustListId, true)
+	source := server.Source(testTrustListId, clientmodels.TrustLevel_High)
 	server.Close()
 
 	c, _, sessionHandler := instantiateClientWithTrustLists(t, nil, "en", signer.RootCert, []lote.Source{source})
@@ -341,17 +487,16 @@ func testUnreachableListLeavesIssuerLow(t *testing.T) {
 func testOverAskFailsAtTopRung(t *testing.T) {
 	signer := lote.NewTestLoteSigner(t)
 	server := lote.NewTestLoteServer(t)
-	// The verifier the EUDI test verifier authenticates as, marked on Yivi's
+	// The verifier the EUDI test verifier authenticates as, listed on Yivi's
 	// own list: the highest rung there is. Its certificate still says which
 	// attributes it may ask for.
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
 		lote.NewTestEntity("Yivi B.V.", "",
 			lote.NewTestCertificateService(trust.RoleVerifier,
-				signer.NewTestPartyCertificate(t, "unused-party", ""),
-				lote.MarkingOnboardedByYivi))))
+				signer.NewTestPartyCertificate(t, "unused-party", "")))))
 
 	c, _, sessionHandler := instantiateClientWithTrustLists(t, nil, "en", signer.RootCert,
-		[]lote.Source{server.Source(testTrustListId, true)})
+		[]lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_High)})
 	defer c.Close()
 	require.NoError(t, c.RefreshTrustLists(context.Background()))
 
@@ -429,7 +574,7 @@ func testCertificateKeyingNeedsBothHalves(t *testing.T) {
 			server.Serve(t, signer, lote.NewTestList(testTrustListId, 1, tc.entry(t, signer)))
 
 			c, clientHandler, sessionHandler := instantiateClientWithTrustLists(t, nil, "en", signer.RootCert,
-				[]lote.Source{server.Source(testTrustListId, true)})
+				[]lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_High)})
 			defer c.Close()
 			c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 			require.NoError(t, clientHandler.AwaitEnrollmentResult())
@@ -462,7 +607,7 @@ func testIssuerKeyedOnItsCertificate(t *testing.T) {
 			lote.NewTestSkiService(trust.RoleIssuer, eudiPidIssuerLeaf(t)))))
 
 	c, _, sessionHandler := instantiateClientWithTrustLists(t, readEudiPidIssuerPyCA(t), "en", signer.RootCert,
-		[]lote.Source{server.Source(testTrustListId, false)})
+		[]lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_Medium)})
 	defer c.Close()
 	require.NoError(t, c.RefreshTrustLists(context.Background()))
 
@@ -506,7 +651,7 @@ func eudiPidIssuerLeaf(t *testing.T) *x509.Certificate {
 // clientWithIssuerList builds a wallet whose one recognized list carries the
 // veramo test issuer under the given service, published by an in-process server
 // and already fetched.
-func clientWithIssuerList(t *testing.T, yivisOwnList bool, service lote.Service) (*client.Client, *MockSessionHandler) {
+func clientWithIssuerList(t *testing.T, confers clientmodels.TrustLevel, service lote.Service) (*client.Client, *MockSessionHandler) {
 	t.Helper()
 
 	signer := lote.NewTestLoteSigner(t)
@@ -515,7 +660,7 @@ func clientWithIssuerList(t *testing.T, yivisOwnList bool, service lote.Service)
 		lote.NewTestEntity("Listed Issuer BV", "", service)))
 
 	c, _, sessionHandler := instantiateClientWithTrustLists(t, nil, "en", signer.RootCert,
-		[]lote.Source{server.Source(testTrustListId, yivisOwnList)})
+		[]lote.Source{server.Source(testTrustListId, confers)})
 	t.Cleanup(func() { _ = c.Close() })
 
 	require.NoError(t, c.RefreshTrustLists(context.Background()))

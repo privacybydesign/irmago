@@ -4,36 +4,19 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
 // The tests below drive whole OpenID4VP sessions to the permission screen and
-// assert what the user is shown about the verifier: the rung the onboarded-by-
-// Yivi marking lifts it to, and which of the competing accounts of who the
+// assert what the user is shown about the verifier: the rung an entry on
+// Yivi's own list lifts it to, and which of the competing accounts of who the
 // verifier is wins. They use the bare did:web verifier, whose certificate
 // channel says nothing, so the rung reported is the list channel's alone.
 
-func TestNewSession_MarkedOnYivisList_RanksHigh(t *testing.T) {
-	authRequestJwt, validator, did := setupDidWebTest(t)
-	list := newYiviListFixture(t)
-	list.grant(t, 1, did, lote.MarkingOnboardedByYivi)
-
-	client := newTrustTestClientWithLists(validator, list.checker(t))
-	handler := newSpyHandler()
-
-	defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
-
-	requestor := handler.awaitRequestor(t)
-	require.Equal(t, clientmodels.TrustLevel_High, requestor.TrustLevel,
-		"an entry Yivi marks as onboarded by Yivi is Yivi vouching for the verifier")
-	require.True(t, requestor.TrustLevel.IsTrusted())
-}
-
-func TestNewSession_UnmarkedOnYivisList_RanksMedium(t *testing.T) {
-	// Yivi publishing a list is not Yivi vouching for everyone on it: the
-	// marking is what separates the two rungs the list can grant.
+func TestNewSession_ListedOnYivisList_RanksHigh(t *testing.T) {
+	// Being on Yivi's list is being onboarded: every entry is Yivi vouching
+	// for the party, the same word its scheme certificate would give.
 	authRequestJwt, validator, did := setupDidWebTest(t)
 	list := newYiviListFixture(t)
 	list.grant(t, 1, did)
@@ -43,24 +26,10 @@ func TestNewSession_UnmarkedOnYivisList_RanksMedium(t *testing.T) {
 
 	defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
 
-	require.Equal(t, clientmodels.TrustLevel_Medium, handler.awaitRequestor(t).TrustLevel)
-}
-
-func TestNewSession_MarkedOnAnotherOperatorsList_StaysMedium(t *testing.T) {
-	// The marking on a list Yivi does not operate is that operator claiming Yivi
-	// onboarded the verifier, which is not Yivi's word and does not get taken as
-	// it. The entry still grants what any recognized list grants: medium.
-	authRequestJwt, validator, did := setupDidWebTest(t)
-	list := newListFixture(t)
-	list.grant(t, 1, did, lote.MarkingOnboardedByYivi)
-
-	client := newTrustTestClientWithLists(validator, list.checker(t))
-	handler := newSpyHandler()
-
-	defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
-
-	require.Equal(t, clientmodels.TrustLevel_Medium, handler.awaitRequestor(t).TrustLevel,
-		"only Yivi's own list may lift a verifier to high")
+	requestor := handler.awaitRequestor(t)
+	require.Equal(t, clientmodels.TrustLevel_High, requestor.TrustLevel,
+		"an entry on Yivi's own list is Yivi vouching for the verifier")
+	require.True(t, requestor.TrustLevel.IsTrusted())
 }
 
 func TestNewSession_ListedVerifier_RendersTheCuratedName(t *testing.T) {
@@ -68,7 +37,7 @@ func TestNewSession_ListedVerifier_RendersTheCuratedName(t *testing.T) {
 	// "Listed BV". The curated name is the one somebody vouches for.
 	authRequestJwt, validator, did := setupDidWebTest(t)
 	list := newYiviListFixture(t)
-	list.grant(t, 1, did, lote.MarkingOnboardedByYivi)
+	list.grant(t, 1, did)
 
 	client := newTrustTestClientWithLists(validator, list.checker(t))
 	handler := newSpyHandler()
@@ -95,15 +64,12 @@ func TestNewSession_LowVerifier_RendersItsOwnNameItsIdentifierAndNoLogo(t *testi
 	require.Nil(t, requestor.Image, "a logo at low would be an impersonation the wallet drew itself")
 }
 
-func TestNewSession_CertifiedVerifierWithoutAListing_RendersItsRequestorInfo(t *testing.T) {
+func TestNewSession_CertifiedVerifierWithoutAListing_RendersItsAttestedName(t *testing.T) {
 	// With no list vouching for it, a certificate-authenticated verifier is
-	// still shown by name rather than by nothing.
-	//
-	// The name here reaches the wallet through client_metadata, which the
-	// verifier wrote itself; the wallet counts it as attested because the
-	// validator hands the requestor info over already collapsed, and telling the
-	// certificate's own account of the party apart from the request's needs the
-	// validator to surface both (#660).
+	// shown under the name its anchored certificate attests — and the name the
+	// request asserts about itself through client_metadata does not displace
+	// it: what the party says about itself never outranks what somebody
+	// vouching for it says.
 	authRequestJwt, validator := setupTest(t, withClientName("Test Verifier"), testdata.PkiOption_None)
 
 	client := newTrustTestClient(validator)
@@ -113,6 +79,7 @@ func TestNewSession_CertifiedVerifierWithoutAListing_RendersItsRequestorInfo(t *
 
 	requestor := handler.awaitRequestor(t)
 	require.Equal(t, clientmodels.TrustLevel_High, requestor.TrustLevel)
-	require.Equal(t, "Test Verifier", requestor.Name)
+	require.Equal(t, "Yivi B.V.", requestor.Name,
+		"the certificate's attested account beats the request's client_metadata")
 	require.NotEmpty(t, requestor.Id, "a certificate-bearing verifier is known by its serial number")
 }

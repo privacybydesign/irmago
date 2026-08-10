@@ -26,31 +26,32 @@ type listFixture struct {
 	source lote.Source
 }
 
+// newListFixture is a recognized list that is not Yivi's own: its entries
+// confer medium.
 func newListFixture(t *testing.T) *listFixture {
 	t.Helper()
-	return newListFixtureOperatedByYivi(t, false)
+	return newListFixtureConferring(t, clientmodels.TrustLevel_Medium)
 }
 
-// newYiviListFixture is a fixture for Yivi's own list — the only list whose
-// onboarded-by-Yivi marking the wallet acts on.
+// newYiviListFixture is a fixture for Yivi's own list, whose entries confer
+// high: being listed there is being onboarded.
 func newYiviListFixture(t *testing.T) *listFixture {
 	t.Helper()
-	return newListFixtureOperatedByYivi(t, true)
+	return newListFixtureConferring(t, clientmodels.TrustLevel_High)
 }
 
-func newListFixtureOperatedByYivi(t *testing.T, operatedByYivi bool) *listFixture {
+func newListFixtureConferring(t *testing.T, confers clientmodels.TrustLevel) *listFixture {
 	t.Helper()
 	signer := lote.NewTestLoteSigner(t)
 	server := lote.NewTestLoteServer(t)
-	return &listFixture{signer: signer, server: server, source: server.Source(trustListId, operatedByYivi)}
+	return &listFixture{signer: signer, server: server, source: server.Source(trustListId, confers)}
 }
 
-// grant publishes a list granting did the verifier role, carrying any markings
-// given.
-func (f *listFixture) grant(t *testing.T, sequenceNumber uint64, did string, markings ...string) {
+// grant publishes a list granting did the verifier role.
+func (f *listFixture) grant(t *testing.T, sequenceNumber uint64, did string) {
 	t.Helper()
 	f.server.Serve(t, f.signer, lote.NewTestList(trustListId, sequenceNumber,
-		lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(trust.RoleVerifier, did, markings...))))
+		lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(trust.RoleVerifier, did))))
 }
 
 // checker returns a checker over this list, refreshed once.

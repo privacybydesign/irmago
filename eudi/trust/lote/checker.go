@@ -10,13 +10,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/trust"
 )
 
 // Source is one recognized list the wallet consults: where to get it, what it
-// must call itself, and whether it is Yivi's own.
+// must call itself, and what a grant on it is worth.
 type Source struct {
 	// ListId is the identifier the fetched document must declare in
 	// `scheme_information.list_identifier`. Binding the two stops one
@@ -27,11 +28,17 @@ type Source struct {
 	// URL is where the signed list is published.
 	URL string
 
-	// OperatedByYivi marks Yivi's own list. It is what makes the
-	// onboarded-by-Yivi marking mean anything: the same marking on any other
-	// recognized list is another operator's word about Yivi, which Yivi does
-	// not get to have taken as its own.
-	OperatedByYivi bool
+	// Confers is the rung a granted entry on this list earns a party. It is a
+	// property of the source rather than of the entry, because vouching is the
+	// list operator's word and every entry carries the same amount of it:
+	// Yivi's own LoTE confers high — being listed there is being onboarded,
+	// Yivi cannot name a party on its list without vouching for it — and any
+	// other recognized list confers what whoever compiled it in decided that
+	// operator's word is worth.
+	//
+	// Unset confers nothing: a granted entry still carries its curated display
+	// metadata, but lifts no rung.
+	Confers clientmodels.TrustLevel
 }
 
 // Config is what a Checker needs. Only Sources and X509Context have no sensible

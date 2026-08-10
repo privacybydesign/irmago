@@ -49,7 +49,7 @@ type fixture struct {
 	config Config
 }
 
-func newFixture(t *testing.T, operatedByYivi bool) *fixture {
+func newFixture(t *testing.T, confers clientmodels.TrustLevel) *fixture {
 	t.Helper()
 	signer := NewTestLoteSigner(t)
 	server := NewTestLoteServer(t)
@@ -59,7 +59,7 @@ func newFixture(t *testing.T, operatedByYivi bool) *fixture {
 		server: server,
 		store:  store,
 		config: Config{
-			Sources:     []Source{server.Source(testListId, operatedByYivi)},
+			Sources:     []Source{server.Source(testListId, confers)},
 			X509Context: signer.X509VerificationContext(),
 			Store:       store,
 		},
@@ -76,7 +76,7 @@ func (f *fixture) refreshed(t *testing.T) *Checker {
 }
 
 func TestChecker_ListedVerifierIsGranted(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	verifier := f.signer.NewTestPartyCertificate(t, "verifier.example.com", "VATNL-000000001")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
 		NewTestEntity("Listed BV", "VATNL-000000001",
@@ -88,11 +88,12 @@ func TestChecker_ListedVerifierIsGranted(t *testing.T) {
 	require.NotNil(t, listing)
 	require.Equal(t, testListId, listing.ListId)
 	require.Equal(t, "Listed BV", listing.Name["en"])
-	require.False(t, listing.OnboardedByYivi, "an unmarked entry is not Yivi's own")
+	require.Equal(t, clientmodels.TrustLevel_Medium, listing.Level,
+		"a listing confers what its source is configured with")
 }
 
 func TestChecker_UnlistedVerifierIsNotGranted(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	listed := f.signer.NewTestPartyCertificate(t, "listed.example.com", "")
 	stranger := f.signer.NewTestPartyCertificate(t, "stranger.example.com", "")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
@@ -105,7 +106,7 @@ func TestChecker_UnlistedVerifierIsNotGranted(t *testing.T) {
 }
 
 func TestChecker_GrantsAreRoleTyped(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
 		NewTestEntity("Issuing BV", "", NewTestCertificateService(trust.RoleIssuer, party)),
@@ -120,7 +121,7 @@ func TestChecker_GrantsAreRoleTyped(t *testing.T) {
 }
 
 func TestChecker_WithdrawnServiceIsNotGranted(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	service := NewTestCertificateService(trust.RoleVerifier, party)
 	service.Status = ServiceStatusWithdrawn
@@ -130,7 +131,7 @@ func TestChecker_WithdrawnServiceIsNotGranted(t *testing.T) {
 }
 
 func TestChecker_EntryKeyedOnSubjectKeyIdentifier(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "VATNL-000000002")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
 		NewTestEntity("Key BV", "VATNL-000000002", NewTestSkiService(trust.RoleVerifier, party)),
@@ -140,7 +141,7 @@ func TestChecker_EntryKeyedOnSubjectKeyIdentifier(t *testing.T) {
 }
 
 func TestChecker_OrganizationIdentifierIsPartOfTheKey(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "VATNL-000000003")
 	// The entry names the right key but the wrong legal entity. Both halves of
 	// the key have to hold, so it does not grant.
@@ -152,7 +153,7 @@ func TestChecker_OrganizationIdentifierIsPartOfTheKey(t *testing.T) {
 }
 
 func TestChecker_DidMatchesThroughOtherId(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	const did = "did:web:verifier.example.com"
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
 		NewTestEntity("DID BV", "", NewTestDidService(trust.RoleVerifier, did)),
@@ -168,33 +169,67 @@ func TestChecker_DidMatchesThroughOtherId(t *testing.T) {
 	}), "a DID is compared verbatim")
 }
 
-func TestChecker_MarkingOnlyCountsOnYivisOwnList(t *testing.T) {
+func TestChecker_ListingConfersTheSourcesLevel(t *testing.T) {
+	// The identical document, once from Yivi's own list and once from another
+	// recognized list: the rung is the source's word, not anything the entries
+	// carry. Markings on an entry are tolerated and change nothing.
 	for _, tc := range []struct {
-		name           string
-		operatedByYivi bool
-		expected       bool
+		name     string
+		confers  clientmodels.TrustLevel
+		expected clientmodels.TrustLevel
 	}{
-		{"yivi's own list", true, true},
-		{"another recognized list", false, false},
+		{"yivi's own list confers high", clientmodels.TrustLevel_High, clientmodels.TrustLevel_High},
+		{"another recognized list confers medium", clientmodels.TrustLevel_Medium, clientmodels.TrustLevel_Medium},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newFixture(t, tc.operatedByYivi)
+			f := newFixture(t, tc.confers)
 			party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 			f.server.Serve(t, f.signer, NewTestList(testListId, 1,
 				NewTestEntity("Marked BV", "",
-					NewTestCertificateService(trust.RoleVerifier, party, MarkingOnboardedByYivi)),
+					NewTestCertificateService(trust.RoleVerifier, party, "onboarded-by-yivi")),
 			))
 
 			listing := f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party})
 
 			require.NotNil(t, listing)
-			require.Equal(t, tc.expected, listing.OnboardedByYivi)
+			require.Equal(t, tc.expected, listing.Level)
 		})
 	}
 }
 
+func TestChecker_TheStrongestGrantingListWins(t *testing.T) {
+	// A party granted on two recognized lists gets the better of the two words,
+	// whatever order the sources were configured in.
+	signer := NewTestLoteSigner(t)
+	party := signer.NewTestPartyCertificate(t, "party.example.com", "")
+	granting := func(listId string) List {
+		return NewTestList(listId, 1,
+			NewTestEntity("Twice Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party)))
+	}
+
+	medium := NewTestLoteServer(t)
+	medium.Serve(t, signer, granting("urn:medium"))
+	yivis := NewTestLoteServer(t)
+	yivis.Serve(t, signer, granting("urn:yivis"))
+
+	checker := NewChecker(Config{
+		// The weaker list first, so ordering alone cannot produce the answer.
+		Sources: []Source{
+			medium.Source("urn:medium", clientmodels.TrustLevel_Medium),
+			yivis.Source("urn:yivis", clientmodels.TrustLevel_High),
+		},
+		X509Context: signer.X509VerificationContext(),
+	})
+	requireRefreshed(t, checker)
+
+	listing := checker.Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party})
+	require.NotNil(t, listing)
+	require.Equal(t, clientmodels.TrustLevel_High, listing.Level)
+	require.Equal(t, "urn:yivis", listing.ListId)
+}
+
 func TestChecker_ServiceNameOverridesTheEntityName(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	service := NewTestCertificateService(trust.RoleVerifier, party)
 	service.Name = clientmodels.TranslatedString{"en": "The Service"}
@@ -251,7 +286,7 @@ func TestChecker_DegradationsLeaveNothingGranted(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newFixture(t, false)
+			f := newFixture(t, clientmodels.TrustLevel_Medium)
 			party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 			tc.degrade(t, f, f.signer)
 
@@ -266,7 +301,7 @@ func TestChecker_DegradationsLeaveNothingGranted(t *testing.T) {
 }
 
 func TestChecker_SequenceNumberMayNotRegress(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	granting := NewTestList(testListId, 7,
 		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party)))
@@ -286,7 +321,7 @@ func TestChecker_SequenceNumberMayNotRegress(t *testing.T) {
 }
 
 func TestChecker_ReissueWithTheSameSequenceNumberIsAccepted(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 3))
 
@@ -301,7 +336,7 @@ func TestChecker_ReissueWithTheSameSequenceNumberIsAccepted(t *testing.T) {
 }
 
 func TestChecker_AListPastItsNextUpdateStopsGranting(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	list := NewTestList(testListId, 1,
 		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party)))
@@ -322,7 +357,7 @@ func TestChecker_AListPastItsNextUpdateStopsGranting(t *testing.T) {
 }
 
 func TestChecker_SnapshotIsPinned(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
 		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party))))
@@ -341,7 +376,7 @@ func TestChecker_SnapshotIsPinned(t *testing.T) {
 }
 
 func TestChecker_PersistedListSurvivesARestart(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 4,
 		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party))))
@@ -356,7 +391,7 @@ func TestChecker_PersistedListSurvivesARestart(t *testing.T) {
 }
 
 func TestChecker_PersistedListIsReverifiedAgainstTheCurrentAnchors(t *testing.T) {
-	f := newFixture(t, false)
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
 		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party))))
@@ -389,7 +424,10 @@ func TestChecker_SourcesAreIndependent(t *testing.T) {
 	bad.Close()
 
 	checker := NewChecker(Config{
-		Sources:     []Source{bad.Source("urn:bad", false), good.Source("urn:good", false)},
+		Sources: []Source{
+			bad.Source("urn:bad", clientmodels.TrustLevel_Medium),
+			good.Source("urn:good", clientmodels.TrustLevel_Medium),
+		},
 		X509Context: signer.X509VerificationContext(),
 	})
 	requireRefreshFailed(t, checker)

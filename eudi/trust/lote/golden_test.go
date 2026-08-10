@@ -28,9 +28,9 @@ import (
 // same list in readable form, and TestGoldenReadableCopyMatchesTheSignedOne
 // proves the two agree — so the readable copy cannot drift into a lie. Between
 // them they show every shape the wallet understands: both certificate key forms,
-// a DID, the onboarded-by-Yivi marking, a withdrawal, service-level name and logo
-// overrides, an unknown marking that must be carried and ignored, and
-// multilingual names.
+// a DID, a withdrawal, service-level name and logo overrides, markings (the
+// retired onboarded-by-yivi bytes among them) that must be carried and
+// ignored, and multilingual names.
 //
 // **It must never rot.** verify() deliberately does not check the list's own time
 // bounds, so a committed document verifies forever; the currency and lookup
@@ -147,16 +147,16 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	require.Equal(t, ServiceStatusGranted, service.Status)
 	require.Equal(t, goldenPartyCertificate(t).Raw, service.DigitalIdentity.X509Certificate,
 		"the certificate key form carries the DER")
-	require.True(t, service.HasMarking(MarkingOnboardedByYivi))
+	require.Contains(t, service.Markings, "onboarded-by-yivi",
+		"markings must survive parsing; the wallet carries them without acting on them")
 
-	// The SKI key form, the service-level overrides, and an unknown marking that
-	// must survive parsing without being acted on.
+	// The SKI key form, the service-level overrides, and markings that must
+	// survive parsing without being acted on.
 	skiService := verified.list.Entities[1].Services[0]
 	require.Equal(t, goldenPartyCertificate(t).SubjectKeyId, skiService.DigitalIdentity.X509SKI)
 	require.Equal(t, clientmodels.TranslatedString{"en": "Voorbeeld Diplomas"}, skiService.Name)
 	require.Equal(t, "https://trustlist.example/logos/diplomas.png", skiService.LogoURI)
-	require.True(t, skiService.HasMarking("some-future-qualifier"))
-	require.False(t, skiService.HasMarking(MarkingOnboardedByYivi))
+	require.Contains(t, skiService.Markings, "some-future-qualifier")
 
 	// The DID convention, and a withdrawal that is listed but grants nothing.
 	didService := verified.list.Entities[2].Services[0]
@@ -188,7 +188,7 @@ func TestGoldenDocumentGrantsThroughTheChecker(t *testing.T) {
 	require.NoError(t, store.Put(goldenListId, goldenRaw(t)))
 
 	checker := NewChecker(Config{
-		Sources:     []Source{{ListId: goldenListId, URL: "http://unused.example", OperatedByYivi: true}},
+		Sources:     []Source{{ListId: goldenListId, URL: "http://unused.example", Confers: clientmodels.TrustLevel_High}},
 		X509Context: goldenAnchors(t),
 		Store:       store,
 		Now:         func() time.Time { return goldenTime(t) },
@@ -199,14 +199,16 @@ func TestGoldenDocumentGrantsThroughTheChecker(t *testing.T) {
 	listing := snapshot.Lookup(trust.RoleVerifier, certificateParty)
 	require.NotNil(t, listing, "the certificate-keyed entry must grant")
 	require.Equal(t, "Gemeente Voorbeeld", listing.Name["en"])
-	require.True(t, listing.OnboardedByYivi, "marked, on a list flagged as Yivi's own")
+	require.Equal(t, clientmodels.TrustLevel_High, listing.Level,
+		"every granted entry confers what the source does")
 
 	// The same party, in its issuer role, matches the SKI-keyed entry instead —
 	// and picks up that service's overriding name.
 	asIssuer := snapshot.Lookup(trust.RoleIssuer, certificateParty)
 	require.NotNil(t, asIssuer)
 	require.Equal(t, "Voorbeeld Diplomas", asIssuer.Name["en"])
-	require.False(t, asIssuer.OnboardedByYivi, "that entry carries only an unknown marking")
+	require.Equal(t, clientmodels.TrustLevel_High, asIssuer.Level,
+		"its markings — known bytes or unknown — neither add nor subtract")
 
 	require.NotNil(t, snapshot.Lookup(trust.RoleVerifier, trust.Evidence{Identifiers: []string{goldenDid}}),
 		"the DID entry must grant")

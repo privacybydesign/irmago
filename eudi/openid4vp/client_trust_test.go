@@ -45,10 +45,22 @@ func newTrustTestClient(validator VerifierValidator) *Client {
 	return newTrustTestClientWithLists(validator, nil)
 }
 
+// staticClassifier confers one fixed level on every certificate. High mirrors
+// production today: the gate only passes chains under the Yivi anchors, and
+// those confer high.
+type staticClassifier clientmodels.TrustLevel
+
+func (s staticClassifier) Classify(*x509.Certificate) clientmodels.TrustLevel {
+	return clientmodels.TrustLevel(s)
+}
+
 // newTrustTestClientWithLists is newTrustTestClient with the recognized-list
 // channel wired up to checker.
 func newTrustTestClientWithLists(validator VerifierValidator, checker *lote.Checker) *Client {
-	client, _ := NewClient(nil, []dcql.DcqlCredentialQueryHandler{stubQueryHandler{}}, validator, nil, services.NewTrustService(checker))
+	trustService := services.NewTrustService(checker,
+		staticClassifier(clientmodels.TrustLevel_High),
+		staticClassifier(clientmodels.TrustLevel_High))
+	client, _ := NewClient(nil, []dcql.DcqlCredentialQueryHandler{stubQueryHandler{}}, validator, nil, trustService)
 	return client
 }
 
@@ -113,8 +125,11 @@ func TestNewSession_DidWebVerifier_RanksLowAndProceeds(t *testing.T) {
 	require.Equal(t, int32(0), handler.cancels.Load())
 }
 
-func TestNewSession_RevokedVerifierCertificate_ReportsPartyValidationFailed(t *testing.T) {
-	authRequestJwt, validator := setupTest(t, withClientName("Test Verifier"), testdata.PkiOption_RevokedEndEntity)
+func TestNewSession_ExpiredVerifierCertificate_ReportsPartyValidationFailed(t *testing.T) {
+	// A certificate presented outside its own validity window is a broken
+	// request — the gate rejects it, and the app must be able to say the
+	// verifier was rejected rather than that the network misbehaved.
+	authRequestJwt, validator := setupTest(t, withClientName("Test Verifier"), testdata.PkiOption_ExpiredEndEntity)
 
 	client := newTrustTestClient(validator)
 	handler := newSpyHandler()
@@ -126,6 +141,27 @@ func TestNewSession_RevokedVerifierCertificate_ReportsPartyValidationFailed(t *t
 		"a rejected verifier must be distinguishable from a network or protocol error")
 	require.Equal(t, int32(0), handler.requests.Load(), "nothing may be asked of the user")
 	require.Equal(t, int32(0), handler.successes.Load(), "nothing may be disclosed")
+}
+
+func TestNewSession_RevokedVerifierCertificate_RanksLowAndProceeds(t *testing.T) {
+	// Revocation withdraws the vouching, it does not break the request: the
+	// signature still verifies, so the session proceeds with the verifier
+	// demoted to a legitimate-looking stranger — low, under its own name, with
+	// nothing attested. (The classifier stub confers high on every certificate
+	// here, which is exactly the point: the validator already stripped the
+	// revoked certificate out of the attested account, so what reaches the
+	// screen is the self-asserted name.)
+	authRequestJwt, validator := setupTest(t, withClientName("Test Verifier"), testdata.PkiOption_RevokedEndEntity)
+
+	client := newTrustTestClient(validator)
+	handler := newSpyHandler()
+
+	defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
+
+	requestor := handler.awaitRequestor(t)
+	require.Equal(t, "Test Verifier", requestor.Name,
+		"a revoked certificate attests nothing, so the verifier is shown under its own word")
+	require.Nil(t, requestor.Image, "and it gets no logo")
 }
 
 func TestNewSession_GenericFailures_CarryNoPartyValidationCode(t *testing.T) {

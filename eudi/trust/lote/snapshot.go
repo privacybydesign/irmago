@@ -22,23 +22,37 @@ type snapshot struct {
 	lists []pinnedList
 }
 
-// Lookup implements [trust.ListSnapshot]. It returns the first granting entry
-// found, searching the lists in configuration order.
+// Lookup implements [trust.ListSnapshot]. It returns the strongest granting
+// entry across the lists — the rung a listing confers is its source's, so a
+// party granted on two lists must get the better of the two words, whatever
+// order the sources were configured in. Within one list the first granting
+// entry stands: every entry on a list confers the same level.
 //
-// "First" is enough because being granted is all the caller asks about: the
-// rung a listing earns does not depend on which list it was found on, except
-// for the onboarded-by-Yivi marking, which only Yivi's own list can carry in
-// the first place.
+// Ties go to configuration order, which keeps the answer deterministic when
+// two equally-strong lists both grant.
 func (s snapshot) Lookup(role trust.Role, ev trust.Evidence) *trust.Listing {
+	var best *trust.Listing
 	for _, pinned := range s.lists {
-		for i := range pinned.list.Entities {
-			entity := &pinned.list.Entities[i]
-			for j := range entity.Services {
-				service := &entity.Services[j]
-				if !grants(entity, service, role, ev) {
-					continue
-				}
-				return listingOf(pinned, entity, service)
+		listing := pinned.lookup(role, ev)
+		if listing == nil {
+			continue
+		}
+		if best == nil || trust.Stronger(listing.Level, best.Level) {
+			best = listing
+		}
+	}
+	return best
+}
+
+// lookup returns the first entry on this list granting the party in this role,
+// or nil when none does.
+func (p pinnedList) lookup(role trust.Role, ev trust.Evidence) *trust.Listing {
+	for i := range p.list.Entities {
+		entity := &p.list.Entities[i]
+		for j := range entity.Services {
+			service := &entity.Services[j]
+			if grants(entity, service, role, ev) {
+				return listingOf(p, entity, service)
 			}
 		}
 	}
@@ -120,9 +134,6 @@ func listingOf(pinned pinnedList, entity *Entity, service *Service) *trust.Listi
 		ListId:  pinned.source.ListId,
 		Name:    name,
 		LogoURI: logoURI,
-		// Yivi vouching for a party is Yivi's statement to make. The same
-		// marking on another operator's list is that operator claiming Yivi
-		// onboarded someone, so it is not carried through.
-		OnboardedByYivi: pinned.source.OperatedByYivi && service.HasMarking(MarkingOnboardedByYivi),
+		Level:   pinned.source.Confers,
 	}
 }

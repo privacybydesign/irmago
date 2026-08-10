@@ -112,6 +112,15 @@ type Config struct {
 	// call that builds the wallet — rather than in a package variable, so that
 	// what a wallet consults is fixed by that call.
 	RecognizedTrustLists []lote.Source
+
+	// ExtraIssuerTrustAnchors and ExtraVerifierTrustAnchors are trust anchors
+	// this wallet pins on top of the compiled-in Yivi roots, each with the
+	// trust level its certificates confer. Empty pins nothing extra, which is
+	// what a released wallet does today: no third-party CA is anchored yet.
+	// This is where one would be — at medium, or at high once promoted under
+	// contract — and it is the seam tests pin a non-Yivi CA through.
+	ExtraIssuerTrustAnchors   []eudi.ExtraTrustAnchor
+	ExtraVerifierTrustAnchors []eudi.ExtraTrustAnchor
 }
 
 // New builds a wallet from cfg. It is the only constructor: everything optional
@@ -161,6 +170,8 @@ func New(cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("instantiating eudi configuration failed: %v", err)
 	}
+	eudiConf.ExtraIssuerTrustAnchors = cfg.ExtraIssuerTrustAnchors
+	eudiConf.ExtraVerifierTrustAnchors = cfg.ExtraVerifierTrustAnchors
 
 	// Initialize DB storage
 	s := clientstorage.NewStorage(cfg.StoragePath, encryptionMiddleware)
@@ -207,7 +218,7 @@ func New(cfg Config) (*Client, error) {
 		Store:       db.NewTrustListStore(eudiStorage.Db()),
 		HTTPClient:  common.HTTPClient,
 	})
-	trustService := services.NewTrustService(trustChecker)
+	trustService := services.NewTrustService(trustChecker, &eudiConf.Issuers, &eudiConf.Verifiers)
 
 	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale, trustService)
 

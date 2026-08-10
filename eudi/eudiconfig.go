@@ -24,6 +24,16 @@ func init() {
 	Logger = common.Logger
 }
 
+// ExtraTrustAnchor is one trust anchor a wallet is built with beyond the
+// pinned Yivi roots: the PEM chain (leaf-to-root order, root last) and the
+// trust level certificates under it confer. This is how a third-party CA is
+// anchored at medium — and how a test pins one — and how a CA promoted under
+// contract would be raised to high: as data on the anchor, not as code.
+type ExtraTrustAnchor struct {
+	PEM     []byte
+	Confers clientmodels.TrustLevel
+}
+
 // Configuration keeps track of issuer and requestor trusted chains and certificate revocation lists,
 // retrieving them from the eudi folder, and downloads and saves new ones on demand.
 // The trust chains are stored in the issuers and verifiers subfolders (.pem files), and the crls in the crls subfolder (.crl files).
@@ -34,6 +44,12 @@ type Configuration struct {
 	Storage   storage.Storage
 	Issuers   TrustModel
 	Verifiers TrustModel
+
+	// ExtraIssuerTrustAnchors and ExtraVerifierTrustAnchors are anchors added
+	// on top of the pinned Yivi roots, each with the level it confers. Set
+	// them before the first Reload; they survive every Reload after that.
+	ExtraIssuerTrustAnchors   []ExtraTrustAnchor
+	ExtraVerifierTrustAnchors []ExtraTrustAnchor
 }
 
 // NewConfiguration returns a new configuration. After this ParseFolder() should be called to parse the specified path.
@@ -85,6 +101,17 @@ func (c *Configuration) Reload() error {
 		}
 	}
 
+	for _, anchor := range c.ExtraIssuerTrustAnchors {
+		if err := c.Issuers.addTrustAnchors(anchor.Confers, anchor.PEM); err != nil {
+			return fmt.Errorf("failed to add extra issuer trust anchor: %v", err)
+		}
+	}
+	for _, anchor := range c.ExtraVerifierTrustAnchors {
+		if err := c.Verifiers.addTrustAnchors(anchor.Confers, anchor.PEM); err != nil {
+			return fmt.Errorf("failed to add extra verifier trust anchor: %v", err)
+		}
+	}
+
 	// Read the trust anchors from storage
 	if err := c.Issuers.Reload(); err != nil {
 		return fmt.Errorf("failed to load issuer trust model: %v", err)
@@ -108,11 +135,12 @@ func (c *Configuration) addProductionTrustAnchors() error {
 		Production_Yivi_VerifierCaCertificateRevocationListDistributionPoint,
 	)
 
-	// Read the hardcoded trust anchors
-	if err := c.Issuers.addTrustAnchors([]byte(Production_Yivi_IssuerTrustAnchor)); err != nil {
+	// Read the hardcoded trust anchors. The Yivi roots confer high: a
+	// certificate under them is Yivi vouching for its holder.
+	if err := c.Issuers.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Production_Yivi_IssuerTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add yivi production issuer trust anchors: %v", err)
 	}
-	if err := c.Verifiers.addTrustAnchors([]byte(Production_Yivi_VerifierTrustAnchor)); err != nil {
+	if err := c.Verifiers.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Production_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add yivi production verifier trust anchors: %v", err)
 	}
 	return nil
@@ -129,11 +157,12 @@ func (c *Configuration) addStagingTrustAnchors() error {
 		Staging_Yivi_VerifierCaCertificateRevocationListDistributionPoint,
 	)
 
-	// Read the hardcoded trust anchors
-	if err := c.Issuers.addTrustAnchors([]byte(Staging_Yivi_IssuerTrustAnchor)); err != nil {
+	// Read the hardcoded trust anchors. The staging roots are Yivi's own too,
+	// so they confer high like the production ones.
+	if err := c.Issuers.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Staging_Yivi_IssuerTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add Yivi staging issuer trust anchors: %v", err)
 	}
-	if err := c.Verifiers.addTrustAnchors([]byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
+	if err := c.Verifiers.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add Yivi staging verifier trust anchors: %v", err)
 	}
 

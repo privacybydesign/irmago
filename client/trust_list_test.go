@@ -95,7 +95,7 @@ func TestClient_RefreshTrustLists_ListedVerifierRanksMedium(t *testing.T) {
 		lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(trust.RoleVerifier, did))))
 
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
-	c := newClientWithTrustLists(t, storagePath, signer, []lote.Source{server.Source(testTrustListId, false)})
+	c := newClientWithTrustLists(t, storagePath, signer, []lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_Medium)})
 
 	require.Equal(t, clientmodels.TrustLevel_Low, verifierLevel(c, did),
 		"a wallet that has not fetched a list yet vouches for nobody")
@@ -112,7 +112,7 @@ func TestClient_TrustListSurvivesARestart(t *testing.T) {
 	server := lote.NewTestLoteServer(t)
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
 		lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(trust.RoleVerifier, did))))
-	source := server.Source(testTrustListId, false)
+	source := server.Source(testTrustListId, clientmodels.TrustLevel_Medium)
 
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
 	first := newClientWithTrustLists(t, storagePath, signer, []lote.Source{source})
@@ -130,7 +130,7 @@ func TestClient_TrustListSurvivesARestart(t *testing.T) {
 func TestClient_UnreachableTrustList_LeavesTheWalletUsable(t *testing.T) {
 	signer := lote.NewTestLoteSigner(t)
 	server := lote.NewTestLoteServer(t)
-	source := server.Source(testTrustListId, false)
+	source := server.Source(testTrustListId, clientmodels.TrustLevel_Medium)
 	server.Close()
 
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
@@ -153,29 +153,33 @@ func TestClient_NoRecognizedLists_RefreshHasNothingToDo(t *testing.T) {
 	require.Equal(t, clientmodels.TrustLevel_Low, verifierLevel(c, "did:web:verifier.example.com"))
 }
 
-func TestClient_RefreshTrustLists_MarkedOnYivisListRanksHigh(t *testing.T) {
+func TestClient_RefreshTrustLists_ListingConfersTheSourcesLevel(t *testing.T) {
 	const did = "did:web:verifier.example.com"
 
 	signer := lote.NewTestLoteSigner(t)
 	server := lote.NewTestLoteServer(t)
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
 		lote.NewTestEntity("Listed BV", "",
-			lote.NewTestDidService(trust.RoleVerifier, did, lote.MarkingOnboardedByYivi))))
+			lote.NewTestDidService(trust.RoleVerifier, did))))
 
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
-	// The same list, once as Yivi's own and once as another operator's: the
-	// marking is the same bytes on the wire, and only the first is Yivi's word.
-	yivis := newClientWithTrustLists(t, storagePath, signer, []lote.Source{server.Source(testTrustListId, true)})
+	// The same list, once configured as Yivi's own and once as another
+	// operator's: identical bytes on the wire, and the rung is the source's
+	// word — being on Yivi's list is being onboarded, another list's word is
+	// worth what the wallet decided it is worth.
+	yivis := newClientWithTrustLists(t, storagePath, signer,
+		[]lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_High)})
 	require.NoError(t, yivis.RefreshTrustLists(context.Background()))
 
 	require.Equal(t, clientmodels.TrustLevel_High, verifierLevel(yivis, did))
 
 	othersPath := filepath.Join(test.CreateTestStorage(t), "client")
-	others := newClientWithTrustLists(t, othersPath, signer, []lote.Source{server.Source(testTrustListId, false)})
+	others := newClientWithTrustLists(t, othersPath, signer,
+		[]lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_Medium)})
 	require.NoError(t, others.RefreshTrustLists(context.Background()))
 
 	require.Equal(t, clientmodels.TrustLevel_Medium, verifierLevel(others, did),
-		"another operator marking a party as onboarded by Yivi is not Yivi vouching for it")
+		"a list that is not Yivi's own confers the level its source declares")
 }
 
 // ----------------------------------------------------------------------------
@@ -229,7 +233,7 @@ func TestStoredCredentialIssuerRanksAtRead(t *testing.T) {
 	server.Serve(t, signer, listed)
 
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
-	c := newClientWithTrustLists(t, storagePath, signer, []lote.Source{server.Source(testTrustListId, false)})
+	c := newClientWithTrustLists(t, storagePath, signer, []lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_Medium)})
 	seedBatchWithoutIssuerEvidence(t, c.eudiStorage.Db(), issuer)
 
 	require.Equal(t, clientmodels.TrustLevel_Low, storedIssuerLevel(t, c),
@@ -261,7 +265,7 @@ func TestTrustListRefreshNotifiesOnContentChange(t *testing.T) {
 
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
 	c, handler := newClientWithTrustListsAndHandler(t, storagePath, signer,
-		[]lote.Source{server.Source(testTrustListId, false)})
+		[]lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_Medium)})
 
 	// The first fetch is not a change: the app was showing no verdict from this
 	// list, so there is nothing it has to go back on.

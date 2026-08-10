@@ -19,6 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
@@ -1283,10 +1284,12 @@ func instantiateClientAtPath(
 	return instantiateClientWithVerifierTrust(t, storagePath, issuerChain, locale, loteRoot, trustLists, testdata.VerifierCACertBytes)
 }
 
-// instantiateClientWithoutVerifierTrust builds a wallet that trusts no verifier
-// CA, so a verifier the compose services authenticate perfectly well fails this
-// wallet's identity gate. It is how a session test reaches the gate-failure state
-// without tampering with a request on the wire.
+// instantiateClientWithoutVerifierTrust builds a wallet that anchors no
+// verifier CA, so a verifier the compose services authenticate perfectly well
+// is a legitimate-looking stranger to this wallet: its chain traces to no
+// anchor, nothing about it is attested, and it ranks low. It is how a session
+// test reaches the unknown-CA state without tampering with a request on the
+// wire.
 func instantiateClientWithoutVerifierTrust(t *testing.T) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	return instantiateClientWithVerifierTrust(t, "", nil, "en", nil, nil, nil)
 }
@@ -1301,6 +1304,22 @@ func instantiateClientWithVerifierTrust(
 	loteRoot *x509.Certificate,
 	trustLists []lote.Source,
 	verifierCA []byte,
+) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	return instantiateClientWithExtraAnchors(t, storagePath, issuerChain, locale, loteRoot, trustLists, verifierCA, nil)
+}
+
+// instantiateClientWithExtraAnchors is instantiateClientWithVerifierTrust with
+// extra pinned trust anchors, each carrying the level it confers — the seam a
+// test pins a third-party CA at medium through.
+func instantiateClientWithExtraAnchors(
+	t *testing.T,
+	storagePath string,
+	issuerChain []byte,
+	locale string,
+	loteRoot *x509.Certificate,
+	trustLists []lote.Source,
+	verifierCA []byte,
+	extraVerifierAnchors []eudi.ExtraTrustAnchor,
 ) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
@@ -1367,6 +1386,9 @@ func instantiateClientWithVerifierTrust(
 		// The one seam for pointing a wallet at a list other than the published
 		// ones. Nil leaves the compiled-in set in force.
 		RecognizedTrustLists: trustLists,
+		// Extra pinned anchors, each with the level it confers — how a test
+		// anchors a third-party CA at medium.
+		ExtraVerifierTrustAnchors: extraVerifierAnchors,
 	})
 	require.NoError(t, err)
 

@@ -2,7 +2,6 @@ package openid4vp
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -203,15 +202,16 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			return
 		}
 
-		request, endEntityCert, requestorSchemeData, err := client.verifierValidator.
+		request, verifiedRequestor, err := client.verifierValidator.
 			ParseAndVerifyAuthorizationRequest(string(authRequestJwt))
 
 		if err != nil {
-			// The identity gate rejected the verifier: its chain, its signature
-			// or its DID did not hold up, or it identified itself in a way the
-			// wallet cannot authenticate at all. Either way the wallet does not
-			// know who it is talking to and nothing was disclosed, and the app
-			// has to be able to say so rather than show a generic error.
+			// The identity gate rejected the verifier: its signature, its
+			// certificate's own validity or its DID did not hold up, or it
+			// identified itself in a way the wallet cannot authenticate at
+			// all. Either way the wallet does not know who it is talking to
+			// and nothing was disclosed, and the app has to be able to say so
+			// rather than show a generic error.
 			handlePartyValidationFailure(handler, "openid4vp: failed to verify authorization request: %v", err)
 			return
 		}
@@ -221,12 +221,15 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			return
 		}
 
-		// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
-		if endEntityCert != nil && requestorSchemeData.Organization.Logo != nil {
-			err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().Save(
-				endEntityCert.SerialNumber.String(),
-				requestorSchemeData.Organization.Logo.Data,
-				requestorSchemeData.Organization.Logo.MimeType,
+		// Store the verifier logo in the cache. Only an attested logo is ever
+		// cached: a logo is believed rather than judged, so nothing the party
+		// asserts about itself may supply one.
+		if logoManager := client.verifierLogoManager(); logoManager != nil &&
+			verifiedRequestor.Attested != nil && verifiedRequestor.Attested.Organization.Logo != nil {
+			err = logoManager.Save(
+				verifiedRequestor.Certificate.SerialNumber.String(),
+				verifiedRequestor.Attested.Organization.Logo.Data,
+				verifiedRequestor.Attested.Organization.Logo.MimeType,
 			)
 			if err != nil {
 				handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
@@ -238,11 +241,11 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 		// ranked, so a list refresh landing mid-session cannot change what this
 		// session decided about the verifier.
 		verdict := client.trustEvaluator.Snapshot(context.Background()).Verifier(trust.Evidence{
-			Certificate: endEntityCert,
+			Certificate: verifiedRequestor.Certificate,
 			Identifiers: verifierIdentifiers(request.ClientId),
 		})
 
-		requestor := client.composeRequestor(verdict, requestorSchemeData, endEntityCert, request.ClientId)
+		requestor := client.composeRequestor(verdict, verifiedRequestor, request.ClientId)
 
 		eudi.Logger.Infof("auth request: %#v", request)
 		err = client.handleAuthorizationRequest(session, request, requestor)
@@ -254,44 +257,41 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 }
 
 // composeRequestor reduces what the wallet knows about the verifier to the party
-// the app renders, through the display precedence every party is composed by.
+// the app renders, through the display precedence every party is composed by:
+// the curated list entry first, what an anchored certificate attests second,
+// and what the verifier says about itself last.
 //
-// Where the verifier's own material belongs depends on how it authenticated.
-// Without a certificate — a bare DID — the wallet has nothing but what the
-// request claims, so the material is the verifier's own word for itself. With
-// one, it is counted as attested, because the validator hands the requestor info
-// over already collapsed: the certificate's own account of the party (the Yivi
-// extension, or the subject's common name) and what the request asserts through
-// client_metadata arrive in the same field, and this side cannot tell them
-// apart. Separating them means changing what the validator surfaces, which is
-// where the issuer's x5c work lands too.
+// The validator hands the attested and self-asserted accounts over separately,
+// so an unanchored certificate's contents — evidentially the verifier's own
+// word — render under the warn state like any self-asserted name, and a
+// client_metadata name never rides along as attested just because a
+// certificate was also present.
 func (client *Client) composeRequestor(
 	verdict trust.Verdict,
-	requestorSchemeData *scheme.RelyingPartyRequestor,
-	endEntityCert *x509.Certificate,
+	requestor *VerifiedRequestor,
 	clientId string,
 ) *clientmodels.TrustedParty {
 	locale := client.currentLocale.Get()
-	name := clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), locale)
 
 	var display trust.PartyDisplay
-	if endEntityCert != nil {
-		display = trust.PartyDisplay{
-			Id: endEntityCert.SerialNumber.String(),
-			Attested: trust.PartyMetadata{
-				Name: name,
-				Logo: logoImage(requestorSchemeData.Organization.Logo),
-			},
+	if requestor.Attested != nil {
+		// An anchored certificate is the one identity document the verifier
+		// cannot have written itself, so its serial number is the identifier
+		// the party is known by.
+		display.Id = requestor.Certificate.SerialNumber.String()
+		display.Attested = trust.PartyMetadata{
+			Name: clientmodels.Resolve(clientmodels.TranslatedString(requestor.Attested.Organization.LegalName), locale),
+			Logo: logoImage(requestor.Attested.Organization.Logo),
 		}
 	} else {
-		display = trust.PartyDisplay{
-			// A verifier that did not authenticate with a certificate has no
-			// serial number to be known by, so it is identified by the party
-			// half of its client_id: the DID or hostname a user can recognize,
-			// and at low the only thing on the screen it did not choose itself.
-			Id:               verifierIdentifiers(clientId)[0],
-			SelfAssertedName: name,
-		}
+		// With nothing attested — a bare DID, or a certificate no anchor
+		// stands behind — the verifier is identified by the party half of its
+		// client_id: the DID or hostname a user can recognize, and at low the
+		// only thing on the screen it did not choose itself.
+		display.Id = verifierIdentifiers(clientId)[0]
+	}
+	if requestor.SelfAsserted != nil {
+		display.SelfAssertedName = clientmodels.Resolve(clientmodels.TranslatedString(requestor.SelfAsserted.Organization.LegalName), locale)
 	}
 
 	if verdict.Listing != nil {

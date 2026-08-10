@@ -58,7 +58,7 @@ const (
 )
 
 func testSessionHandlerForPublishedTrustList(t *testing.T) {
-	t.Run("a foreign-signed list is accepted and grants medium", testPublishedListGrantsMedium)
+	t.Run("a foreign-signed list is accepted and grants its source's level", testPublishedListGrants)
 	t.Run("a held list crossing next_update caps parties at low", testPublishedListExpiresWhileHeld)
 	t.Run("the scheduled refresh wakes the app once on a content change", testScheduledRefreshWakesTheAppOnce)
 	t.Run("a session completes while the publisher is dark", testSessionCompletesWhilePublisherIsDark)
@@ -66,14 +66,15 @@ func testSessionHandlerForPublishedTrustList(t *testing.T) {
 	t.Run("curated name and logo beat the certificate's own", testCuratedDisplayBeatsAttested)
 }
 
-// testPublishedListGrantsMedium is this suite's tracer. Everything else here
+// testPublishedListGrants is this suite's tracer. Everything else here
 // depends on it: a list signed by the openssl CLI, assembled by hand, fetched
 // over TLS from a service the test does not share a process with, is verified by
-// the wallet and lifts the issuer it grants to medium in a real session.
+// the wallet and lifts the issuer it grants to the level the source confers —
+// high, because the publisher stands in for Yivi's own LoTE — in a real session.
 //
 // If this fails, the finding is about the wallet or about
 // docs/plans/yivi-lote-publishing.md — not about the test.
-func testPublishedListGrantsMedium(t *testing.T) {
+func testPublishedListGrants(t *testing.T) {
 	c, _, sessionHandler := newPublishedListClient(t)
 	defer c.Close()
 
@@ -94,8 +95,8 @@ func testPublishedListGrantsMedium(t *testing.T) {
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 
-	require.Equal(t, clientmodels.TrustLevel_Medium, session.Requestor.TrustLevel,
-		"a party granted on the published list ranks medium")
+	require.Equal(t, clientmodels.TrustLevel_High, session.Requestor.TrustLevel,
+		"a party granted on the published list ranks what its source confers")
 	require.Equal(t, "Published Issuer BV", session.Requestor.Name,
 		"and is shown under the curated name the entry carries")
 
@@ -121,7 +122,7 @@ func testPublishedListExpiresWhileHeld(t *testing.T) {
 	require.NoError(t, c.RefreshTrustLists(context.Background()),
 		"a list just inside the skew window is still accepted at fetch")
 
-	require.Equal(t, clientmodels.TrustLevel_Medium, issuerLevelOfOffer(t, c, 1, sessionHandler),
+	require.Equal(t, clientmodels.TrustLevel_High, issuerLevelOfOffer(t, c, 1, sessionHandler),
 		"while it is current, the list grants")
 
 	time.Sleep(expiresWithin + time.Second)
@@ -174,7 +175,7 @@ func testSessionCompletesWhilePublisherIsDark(t *testing.T) {
 	require.Error(t, c.RefreshTrustLists(context.Background()),
 		"the refresh reports the outage to whoever asked for it")
 
-	require.Equal(t, clientmodels.TrustLevel_Medium, issuerLevelOfOffer(t, c, 1, sessionHandler),
+	require.Equal(t, clientmodels.TrustLevel_High, issuerLevelOfOffer(t, c, 1, sessionHandler),
 		"and the wallet keeps ranking on the copy it holds")
 }
 
@@ -195,7 +196,7 @@ func testRestartedWalletRanksFromDisk(t *testing.T) {
 	second, _, sessionHandler := newPublishedListClientAt(t, storagePath)
 	defer second.Close()
 
-	require.Equal(t, clientmodels.TrustLevel_Medium, issuerLevelOfOffer(t, second, 1, sessionHandler),
+	require.Equal(t, clientmodels.TrustLevel_High, issuerLevelOfOffer(t, second, 1, sessionHandler),
 		"the persisted list still grants after a restart, with the publisher unreachable")
 }
 
@@ -346,7 +347,7 @@ func newPublishedListClient(t *testing.T) (*client.Client, *irmaclient.MockClien
 func newPublishedListClientAt(t *testing.T, storagePath string) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	t.Helper()
 	return instantiateClientAtPath(t, storagePath, nil, "en", publisherRoot(t),
-		[]lote.Source{{ListId: publishedListId, URL: publishedListURL, OperatedByYivi: true}})
+		[]lote.Source{{ListId: publishedListId, URL: publishedListURL, Confers: clientmodels.TrustLevel_High}})
 }
 
 // publisherRoot reads the committed root the publisher's signing leaf chains to.

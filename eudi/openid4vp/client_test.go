@@ -24,7 +24,7 @@ func init() {
 func newTestClient() *Client {
 	return &Client{
 		dcqlHandler:    dcql.NewDcqlHandler(nil),
-		trustEvaluator: services.NewTrustService(nil),
+		trustEvaluator: services.NewTrustService(nil, nil, nil),
 	}
 }
 

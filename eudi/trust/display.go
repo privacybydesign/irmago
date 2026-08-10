@@ -26,14 +26,14 @@ type PartyDisplay struct {
 	// which is why the app shows it alongside the name there.
 	Id string
 
-	// Attested is what the party's validated certificate says about it.
+	// Attested is what the party's certificate says about it, when an anchor
+	// the wallet holds stands behind that certificate.
 	//
-	// Supply this only when the party actually authenticated with a certificate
-	// that verified against the Yivi anchors — the same condition that puts a
-	// non-nil Certificate in its [Evidence]. It is a vouched-for source, so its
-	// logo is rendered; a name the party merely asserted belongs in
-	// SelfAssertedName however it reached the wallet, and a logo it merely
-	// asserted goes nowhere.
+	// Supply this only for an anchored certificate — the contents of a
+	// certificate no anchor vouches for are evidentially the party's own word.
+	// An attested account is a vouched-for source, so its logo is rendered; a
+	// name the party merely asserted belongs in SelfAssertedName however it
+	// reached the wallet, and a logo it merely asserted goes nowhere.
 	Attested PartyMetadata
 
 	// SelfAssertedName is what the party calls itself: OpenID4VP client

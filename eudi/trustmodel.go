@@ -2,6 +2,7 @@ package eudi
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
 	"io"
@@ -9,7 +10,9 @@ import (
 	"slices"
 	"time"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/sirupsen/logrus"
 )
@@ -25,6 +28,14 @@ type TrustModel struct {
 	httpClient                        *http.Client
 	logger                            *logrus.Logger
 	certificateVerificationMode       CertificateVerificationMode
+
+	// anchorLevels records, per anchored root (keyed by the SHA-256 of its
+	// DER), the trust level its certificates confer: the Yivi roots confer
+	// high, an anchored third-party CA confers medium — or high, once promoted
+	// under contract, which is a change to this data rather than to code.
+	// Every path that adds an anchor states the level explicitly; nothing
+	// defaults to high.
+	anchorLevels map[[sha256.Size]byte]clientmodels.TrustLevel
 }
 
 type CertificateVerificationMode int
@@ -48,6 +59,7 @@ func (tm *TrustModel) clear() {
 	tm.trustedIntermediateCertificates = x509.NewCertPool()
 	tm.revocationLists = []*x509.RevocationList{}
 	tm.revocationListsDistributionPoints = []string{}
+	tm.anchorLevels = map[[sha256.Size]byte]clientmodels.TrustLevel{}
 }
 
 func (tm *TrustModel) findCertificateForRevocationList(crl *x509.RevocationList) *x509.Certificate {
@@ -146,7 +158,11 @@ func (tm *TrustModel) loadTrustChains() error {
 	if err != nil {
 		return err
 	}
-	return tm.addTrustAnchors(trustedChainFiles...)
+	// Locally installed chains confer high: this storage is the dev, staging
+	// and test seam that stands in for the Yivi CA (nothing writes here in a
+	// released wallet). A third-party CA anchored at medium is pinned in code
+	// with its level, never installed here.
+	return tm.addTrustAnchors(clientmodels.TrustLevel_High, trustedChainFiles...)
 }
 
 func (tm *TrustModel) addRevocationListDistributionPoints(distPointUrls ...string) {
@@ -186,7 +202,11 @@ func (tm *TrustModel) getIntermediateCertificateVerificationOptions() x509.Verif
 	return validationOptions
 }
 
-func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
+// addTrustAnchors installs trust anchor chains, recording confers as the trust
+// level every root in them passes on to the certificates that validate to it.
+// The level is a required statement by the caller: pinned Yivi roots say high,
+// a pinned third-party CA says the level Yivi granted it.
+func (tm *TrustModel) addTrustAnchors(confers clientmodels.TrustLevel, trustAnchors ...[]byte) error {
 	for _, bts := range trustAnchors {
 		chain, err := utils.ParsePemCertificateChain(bts)
 		if err != nil {
@@ -232,6 +252,7 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 
 			// Valid root cert, add to the trusted root pool
 			tm.trustedRootCertificates.AddCert(rootCert)
+			tm.recordAnchorLevel(rootCert, confers)
 
 			// Add the intermediate certs to the intermediate pool. The chain
 			// on disk is leaf-to-root, so to walk outward from the root we
@@ -430,4 +451,82 @@ func (tm *TrustModel) downloadVerifyAndCacheCrl(crlDistPoint string) error {
 
 func (tm *TrustModel) InstallCertificate(pemData []byte) error {
 	return tm.storageContainer.CertificateManager().InstallCertificate(pemData)
+}
+
+// recordAnchorLevel remembers the level this root's certificates confer. A root
+// that arrives twice — the same CA pinned by two callers — keeps the strongest
+// statement made about it.
+func (tm *TrustModel) recordAnchorLevel(root *x509.Certificate, confers clientmodels.TrustLevel) {
+	if tm.anchorLevels == nil {
+		tm.anchorLevels = map[[sha256.Size]byte]clientmodels.TrustLevel{}
+	}
+	key := sha256.Sum256(root.Raw)
+	if existing, ok := tm.anchorLevels[key]; ok && !trust.Stronger(confers, existing) {
+		return
+	}
+	tm.anchorLevels[key] = confers
+}
+
+// Classify implements [trust.CertificateClassifier]: the trust level conferred
+// by the anchor the leaf's chain validates to, or unevaluated when no anchored
+// chain holds up. It never errors — an unclassifiable certificate is absent
+// evidence for the trust ladder, not a failure — and it is on the evaluation
+// path, so it must also serve stored evidence: a stored credential's issuer
+// leaf is re-classified against the current anchors on every read.
+//
+// Classification is expiry-tolerant: the chain is verified at a time inside
+// the leaf's validity window, because the vouching question about stored
+// evidence concerns the signing act, which happened inside that window, and
+// issuer leaves routinely expire before the credentials they signed. Demotion
+// is reserved for acts of distrust — a revoked certificate or an anchor no
+// longer in the set. Live parties are not thereby exempt from expiry: the
+// session gate checks the leaf's validity window against the wall clock
+// before evaluation ever sees the certificate.
+func (tm *TrustModel) Classify(leaf *x509.Certificate) clientmodels.TrustLevel {
+	if leaf == nil || tm.trustedRootCertificates == nil {
+		return clientmodels.TrustLevel_Unevaluated
+	}
+
+	opts := tm.GetVerificationOptionsTemplate()
+	opts.CurrentTime = classificationTime(time.Now(), leaf)
+	chains, err := leaf.Verify(opts)
+	if err != nil {
+		tm.logger.Tracef("trust: certificate %s classifies to no anchor: %v", leaf.Subject.ToRDNSequence().String(), err)
+		return clientmodels.TrustLevel_Unevaluated
+	}
+
+	if leaf.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
+		tm.logger.Warnf("trust: certificate %s misses the digitalSignature key usage, not classifying it", leaf.Subject.ToRDNSequence().String())
+		return clientmodels.TrustLevel_Unevaluated
+	}
+
+	// A revoked certificate is an act of distrust, so it stops conferring
+	// whatever its anchor would have.
+	if err := utils.VerifyCertificateAgainstIssuerRevocationLists(leaf, tm.revocationLists); err != nil {
+		tm.logger.Warnf("trust: certificate %s fails the revocation check, not classifying it: %v", leaf.Subject.ToRDNSequence().String(), err)
+		return clientmodels.TrustLevel_Unevaluated
+	}
+
+	// A cross-signed leaf may validate to several anchors; the party lands on
+	// the strongest word any of them gives.
+	best := clientmodels.TrustLevel_Unevaluated
+	for _, chain := range chains {
+		root := chain[len(chain)-1]
+		if level, ok := tm.anchorLevels[sha256.Sum256(root.Raw)]; ok && trust.Stronger(level, best) {
+			best = level
+		}
+	}
+	return best
+}
+
+// classificationTime is the moment a chain is verified at when classifying:
+// now, clamped into the leaf's own validity window.
+func classificationTime(now time.Time, leaf *x509.Certificate) time.Time {
+	if now.Before(leaf.NotBefore) {
+		return leaf.NotBefore
+	}
+	if now.After(leaf.NotAfter) {
+		return leaf.NotAfter
+	}
+	return now
 }

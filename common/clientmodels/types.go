@@ -28,11 +28,16 @@ const (
 	// party. It is distinct from TrustLevel_Low, which is a verdict ("nobody
 	// vouches"). It is omitted from JSON, so the app sees an absent field.
 	TrustLevel_Unevaluated TrustLevel = ""
-	// TrustLevel_Low means nobody vouches for the party.
+	// TrustLevel_Low means nobody vouches for the party: a bare DID, or a
+	// certificate no anchor the wallet holds stands behind.
 	TrustLevel_Low TrustLevel = "low"
-	// TrustLevel_Medium means the party is granted on a recognized trust list.
+	// TrustLevel_Medium means somebody besides Yivi vouches for the party: an
+	// anchored third-party CA attested it, or a recognized trust list that is
+	// not Yivi's own grants it.
 	TrustLevel_Medium TrustLevel = "medium"
-	// TrustLevel_High means Yivi itself vouches for the party.
+	// TrustLevel_High means Yivi itself vouches for the party: an IRMA scheme
+	// registration, a certificate under the Yivi CA, or an entry on Yivi's
+	// own trust list.
 	TrustLevel_High TrustLevel = "high"
 )
 
