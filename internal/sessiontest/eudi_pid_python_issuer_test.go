@@ -14,7 +14,6 @@ import (
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/stretchr/testify/require"
 )
 
@@ -131,10 +130,11 @@ func testEudiPidPythonIssuerDisclosesToEudiKotlinVerifier(t *testing.T) {
 		},
 		"nonce": "nonce",
 		"jar_mode": "by_reference",
-		"request_uri_method": "post"
-	}`, eudiPidIssuerPyVct)
+		"request_uri_method": "get",
+		"intended_use_id": %q
+	}`, eudiPidIssuerPyVct, eudiVerifierIntendedUseId)
 
-	verifierSession, err := irmaclient.StartTestSessionAtEudiVerifier(eudiPidIssuerPyOpenID4VPVerifierHost, startReq)
+	verifierSession, err := StartTestSessionAtEudiVerifier(eudiPidIssuerPyOpenID4VPVerifierHost, startReq)
 	require.NoError(t, err)
 
 	startOpenID4VPDisclosureSession(t, c, 2, verifierSession.SessionLink)
@@ -151,7 +151,7 @@ func testEudiPidPythonIssuerDisclosesToEudiKotlinVerifier(t *testing.T) {
 	disclosureSession = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, disclosureSession, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
-	walletResponse, err := irmaclient.GetWalletResponseFromEudiVerifier(verifierSession)
+	walletResponse, err := GetWalletResponseFromEudiVerifier(verifierSession)
 	require.NoError(t, err)
 	require.NotNil(t, walletResponse, "EUDI verifier returned no wallet response")
 }

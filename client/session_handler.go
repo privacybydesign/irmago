@@ -806,7 +806,11 @@ func (client *Client) NewSession(id int, sessionrequest string) {
 
 	switch sessionReq.Protocol {
 	case clientmodels.Protocol_OpenID4VP:
-		session.dismisser = client.openid4vpClient.NewSession(sessionReq.URL, &openid4vpSessionAdapter{session: session})
+		if sessionReq.DcApi != nil {
+			session.dismisser = client.openid4vpClient.NewDcApiSession(sessionReq.DcApi, &openid4vpSessionAdapter{session: session})
+		} else {
+			session.dismisser = client.openid4vpClient.NewSession(sessionReq.URL, &openid4vpSessionAdapter{session: session})
+		}
 	case clientmodels.Protocol_OpenID4VCI:
 		if sessionReq.OpenID4VCIRedirectUri == "" {
 			session.error(fmt.Errorf("OpenID4VCI session request is missing openid4vci_redirect_uri"))

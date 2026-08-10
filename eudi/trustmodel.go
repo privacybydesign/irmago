@@ -453,6 +453,13 @@ func (tm *TrustModel) InstallCertificate(pemData []byte) error {
 	return tm.storageContainer.CertificateManager().InstallCertificate(pemData)
 }
 
+// RemoveCertificate removes the installed certificate chain whose leaf
+// certificate signature (hex-encoded) matches the given thumbprint. Call
+// Reload afterwards to drop the chain from the in-memory trust pools.
+func (tm *TrustModel) RemoveCertificate(thumbprint string) error {
+	return tm.storageContainer.CertificateManager().RemoveCertificate(thumbprint)
+}
+
 // recordAnchorLevel remembers the level this root's certificates confer. A root
 // that arrives twice — the same CA pinned by two callers — keeps the strongest
 // statement made about it.

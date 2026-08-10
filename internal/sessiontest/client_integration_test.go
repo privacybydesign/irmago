@@ -1060,7 +1060,7 @@ func testDiscloseOverOpenID4VP(t *testing.T) {
 }
 
 func discloseOverOpenID4VP(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, openid4vpHost string) {
-	verifierSession, err := irmaclient.StartTestSessionAtEudiVerifier(openid4vpHost, createEmailAuthRequestRequest())
+	verifierSession, err := StartTestSessionAtEudiVerifier(openid4vpHost, createEmailAuthRequestRequest())
 	require.NoError(t, err)
 	sessionReq := client.SessionRequestData{
 		Qr: irma.Qr{
@@ -1396,6 +1396,20 @@ func instantiateClientWithExtraAnchors(
 	return client, clientHandler, sessionHandler
 }
 
+// eudiVerifierIntendedUseId is the intended use every session at the EUDI reference
+// verifier is started under. From v0.11.0 the verifier refuses a transaction that
+// names neither an intended use nor a registration certificate, and id "1" is the one
+// the verifier image configures out of the box, with the registration certificate it
+// carries. So nothing has to be configured for it in docker-compose.yml.
+const eudiVerifierIntendedUseId = "1"
+
+// createAuthRequestRequestWithDcql builds the request that starts a session at the
+// EUDI reference verifier.
+//
+// request_uri_method is "get" because that is what the client does: it fetches the
+// request object with a GET and sends neither wallet_metadata nor wallet_nonce. The
+// verifier enforces the method the transaction was started with from v0.11.0, so
+// asking it for "post" and then doing a GET now fails the session.
 func createAuthRequestRequestWithDcql(dcql string) string {
 	return fmt.Sprintf(`
 		{
@@ -1403,11 +1417,13 @@ func createAuthRequestRequestWithDcql(dcql string) string {
 		  "dcql_query": %s,
 		  "nonce": "nonce",
 		  "jar_mode": "by_reference",
-		  "request_uri_method": "post",
+		  "request_uri_method": "get",
+		  "intended_use_id": "%s",
 		  "issuer_chain": "%s"
 		}
 		`,
 		dcql,
+		eudiVerifierIntendedUseId,
 		string(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
 	)
 }

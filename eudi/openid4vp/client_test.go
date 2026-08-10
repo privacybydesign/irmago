@@ -68,6 +68,10 @@ func (h *spyHandler) Cancelled() { h.cancels.Add(1) }
 
 func (h *spyHandler) Success(_ string, _ []clientmodels.LogCredential) { h.successes.Add(1) }
 
+// DeliverDcApiResponse is never called for the URL-invoked sessions this handler
+// serves; sessions started over the Digital Credentials API use testHandler.
+func (h *spyHandler) DeliverDcApiResponse(_ string) {}
+
 func (h *spyHandler) RequestVerificationPermission(
 	_ *clientmodels.DisclosurePlan,
 	requestor *clientmodels.TrustedParty,

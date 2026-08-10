@@ -9,7 +9,6 @@ import (
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/irma"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/privacybydesign/irmago/testdata"
 
 	"github.com/stretchr/testify/require"
@@ -1316,7 +1315,7 @@ func testOpenID4VP_YiviScheme_UnknownCredentialError(
 // openID4VPTestSession holds both the client session state and verifier session info
 type openID4VPTestSession struct {
 	ClientSession   clientmodels.SessionState
-	VerifierSession irmaclient.EudiVerifierSession
+	VerifierSession EudiVerifierSession
 }
 
 // startOpenID4VPSession starts an OpenID4VP session with DCQL and returns the initial session state
@@ -1340,7 +1339,7 @@ func startOpenID4VPSessionWithAuthRequest(
 	authRequestJson string,
 ) openID4VPTestSession {
 	t.Helper()
-	verifierSession, err := irmaclient.StartTestSessionAtEudiVerifier(testdata.OpenID4VP_DirectPostJwt_Host, authRequestJson)
+	verifierSession, err := StartTestSessionAtEudiVerifier(testdata.OpenID4VP_DirectPostJwt_Host, authRequestJson)
 	require.NoError(t, err)
 	sessionRequest := client.SessionRequestData{
 		Qr: irma.Qr{
@@ -1367,10 +1366,10 @@ type expectedClaims map[string]string
 
 // requireVerifierResult fetches the wallet response from the EUDI verifier and checks that
 // the vp_token contains the expected DCQL query IDs with the expected disclosed claims.
-func requireVerifierResult(t *testing.T, verifierSession irmaclient.EudiVerifierSession, expectedCredentials expectedVpToken) {
+func requireVerifierResult(t *testing.T, verifierSession EudiVerifierSession, expectedCredentials expectedVpToken) {
 	t.Helper()
 
-	result, err := irmaclient.GetWalletResponseFromEudiVerifier(verifierSession)
+	result, err := GetWalletResponseFromEudiVerifier(verifierSession)
 	require.NoError(t, err)
 
 	require.Nil(t, result["error"], "verifier returned error: %v", result["error_description"])
