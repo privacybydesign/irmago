@@ -7,6 +7,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -69,8 +71,8 @@ func (h *mockDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 	}, nil
 }
 
-func (h *mockDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, clientId string) (*dcql.PreparedDisclosure, error) {
-	h.preparedForAudience = clientId
+func (h *mockDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
+	h.preparedForAudience = audience
 	h.preparedForNonce = nonce
 	return &dcql.PreparedDisclosure{
 		QueryResponses: []dcql.QueryResponse{{
@@ -199,8 +201,8 @@ func TestParseDcApiRequest_Unsigned_Succeeds(t *testing.T) {
 	require.Equal(t, "n-0S6_WzA2Mj", request.Nonce)
 	require.Len(t, request.DcqlQuery.Credentials, 1)
 	// An unsigned request is not backed by any trust framework, so the verifier is
-	// shown by its origin host and never as verified.
-	require.Equal(t, "verifier.example.com", requestor.Name)
+	// shown by its origin and never as verified.
+	require.Equal(t, testOrigin, requestor.Name)
 	require.False(t, requestor.Verified)
 }
 
@@ -219,7 +221,7 @@ func TestParseDcApiRequest_Unsigned_IgnoresClientName(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, "phishing.example.net", requestor.Name)
+	require.Equal(t, "https://phishing.example.net", requestor.Name)
 	require.False(t, requestor.Verified)
 }
 
@@ -721,4 +723,90 @@ func TestNewDcApiSession_ReportsFailureForAnInvalidRequest(t *testing.T) {
 
 	err := awaitOn(t, handler.failureCh, "a failure callback")
 	require.Contains(t, err.WrappedError, `requires response_mode "dc_api" or "dc_api.jwt"`)
+}
+
+// The mirror of TestNewDcApiSession_ReportsFailureForAnInvalidRequest on the other
+// entry point: a session started from a URL fetches its request object from a
+// request_uri, so there is no platform to hand the response to and the DC API
+// response modes must be rejected there.
+//
+// Without that check the session reaches the platform-delivery branch of perform():
+// it binds the presentation to the client identifier instead of an origin, calls
+// DeliverDcApiResponse with nothing listening for it, and then reports Success and
+// writes a disclosure log, though nothing was ever transmitted to the verifier.
+// Before the DC API existed the same misconfiguration POSTed an empty response and
+// failed on the non-200, so the silent success would be a regression.
+func TestNewSession_RejectsDcApiResponseModeFromARequestUri(t *testing.T) {
+	for _, mode := range []ResponseMode{ResponseMode_DcApi, ResponseMode_DcApiJwt} {
+		t.Run(string(mode), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte("eyJhbGciOiJFUzI1NiJ9.e30.signature"))
+			}))
+			defer server.Close()
+
+			request := signedAuthRequest([]string{testOrigin})
+			request.ResponseMode = mode
+
+			// The DCQL handler and the granted selections are the ones the end-to-end
+			// tests above use, so the session would run all the way to a response if
+			// the response mode were not rejected.
+			client := &Client{
+				dcqlHandler:       dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{&mockDcqlHandler{}}),
+				verifierValidator: &mockVerifierValidator{request: request},
+			}
+			handler := &testHandler{
+				failureCh: make(chan *clientmodels.SessionError, 1),
+				successCh: make(chan string, 1),
+				dcApiCh:   make(chan string, 1),
+				grant: []dcql.DisclosureSelection{{
+					QueryId:        testDcqlQueryId,
+					CredentialHash: "credential-hash",
+				}},
+			}
+
+			client.NewSession(fmt.Sprintf("openid4vp://?request_uri=%s", server.URL), handler)
+
+			err := awaitOn(t, handler.failureCh, "a failure callback")
+			require.Contains(t, err.WrappedError, fmt.Sprintf("response_mode %s is only valid for a session started over the digital credentials api", mode))
+			require.Empty(t, handler.dcApiCh, "no response may be handed to a platform that is not there")
+			require.Empty(t, handler.successCh, "the session must not report success")
+		})
+	}
+}
+
+// The origin is the only fact the wallet can show the user about an unsigned
+// request, so the display name must not collapse origins the response would be
+// bound to separately: showing the host alone renders http, https and a non-default
+// port identically.
+func TestParseDcApiRequest_Unsigned_DisplayNameDistinguishesOrigins(t *testing.T) {
+	tests := []struct {
+		origin      string
+		displayName string
+	}{
+		{"https://verifier.example.com", "https://verifier.example.com"},
+		{"http://verifier.example.com", "http://verifier.example.com"},
+		{"https://verifier.example.com:8443", "https://verifier.example.com:8443"},
+		// A default port written out explicitly is the same origin as one without it,
+		// so it is normalised away rather than shown.
+		{"https://verifier.example.com:443", "https://verifier.example.com"},
+		{"http://verifier.example.com:80", "http://verifier.example.com"},
+		// Android reports a non-URL origin for a native caller. There is no host to
+		// take apart, so it is shown as it came in.
+		{"android:apk-key-hash:9VvJfmY5x0hkkJ8xEP0FQoAgwqPCzOJQBcTtCVLmC-4", "android:apk-key-hash:9VvJfmY5x0hkkJ8xEP0FQoAgwqPCzOJQBcTtCVLmC-4"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.origin, func(t *testing.T) {
+			client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+
+			_, requestor, err := client.parseDcApiRequest(&DcApiRequest{
+				Protocol: DcApiProtocolUnsigned,
+				Origin:   test.origin,
+				Data:     unsignedRequestData(t, nil),
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, test.displayName, requestor.Name)
+		})
+	}
 }

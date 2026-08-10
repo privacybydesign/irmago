@@ -191,6 +191,16 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			return
 		}
 
+		// A session started from a URL has no platform to hand the response to, so the
+		// DC API response modes cannot be honoured here. Rejecting them keeps the
+		// response-delivery branch in perform() out of reach from this entry point:
+		// without this check the session would report success while nothing had been
+		// transmitted to the verifier.
+		if isDcApiResponseMode(request.ResponseMode) {
+			handleFailure(handler, "openid4vp: response_mode %s is only valid for a session started over the digital credentials api", request.ResponseMode)
+			return
+		}
+
 		eudi.Logger.Infof("auth request: %#v", request)
 
 		// Without the DC API the response is bound to the client identifier.

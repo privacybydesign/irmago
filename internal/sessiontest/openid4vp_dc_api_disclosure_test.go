@@ -32,13 +32,12 @@ import (
 // the wiring from the app-facing client API through disclosure to the response.
 
 const (
-	// dcApiOrigin is the caller origin the platform authenticated. Its host is
-	// what an unsigned request must be shown as, and it is what every response is
-	// bound to as origin:<origin>.
-	dcApiOrigin     = "https://verifier.example.com"
-	dcApiOriginHost = "verifier.example.com"
-	dcApiNonce      = "n-0S6_WzA2Mj"
-	dcApiQueryId    = "email_credential"
+	// dcApiOrigin is the caller origin the platform authenticated. It is what an
+	// unsigned request must be shown as, and what every response is bound to as
+	// origin:<origin>.
+	dcApiOrigin  = "https://verifier.example.com"
+	dcApiNonce   = "n-0S6_WzA2Mj"
+	dcApiQueryId = "email_credential"
 )
 
 func testSessionHandlerForOpenID4VPOverDcApi(t *testing.T) {
@@ -93,8 +92,8 @@ func testDcApiUnsignedDisclosure(
 	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
 
 	// An unsigned request is backed by no trust framework, so the verifier is
-	// shown by its origin host and never as verified.
-	require.Equal(t, dcApiOriginHost, session.Requestor.Name)
+	// shown by its origin and never as verified.
+	require.Equal(t, dcApiOrigin, session.Requestor.Name)
 	require.False(t, session.Requestor.Verified)
 
 	grantDcApiDisclosure(t, c, 2, session)
@@ -185,7 +184,7 @@ func testDcApiUnsignedClientNameCannotNameVerifier(
 	})
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	require.Equal(t, dcApiOriginHost, session.Requestor.Name,
+	require.Equal(t, dcApiOrigin, session.Requestor.Name,
 		"an unsigned request must never present itself under a self-chosen name")
 	require.False(t, session.Requestor.Verified)
 }

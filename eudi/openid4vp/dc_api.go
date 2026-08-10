@@ -219,10 +219,16 @@ func originHostPort(u *url.URL) string {
 // expected_origins are dropped, so letting client_name name the verifier would
 // hide the one fact the platform did authenticate behind a value the caller
 // chose for itself.
+//
+// The display name is the origin itself, not just its host: the wallet does not
+// require the origin to be https, so dropping the scheme and the port would show
+// http://example.com, https://example.com and https://example.com:8443 under one
+// name, while the response is bound to exactly one of them. A default port
+// written out explicitly is normalised away, matching sameOrigin.
 func unsignedDcApiRequestor(origin string) *clientmodels.TrustedParty {
 	displayName := origin
-	if host := hostFromURL(origin); host != "" {
-		displayName = host
+	if u, err := url.Parse(origin); err == nil && u.Scheme != "" && u.Hostname() != "" {
+		displayName = u.Scheme + "://" + originHostPort(u)
 	}
 	return &clientmodels.TrustedParty{
 		// client_name is a single string and an origin is not localized, so there
