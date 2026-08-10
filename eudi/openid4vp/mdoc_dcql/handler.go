@@ -123,7 +123,10 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 	return result, nil
 }
 
-func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, clientId string) (*dcql.PreparedDisclosure, error) {
+// PrepareDisclosure builds a device-signed presentation per selection. The audience is the
+// value the presentation is bound to, which for a URL-invoked session is the verifier's
+// client identifier -- the value the OpenID4VP session transcript signs over.
+func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
 	for _, sel := range selections {
@@ -156,7 +159,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 		}
 		holder := stdmdoc.NewHolderFromPrivateKey(privKey)
 
-		transcript, err := newOpenID4VPSessionTranscript(clientId, nonce, sel.ResponseUri)
+		transcript, err := newOpenID4VPSessionTranscript(audience, nonce, sel.ResponseUri)
 		if err != nil {
 			return nil, fmt.Errorf("build session transcript: %w", err)
 		}

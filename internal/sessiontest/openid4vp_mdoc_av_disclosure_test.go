@@ -23,7 +23,6 @@ import (
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
 // avDocType is the EU Age Verification profile's docType. Five dot-separated
@@ -266,7 +265,7 @@ func createMdocAvAuthRequestRequest(t *testing.T, issuer *stdmdoc.Issuer) string
 // unwrapped from their Tag-24 envelopes to read the disclosed claim back.
 func requireMdocVerifierResult(
 	t *testing.T,
-	verifierSession irmaclient.EudiVerifierSession,
+	verifierSession EudiVerifierSession,
 	queryId string,
 	expectedDocType string,
 	expectedElement string,
@@ -274,7 +273,7 @@ func requireMdocVerifierResult(
 ) {
 	t.Helper()
 
-	result, err := irmaclient.GetWalletResponseFromEudiVerifier(verifierSession)
+	result, err := GetWalletResponseFromEudiVerifier(verifierSession)
 	require.NoError(t, err)
 	require.Nil(t, result["error"], "verifier returned error: %v", result["error_description"])
 

@@ -23,8 +23,8 @@ type DisclosureSelection struct {
 	RequireHolderBinding bool
 	// The verifier's response_uri from the Authorization Request. Only used by formats whose
 	// holder-binding proof is bound to the OpenID4VP session transcript (e.g. mso_mdoc's
-	// deviceAuth, which signs over [clientId, nonce, responseUri]) -- SD-JWT's key-binding JWT
-	// only needs nonce/clientId and ignores this field.
+	// deviceAuth, which signs over [audience, nonce, responseUri]) -- SD-JWT's key-binding JWT
+	// only needs nonce/audience and ignores this field.
 	ResponseUri string
 }
 
@@ -46,5 +46,5 @@ type DcqlCredentialQueryHandler interface {
 	FindCandidates(query CredentialQuery) (*CredentialQueryResult, error)
 
 	// PrepareDisclosure prepares the selected credentials for inclusion in the VP token.
-	PrepareDisclosure(selections []DisclosureSelection, nonce string, clientId string) (*PreparedDisclosure, error)
+	PrepareDisclosure(selections []DisclosureSelection, nonce string, audience string) (*PreparedDisclosure, error)
 }
