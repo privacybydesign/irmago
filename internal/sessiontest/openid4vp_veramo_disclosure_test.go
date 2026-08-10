@@ -14,7 +14,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -2753,7 +2752,7 @@ func testEudiVerifierRequestingVeramoCredentialFails(t *testing.T) {
 		]
 	}`)
 
-	verifierSession, err := irmaclient.StartTestSessionAtEudiVerifier(
+	verifierSession, err := StartTestSessionAtEudiVerifier(
 		testdata.OpenID4VP_DirectPost_Host, authRequest)
 	require.NoError(t, err)
 

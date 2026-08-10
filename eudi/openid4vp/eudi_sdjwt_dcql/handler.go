@@ -401,7 +401,7 @@ func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.
 	return filtered, nil
 }
 
-func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, clientId string) (*dcql.PreparedDisclosure, error) {
+func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
 	// Load all batches with full metadata so buildLogCredential can resolve display names.
@@ -434,7 +434,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 
 		presentation := string(selected)
 		if sel.RequireHolderBinding {
-			kbjwt, err := sdjwt.CreateKbJwt(selected, h.keyBinder, nonce, clientId)
+			kbjwt, err := sdjwt.CreateKbJwt(selected, h.keyBinder, nonce, audience)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create kbjwt: %w", err)
 			}

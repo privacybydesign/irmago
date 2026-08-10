@@ -345,6 +345,12 @@ type SessionRequestData struct {
 	// universal link (production vs staging). Required when Protocol is
 	// OpenID4VCI; ignored otherwise.
 	OpenID4VCIRedirectUri string `json:"openid4vci_redirect_uri,omitempty"`
+	// DcApi carries an OpenID4VP request the platform delivered through the W3C
+	// Digital Credentials API rather than through a URL. When set, Protocol must be
+	// OpenID4VP and URL is ignored; the resulting Authorization Response is
+	// reported back on SessionState.DcApiResponse instead of being transmitted by
+	// the wallet.
+	DcApi *openid4vp.DcApiRequest `json:"dc_api,omitempty"`
 }
 
 func (client *Client) DeleteKeyshareTokens() {

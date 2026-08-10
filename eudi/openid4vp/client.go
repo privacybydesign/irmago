@@ -21,6 +21,10 @@ type Handler interface {
 	Failure(err *clientmodels.SessionError)
 	Cancelled()
 	Success(result string, credentialLogs []clientmodels.LogCredential)
+	// DeliverDcApiResponse hands the Authorization Response back to the platform
+	// that delivered the request through the Digital Credentials API. It is only
+	// called for sessions started with NewDcApiSession, and always before Success.
+	DeliverDcApiResponse(response string)
 	RequestVerificationPermission(
 		disclosurePlan *clientmodels.DisclosurePlan,
 		requestor *clientmodels.TrustedParty,
@@ -114,6 +118,17 @@ func (client *Client) NewSession(fullUrl string, handler Handler) SessionDismiss
 	return session
 }
 
+// NewDcApiSession starts a new OpenID4VP session from a request the platform
+// delivered through the W3C Digital Credentials API, and returns a
+// SessionDismisser bound to that session. The Authorization Response is handed
+// back to the platform via Handler.DeliverDcApiResponse instead of being
+// transmitted by the wallet.
+func (client *Client) NewDcApiSession(request *DcApiRequest, handler Handler) SessionDismisser {
+	session := client.newSession(handler)
+	client.handleDcApiSessionAsync(request, session)
+	return session
+}
+
 func (client *Client) newSession(handler Handler) *openid4vpSession {
 	return &openid4vpSession{
 		handler:     handler,
@@ -165,11 +180,9 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			return
 		}
 
-		request, endEntityCert, requestorSchemeData, err := client.verifierValidator.
-			ParseAndVerifyAuthorizationRequest(string(authRequestJwt))
-
+		request, requestor, err := client.verifySignedAuthorizationRequest(string(authRequestJwt))
 		if err != nil {
-			handleFailure(handler, "openid4vp: failed to verify authorization request: %v", err)
+			handleFailure(handler, "openid4vp: %v", err)
 			return
 		}
 
@@ -178,35 +191,20 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			return
 		}
 
-		// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
-		if endEntityCert != nil && requestorSchemeData.Organization.Logo != nil {
-			err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().Save(
-				endEntityCert.SerialNumber.String(),
-				requestorSchemeData.Organization.Logo.Data,
-				requestorSchemeData.Organization.Logo.MimeType,
-			)
-			if err != nil {
-				handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
-				return
-			}
-		}
-
-		requestor := &clientmodels.TrustedParty{
-			Name:     clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), client.currentLocale.Get()),
-			Verified: endEntityCert != nil,
-		}
-		if endEntityCert != nil {
-			requestor.Id = endEntityCert.SerialNumber.String()
-		}
-
-		if requestorSchemeData.Organization.Logo != nil && len(requestorSchemeData.Organization.Logo.Data) > 0 {
-			requestor.Image = &clientmodels.Image{
-				Base64: base64.StdEncoding.EncodeToString(requestorSchemeData.Organization.Logo.Data),
-			}
+		// A session started from a URL has no platform to hand the response to, so the
+		// DC API response modes cannot be honoured here. Rejecting them keeps the
+		// response-delivery branch in perform() out of reach from this entry point:
+		// without this check the session would report success while nothing had been
+		// transmitted to the verifier.
+		if isDcApiResponseMode(request.ResponseMode) {
+			handleFailure(handler, "openid4vp: response_mode %s is only valid for a session started over the digital credentials api", request.ResponseMode)
+			return
 		}
 
 		eudi.Logger.Infof("auth request: %#v", request)
-		err = client.handleAuthorizationRequest(session, request, requestor)
+
+		// Without the DC API the response is bound to the client identifier.
+		err = client.handleAuthorizationRequest(session, request, requestor, request.ClientId)
 
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
@@ -214,13 +212,80 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 	}()
 }
 
+func (client *Client) handleDcApiSessionAsync(request *DcApiRequest, session *openid4vpSession) {
+	go func() {
+		handler := session.handler
+		authRequest, requestor, err := client.parseDcApiRequest(request)
+		if err != nil {
+			handleFailure(handler, "openid4vp: %v", err)
+			return
+		}
+
+		eudi.Logger.Infof("dc api auth request: %#v", authRequest)
+
+		// Over the DC API the response is bound to the origin the platform
+		// authenticated, never to the client identifier (Appendix A.4).
+		err = client.handleAuthorizationRequest(session, authRequest, requestor, OriginAudience(request.Origin))
+
+		if err != nil {
+			handleFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
+		}
+	}()
+}
+
+// verifySignedAuthorizationRequest verifies a signed authorization request JWT
+// against the configured trust models, caches the verifier logo, and builds the
+// requestor to show to the user.
+func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
+	*AuthorizationRequest,
+	*clientmodels.TrustedParty,
+	error,
+) {
+	request, endEntityCert, requestorSchemeData, err := client.verifierValidator.
+		ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to verify authorization request: %v", err)
+	}
+
+	// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
+	if endEntityCert != nil && requestorSchemeData.Organization.Logo != nil {
+		err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().Save(
+			endEntityCert.SerialNumber.String(),
+			requestorSchemeData.Organization.Logo.Data,
+			requestorSchemeData.Organization.Logo.MimeType,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to store verifier logo: %v", err)
+		}
+	}
+
+	requestor := &clientmodels.TrustedParty{
+		Name:     clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), client.currentLocale.Get()),
+		Verified: endEntityCert != nil,
+	}
+	if endEntityCert != nil {
+		requestor.Id = endEntityCert.SerialNumber.String()
+	}
+
+	if requestorSchemeData.Organization.Logo != nil && len(requestorSchemeData.Organization.Logo.Data) > 0 {
+		requestor.Image = &clientmodels.Image{
+			Base64: base64.StdEncoding.EncodeToString(requestorSchemeData.Organization.Logo.Data),
+		}
+	}
+
+	return request, requestor, nil
+}
+
 func (client *Client) handleAuthorizationRequest(
 	session *openid4vpSession,
 	request *AuthorizationRequest,
 	requestor *clientmodels.TrustedParty,
+	audience string,
 ) error {
 	session.request = request
 	session.requestor = requestor
+	session.audience = audience
 	client.register(session)
 	defer client.deregister(session)
 	return session.perform()
@@ -235,8 +300,12 @@ type openid4vpSession struct {
 	requestor   *clientmodels.TrustedParty
 	handler     Handler
 	dcqlHandler *dcql.DcqlHandler
-	lastPlan    *clientmodels.DisclosurePlan
-	lastResult  *dcql.DcqlResult
+	// audience is the value the disclosed presentations are bound to (the aud of
+	// a Key Binding JWT): the client identifier for a URL-invoked session, the
+	// origin-prefixed caller origin for a Digital Credentials API session.
+	audience   string
+	lastPlan   *clientmodels.DisclosurePlan
+	lastResult *dcql.DcqlResult
 	// preExistingHashes tracks owned credential hashes at session start,
 	// used to detect newly issued credentials for WrongCredentialIssued.
 	preExistingHashes map[string]struct{}
@@ -371,12 +440,24 @@ func (session *openid4vpSession) perform() error {
 		ResponseMode:   session.request.ResponseMode,
 	}
 
-	if session.request.ResponseMode == ResponseMode_DirectPostJwt {
+	if session.request.ResponseMode == ResponseMode_DirectPostJwt || session.request.ResponseMode == ResponseMode_DcApiJwt {
 		if session.request.ClientMetadata == nil || session.request.ClientMetadata.Jwks == nil {
-			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", ResponseMode_DirectPostJwt)
+			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", session.request.ResponseMode)
 		}
 		responseConfig.EncryptionKeys = &session.request.ClientMetadata.Jwks.Set
 		responseConfig.EncryptedResponseEncValuesSupported = session.request.ClientMetadata.EncryptedResponseEncValuesSupported
+	}
+
+	// Over the DC API the platform, not the wallet, transports the response back
+	// to the verifier, so there is nothing to POST.
+	if isDcApiResponseMode(session.request.ResponseMode) {
+		dcApiResponse, err := createDcApiResponse(responseConfig)
+		if err != nil {
+			return err
+		}
+		session.handler.DeliverDcApiResponse(dcApiResponse)
+		session.handler.Success("managed to complete openid4vp session over the digital credentials api", credLogs)
+		return nil
 	}
 
 	responseReq, err := createAuthorizationResponseHttpRequest(responseConfig)
@@ -403,7 +484,7 @@ func (session *openid4vpSession) prepareDisclosures(
 	selections []dcql.DisclosureSelection,
 ) ([]dcql.QueryResponse, []clientmodels.LogCredential, error) {
 	prepared, err := session.dcqlHandler.PrepareDisclosure(
-		session.request.DcqlQuery, selections, session.request.Nonce, session.request.ClientId,
+		session.request.DcqlQuery, selections, session.request.Nonce, session.audience,
 	)
 	if err != nil {
 		return nil, nil, err
