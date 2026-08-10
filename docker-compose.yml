@@ -496,6 +496,10 @@ services:
       - VERIFIER_CLIENTIDPREFIX=x509_hash
       # The JAR signing key configuration was renamed in v0.10.0.
       - VERIFIER_ACCESS_CERTIFICATE_ALIAS=verifier_cert
+      # The image ships application.properties with ES512, but the key in the
+      # keystore is P-256, and nimbus rejects the mismatch when it signs the
+      # request object. Must match the curve of verifier_cert.
+      - VERIFIER_ACCESS_CERTIFICATE_SIGNING_ALGORITHM=ES256
       - VERIFIER_ACCESS_CERTIFICATE_KEYSTORE=file:///keystore.p12
       - VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD=changeit
       - VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_TYPE=pkcs12
