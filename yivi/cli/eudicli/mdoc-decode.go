@@ -1,16 +1,16 @@
-// decode is a small standalone CLI for inspecting COSE_Sign1 / raw CBOR
-// hex blobs produced by the mdoc program — e.g. issuerAuth, deviceAuth,
+// mdoc-decode is a small standalone CLI for inspecting COSE_Sign1 / raw CBOR
+// hex blobs produced by eudi/credentials/mdoc — e.g. issuerAuth, deviceAuth,
 // or a full presented mdoc. It does NOT verify signatures or validate
 // anything; it only decodes structure so you can eyeball what's inside.
 //
-// Usage:
+// Usage, from the repository root:
 //
-//	go run decode.go <hex-string>
-//	go run decode.go -              (reads hex from stdin)
+//	go run ./yivi/cli/eudicli/mdoc-decode.go <hex-string>
+//	go run ./yivi/cli/eudicli/mdoc-decode.go -    (reads hex from stdin)
 //
 // Example:
 //
-//	go run decode.go d28443a10126a0585c84...988b
+//	go run ./yivi/cli/eudicli/mdoc-decode.go d28443a10126a0585c84...988b
 package main
 
 import (
@@ -26,7 +26,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: go run decode.go <hex-string>   (or '-' to read hex from stdin)")
+		fmt.Fprintln(os.Stderr, "usage: go run ./yivi/cli/eudicli/mdoc-decode.go <hex-string>   (or '-' to read hex from stdin)")
 		os.Exit(1)
 	}
 

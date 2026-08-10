@@ -1,23 +1,24 @@
-# decode — COSE/CBOR inspector
+# mdoc-decode — COSE/CBOR inspector
 
 A standalone CLI for manually inspecting any hex-encoded COSE_Sign1 or CBOR
-blob produced by the mdoc program (`issuerAuth`, `deviceAuth`, a full
+blob produced by `eudi/credentials/mdoc` (`issuerAuth`, `deviceAuth`, a full
 presented mdoc, or any raw CBOR bytes). Read-only — it does not verify
 signatures, certificate chains, or digests; it only decodes and prints
 structure so you can eyeball what's actually inside.
 
-Lives in its own directory because it's a separate `package main` — Go
-doesn't allow a `func main()` to sit in the same package as library code,
-so it cannot share a folder with the `mdoc` package it inspects.
+Lives here rather than beside the `mdoc` package because it's a separate
+`package main` — Go doesn't allow a `func main()` to sit in the same package
+as library code, so it cannot share a folder with the package it inspects.
 
 ---
 
 ## Usage
 
+From the repository root:
+
 ```bash
-cd decode
-go run decode.go <hex-string>
-go run decode.go -              # reads hex from stdin instead
+go run ./yivi/cli/eudicli/mdoc-decode.go <hex-string>
+go run ./yivi/cli/eudicli/mdoc-decode.go -    # reads hex from stdin instead
 ```
 
 Input can have spaces or newlines in it (e.g. pasted from a wrapped
@@ -27,11 +28,27 @@ terminal output) — they're stripped before decoding.
 
 ```bash
 # decode a deviceAuth COSE_Sign1
-go run decode.go d28443a10126a0585c84...988b
+go run ./yivi/cli/eudicli/mdoc-decode.go d28443a10126a0585c84...988b
 
 # decode a full presented mdoc from a file
-cat mdoc.hex | go run decode.go -
+cat mdoc.hex | go run ./yivi/cli/eudicli/mdoc-decode.go -
 ```
+
+To read back a `vp_token` an OpenID4VP verifier collected, the entry has to be
+converted from base64url to hex first (PowerShell):
+
+```powershell
+$tx  = "<transaction_id>"
+$r   = curl.exe -s "http://127.0.0.1:8090/ui/presentations/$tx" | ConvertFrom-Json
+$b64 = $r.vp_token.age; if ($b64 -is [array]) { $b64 = $b64[0] }
+$b64 = $b64.Replace('-','+').Replace('_','/')
+$b64 = $b64.PadRight(4 * [math]::Ceiling($b64.Length / 4), '=')
+$hex = -join ([Convert]::FromBase64String($b64) | % { $_.ToString('x2') })
+$hex | go run ./yivi/cli/eudicli/mdoc-decode.go -
+```
+
+Piping to `-` rather than passing the hex as an argument keeps a multi-document
+response clear of the Windows command-line length limit.
 
 ---
 
@@ -68,7 +85,7 @@ validUntil: 1791452553  (2027-07-10T08:42:33Z)
 
 ## Limitations
 
-- **Does not verify anything.** No signature checking, no cert chain walk, no digest recomputation. Use the actual `Verifier` (in the parent package) for that — this tool only tells you what bytes are present, not whether they're trustworthy.
+- **Does not verify anything.** No signature checking, no cert chain walk, no digest recomputation. Use the actual `Verifier` (in `eudi/credentials/mdoc`) for that — this tool only tells you what bytes are present, not whether they're trustworthy.
 - **Heuristic recursion, not exhaustive.** `looksLikeNestedCBOR` only recognizes Tag-24 and 4-element COSE_Sign1 arrays; other nested CBOR shapes fall through to a flat hex dump.
 - **Best-effort formatting.** Unknown COSE header labels are printed as their raw integer key; unknown timestamp field names are left as plain integers.
 
