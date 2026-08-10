@@ -457,7 +457,7 @@ services:
       - VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD=changeit
       - VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_TYPE=pkcs12
       - VERIFIER_ACCESS_CERTIFICATE_PASSWORD=changeit
-      - 'VERIFIER_ATTESTATIONCLASSIFICATIONS={"pid":{"vcts":["urn:eudi:pid:1"],"docTypes":[]},"qeaa":{"vcts":[],"docTypes":[]},"pubeaa":{"vcts":[],"docTypes":[]},"eaa":[{"useCase":"irmago-tests","vcts":["test.test.email","test.test.test","irma-demo.MijnOverheid.fullName","irma-demo.RU.studentCard"],"docTypes":[]}]}'
+      - 'VERIFIER_ATTESTATIONCLASSIFICATIONS={"pid":{"vcts":["urn:eudi:pid:1"],"docTypes":[]},"qeaa":{"vcts":[],"docTypes":[]},"pubeaa":{"vcts":[],"docTypes":[]},"eaa":[{"useCase":"irmago-tests","vcts":["test.test.email","test.test.mobilephone","test.test.test","irma-demo.MijnOverheid.fullName","irma-demo.RU.studentCard"],"docTypes":[]}]}'
       - VERIFIER_VALIDATION_SDJWTVC_STATUSCHECK_ENABLED=false
       - VERIFIER_ORIGINALCLIENTID=localhost
       - VERIFIER_CLIENTIDPREFIX=x509_san_dns
@@ -479,7 +479,7 @@ services:
       - VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD=changeit
       - VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_TYPE=pkcs12
       - VERIFIER_ACCESS_CERTIFICATE_PASSWORD=changeit
-      - 'VERIFIER_ATTESTATIONCLASSIFICATIONS={"pid":{"vcts":["urn:eudi:pid:1"],"docTypes":[]},"qeaa":{"vcts":[],"docTypes":[]},"pubeaa":{"vcts":[],"docTypes":[]},"eaa":[{"useCase":"irmago-tests","vcts":["test.test.email","test.test.test","irma-demo.MijnOverheid.fullName","irma-demo.RU.studentCard"],"docTypes":[]}]}'
+      - 'VERIFIER_ATTESTATIONCLASSIFICATIONS={"pid":{"vcts":["urn:eudi:pid:1"],"docTypes":[]},"qeaa":{"vcts":[],"docTypes":[]},"pubeaa":{"vcts":[],"docTypes":[]},"eaa":[{"useCase":"irmago-tests","vcts":["test.test.email","test.test.mobilephone","test.test.test","irma-demo.MijnOverheid.fullName","irma-demo.RU.studentCard"],"docTypes":[]}]}'
       - VERIFIER_VALIDATION_SDJWTVC_STATUSCHECK_ENABLED=false
       - VERIFIER_ORIGINALCLIENTID=localhost
       - VERIFIER_CLIENTIDPREFIX=x509_san_dns
@@ -510,7 +510,7 @@ services:
       - VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD=changeit
       - VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_TYPE=pkcs12
       - VERIFIER_ACCESS_CERTIFICATE_PASSWORD=changeit
-      - 'VERIFIER_ATTESTATIONCLASSIFICATIONS={"pid":{"vcts":["urn:eudi:pid:1"],"docTypes":[]},"qeaa":{"vcts":[],"docTypes":[]},"pubeaa":{"vcts":[],"docTypes":[]},"eaa":[{"useCase":"irmago-tests","vcts":["test.test.email","test.test.test","irma-demo.MijnOverheid.fullName","irma-demo.RU.studentCard"],"docTypes":[]}]}'
+      - 'VERIFIER_ATTESTATIONCLASSIFICATIONS={"pid":{"vcts":["urn:eudi:pid:1"],"docTypes":[]},"qeaa":{"vcts":[],"docTypes":[]},"pubeaa":{"vcts":[],"docTypes":[]},"eaa":[{"useCase":"irmago-tests","vcts":["test.test.email","test.test.mobilephone","test.test.test","irma-demo.MijnOverheid.fullName","irma-demo.RU.studentCard"],"docTypes":[]}]}'
       - VERIFIER_VALIDATION_SDJWTVC_STATUSCHECK_ENABLED=false
 
 # Docker Desktop for MacOS does not support exposing ports when using host networking. Therefore,
