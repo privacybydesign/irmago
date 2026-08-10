@@ -10,18 +10,14 @@ import (
 )
 
 // newOpenID4VPSessionTranscript builds a real, spec-shaped SessionTranscript
-// for an mdoc presented over OpenID4VP with response_mode=direct_post — the
-// only mode the AV Blueprint's Annex A §A.6 OpenID4VP requirements allow
-// (response_mode MUST be direct_post, never direct_post.jwt). Because the
-// response is therefore never encrypted, there is no response-encryption
-// key to thumbprint, hence the CBOR null in HandoverInfo below.
+// for an mdoc presented over OpenID4VP.
 //
 // Construction (matches Multipaz's vpSessionTranscript in
 // org.multipaz.verification.VerificationUtil — the AV Blueprint itself only
 // specifies the OpenID4VP request-level requirements, not this byte-level
 // formula):
 //
-//	HandoverInfo      = [clientId, nonce, null, responseUri]
+//	HandoverInfo      = [clientId, nonce, jwkThumbprint, responseUri]
 //	Handover          = ["OpenID4VPHandover", SHA-256(CBOR(HandoverInfo))]
 //	SessionTranscript = [null, null, Handover]
 //
@@ -30,12 +26,18 @@ import (
 // this independently, so any mismatch produces a different digest and
 // deviceAuth's signature check fails.
 //
-// If Yivi ever needs response_mode=direct_post.jwt (encrypted responses),
-// this function will need a jwkThumbprint parameter — the CBOR null below
-// would become the SHA-256 JWK thumbprint of the verifier's response
-// encryption public key instead.
-func newOpenID4VPSessionTranscript(clientId, nonce, responseUri string) (mdoc.SessionTranscript, error) {
-	handoverInfo := []any{clientId, nonce, nil, responseUri}
+// jwkThumbprint is the SHA-256 JWK thumbprint of the verifier's response
+// encryption public key, and nil when the response is sent unencrypted, which
+// puts a CBOR null in that slot. Both cases are real: the AV Blueprint's crypto
+// suite has the verifier publish a recipient encryption key and the response
+// come back encrypted, while plenty of verifiers (and every one of this
+// package's own tests) use plain direct_post. Getting this wrong is silent in
+// the wallet and fatal at the verifier — the response transmits fine and the
+// deviceAuth signature simply does not verify — so the caller must pass the
+// thumbprint of the key the response is actually encrypted to, not merely one
+// the verifier advertised.
+func newOpenID4VPSessionTranscript(clientId, nonce, responseUri string, jwkThumbprint []byte) (mdoc.SessionTranscript, error) {
+	handoverInfo := []any{clientId, nonce, encryptionKeyElement(jwkThumbprint), responseUri}
 	handoverInfoBytes, err := cbor.Marshal(handoverInfo)
 	if err != nil {
 		return mdoc.SessionTranscript{}, fmt.Errorf("marshal handoverInfo: %w", err)
@@ -45,4 +47,15 @@ func newOpenID4VPSessionTranscript(clientId, nonce, responseUri string) (mdoc.Se
 	return mdoc.SessionTranscript{
 		Handover: []any{"OpenID4VPHandover", digest[:]},
 	}, nil
+}
+
+// encryptionKeyElement renders the third HandoverInfo element: the thumbprint
+// when the response is encrypted, CBOR null when it is not. A nil []byte would
+// encode as null anyway; spelling it out keeps the encoded shape independent of
+// that detail, and keeps both handover variants agreeing on it.
+func encryptionKeyElement(jwkThumbprint []byte) any {
+	if len(jwkThumbprint) == 0 {
+		return nil
+	}
+	return jwkThumbprint
 }

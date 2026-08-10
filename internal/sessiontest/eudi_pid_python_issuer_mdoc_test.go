@@ -10,6 +10,7 @@ import (
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,7 +75,15 @@ func testEudiPidPythonIssuerDisclosesAvMdoc(t *testing.T) {
 	// nothing else in the request establishes who may issue this docType.
 	startReq := createAvMdocAuthRequest(t)
 
-	verifierSession, err := StartTestSessionAtEudiVerifier(eudiPidIssuerPyOpenID4VPVerifierHost, startReq)
+	// Not eudiPidIssuerPyOpenID4VPVerifierHost (:8089) as the SD-JWT tests use:
+	// that instance demands a relying-party registration certificate for
+	// anything VERIFIER_ATTESTATIONCLASSIFICATIONS does not exempt, and it
+	// decides the exemption on vct alone. An mso_mdoc query names its credential
+	// with doctype_value, so it stays unclassified there whichever bucket the
+	// docType is listed in, and the session is refused with
+	// MissingRegistrationCertificate before the wallet is ever contacted.
+	// :8090 is the instance the other mdoc test already runs against.
+	verifierSession, err := StartTestSessionAtEudiVerifier(testdata.OpenID4VP_DirectPostJwt_Host, startReq)
 	require.NoError(t, err)
 
 	startOpenID4VPDisclosureSession(t, c, 2, verifierSession.SessionLink)
@@ -214,9 +223,15 @@ func createAvMdocAuthRequest(t *testing.T) string {
 				},
 			},
 		},
-		"nonce":              "nonce",
-		"jar_mode":           "by_reference",
-		"request_uri_method": "post",
+		"nonce":    "nonce",
+		"jar_mode": "by_reference",
+		// The client fetches the request object with a GET and sends no
+		// wallet_nonce, and the verifier enforces the method the transaction was
+		// started with. Every transaction must also name an intended use or carry
+		// a relying-party registration certificate, which the wallet does not
+		// produce; id "1" is the one the image configures out of the box.
+		"request_uri_method": "get",
+		"intended_use_id":    eudiVerifierIntendedUseId,
 		"issuer_chain":       string(caPEM),
 	}
 

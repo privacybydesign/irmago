@@ -244,9 +244,15 @@ func createMdocAvAuthRequestRequest(t *testing.T, issuer *stdmdoc.Issuer) string
 				},
 			},
 		},
-		"nonce":              "nonce",
-		"jar_mode":           "by_reference",
-		"request_uri_method": "post",
+		"nonce":    "nonce",
+		"jar_mode": "by_reference",
+		// The client fetches the request object with a GET and sends no
+		// wallet_nonce, and the verifier enforces the method the transaction was
+		// started with. Every transaction must also name an intended use or carry
+		// a relying-party registration certificate, which the wallet does not
+		// produce; id "1" is the one the image configures out of the box.
+		"request_uri_method": "get",
+		"intended_use_id":    eudiVerifierIntendedUseId,
 		"issuer_chain":       string(chain),
 	}
 

@@ -91,7 +91,7 @@ func TestFindCandidatesAndPrepareDisclosureRoundTrip(t *testing.T) {
 	require.NoError(t, cbor.Unmarshal(encoded, &response))
 	require.Len(t, response.Documents, 1)
 
-	transcript, err := newOpenID4VPSessionTranscript(testClientId, testNonce, testResponseU)
+	transcript, err := newOpenID4VPSessionTranscript(testClientId, testNonce, testResponseU, nil)
 	require.NoError(t, err)
 
 	results, err := env.verifier.VerifyDeviceResponse(response, testNamespace, testDocType, transcript)
@@ -128,7 +128,7 @@ func TestPrepareDisclosureRejectsUndisclosedElement(t *testing.T) {
 	var response stdmdoc.DeviceResponse
 	require.NoError(t, cbor.Unmarshal(encoded, &response))
 
-	transcript, err := newOpenID4VPSessionTranscript(testClientId, testNonce, testResponseU)
+	transcript, err := newOpenID4VPSessionTranscript(testClientId, testNonce, testResponseU, nil)
 	require.NoError(t, err)
 	results, err := env.verifier.VerifyDeviceResponse(response, testNamespace, testDocType, transcript)
 	require.NoError(t, err)

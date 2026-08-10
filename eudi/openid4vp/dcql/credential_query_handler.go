@@ -26,6 +26,30 @@ type DisclosureSelection struct {
 	// deviceAuth, which signs over [audience, nonce, responseUri]) -- SD-JWT's key-binding JWT
 	// only needs nonce/audience and ignores this field.
 	ResponseUri string
+
+	// ResponseEncryptionKeyThumbprint is the SHA-256 JWK thumbprint of the
+	// verifier's response encryption key, or nil when the response is not
+	// encrypted. It occupies the third slot of the OpenID4VP handover the
+	// session transcript hashes, so an mdoc's deviceAuth signature only verifies
+	// if the wallet and the verifier agree on this value -- which in turn means
+	// the response must be encrypted to the very key thumbprinted here, not
+	// merely to some key the verifier published. Ignored by SD-JWT, like
+	// ResponseUri above.
+	ResponseEncryptionKeyThumbprint []byte
+}
+
+// ResponseBinding carries the transport-level values that a format whose
+// holder-binding proof is bound to the session transcript must sign over. They
+// travel together because they are decided together, before any disclosure is
+// prepared: the response encryption key in particular has to be chosen while the
+// device signature is still ahead of us. Formats whose proof is not
+// transcript-bound (every SD-JWT one) ignore all of it.
+type ResponseBinding struct {
+	// ResponseUri is the verifier's response_uri from the Authorization Request.
+	ResponseUri string
+	// EncryptionKeyThumbprint is the SHA-256 JWK thumbprint of the key the
+	// response is encrypted to, nil when it travels unencrypted.
+	EncryptionKeyThumbprint []byte
 }
 
 // PreparedDisclosure contains the VP token response data and log information

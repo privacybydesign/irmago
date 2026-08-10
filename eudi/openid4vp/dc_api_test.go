@@ -513,11 +513,13 @@ func TestCreateDcApiResponse_DcApi(t *testing.T) {
 
 func TestCreateDcApiResponse_DcApiJwt(t *testing.T) {
 	privateKey, jwks := testEncryptionKeys(t)
+	encryptionKey, _, err := selectResponseEncryptionKey(jwks)
+	require.NoError(t, err)
 
 	response, err := createDcApiResponse(authorizationResponseConfig{
-		ResponseMode:   ResponseMode_DcApiJwt,
-		State:          "should-not-appear",
-		EncryptionKeys: &jwks,
+		ResponseMode:  ResponseMode_DcApiJwt,
+		State:         "should-not-appear",
+		EncryptionKey: encryptionKey,
 		QueryResponses: []dcql.QueryResponse{{
 			QueryId:     testDcqlQueryId,
 			Credentials: []string{"presented~sd~jwt"},
@@ -558,12 +560,14 @@ func TestCreateDcApiResponse_RejectsNonDcApiResponseMode(t *testing.T) {
 // direct_post.jwt keeps carrying state, which the DC API response modes drop.
 func TestCreateAuthorizationResponseHttpRequest_DirectPostJwtKeepsState(t *testing.T) {
 	privateKey, jwks := testEncryptionKeys(t)
+	encryptionKey, _, err := selectResponseEncryptionKey(jwks)
+	require.NoError(t, err)
 
 	request, err := createAuthorizationResponseHttpRequest(authorizationResponseConfig{
-		ResponseMode:   ResponseMode_DirectPostJwt,
-		ResponseUri:    "https://verifier.example.com/response",
-		State:          "the-state",
-		EncryptionKeys: &jwks,
+		ResponseMode:  ResponseMode_DirectPostJwt,
+		ResponseUri:   "https://verifier.example.com/response",
+		State:         "the-state",
+		EncryptionKey: encryptionKey,
 		QueryResponses: []dcql.QueryResponse{{
 			QueryId:     testDcqlQueryId,
 			Credentials: []string{"presented~sd~jwt"},

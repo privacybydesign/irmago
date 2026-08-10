@@ -21,7 +21,7 @@ func TestOpenID4VPSessionTranscriptShape(t *testing.T) {
 	nonce := "abc123"
 	responseUri := "https://verifier.example.com/response"
 
-	st, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri)
+	st, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri, nil)
 	if err != nil {
 		t.Fatalf("newOpenID4VPSessionTranscript: %v", err)
 	}
@@ -80,16 +80,16 @@ func TestOpenID4VPSessionTranscriptShape(t *testing.T) {
 // them didn't, a verifier could accept a deviceAuth signed for a different
 // session/client than the one it actually requested.
 func TestOpenID4VPSessionTranscriptBindsAllInputs(t *testing.T) {
-	base, err := newOpenID4VPSessionTranscript("client-a", "nonce-a", "https://a.example.com/response")
+	base, err := newOpenID4VPSessionTranscript("client-a", "nonce-a", "https://a.example.com/response", nil)
 	if err != nil {
 		t.Fatalf("newOpenID4VPSessionTranscript base: %v", err)
 	}
 	baseDigest := base.Handover.([]any)[1].([]byte)
 
 	variants := map[string]mdoc.SessionTranscript{}
-	variants["clientId"], _ = newOpenID4VPSessionTranscript("client-b", "nonce-a", "https://a.example.com/response")
-	variants["nonce"], _ = newOpenID4VPSessionTranscript("client-a", "nonce-b", "https://a.example.com/response")
-	variants["responseUri"], _ = newOpenID4VPSessionTranscript("client-a", "nonce-a", "https://b.example.com/response")
+	variants["clientId"], _ = newOpenID4VPSessionTranscript("client-b", "nonce-a", "https://a.example.com/response", nil)
+	variants["nonce"], _ = newOpenID4VPSessionTranscript("client-a", "nonce-b", "https://a.example.com/response", nil)
+	variants["responseUri"], _ = newOpenID4VPSessionTranscript("client-a", "nonce-a", "https://b.example.com/response", nil)
 
 	for field, variant := range variants {
 		variantDigest := variant.Handover.([]any)[1].([]byte)
@@ -130,7 +130,7 @@ func TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth(t *testing.T) {
 	clientId := "redirect_uri:https://verifier.example.com/response"
 	nonce := "abc123"
 	responseUri := "https://verifier.example.com/response"
-	transcript, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri)
+	transcript, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri, nil)
 	if err != nil {
 		t.Fatalf("newOpenID4VPSessionTranscript: %v", err)
 	}
@@ -152,12 +152,69 @@ func TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth(t *testing.T) {
 	// A verifier that derives its transcript from a different nonce (e.g.
 	// it issued one authorization request, the holder responded to
 	// another) must NOT accept the same deviceAuth signature.
-	wrongTranscript, err := newOpenID4VPSessionTranscript(clientId, "different-nonce", responseUri)
+	wrongTranscript, err := newOpenID4VPSessionTranscript(clientId, "different-nonce", responseUri, nil)
 	if err != nil {
 		t.Fatalf("newOpenID4VPSessionTranscript (wrong nonce): %v", err)
 	}
 	mismatchResult := verifier.VerifyWithDeviceAuth(presented, namespace, docType, wrongTranscript, deviceAuthBytes)
 	if mismatchResult.DeviceAuthValid {
 		t.Fatalf("expected deviceAuth to be rejected against a mismatched OpenID4VP transcript, but it was accepted")
+	}
+}
+
+// TestOpenID4VPSessionTranscriptCarriesEncryptionKeyThumbprint pins the
+// encrypted-response half of the handover.
+//
+// The third HandoverInfo element is the SHA-256 JWK thumbprint of the verifier's
+// response encryption key, and CBOR null only when the response travels
+// unencrypted. Getting this wrong is invisible on the wallet side — the response
+// is transmitted and accepted — and shows up at the verifier as a deviceAuth
+// signature that does not verify, with nothing to point at the cause. So both
+// the value and the fact that it changes the digest are asserted here.
+func TestOpenID4VPSessionTranscriptCarriesEncryptionKeyThumbprint(t *testing.T) {
+	clientId := "x509_san_dns:verifier.example.com"
+	nonce := "abc123"
+	responseUri := "https://verifier.example.com/response"
+	thumbprint := sha256.Sum256([]byte("response encryption key"))
+
+	encrypted, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri, thumbprint[:])
+	if err != nil {
+		t.Fatalf("newOpenID4VPSessionTranscript: %v", err)
+	}
+
+	wantInfoBytes, err := cbor.Marshal([]any{clientId, nonce, thumbprint[:], responseUri})
+	if err != nil {
+		t.Fatalf("marshal expected handoverInfo: %v", err)
+	}
+	wantDigest := sha256.Sum256(wantInfoBytes)
+
+	gotDigest, ok := encrypted.Handover.([]any)[1].([]byte)
+	if !ok {
+		t.Fatalf("expected handover[1] to be a digest, got %#v", encrypted.Handover.([]any)[1])
+	}
+	if string(gotDigest) != string(wantDigest[:]) {
+		t.Fatalf("digest mismatch: got %x, want %x", gotDigest, wantDigest)
+	}
+
+	// An unencrypted response must not produce the same transcript: a wallet that
+	// ignored the thumbprint would still sign something, just not what the
+	// verifier reconstructs.
+	plain, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri, nil)
+	if err != nil {
+		t.Fatalf("newOpenID4VPSessionTranscript (unencrypted): %v", err)
+	}
+	plainDigest := plain.Handover.([]any)[1].([]byte)
+	if string(plainDigest) == string(gotDigest) {
+		t.Fatal("the encrypted and unencrypted transcripts hash to the same digest; the thumbprint is not reaching the handover")
+	}
+
+	// An empty (rather than nil) thumbprint means the same thing as nil — no
+	// encryption — and must not encode as a zero-length byte string.
+	empty, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri, []byte{})
+	if err != nil {
+		t.Fatalf("newOpenID4VPSessionTranscript (empty thumbprint): %v", err)
+	}
+	if string(empty.Handover.([]any)[1].([]byte)) != string(plainDigest) {
+		t.Fatal("an empty thumbprint must produce the same transcript as no thumbprint at all")
 	}
 }

@@ -159,7 +159,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 		}
 		holder := stdmdoc.NewHolderFromPrivateKey(privKey)
 
-		transcript, err := newOpenID4VPSessionTranscript(audience, nonce, sel.ResponseUri)
+		transcript, err := newOpenID4VPSessionTranscript(audience, nonce, sel.ResponseUri, sel.ResponseEncryptionKeyThumbprint)
 		if err != nil {
 			return nil, fmt.Errorf("build session transcript: %w", err)
 		}

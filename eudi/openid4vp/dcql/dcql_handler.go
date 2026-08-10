@@ -86,7 +86,7 @@ func (h *DcqlHandler) PrepareDisclosure(
 	selections []DisclosureSelection,
 	nonce string,
 	audience string,
-	responseUri string,
+	binding ResponseBinding,
 ) (*PreparedDisclosure, error) {
 	// Build a map from queryId -> CredentialQuery
 	queryById := make(map[string]CredentialQuery, len(query.Credentials))
@@ -104,9 +104,10 @@ func (h *DcqlHandler) PrepareDisclosure(
 		}
 		// Propagate the holder binding requirement from the credential query.
 		sel.RequireHolderBinding = credQuery.NeedsHolderBinding()
-		// Propagate the verifier's response_uri -- only formats whose holder-binding
-		// proof is bound to the session transcript (e.g. mso_mdoc) read this.
-		sel.ResponseUri = responseUri
+		// Propagate the transport binding -- only formats whose holder-binding
+		// proof is bound to the session transcript (e.g. mso_mdoc) read these.
+		sel.ResponseUri = binding.ResponseUri
+		sel.ResponseEncryptionKeyThumbprint = binding.EncryptionKeyThumbprint
 
 		handlers := h.findHandlersForQuery(credQuery)
 		if len(handlers) == 0 {

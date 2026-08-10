@@ -346,6 +346,30 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	return &mso, result
 }
 
+// DocTypeFromIssuerAuth reads the docType out of the MSO that issuerAuth signs
+// over, without verifying anything.
+//
+// It exists for one caller: an issuer that returns the bare IssuerSigned
+// structure OpenID4VCI's mso_mdoc profile specifies sends no envelope docType,
+// and MDoc.DocType has to hold something for the envelope-versus-MSO binding in
+// Verify to compare. Taking it from the MSO makes that comparison trivially
+// true, which is correct precisely because there is no second, unsigned copy to
+// disagree with — unlike a Document, where the envelope is attacker-controlled
+// and the check is load-bearing. Everything that matters about this value is
+// still established afterwards: the caller's Verify re-reads it from the MSO
+// only once the Document Signer's signature over it has been checked.
+func DocTypeFromIssuerAuth(issuerAuth cbor.RawMessage) (string, error) {
+	msg, err := decodeCoseSign1(issuerAuth)
+	if err != nil {
+		return "", fmt.Errorf("decode cose: %w", err)
+	}
+	mso, err := tag24Unwrap[MSO](msg.Payload)
+	if err != nil {
+		return "", fmt.Errorf("decode mso: %w", err)
+	}
+	return mso.DocType, nil
+}
+
 // verifyNamespaceDigests recomputes SHA-256(Tag24(item)) for each disclosed
 // item in items and compares it against nsDigests[item.DigestID]
 // (constant-time), returning the decoded elementIdentifier -> elementValue

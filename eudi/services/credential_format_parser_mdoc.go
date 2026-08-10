@@ -33,12 +33,12 @@ func (p *mdocCredentialFormatParser) ParseAndVerify(raw, credentialIssuer string
 	if err != nil {
 		return nil, fmt.Errorf("failed to base64url-decode mdoc credential: %w", err)
 	}
-	var m mdoc.MDoc
-	if err := cbor.Unmarshal(encoded, &m); err != nil {
-		return nil, fmt.Errorf("failed to decode mdoc: %w", err)
+	m, err := decodeIssuedMdoc(encoded)
+	if err != nil {
+		return nil, err
 	}
 
-	resolved, result := p.verifier.VerifyAllDisclosedNamespaces(&m)
+	resolved, result := p.verifier.VerifyAllDisclosedNamespaces(m)
 	if !result.Valid {
 		return nil, fmt.Errorf("mdoc verification failed: %s", result.Error)
 	}
@@ -124,4 +124,55 @@ func unixPtrIfNotZero(t time.Time) *int64 {
 	}
 	x := t.Unix()
 	return &x
+}
+
+// decodeIssuedMdoc reads the credential an issuer returns at the OpenID4VCI
+// credential endpoint, which is not one fixed shape in practice.
+//
+// OpenID4VCI's mso_mdoc profile says the credential is the base64url-encoded
+// CBOR of an IssuerSigned structure, and a Document (docType + issuerSigned) is
+// the natural thing to send when the docType has to travel with it. The EUDI
+// reference issuer sends neither: it returns a whole DeviceResponse envelope,
+// documents array and all (see cbor2elems in its formatter_func.py, which reads
+// its own output back as documents[0].issuerSigned). Decoding that into a
+// Document silently produced a zero-valued struct, so the credential failed with
+// "empty COSE_Sign1" — a decode mismatch reported as if the issuer's signature
+// were malformed.
+//
+// Reading is therefore permissive across all three, matching decodeCoseSign1's
+// reasoning in the mdoc package: nothing here is trusted on the strength of its
+// container, since the MSO's signature and its docType are checked afterwards
+// either way.
+func decodeIssuedMdoc(encoded []byte) (*mdoc.MDoc, error) {
+	// Document first: it carries the envelope docType, which the verifier binds
+	// to the signed one.
+	var doc mdoc.MDoc
+	if err := cbor.Unmarshal(encoded, &doc); err == nil && len(doc.IssuerSigned.IssuerAuth) > 0 {
+		return &doc, nil
+	}
+
+	var resp mdoc.DeviceResponse
+	if err := cbor.Unmarshal(encoded, &resp); err == nil && len(resp.Documents) > 0 {
+		if len(resp.Documents) > 1 {
+			return nil, fmt.Errorf("mdoc credential holds %d documents; expected exactly one", len(resp.Documents))
+		}
+		if len(resp.Documents[0].IssuerSigned.IssuerAuth) == 0 {
+			return nil, fmt.Errorf("mdoc credential's document carries no issuerAuth")
+		}
+		return &resp.Documents[0], nil
+	}
+
+	// Bare IssuerSigned: no envelope docType exists to bind, so it is taken from
+	// the MSO the issuer signed. Leaving it empty would fail the verifier's
+	// docType check against a value the issuer never sent.
+	var issuerSigned mdoc.IssuerSigned
+	if err := cbor.Unmarshal(encoded, &issuerSigned); err == nil && len(issuerSigned.IssuerAuth) > 0 {
+		docType, err := mdoc.DocTypeFromIssuerAuth(issuerSigned.IssuerAuth)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read docType from issuerAuth: %w", err)
+		}
+		return &mdoc.MDoc{DocType: docType, IssuerSigned: issuerSigned}, nil
+	}
+
+	return nil, fmt.Errorf("mdoc credential is neither a Document, a DeviceResponse nor an IssuerSigned structure")
 }

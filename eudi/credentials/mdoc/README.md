@@ -56,7 +56,7 @@ that both directions are wired for real; see the sections below for what's left.
 | `DeviceSigned` wrapper struct | ✓ | `AttachDeviceSigned` populates an `MDoc.DeviceSigned` field (deviceAuth + empty deviceNameSpaces), matching ISO 18013-5's actual document shape instead of passing deviceAuth bytes around separately |
 | `DeviceResponse` container | ✓ | `NewDeviceResponse`/`VerifyDeviceResponse` — real response container, holds one or more documents; reader authentication deliberately omitted per Annex A §A.6 |
 | Issuance-time verification (all namespaces) | ✓ | `VerifyAllDisclosedNamespaces` — verifies issuerAuth/MSO/digests across every namespace present, for the credential-endpoint response before selective disclosure has happened; `Verify` remains the single-namespace, presentation-time entry point |
-| Real OpenID4VP `SessionTranscript`/`Handover` | ✓ | now built in `eudi/openid4vp/mdoc_dcql` (production code), not in this package — `["OpenID4VPHandover", SHA-256(CBOR([clientId, nonce, null, responseUri]))]`, matching Multipaz's `vpSessionTranscript` for the AV Blueprint's `response_mode=direct_post` case |
+| Real OpenID4VP `SessionTranscript`/`Handover` | ✓ | now built in `eudi/openid4vp/mdoc_dcql` (production code), not in this package — `["OpenID4VPHandover", SHA-256(CBOR([clientId, nonce, jwkThumbprint, responseUri]))]`, the redirect variant of OpenID4VP Annex B.2.6.1, matching Multipaz's `OpenID4VP.kt`. `jwkThumbprint` is the SHA-256 JWK thumbprint of the verifier's response encryption key, and CBOR null when the response is unencrypted — which is the AV Blueprint's `response_mode=direct_post` case, so that profile produces the null form. The Digital Credentials API's `OpenID4VPDCAPIHandover` (Annex B.2.6.2) is a separate construction and is not built yet |
 | OpenID4VCI `pre-authorized_code` issuance | ✓ | wired for real through `eudi/openid4vci` (generic) + `eudi/services/credential_format_parser_mdoc.go` (mdoc-specific parsing/verification) — not modeled in this package |
 | OpenID4VCI `authorization_code` grant | ✓ | inherited for free — `eudi/openid4vci` already implements it generically for every format |
 | Session encryption (BLE/NFC) | ✗ | transport layer not built; also explicitly out of scope for the AV Blueprint (proximity presentation is excluded — see Annex A §A.6) |
@@ -140,7 +140,7 @@ Tests for the protocol layers live with the code they cover, not here:
 
 | Location | Covers |
 |---|---|
-| `eudi/openid4vp/mdoc_dcql/sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptShape`, `…BindsAllInputs`, `…IntegratesWithDeviceAuth` — the byte-level handover formula, and that a `deviceAuth` signed over it verifies |
+| `eudi/openid4vp/mdoc_dcql/sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptShape`, `…BindsAllInputs`, `…IntegratesWithDeviceAuth` — the byte-level handover formula, and that a `deviceAuth` signed over it verifies. `…CarriesEncryptionKeyThumbprint` covers the other axis: the third handover slot, which carries the response encryption key's thumbprint when the response is encrypted and CBOR null when it is not |
 | `eudi/services/credential_format_parser_mdoc_test.go` | `TestMdocCredentialFormatParser_ParseAndVerify` (+ `_UntrustedRootRejected`, `_InvalidBase64`) and `_CheckBatchUniqueness` — the issuance-side parse/verify path |
 | `eudi/services/credential_service_test.go` | `TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames`, `…_NoMetadataStillEmitsValues` — permission-dialog attribute building |
 | `eudi/openid4vci/metadata_validators_test.go` | `mso_mdoc` accepted as a supported credential format, and `credential_signing_alg_values_supported` validated as COSE algorithm identifiers — ES256 (`-7`) required, an identifier ISO 18013-5 permits but this wallet cannot verify distinguished from one it does not permit at all |
@@ -323,9 +323,12 @@ exclusively. Concretely out of scope as a result:
   attributes via a DCQL query instead (JSON), which `eudi/openid4vp/dcql` implements
   generically for every format.
 - The DC API's `EncryptedResponse = ["dcapi", {enc, cipherText}]` wrapper, where
-  `cipherText` is `DeviceResponse` encrypted with HPKE (RFC 9180). OpenID4VP's
-  `response_mode=direct_post` sends `DeviceResponse` unencrypted (as base64url CBOR),
-  so no HPKE layer is needed for the path actually implemented.
+  `cipherText` is `DeviceResponse` encrypted with HPKE (RFC 9180). This package still
+  has no HPKE layer: `response_mode=direct_post` sends `DeviceResponse` unencrypted (as
+  base64url CBOR), and the encrypted OpenID4VP modes (`direct_post.jwt`, `dc_api.jwt`)
+  are JWE at the OpenID4VP layer, built in `eudi/openid4vp`, not HPKE around the mdoc.
+  What this package's callers do supply is the response encryption key's thumbprint, so
+  the session transcript commits to it — see the handover row above.
 
 ### No session encryption / transport layer
 
@@ -415,7 +418,11 @@ use `time.Now()`.
 > Annex A's numbering at all. The *content* of each claim was checked and holds — P-256
 > with ES256 and SHA-256, `response_mode` MUST be `direct_post`, proximity presentation
 > out of scope, no AP metadata or certificate profile specified. Only the numbering is
-> in doubt. Anyone relying on a specific citation should confirm it against the
+> in doubt. The `direct_post` restriction is narrower than OpenID4VP and ISO 18013-7,
+> which both allow the encrypted variant and which this wallet implements; a deployment
+> serving the AV profile holds itself to the narrower rule with
+> `openid4vp.Client.RequireUnencryptedDirectPost`, off by default so ordinary 18013-7
+> verifiers are not refused. Anyone relying on a specific citation should confirm it against the
 > authoritative document first, and ideally pin the Blueprint revision here once
 > someone has it open.
 - IANA COSE Algorithms registry — `-7` = ES256

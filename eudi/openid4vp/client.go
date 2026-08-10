@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"io"
 	"net/http"
 	"net/url"
@@ -50,6 +51,11 @@ type Client struct {
 	verifierValidator VerifierValidator
 	currentLocale     *clientmodels.CurrentLocale
 
+	// requireUnencryptedDirectPost is the deployment policy set by
+	// RequireUnencryptedDirectPost. Read on the session goroutines, written once
+	// at wallet construction before any session exists.
+	requireUnencryptedDirectPost bool
+
 	// Sessions currently performing, each on its own goroutine. Sessions may
 	// overlap: a second disclosure can arrive while one is parked awaiting
 	// permission, so a single pointer would misroute answers between them.
@@ -92,6 +98,37 @@ func (client *Client) deregister(session *openid4vpSession) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	delete(client.sessions, session)
+}
+
+// RequireUnencryptedDirectPost restricts URL-invoked sessions to
+// response_mode=direct_post, refusing direct_post.jwt.
+//
+// This is deployment policy, not protocol: OpenID4VP and ISO 18013-7 both allow
+// the encrypted variant, and the wallet implements it correctly (mso_mdoc's
+// session transcript commits to the response encryption key's thumbprint, see
+// mdoc_dcql). The EU Age Verification profile is narrower than the specs it
+// builds on and permits only plain direct_post on the redirect path, so a
+// deployment serving that profile can hold the wallet to it here rather than
+// discovering the mismatch at a verifier.
+//
+// Off by default: enabling it unconditionally would refuse ordinary
+// 18013-7 verifiers that do nothing wrong. It deliberately does not touch the
+// Digital Credentials API modes, which the AV profile makes the primary path and
+// where encrypted responses are expected.
+func (client *Client) RequireUnencryptedDirectPost(required bool) {
+	client.requireUnencryptedDirectPost = required
+}
+
+func (client *Client) checkRedirectResponseModeAllowed(mode ResponseMode) error {
+	if !client.requireUnencryptedDirectPost {
+		return nil
+	}
+	if mode == ResponseMode_DirectPostJwt {
+		return fmt.Errorf(
+			"response_mode %s is not accepted by this wallet deployment: only %s is allowed for a URL-invoked session",
+			ResponseMode_DirectPostJwt, ResponseMode_DirectPost)
+	}
+	return nil
 }
 
 // NewClient creates a new OpenID4VP client.
@@ -198,6 +235,11 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 		// transmitted to the verifier.
 		if isDcApiResponseMode(request.ResponseMode) {
 			handleFailure(handler, "openid4vp: response_mode %s is only valid for a session started over the digital credentials api", request.ResponseMode)
+			return
+		}
+
+		if err := client.checkRedirectResponseModeAllowed(request.ResponseMode); err != nil {
+			handleFailure(handler, "openid4vp: %v", err)
 			return
 		}
 
@@ -426,8 +468,29 @@ func (session *openid4vpSession) perform() error {
 
 	logMarshalled("selections:", permResp.selections)
 
+	// The response encryption key is chosen before anything is disclosed, not
+	// when the response is built: mso_mdoc's deviceAuth signs over a session
+	// transcript carrying this key's thumbprint, so the choice has to be made
+	// while the signature is still ahead of us. Formats whose holder binding is
+	// not transcript-bound ignore the thumbprint entirely.
+	var encryptionKey jwk.Key
+	var encryptionKeyThumbprint []byte
+	if session.request.ResponseMode == ResponseMode_DirectPostJwt || session.request.ResponseMode == ResponseMode_DcApiJwt {
+		if session.request.ClientMetadata == nil || session.request.ClientMetadata.Jwks == nil {
+			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", session.request.ResponseMode)
+		}
+		var err error
+		encryptionKey, encryptionKeyThumbprint, err = selectResponseEncryptionKey(session.request.ClientMetadata.Jwks.Set)
+		if err != nil {
+			return err
+		}
+	}
+
 	// Group selections by format
-	queryResponses, credLogs, err := session.prepareDisclosures(permResp.selections)
+	queryResponses, credLogs, err := session.prepareDisclosures(permResp.selections, dcql.ResponseBinding{
+		ResponseUri:             session.request.ResponseUri,
+		EncryptionKeyThumbprint: encryptionKeyThumbprint,
+	})
 	if err != nil {
 		return err
 	}
@@ -440,11 +503,8 @@ func (session *openid4vpSession) perform() error {
 		ResponseMode:   session.request.ResponseMode,
 	}
 
-	if session.request.ResponseMode == ResponseMode_DirectPostJwt || session.request.ResponseMode == ResponseMode_DcApiJwt {
-		if session.request.ClientMetadata == nil || session.request.ClientMetadata.Jwks == nil {
-			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", session.request.ResponseMode)
-		}
-		responseConfig.EncryptionKeys = &session.request.ClientMetadata.Jwks.Set
+	if encryptionKey != nil {
+		responseConfig.EncryptionKey = encryptionKey
 		responseConfig.EncryptedResponseEncValuesSupported = session.request.ClientMetadata.EncryptedResponseEncValuesSupported
 	}
 
@@ -482,9 +542,10 @@ func (session *openid4vpSession) perform() error {
 // prepareDisclosures delegates to the DcqlHandler to prepare credentials for the VP token.
 func (session *openid4vpSession) prepareDisclosures(
 	selections []dcql.DisclosureSelection,
+	binding dcql.ResponseBinding,
 ) ([]dcql.QueryResponse, []clientmodels.LogCredential, error) {
 	prepared, err := session.dcqlHandler.PrepareDisclosure(
-		session.request.DcqlQuery, selections, session.request.Nonce, session.audience, session.request.ResponseUri,
+		session.request.DcqlQuery, selections, session.request.Nonce, session.audience, binding,
 	)
 	if err != nil {
 		return nil, nil, err
