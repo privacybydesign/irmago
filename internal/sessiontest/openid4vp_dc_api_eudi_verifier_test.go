@@ -7,7 +7,6 @@ import (
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/privacybydesign/irmago/testdata"
 
 	"github.com/stretchr/testify/require"
@@ -63,7 +62,7 @@ func testDcApiDisclosureToEudiVerifier(
 ) {
 	issueEmailCredential(t, irmaServer, c, sessionHandler, 1)
 
-	verifierSession, err := irmaclient.StartDcApiTestSessionAtEudiVerifier(
+	verifierSession, err := StartDcApiTestSessionAtEudiVerifier(
 		testdata.OpenID4VP_DcApi_Host,
 		createDcApiEmailAuthRequestRequest(t, dcApiVerifierOrigin),
 	)
@@ -92,7 +91,7 @@ func testDcApiDisclosureToEudiVerifier(
 
 	// The wallet transmits nothing itself: the platform is what carries the response
 	// back to the verifier.
-	require.NoError(t, irmaclient.PostDcApiWalletResponseToEudiVerifier(verifierSession, session.DcApiResponse))
+	require.NoError(t, PostDcApiWalletResponseToEudiVerifier(verifierSession, session.DcApiResponse))
 
 	// The verifier decrypted the response, verified the presentation and its Key
 	// Binding JWT against the origin it signed for, and recorded the disclosed claims.
@@ -111,7 +110,7 @@ func testDcApiRejectsRequestSignedForAnotherOrigin(
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 ) {
-	verifierSession, err := irmaclient.StartDcApiTestSessionAtEudiVerifier(
+	verifierSession, err := StartDcApiTestSessionAtEudiVerifier(
 		testdata.OpenID4VP_DcApi_Host,
 		createDcApiEmailAuthRequestRequest(t, "https://other.example.com"),
 	)

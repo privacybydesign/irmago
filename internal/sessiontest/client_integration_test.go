@@ -1058,7 +1058,7 @@ func testDiscloseOverOpenID4VP(t *testing.T) {
 }
 
 func discloseOverOpenID4VP(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, openid4vpHost string) {
-	verifierSession, err := irmaclient.StartTestSessionAtEudiVerifier(openid4vpHost, createEmailAuthRequestRequest())
+	verifierSession, err := StartTestSessionAtEudiVerifier(openid4vpHost, createEmailAuthRequestRequest())
 	require.NoError(t, err)
 	sessionReq := client.SessionRequestData{
 		Qr: irma.Qr{
