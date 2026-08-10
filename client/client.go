@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
@@ -218,11 +219,21 @@ func New(
 		StatusChecker: statusChecker,
 	}
 
+	// SD-JWT-secured VCDM credentials share the issuer trust anchors and clock
+	// with the SD-JWT VC context; received credentials are routed between the
+	// two verifiers by data model (#682).
+	vcdmVerificationContextOpenID4VCI := vcdmsdjwt.VerificationContext{
+		X509VerificationContext: &eudiConf.Issuers,
+		Clock:                   eudi_jwt.NewSystemClock(),
+		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
+	}
+
 	// Initiate the OpenID4VCI client
 	openid4vciClient, err := openid4vci.NewClient(
 		common.HTTPClient,
 		eudiConf,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI),
+		vcdmsdjwt.NewHolderVerificationProcessor(vcdmVerificationContextOpenID4VCI),
 		credentialService,
 		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
 		currentLocale,
