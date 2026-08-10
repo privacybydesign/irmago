@@ -532,7 +532,7 @@ services:
       # when it does not match. Recompute it after regenerating the keystore with:
       # openssl x509 -in testdata/eudi/verifier/verifier.crt -outform der |
       #   openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '='
-      - VERIFIER_ORIGINALCLIENTID=RWPXyj9oygWIOguFFcocp7qFVS_fVpkmps5FBL90qxQ
+      - VERIFIER_ORIGINALCLIENTID=raSlLEuKKQ__9tlN26ybyx9tV0C07-_2ezCZtl6A3lw
       - VERIFIER_CLIENTIDPREFIX=x509_hash
       - VERIFIER_ACCESS_CERTIFICATE_ALIAS=verifier_cert
       - VERIFIER_ACCESS_CERTIFICATE_SIGNING_ALGORITHM=ES256

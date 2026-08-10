@@ -54,3 +54,9 @@ chmod a+r keystore.p12
 
 # remove unused files
 rm ca.srl verifier.csr
+
+# The eudi_openid4vp_dcapi service in docker-compose.yml pins VERIFIER_ORIGINALCLIENTID
+# to the hash of this certificate, and the verifier refuses to start when it does not
+# match, so update it there too:
+openssl x509 -in verifier.crt -outform der | openssl dgst -sha256 -binary |
+  base64 | tr '+/' '-_' | tr -d '='
