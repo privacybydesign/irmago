@@ -35,6 +35,11 @@ func (v *DidVerifierValidator) SetAllowInsecureDidWeb(allow bool) {
 	v.didWebResolver.AllowInsecure = allow
 }
 
+// AllowsInsecureDidWeb reports whether did:web DIDs may be resolved over HTTP.
+func (v *DidVerifierValidator) AllowsInsecureDidWeb() bool {
+	return v.didWebResolver.AllowInsecure
+}
+
 func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (
 	*AuthorizationRequest,
 	*VerifiedRequestor,
