@@ -14,10 +14,12 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
 // SdJwtVcStorageClient is the interface that the openid4vci client requires for
@@ -27,10 +29,11 @@ type SdJwtVcStorageClient interface {
 }
 
 type Client struct {
-	Configuration  *eudi.Configuration
-	httpClient     *http.Client
-	currentSession *session
-	holderVerifier *sdjwtvc.HolderVerificationProcessor
+	Configuration           *eudi.Configuration
+	httpClient              *http.Client
+	currentSession          *session
+	holderVerifier          *sdjwtvc.HolderVerificationProcessor
+	credentialFormatParsers services.CredentialFormatParsers
 
 	credentialService services.CredentialService
 
@@ -66,13 +69,39 @@ func NewClient(httpClient *http.Client,
 		return nil, fmt.Errorf("holderKeyBinder cannot be nil")
 	}
 	return &Client{
-		httpClient:        httpClient,
-		Configuration:     config,
-		holderVerifier:    holderVerifier,
-		credentialService: credentialService,
-		holderKeyBinder:   holderKeyBinder,
-		currentLocale:     currentLocale,
+		httpClient:              httpClient,
+		Configuration:           config,
+		holderVerifier:          holderVerifier,
+		credentialService:       credentialService,
+		credentialFormatParsers: newCredentialFormatParsers(config, holderVerifier),
+		holderKeyBinder:         holderKeyBinder,
+		currentLocale:           currentLocale,
 	}, nil
+}
+
+// newCredentialFormatParsers builds the per-format parser registry used to
+// verify freshly issued credentials.
+//
+// It is derived here rather than passed in: both inputs are already arguments
+// of NewClient, so a caller-supplied registry could only ever repeat what this
+// function computes — while making it possible to forget one, or to wire a
+// registry inconsistent with the config the rest of the client uses. That is
+// not hypothetical: the parameter was silently dropped twice while merging,
+// each time disabling format dispatch with no compile error at the call site.
+//
+// mso_mdoc's IACA trust anchors are taken from the same issuer pool that backs
+// SD-JWT x5c validation. That assumes one shared PKI, which holds for the
+// current setup but is a deliberate simplification, not a general truth.
+func newCredentialFormatParsers(
+	config *eudi.Configuration,
+	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+) services.CredentialFormatParsers {
+	return services.CredentialFormatParsers{
+		models.CredentialFormatSdJwtVc: services.NewSdJwtVcCredentialFormatParser(holderVerifier),
+		models.CredentialFormatMsoMdoc: services.NewMdocCredentialFormatParser(
+			mdoc.NewVerifierFromPool(config.Issuers.GetVerificationOptionsTemplate().Roots),
+		),
+	}
 }
 
 func (client *Client) AllowInsecureHttpForTesting() {
@@ -179,6 +208,7 @@ func (client *Client) handleCredentialOffer(
 		holderKeyBinder:            client.holderKeyBinder,
 		storage:                    client.Configuration.Storage,
 		credentialService:          client.credentialService,
+		credentialFormatParsers:    client.credentialFormatParsers,
 		vctResolver:                vctResolver,
 		allowInsecureHttp:          client.allowInsecureHttp,
 		originalCredentialMetadata: originalCredentialMetadata,
@@ -374,8 +404,8 @@ func (client *Client) convertToCredentialInfoList(
 	result := make([]*clientmodels.CredentialDescriptor, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
-			if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc {
-				// We only support SD-JWT VCs for now
+			if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
+				config.Format != metadata.CredentialFormatIdentifier_MsoMdoc {
 				continue
 			}
 

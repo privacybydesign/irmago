@@ -142,6 +142,7 @@ func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedB
 	}
 	d.CredentialName = clientmodels.Resolve(CredentialNamesByLanguage(batch.CredentialMetadata.Display), locale)
 
+	bareElementClaims := map[string][]any{}
 	for i, claim := range batch.CredentialMetadata.Claims {
 		var path []any
 		if err := json.Unmarshal(claim.Path, &path); err != nil {
@@ -152,6 +153,74 @@ func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedB
 		if len(claim.Display) > 0 {
 			d.ClaimNames[key] = clientmodels.Resolve(ClaimNamesByLanguage(claim.Display), locale)
 		}
+		if element, ok := bareElementPath(path); ok {
+			if _, taken := bareElementClaims[element]; !taken {
+				bareElementClaims[element] = path
+			}
+		}
 	}
+	aliasMdocBareElementPaths(&d, batch, bareElementClaims)
 	return d
+}
+
+// aliasMdocBareElementPaths indexes an mdoc's one-component claim metadata under
+// the two-component path its values actually live at.
+//
+// An mdoc claim path is [namespace, elementIdentifier], but OpenID4VCI's mso_mdoc
+// profile specifies no display metadata at all, so nothing obliges an issuer to
+// publish the two-component form -- and real ones publish the bare element.
+// Callers look display names up by the path they walked to reach a value, which is
+// always two components, so a bare-element entry matches nothing and the attribute
+// renders with no label at all: the credential list shows a namespace-nested,
+// unlabelled row while the disclosure screen for the very same credential labels it
+// correctly, because eudi/openid4vp/mdoc_dcql applies this same fallback itself
+// (see claimDisplayName there, which also logs the issuer-side fix once per
+// disclosure -- deliberately not repeated here, since this runs on every list
+// render).
+//
+// Aliases never overwrite: a correctly published [namespace, element] path always
+// wins, and the alias is only added for namespaces the credential actually carries.
+func aliasMdocBareElementPaths(d *ResolvedBatchDisplay, batch *models.CredentialBatch, bareElementClaims map[string][]any) {
+	if batch.Format != models.CredentialFormatMsoMdoc || len(bareElementClaims) == 0 {
+		return
+	}
+
+	// An mdoc's stored payload is namespace -> elementIdentifier -> value, which
+	// is where the namespaces the issuer left out come from.
+	var resolved map[string]map[string]any
+	if err := json.Unmarshal(batch.ProcessedSdJwtPayload, &resolved); err != nil {
+		return
+	}
+
+	for namespace, elements := range resolved {
+		for element := range elements {
+			barePath, published := bareElementClaims[element]
+			if !published {
+				continue
+			}
+			bareKey := clientmodels.ClaimPathKey(barePath)
+			aliasKey := clientmodels.ClaimPathKey([]any{namespace, element})
+
+			if name, ok := d.ClaimNames[bareKey]; ok {
+				if _, exact := d.ClaimNames[aliasKey]; !exact {
+					d.ClaimNames[aliasKey] = name
+				}
+			}
+			if order, ok := d.ClaimOrder[bareKey]; ok {
+				if _, exact := d.ClaimOrder[aliasKey]; !exact {
+					d.ClaimOrder[aliasKey] = order
+				}
+			}
+		}
+	}
+}
+
+// bareElementPath reports whether a claim path is a single string component, the
+// namespace-less form an mdoc issuer may publish.
+func bareElementPath(path []any) (element string, ok bool) {
+	if len(path) != 1 {
+		return "", false
+	}
+	element, ok = path[0].(string)
+	return element, ok
 }

@@ -38,9 +38,13 @@ openssl ecparam -name prime256v1 -genkey -noout -out issuer.key
 openssl req -new -key issuer.key \
   -subj "/CN=Yivi Test PID Issuer/C=NL" \
   -out issuer.csr
+# 1.0.18013.5.1.2 is ISO 18013-5 Annex B.1.2's mdoc document-signer usage. It has
+# to be here because this same certificate signs the issuer's mso_mdoc MSOs, and
+# irmago rejects a document signer that enumerates its extended key usages
+# without naming this one. clientAuth stays for the SD-JWT/x5c path.
 openssl x509 -req -in issuer.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
   -out issuer.pem -days "$DAYS" -sha256 \
-  -extfile <(printf "subjectAltName=%s\nkeyUsage=digitalSignature\nextendedKeyUsage=clientAuth\n" "$SAN_ISSUER")
+  -extfile <(printf "subjectAltName=%s\nkeyUsage=digitalSignature\nextendedKeyUsage=clientAuth,1.0.18013.5.1.2\n" "$SAN_ISSUER")
 openssl x509 -in issuer.pem -outform der -out issuer.der
 rm -f issuer.csr ca.srl
 

@@ -4,5 +4,9 @@
 # Denote all files that are truly binary and should not be modified.
 *.sig binary
 *.png binary
+# Without this the `* text eol=lf` above normalises the PKCS#12 keystore on
+# commit, stripping its CR bytes: the file lands in the repository corrupt and
+# the eudi_openid4vp containers die at startup with java.io.EOFException.
+*.p12 binary
 testdata/storage_regression/**/bbolt_client_db binary
 testdata/storage_regression/**/eudi_client_db binary

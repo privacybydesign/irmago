@@ -25,8 +25,9 @@ const (
 type HolderBindingKey struct {
 	ID datatypes.UUID `gorm:"primaryKey"`
 
-	// FK back to the owning credential instance (Has One from IssuedCredentialInstance).
-	// Nil when the key has not yet been bound to a credential instance.
+	// FK back to the owning credential instance (Has One from IssuedCredentialInstance),
+	// shared across every credential format. Nil when the key has not yet been bound to a
+	// credential instance.
 	IssuedCredentialInstanceID *datatypes.UUID
 
 	Algorithm KeyAlgorithm `gorm:"type:text;not null;index"`

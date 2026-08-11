@@ -22,6 +22,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -77,6 +78,28 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 	client.AllowInsecureHttpForTesting()
 
 	return s, client
+}
+
+// TestNewClientRegistersEveryCredentialFormat pins that NewClient derives a
+// parser for every format the client claims to support.
+//
+// obtainCredential looks its parser up by format and fails the session when
+// there is none, so a missing entry disables issuance for that format at
+// runtime with nothing failing at compile time. That is not hypothetical: the
+// registry used to be a NewClient parameter and was silently dropped twice
+// while merging, each time leaving format dispatch broken.
+func TestNewClientRegistersEveryCredentialFormat(t *testing.T) {
+	s, client := createOpenID4VCiClientForTesting(t)
+	defer s.Close()
+
+	for _, format := range []models.CredentialFormat{
+		models.CredentialFormatSdJwtVc,
+		models.CredentialFormatMsoMdoc,
+	} {
+		parser, ok := client.credentialFormatParsers[format]
+		require.True(t, ok, "no parser registered for format %q", format)
+		require.NotNil(t, parser, "nil parser registered for format %q", format)
+	}
 }
 
 func TestOpenID4VciClient(t *testing.T) {

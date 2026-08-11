@@ -8,31 +8,34 @@ import (
 	"gorm.io/gorm"
 )
 
-// TODO: we need to add polymorphic associations to support multiple credential formats in the future, but for now we only support SD-JWT VCs, so we can keep all fields in one table and use the Format field to distinguish them. See https://gorm.io/docs/polymorphism.html for reference on how to implement this when we need it.
-
 // CredentialFormat represents the credential format identifier as defined in the OID4VCI spec.
 type CredentialFormat string
 
 const (
 	CredentialFormatSdJwtVc CredentialFormat = "dc+sd-jwt"
+	CredentialFormatMsoMdoc CredentialFormat = "mso_mdoc"
 )
 
 // CredentialBatch groups all credential instances issued from a single credential_configuration_id
-// request within one OID4VCI issuance session. When the issuer supports batch issuance,
-// BatchSize > 1 and multiple IssuedCredentialInstance rows belong to this batch. Single-use
-// wallets decrement RemainingCount on each presentation; the batch is exhausted when it reaches 0.
+// request within one OID4VCI issuance session, shared across every credential format (the Format
+// field discriminates). When the issuer supports batch issuance, BatchSize > 1 and multiple
+// IssuedCredentialInstance rows belong to this batch. Single-use wallets decrement RemainingCount
+// on each presentation; the batch is exhausted when it reaches 0.
 type CredentialBatch struct {
 	ID datatypes.UUID
 
-	// IssuerURL is the iss claim from the issuer-signed JWT, equal to the credential_issuer
-	// in the credential offer (OID4VCI §7.1.1 requires iss == credential_issuer).
-	// This is the value used for DCQL TrustedAuthority resolution in OID4VP.
+	// IssuerURL is the iss claim from the issuer-signed JWT (SD-JWT) or the credential_issuer
+	// used at issuance (mdoc), equal to the credential_issuer in the credential offer
+	// (OID4VCI §7.1.1 requires iss == credential_issuer). This is the value used for DCQL
+	// TrustedAuthority resolution in OID4VP.
 	IssuerURL string
 
-	// VerifiableCredentialType is the vct claim from the issued SD-JWT VC.
+	// VerifiableCredentialType is the credential type identifier: the vct claim for
+	// "dc+sd-jwt" credentials, or the ISO 18013-5 docType (e.g. "eu.europa.ec.av.1") for
+	// "mso_mdoc" credentials.
 	VerifiableCredentialType string
 
-	// Format is the credential format identifier (e.g. "dc+sd-jwt").
+	// Format is the credential format identifier (e.g. "dc+sd-jwt", "mso_mdoc").
 	Format CredentialFormat
 
 	// Hash is a deterministic hash over the credential type and its sorted disclosed attributes.
@@ -40,16 +43,29 @@ type CredentialBatch struct {
 	// storage remains compatible with the IRMA client's deduplication logic.
 	Hash string `gorm:"uniqueIndex"`
 
-	// ProcessedSdJwtPayload is the JSON-encoded payload of the SD-JWT after processing/verifying the issuer-signed JWT.
+	// ProcessedSdJwtPayload holds the credential's JSON-encoded claims, cached at issuance time
+	// so matching a DCQL query doesn't require re-parsing the raw credential.
+	//
+	// Despite the name, the contents are format-dependent: for "dc+sd-jwt" this is the processed
+	// SD-JWT payload (after processing/verifying the issuer-signed JWT), and for "mso_mdoc" it is
+	// a namespace -> elementIdentifier -> value map. The name predates multi-format support and
+	// is kept deliberately — renaming the field renames the column, and AutoMigrate (the only
+	// schema mechanism here, see storage.autoMigrateHolderModels) cannot rename a column. It
+	// would instead try to ADD the new one, which SQLite rejects for a NOT NULL column once the
+	// table has rows, so every wallet already holding a credential would fail to open its
+	// database. See credentials_schema_test.go, which pins this.
 	ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`
 
-	// IssuedAt is taken from the iat claim of the issuer-signed JWT.
+	// IssuedAt is the iat claim of the issuer-signed JWT ("dc+sd-jwt"), or the MSO's
+	// validityInfo.signed ("mso_mdoc").
 	IssuedAt datatypes.NullTime
 
-	// ExpiresAt is taken from the exp claim of the issuer-signed JWT. Nil if the credential does not expire.
+	// ExpiresAt is the exp claim of the issuer-signed JWT ("dc+sd-jwt"), or the MSO's
+	// validityInfo.validUntil ("mso_mdoc"). Nil if the credential does not expire.
 	ExpiresAt datatypes.NullTime
 
-	// NotBefore is taken from the nbf claim of the issuer-signed JWT. Nil if the credential has no nbf restriction.
+	// NotBefore is the nbf claim of the issuer-signed JWT ("dc+sd-jwt"), or the MSO's
+	// validityInfo.validFrom ("mso_mdoc"). Nil if the credential has no such restriction.
 	// OID4VP wallets must not present a credential before this time.
 	NotBefore datatypes.NullTime
 
@@ -117,9 +133,10 @@ func (b *CredentialBatch) validate() error {
 	return nil
 }
 
-// IssuedCredentialInstance is a single raw SD-JWT VC token within a CredentialBatch.
-// Each instance carries its own holder binding key, because the OID4VCI session creates
-// one key pair per proof JWT in the batch credential request.
+// IssuedCredentialInstance is a single raw credential within a CredentialBatch, in
+// whichever format the batch's Format field names. Each instance carries its own holder
+// binding key, because the OID4VCI session creates one key pair per proof JWT in the
+// batch credential request.
 type IssuedCredentialInstance struct {
 	ID datatypes.UUID
 
@@ -129,7 +146,9 @@ type IssuedCredentialInstance struct {
 	// Nil if the credential configuration did not require cryptographic key binding.
 	HolderBindingKey *HolderBindingKey `gorm:"constraint:OnDelete:CASCADE"`
 
-	// RawCredential is the raw SD-JWT VC token (without key binding JWT).
+	// RawCredential is the credential as issued, minus anything the holder re-creates per
+	// presentation: the SD-JWT VC token without its key binding JWT for "dc+sd-jwt", and
+	// CBOR of docType plus issuerSigned without DeviceSigned for "mso_mdoc".
 	// The surrounding SQLCipher layer encrypts this at rest.
 	RawCredential []byte `gorm:"type:bytea;not null"`
 

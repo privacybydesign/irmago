@@ -39,6 +39,13 @@
 					"family_name",
 					"birthdate"
 				]
+			},
+			{
+				"credential": "eu.europa.ec.av.1",
+				"attributes": [
+					"age_over_18",
+					"age_over_21"
+				]
 			}
 		],
 		"purpose": {

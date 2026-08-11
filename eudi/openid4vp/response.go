@@ -1,6 +1,7 @@
 package openid4vp
 
 import (
+	"crypto"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -15,12 +16,15 @@ import (
 )
 
 type authorizationResponseConfig struct {
-	State                               string
-	QueryResponses                      []dcql.QueryResponse
-	ResponseUri                         string
-	ResponseType                        string
-	ResponseMode                        ResponseMode
-	EncryptionKeys                      *jwk.Set
+	State          string
+	QueryResponses []dcql.QueryResponse
+	ResponseUri    string
+	ResponseType   string
+	ResponseMode   ResponseMode
+	// EncryptionKey is the single key the response is encrypted to, chosen by
+	// selectResponseEncryptionKey before disclosure so mso_mdoc's session
+	// transcript can commit to its thumbprint.
+	EncryptionKey                       jwk.Key
 	EncryptedResponseEncValuesSupported []string
 }
 
@@ -37,13 +41,13 @@ func createAuthorizationResponseHttpRequest(config authorizationResponseConfig) 
 	}
 
 	if config.ResponseMode == ResponseMode_DirectPostJwt {
-		if config.EncryptionKeys == nil {
+		if config.EncryptionKey == nil {
 			return nil, fmt.Errorf("using response mode %v, but the encryption key is nil", ResponseMode_DirectPostJwt)
 		}
 		jwe, err := createEncryptedResponse(
 			config.QueryResponses,
 			map[string]any{"state": config.State},
-			*config.EncryptionKeys,
+			config.EncryptionKey,
 			config.EncryptedResponseEncValuesSupported,
 		)
 		if err != nil {
@@ -74,13 +78,13 @@ func createDcApiResponse(config authorizationResponseConfig) (string, error) {
 		payload = map[string]any{"vp_token": createVpToken(config.QueryResponses)}
 
 	case ResponseMode_DcApiJwt:
-		if config.EncryptionKeys == nil {
+		if config.EncryptionKey == nil {
 			return "", fmt.Errorf("using response mode %v, but the encryption key is nil", ResponseMode_DcApiJwt)
 		}
 		jwe, err := createEncryptedResponse(
 			config.QueryResponses,
 			nil,
-			*config.EncryptionKeys,
+			config.EncryptionKey,
 			config.EncryptedResponseEncValuesSupported,
 		)
 		if err != nil {
@@ -103,15 +107,57 @@ func createDcApiResponse(config authorizationResponseConfig) (string, error) {
 // encrypted JWT whose payload holds the response parameters as top-level members
 // (Section 8.3). extraMembers carries the response-mode-specific members beyond
 // vp_token, such as state for direct_post.jwt.
-func createEncryptedResponse(queryResponses []dcql.QueryResponse, extraMembers map[string]any, encryptionKeys jwk.Set, encSupported []string) (string, error) {
+func createEncryptedResponse(queryResponses []dcql.QueryResponse, extraMembers map[string]any, encryptionKey jwk.Key, encSupported []string) (string, error) {
 	payload := map[string]any{
 		"vp_token": createVpToken(queryResponses),
 	}
 	maps.Copy(payload, extraMembers)
-	return encryptJwe(payload, encryptionKeys, encSupported)
+	return encryptJwe(payload, encryptionKey, encSupported)
 }
 
-func encryptJwe(payload map[string]any, keys jwk.Set, encSupported []string) (string, error) {
+// selectResponseEncryptionKey returns the key encryptJwe will encrypt to, and
+// its SHA-256 JWK thumbprint.
+//
+// It exists so the choice can be made before the response is built: mso_mdoc's
+// session transcript hashes that thumbprint into the handover its deviceAuth
+// signs over, and the signature only verifies if the response then arrives
+// encrypted to the same key. Picking here and encrypting later against "the
+// first key that works" would be a silent mismatch whenever the verifier
+// publishes more than one usable key.
+//
+// The selection mirrors encryptJwe's own requirements — a key needs an alg, and
+// that alg has to be one jwe.Encrypt accepts — and takes the first such key.
+func selectResponseEncryptionKey(keys jwk.Set) (jwk.Key, []byte, error) {
+	for i := range keys.Len() {
+		key, ok := keys.Key(i)
+		if !ok {
+			continue
+		}
+		keyAlg, ok := key.Algorithm()
+		if !ok {
+			continue
+		}
+		// A verifier may publish its signing keys in the same jwks. Encrypting to
+		// one fails outright now that there is no fallback, so skip anything whose
+		// alg is not a key-encryption algorithm.
+		if _, ok := keyAlg.(jwa.KeyEncryptionAlgorithm); !ok {
+			continue
+		}
+		thumbprint, err := key.Thumbprint(crypto.SHA256)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to compute the response encryption key's thumbprint: %v", err)
+		}
+		return key, thumbprint, nil
+	}
+	return nil, nil, fmt.Errorf("client metadata carries no usable response encryption key")
+}
+
+// encryptJwe encrypts to exactly the key selectResponseEncryptionKey returned.
+// Trying other published keys on failure is deliberately not done: an mdoc's
+// deviceAuth has already been signed over a transcript committing to this key's
+// thumbprint, so falling back to another key would produce a response the
+// verifier can decrypt but whose device signature does not verify.
+func encryptJwe(payload map[string]any, key jwk.Key, encSupported []string) (string, error) {
 	payloadJson, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("failed to serialize payload for the encrypted response: %v", err)
@@ -122,44 +168,26 @@ func encryptJwe(payload map[string]any, keys jwk.Set, encSupported []string) (st
 		return "", fmt.Errorf("no supported encryption algorithm: %v", err)
 	}
 
-	errors := []error{}
-
-	for i := range keys.Len() {
-		key, ok := keys.Key(i)
-		if !ok {
-			errors = append(errors, fmt.Errorf("couldn't find key at index %v", i))
-			continue
-		}
-
-		h := jwe.NewHeaders()
-
-		if kid, ok := key.KeyID(); !ok {
-			errors = append(errors, fmt.Errorf("missing key id"))
-			continue
-		} else if kid != "" {
-			h.Set(jwe.KeyIDKey, kid)
-		}
-
-		keyAlg, ok := key.Algorithm()
-		if !ok {
-			errors = append(errors, fmt.Errorf("key doesn't have alg"))
-			continue
-		}
-
-		encrypted, err := jwe.Encrypt(
-			payloadJson,
-			jwe.WithKey(keyAlg, key),
-			jwe.WithContentEncryption(encAlg),
-			jwe.WithProtectedHeaders(h),
-		)
-		if err != nil {
-			errors = append(errors, err)
-			continue
-		}
-		return string(encrypted), nil
+	keyAlg, ok := key.Algorithm()
+	if !ok {
+		return "", fmt.Errorf("response encryption key has no alg")
 	}
 
-	return "", fmt.Errorf("failed to encrypt response: %v", errors)
+	h := jwe.NewHeaders()
+	if kid, ok := key.KeyID(); ok && kid != "" {
+		h.Set(jwe.KeyIDKey, kid)
+	}
+
+	encrypted, err := jwe.Encrypt(
+		payloadJson,
+		jwe.WithKey(keyAlg, key),
+		jwe.WithContentEncryption(encAlg),
+		jwe.WithProtectedHeaders(h),
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to encrypt response: %v", err)
+	}
+	return string(encrypted), nil
 }
 
 func pickEncryptionAlgorithm(options []string) (jwa.ContentEncryptionAlgorithm, error) {
