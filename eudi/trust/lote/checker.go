@@ -57,7 +57,7 @@ type Config struct {
 	Store Store
 
 	// HTTPClient is used for list downloads. Nil falls back to
-	// http.DefaultClient, bounded by FetchTimeoutDefault.
+	// http.DefaultClient, bounded by the package's own fetch timeout.
 	HTTPClient *http.Client
 
 	// Now supplies the clock the currency checks read. Nil falls back to
@@ -146,14 +146,15 @@ func (c *Checker) loadPersisted() {
 // it is not a session-facing failure, and callers on a schedule are expected to
 // log it and carry on.
 //
-// changed counts the lists whose *entries* came back different, which is the
+// changed reports whether any list's *entries* came back different, which is the
 // only kind of refresh that can change a verdict the wallet already showed. A
 // re-issue that says the same thing about the same parties — a fresh
-// next_update, a new sequence number, a new signature — counts zero, so
+// next_update, a new sequence number, a new signature — does not count, so
 // re-confirmation never wakes the app.
+//
 // Sources are refreshed concurrently: they are independent downloads, so a slow
 // or unreachable one must not add its timeout to every other source's wait.
-func (c *Checker) Refresh(ctx context.Context) (int, error) {
+func (c *Checker) Refresh(ctx context.Context) (bool, error) {
 	c.loadPersisted()
 
 	type outcome struct {
@@ -173,7 +174,7 @@ func (c *Checker) Refresh(ctx context.Context) (int, error) {
 
 	// Reported in configuration order, so the log reads the same way whatever
 	// order the downloads happened to finish in.
-	changed := 0
+	changed := false
 	var failures []error
 	for i, source := range c.cfg.Sources {
 		if err := outcomes[i].err; err != nil {
@@ -181,9 +182,7 @@ func (c *Checker) Refresh(ctx context.Context) (int, error) {
 			failures = append(failures, fmt.Errorf("%s: %w", source.ListId, err))
 			continue
 		}
-		if outcomes[i].changed {
-			changed++
-		}
+		changed = changed || outcomes[i].changed
 	}
 	return changed, errors.Join(failures...)
 }

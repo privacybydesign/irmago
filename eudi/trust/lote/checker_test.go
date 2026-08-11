@@ -473,11 +473,10 @@ func TestVerify_RejectsGarbage(t *testing.T) {
 }
 
 // requireRefreshed refreshes and asserts every source held up.
-func requireRefreshed(t *testing.T, checker *Checker) int {
+func requireRefreshed(t *testing.T, checker *Checker) {
 	t.Helper()
-	changed, err := checker.Refresh(context.Background())
+	_, err := checker.Refresh(context.Background())
 	require.NoError(t, err)
-	return changed
 }
 
 // requireRefreshFailed refreshes and asserts a source did not hold up.

@@ -109,6 +109,13 @@ func NewClient(
 	currentLocale *clientmodels.CurrentLocale,
 	trustEvaluator trust.Evaluator,
 ) (*Client, error) {
+	// Checked rather than documented: the session path dereferences it without a
+	// guard, so a nil one would panic on a session goroutine no caller can
+	// recover from. Fail here, where the app can see it — matching
+	// openid4vci.NewClient, which requires it for the same reason.
+	if trustEvaluator == nil {
+		return nil, fmt.Errorf("trustEvaluator cannot be nil")
+	}
 	return &Client{
 		Configuration:     eudiConf,
 		dcqlHandler:       dcql.NewDcqlHandler(handlers),
@@ -358,18 +365,14 @@ func (client *Client) composeRequestor(
 		// only thing on the screen it did not choose itself.
 		display.Id = verifierIdentifiers(clientId)[0]
 	}
-	if requestor.SelfAsserted != nil {
-		display.SelfAssertedName = clientmodels.Resolve(clientmodels.TranslatedString(requestor.SelfAsserted.Organization.LegalName), locale)
-	}
+	display.SelfAssertedName = requestor.SelfAssertedName
 
-	if verdict.Listing != nil {
-		display.CuratedLogo = services.LoadCuratedLogo(
-			context.Background(),
-			client.verifierLogoManager(),
-			common.HTTPClient,
-			verdict.Listing.LogoURI,
-		)
-	}
+	display.CuratedLogo = services.LoadCuratedLogo(
+		context.Background(),
+		client.verifierLogoManager(),
+		common.HTTPClient,
+		verdict.CuratedLogoURI(),
+	)
 
 	return display.TrustedParty(verdict, locale)
 }

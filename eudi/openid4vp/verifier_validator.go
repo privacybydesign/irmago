@@ -33,11 +33,17 @@ type VerifiedRequestor struct {
 	// contents are evidentially self-asserted.
 	Attested *scheme.RelyingPartyRequestor
 
-	// SelfAsserted is the verifier's own account of itself: client_metadata,
-	// or the contents of an unanchored certificate, or the hostname it is
-	// reachable at. Nil when the verifier asserted nothing beyond what is
-	// attested.
-	SelfAsserted *scheme.RelyingPartyRequestor
+	// SelfAssertedName is the verifier's own account of itself: client_metadata's
+	// client_name, or the common name of an unanchored certificate, or the
+	// hostname it is reachable at. Empty when the verifier asserted nothing
+	// beyond what is attested.
+	//
+	// A bare name, and deliberately not a requestor: this account reaches the
+	// user as one string under the warn state, and there is nowhere in it to put
+	// a logo — a name the party chose is a claim the user can weigh, a logo is
+	// simply believed. The type is what enforces that, rather than a convention
+	// each producer has to keep.
+	SelfAssertedName string
 }
 
 // VerifierValidator is the identity gate for OpenID4VP verifiers: it parses the

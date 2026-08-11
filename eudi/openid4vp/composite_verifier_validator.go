@@ -53,17 +53,12 @@ func (v *CompositeVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJ
 		}
 		return v.didValidator.ParseAndVerifyAuthorizationRequest(requestJwt)
 
-	case strings.HasPrefix(clientId, string(ClientIdentifierPrefix_RedirectUri)) ||
-		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_OpenidFederation)) ||
-		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_VerifierAttestation)) ||
-		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_Origin)):
-		return nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
-
 	default:
-		// Fallback to pre-registered client_id validation for backward compatibility
-		// if v.clientRegistry != nil && v.clientRegistry.IsRegistered(clientId) {
-		// 	return nil, nil, fmt.Errorf("pre-registered client_id %q is not supported", clientId)
-		// }
+		// Everything else is refused the same way, whether the scheme is one the
+		// spec defines and the wallet does not implement (redirect_uri,
+		// openid_federation, verifier_attestation, origin) or one nobody
+		// recognizes: an unsupported scheme is an unsupported scheme, and the
+		// wallet has nothing more specific to say about either.
 		return nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
 	}
 }

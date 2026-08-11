@@ -490,14 +490,12 @@ func composeIssuerParty(
 		// the user; a logo is never taken from a party's own account of itself.
 		SelfAssertedName: clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
 	}
-	if verdict.Listing != nil {
-		display.CuratedLogo = services.LoadCuratedLogo(
-			context.Background(),
-			issuerLogos,
-			httpClient,
-			verdict.Listing.LogoURI,
-		)
-	}
+	display.CuratedLogo = services.LoadCuratedLogo(
+		context.Background(),
+		issuerLogos,
+		httpClient,
+		verdict.CuratedLogoURI(),
+	)
 
 	return display.TrustedParty(verdict, locale)
 }

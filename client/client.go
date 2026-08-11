@@ -418,7 +418,7 @@ func (client *Client) RefreshStatuses(ctx context.Context) error {
 // an explicit refresh action.
 func (client *Client) RefreshTrustLists(ctx context.Context) error {
 	changed, err := client.trustService.RefreshLists(ctx)
-	if changed > 0 {
+	if changed {
 		client.handler.CredentialsChanged()
 	}
 	return err

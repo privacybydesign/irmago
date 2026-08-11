@@ -92,9 +92,9 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	// behind them. A self-asserted logo is never taken, so only the name
 	// travels.
 	if authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil {
-		requestor.SelfAsserted = scheme.NamedRelyingParty(*authRequest.ClientMetadata.ClientName)
+		requestor.SelfAssertedName = *authRequest.ClientMetadata.ClientName
 	} else if !anchored {
-		requestor.SelfAsserted = scheme.NamedRelyingParty(leafCert.Subject.CommonName)
+		requestor.SelfAssertedName = leafCert.Subject.CommonName
 	}
 
 	return &authRequest, requestor, nil

@@ -52,10 +52,26 @@ type Verdict struct {
 	Listing *Listing
 	// CertificateLevel is the certificate channel's own contribution: the
 	// level conferred by the anchor the party's chain validated to, or
-	// unevaluated when no anchored certificate vouches for the party. Display
-	// keys attested-ness off it — a certificate's account of the party counts
-	// as attested only when an anchor stands behind the certificate.
+	// unevaluated when no anchored certificate vouches for the party.
+	//
+	// It is reported separately from Level so the two channels can be told
+	// apart — Level alone cannot say whether a high rung came from an anchor or
+	// from a listing. Note that the protocol paths do not read it to decide
+	// attested-ness: each identity gate establishes that for itself, because it
+	// needs the answer before a verdict exists (an unanchored certificate's
+	// authorization is not worth enforcing, which is a gate decision).
 	CertificateLevel clientmodels.TrustLevel
+}
+
+// CuratedLogoURI is the logo the granting listing names, or "" when no list
+// vouched for the party or its entry carries none. It exists so that every
+// composition path reaches for the curated logo the same way, rather than each
+// one guarding on Listing before dereferencing it.
+func (v Verdict) CuratedLogoURI() string {
+	if v.Listing == nil {
+		return ""
+	}
+	return v.Listing.LogoURI
 }
 
 // Listing is a party's entry on a recognized trust list, produced by the

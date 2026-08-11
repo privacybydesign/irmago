@@ -2,12 +2,9 @@ package eudi
 
 import (
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/pem"
-	"math/big"
 	"testing"
 	"time"
 
@@ -46,25 +43,21 @@ func classifyFixture(t *testing.T, confers clientmodels.TrustLevel) (*TrustModel
 	return tm, caCert, caKey
 }
 
-// mintLeaf issues an end-entity certificate under the given CA, with the
-// validity window the test asks for.
-func mintLeaf(t *testing.T, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, notBefore, notAfter time.Time) *x509.Certificate {
+// mintLeaf issues an end-entity certificate under the given CA, delegating the
+// construction to the shared testdata builder so these leaves stay in step with
+// every other test certificate in the repo as the x509 policy tightens.
+//
+// opts carries the validity window the test asks for: PkiOption_None is a
+// currently-valid leaf, PkiOption_ExpiredEndEntity one whose window closed an
+// hour ago — still inside the CA's own validity, which is the shape a real
+// expired issuer leaf has.
+func mintLeaf(t *testing.T, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, opts testdata.PkiGenerationOptions) *x509.Certificate {
 	t.Helper()
 
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	require.NoError(t, err)
-	template := &x509.Certificate{
-		SerialNumber: big.NewInt(time.Now().UnixNano()),
-		Subject:      pkix.Name{CommonName: "party.example.com"},
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		NotBefore:    notBefore,
-		NotAfter:     notAfter,
-		DNSNames:     []string{"party.example.com"},
-	}
-	der, err := x509.CreateCertificate(rand.Reader, template, caCert, key.Public(), caKey)
-	require.NoError(t, err)
-	leaf, err := x509.ParseCertificate(der)
-	require.NoError(t, err)
+	_, leaf, _ := testdata.CreateEndEntityCertificate(
+		t, testdata.CreateDistinguishedName("party.example.com"), "party.example.com",
+		caCert, caKey, "", opts,
+	)
 	return leaf
 }
 
@@ -78,7 +71,7 @@ func testClassifyInstalledAnchorConfersHigh(t *testing.T) {
 	installCertChain(t, tm, caCert, rootCert)
 	require.NoError(t, tm.Reload())
 
-	leaf := mintLeaf(t, caCert, caKey, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	leaf := mintLeaf(t, caCert, caKey, testdata.PkiOption_None)
 	require.Equal(t, clientmodels.TrustLevel_High, tm.Classify(leaf))
 }
 
@@ -88,7 +81,7 @@ func testClassifyPinnedAnchorConfersItsLevel(t *testing.T) {
 	// changing to high.
 	tm, caCert, caKey := classifyFixture(t, clientmodels.TrustLevel_Medium)
 
-	leaf := mintLeaf(t, caCert, caKey, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	leaf := mintLeaf(t, caCert, caKey, testdata.PkiOption_None)
 	require.Equal(t, clientmodels.TrustLevel_Medium, tm.Classify(leaf))
 }
 
@@ -100,7 +93,7 @@ func testClassifyUnknownRootConfersNothing(t *testing.T) {
 
 	strangerRootKey, strangerRoot := testdata.CreateRootCertificate(t, testdata.CreateDistinguishedName("Stranger Root"), testdata.PkiOption_None)
 	strangerCaKey, strangerCa, _ := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("Stranger CA"), strangerRoot, strangerRootKey, testdata.PkiOption_None, nil)
-	leaf := mintLeaf(t, strangerCa, strangerCaKey, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	leaf := mintLeaf(t, strangerCa, strangerCaKey, testdata.PkiOption_None)
 
 	require.Equal(t, clientmodels.TrustLevel_Unevaluated, tm.Classify(leaf))
 }
@@ -114,7 +107,7 @@ func testClassifyToleratesAnExpiredLeaf(t *testing.T) {
 
 	// Expired ten minutes ago, still inside the CA's own validity — the shape
 	// a real expired issuer leaf has, since a CA cannot sign before it exists.
-	leaf := mintLeaf(t, caCert, caKey, time.Now().Add(-50*time.Minute), time.Now().Add(-10*time.Minute))
+	leaf := mintLeaf(t, caCert, caKey, testdata.PkiOption_ExpiredEndEntity)
 	require.Equal(t, clientmodels.TrustLevel_High, tm.Classify(leaf))
 }
 
@@ -122,7 +115,7 @@ func testClassifyRevokedLeafConfersNothing(t *testing.T) {
 	// Revocation is an act of distrust, so it stops the anchor's word — unlike
 	// expiry above.
 	tm, caCert, caKey := classifyFixture(t, clientmodels.TrustLevel_High)
-	leaf := mintLeaf(t, caCert, caKey, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	leaf := mintLeaf(t, caCert, caKey, testdata.PkiOption_None)
 
 	crlTemplate := testdata.GetDefaultCrlTemplate(caCert)
 	crlTemplate.RevokedCertificateEntries = []x509.RevocationListEntry{{

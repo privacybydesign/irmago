@@ -91,7 +91,7 @@ func testParseAndVerifyAuthorizationRequestSuccess(t *testing.T) {
 	require.NotNil(t, requestor)
 	require.NotNil(t, requestor.Certificate)
 	require.NotNil(t, requestor.Attested, "an anchored certificate's account of the party is attested")
-	require.Nil(t, requestor.SelfAsserted, "the request asserted nothing of its own")
+	require.Empty(t, requestor.SelfAssertedName, "the request asserted nothing of its own")
 
 	// Assert requestor data
 	attested := requestor.Attested
@@ -215,8 +215,8 @@ func testParseAndVerifyAuthorizationRequestRevokedX5C_DemotesToSelfAsserted(t *t
 	require.NoError(t, err)
 	require.NotNil(t, requestor.Certificate)
 	require.Nil(t, requestor.Attested, "a revoked certificate attests nothing")
-	require.NotNil(t, requestor.SelfAsserted)
-	require.Equal(t, EndEntityCN, requestor.SelfAsserted.Organization.LegalName["en"])
+	require.NotEmpty(t, requestor.SelfAssertedName)
+	require.Equal(t, EndEntityCN, requestor.SelfAssertedName)
 }
 
 func testParseAndVerifyAuthorizationRequestMissingRoot_DemotesToSelfAsserted(t *testing.T) {
@@ -234,7 +234,7 @@ func testParseAndVerifyAuthorizationRequestMissingRoot_DemotesToSelfAsserted(t *
 
 	require.NoError(t, err, "a legitimate-looking stranger passes the gate")
 	require.Nil(t, requestor.Attested)
-	require.Equal(t, EndEntityCN, requestor.SelfAsserted.Organization.LegalName["en"])
+	require.Equal(t, EndEntityCN, requestor.SelfAssertedName)
 }
 
 func testParseAndVerifyAuthorizationRequestExpiredRoot_DemotesToSelfAsserted(t *testing.T) {
@@ -244,7 +244,7 @@ func testParseAndVerifyAuthorizationRequestExpiredRoot_DemotesToSelfAsserted(t *
 
 	require.NoError(t, err)
 	require.Nil(t, requestor.Attested, "an expired root is not an anchor anymore")
-	require.Equal(t, EndEntityCN, requestor.SelfAsserted.Organization.LegalName["en"])
+	require.Equal(t, EndEntityCN, requestor.SelfAssertedName)
 }
 
 // This function implicitly also tests the case where an intermediate certificate is revoked, because it will be 'missing'
@@ -264,7 +264,7 @@ func testParseAndVerifyAuthorizationRequestMissingIntermediate_DemotesToSelfAsse
 
 	require.NoError(t, err)
 	require.Nil(t, requestor.Attested)
-	require.Equal(t, EndEntityCN, requestor.SelfAsserted.Organization.LegalName["en"])
+	require.Equal(t, EndEntityCN, requestor.SelfAssertedName)
 }
 
 func testParseAndVerifyAuthorizationRequestExpiredIntermediate_DemotesToSelfAsserted(t *testing.T) {
@@ -274,7 +274,7 @@ func testParseAndVerifyAuthorizationRequestExpiredIntermediate_DemotesToSelfAsse
 
 	require.NoError(t, err)
 	require.Nil(t, requestor.Attested)
-	require.Equal(t, EndEntityCN, requestor.SelfAsserted.Organization.LegalName["en"])
+	require.Equal(t, EndEntityCN, requestor.SelfAssertedName)
 }
 
 func testParseAndVerifyAuthorizationRequestSuccessX509Hash(t *testing.T) {
@@ -314,7 +314,7 @@ func testParseAndVerifyAuthorizationRequestNilClientMetadata_AttestsCertificateS
 	require.NoError(t, err)
 	require.Nil(t, claims.ClientMetadata)
 	require.Equal(t, "Yivi B.V.", requestor.Attested.Organization.LegalName["en"])
-	require.Nil(t, requestor.SelfAsserted)
+	require.Empty(t, requestor.SelfAssertedName)
 }
 
 func testParseAndVerifyAuthorizationRequestClientMetadataWithoutClientName_AttestsCertificateSchemeData(t *testing.T) {
@@ -332,7 +332,7 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithoutClientName_Attes
 	require.NotNil(t, claims.ClientMetadata)
 	require.Nil(t, claims.ClientMetadata.ClientName)
 	require.Equal(t, "Yivi B.V.", requestor.Attested.Organization.LegalName["en"])
-	require.Nil(t, requestor.SelfAsserted)
+	require.Empty(t, requestor.SelfAssertedName)
 }
 
 func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_IsSelfAsserted(t *testing.T) {
@@ -351,7 +351,7 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_IsSelfAs
 	require.NoError(t, err)
 	require.Equal(t, "Yivi B.V.", requestor.Attested.Organization.LegalName["en"],
 		"the certificate's account stays attested")
-	require.Equal(t, "Acme Verifier", requestor.SelfAsserted.Organization.LegalName["en"],
+	require.Equal(t, "Acme Verifier", requestor.SelfAssertedName,
 		"the request's account stays the verifier's own word")
 }
 
@@ -369,8 +369,9 @@ func testParseAndVerifyAuthorizationRequestClientMetadataLogo_IsIgnored(t *testi
 	_, requestor, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.NoError(t, err)
-	require.Equal(t, "Acme Verifier", requestor.SelfAsserted.Organization.LegalName["en"])
-	require.Nil(t, requestor.SelfAsserted.Organization.Logo)
+	// Only the name survives: the self-asserted account is a bare string, so
+	// there is structurally nowhere for logo_uri to land.
+	require.Equal(t, "Acme Verifier", requestor.SelfAssertedName)
 }
 
 func testParseAndVerifyAuthorizationRequestQueryValidation_EnforcedWithClientMetadata(t *testing.T) {

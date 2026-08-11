@@ -16,7 +16,6 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/stretchr/testify/require"
 )
@@ -48,7 +47,7 @@ func (v *mockVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt st
 	}
 	// No certificate, so nothing is attested: the mock verifier passes the
 	// identity gate and describes itself, which is the DID-identified shape.
-	return v.request, &VerifiedRequestor{SelfAsserted: scheme.NamedRelyingParty("Verifier Example")}, nil
+	return v.request, &VerifiedRequestor{SelfAssertedName: "Verifier Example"}, nil
 }
 
 // mockDcqlHandler answers a single DCQL credential query with one owned

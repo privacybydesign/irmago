@@ -5,24 +5,29 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
-	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"gorm.io/gorm"
 )
 
-type trustListStore struct {
+// TrustListStore persists signed trust list documents in the
+// trust_list_documents table. It satisfies lote.Store structurally, which is how
+// the wallet hands it to the LoTE checker.
+//
+// The concrete type is returned rather than that interface deliberately: naming
+// it here would make this persistence package depend on the trust packages and,
+// through them, on all of eudi — leaving eudi unable to ever import storage/db
+// without a cycle.
+type TrustListStore struct {
 	db *gorm.DB
 }
 
-// NewTrustListStore returns a lote.Store backed by the trust_list_documents
-// table. Returning the interface (not the concrete type) lets the wallet treat
-// the persistent store and lote's in-memory one interchangeably.
-func NewTrustListStore(db *gorm.DB) lote.Store {
-	return &trustListStore{db: db}
+// NewTrustListStore returns a store backed by the trust_list_documents table.
+func NewTrustListStore(db *gorm.DB) *TrustListStore {
+	return &TrustListStore{db: db}
 }
 
-// Get implements [lote.Store]. Any read failure reads as a miss: the caller
+// Get implements lote.Store. Any read failure reads as a miss: the caller
 // re-fetches, and the interface has nowhere to report an error to.
-func (s *trustListStore) Get(listId string) ([]byte, bool) {
+func (s *TrustListStore) Get(listId string) ([]byte, bool) {
 	if listId == "" {
 		return nil, false
 	}
@@ -33,8 +38,8 @@ func (s *trustListStore) Get(listId string) ([]byte, bool) {
 	return row.RawJws, true
 }
 
-// Put implements [lote.Store].
-func (s *trustListStore) Put(listId string, rawJws []byte) error {
+// Put implements lote.Store.
+func (s *TrustListStore) Put(listId string, rawJws []byte) error {
 	if listId == "" {
 		return fmt.Errorf("trust_list_documents: empty list id")
 	}

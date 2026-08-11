@@ -86,7 +86,7 @@ func NewImage(data []byte, mimeType string) *Image {
 }
 
 // ImageFromFile reads an image file from disk and returns it as a base64-encoded Image.
-// Returns nil if the path is empty or the file cannot be read.
+// Returns nil if the path is empty, the file cannot be read, or it is empty.
 func ImageFromFile(path string) *Image {
 	if path == "" {
 		return nil
@@ -95,7 +95,8 @@ func ImageFromFile(path string) *Image {
 	if err != nil {
 		return nil
 	}
-	return &Image{Base64: base64.StdEncoding.EncodeToString(data)}
+	// The MIME type is not read off the file: callers render these by data alone.
+	return NewImage(data, "")
 }
 
 // AttributeType indicates the type of an attribute value.

@@ -82,16 +82,16 @@ func BatchIssuerEvidence(batch *models.CredentialBatch) trust.Evidence {
 // It is the only path that touches the network, and it is deliberately not on
 // the evaluation path: a session reads whatever the wallet already holds.
 //
-// changed counts the lists that came back saying something different about the
-// parties on them, which is what tells the caller whether anything the app has
-// already rendered went stale. A re-issue with the same entries counts zero.
+// changed reports whether any list came back saying something different about the
+// parties on it, which is what tells the caller whether anything the app has
+// already rendered went stale. A re-issue with the same entries does not count.
 //
 // The error reports which sources failed, for the caller's log. A failed
 // refresh is not an error condition for the wallet — the lists it already holds
 // stay in force, and a party it can no longer confirm caps at low.
-func (s *TrustService) RefreshLists(ctx context.Context) (int, error) {
+func (s *TrustService) RefreshLists(ctx context.Context) (bool, error) {
 	if s.checker == nil {
-		return 0, nil
+		return false, nil
 	}
 	return s.checker.Refresh(ctx)
 }

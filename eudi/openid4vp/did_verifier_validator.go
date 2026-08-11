@@ -10,7 +10,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
-	"github.com/privacybydesign/irmago/eudi/scheme"
 )
 
 const (
@@ -91,7 +90,7 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 
 	// We don't validate credential queries using queryValidator.ValidateCredentialQueries(..) on purpose here, because we have no external requestorInfo containing authorized attributes
 
-	return &authRequest, &VerifiedRequestor{SelfAsserted: scheme.NamedRelyingParty(displayName)}, nil
+	return &authRequest, &VerifiedRequestor{SelfAssertedName: displayName}, nil
 }
 
 // hostFromURL parses a URL and returns its hostname (without port), or "" on failure.

@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
@@ -159,6 +160,13 @@ func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedB
 	return d
 }
 
+// CuratedLogoFetchTimeout bounds a curated logo download. It is enforced here
+// rather than left to the caller because this is the one logo fetch that happens
+// on a session's path, with the user waiting on the screen behind it: the shared
+// HTTP client carries no timeout of its own, so an unresponsive logo host would
+// otherwise stall a disclosure or an issuance offer indefinitely.
+const CuratedLogoFetchTimeout = 10 * time.Second
+
 // LoadCuratedLogo returns the logo a recognized trust list names for a party,
 // downloading it on a cache miss.
 //
@@ -169,7 +177,9 @@ func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedB
 // makes fetching it safe to do here at all.
 //
 // A download that fails is not an error: the party renders without a logo — the
-// same as an entry that names none — and the next session tries again.
+// same as an entry that names none — and the next session tries again. That is
+// what makes bounding the wait safe: a logo the wallet gives up on costs the
+// logo, never the session.
 func LoadCuratedLogo(ctx context.Context, manager filesystem.LogoManager, httpClient *http.Client, uri string) *clientmodels.Image {
 	if uri == "" || manager == nil {
 		return nil
@@ -177,6 +187,9 @@ func LoadCuratedLogo(ctx context.Context, manager filesystem.LogoManager, httpCl
 	if img := eudi.LoadLogoImage(manager, uri); img != nil {
 		return img
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, CuratedLogoFetchTimeout)
+	defer cancel()
 
 	data, mimeType, err := helpers.DownloadRemoteImage(ctx, httpClient, uri)
 	if err != nil {

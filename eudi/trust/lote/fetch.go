@@ -9,15 +9,16 @@ import (
 )
 
 const (
-	// MaxBodyDefault caps a list download. A LoTE is a directory of
-	// organizations, not a bulk data feed, so a few megabytes is generous.
-	MaxBodyDefault int64 = 5 << 20
+	// maxBody caps a list download. A LoTE is a directory of organizations, not
+	// a bulk data feed, so a few megabytes is generous.
+	maxBody int64 = 5 << 20
 
-	// FetchTimeoutDefault bounds one list download.
-	FetchTimeoutDefault = 10 * time.Second
+	// fetchTimeout bounds one list download.
+	fetchTimeout = 10 * time.Second
 )
 
-// fetch downloads the signed list at url.
+// fetch downloads the signed list at url. httpClient is the checker's, already
+// defaulted by NewChecker — the one place that fallback is stated.
 //
 // The response Content-Type is deliberately not gated on. ETSI has not settled
 // a media type for a JAdES-signed TS 119 602 list in JSON, and a scheme
@@ -25,12 +26,7 @@ const (
 // text/plain is not the wallet's problem to police — the signature is the gate,
 // and the `typ` header inside it is what says this JWS is a trusted list.
 func fetch(ctx context.Context, httpClient *http.Client, url string) ([]byte, error) {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	const maxBody = MaxBodyDefault
-
-	reqCtx, cancel := context.WithTimeout(ctx, FetchTimeoutDefault)
+	reqCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
