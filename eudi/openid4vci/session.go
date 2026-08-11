@@ -142,12 +142,8 @@ func (s *session) perform() {
 	fetched, err := s.obtainCredentials(permission.GetAccessToken())
 	if err != nil {
 		eudi.Logger.Infof("error obtaining credentials: %v", err)
-		errorType := ""
-		if eudi.IsPartyValidationFailure(err) {
-			errorType = clientmodels.ErrorType_PartyValidationFailed
-		}
 		s.handler.Failure(&clientmodels.SessionError{
-			ErrorType:    errorType,
+			ErrorType:    eudi.SessionErrorType(err),
 			WrappedError: err.Error(),
 		})
 		return
@@ -247,22 +243,17 @@ type fetchedCredential struct {
 // issuerVerdict ranks the issuer of the given credentials against the pinned
 // trust view. Called with the whole fetch it ranks the party behind the session;
 // called with one credential it ranks that credential's issuer.
-func (s *session) issuerVerdict(fetched ...*fetchedCredential) trust.Verdict {
-	return s.trustView.Issuer(s.issuerEvidence(fetched...))
-}
-
-// issuerEvidence is what the wallet knows about the party that signed these
-// credentials.
 //
-// The certificate is the certificate channel's evidence: the `x5c` leaf the
-// credentials verified against, nil for a DID-identified issuer. It is a
-// claim, not a verdict — the channel classifies it against the wallet's
+// The evidence it evaluates is what the wallet knows about the party that signed
+// these credentials. The certificate is the certificate channel's evidence: the
+// `x5c` leaf the credentials verified against, nil for a DID-identified issuer.
+// It is a claim, not a verdict — the channel classifies it against the wallet's
 // anchors and confers that anchor's level, or nothing for a chain the wallet
-// cannot trace. The identifiers are the names a recognized list keys entries
-// on: what the credentials say signed them (the `iss` claim — a DID for a
+// cannot trace. The identifiers are the names a recognized list keys entries on:
+// what the credentials say signed them (the `iss` claim — a DID for a
 // DID-identified issuer) and the credential issuer's own identifier from its
 // metadata.
-func (s *session) issuerEvidence(fetched ...*fetchedCredential) trust.Evidence {
+func (s *session) issuerVerdict(fetched ...*fetchedCredential) trust.Verdict {
 	identifiers := []string{}
 	for _, fc := range fetched {
 		for _, vc := range fc.verifiedSdJwtVcs {
@@ -271,10 +262,10 @@ func (s *session) issuerEvidence(fetched ...*fetchedCredential) trust.Evidence {
 			}
 		}
 	}
-	return trust.Evidence{
+	return s.trustView.Issuer(trust.Evidence{
 		Certificate: issuerCertificate(fetched...),
 		Identifiers: append(identifiers, s.credentialIssuerMetadata.CredentialIssuer),
-	}
+	})
 }
 
 // issuerCertificate returns the certificate every given credential was signed

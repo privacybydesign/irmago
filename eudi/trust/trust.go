@@ -14,7 +14,9 @@ package trust
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
+	"sync"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 )
@@ -102,6 +104,24 @@ type Evaluator interface {
 	Snapshot(ctx context.Context) View
 }
 
+// SnapshotOf pins the view to evaluate one pass against, tolerating the absence
+// of an evaluator: a wallet component built without one ranks nobody rather than
+// failing the read it was asked for. It exists so that fallback is stated once,
+// here, instead of every caller spelling out what a viewless wallet does.
+func SnapshotOf(ctx context.Context, evaluator Evaluator) View {
+	if evaluator == nil {
+		return DarkView()
+	}
+	return evaluator.Snapshot(ctx)
+}
+
+// DarkView is the view with no channels at all: every party ranks low, because
+// nothing is consulted that could vouch for one. It is what the wallet evaluates
+// against before it holds any trust model — in practice, a test.
+func DarkView() View {
+	return NewView(nil, nil, nil)
+}
+
 // ListSnapshot is the recognized-list channel, pinned to one state of the
 // wallet's lists. It answers with the entry that grants the party in that role,
 // or nil when no list grants it — including when there is no usable list at
@@ -136,7 +156,12 @@ type CertificateClassifier interface {
 // role's certificate channel dark, which only a wallet without trust models
 // (in practice: a test) does.
 func NewView(lists ListSnapshot, issuerCerts, verifierCerts CertificateClassifier) View {
-	return layeredView{lists: lists, issuerCerts: issuerCerts, verifierCerts: verifierCerts}
+	return &layeredView{
+		lists:         lists,
+		issuerCerts:   issuerCerts,
+		verifierCerts: verifierCerts,
+		classified:    map[classifiedKey]clientmodels.TrustLevel{},
+	}
 }
 
 // layeredView is the whole ladder: the certificate channel and the
@@ -148,15 +173,32 @@ type layeredView struct {
 	lists         ListSnapshot
 	issuerCerts   CertificateClassifier
 	verifierCerts CertificateClassifier
+
+	// classified memoizes the certificate channel's answers for the life of the
+	// view. A view is pinned to one state of the world, so asking about the same
+	// certificate twice must give the same answer twice — which makes remembering
+	// it a saving with no semantics of its own. The saving is the point: one
+	// classification is a chain build plus a revocation scan, and the paths that
+	// rank a whole wallet ask about one issuer's certificate once per credential.
+	mu         sync.Mutex
+	classified map[classifiedKey]clientmodels.TrustLevel
+}
+
+// classifiedKey identifies one certificate asked about in one role. The roles are
+// separate grants consulting separate anchor sets, so a level found for one says
+// nothing about the other.
+type classifiedKey struct {
+	role Role
+	leaf [sha256.Size]byte
 }
 
 // Verifier implements [View].
-func (v layeredView) Verifier(ev Evidence) Verdict { return v.evaluate(RoleVerifier, ev) }
+func (v *layeredView) Verifier(ev Evidence) Verdict { return v.evaluate(RoleVerifier, ev) }
 
 // Issuer implements [View].
-func (v layeredView) Issuer(ev Evidence) Verdict { return v.evaluate(RoleIssuer, ev) }
+func (v *layeredView) Issuer(ev Evidence) Verdict { return v.evaluate(RoleIssuer, ev) }
 
-func (v layeredView) evaluate(role Role, ev Evidence) Verdict {
+func (v *layeredView) evaluate(role Role, ev Evidence) Verdict {
 	verdict := Verdict{
 		Level:            clientmodels.TrustLevel_Low,
 		CertificateLevel: v.classify(role, ev.Certificate),
@@ -181,7 +223,7 @@ func (v layeredView) evaluate(role Role, ev Evidence) Verdict {
 // classify is the certificate channel: the level the role's anchor set confers
 // on the party's leaf, or unevaluated when the party presented no certificate,
 // the role has no classifier, or the chain does not hold up.
-func (v layeredView) classify(role Role, leaf *x509.Certificate) clientmodels.TrustLevel {
+func (v *layeredView) classify(role Role, leaf *x509.Certificate) clientmodels.TrustLevel {
 	if leaf == nil {
 		return clientmodels.TrustLevel_Unevaluated
 	}
@@ -192,7 +234,19 @@ func (v layeredView) classify(role Role, leaf *x509.Certificate) clientmodels.Tr
 	if classifier == nil {
 		return clientmodels.TrustLevel_Unevaluated
 	}
-	return classifier.Classify(leaf)
+
+	key := classifiedKey{role: role, leaf: sha256.Sum256(leaf.Raw)}
+
+	// Held across the classification so concurrent askers about one certificate
+	// wait for the first answer rather than each building the chain themselves.
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if level, ok := v.classified[key]; ok {
+		return level
+	}
+	level := classifier.Classify(leaf)
+	v.classified[key] = level
+	return level
 }
 
 // Stronger reports whether a outranks b on the ladder. It is how independent

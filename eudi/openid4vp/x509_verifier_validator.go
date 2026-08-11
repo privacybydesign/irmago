@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v5"
@@ -84,8 +83,7 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 			// third-party CA attested the subject, so its name is attested —
 			// but it carries no attribute authorization to enforce.
 			eudi.Logger.Debugf("openid4vp: verifier certificate carries no scheme data (%v), using its subject", err)
-			requestor.Attested = &scheme.RelyingPartyRequestor{}
-			requestor.Attested.Organization.LegalName = map[string]string{"en": leafCert.Subject.CommonName}
+			requestor.Attested = scheme.NamedRelyingParty(leafCert.Subject.CommonName)
 		}
 	}
 
@@ -94,11 +92,9 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	// behind them. A self-asserted logo is never taken, so only the name
 	// travels.
 	if authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil {
-		requestor.SelfAsserted = &scheme.RelyingPartyRequestor{}
-		requestor.SelfAsserted.Organization.LegalName = map[string]string{"en": *authRequest.ClientMetadata.ClientName}
+		requestor.SelfAsserted = scheme.NamedRelyingParty(*authRequest.ClientMetadata.ClientName)
 	} else if !anchored {
-		requestor.SelfAsserted = &scheme.RelyingPartyRequestor{}
-		requestor.SelfAsserted.Organization.LegalName = map[string]string{"en": leafCert.Subject.CommonName}
+		requestor.SelfAsserted = scheme.NamedRelyingParty(leafCert.Subject.CommonName)
 	}
 
 	return &authRequest, requestor, nil
@@ -121,15 +117,11 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 			return nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 		}
 
-		// A certificate presented outside its own validity window is a broken
-		// artifact, like an expired JWT: the gate rejects it. (Stored
-		// evidence is different — classification of a stored issuer leaf is
-		// expiry-tolerant, see TrustModel.Classify — but a live party has no
-		// business presenting an expired certificate.)
-		now := eudi_jwt.VerificationTime(v.verificationContext)
-		if now.Add(ClockSkew).Before(parsedCert.NotBefore) || now.Add(-ClockSkew).After(parsedCert.NotAfter) {
-			return nil, fmt.Errorf("relying party certificate is not valid at the current time (notBefore %s, notAfter %s)",
-				parsedCert.NotBefore.Format(time.RFC3339), parsedCert.NotAfter.Format(time.RFC3339))
+		// A live party has no business presenting an expired certificate, so the
+		// gate rejects it. (Stored evidence is different — classification of a
+		// stored issuer leaf is expiry-tolerant, see TrustModel.Classify.)
+		if err := eudi_jwt.CheckCertificateValidAt(v.verificationContext, parsedCert, ClockSkew, "relying party certificate"); err != nil {
+			return nil, err
 		}
 
 		// The client_id binding: the request must prove it is for the party

@@ -1249,14 +1249,49 @@ func createClientWithCustomIssuerTrustChain(
 	return createClientWithIssuerChain(t, issuerChainBytes)
 }
 
+// testClient is what a session test varies about the wallet it builds. Every
+// zero value is the default a plain instantiateClient gets, so a test names only
+// what it is actually testing — which is why this is a struct and not another
+// row of positional parameters.
+type testClient struct {
+	// StoragePath reuses an existing wallet's storage, so a second wallet can be
+	// built over the first one's data — what proves a persisted document survives
+	// a restart and is re-verified when it is read. Empty gets a fresh temporary
+	// path.
+	StoragePath string
+
+	// IssuerChain replaces the compiled-in staging issuer anchor.
+	IssuerChain []byte
+
+	// Locale is the language the app asks for. Empty asks for none.
+	Locale string
+
+	// LoteRoot is installed as an extra issuer trust anchor: it is where the
+	// wallet looks for the key a list signature has to chain to.
+	LoteRoot *x509.Certificate
+
+	// TrustLists replaces the wallet's recognized-list set, for tests that
+	// publish a LoTE of their own. Nil leaves the compiled-in set in force.
+	TrustLists []lote.Source
+
+	// NoVerifierCA anchors no verifier CA at all, so a verifier the compose
+	// services authenticate perfectly well is a legitimate-looking stranger to
+	// this wallet: its chain traces to no anchor, nothing about it is attested,
+	// and it ranks low. It is how a session test reaches the unknown-CA state
+	// without tampering with a request on the wire.
+	NoVerifierCA bool
+
+	// ExtraVerifierAnchors are extra pinned anchors, each carrying the level it
+	// confers — the seam a test pins a third-party CA at medium through.
+	ExtraVerifierAnchors []eudi.ExtraTrustAnchor
+}
+
 func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
-	return instantiateClientWithTrustLists(t, issuerChain, locale, nil, nil)
+	return newTestClient(t, testClient{IssuerChain: issuerChain, Locale: locale})
 }
 
 // instantiateClientWithTrustLists is instantiateClient with the wallet's
 // recognized-list set replaced, for tests that publish a LoTE of their own.
-// loteRoot is installed as an extra issuer trust anchor: it is where the wallet
-// looks for the key a list signature has to chain to.
 func instantiateClientWithTrustLists(
 	t *testing.T,
 	issuerChain []byte,
@@ -1264,14 +1299,16 @@ func instantiateClientWithTrustLists(
 	loteRoot *x509.Certificate,
 	trustLists []lote.Source,
 ) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
-	return instantiateClientWithVerifierTrust(t, "", issuerChain, locale, loteRoot, trustLists, testdata.VerifierCACertBytes)
+	return newTestClient(t, testClient{
+		IssuerChain: issuerChain,
+		Locale:      locale,
+		LoteRoot:    loteRoot,
+		TrustLists:  trustLists,
+	})
 }
 
 // instantiateClientAtPath is instantiateClientWithTrustLists at a storage path
 // the caller supplies, so a second wallet can be built over the first one's data.
-// That is what proves a persisted document survives a restart and is re-verified
-// when it is read — client.New already takes the path, so this widens nothing
-// outside internal/sessiontest.
 func instantiateClientAtPath(
 	t *testing.T,
 	storagePath string,
@@ -1281,46 +1318,27 @@ func instantiateClientAtPath(
 	trustLists []lote.Source,
 ) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	require.NotEmpty(t, storagePath, "instantiateClientAtPath needs a path; use instantiateClientWithTrustLists for a fresh one")
-	return instantiateClientWithVerifierTrust(t, storagePath, issuerChain, locale, loteRoot, trustLists, testdata.VerifierCACertBytes)
+	return newTestClient(t, testClient{
+		StoragePath: storagePath,
+		IssuerChain: issuerChain,
+		Locale:      locale,
+		LoteRoot:    loteRoot,
+		TrustLists:  trustLists,
+	})
 }
 
-// instantiateClientWithoutVerifierTrust builds a wallet that anchors no
-// verifier CA, so a verifier the compose services authenticate perfectly well
-// is a legitimate-looking stranger to this wallet: its chain traces to no
-// anchor, nothing about it is attested, and it ranks low. It is how a session
-// test reaches the unknown-CA state without tampering with a request on the
-// wire.
-func instantiateClientWithoutVerifierTrust(t *testing.T) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
-	return instantiateClientWithVerifierTrust(t, "", nil, "en", nil, nil, nil)
-}
+// newTestClient builds the wallet a session test runs against.
+func newTestClient(t *testing.T, opts testClient) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	storagePath, issuerChain, locale := opts.StoragePath, opts.IssuerChain, opts.Locale
+	loteRoot, trustLists, extraVerifierAnchors := opts.LoteRoot, opts.TrustLists, opts.ExtraVerifierAnchors
 
-// instantiateClientWithVerifierTrust is the full form. An empty storagePath gets
-// a fresh temporary one; verifierCA nil installs no verifier anchor at all.
-func instantiateClientWithVerifierTrust(
-	t *testing.T,
-	storagePath string,
-	issuerChain []byte,
-	locale string,
-	loteRoot *x509.Certificate,
-	trustLists []lote.Source,
-	verifierCA []byte,
-) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
-	return instantiateClientWithExtraAnchors(t, storagePath, issuerChain, locale, loteRoot, trustLists, verifierCA, nil)
-}
+	// A nil verifier CA leaves the anchor directory empty, which is what the
+	// gate-failure tests want.
+	verifierCA := testdata.VerifierCACertBytes
+	if opts.NoVerifierCA {
+		verifierCA = nil
+	}
 
-// instantiateClientWithExtraAnchors is instantiateClientWithVerifierTrust with
-// extra pinned trust anchors, each carrying the level it confers — the seam a
-// test pins a third-party CA at medium through.
-func instantiateClientWithExtraAnchors(
-	t *testing.T,
-	storagePath string,
-	issuerChain []byte,
-	locale string,
-	loteRoot *x509.Certificate,
-	trustLists []lote.Source,
-	verifierCA []byte,
-	extraVerifierAnchors []eudi.ExtraTrustAnchor,
-) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 

@@ -71,6 +71,20 @@ type Image struct {
 	MimeType *string `json:"mime_type,omitempty"`
 }
 
+// NewImage wraps raw image bytes as the app-facing Image, carrying the MIME type
+// when one is known. Returns nil for empty data, so "no image" and "an image of
+// nothing" cannot be told apart by callers that have neither.
+func NewImage(data []byte, mimeType string) *Image {
+	if len(data) == 0 {
+		return nil
+	}
+	image := &Image{Base64: base64.StdEncoding.EncodeToString(data)}
+	if mimeType != "" {
+		image.MimeType = &mimeType
+	}
+	return image
+}
+
 // ImageFromFile reads an image file from disk and returns it as a base64-encoded Image.
 // Returns nil if the path is empty or the file cannot be read.
 func ImageFromFile(path string) *Image {

@@ -73,6 +73,14 @@ type SchemeInformation struct {
 	NextUpdate time.Time `json:"next_update"`
 }
 
+// current reports whether a list carrying this scheme information may still be
+// relied on at now, i.e. whether now is before its NextUpdate. It lives on the
+// data the rule is about so the fetch path and the evaluation path cannot spell
+// the same time bound two ways.
+func (si SchemeInformation) current(now time.Time) bool {
+	return now.Add(-ClockSkew).Before(si.NextUpdate)
+}
+
 // Entity is a listed organization (TS 119 612 `TrustServiceProvider`): who it
 // is, plus the grants it holds.
 type Entity struct {
@@ -162,9 +170,13 @@ type OtherId struct {
 // OtherIdTypeDid is the OtherId type a DID is carried under.
 const OtherIdTypeDid = "did"
 
-// certificateOrganizationIdentifier returns the subject's
+// CertificateOrganizationIdentifier returns the subject's
 // `organizationIdentifier` attribute, or "" when the certificate carries none.
-func certificateOrganizationIdentifier(cert *x509.Certificate) string {
+//
+// Exported so that whoever builds a list entry — a test fixture, a publisher
+// tool — keys it the way this matcher reads it, instead of re-deriving the OID
+// and agreeing only with itself.
+func CertificateOrganizationIdentifier(cert *x509.Certificate) string {
 	for _, attr := range cert.Subject.Names {
 		if !attr.Type.Equal(organizationIdentifierOID) {
 			continue

@@ -2,7 +2,6 @@ package openid4vp
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -170,28 +169,18 @@ func verifierIdentifiers(clientId string) []string {
 	return []string{clientId}
 }
 
-// handlePartyValidationFailure ends the session the same way handleFailure
-// does, but with the code that tells the app the verifier itself was rejected
-// rather than that the network or the protocol misbehaved.
-func handlePartyValidationFailure(handler Handler, message string, fmtArgs ...any) {
-	eudi.Logger.Errorf(message, fmtArgs...)
-	handler.Failure(&clientmodels.SessionError{
-		ErrorType:    clientmodels.ErrorType_PartyValidationFailed,
-		WrappedError: fmt.Sprintf(message, fmtArgs...),
-	})
-}
-
 // handleVerificationFailure ends the session with the code that fits what went
 // wrong while the request was being verified: a rejection by the identity gate
 // tells the app the verifier itself was not trustworthy, anything else is a
 // generic failure. Both entry points report through it, so a request delivered
 // by the platform fails the same way one fetched from a request_uri does.
 func handleVerificationFailure(handler Handler, err error) {
-	if eudi.IsPartyValidationFailure(err) {
-		handlePartyValidationFailure(handler, "openid4vp: %v", err)
-		return
-	}
-	handleFailure(handler, "openid4vp: %v", err)
+	message := fmt.Sprintf("openid4vp: %v", err)
+	eudi.Logger.Errorf("%s", message)
+	handler.Failure(&clientmodels.SessionError{
+		ErrorType:    eudi.SessionErrorType(err),
+		WrappedError: message,
+	})
 }
 
 func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSession) {
@@ -397,14 +386,10 @@ func (client *Client) verifierLogoManager() filesystem.LogoManager {
 
 // logoImage wraps a scheme logo for the app, or returns nil when there is none.
 func logoImage(logo *scheme.Logo) *clientmodels.Image {
-	if logo == nil || len(logo.Data) == 0 {
+	if logo == nil {
 		return nil
 	}
-	image := &clientmodels.Image{Base64: base64.StdEncoding.EncodeToString(logo.Data)}
-	if mimeType := logo.MimeType; mimeType != "" {
-		image.MimeType = &mimeType
-	}
-	return image
+	return clientmodels.NewImage(logo.Data, logo.MimeType)
 }
 
 func (client *Client) handleAuthorizationRequest(

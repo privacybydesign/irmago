@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/privacybydesign/irmago/eudi/utils"
@@ -494,23 +496,19 @@ func (tm *TrustModel) Classify(leaf *x509.Certificate) clientmodels.TrustLevel {
 		return clientmodels.TrustLevel_Unevaluated
 	}
 
-	opts := tm.GetVerificationOptionsTemplate()
-	opts.CurrentTime = classificationTime(time.Now(), leaf)
-	chains, err := leaf.Verify(opts)
+	// The acceptance rules — chain to an anchor, digitalSignature key usage, not
+	// revoked — are the wallet's one policy, shared with the session gate, so a
+	// rule added there also governs ranking. Only the moment differs.
+	chains, err := eudi_jwt.VerifyCertificateChains(tm, leaf, nil, classificationTime(time.Now(), leaf))
 	if err != nil {
-		tm.logger.Tracef("trust: certificate %s classifies to no anchor: %v", leaf.Subject.ToRDNSequence().String(), err)
-		return clientmodels.TrustLevel_Unevaluated
-	}
-
-	if leaf.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
-		tm.logger.Warnf("trust: certificate %s misses the digitalSignature key usage, not classifying it", leaf.Subject.ToRDNSequence().String())
-		return clientmodels.TrustLevel_Unevaluated
-	}
-
-	// A revoked certificate is an act of distrust, so it stops conferring
-	// whatever its anchor would have.
-	if err := utils.VerifyCertificateAgainstIssuerRevocationLists(leaf, tm.revocationLists); err != nil {
-		tm.logger.Warnf("trust: certificate %s fails the revocation check, not classifying it: %v", leaf.Subject.ToRDNSequence().String(), err)
+		// A revoked certificate is an act of distrust rather than the ordinary
+		// absence of an anchor, so it is worth saying out loud; anything else is
+		// the expected outcome for a party the wallet holds no anchor for.
+		if errors.Is(err, eudi_jwt.ErrCertificateRevoked) {
+			tm.logger.Warnf("trust: certificate %s fails the revocation check, not classifying it: %v", leaf.Subject.ToRDNSequence().String(), err)
+		} else {
+			tm.logger.Tracef("trust: certificate %s classifies to no anchor: %v", leaf.Subject.ToRDNSequence().String(), err)
+		}
 		return clientmodels.TrustLevel_Unevaluated
 	}
 

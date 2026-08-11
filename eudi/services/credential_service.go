@@ -96,12 +96,8 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 
 	// One trust view for the whole listing: a refresh landing halfway through
 	// must not rank the first half of the list against one state of the
-	// recognized lists and the second half against another. A service built
-	// without an evaluator ranks nobody rather than failing the read.
-	trustView := trust.NewView(nil, nil, nil)
-	if s.trustEvaluator != nil {
-		trustView = s.trustEvaluator.Snapshot(context.Background())
-	}
+	// recognized lists and the second half against another.
+	trustView := trust.SnapshotOf(context.Background(), s.trustEvaluator)
 
 	// Convert storage models to client models
 	clientModels := make([]*clientmodels.Credential, len(m))

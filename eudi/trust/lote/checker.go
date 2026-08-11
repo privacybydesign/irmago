@@ -57,15 +57,8 @@ type Config struct {
 	Store Store
 
 	// HTTPClient is used for list downloads. Nil falls back to
-	// http.DefaultClient, bounded by FetchTimeout.
+	// http.DefaultClient, bounded by FetchTimeoutDefault.
 	HTTPClient *http.Client
-
-	// MaxBodyBytes caps a downloaded list. <= 0 falls back to MaxBodyDefault.
-	MaxBodyBytes int64
-
-	// FetchTimeout bounds one download. <= 0 falls back to
-	// FetchTimeoutDefault.
-	FetchTimeout time.Duration
 
 	// Now supplies the clock the currency checks read. Nil falls back to
 	// time.Now.
@@ -81,13 +74,9 @@ type Config struct {
 //
 // A Checker is safe for concurrent use.
 type Checker struct {
-	sources     []Source
-	store       Store
-	x509Context eudi_jwt.X509VerificationContext
-	httpClient  *http.Client
-	maxBody     int64
-	timeout     time.Duration
-	now         func() time.Time
+	// cfg is the configuration as normalized by NewChecker, so the defaults are
+	// applied in one place rather than re-derived per use.
+	cfg Config
 
 	// loadOnce defers reading the persisted lists to the first use rather than
 	// doing it in the constructor. The wallet builds its trust models — the
@@ -100,44 +89,41 @@ type Checker struct {
 	// held is the last list that verified, per source, whether or not it is
 	// still current. An expired list is kept because its sequence number is
 	// still the floor a replayed older list has to clear; Snapshot is where
-	// currency is applied.
-	held map[string]*List
+	// currency is applied. The verified bytes are kept alongside the parsed
+	// list so a re-issue that is byte-identical can be recognized without
+	// re-marshalling anything.
+	held map[string]*verifiedList
 }
 
 // NewChecker builds a Checker. The lists already persisted are read and
 // re-verified against the anchors on first use; one that no longer verifies is
 // dropped, exactly as if it had never been fetched.
 func NewChecker(cfg Config) *Checker {
-	now := cfg.Now
-	if now == nil {
-		now = time.Now
+	if cfg.Now == nil {
+		cfg.Now = time.Now
 	}
-	c := &Checker{
-		sources:     cfg.Sources,
-		store:       cfg.Store,
-		x509Context: cfg.X509Context,
-		httpClient:  cfg.HTTPClient,
-		maxBody:     cfg.MaxBodyBytes,
-		timeout:     cfg.FetchTimeout,
-		now:         now,
-		held:        map[string]*List{},
+	if cfg.HTTPClient == nil {
+		cfg.HTTPClient = http.DefaultClient
 	}
-	return c
+	return &Checker{
+		cfg:  cfg,
+		held: map[string]*verifiedList{},
+	}
 }
 
 func (c *Checker) loadPersisted() {
-	if c.store == nil {
+	if c.cfg.Store == nil {
 		return
 	}
 	c.loadOnce.Do(func() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		for _, source := range c.sources {
-			raw, ok := c.store.Get(source.ListId)
+		for _, source := range c.cfg.Sources {
+			raw, ok := c.cfg.Store.Get(source.ListId)
 			if !ok {
 				continue
 			}
-			verified, err := verify(raw, c.x509Context)
+			verified, err := verify(raw, c.cfg.X509Context)
 			if err != nil {
 				eudi.Logger.Warnf("lote: stored list %q no longer verifies, dropping it: %v", source.ListId, err)
 				continue
@@ -147,7 +133,7 @@ func (c *Checker) loadPersisted() {
 					source.ListId, verified.list.SchemeInformation.ListIdentifier)
 				continue
 			}
-			c.held[source.ListId] = verified.list
+			c.held[source.ListId] = verified
 		}
 	})
 }
@@ -165,19 +151,39 @@ func (c *Checker) loadPersisted() {
 // re-issue that says the same thing about the same parties — a fresh
 // next_update, a new sequence number, a new signature — counts zero, so
 // re-confirmation never wakes the app.
+// Sources are refreshed concurrently: they are independent downloads, so a slow
+// or unreachable one must not add its timeout to every other source's wait.
 func (c *Checker) Refresh(ctx context.Context) (int, error) {
 	c.loadPersisted()
 
+	type outcome struct {
+		changed bool
+		err     error
+	}
+	outcomes := make([]outcome, len(c.cfg.Sources))
+
+	var wg sync.WaitGroup
+	for i, source := range c.cfg.Sources {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			changed, err := c.refreshSource(ctx, source)
+			outcomes[i] = outcome{changed: changed, err: err}
+		}()
+	}
+	wg.Wait()
+
+	// Reported in configuration order, so the log reads the same way whatever
+	// order the downloads happened to finish in.
 	changed := 0
 	var failures []error
-	for _, source := range c.sources {
-		contentChanged, err := c.refreshSource(ctx, source)
-		if err != nil {
+	for i, source := range c.cfg.Sources {
+		if err := outcomes[i].err; err != nil {
 			eudi.Logger.Warnf("lote: refreshing %q: %v", source.ListId, err)
 			failures = append(failures, fmt.Errorf("%s: %w", source.ListId, err))
 			continue
 		}
-		if contentChanged {
+		if outcomes[i].changed {
 			changed++
 		}
 	}
@@ -187,12 +193,12 @@ func (c *Checker) Refresh(ctx context.Context) (int, error) {
 // refreshSource fetches one source and adopts the list if it holds up,
 // reporting whether the entries it carries differ from the ones the wallet held.
 func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error) {
-	raw, err := fetch(ctx, c.httpClient, source.URL, c.maxBody, c.timeout)
+	raw, err := fetch(ctx, c.cfg.HTTPClient, source.URL)
 	if err != nil {
 		return false, fmt.Errorf("fetch: %w", err)
 	}
 
-	verified, err := verify(raw, c.x509Context)
+	verified, err := verify(raw, c.cfg.X509Context)
 	if err != nil {
 		return false, err
 	}
@@ -203,7 +209,7 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 		return false, fmt.Errorf("declares list identifier %q, expected %q", got, source.ListId)
 	}
 
-	if !verified.current(c.now()) {
+	if !verified.current(c.cfg.Now()) {
 		return false, fmt.Errorf("expired: next_update was %s", verified.list.SchemeInformation.NextUpdate.Format(time.RFC3339))
 	}
 
@@ -215,26 +221,26 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 	// A re-issue may repeat a sequence number (the same issue served twice) but
 	// never go backwards: that is an older list being replayed, which would
 	// silently un-list everyone added since.
-	if held && verified.list.SchemeInformation.SequenceNumber < previous.SchemeInformation.SequenceNumber {
+	if held && verified.list.SchemeInformation.SequenceNumber < previous.list.SchemeInformation.SequenceNumber {
 		return false, fmt.Errorf("sequence number regressed from %d to %d",
-			previous.SchemeInformation.SequenceNumber, verified.list.SchemeInformation.SequenceNumber)
+			previous.list.SchemeInformation.SequenceNumber, verified.list.SchemeInformation.SequenceNumber)
 	}
 
-	if c.store != nil {
-		if err := c.store.Put(source.ListId, verified.rawJws); err != nil {
+	if c.cfg.Store != nil {
+		if err := c.cfg.Store.Put(source.ListId, verified.rawJws); err != nil {
 			// The list is good; only persisting it failed. Use it for this run
 			// rather than throwing away a valid download over a storage problem.
 			eudi.Logger.Warnf("lote: persisting list %q: %v", source.ListId, err)
 		}
 	}
-	c.held[source.ListId] = verified.list
+	c.held[source.ListId] = verified
 
 	// A first fetch is not a change: the wallet showed no verdict from this list
 	// before, so there is nothing it has to go back on.
 	if !held {
 		return false, nil
 	}
-	return entriesDiffer(previous, verified.list), nil
+	return entriesDiffer(previous, verified), nil
 }
 
 // entriesDiffer reports whether two issues of the same list say different things
@@ -247,12 +253,17 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 // strictly need. That is the accepted side of the trade: list content changes
 // are human acts, rare enough that a spurious one costs a redraw, while missing
 // a real one leaves a delisted issuer showing a rung it no longer holds.
-func entriesDiffer(previous, current *List) bool {
-	previousEntities, err := json.Marshal(previous.Entities)
+func entriesDiffer(previous, current *verifiedList) bool {
+	// An operator re-serving the identical document is the common case, and
+	// identical bytes cannot say anything different about anybody.
+	if bytes.Equal(previous.rawJws, current.rawJws) {
+		return false
+	}
+	previousEntities, err := json.Marshal(previous.list.Entities)
 	if err != nil {
 		return true
 	}
-	currentEntities, err := json.Marshal(current.Entities)
+	currentEntities, err := json.Marshal(current.list.Entities)
 	if err != nil {
 		return true
 	}
@@ -265,22 +276,22 @@ func entriesDiffer(previous, current *List) bool {
 // falls back to what the other channels say.
 func (c *Checker) Snapshot() trust.ListSnapshot {
 	c.loadPersisted()
-	now := c.now()
+	now := c.cfg.Now()
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	pinned := make([]pinnedList, 0, len(c.sources))
-	for _, source := range c.sources {
-		list, ok := c.held[source.ListId]
+	pinned := make([]pinnedList, 0, len(c.cfg.Sources))
+	for _, source := range c.cfg.Sources {
+		held, ok := c.held[source.ListId]
 		if !ok {
 			continue
 		}
-		if !now.Add(-ClockSkew).Before(list.SchemeInformation.NextUpdate) {
+		if !held.current(now) {
 			eudi.Logger.Infof("lote: list %q is past its next_update, ignoring it", source.ListId)
 			continue
 		}
-		pinned = append(pinned, pinnedList{source: source, list: list})
+		pinned = append(pinned, pinnedList{source: source, list: held.list})
 	}
 	return snapshot{lists: pinned}
 }

@@ -6,13 +6,10 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
-	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -237,7 +234,7 @@ func testUnknownCaVerifierRanksLowAndProceeds(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	c, clientHandler, sessionHandler := instantiateClientWithoutVerifierTrust(t)
+	c, clientHandler, sessionHandler := newTestClient(t, testClient{Locale: "en", NoVerifierCA: true})
 	defer c.Close()
 	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
@@ -272,10 +269,14 @@ func testUnknownCaVerifierListedOnYivisListRanksHigh(t *testing.T) {
 		lote.NewTestEntity(curatedName, subjectOrganizationIdentifier(t, verifierLeaf),
 			lote.NewTestSkiService(trust.RoleVerifier, verifierLeaf))))
 
-	// The full form with verifierCA nil: the wallet anchors no verifier CA at
-	// all, so the list entry is the only thing that can speak for the verifier.
-	c, clientHandler, sessionHandler := instantiateClientWithVerifierTrust(t, "", nil, "en", signer.RootCert,
-		[]lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_High)}, nil)
+	// No verifier CA is anchored at all, so the list entry is the only thing that
+	// can speak for the verifier.
+	c, clientHandler, sessionHandler := newTestClient(t, testClient{
+		Locale:       "en",
+		LoteRoot:     signer.RootCert,
+		TrustLists:   []lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_High)},
+		NoVerifierCA: true,
+	})
 	defer c.Close()
 	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
@@ -302,9 +303,12 @@ func testThirdPartyCaVerifierRanksMedium(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	c, clientHandler, sessionHandler := instantiateClientWithExtraAnchors(t, "", nil, "en", nil, nil,
-		nil, // no verifier CA installed at high...
-		[]eudi.ExtraTrustAnchor{{PEM: testdata.VerifierCACertBytes, Confers: clientmodels.TrustLevel_Medium}})
+	c, clientHandler, sessionHandler := newTestClient(t, testClient{
+		Locale: "en",
+		// ...not installed at high, but pinned as a third-party anchor at medium.
+		NoVerifierCA:         true,
+		ExtraVerifierAnchors: []eudi.ExtraTrustAnchor{{PEM: testdata.VerifierCACertBytes, Confers: clientmodels.TrustLevel_Medium}},
+	})
 	defer c.Close()
 	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
@@ -635,13 +639,7 @@ func testIssuerKeyedOnItsCertificate(t *testing.T) {
 // signs its credentials with (mounted into the container as issuer.der).
 func eudiPidIssuerLeaf(t *testing.T) *x509.Certificate {
 	t.Helper()
-	leafPem, err := os.ReadFile(filepath.Join(testdataFolder, "eudi-pid-issuer-py", "certs", "issuer.pem"))
-	require.NoError(t, err)
-	block, _ := pem.Decode(leafPem)
-	require.NotNil(t, block)
-	leaf, err := x509.ParseCertificate(block.Bytes)
-	require.NoError(t, err)
-	return leaf
+	return certFromPemFile(t, "eudi-pid-issuer-py", "certs", "issuer.pem")
 }
 
 // ----------------------------------------------------------------------------

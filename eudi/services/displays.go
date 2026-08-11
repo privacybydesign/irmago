@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"maps"
 	"net/http"
@@ -190,9 +189,5 @@ func LoadCuratedLogo(ctx context.Context, manager filesystem.LogoManager, httpCl
 		eudi.Logger.Warnf("failed to cache curated logo %q: %v", uri, err)
 	}
 
-	image := &clientmodels.Image{Base64: base64.StdEncoding.EncodeToString(data)}
-	if mimeType != "" {
-		image.MimeType = &mimeType
-	}
-	return image
+	return clientmodels.NewImage(data, mimeType)
 }

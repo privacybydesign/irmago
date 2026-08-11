@@ -3,7 +3,6 @@ package lote
 import (
 	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/trust"
+	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,13 +68,12 @@ func goldenAnchors(t *testing.T) eudi_jwt.X509VerificationContext {
 	t.Helper()
 	rootPem, err := os.ReadFile(filepath.Join(goldenDir(t), "certs", "root.crt"))
 	require.NoError(t, err)
-	block, _ := pem.Decode(rootPem)
-	require.NotNil(t, block)
-	root, err := x509.ParseCertificate(block.Bytes)
+	chain, err := utils.ParsePemCertificateChain(rootPem)
 	require.NoError(t, err)
+	require.NotEmpty(t, chain)
 
 	pool := x509.NewCertPool()
-	pool.AddCert(root)
+	pool.AddCert(chain[0])
 	return &eudi_jwt.StaticVerificationContext{VerifyOpts: x509.VerifyOptions{
 		Roots:       pool,
 		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageAny},

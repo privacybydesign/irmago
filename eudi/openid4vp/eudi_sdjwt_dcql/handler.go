@@ -1253,15 +1253,8 @@ func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, v
 
 // trustView pins the recognized-list state for one pass over the wallet's
 // credentials. Take it once per entry point, never per credential.
-//
-// A handler built without an evaluator falls back to a dark view that ranks
-// everybody low, rather than crashing on a caller that does not care about
-// trust levels.
 func (h *SdJwtVcDcqlHandler) trustView() trust.View {
-	if h.trustEvaluator == nil {
-		return trust.NewView(nil, nil, nil)
-	}
-	return h.trustEvaluator.Snapshot(context.Background())
+	return trust.SnapshotOf(context.Background(), h.trustEvaluator)
 }
 
 // issuerImage loads the issuer logo that resolves for the locale from the

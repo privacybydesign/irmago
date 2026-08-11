@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
-	mathBig "math/big"
 	"testing"
 	"time"
 
@@ -480,18 +479,12 @@ func revocationListsFor(t *testing.T, opts testdata.PkiGenerationOptions, verifi
 		return nil
 	}
 
-	crlTemplate := &x509.RevocationList{
-		Number:     mathBig.NewInt(1),
-		ThisUpdate: time.Now().Add(time.Duration(-1 * time.Hour)),
-		NextUpdate: time.Now().Add(time.Duration(1 * time.Hour)),
-		RevokedCertificateEntries: []x509.RevocationListEntry{
-			{
-				SerialNumber:   verifierCert.SerialNumber,
-				RevocationTime: time.Now().Add(time.Duration(-1 * time.Hour)),
-				ReasonCode:     0, // Unspecified reason
-			},
-		},
-	}
+	crlTemplate := testdata.GetDefaultCrlTemplate(caCert)
+	crlTemplate.RevokedCertificateEntries = []x509.RevocationListEntry{{
+		SerialNumber:   verifierCert.SerialNumber,
+		RevocationTime: time.Now().Add(-time.Hour),
+		ReasonCode:     0, // Unspecified reason
+	}}
 	crlBytes, err := x509.CreateRevocationList(rand.Reader, crlTemplate, caCert, caKey)
 	require.NoError(t, err)
 	crl, err := x509.ParseRevocationList(crlBytes)

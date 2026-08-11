@@ -1,7 +1,6 @@
 package lote
 
 import (
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -57,33 +56,30 @@ func verify(rawJws []byte, x509Context eudi_jwt.X509VerificationContext) (*verif
 		// JAdES-B-B compact serialization carries exactly one signature.
 		return nil, fmt.Errorf("expected exactly one signature, got %d", len(signatures))
 	}
-	headers := signatures[0].ProtectedHeaders()
-
-	if typ, ok := headers.Type(); !ok || typ != LoteTyp {
-		return nil, fmt.Errorf("invalid 'typ' header: %q, expected %q", typ, LoteTyp)
-	}
-
-	chain, ok := headers.X509CertChain()
-	if !ok || chain == nil || chain.Len() == 0 {
-		return nil, fmt.Errorf("missing 'x5c' header")
-	}
-
-	// Resolve the signing key from x5c and verify the signature with it. The
-	// provider hands the end-entity certificate back so the chain can be
-	// validated against the anchors; a signature that verifies under a
-	// certificate nobody trusts is worth nothing, so both have to hold.
-	keyProvider := eudi_jwt.NewX509KeyProvider(chain)
+	// Resolve the signing key through the wallet's shared JWS key provider: it
+	// enforces the `typ` allow-list and rejects an ambiguous key reference (both
+	// `x5c` and `kid`), and it hands the end-entity certificate back so the
+	// chain can be validated against the anchors. A signature that verifies
+	// under a certificate nobody trusts is worth nothing, so both have to hold.
+	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{LoteTyp}, false)
 	payload, err := jws.Verify(rawJws, jws.WithKeyProvider(keyProvider))
 	if err != nil {
 		return nil, fmt.Errorf("verify signature: %v", err)
 	}
 
-	cert := keyProvider.GetCert()
+	// A LoTE is signed with an x5c chain; a `kid`-resolved key would skip the
+	// anchor check entirely, so anything else the provider accepted is refused
+	// here.
+	x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider)
+	if !ok {
+		return nil, fmt.Errorf("missing 'x5c' header")
+	}
+	cert := x509KeyProvider.GetCert()
 	if cert == nil {
 		return nil, fmt.Errorf("signature verified but no end-entity certificate was resolved")
 	}
-	if err := verifyChain(x509Context, cert); err != nil {
-		return nil, err
+	if err := eudi_jwt.VerifyCertificate(x509Context, cert, nil); err != nil {
+		return nil, fmt.Errorf("validate signing certificate: %v", err)
 	}
 
 	var list List
@@ -103,15 +99,8 @@ func verify(rawJws []byte, x509Context eudi_jwt.X509VerificationContext) (*verif
 	return &verifiedList{list: &list, rawJws: rawJws}, nil
 }
 
-func verifyChain(x509Context eudi_jwt.X509VerificationContext, cert *x509.Certificate) error {
-	if err := eudi_jwt.VerifyCertificate(x509Context, cert, nil); err != nil {
-		return fmt.Errorf("validate signing certificate: %v", err)
-	}
-	return nil
-}
-
 // current reports whether the list may still be relied on at now, i.e. whether
 // it is before its NextUpdate.
 func (v *verifiedList) current(now time.Time) bool {
-	return now.Add(-ClockSkew).Before(v.list.SchemeInformation.NextUpdate)
+	return v.list.SchemeInformation.current(now)
 }

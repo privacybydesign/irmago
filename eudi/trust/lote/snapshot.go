@@ -95,7 +95,7 @@ func matchesIdentity(entity *Entity, service *Service, ev trust.Evidence) bool {
 		if entity.OrganizationIdentifier == "" {
 			return true
 		}
-		return entity.OrganizationIdentifier == certificateOrganizationIdentifier(ev.Certificate)
+		return entity.OrganizationIdentifier == CertificateOrganizationIdentifier(ev.Certificate)
 	}
 
 	for _, other := range identity.OtherIds {

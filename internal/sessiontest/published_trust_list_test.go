@@ -4,10 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
-	"encoding/asn1"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/trust/lote"
+	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
@@ -261,33 +261,35 @@ func listedVerifierEntity(t *testing.T, name string) map[string]any {
 	}
 }
 
+// certFromPemFile parses the first certificate out of a committed PEM file under
+// testdata. It reads a whole chain, so a fixture that later grows intermediates
+// still parses and the leaf is still what comes back.
+func certFromPemFile(t *testing.T, parts ...string) *x509.Certificate {
+	t.Helper()
+	pemBytes, err := os.ReadFile(filepath.Join(append([]string{testdataFolder}, parts...)...))
+	require.NoError(t, err)
+	chain, err := utils.ParsePemCertificateChain(pemBytes)
+	require.NoError(t, err)
+	require.NotEmpty(t, chain)
+	return chain[0]
+}
+
 // eudiVerifierLeaf parses the committed certificate the EUDI Kotlin verifier
 // signs its authorization requests with.
 func eudiVerifierLeaf(t *testing.T) *x509.Certificate {
 	t.Helper()
-	leafPem, err := os.ReadFile(filepath.Join(testdataFolder, "eudi", "verifier", "verifier.crt"))
-	require.NoError(t, err)
-	block, _ := pem.Decode(leafPem)
-	require.NotNil(t, block)
-	leaf, err := x509.ParseCertificate(block.Bytes)
-	require.NoError(t, err)
-	return leaf
+	return certFromPemFile(t, "eudi", "verifier", "verifier.crt")
 }
 
-// subjectOrganizationIdentifier reads the X.520 organizationIdentifier attribute
-// (2.5.4.97) out of a subject. Go's pkix.Name has no field for it.
+// subjectOrganizationIdentifier reads the entity identifier a list entry is keyed
+// on out of a certificate, through the very matcher the wallet reads it with — so
+// a fixture cannot key an entry in a way the production lookup would miss.
 func subjectOrganizationIdentifier(t *testing.T, cert *x509.Certificate) string {
 	t.Helper()
-	oid := asn1.ObjectIdentifier{2, 5, 4, 97}
-	for _, attr := range cert.Subject.Names {
-		if attr.Type.Equal(oid) {
-			value, ok := attr.Value.(string)
-			require.True(t, ok)
-			return value
-		}
-	}
-	t.Fatalf("certificate subject carries no organizationIdentifier; re-run testdata/eudi/verifier/gen-cert-chain.sh")
-	return ""
+	value := lote.CertificateOrganizationIdentifier(cert)
+	require.NotEmpty(t, value,
+		"certificate subject carries no organizationIdentifier; re-run testdata/eudi/verifier/gen-cert-chain.sh")
+	return value
 }
 
 // issuerLevelOfOffer drives a pre-authorized issuance to the permission screen,
@@ -353,13 +355,7 @@ func newPublishedListClientAt(t *testing.T, storagePath string) (*client.Client,
 // publisherRoot reads the committed root the publisher's signing leaf chains to.
 func publisherRoot(t *testing.T) *x509.Certificate {
 	t.Helper()
-	rootPem, err := os.ReadFile(filepath.Join(testdataFolder, "lote-publisher", "certs", "root.crt"))
-	require.NoError(t, err)
-	block, _ := pem.Decode(rootPem)
-	require.NotNil(t, block, "publisher root must be PEM")
-	root, err := x509.ParseCertificate(block.Bytes)
-	require.NoError(t, err)
-	return root
+	return certFromPemFile(t, "lote-publisher", "certs", "root.crt")
 }
 
 // publishList replaces what the publisher serves. nextUpdateSeconds may be
@@ -429,15 +425,8 @@ func requirePublishedLogo(t *testing.T, party clientmodels.TrustedParty) {
 	resp, err := http.Get(publishedLogoURI)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, resp.Body.Close()) }()
-	served := make([]byte, 0, 128)
-	buf := make([]byte, 128)
-	for {
-		n, readErr := resp.Body.Read(buf)
-		served = append(served, buf[:n]...)
-		if readErr != nil {
-			break
-		}
-	}
+	served, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
 	require.Equal(t, served, decoded, "the cached logo must be the bytes the publisher served")
 	require.NotNil(t, party.Image.MimeType)
 	require.Equal(t, "image/png", *party.Image.MimeType)

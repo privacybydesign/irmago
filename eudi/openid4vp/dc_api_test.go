@@ -48,9 +48,7 @@ func (v *mockVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt st
 	}
 	// No certificate, so nothing is attested: the mock verifier passes the
 	// identity gate and describes itself, which is the DID-identified shape.
-	selfAsserted := &scheme.RelyingPartyRequestor{}
-	selfAsserted.Organization.LegalName = map[string]string{"en": "Verifier Example"}
-	return v.request, &VerifiedRequestor{SelfAsserted: selfAsserted}, nil
+	return v.request, &VerifiedRequestor{SelfAsserted: scheme.NamedRelyingParty("Verifier Example")}, nil
 }
 
 // mockDcqlHandler answers a single DCQL credential query with one owned

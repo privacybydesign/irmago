@@ -3,6 +3,8 @@ package eudi
 import (
 	"errors"
 	"fmt"
+
+	"github.com/privacybydesign/irmago/common/clientmodels"
 )
 
 // ErrPartyValidation marks an error as the identity gate rejecting the party on
@@ -33,4 +35,15 @@ func PartyValidationFailed(err error) error {
 // switches on rather than as a generic error.
 func IsPartyValidationFailure(err error) bool {
 	return errors.Is(err, ErrPartyValidation)
+}
+
+// SessionErrorType is the code a failed session reports err under: the one the
+// app switches on when the party itself was rejected, and the empty generic code
+// for everything else. It lives next to the marker so both protocols read the
+// marker the same way rather than each mapping it for itself.
+func SessionErrorType(err error) string {
+	if IsPartyValidationFailure(err) {
+		return clientmodels.ErrorType_PartyValidationFailed
+	}
+	return ""
 }

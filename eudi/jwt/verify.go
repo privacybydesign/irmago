@@ -2,6 +2,7 @@ package eudi_jwt
 
 import (
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"time"
 
@@ -55,34 +56,72 @@ func VerificationTime(context X509VerificationContext) time.Time {
 	return time.Now()
 }
 
-// VerifyCertificate verifies the given certificate against the trusted chains and revocation lists in the provided context.
-// If a hostname is provided, it will be used for the SAN check during verification.
-func VerifyCertificate(context X509VerificationContext, cert *x509.Certificate, hostname *string) error {
-	// Verify the end-entity cert against the trusted chains
+// ErrCertificateRevoked marks the one acceptance failure that is an act of
+// distrust rather than an absence of trust, so a caller that treats an
+// unanchored certificate as ordinary can still single a revoked one out.
+var ErrCertificateRevoked = errors.New("certificate is revoked")
+
+// CheckCertificateValidAt reports whether cert is inside its own validity
+// window at the context's verification time, allowing skew on either bound.
+// what names the certificate in the error message.
+//
+// A certificate presented outside its window is a broken artifact, like an
+// expired JWT, so the gates that meet a live party reject it. Classification of
+// *stored* evidence is deliberately expiry-tolerant instead — see
+// TrustModel.Classify — which is why this is a check a caller asks for rather
+// than part of VerifyCertificate.
+func CheckCertificateValidAt(context X509VerificationContext, cert *x509.Certificate, skew time.Duration, what string) error {
+	now := VerificationTime(context)
+	if now.Add(skew).Before(cert.NotBefore) || now.Add(-skew).After(cert.NotAfter) {
+		return fmt.Errorf("%s is not valid at the current time (notBefore %s, notAfter %s)",
+			what, cert.NotBefore.Format(time.RFC3339), cert.NotAfter.Format(time.RFC3339))
+	}
+	return nil
+}
+
+// VerifyCertificateChains is the wallet's certificate acceptance policy in one
+// place: the chain must build to a pinned anchor, the end-entity certificate
+// must carry the digitalSignature key usage, and it must not be revoked by any
+// of its issuer's revocation lists. It returns the chains the certificate
+// validated to, for callers that need to know *which* anchor stood behind it.
+//
+// If a hostname is provided, it is used for the SAN check. A non-zero at
+// overrides the moment the chain is verified at; the zero value leaves the
+// context's own reading in place.
+func VerifyCertificateChains(context X509VerificationContext, cert *x509.Certificate, hostname *string, at time.Time) ([][]*x509.Certificate, error) {
 	var verifyOpts x509.VerifyOptions
 	if hostname != nil {
 		verifyOpts = GetX509VerificationOptionsFromTemplate(context, *hostname)
 	} else {
 		verifyOpts = context.GetVerificationOptionsTemplate()
 	}
+	if !at.IsZero() {
+		verifyOpts.CurrentTime = at
+	}
 
 	// Verify the end-entity cert against the trusted chains
-	chain, err := cert.Verify(verifyOpts)
+	chains, err := cert.Verify(verifyOpts)
 	if err != nil {
-		return fmt.Errorf("failed to verify x5c end-entity certificate: %v", err)
+		return nil, fmt.Errorf("failed to verify x5c end-entity certificate: %v", err)
 	}
 
 	// Verify the digital signature key usage of the end-entity cert
-	leafCert := chain[0][0]
+	leafCert := chains[0][0]
 	if leafCert.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
-		return fmt.Errorf("end-entity certificate missing digitalSignature key usage")
+		return nil, fmt.Errorf("end-entity certificate missing digitalSignature key usage")
 	}
 
 	// Check the end-entity cert against all revocation lists from the issuing cert
 	if err := utils.VerifyCertificateAgainstIssuerRevocationLists(cert, context.GetRevocationLists()); err != nil {
-		return fmt.Errorf("failed to verify x5c end-entity certificate against revocation lists: %v", err)
+		return nil, fmt.Errorf("%w: failed to verify x5c end-entity certificate against revocation lists: %v", ErrCertificateRevoked, err)
 	}
 
-	// Cert is valid, no error returned
-	return nil
+	return chains, nil
+}
+
+// VerifyCertificate verifies the given certificate against the trusted chains and revocation lists in the provided context.
+// If a hostname is provided, it will be used for the SAN check during verification.
+func VerifyCertificate(context X509VerificationContext, cert *x509.Certificate, hostname *string) error {
+	_, err := VerifyCertificateChains(context, cert, hostname, time.Time{})
+	return err
 }

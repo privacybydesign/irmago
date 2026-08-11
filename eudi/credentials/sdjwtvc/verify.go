@@ -177,12 +177,11 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 	}
 	rawSdJwtVc := SdJwtVc(rawSdJwtVcSdJwt)
 
-	issuerSignedJwtPayload, requestorInfo, issuerCert, decodedDisclosures, processedSdJwtPayload, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
+	verified, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
 	if err != nil {
 		return nil, err
 	}
-	// ignore
-	_ = requestorInfo
+	issuerSignedJwtPayload := verified.payload
 
 	kbJwtPayload, err := keyBindingProcessor.ProcessAndVerifyKeyBindingJwt(rawKbJwt, rawSdJwtVc, issuerSignedJwtPayload)
 	if err != nil {
@@ -210,35 +209,43 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 	// Valid SD-JWT, optionally with valid key binding JWT, depending on the key binding processor used
 	return &VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: *issuerSignedJwtPayload,
-		Disclosures:            decodedDisclosures,
+		Disclosures:            verified.disclosures,
 		KeyBindingJwt:          kbJwtPayload,
-		IssuerCertificate:      issuerCert,
+		IssuerCertificate:      verified.certificate,
 		rawSdJwtVc:             rawSdJwtVc,
-		ProcessedSdJwtPayload:  *processedSdJwtPayload,
+		ProcessedSdJwtPayload:  *verified.processed,
 	}, nil
 }
 
-// parseAndVerifyIssuerSignedJwt returns, besides the payload, the certificate
-// the issuer signed with when it identified itself by `x5c` — nil otherwise.
-// The caller passes it on to the trust ladder, which is the only place that
-// cares who the signer is beyond the signature holding up.
-func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerSignedJwt, disclosures []sdjwt.EncodedDisclosure) (
-	*IssuerSignedJwtPayload,
-	*scheme.AttestationProviderRequestor,
-	*x509.Certificate,
-	[]sdjwt.DisclosureContent,
-	*sdjwt.ProcessedPayload,
-	error,
-) {
+// verifiedIssuerSignedJwt is everything one verified issuer-signed JWT yields.
+// It travels as a struct rather than as a row of positional results because the
+// caller needs most of it and the error paths need none of it.
+type verifiedIssuerSignedJwt struct {
+	payload *IssuerSignedJwtPayload
+	// requestorInfo is the issuer's authorization artifact read off its
+	// certificate, present only when the wallet demanded and found one.
+	requestorInfo *scheme.AttestationProviderRequestor
+	// certificate is what the issuer signed with when it identified itself by
+	// `x5c` — nil otherwise. The caller passes it on to the trust ladder, which
+	// is the only place that cares who the signer is beyond the signature
+	// holding up.
+	certificate *x509.Certificate
+	disclosures []sdjwt.DisclosureContent
+	processed   *sdjwt.ProcessedPayload
+}
+
+func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(
+	signedJwt sdjwt.IssuerSignedJwt, disclosures []sdjwt.EncodedDisclosure,
+) (*verifiedIssuerSignedJwt, error) {
 	token, requestorInfo, issuerCert, err := v.decodeJwtAndVerifyFromX5cHeader([]byte(signedJwt))
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, err
 	}
 
 	var vct string
 	err = token.Get(VerifiableCredentialTypeKey, &vct)
 	if err != nil {
-		return nil, nil, nil, nil, nil, errors.New("missing vct field")
+		return nil, errors.New("missing vct field")
 	}
 
 	// Get optional fields
@@ -249,7 +256,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	iss, issPresent := token.Issuer()
 
 	if !issPresent {
-		return nil, nil, nil, nil, nil, errors.New("missing iss field")
+		return nil, errors.New("missing iss field")
 	}
 
 	// Check if the hashing algorithm was specified and supported, or use SHA-256 as default if the claim is not present
@@ -258,7 +265,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 		if h := getOptional[string](token, sdjwt.SdAlgKey); iana.IsSupportedHashingAlgorithm(iana.HashingAlgorithm(h)) {
 			sdAlg = iana.HashingAlgorithm(h)
 		} else {
-			return nil, nil, nil, nil, nil, fmt.Errorf("unsupported _sd_alg: %s", h)
+			return nil, fmt.Errorf("unsupported _sd_alg: %s", h)
 		}
 	}
 
@@ -269,7 +276,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	if err == nil {
 		sd, err = sdjwt.ParseSdField(sdRaw)
 		if err != nil {
-			return nil, nil, nil, nil, nil, fmt.Errorf("failed to parse sd field: %v", err)
+			return nil, fmt.Errorf("failed to parse sd field: %v", err)
 		}
 	}
 
@@ -278,7 +285,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	if err == nil {
 		cnf, err = sdjwt.ParseConfirmField(cnfRaw)
 		if err != nil {
-			return nil, nil, nil, nil, nil, fmt.Errorf("failed to parse cnf field: %v", err)
+			return nil, fmt.Errorf("failed to parse cnf field: %v", err)
 		}
 	}
 
@@ -287,7 +294,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	if token.Has(StatusKey) {
 		status, err = parseStatusClaim(token)
 		if err != nil {
-			return nil, nil, nil, nil, nil, fmt.Errorf("failed to parse status claim: %v", err)
+			return nil, fmt.Errorf("failed to parse status claim: %v", err)
 		}
 	}
 
@@ -295,7 +302,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	// Get structured SD-JWT claims, which we can check for embedded disclosure digests
 	issuerSignedJwtClaims, err := sdjwt.ExtractClaimsAndDisclosureDigestsFromToken(token)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
+		return nil, fmt.Errorf("failed to extract claims from token: %v", err)
 	}
 
 	// Construct payload — use 0 for missing time claims instead of time.Time{}.Unix()
@@ -329,13 +336,13 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	// Verify times
 	err = v.verifyTimeFields(payload)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, err
 	}
 
 	// Parse and verify disclosures
 	processedSdJwtPayload, decodedDisclosures, err := sdjwt.VerifyAndProcessDisclosures(payload.SdAlg, &issuerSignedJwtClaims, disclosures)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, err
 	}
 
 	// Convert pointer to disclosures to values for return  (TODO: optimize to avoid this copy?)
@@ -344,7 +351,13 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 		decodedDisclosuresValues[i] = *discPtr
 	}
 
-	return payload, requestorInfo, issuerCert, decodedDisclosuresValues, &processedSdJwtPayload, nil
+	return &verifiedIssuerSignedJwt{
+		payload:       payload,
+		requestorInfo: requestorInfo,
+		certificate:   issuerCert,
+		disclosures:   decodedDisclosuresValues,
+		processed:     &processedSdJwtPayload,
+	}, nil
 }
 
 func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *IssuerSignedJwtPayload) error {
@@ -459,18 +472,13 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 	if x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider); ok {
 		cert := x509KeyProvider.GetCert()
 
-		// A certificate presented outside its own validity window is a broken
-		// artifact, like an expired JWT: the gate rejects it. (Classification
-		// of *stored* issuer evidence is expiry-tolerant — see
-		// TrustModel.Classify — but a fresh credential has no business being
-		// signed with an expired certificate.) The moment is the X.509
-		// context's, not the JWT clock's, matching what chain verification
-		// against the same context reads.
-		now := eudi_jwt.VerificationTime(v.verificationContext.X509VerificationContext)
-		if now.Add(ClockSkewInSeconds*time.Second).Before(cert.NotBefore) ||
-			now.Add(-ClockSkewInSeconds*time.Second).After(cert.NotAfter) {
-			return nil, nil, nil, fmt.Errorf("issuer certificate is not valid at the current time (notBefore %s, notAfter %s)",
-				cert.NotBefore.Format(time.RFC3339), cert.NotAfter.Format(time.RFC3339))
+		// A fresh credential has no business being signed with an expired
+		// certificate, so the gate rejects it. (Classification of *stored*
+		// issuer evidence is expiry-tolerant — see TrustModel.Classify.)
+		if err := eudi_jwt.CheckCertificateValidAt(
+			v.verificationContext.X509VerificationContext, cert, ClockSkewInSeconds*time.Second, "issuer certificate",
+		); err != nil {
+			return nil, nil, nil, err
 		}
 
 		// Does any anchor the wallet holds stand behind this certificate?

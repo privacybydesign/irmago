@@ -24,18 +24,13 @@ const (
 // operator serving one as application/jwt, application/jose or even
 // text/plain is not the wallet's problem to police — the signature is the gate,
 // and the `typ` header inside it is what says this JWS is a trusted list.
-func fetch(ctx context.Context, httpClient *http.Client, url string, maxBody int64, timeout time.Duration) ([]byte, error) {
+func fetch(ctx context.Context, httpClient *http.Client, url string) ([]byte, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	if maxBody <= 0 {
-		maxBody = MaxBodyDefault
-	}
-	if timeout <= 0 {
-		timeout = FetchTimeoutDefault
-	}
+	const maxBody = MaxBodyDefault
 
-	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	reqCtx, cancel := context.WithTimeout(ctx, FetchTimeoutDefault)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)

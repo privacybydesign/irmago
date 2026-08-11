@@ -89,12 +89,9 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 		displayName = domain
 	}
 
-	selfAsserted := &scheme.RelyingPartyRequestor{}
-	selfAsserted.Organization.LegalName = map[string]string{"en": displayName}
-
 	// We don't validate credential queries using queryValidator.ValidateCredentialQueries(..) on purpose here, because we have no external requestorInfo containing authorized attributes
 
-	return &authRequest, &VerifiedRequestor{SelfAsserted: selfAsserted}, nil
+	return &authRequest, &VerifiedRequestor{SelfAsserted: scheme.NamedRelyingParty(displayName)}, nil
 }
 
 // hostFromURL parses a URL and returns its hostname (without port), or "" on failure.
