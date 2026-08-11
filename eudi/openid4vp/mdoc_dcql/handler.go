@@ -158,7 +158,13 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 		}
 		holder := stdmdoc.NewHolderFromPrivateKey(privKey)
 
-		transcript, err := newOpenID4VPSessionTranscript(audience, nonce, sel.ResponseUri, sel.ResponseEncryptionKeyThumbprint)
+		// Which handover deviceAuth signs is decided by the transport the request
+		// arrived on, never by inspecting the values: the DC API's origin-prefixed
+		// audience and empty response_uri are indistinguishable here from an
+		// ordinary unencrypted URL session, and picking the wrong variant produces
+		// a response that transmits and decrypts fine and fails only at the
+		// verifier's signature check, with nothing naming the cause.
+		transcript, err := h.sessionTranscript(sel, nonce, audience)
 		if err != nil {
 			return nil, fmt.Errorf("build session transcript: %w", err)
 		}
@@ -207,6 +213,26 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 	}
 
 	return result, nil
+}
+
+// sessionTranscript picks the handover variant the transport requires and
+// builds the SessionTranscript deviceAuth signs over.
+//
+// The DC API binds the response to the origin the platform authenticated rather
+// than to a client identifier, so the audience arrives origin-prefixed and is
+// not what the handover signs; sel.Origin carries the bare value. An empty one
+// means the transport was reported without the origin that authenticates it,
+// which cannot produce a verifiable signature, so it fails here rather than
+// silently signing over "".
+func (h *MdocDcqlHandler) sessionTranscript(sel dcql.DisclosureSelection, nonce, audience string) (stdmdoc.SessionTranscript, error) {
+	if !sel.OverDcApi {
+		return newOpenID4VPSessionTranscript(audience, nonce, sel.ResponseUri, sel.ResponseEncryptionKeyThumbprint)
+	}
+	if sel.Origin == "" {
+		return stdmdoc.SessionTranscript{}, fmt.Errorf(
+			"a digital credentials api session must carry the origin the platform authenticated")
+	}
+	return newDcApiSessionTranscript(sel.Origin, nonce, sel.ResponseEncryptionKeyThumbprint)
 }
 
 // ---------------------------------------------------------------------------

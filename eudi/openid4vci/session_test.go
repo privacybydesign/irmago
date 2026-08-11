@@ -570,6 +570,107 @@ func Test_openid4vciSession_obtainCredential_sendsEncryptedRequest(t *testing.T)
 	require.Equal(t, "credential-config-1", configId)
 }
 
+// Test_buildOfferedCredentials_CredentialIdComesFromTheIssuedCredential pins
+// where the credential id shown to the user — and recorded in the issuance log —
+// is taken from: the credential the issuer signed, with its advertised
+// configuration as fallback.
+//
+// The distinction is not academic for mso_mdoc. A credential configuration
+// carries a vct only for dc+sd-jwt (metadata.CredentialConfiguration.VerifiableCredentialType,
+// `json:"vct"`), so preferring the configuration leaves an mdoc issuance naming
+// nothing at all: an empty id in the permission dialog and in the activity log,
+// while the stored batch — keyed off the same docType this reads — has it right.
+func Test_buildOfferedCredentials_CredentialIdComesFromTheIssuedCredential(t *testing.T) {
+	const configId = "credential-config-1"
+
+	// The namespace -> elementIdentifier -> value shape the mdoc branch reads.
+	resolvedMdocClaims, err := json.Marshal(map[string]map[string]any{
+		"eu.europa.ec.av.1": {"age_over_18": true},
+	})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		configVct  string
+		parsed     *services.ParsedCredential
+		expectedId string
+	}{
+		{
+			name: "mso_mdoc is named by the docType out of the signed MSO",
+			// An mso_mdoc configuration has no vct field to publish.
+			configVct: "",
+			parsed: &services.ParsedCredential{
+				Format:                   models.CredentialFormatMsoMdoc,
+				VerifiableCredentialType: "eu.europa.ec.av.1",
+				ResolvedClaims:           resolvedMdocClaims,
+			},
+			expectedId: "eu.europa.ec.av.1",
+		},
+		{
+			name: "dc+sd-jwt prefers the signed vct over the advertised one",
+			// The placeholder veramo publishes, which must not win.
+			configVct: "unknown",
+			// Both fields carry the vct, as NewSdJwtVcCredentialFormatParser
+			// leaves them: ParsedCredential.VerifiableCredentialType is copied
+			// from the same IssuerSignedJwtPayload that SdJwtVc exposes. Setting
+			// only one would make this subtest pass or fail on which field the
+			// code happens to read, rather than on the id it produces.
+			parsed: &services.ParsedCredential{
+				Format:                   models.CredentialFormatSdJwtVc,
+				VerifiableCredentialType: "https://issuer.example.com/vct/pid",
+				SdJwtVc: &sdjwtvc.VerifiedSdJwtVc{
+					IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
+						VerifiableCredentialType: "https://issuer.example.com/vct/pid",
+					},
+					ProcessedSdJwtPayload: sdjwt.ProcessedPayload{"given_name": "Alice"},
+				},
+			},
+			expectedId: "https://issuer.example.com/vct/pid",
+		},
+		{
+			name:      "the configuration is the fallback when the credential names nothing",
+			configVct: "https://issuer.example.com/vct/fallback",
+			parsed: &services.ParsedCredential{
+				Format:         models.CredentialFormatMsoMdoc,
+				ResolvedClaims: resolvedMdocClaims,
+			},
+			expectedId: "https://issuer.example.com/vct/fallback",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var aesKey [32]byte
+			copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+			// Needed only for the logo managers the display resolution consults.
+			eudiStorage, err := sqlcipherstorage.New(aesKey, ":memory:", t.TempDir())
+			require.NoError(t, err)
+
+			s := &session{
+				storage: eudiStorage,
+				locale:  "en",
+				credentialIssuerMetadata: &metadata.CredentialIssuerMetadata{
+					CredentialIssuer: "https://issuer.example.com",
+					CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+						configId: {
+							VerifiableCredentialType: tt.configVct,
+							CredentialMetadata:       &metadata.CredentialMetadata{},
+						},
+					},
+				},
+			}
+
+			offered := s.buildOfferedCredentials([]*fetchedCredential{{
+				credentialConfigurationId: configId,
+				parsedCredentials:         []*services.ParsedCredential{tt.parsed},
+			}})
+
+			require.Len(t, offered, 1)
+			require.Equal(t, tt.expectedId, offered[0].CredentialId)
+		})
+	}
+}
+
 func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 	en := "en"
 	claims := []metadata.ClaimsDescription{

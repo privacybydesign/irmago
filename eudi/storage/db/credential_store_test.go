@@ -359,37 +359,35 @@ func TestGetBatchByHash_EmptyHash(t *testing.T) {
 	require.Error(t, err)
 }
 
-// --- GetBatchesByVCT ---
+// --- GetBatchesByDocType ---
 
-func TestGetBatchesByVCT_Found(t *testing.T) {
+func TestGetBatchesByDocType_MultipleMatches(t *testing.T) {
 	store := newTestCredentialStore(t)
 
-	require.NoError(t, store.StoreBatch(newBatch("hash-vct-1")))
-	require.NoError(t, store.StoreBatch(newBatch("hash-vct-2")))
+	for _, hash := range []string{"hash-doctype-multi-1", "hash-doctype-multi-2"} {
+		batch := newBatch(hash)
+		batch.Format = models.CredentialFormatMsoMdoc
+		batch.VerifiableCredentialType = "eu.europa.ec.av.1"
+		require.NoError(t, store.StoreBatch(batch))
+	}
 
-	batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
+	batches, err := store.GetBatchesByDocType("eu.europa.ec.av.1")
 	require.NoError(t, err)
 	assert.Len(t, batches, 2)
 }
 
-func TestGetBatchesByVCT_NoMatch(t *testing.T) {
+func TestGetBatchesByDocType_NoMatch(t *testing.T) {
 	store := newTestCredentialStore(t)
 
-	require.NoError(t, store.StoreBatch(newBatch("hash-vct-nomatch")))
+	batch := newBatch("hash-doctype-nomatch")
+	batch.Format = models.CredentialFormatMsoMdoc
+	batch.VerifiableCredentialType = "eu.europa.ec.av.1"
+	require.NoError(t, store.StoreBatch(batch))
 
-	batches, err := store.GetBatchesByVCT("https://vct.example.com/OtherCredential")
+	batches, err := store.GetBatchesByDocType("eu.europa.ec.pid.1")
 	require.NoError(t, err)
 	assert.Empty(t, batches)
 }
-
-func TestGetBatchesByVCT_EmptyVCT(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	_, err := store.GetBatchesByVCT("")
-	require.Error(t, err)
-}
-
-// --- GetBatchesByDocType ---
 
 // One shared table serves every credential format, distinguished only by the Format column,
 // so GetBatchesByDocType has to filter on both.
@@ -430,12 +428,6 @@ func TestGetBatchesByDocType_ExcludesOtherFormatsWithTheSameTypeString(t *testin
 	require.Len(t, batches, 1)
 	assert.Equal(t, "hash-doctype-mdoc", batches[0].Hash)
 	assert.Equal(t, models.CredentialFormatMsoMdoc, batches[0].Format)
-
-	// The mirror direction still sees both, since GetBatchesByVCT is format-agnostic by
-	// contract and has no mdoc-specific caller to protect.
-	byVct, err := store.GetBatchesByVCT(shared)
-	require.NoError(t, err)
-	assert.Len(t, byVct, 2)
 }
 
 func TestGetBatchesByDocType_EmptyDocType(t *testing.T) {
@@ -445,17 +437,20 @@ func TestGetBatchesByDocType_EmptyDocType(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestGetBatchesByVCT_FiltersCorrectly(t *testing.T) {
+func TestGetBatchesByDocType_FiltersCorrectly(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch1 := newBatch("hash-filter-1")
+	batch1.Format = models.CredentialFormatMsoMdoc
+	batch1.VerifiableCredentialType = "eu.europa.ec.av.1"
 	batch2 := newBatch("hash-filter-2")
-	batch2.VerifiableCredentialType = "https://vct.example.com/OtherCredential"
+	batch2.Format = models.CredentialFormatMsoMdoc
+	batch2.VerifiableCredentialType = "eu.europa.ec.pid.1"
 
 	require.NoError(t, store.StoreBatch(batch1))
 	require.NoError(t, store.StoreBatch(batch2))
 
-	batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
+	batches, err := store.GetBatchesByDocType("eu.europa.ec.av.1")
 	require.NoError(t, err)
 	require.Len(t, batches, 1)
 	assert.Equal(t, batch1.Hash, batches[0].Hash)
@@ -709,16 +704,6 @@ func TestBatchLookupsPreloadDisplayMetadata(t *testing.T) {
 		batch, err := store.GetBatchByHash("hash-preload-byhash")
 		require.NoError(t, err)
 		assertPreloaded(t, batch)
-	})
-
-	t.Run("GetBatchesByVCT", func(t *testing.T) {
-		store := newTestCredentialStore(t)
-		require.NoError(t, store.StoreBatch(newBatch("hash-preload-byvct")))
-
-		batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
-		require.NoError(t, err)
-		require.Len(t, batches, 1)
-		assertPreloaded(t, batches[0])
 	})
 
 	t.Run("GetBatchesByDocType", func(t *testing.T) {

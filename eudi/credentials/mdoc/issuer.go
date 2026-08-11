@@ -18,6 +18,23 @@ import (
 // ISSUER
 // ============================================================
 
+const (
+	// minSaltLength is the floor ISO/IEC 18013-5 puts on an IssuerSignedItem's
+	// random value: at least 16 bytes.
+	minSaltLength = 16
+
+	// saltLength is what this issuer actually generates. At the floor rather than
+	// above it because nothing here needs the extra bytes, and every byte is
+	// carried by every disclosed item on every presentation.
+	saltLength = 16
+)
+
+// Editing saltLength below the ISO floor fails the build: the subtraction is a
+// negative constant, which does not convert to uint. The runtime check in Issue
+// still stands, for a salt whose length is ever decided at runtime rather than
+// by this constant.
+const _ = uint(saltLength - minSaltLength)
+
 // Issuer holds a two-level certificate chain:
 //
 //	IACA root CA (offline, self-signed, signs DS certs only)
@@ -179,11 +196,23 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any
 
 	for _, identifier := range identifiers {
 		value := claims[identifier]
-		// 16-byte random salt per item — prevents brute-forcing boolean values
-		// (without salt, SHA-256(true) is always the same — trivially reversible)
-		salt := make([]byte, 16)
+		// A fresh random salt per item, without which the digest would be
+		// brute-forceable: SHA-256(true) is always the same, so a verifier holding
+		// the digest of an undisclosed boolean could simply hash both values and
+		// see which matches. That is not hypothetical for this profile, whose
+		// claims are all booleans.
+		salt := make([]byte, saltLength)
 		if _, err := rand.Read(salt); err != nil {
 			return nil, fmt.Errorf("generate salt: %w", err)
+		}
+		// Belt and braces against saltLength ever being edited down: the length is
+		// a security parameter rather than a formatting choice, and a shortened
+		// salt would leave every signature and digest still verifying, so nothing
+		// downstream would notice.
+		if len(salt) < minSaltLength {
+			return nil, fmt.Errorf(
+				"salt is %d bytes, but ISO/IEC 18013-5 requires the IssuerSignedItem random value to be at least %d",
+				len(salt), minSaltLength)
 		}
 		item := IssuerSignedItem{
 			DigestID:          digestID,

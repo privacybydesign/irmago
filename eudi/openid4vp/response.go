@@ -125,16 +125,22 @@ func createEncryptedResponse(queryResponses []dcql.QueryResponse, extraMembers m
 // first key that works" would be a silent mismatch whenever the verifier
 // publishes more than one usable key.
 //
-// The selection mirrors encryptJwe's own requirements — a key needs an alg to
-// be usable — and takes the first such key, which is also the order encryptJwe
-// walks the set in.
+// The selection mirrors encryptJwe's own requirements — a key needs an alg, and
+// that alg has to be one jwe.Encrypt accepts — and takes the first such key.
 func selectResponseEncryptionKey(keys jwk.Set) (jwk.Key, []byte, error) {
 	for i := range keys.Len() {
 		key, ok := keys.Key(i)
 		if !ok {
 			continue
 		}
-		if _, ok := key.Algorithm(); !ok {
+		keyAlg, ok := key.Algorithm()
+		if !ok {
+			continue
+		}
+		// A verifier may publish its signing keys in the same jwks. Encrypting to
+		// one fails outright now that there is no fallback, so skip anything whose
+		// alg is not a key-encryption algorithm.
+		if _, ok := keyAlg.(jwa.KeyEncryptionAlgorithm); !ok {
 			continue
 		}
 		thumbprint, err := key.Thumbprint(crypto.SHA256)

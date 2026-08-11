@@ -468,3 +468,65 @@ func TestDecodeStoredAttributes_RoundTripsEveryAttributeField(t *testing.T) {
 	require.Len(t, decoded, 1)
 	require.Equal(t, original, decoded[0])
 }
+
+// A verifier authenticated by a trusted end-entity certificate must still read
+// back as verified. The flag was dropped on write, so an entry could carry the
+// certificate serial as its verifier id -- which the wallet only sets when a
+// certificate authenticated the request -- while reporting verified: false in
+// the same object, contradicting the permission screen the user had approved.
+func TestDisclosureLogRoundTrip_PreservesVerifierVerifiedFlag(t *testing.T) {
+	svc := newTestLogService(t)
+
+	verified := clientmodels.TrustedParty{
+		// A certificate serial, which is what the wallet uses as the id exactly
+		// when the request was signed by a trusted end-entity certificate.
+		Id:       "406029387936982878083113394765101392849886441027",
+		Name:     "Yivi B.V.",
+		Verified: true,
+	}
+	require.NoError(t, svc.AddDisclosureLog(verified, nil))
+
+	logs, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	require.NotNil(t, logs[0].DisclosureLog)
+	require.NotNil(t, logs[0].DisclosureLog.Verifier)
+	require.True(t, logs[0].DisclosureLog.Verifier.Verified,
+		"a certificate-authenticated verifier must not be logged as unverified")
+	require.Equal(t, verified.Id, logs[0].DisclosureLog.Verifier.Id)
+}
+
+// The converse: an unauthenticated requestor stays unverified, so the flag
+// carries information rather than always being true.
+func TestDisclosureLogRoundTrip_KeepsUnverifiedVerifierUnverified(t *testing.T) {
+	svc := newTestLogService(t)
+
+	require.NoError(t, svc.AddDisclosureLog(clientmodels.TrustedParty{
+		Id:   "https://verifier.example.com",
+		Name: "Some Verifier",
+	}, nil))
+
+	logs, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	require.False(t, logs[0].DisclosureLog.Verifier.Verified)
+}
+
+// Issuance takes the same write path, so the issuer identity on the entry keeps
+// its flag too -- distinct from the per-credential IssuerVerified already stored
+// on each logged credential.
+func TestIssuanceLogRoundTrip_PreservesIssuerVerifiedFlag(t *testing.T) {
+	svc := newTestLogService(t)
+
+	require.NoError(t, svc.AddIssuanceLog(
+		clientmodels.Protocol_OpenID4VCI,
+		clientmodels.TrustedParty{Id: "https://issuer.example.com", Name: "Test Issuer", Verified: true},
+		nil,
+	))
+
+	logs, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	require.NotNil(t, logs[0].IssuanceLog)
+	require.True(t, logs[0].IssuanceLog.Issuer.Verified)
+}

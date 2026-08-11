@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"testing"
@@ -32,6 +33,7 @@ const (
 	testClientId  = "x509_san_dns:verifier.example.com"
 	testNonce     = "n-0S6_WzA2Mj"
 	testResponseU = "https://verifier.example.com/response"
+	testOrigin    = "https://verifier.example.com"
 )
 
 // TestFindCandidatesAndPrepareDisclosureRoundTrip walks one mdoc through every
@@ -342,6 +344,118 @@ func newTestEnvWithBatchSize(t *testing.T, batchSize uint) *testEnv {
 		verifier: verifier,
 		store:    store,
 		hash:     hash,
+	}
+}
+
+// TestPrepareDisclosureOverDcApiSignsTheDcApiHandover verifies a presentation
+// delivered through the Digital Credentials API the way a conformant verifier
+// would: against a transcript this test derives itself from the spec formula
+// (Annex B.2.6.2), not from the production helper.
+//
+// Deriving it here is the point. A test that called newDcApiSessionTranscript
+// would agree with whatever this package builds, including the URL-flow
+// handover — which is exactly the mistake worth catching, since the DC API's
+// inputs pass unremarked through the other variant: an origin-prefixed audience
+// is still a string, and an empty response_uri is legal for an unencrypted URL
+// session.
+func TestPrepareDisclosureOverDcApiSignsTheDcApiHandover(t *testing.T) {
+	env := newTestEnv(t)
+
+	prepared, err := env.handler.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:              "av",
+		CredentialHash:       env.hash,
+		ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},
+		RequireHolderBinding: true,
+		// What the DC API path actually passes: no response_uri, since the
+		// response goes back through the platform (eudi/openid4vp/dc_api.go).
+		ResponseUri: "",
+		OverDcApi:   true,
+		Origin:      testOrigin,
+	}}, testNonce, "origin:"+testOrigin)
+	require.NoError(t, err)
+	require.Len(t, prepared.QueryResponses, 1)
+
+	encoded, err := base64.RawURLEncoding.DecodeString(prepared.QueryResponses[0].Credentials[0])
+	require.NoError(t, err)
+	var response stdmdoc.DeviceResponse
+	require.NoError(t, cbor.Unmarshal(encoded, &response))
+
+	results, err := env.verifier.VerifyDeviceResponse(
+		response, testNamespace, testDocType, expectedDcApiTranscript(t, testOrigin, testNonce))
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.True(t, results[0].Valid, "verification failed: %s", results[0].Error)
+	assert.True(t, results[0].DeviceAuthValid, "deviceAuth did not verify: %s", results[0].Error)
+	assert.Equal(t, map[string]any{"age_over_18": true}, results[0].Attributes)
+}
+
+// TestPrepareDisclosureOverDcApiRejectsTheUrlFlowHandover is the negative half:
+// the URL-flow transcript must not verify a DC API presentation. Without it the
+// test above would still pass if both variants happened to agree.
+func TestPrepareDisclosureOverDcApiRejectsTheUrlFlowHandover(t *testing.T) {
+	env := newTestEnv(t)
+
+	prepared, err := env.handler.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:              "av",
+		CredentialHash:       env.hash,
+		ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},
+		RequireHolderBinding: true,
+		OverDcApi:            true,
+		Origin:               testOrigin,
+	}}, testNonce, "origin:"+testOrigin)
+	require.NoError(t, err)
+
+	encoded, err := base64.RawURLEncoding.DecodeString(prepared.QueryResponses[0].Credentials[0])
+	require.NoError(t, err)
+	var response stdmdoc.DeviceResponse
+	require.NoError(t, cbor.Unmarshal(encoded, &response))
+
+	urlFlow, err := newOpenID4VPSessionTranscript("origin:"+testOrigin, testNonce, "", nil)
+	require.NoError(t, err)
+
+	results, err := env.verifier.VerifyDeviceResponse(response, testNamespace, testDocType, urlFlow)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.False(t, results[0].DeviceAuthValid,
+		"the URL-flow handover must not verify a presentation made over the DC API")
+}
+
+// TestPrepareDisclosureOverDcApiWithoutOriginFails pins that the origin is
+// required rather than defaulted. The platform authenticates it, and it is the
+// first element of what deviceAuth signs, so an empty one can only produce a
+// signature no verifier reproduces.
+func TestPrepareDisclosureOverDcApiWithoutOriginFails(t *testing.T) {
+	env := newTestEnvWithBatchSize(t, 2)
+
+	_, err := env.handler.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:              "av",
+		CredentialHash:       env.hash,
+		ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},
+		RequireHolderBinding: true,
+		OverDcApi:            true,
+	}}, testNonce, "")
+	require.ErrorContains(t, err, "origin")
+
+	// Failing must also be free: a refused session may not consume a single-use
+	// instance the holder can never get back.
+	batch, err := env.store.GetBatchByHash(env.hash)
+	require.NoError(t, err)
+	assert.Equal(t, uint(2), batch.RemainingCount)
+}
+
+// expectedDcApiTranscript spells out OpenID4VP Annex B.2.6.2 rather than calling
+// the production helper, so a change to either side has to be made twice.
+func expectedDcApiTranscript(t *testing.T, origin, nonce string) stdmdoc.SessionTranscript {
+	t.Helper()
+
+	// HandoverInfo = [origin, nonce, jwkThumbprint]; the response is unencrypted
+	// here, which puts a CBOR null in the thumbprint slot.
+	handoverInfo, err := cbor.Marshal([]any{origin, nonce, nil})
+	require.NoError(t, err)
+	digest := sha256.Sum256(handoverInfo)
+
+	return stdmdoc.SessionTranscript{
+		Handover: []any{"OpenID4VPDCAPIHandover", digest[:]},
 	}
 }
 

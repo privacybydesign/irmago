@@ -1303,10 +1303,6 @@ func (m *mockCredentialStore) GetBatchByHash(hash string) (*models.CredentialBat
 	return nil, db.ErrNotFound
 }
 
-func (m *mockCredentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error) {
-	return nil, nil
-}
-
 func (m *mockCredentialStore) GetBatchesByDocType(docType string) ([]*models.CredentialBatch, error) {
 	return nil, nil
 }
@@ -1569,4 +1565,52 @@ func TestBuildMdocAttributesFromResolvedClaims_NoMetadataStillEmitsValues(t *tes
 	require.Len(t, attrs, 1)
 	assert.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
 	assert.Nil(t, attrs[0].DisplayName)
+}
+
+// ========== GetCredentialMetadataList — mso_mdoc ==========
+
+// An mdoc reaches the credential list through the same flatten path as an
+// SD-JWT, since its resolved claims are a degenerate two-level case of the same
+// structure. What differs is where the display names come from: an issuer may
+// publish claim paths without the namespace, and until those are aliased the
+// list renders unlabelled rows for a credential whose disclosure screen labels
+// them correctly.
+func TestGetCredentialMetadataList_MdocLabelsBareElementClaims(t *testing.T) {
+	batch := newStorageBatch()
+	batch.Format = models.CredentialFormatMsoMdoc
+	batch.VerifiableCredentialType = "eu.europa.ec.av.1"
+	batch.ProcessedSdJwtPayload = datatypes.JSON(
+		`{"eu.europa.ec.av.1":{"age_over_18":true,"age_over_21":true}}`)
+	batch.CredentialMetadata.Claims = []models.CredentialClaim{
+		{
+			Path:    datatypes.JSON(`["age_over_18"]`),
+			Display: []models.ClaimDisplay{{Name: "Older than 18", Locale: datatypes.NullString{V: "en", Valid: true}}},
+		},
+		{
+			Path:    datatypes.JSON(`["eu.europa.ec.av.1","age_over_21"]`),
+			Display: []models.ClaimDisplay{{Name: "Older than 21", Locale: datatypes.NullString{V: "en", Valid: true}}},
+		},
+	}
+
+	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+
+	result, err := svc.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	// Both elements are listed at their real mdoc claim path -- [namespace,
+	// elementIdentifier] -- and both carry a label, whichever form the issuer
+	// published.
+	labels := map[string]string{}
+	for _, attr := range result[0].Attributes {
+		require.Len(t, attr.ClaimPath, 2, "an mdoc attribute path is [namespace, elementIdentifier]")
+		require.Equal(t, "eu.europa.ec.av.1", attr.ClaimPath[0])
+		require.NotNil(t, attr.DisplayName, "attribute %v renders without a label", attr.ClaimPath)
+		labels[attr.ClaimPath[1].(string)] = *attr.DisplayName
+	}
+	assert.Equal(t, map[string]string{
+		"age_over_18": "Older than 18",
+		"age_over_21": "Older than 21",
+	}, labels)
 }

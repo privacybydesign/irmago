@@ -44,13 +44,9 @@ type CredentialStore interface {
 	// deterministic hash. Returns ErrNotFound if no matching batch exists.
 	GetBatchByHash(hash string) (*models.CredentialBatch, error)
 
-	// GetBatchesByVCT returns all CredentialBatches whose VerifiableCredentialType matches
-	// the given vct string. Does not preload instances.
-	GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error)
-
 	// GetBatchesByDocType returns all mso_mdoc CredentialBatches whose VerifiableCredentialType
-	// matches the given docType string. Unlike GetBatchesByVCT it also filters on Format, since
-	// one table holds every format and a docType is only meaningful for mso_mdoc.
+	// matches the given docType string. It filters on Format as well, since one table holds
+	// every format and a docType is only meaningful for mso_mdoc.
 	GetBatchesByDocType(docType string) ([]*models.CredentialBatch, error)
 
 	// GetUnusedInstance returns one IssuedCredentialInstance from the given batch that has
@@ -153,27 +149,12 @@ func (s *credentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, 
 	return &batch, nil
 }
 
-func (s *credentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error) {
-	if vct == "" {
-		return nil, fmt.Errorf("vct is required")
-	}
-
-	var batches []*models.CredentialBatch
-	err := withBatchDisplayPreloads(s.db).
-		Where("verifiable_credential_type = ?", vct).
-		Find(&batches).Error
-	if err != nil {
-		return nil, err
-	}
-
-	return batches, nil
-}
-
-// GetBatchesByDocType filters on Format as well as the type column. Delegating to
-// GetBatchesByVCT matched on verifiable_credential_type alone, so an SD-JWT batch whose
-// vct happened to equal the requested docType was handed to the mdoc DCQL handler, which
-// then treated an SD-JWT payload as a namespace map. Nothing downstream re-checks the
-// format, so the discriminator belongs in the query.
+// GetBatchesByDocType filters on Format as well as the type column. Matching on
+// verifiable_credential_type alone handed an SD-JWT batch whose vct happened to equal the
+// requested docType to the mdoc DCQL handler, which then treated an SD-JWT payload as a
+// namespace map. Nothing downstream re-checks the format, so the discriminator belongs in
+// the query — which is also why there is no format-agnostic sibling to this method: an
+// unguarded lookup next to a guarded one is the same bug waiting for its next caller.
 //
 // The match is exact rather than "not some other format": a batch with an empty Format
 // predates the fix that stores the verified parser's format (see credential_service.go)

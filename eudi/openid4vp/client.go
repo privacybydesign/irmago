@@ -267,6 +267,7 @@ func (client *Client) handleDcApiSessionAsync(request *DcApiRequest, session *op
 
 		// Over the DC API the response is bound to the origin the platform
 		// authenticated, never to the client identifier (Appendix A.4).
+		session.origin = request.Origin
 		err = client.handleAuthorizationRequest(session, authRequest, requestor, OriginAudience(request.Origin))
 
 		if err != nil {
@@ -345,7 +346,13 @@ type openid4vpSession struct {
 	// audience is the value the disclosed presentations are bound to (the aud of
 	// a Key Binding JWT): the client identifier for a URL-invoked session, the
 	// origin-prefixed caller origin for a Digital Credentials API session.
-	audience   string
+	audience string
+	// origin is the bare caller origin the platform authenticated, set only for a
+	// Digital Credentials API session. mso_mdoc's DC API handover signs this
+	// value, which is the audience without its "origin:" prefix; keeping it
+	// rather than stripping the prefix back off keeps one representation
+	// authoritative.
+	origin     string
 	lastPlan   *clientmodels.DisclosurePlan
 	lastResult *dcql.DcqlResult
 	// preExistingHashes tracks owned credential hashes at session start,
@@ -466,8 +473,6 @@ func (session *openid4vpSession) perform() error {
 		return nil
 	}
 
-	logMarshalled("selections:", permResp.selections)
-
 	// The response encryption key is chosen before anything is disclosed, not
 	// when the response is built: mso_mdoc's deviceAuth signs over a session
 	// transcript carrying this key's thumbprint, so the choice has to be made
@@ -486,11 +491,27 @@ func (session *openid4vpSession) perform() error {
 		}
 	}
 
-	// Group selections by format
-	queryResponses, credLogs, err := session.prepareDisclosures(permResp.selections, dcql.ResponseBinding{
+	binding := dcql.ResponseBinding{
 		ResponseUri:             session.request.ResponseUri,
 		EncryptionKeyThumbprint: encryptionKeyThumbprint,
-	})
+		OverDcApi:               isDcApiResponseMode(session.request.ResponseMode),
+		Origin:                  session.origin,
+	}
+
+	// Logged together, and only once the binding exists. The transport-bound
+	// fields of a DisclosureSelection are still zero when the user answers the
+	// permission request -- they are filled in from the binding further down --
+	// so logging the selections alone printed an empty response_uri and a null
+	// encryption key thumbprint even for a direct_post.jwt session that had both.
+	// Those are the first values anyone reads when an mdoc's deviceAuth fails to
+	// verify, and reading them as empty sends the search in the wrong direction.
+	logMarshalled("disclosure:", struct {
+		Selections []dcql.DisclosureSelection `json:"selections"`
+		Binding    dcql.ResponseBinding       `json:"response_binding"`
+	}{permResp.selections, binding})
+
+	// Group selections by format
+	queryResponses, credLogs, err := session.prepareDisclosures(permResp.selections, binding)
 	if err != nil {
 		return err
 	}

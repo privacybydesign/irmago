@@ -442,15 +442,20 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 
 		issuanceDate, expiryDate := first.IssuedAt, first.ExpiresAt
 
-		// The issued JWT's vct claim is authoritative for the credential id —
-		// it is what was signed and what the stored batch is keyed by. The
-		// issuer's well-known document may carry a placeholder (e.g. veramo's
-		// "unknown"), which would leave the issuance log pointing at nothing.
+		// The issued credential is authoritative for the credential id — it is
+		// what was signed and what the stored batch is keyed by. Both format
+		// parsers populate ParsedCredential.VerifiableCredentialType with it:
+		// the vct claim for dc+sd-jwt, the docType out of the signed MSO for
+		// mso_mdoc.
+		//
+		// The issuer's well-known document is only a fallback, and a weak one.
+		// For dc+sd-jwt it may carry a placeholder (e.g. veramo's "unknown"),
+		// and an mso_mdoc configuration has no vct field at all to carry —
+		// which is why reading it there yielded an empty id, leaving both the
+		// permission dialog and the issuance log naming nothing.
 		credentialId := config.VerifiableCredentialType
-		if first.SdJwtVc != nil {
-			if vct := first.SdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType; vct != "" {
-				credentialId = vct
-			}
+		if first.VerifiableCredentialType != "" {
+			credentialId = first.VerifiableCredentialType
 		}
 
 		cred := clientmodels.Credential{

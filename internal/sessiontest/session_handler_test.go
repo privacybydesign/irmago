@@ -9,6 +9,7 @@ func TestSessionHandler(t *testing.T) {
 	t.Run("openid4vp/irma-sdjwt", testSessionHandlerForOpenID4VPWithIrmaSdJwts)
 	t.Run("openid4vp/dc-api", testSessionHandlerForOpenID4VPOverDcApi)
 	t.Run("openid4vp/dc-api/eudi-verifier", testSessionHandlerForOpenID4VPOverDcApiWithEudiVerifier)
+	t.Run("openid4vp/dc-api/mdoc", testSessionHandlerForOpenID4VPOverDcApiWithMdoc)
 	t.Run("openid4vp/sdjwtvc", testSessionHandlerForOpenID4VPWithSdJwtVcs)
 	t.Run("openid4vp/mdoc-av", testSessionHandlerForOpenID4VPWithMdocAv)
 	t.Run("openid4vci/sdjwtvc/pre-authorized", testSessionHandlerForOpenID4VCIPreAuth)

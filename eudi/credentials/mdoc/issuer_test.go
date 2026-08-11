@@ -219,3 +219,71 @@ func TestIssuedValidityTimestampsAreCoarsened(t *testing.T) {
 			infos[0].Signed, infos[0].ValidUntil, infos[1].Signed, infos[1].ValidUntil)
 	}
 }
+
+// TestIssuedSaltsMeetTheIsoMinimum pins the size and freshness of the per-item
+// random value.
+//
+// The salt is what stops a verifier brute-forcing an undisclosed claim: it holds
+// the digest of every element, disclosed or not, and this profile's values are
+// booleans, so without a salt hashing "true" and "false" would reveal which one
+// the issuer signed. ISO/IEC 18013-5 therefore requires at least 16 bytes.
+//
+// Nothing downstream would notice a shortened or reused salt — every signature
+// and digest would still verify — so it is worth asserting directly.
+func TestIssuedSaltsMeetTheIsoMinimum(t *testing.T) {
+	issuer, err := NewIssuer()
+	if err != nil {
+		t.Fatalf("NewIssuer: %v", err)
+	}
+	holder, err := NewHolder()
+	if err != nil {
+		t.Fatalf("NewHolder: %v", err)
+	}
+
+	const docType = "eu.europa.ec.av.1"
+	credential, err := issuer.Issue(docType, docType,
+		map[string]any{"age_over_18": true, "age_over_21": true}, holder.PublicKey())
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	items := credential.IssuerSigned.NameSpaces[docType]
+	if len(items) != 2 {
+		t.Fatalf("expected 2 issuer-signed items, got %d", len(items))
+	}
+
+	seen := map[string]string{}
+	for _, wrapped := range items {
+		item, err := decodeTag24Item(wrapped)
+		if err != nil {
+			t.Fatalf("decode item: %v", err)
+		}
+		if len(item.Random) < minSaltLength {
+			t.Errorf("%s carries a %d-byte salt; ISO/IEC 18013-5 requires at least %d",
+				item.ElementIdentifier, len(item.Random), minSaltLength)
+		}
+		key := string(item.Random)
+		if other, reused := seen[key]; reused {
+			t.Errorf("%s and %s share a salt, so their digests leak whether their values are equal",
+				other, item.ElementIdentifier)
+		}
+		seen[key] = item.ElementIdentifier
+	}
+}
+
+// decodeTag24Item unwraps one Tag-24 issuer-signed item.
+func decodeTag24Item(wrapped Tag24Item) (*IssuerSignedItem, error) {
+	var tagged cbor.RawTag
+	if err := cbor.Unmarshal(wrapped.EncodedItem, &tagged); err != nil {
+		return nil, err
+	}
+	var inner []byte
+	if err := cbor.Unmarshal(tagged.Content, &inner); err != nil {
+		return nil, err
+	}
+	var item IssuerSignedItem
+	if err := cbor.Unmarshal(inner, &item); err != nil {
+		return nil, err
+	}
+	return &item, nil
+}

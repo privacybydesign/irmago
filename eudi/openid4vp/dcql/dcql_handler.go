@@ -108,6 +108,8 @@ func (h *DcqlHandler) PrepareDisclosure(
 		// proof is bound to the session transcript (e.g. mso_mdoc) read these.
 		sel.ResponseUri = binding.ResponseUri
 		sel.ResponseEncryptionKeyThumbprint = binding.EncryptionKeyThumbprint
+		sel.OverDcApi = binding.OverDcApi
+		sel.Origin = binding.Origin
 
 		handlers := h.findHandlersForQuery(credQuery)
 		if len(handlers) == 0 {

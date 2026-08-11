@@ -36,6 +36,18 @@ type DisclosureSelection struct {
 	// merely to some key the verifier published. Ignored by SD-JWT, like
 	// ResponseUri above.
 	ResponseEncryptionKeyThumbprint []byte
+
+	// OverDcApi reports that the request arrived through the Digital Credentials
+	// API rather than a URL. OpenID4VP defines a separate handover for that
+	// transport, so a transcript-bound format cannot treat the two alike; see
+	// ResponseBinding.OverDcApi.
+	OverDcApi bool
+
+	// Origin is the caller origin the platform authenticated, set only when
+	// OverDcApi is true. It is the bare origin the DC API handover signs over,
+	// which is why it travels separately from the audience -- the audience
+	// carries the same origin behind an "origin:" prefix.
+	Origin string
 }
 
 // ResponseBinding carries the transport-level values that a format whose
@@ -50,6 +62,26 @@ type ResponseBinding struct {
 	// EncryptionKeyThumbprint is the SHA-256 JWK thumbprint of the key the
 	// response is encrypted to, nil when it travels unencrypted.
 	EncryptionKeyThumbprint []byte
+
+	// OverDcApi reports that the request arrived through the Digital Credentials
+	// API rather than a URL.
+	//
+	// It is part of the binding because the transport picks the handover a
+	// transcript-bound format signs over, and the two are not interchangeable:
+	// the URL flow hashes [clientId, nonce, thumbprint, responseUri] under
+	// "OpenID4VPHandover", the DC API hashes [origin, nonce, thumbprint] under
+	// "OpenID4VPDCAPIHandover". Without this the DC API values -- an
+	// origin-prefixed audience and an empty ResponseUri, since the response never
+	// travels to one -- are indistinguishable from an ordinary URL session that
+	// happens to be unencrypted, and a format would sign the wrong handover
+	// without anything failing until the verifier checks the signature.
+	OverDcApi bool
+
+	// Origin is the caller origin the platform authenticated, set only when
+	// OverDcApi is true. The DC API handover signs the bare origin, while the
+	// audience carries it behind an "origin:" prefix, so passing it here keeps
+	// formats from having to strip that prefix back off.
+	Origin string
 }
 
 // PreparedDisclosure contains the VP token response data and log information

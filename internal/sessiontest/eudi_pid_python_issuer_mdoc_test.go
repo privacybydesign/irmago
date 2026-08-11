@@ -83,6 +83,29 @@ func testEudiPidPythonIssuerIssuesAvMdoc(t *testing.T) {
 			"an AV element lives in the namespace named after the docType")
 		require.NotNil(t, attr.Value.Bool, "age_over_NN elements are booleans")
 	}
+
+	// The activity log names the same credential.
+	//
+	// It is worth asserting separately from the stored credential above: the log
+	// entry is written from the offered-credential snapshot, not from the stored
+	// batch, so the two are populated by different code and an id that is right
+	// in the wallet can still be missing from the log the user reads afterwards.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logs, 1, "issuance should be the only entry; this client never enrolled with a keyshare server")
+
+	issuanceLog := findLog(logs, clientmodels.LogType_Issuance)
+	require.NotNil(t, issuanceLog, "issuing an mdoc should create an issuance log")
+	require.NotNil(t, issuanceLog.IssuanceLog)
+	require.Equal(t, clientmodels.Protocol_OpenID4VCI, issuanceLog.IssuanceLog.Protocol)
+	require.Len(t, issuanceLog.IssuanceLog.Credentials, 1)
+
+	logged := issuanceLog.IssuanceLog.Credentials[0]
+	require.Equal(t, eudiPidIssuerPyAvDocType, logged.CredentialId,
+		"the issuance log must name the docType; an mso_mdoc configuration carries no vct to fall back on")
+	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc}, logged.Formats,
+		"the issuance log must file the entry under mso_mdoc, which is what every format-keyed read depends on")
+	require.Len(t, logged.Attributes, 2, "both issued claims are logged; the selective part happens at presentation")
 }
 
 func testEudiPidPythonIssuerDisclosesAvMdoc(t *testing.T) {
@@ -164,6 +187,13 @@ func issueAvMdocViaPythonIssuer(
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 	require.Len(t, session.OfferedCredentials, 1)
+
+	// The offer the user is asked to accept names the docType out of the signed
+	// MSO. It has to come from the credential: an mso_mdoc credential
+	// configuration publishes no vct, so a dialog built from the issuer's
+	// advertised metadata alone would name nothing at all.
+	require.Equal(t, eudiPidIssuerPyAvDocType, session.OfferedCredentials[0].CredentialId,
+		"the offered credential must be named by the docType the issuer signed")
 
 	grantPermission(t, c, session.Id)
 

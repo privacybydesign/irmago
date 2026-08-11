@@ -21,6 +21,15 @@ type EudiLogEntry struct {
 	RequestorId   string
 	RequestorName datatypes.JSON `gorm:"type:json"`
 
+	// RequestorVerified records whether the requestor was authenticated at the
+	// time of the session — for a verifier, that its request was signed by a
+	// trusted end-entity certificate. It is stored rather than re-derived,
+	// because the certificate that authenticated a past session is not
+	// something the wallet keeps: the log says what was true then, the same way
+	// IssuerVerified does per credential. Entries written before this column
+	// existed read back false, which is the pre-existing behaviour.
+	RequestorVerified bool
+
 	// Logged credentials.
 	Credentials []EudiLogCredential `gorm:"foreignKey:EudiLogEntryID;constraint:OnDelete:CASCADE"`
 }

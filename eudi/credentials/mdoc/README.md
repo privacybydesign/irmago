@@ -58,7 +58,7 @@ that both directions are wired for real; see the sections below for what's left.
 | `DeviceSigned` wrapper struct | ✓ | `AttachDeviceSigned` populates an `MDoc.DeviceSigned` field (deviceAuth + empty deviceNameSpaces), matching ISO 18013-5's actual document shape instead of passing deviceAuth bytes around separately |
 | `DeviceResponse` container | ✓ | `NewDeviceResponse`/`VerifyDeviceResponse` — real response container, holds one or more documents; reader authentication deliberately omitted per Annex A §A.6 |
 | Issuance-time verification (all namespaces) | ✓ | `VerifyAllDisclosedNamespaces` — verifies issuerAuth/MSO/digests across every namespace present, for the credential-endpoint response before selective disclosure has happened; `Verify` remains the single-namespace, presentation-time entry point |
-| Real OpenID4VP `SessionTranscript`/`Handover` | ✓ | now built in `eudi/openid4vp/mdoc_dcql` (production code), not in this package — `["OpenID4VPHandover", SHA-256(CBOR([clientId, nonce, jwkThumbprint, responseUri]))]`, the redirect variant of OpenID4VP Annex B.2.6.1, matching Multipaz's `OpenID4VP.kt`. `jwkThumbprint` is the SHA-256 JWK thumbprint of the verifier's response encryption key, and CBOR null when the response is unencrypted — which is the AV Blueprint's `response_mode=direct_post` case, so that profile produces the null form. The Digital Credentials API's `OpenID4VPDCAPIHandover` (Annex B.2.6.2) is a separate construction and is not built yet |
+| Real OpenID4VP `SessionTranscript`/`Handover` | ✓ | now built in `eudi/openid4vp/mdoc_dcql` (production code), not in this package — `["OpenID4VPHandover", SHA-256(CBOR([clientId, nonce, jwkThumbprint, responseUri]))]`, the redirect variant of OpenID4VP Annex B.2.6.1, matching Multipaz's `OpenID4VP.kt`. `jwkThumbprint` is the SHA-256 JWK thumbprint of the verifier's response encryption key, and CBOR null when the response is unencrypted — which is the AV Blueprint's `response_mode=direct_post` case, so that profile produces the null form. A request delivered through the W3C Digital Credentials API signs the other variant, `["OpenID4VPDCAPIHandover", SHA-256(CBOR([origin, nonce, jwkThumbprint]))]` (Annex B.2.6.2), built alongside it in the same file. Which one applies follows the transport the request arrived on, never the shape of the values |
 | OpenID4VCI `pre-authorized_code` issuance | ✓ | wired for real through `eudi/openid4vci` (generic) + `eudi/services/credential_format_parser_mdoc.go` (mdoc-specific parsing/verification) — not modeled in this package |
 | OpenID4VCI `authorization_code` grant | ✓ | inherited for free — `eudi/openid4vci` already implements it generically for every format |
 | Session encryption (BLE/NFC) | ✗ | transport layer not built; also explicitly out of scope for the AV Blueprint (proximity presentation is excluded — see Annex A §A.6) |
@@ -313,12 +313,14 @@ mdocs itself, the check belongs in that issuance path, not in `Issue()`.
 
 ## Known gaps vs real mDoc
 
-### OpenID4VP only — the W3C Digital Credentials API path is out of scope by design
+### OpenID4VP only — ISO 18013-5's own DC API wire format is out of scope by design
 
 The AV Blueprint's Annex A §A.6 states the W3C Digital Credentials API is the
-*default* presentation method, with OpenID4VP only as a *fallback*. Both this package
-and `eudi/openid4vp/mdoc_dcql` deliberately model the OpenID4VP fallback path
-exclusively. Concretely out of scope as a result:
+*default* presentation method, with OpenID4VP only as a *fallback*. Both transports are
+supported, but only as OpenID4VP carries them: `eudi/openid4vp` handles a DC API request
+delivered by the platform (`Client.NewDcApiSession`), and `mdoc_dcql` signs that
+transport's session transcript. What stays out of scope is ISO 18013-5's own wire format
+for that path, which the blueprint pairs with the DC API:
 
 - ISO 18013-5's native `DeviceRequest` CBOR object (§8.3.2.1.2.1) — the blueprint
   confirms this is used *exclusively* by the DC API path; OpenID4VP requests
@@ -326,9 +328,10 @@ exclusively. Concretely out of scope as a result:
   generically for every format.
 - The DC API's `EncryptedResponse = ["dcapi", {enc, cipherText}]` wrapper, where
   `cipherText` is `DeviceResponse` encrypted with HPKE (RFC 9180). This package still
-  has no HPKE layer: `response_mode=direct_post` sends `DeviceResponse` unencrypted (as
-  base64url CBOR), and the encrypted OpenID4VP modes (`direct_post.jwt`, `dc_api.jwt`)
-  are JWE at the OpenID4VP layer, built in `eudi/openid4vp`, not HPKE around the mdoc.
+  has no HPKE layer: `response_mode=direct_post` and `dc_api` send `DeviceResponse`
+  unencrypted (as base64url CBOR), and the encrypted modes (`direct_post.jwt`,
+  `dc_api.jwt`) are JWE at the OpenID4VP layer, built in `eudi/openid4vp`, not HPKE
+  around the mdoc.
   What this package's callers do supply is the response encryption key's thumbprint, so
   the session transcript commits to it — see the handover row above.
 

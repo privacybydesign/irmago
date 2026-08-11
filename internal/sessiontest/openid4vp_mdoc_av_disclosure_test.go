@@ -183,6 +183,9 @@ func runMdocAvDisclosure(
 	})
 
 	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	// Kept for the log assertion below, which checks the entry is filed under the
+	// verifier the permission screen actually named.
+	approvedRequestor := session.Requestor
 	grantPermission(t, c, 1, makeDisclosureChoice(choice))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -197,6 +200,84 @@ func runMdocAvDisclosure(
 	// signature here, against a transcript rebuilt from the request the wallet was
 	// actually given.
 	requireDeviceAuthVerifies(t, issuer, response, avSessionTranscript(t, requestJwt))
+
+	requireMdocAvDisclosureLog(t, c, approvedRequestor)
+}
+
+// requireMdocAvDisclosureLog checks the wallet recorded the presentation in its
+// activity log.
+//
+// MdocDcqlHandler.buildLogCredential is the only mdoc-specific code on the
+// logging path, and nothing else in the suite runs it: it has to turn a
+// namespace/elementIdentifier claim selection into the qualified
+// [namespace, elementIdentifier] attribute paths the rest of the wallet
+// addresses mdoc claims by, and read values out of the batch's namespaced claim
+// map rather than an SD-JWT's flat payload. The mdoc removal log covered in
+// eudi_logs_test.go goes through format-agnostic code instead, so it does not
+// exercise any of this.
+//
+// A log entry is written after the response has already gone out, so a fault
+// here reaches the user's activity screen while the session and the verifier
+// both report success.
+func requireMdocAvDisclosureLog(t *testing.T, c *client.Client, approvedRequestor clientmodels.TrustedParty) {
+	t.Helper()
+
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	// Exactly one disclosure entry, not one entry: the log also carries the IRMA
+	// issuance of the keyshare credential that enrolling this client produced.
+	// Counting disclosures is what rules out the session being logged twice, which
+	// the merged read path across the two stores makes possible.
+	disclosureCount := 0
+	for _, entry := range logs {
+		if entry.Type == clientmodels.LogType_Disclosure {
+			disclosureCount++
+		}
+	}
+	require.Equal(t, 1, disclosureCount, "the presentation should be logged exactly once")
+
+	disclosureLog := findLog(logs, clientmodels.LogType_Disclosure)
+	require.NotNil(t, disclosureLog, "an mdoc disclosure should create a disclosure log")
+	require.NotNil(t, disclosureLog.DisclosureLog)
+	require.Equal(t, clientmodels.Protocol_OpenID4VP, disclosureLog.DisclosureLog.Protocol)
+
+	// Compared against the requestor the permission screen showed rather than a
+	// hardcoded name: that is the property worth asserting — the entry names the
+	// verifier the user approved — and it does not pin the container's
+	// certificate subject.
+	require.NotNil(t, disclosureLog.DisclosureLog.Verifier)
+	require.Equal(t, approvedRequestor.Id, disclosureLog.DisclosureLog.Verifier.Id)
+	require.Equal(t, approvedRequestor.Name, disclosureLog.DisclosureLog.Verifier.Name)
+	// The log must agree with the screen the user approved. This one was dropped
+	// on write, so an entry could name the verifier by its certificate serial --
+	// an id the wallet only assigns once a certificate has authenticated the
+	// request -- and call it unverified in the same breath.
+	require.Equal(t, approvedRequestor.Verified, disclosureLog.DisclosureLog.Verifier.Verified,
+		"the disclosure log must record the verifier the same way the permission screen showed it")
+
+	require.Len(t, disclosureLog.DisclosureLog.Credentials, 1)
+	logged := disclosureLog.DisclosureLog.Credentials[0]
+	require.Equal(t, avDocType, logged.CredentialId)
+	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc}, logged.Formats,
+		"the disclosure log must file the entry under mso_mdoc, which is what every format-keyed read depends on")
+	// The AV profile publishes no display metadata, so the name falls back to the
+	// raw docType — the same fallback the disclosure plan above asserts, and the
+	// case where a read-time re-resolution against live credential metadata could
+	// overwrite the snapshot with an empty string.
+	require.Equal(t, avDocType, logged.Name)
+
+	// The disclosed claim keeps its qualified path, with the value resolved from
+	// the batch's namespaced claim map. requireAttrsInOrder also asserts the
+	// absent DisplayName, which is correct here for the same reason as the name
+	// fallback: no claim display metadata exists to label it with.
+	requireAttrsInOrder(t, logged.Attributes, expectedAttr{
+		Path:  []any{avDocType, "age_over_18"},
+		Value: boolVal(true),
+	})
+
+	// The batch timestamps come along; they are what dates the entry in the UI.
+	require.NotNil(t, logged.IssuanceDate, "disclosure log should carry the issuance date")
+	require.NotNil(t, logged.ExpiryDate, "disclosure log should carry the expiry date")
 }
 
 // seedAvMdoc issues a real mso_mdoc age credential and stores it the way
