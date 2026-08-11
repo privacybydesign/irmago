@@ -196,12 +196,10 @@ func New(
 	// The developer mode preference is persisted, so a client that starts up
 	// with it already enabled never passes through SetPreferences. Apply the
 	// same relaxations here, or a restart silently returns the wallet to
-	// production-strict behaviour.
+	// production-strict behaviour. The configuration half goes before the
+	// Reload below: that is what validates the stored chains.
 	developerMode := irmaClient.Preferences.DeveloperMode
-	if developerMode {
-		// Before the Reload below: that is what validates the stored chains.
-		applyDeveloperModeToConfiguration(eudiConf)
-	}
+	setDeveloperModeOnConfiguration(eudiConf, developerMode)
 
 	if err := openid4vpClient.Configuration.Reload(); err != nil {
 		return nil, fmt.Errorf("reloading eudi configuration failed: %v", err)
@@ -236,9 +234,7 @@ func New(
 		return nil, fmt.Errorf("failed to instantiate openid4vci client: %v", err)
 	}
 
-	if developerMode {
-		applyDeveloperModeToClients(openid4vciClient, didValidator)
-	}
+	setDeveloperModeOnClients(openid4vciClient, didValidator, developerMode)
 
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,
@@ -691,35 +687,56 @@ func mergeLogsByTime(a, b []clientmodels.LogInfo, max int) []clientmodels.LogInf
 	return merged
 }
 
-// applyDeveloperModeToConfiguration relaxes the certificate checks that local
-// development needs. It is separate from applyDeveloperModeToClients because
-// New has to call the two at different points: these settings must be in place
-// before Configuration.Reload validates the stored chains, while the OpenID4VCI
-// client the other half needs is only constructed after that reload.
-func applyDeveloperModeToConfiguration(conf *eudi.Configuration) {
-	conf.SetCertificateVerificationMode(eudi.DeveloperModeCertificateVerification)
-	conf.EnableStagingTrustAnchors()
+// setDeveloperModeOnConfiguration brings the certificate checks in line with
+// the developer mode preference. It is separate from setDeveloperModeOnClients
+// because New has to call the two at different points: these settings must be
+// in place before Configuration.Reload validates the stored chains, while the
+// OpenID4VCI client the other half needs is only constructed after that reload.
+//
+// The trust anchors themselves only follow on the next Reload.
+func setDeveloperModeOnConfiguration(conf *eudi.Configuration, enabled bool) {
+	mode := eudi.StrictCertificateVerification
+	if enabled {
+		mode = eudi.DeveloperModeCertificateVerification
+	}
+	conf.SetCertificateVerificationMode(mode)
+	conf.SetUseStagingTrustAnchors(enabled)
 }
 
-// applyDeveloperModeToClients relaxes the transport checks that local
-// development needs: plain-HTTP OpenID4VCI issuers and insecure did:web
+// setDeveloperModeOnClients brings the transport checks in line with the
+// developer mode preference: plain-HTTP OpenID4VCI issuers and insecure did:web
 // verifiers.
-func applyDeveloperModeToClients(vciClient *openid4vci.Client, didValidator *openid4vp.DidVerifierValidator) {
-	vciClient.AllowInsecureHttpForTesting()
-	didValidator.SetAllowInsecureDidWeb(true)
+func setDeveloperModeOnClients(vciClient *openid4vci.Client, didValidator *openid4vp.DidVerifierValidator, enabled bool) {
+	vciClient.SetAllowInsecureHttp(enabled)
+	didValidator.SetAllowInsecureDidWeb(enabled)
 }
 
 func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
+	developerModeChanged := client.irmaClient.Preferences.DeveloperMode != prefs.DeveloperMode
 	client.irmaClient.SetPreferences(prefs)
-	if prefs.DeveloperMode {
-		// Kept in step with New, which applies the same relaxations when the
-		// preference is already set at startup.
-		applyDeveloperModeToConfiguration(client.openid4vpClient.Configuration)
-		applyDeveloperModeToClients(client.openid4vciClient, client.didValidator)
 
-		if err := client.openid4vpClient.Configuration.Reload(); err != nil {
-			common.Logger.Warnf("error while reloading eudi config: %v", err)
-		}
+	// Both directions have to take effect: every relaxation developer mode
+	// makes is undone when it is switched off, so the wallet does not keep
+	// accepting plain HTTP and staging chains until the process restarts.
+	// Kept in step with New, which applies the same for the preference that is
+	// already set at startup.
+	setDeveloperModeOnConfiguration(client.openid4vpClient.Configuration, prefs.DeveloperMode)
+	setDeveloperModeOnClients(client.openid4vciClient, client.didValidator, prefs.DeveloperMode)
+
+	if !developerModeChanged {
+		return
+	}
+
+	// Reload rebuilds both trust models from the anchors the new setting
+	// selects: switching developer mode on adds the staging chains, switching
+	// it off drops them again.
+	if err := client.openid4vpClient.Configuration.Reload(); err != nil {
+		common.Logger.Warnf("error while reloading eudi config: %v", err)
+	}
+	// Only the staging anchors bring distribution points whose CRLs the wallet
+	// has not downloaded yet, so this is needed on the way in, not on the way
+	// out: the production CRLs were already on disk for the Reload above.
+	if prefs.DeveloperMode {
 		if err := client.openid4vpClient.Configuration.UpdateCertificateRevocationLists(); err != nil {
 			common.Logger.Warnf("error while updating CRLs: %v", err)
 		}

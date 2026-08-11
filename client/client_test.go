@@ -57,20 +57,7 @@ func TestInstantiateClientWithExistingIrmaStorage(t *testing.T) {
 // already enabled when the client starts: New then never passes through
 // SetPreferences, so before the fix the wallet came back up production-strict.
 func TestDeveloperModeSurvivesRestart(t *testing.T) {
-	var aesKey [32]byte
-	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-
-	path := test.FindTestdataFolder(t)
-	storageFolder := test.CreateTestStorage(t)
-	storagePath := filepath.Join(storageFolder, "client")
-	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
-	eudiAppDataPath := filepath.Join(storagePath, "eudi")
-
-	newClient := func() *Client {
-		c, err := New(storagePath, irmaConfigurationPath, eudiAppDataPath, &testhelpers.TestClientHandler{}, nil, test.NewSigner(t), aesKey, "en")
-		require.NoError(t, err)
-		return c
-	}
+	newClient := newClientOnFreshStorage(t)
 
 	// First run: production-strict until developer mode is switched on.
 	first := newClient()
@@ -85,6 +72,46 @@ func TestDeveloperModeSurvivesRestart(t *testing.T) {
 	defer second.Close()
 	require.True(t, second.GetPreferences().DeveloperMode)
 	requireDeveloperModeApplied(t, second, true)
+}
+
+// TestDeveloperModeSwitchedOffRevertsRelaxations covers the other direction:
+// every relaxation has to be undone the moment the preference is switched off,
+// instead of staying active until the process restarts.
+func TestDeveloperModeSwitchedOffRevertsRelaxations(t *testing.T) {
+	client := newClientOnFreshStorage(t)()
+	defer client.Close()
+
+	conf := client.openid4vpClient.Configuration
+	productionRoots := conf.Issuers.GetVerificationOptionsTemplate().Roots
+
+	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
+	requireDeveloperModeApplied(t, client, true)
+	require.False(t, productionRoots.Equal(conf.Issuers.GetVerificationOptionsTemplate().Roots),
+		"switching developer mode on should add the staging trust anchors")
+
+	client.SetPreferences(clientsettings.Preferences{DeveloperMode: false})
+	requireDeveloperModeApplied(t, client, false)
+	require.True(t, productionRoots.Equal(conf.Issuers.GetVerificationOptionsTemplate().Roots),
+		"switching developer mode off should drop the staging trust anchors")
+}
+
+// newClientOnFreshStorage returns a factory that opens a client on one empty
+// storage folder, so calling it twice models a restart of the same wallet.
+func newClientOnFreshStorage(t *testing.T) func() *Client {
+	var aesKey [32]byte
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+
+	path := test.FindTestdataFolder(t)
+	storageFolder := test.CreateTestStorage(t)
+	storagePath := filepath.Join(storageFolder, "client")
+	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
+	eudiAppDataPath := filepath.Join(storagePath, "eudi")
+
+	return func() *Client {
+		c, err := New(storagePath, irmaConfigurationPath, eudiAppDataPath, &testhelpers.TestClientHandler{}, nil, test.NewSigner(t), aesKey, "en")
+		require.NoError(t, err)
+		return c
+	}
 }
 
 // requireDeveloperModeApplied asserts each of the relaxations developer mode

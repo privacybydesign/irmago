@@ -59,8 +59,11 @@ func NewConfiguration(s storage.Storage) (conf *Configuration, err error) {
 	return
 }
 
-func (c *Configuration) EnableStagingTrustAnchors() {
-	c.useStagingTrustAnchors = true
+// SetUseStagingTrustAnchors selects whether the staging trust anchors are
+// loaded on top of the production ones. The next Reload acts on it: switching
+// this off does not by itself drop staging anchors already in the trust models.
+func (c *Configuration) SetUseStagingTrustAnchors(use bool) {
+	c.useStagingTrustAnchors = use
 }
 
 // UsesStagingTrustAnchors reports whether Reload also loads the staging trust
