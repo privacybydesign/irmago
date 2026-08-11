@@ -178,7 +178,7 @@ func TestIssuedValidityTimestampsAreCoarsened(t *testing.T) {
 
 	// Two attestations of the same batch, issued to different device keys.
 	var issued []*MDoc
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		holder, err := NewHolder()
 		if err != nil {
 			t.Fatalf("NewHolder: %v", err)
