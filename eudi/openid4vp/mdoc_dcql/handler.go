@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -536,38 +535,6 @@ func resolveClaimName(display []models.ClaimDisplay, locale string) *string {
 		return clientmodels.ResolvePtr(ts, locale)
 	}
 	return nil
-}
-
-// LogCredentialForHash builds a LogCredential for the stored mdoc batch identified by
-// hash, covering all of its resolved claims -- unlike buildLogCredential's callers in
-// PrepareDisclosure, which only log the claim paths a DCQL query actually selected.
-// Used for removal logging when a credential is deleted outside of a presentation flow.
-func (h *MdocDcqlHandler) LogCredentialForHash(hash string) (*clientmodels.LogCredential, error) {
-	batch, err := h.credentialStore.GetBatchByHash(hash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find mdoc batch for hash %s: %w", hash, err)
-	}
-
-	resolved, err := unmarshalResolvedClaims(batch)
-	if err != nil {
-		return nil, fmt.Errorf("decode resolved claims for hash %s: %w", hash, err)
-	}
-
-	var allPaths [][]any
-	for namespace, elements := range resolved {
-		for elementIdentifier := range elements {
-			allPaths = append(allPaths, []any{namespace, elementIdentifier})
-		}
-	}
-	sort.Slice(allPaths, func(i, j int) bool {
-		if allPaths[i][0] != allPaths[j][0] {
-			return allPaths[i][0].(string) < allPaths[j][0].(string)
-		}
-		return allPaths[i][1].(string) < allPaths[j][1].(string)
-	})
-
-	log := h.buildLogCredential(batch, allPaths, resolved)
-	return &log, nil
 }
 
 func (h *MdocDcqlHandler) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any, resolved map[string]map[string]any) clientmodels.LogCredential {

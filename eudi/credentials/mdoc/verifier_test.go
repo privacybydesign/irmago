@@ -513,19 +513,21 @@ func TestNotYetValidMSOIsRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIssuer: %v", err)
 	}
-	holder, _ := NewHolder()
-	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
-		map[string]any{"age_over_18": true}, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	// The validity window is set explicitly rather than taken from Issue():
+	// issued attestations are coarsened to midnight UTC so a batch cannot be
+	// correlated by its timestamps (see TestIssuedValidityTimestampsAreCoarsened),
+	// which puts validFrom in the past and leaves no clock that is both after the
+	// certificates' NotBefore and before it. Signing a future window with the
+	// issuer's own DS key keeps the chain valid, so only the MSO validityInfo
+	// check can fail — which is what this test is for.
+	futureStart := time.Now().UTC().Add(time.Hour)
+	mdoc := issueWithValidity(t, issuer, futureStart, futureStart.Add(24*time.Hour))
 	presented, err := SelectiveDisclose(mdoc, "eu.europa.ec.av.1", []string{"age_over_18"})
 	if err != nil {
 		t.Fatalf("SelectiveDisclose: %v", err)
 	}
 
-	pastClock := time.Now().Add(-2 * time.Minute) // after cert NotBefore (-5min), before MSO validFrom (~now)
-	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.IACACert()}, pastClock)
+	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.IACACert()}, time.Now())
 
 	result := verifier.Verify(presented, "eu.europa.ec.av.1")
 	if result.Valid {
@@ -1069,5 +1071,144 @@ func TestFullIssuanceFlow_ProducesValidMDoc(t *testing.T) {
 	}
 	if _, present := result.Attributes["age_over_21"]; present {
 		t.Fatalf("age_over_21 should have been withheld, but was disclosed")
+	}
+}
+
+// issueWithValidity mints a credential from the given issuer with an explicit
+// validityInfo window, using that issuer's own DS key and chain so certificate
+// verification still passes. Issue() coarsens its timestamps to midnight UTC for
+// unlinkability, which is right for real attestations but leaves no way to place
+// the MSO's window relative to a test clock.
+func issueWithValidity(t *testing.T, issuer *Issuer, validFrom, validUntil time.Time) *MDoc {
+	t.Helper()
+
+	holder, err := NewHolder()
+	if err != nil {
+		t.Fatalf("NewHolder: %v", err)
+	}
+	deviceKey, err := coseKeyFromECDSA(holder.PublicKey())
+	if err != nil {
+		t.Fatalf("coseKeyFromECDSA: %v", err)
+	}
+
+	const docType = "eu.europa.ec.av.1"
+	item := IssuerSignedItem{DigestID: 0, Random: make([]byte, 16), ElementIdentifier: "age_over_18", ElementValue: true}
+	digest, err := hashTag24Item(item)
+	if err != nil {
+		t.Fatalf("hashTag24Item: %v", err)
+	}
+	wrapped, err := tag24Wrap(item)
+	if err != nil {
+		t.Fatalf("tag24Wrap: %v", err)
+	}
+
+	mso := MSO{
+		Version:         "1.0",
+		DigestAlgorithm: "SHA-256",
+		ValueDigests:    map[string]map[uint64][]byte{docType: {0: digest}},
+		DocType:         docType,
+		ValidityInfo:    ValidityInfo{Signed: validFrom, ValidFrom: validFrom, ValidUntil: validUntil},
+		DeviceKeyInfo:   DeviceKeyInfo{DeviceKey: deviceKey},
+	}
+	msoBytes, err := tag24WrapWithMode(mso, avTimeEncMode)
+	if err != nil {
+		t.Fatalf("wrap mso: %v", err)
+	}
+
+	signer, err := cose.NewSigner(cose.AlgorithmES256, issuer.dskey)
+	if err != nil {
+		t.Fatalf("cose.NewSigner: %v", err)
+	}
+	msg := cose.NewSign1Message()
+	msg.Payload = msoBytes
+	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
+	msg.Headers.Unprotected[int64(33)] = [][]byte{issuer.dscert.Raw, issuer.iacacert.Raw}
+	if err := msg.Sign(rand.Reader, nil, signer); err != nil {
+		t.Fatalf("sign mso: %v", err)
+	}
+	coseBytes, err := msg.MarshalCBOR()
+	if err != nil {
+		t.Fatalf("marshal issuerAuth: %v", err)
+	}
+
+	return &MDoc{
+		DocType: docType,
+		IssuerSigned: IssuerSigned{
+			NameSpaces: map[string][]Tag24Item{docType: {{EncodedItem: wrapped}}},
+			IssuerAuth: coseBytes,
+		},
+	}
+}
+
+// TestRequireElementsCatchesAnOmittedElement is the check the digest and
+// deviceAuth verification cannot make.
+//
+// A holder that simply leaves an element out produces a document where
+// everything present is authentic and the device signature is over the right
+// session transcript, so every other check passes — the signature covers the
+// transcript and the docType, never the disclosed set. A verifier that reads
+// result.Attributes without asking whether what it requested is there would see
+// a missing boolean as absent-and-therefore-false.
+func TestRequireElementsCatchesAnOmittedElement(t *testing.T) {
+	issuer, err := NewIssuer()
+	if err != nil {
+		t.Fatalf("NewIssuer: %v", err)
+	}
+	holder, err := NewHolder()
+	if err != nil {
+		t.Fatalf("NewHolder: %v", err)
+	}
+
+	const docType = "eu.europa.ec.av.1"
+	full, err := issuer.Issue(docType, docType,
+		map[string]any{"age_over_18": true, "age_over_21": true}, holder.PublicKey())
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	// The holder discloses only one of the two the verifier asked for.
+	presented, err := SelectiveDisclose(full, docType, []string{"age_over_18"})
+	if err != nil {
+		t.Fatalf("SelectiveDisclose: %v", err)
+	}
+
+	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
+	result := verifier.Verify(presented, docType)
+
+	// Everything the format itself checks still passes: this is not a forgery.
+	if !result.Valid {
+		t.Fatalf("expected the partial disclosure to verify as authentic, got: %s", result.Error)
+	}
+
+	if err := result.RequireElements("age_over_18"); err != nil {
+		t.Errorf("age_over_18 was disclosed, so requiring it must succeed: %v", err)
+	}
+
+	err = result.RequireElements("age_over_18", "age_over_21")
+	if err == nil {
+		t.Fatal("age_over_21 was requested and not disclosed, but RequireElements accepted the result")
+	}
+	if !strings.Contains(err.Error(), "age_over_21") {
+		t.Errorf("the error should name the element that is missing, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "age_over_18") {
+		t.Errorf("the error should not name an element that was disclosed, got: %v", err)
+	}
+}
+
+// TestRequireElementsRefusesAFailedResult stops the check from reading as a pass
+// on a result that never verified: with Valid false the Attributes map is empty,
+// so a naive "are the elements present" test would report them all missing —
+// technically true, but it would let a caller treat a rejected credential as
+// merely under-disclosed.
+func TestRequireElementsRefusesAFailedResult(t *testing.T) {
+	failed := VerificationResult{Valid: false, Error: "issuerAuth signature invalid"}
+
+	err := failed.RequireElements()
+	if err == nil {
+		t.Fatal("RequireElements must refuse a result that did not verify, even with nothing requested")
+	}
+	if !strings.Contains(err.Error(), "issuerAuth signature invalid") {
+		t.Errorf("the error should carry the underlying verification failure, got: %v", err)
 	}
 }

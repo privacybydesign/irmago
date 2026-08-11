@@ -1,9 +1,11 @@
 package mdoc
 
 import (
+	"crypto/x509"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 )
@@ -159,5 +161,61 @@ func TestIssueAcceptsArbitraryDocTypeAndClaims(t *testing.T) {
 				t.Fatalf("expected %d claims in namespace %q, got %d", len(tc.claims), tc.namespace, len(mdoc.IssuerSigned.NameSpaces[tc.namespace]))
 			}
 		})
+	}
+}
+
+// TestIssuedValidityTimestampsAreCoarsened pins the AV profile's unlinkability
+// requirement on the issuer side: attestations are single-use and issued in
+// batches so a holder cannot be followed between relying parties, which a
+// per-second validityInfo would undo — each attestation would carry a distinct
+// validUntil, correlating exactly what the batch exists to hide. Annex A has the
+// provider set hh, mm and ss to the same value on every attestation.
+func TestIssuedValidityTimestampsAreCoarsened(t *testing.T) {
+	issuer, err := NewIssuer()
+	if err != nil {
+		t.Fatalf("NewIssuer: %v", err)
+	}
+
+	// Two attestations of the same batch, issued to different device keys.
+	var issued []*MDoc
+	for i := 0; i < 2; i++ {
+		holder, err := NewHolder()
+		if err != nil {
+			t.Fatalf("NewHolder: %v", err)
+		}
+		doc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
+			map[string]any{"age_over_18": true}, holder.PublicKey())
+		if err != nil {
+			t.Fatalf("Issue: %v", err)
+		}
+		issued = append(issued, doc)
+	}
+
+	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
+	var infos []ValidityInfo
+	for _, doc := range issued {
+		_, result := verifier.VerifyAllDisclosedNamespaces(doc)
+		if !result.Valid {
+			t.Fatalf("verify: %s", result.Error)
+		}
+		infos = append(infos, result.ValidityInfo)
+	}
+
+	for _, info := range infos {
+		for name, ts := range map[string]time.Time{
+			"signed": info.Signed, "validFrom": info.ValidFrom, "validUntil": info.ValidUntil,
+		} {
+			h, m, s := ts.UTC().Clock()
+			if h != 0 || m != 0 || s != 0 {
+				t.Errorf("%s is %s: hh:mm:ss must be coarsened away, not the issuing wallclock", name, ts.UTC().Format(time.RFC3339))
+			}
+		}
+	}
+
+	// The point of coarsening: two attestations of one batch must be
+	// indistinguishable by their timestamps.
+	if !infos[0].Signed.Equal(infos[1].Signed) || !infos[0].ValidUntil.Equal(infos[1].ValidUntil) {
+		t.Errorf("two attestations carry different validity timestamps (%s/%s vs %s/%s); they are linkable",
+			infos[0].Signed, infos[0].ValidUntil, infos[1].Signed, infos[1].ValidUntil)
 	}
 }

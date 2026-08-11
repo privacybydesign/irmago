@@ -5,11 +5,17 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +29,8 @@ import (
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/testdata"
 )
 
 // avDocType is the EU Age Verification profile's docType. Five dot-separated
@@ -40,6 +48,12 @@ const avDocType = "eu.europa.ec.av.1"
 // container presents is testdata/eudi/verifier/verifier.crt, whose scheme
 // extension authorizes eu.europa.ec.av.1 — so the authorization stage runs for
 // real and passes because the certificate genuinely permits the query.
+//
+// The disclosure runs against both verifier containers, because the response
+// mode changes the bytes deviceAuth signs over: direct_post.jwt puts the
+// response encryption key's thumbprint in the handover, direct_post puts a CBOR
+// null there. Only one of the two can be wrong at a time, and only the AV
+// Blueprint's own choice — direct_post — matters for conformance.
 func testSessionHandlerForOpenID4VPWithMdocAv(t *testing.T) {
 	runEudiSessionTest(t,
 		"age verification mdoc is disclosed to the verifier",
@@ -47,8 +61,23 @@ func testSessionHandlerForOpenID4VPWithMdocAv(t *testing.T) {
 	)
 
 	runEudiSessionTest(t,
+		"age verification mdoc is disclosed with response mode direct_post",
+		testOpenID4VP_MdocAv_DisclosureDirectPost,
+	)
+
+	runEudiSessionTest(t,
 		"an unauthorized mdoc doctype is refused",
 		testOpenID4VP_MdocAv_UnauthorizedDocType,
+	)
+
+	runEudiSessionTest(t,
+		"an expired credential is not offered",
+		testOpenID4VP_MdocAv_ExpiredCredentialIsNotOffered,
+	)
+
+	runEudiSessionTest(t,
+		"an exhausted batch is not offered",
+		testOpenID4VP_MdocAv_ExhaustedBatchIsNotOffered,
 	)
 }
 
@@ -95,10 +124,37 @@ func testOpenID4VP_MdocAv_Disclosure(
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 ) {
+	runMdocAvDisclosure(t, c, sessionHandler, testdata.OpenID4VP_DirectPostJwt_Host)
+}
+
+// testOpenID4VP_MdocAv_DisclosureDirectPost runs the same disclosure against the
+// direct_post verifier.
+//
+// This is the response mode the AV Blueprint's Annex A §A.6 requires, and it is
+// not the same code path: the handover carries a CBOR null where direct_post.jwt
+// carries the response encryption key's thumbprint, so a bug in either branch of
+// that choice shows up in exactly one of these two subtests.
+func testOpenID4VP_MdocAv_DisclosureDirectPost(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	runMdocAvDisclosure(t, c, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
+}
+
+func runMdocAvDisclosure(
+	t *testing.T,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+	verifierHost string,
+) {
+	t.Helper()
+
 	issuer := seedAvMdoc(t, c)
 
-	testSession := startOpenID4VPSessionWithAuthRequest(t, c, 1, sessionHandler,
-		createMdocAvAuthRequestRequest(t, issuer))
+	testSession, requestJwt := startMdocAvSessionCapturingRequest(t, c, 1, sessionHandler,
+		verifierHost, createMdocAvAuthRequestRequest(t, issuer))
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -132,7 +188,15 @@ func testOpenID4VP_MdocAv_Disclosure(
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
-	requireMdocVerifierResult(t, testSession.VerifierSession, "age", avDocType, "age_over_18", true)
+	response := requireMdocVerifierResult(t, testSession.VerifierSession, "age", avDocType, "age_over_18", true)
+
+	// The assertions above only establish what the verifier *received*. They pass
+	// whether or not deviceAuth actually verifies, because the container is not
+	// known to check it — and a handover the verifier cannot reproduce is silent
+	// in the wallet and fatal only at a verifier that does check. So verify the
+	// signature here, against a transcript rebuilt from the request the wallet was
+	// actually given.
+	requireDeviceAuthVerifies(t, issuer, response, avSessionTranscript(t, requestJwt))
 }
 
 // seedAvMdoc issues a real mso_mdoc age credential and stores it the way
@@ -146,6 +210,21 @@ func testOpenID4VP_MdocAv_Disclosure(
 // a DeviceSigned at presentation time — PrepareDisclosure refuses an instance
 // without one.
 func seedAvMdoc(t *testing.T, c *client.Client) *stdmdoc.Issuer {
+	t.Helper()
+	return seedAvMdocBatch(t, c, avSeedOptions{BatchSize: 1, RemainingCount: 1, ExpiresIn: 24 * time.Hour})
+}
+
+// avSeedOptions describes the batch seedAvMdocBatch writes, so a test can put
+// the wallet in a state a real issuer will not hand out on demand — an expired
+// credential, or a batch whose instances are all spent.
+type avSeedOptions struct {
+	BatchSize      uint
+	RemainingCount uint
+	// ExpiresIn is relative to now, and may be negative for an expired batch.
+	ExpiresIn time.Duration
+}
+
+func seedAvMdocBatch(t *testing.T, c *client.Client, opts avSeedOptions) *stdmdoc.Issuer {
 	t.Helper()
 
 	issuer, err := stdmdoc.NewIssuer()
@@ -192,9 +271,9 @@ func seedAvMdoc(t *testing.T, c *client.Client) *stdmdoc.Issuer {
 		Hash:                     "av-integration-batch-hash",
 		ProcessedSdJwtPayload:    datatypes.JSON(resolvedClaims),
 		IssuedAt:                 datatypes.NullTime{V: now.Add(-time.Hour), Valid: true},
-		ExpiresAt:                datatypes.NullTime{V: now.Add(24 * time.Hour), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
+		ExpiresAt:                datatypes.NullTime{V: now.Add(opts.ExpiresIn), Valid: true},
+		BatchSize:                opts.BatchSize,
+		RemainingCount:           opts.RemainingCount,
 		Instances: []models.IssuedCredentialInstance{
 			{
 				RawCredential: rawCredential,
@@ -261,9 +340,206 @@ func createMdocAvAuthRequestRequest(t *testing.T, issuer *stdmdoc.Issuer) string
 	return string(body)
 }
 
+// startMdocAvSessionCapturingRequest starts a verifier session and hands the
+// wallet the request object, returning it to the caller as well.
+//
+// It exists because the transcript deviceAuth signs over can only be rebuilt
+// from the authorization request, and none of its inputs are obtainable any
+// other way: the verifier mints a per-session response_uri
+// (…/wallet/direct_post/<token>) and, in direct_post.jwt mode, a per-session
+// response encryption key, both of which live only inside the request object.
+// That object is single-use — a second fetch of request_uri answers 400 — so the
+// test cannot simply read it alongside the wallet.
+//
+// So it is fetched once here and re-served to the wallet verbatim from a local
+// server. The bytes are untouched, signature and x5c included, so the wallet
+// authenticates exactly the request the verifier signed; only the URL it was
+// retrieved from differs, and that URL is not part of what the wallet verifies.
+func startMdocAvSessionCapturingRequest(
+	t *testing.T,
+	c *client.Client,
+	sessionId int,
+	sessionHandler *MockSessionHandler,
+	verifierHost string,
+	authRequestJson string,
+) (openID4VPTestSession, string) {
+	t.Helper()
+
+	verifierSession, err := StartTestSessionAtEudiVerifier(verifierHost, authRequestJson)
+	require.NoError(t, err)
+
+	link, err := url.Parse(verifierSession.SessionLink)
+	require.NoError(t, err)
+	query := link.Query()
+	requestUri := query.Get("request_uri")
+	require.NotEmpty(t, requestUri, "the verifier must hand out a request_uri to capture")
+
+	requestJwt := fetchAuthorizationRequest(t, requestUri)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/oauth-authz-req+jwt")
+		_, _ = w.Write([]byte(requestJwt))
+	}))
+	t.Cleanup(server.Close)
+
+	query.Set("request_uri", server.URL)
+	// Built by hand rather than through url.URL: a Scheme carrying its own "//"
+	// makes String() emit "eudi-openid4vp://:?...", with a stray colon.
+	sessionRequest, err := json.Marshal(client.SessionRequestData{
+		Qr: irma.Qr{
+			Type: irma.ActionDisclosing,
+			URL:  "eudi-openid4vp://?" + query.Encode(),
+		},
+		Protocol: clientmodels.Protocol_OpenID4VP,
+	})
+	require.NoError(t, err)
+
+	c.NewSession(sessionId, string(sessionRequest))
+	return openID4VPTestSession{
+		ClientSession:   awaitSessionState(t, sessionHandler),
+		VerifierSession: verifierSession,
+	}, requestJwt
+}
+
+// fetchAuthorizationRequest retrieves the request object once. The transaction was
+// started with request_uri_method "get", and the verifier enforces the method it
+// was started with, so this is a GET with no wallet_nonce.
+func fetchAuthorizationRequest(t *testing.T, requestUri string) string {
+	t.Helper()
+
+	response, err := http.Get(requestUri)
+	require.NoError(t, err)
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode,
+		"fetching the request object failed: %s", string(body))
+
+	return strings.TrimSpace(string(body))
+}
+
+// avSessionTranscript rebuilds the SessionTranscript the wallet's deviceAuth
+// signed over, from the authorization request it was given.
+//
+// This deliberately re-derives the handover rather than calling the wallet's own
+// newOpenID4VPSessionTranscript: a check that reuses the code under test agrees
+// with itself no matter which formula it implements, and getting the formula
+// wrong is precisely the failure this test is here to catch. The construction is
+// the one in eudi/openid4vp/mdoc_dcql/sessiontranscript.go, which follows
+// Multipaz's vpSessionTranscript:
+//
+//	HandoverInfo      = [clientId, nonce, jwkThumbprint, responseUri]
+//	Handover          = ["OpenID4VPHandover", SHA-256(CBOR(HandoverInfo))]
+//	SessionTranscript = [null, null, Handover]
+func avSessionTranscript(t *testing.T, requestJwt string) stdmdoc.SessionTranscript {
+	t.Helper()
+
+	var request struct {
+		ClientId       string `json:"client_id"`
+		Nonce          string `json:"nonce"`
+		ResponseUri    string `json:"response_uri"`
+		ResponseMode   string `json:"response_mode"`
+		ClientMetadata *struct {
+			Jwks json.RawMessage `json:"jwks"`
+		} `json:"client_metadata"`
+	}
+
+	segments := strings.Split(requestJwt, ".")
+	require.Len(t, segments, 3, "the request object is a compact JWS")
+	payload, err := base64.RawURLEncoding.DecodeString(segments[1])
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(payload, &request))
+
+	require.NotEmpty(t, request.ClientId)
+	require.NotEmpty(t, request.ResponseUri)
+
+	var thumbprint []byte
+	if request.ResponseMode == "direct_post.jwt" {
+		require.NotNil(t, request.ClientMetadata, "an encrypted response mode must publish client_metadata")
+		thumbprint = responseEncryptionKeyThumbprint(t, request.ClientMetadata.Jwks)
+	}
+
+	handoverInfo := []any{request.ClientId, request.Nonce, encryptionKeyElement(thumbprint), request.ResponseUri}
+	handoverInfoBytes, err := cbor.Marshal(handoverInfo)
+	require.NoError(t, err)
+	digest := sha256.Sum256(handoverInfoBytes)
+
+	return stdmdoc.SessionTranscript{
+		Handover: []any{"OpenID4VPHandover", digest[:]},
+	}
+}
+
+// encryptionKeyElement renders the third HandoverInfo element: the thumbprint
+// when the response is encrypted, CBOR null when it is not. Spelled out rather
+// than relying on a nil []byte encoding as null, so the shape does not depend on
+// that detail.
+func encryptionKeyElement(thumbprint []byte) any {
+	if len(thumbprint) == 0 {
+		return nil
+	}
+	return thumbprint
+}
+
+// responseEncryptionKeyThumbprint picks the key the response is encrypted to and
+// returns its SHA-256 JWK thumbprint. The selection mirrors the wallet's
+// selectResponseEncryptionKey: the first published key carrying an alg. A
+// verifier publishing several usable keys would make the two disagree, and the
+// deviceAuth check below is what would report it.
+func responseEncryptionKeyThumbprint(t *testing.T, jwks json.RawMessage) []byte {
+	t.Helper()
+
+	set, err := jwk.Parse(jwks)
+	require.NoError(t, err)
+
+	for i := range set.Len() {
+		key, ok := set.Key(i)
+		if !ok {
+			continue
+		}
+		if _, ok := key.Algorithm(); !ok {
+			continue
+		}
+		thumbprint, err := key.Thumbprint(crypto.SHA256)
+		require.NoError(t, err)
+		return thumbprint
+	}
+
+	t.Fatalf("client_metadata carries no usable response encryption key: %s", string(jwks))
+	return nil
+}
+
+// requireDeviceAuthVerifies verifies the presented DeviceResponse the way a
+// verifier that checks device binding would: issuer signature and digests
+// against the run's IACA, then deviceAuth against the given transcript.
+//
+// A mismatch here means the wallet signed over a transcript the verifier cannot
+// reproduce — the response still transmits fine, which is why nothing earlier in
+// the test notices.
+func requireDeviceAuthVerifies(
+	t *testing.T,
+	issuer *stdmdoc.Issuer,
+	response stdmdoc.DeviceResponse,
+	transcript stdmdoc.SessionTranscript,
+) {
+	t.Helper()
+
+	verifier := stdmdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})
+	results, err := verifier.VerifyDeviceResponse(response, avDocType, avDocType, transcript)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	result := results[0]
+	require.True(t, result.Valid, "presented mdoc did not verify: %s", result.Error)
+	require.True(t, result.DeviceAuthValid,
+		"deviceAuth did not verify against the rebuilt session transcript: %s", result.Error)
+	require.Equal(t, true, result.Attributes["age_over_18"])
+}
+
 // requireMdocVerifierResult fetches the wallet response from the verifier and
 // checks that the vp_token holds a DeviceResponse disclosing exactly the
-// requested element.
+// requested element, returning that DeviceResponse so the caller can verify its
+// signatures.
 //
 // An mso_mdoc vp_token entry is base64url-encoded CBOR rather than the compact
 // JWS the SD-JWT helpers expect, so this cannot reuse requireVerifierResult:
@@ -276,7 +552,7 @@ func requireMdocVerifierResult(
 	expectedDocType string,
 	expectedElement string,
 	expectedValue any,
-) {
+) stdmdoc.DeviceResponse {
 	t.Helper()
 
 	result, err := GetWalletResponseFromEudiVerifier(verifierSession)
@@ -324,6 +600,8 @@ func requireMdocVerifierResult(
 	disclosed := decodeIssuerSignedItem(t, items[0])
 	require.Equal(t, expectedElement, disclosed.ElementIdentifier)
 	require.Equal(t, expectedValue, disclosed.ElementValue)
+
+	return response
 }
 
 // decodeIssuerSignedItem unwraps one Tag-24 wrapped issuerSigned item. The outer
@@ -351,4 +629,74 @@ func namespaceKeys(namespaces map[string][]stdmdoc.Tag24Item) []string {
 		keys = append(keys, key)
 	}
 	return keys
+}
+
+// testOpenID4VP_MdocAv_ExpiredCredentialIsNotOffered seeds a credential whose
+// validity has already run out and checks the wallet does not put it forward.
+//
+// The AV profile leans on expiry as its only revocation lever — attestations are
+// short-lived and there is no status list — so an expired one being offered is
+// the closest thing to presenting a revoked credential. `dcql.IsBatchValid`
+// implements the check, and until now nothing exercised it through a real
+// session: a unit test cannot show that the disclosure planner consults it
+// before building the permission screen.
+func testOpenID4VP_MdocAv_ExpiredCredentialIsNotOffered(
+	t *testing.T,
+	_ *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	issuer := seedAvMdocBatch(t, c, avSeedOptions{
+		BatchSize:      1,
+		RemainingCount: 1,
+		ExpiresIn:      -time.Hour,
+	})
+
+	testSession := startOpenID4VPSessionWithAuthRequest(t, c, 1, sessionHandler,
+		createMdocAvAuthRequestRequest(t, issuer))
+	session := testSession.ClientSession
+
+	// The session still reaches the permission screen — the user is told what was
+	// asked for — but with nothing of theirs to answer it. Were the expiry check
+	// skipped, this same plan would carry the seeded credential as an owned
+	// option, which is what the assertion is really about.
+	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	require.NotNil(t, session.DisclosurePlan)
+	for _, choice := range session.DisclosurePlan.DisclosureChoicesOverview {
+		require.Empty(t, choice.OwnedOptions,
+			"the wallet offered a credential whose validity window has passed")
+	}
+}
+
+// testOpenID4VP_MdocAv_ExhaustedBatchIsNotOffered seeds a batch whose instances
+// are all spent.
+//
+// Single-use is the property batch issuance exists to provide, and the wallet
+// enforces it by refusing to reuse an instance rather than by re-presenting the
+// last one. Reaching this state against a real issuer would take a hundred
+// presentations, since that is the batch size it hands out, so it is seeded.
+func testOpenID4VP_MdocAv_ExhaustedBatchIsNotOffered(
+	t *testing.T,
+	_ *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	issuer := seedAvMdocBatch(t, c, avSeedOptions{
+		BatchSize:      2,
+		RemainingCount: 0,
+		ExpiresIn:      24 * time.Hour,
+	})
+
+	testSession := startOpenID4VPSessionWithAuthRequest(t, c, 1, sessionHandler,
+		createMdocAvAuthRequestRequest(t, issuer))
+	session := testSession.ClientSession
+
+	// Unlike an expired credential, an exhausted batch fails the session outright:
+	// the wallet holds a credential of the right type and cannot spend it, which
+	// is worth telling the user about rather than silently showing nothing.
+	require.Equal(t, clientmodels.Status_Error, session.Status,
+		"a batch with no unused instances left must not produce a presentable option")
+	require.NotNil(t, session.Error)
+	require.Contains(t, session.Error.WrappedError, "exhausted",
+		"the failure should name the exhausted batch rather than surface as a generic matching failure")
 }

@@ -461,6 +461,11 @@ services:
       - VERIFIER_VALIDATION_SDJWTVC_STATUSCHECK_ENABLED=false
       - VERIFIER_ORIGINALCLIENTID=localhost
       - VERIFIER_CLIENTIDPREFIX=x509_san_dns
+      # The buildpack's memory calculator caps direct memory at 10M, which Netty
+      # exhausts after a few dozen sessions — the container then answers with EOFs
+      # and 500s that read as test failures rather than as an OOM. Raised here
+      # because the mdoc batch tests run many more sessions than the rest.
+      - JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=128M
 
   # Eudi openid4vp verifier service with direct_post.jwt enabled
   eudi_openid4vp_jwt:
@@ -483,6 +488,11 @@ services:
       - VERIFIER_VALIDATION_SDJWTVC_STATUSCHECK_ENABLED=false
       - VERIFIER_ORIGINALCLIENTID=localhost
       - VERIFIER_CLIENTIDPREFIX=x509_san_dns
+      # The buildpack's memory calculator caps direct memory at 10M, which Netty
+      # exhausts after a few dozen sessions — the container then answers with EOFs
+      # and 500s that read as test failures rather than as an OOM. Raised here
+      # because the mdoc batch tests run many more sessions than the rest.
+      - JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=128M
 
   # Eudi openid4vp verifier service that serves requests over the W3C Digital
   # Credentials API. Those endpoints run the ETSI TS 119 472-2 profile, which the
@@ -502,8 +512,11 @@ services:
       # when it does not match. Recompute it after regenerating the keystore with:
       # openssl x509 -in testdata/eudi/verifier/verifier.crt -outform der |
       #   openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '='
-      - VERIFIER_ORIGINALCLIENTID=iabG3E3gMMAoZdGV4qaCu3iKn7tNcdrlTrF-m3PvExQ
+      - VERIFIER_ORIGINALCLIENTID=h7SCYu3pDQs0Nm6sw7uwb5DsxcXY5VpaJRQ0FlB9Zrw
       - VERIFIER_CLIENTIDPREFIX=x509_hash
+      # See the note on the other verifier services: the buildpack caps direct
+      # memory at 10M and Netty exhausts it after a few dozen sessions.
+      - JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=128M
       - VERIFIER_ACCESS_CERTIFICATE_ALIAS=verifier_cert
       - VERIFIER_ACCESS_CERTIFICATE_SIGNING_ALGORITHM=ES256
       - VERIFIER_ACCESS_CERTIFICATE_KEYSTORE=file:///keystore.p12

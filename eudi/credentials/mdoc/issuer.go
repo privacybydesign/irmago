@@ -214,7 +214,23 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any
 	}
 
 	// ── Build MSO ────────────────────────────────────────────────
-	now := time.Now().UTC()
+	//
+	// The validity timestamps are coarsened to midnight UTC rather than stamped
+	// with the wallclock. Proof-of-age attestations are single-use and issued in
+	// batches precisely so a holder cannot be followed between relying parties,
+	// and a per-second timestamp defeats that on its own: every attestation in a
+	// batch would carry a distinct validUntil, which is as good a correlator as
+	// the credential it is trying to protect. The AV profile therefore has the
+	// provider "set timestamps in the ValidityInfo structure with a precision
+	// that limits the linkability information, following the ISO/IEC 18013-5
+	// recommendation by setting the hh, mm and ss information to the same value
+	// on each Proof of Age Attestation" (Annex A). The EU reference issuer does
+	// the same for batch credentials — see is_batch_credential in its
+	// formatter_func.py, which replaces hour/minute/second with zero.
+	//
+	// Coarsening downwards also keeps validFrom in the past, so a credential is
+	// never briefly not-yet-valid against a verifier whose clock trails ours.
+	now := time.Now().UTC().Truncate(24 * time.Hour)
 	mso := MSO{
 		Version:         "1.0",
 		DigestAlgorithm: "SHA-256",

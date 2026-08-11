@@ -20,6 +20,7 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("openid4vp empty optional disclosure creates log", testOpenID4VPEmptyDisclosureCreatesLog)
 	t.Run("eudi credential removal creates log", testEudiCredentialRemovalCreatesLog)
 	t.Run("eudi credential removal log has attributes", testEudiCredentialRemovalLogHasAttributes)
+	t.Run("mdoc credential removal creates log", testMdocCredentialRemovalCreatesLog)
 	t.Run("deeply nested issuance log", testDeeplyNestedIssuanceLog)
 	t.Run("deeply nested removal log", testDeeplyNestedRemovalLog)
 	t.Run("complex disclosure log only contains shared subset", testComplexDisclosureLogOnlyContainsSharedSubset)
@@ -444,6 +445,83 @@ func testEudiCredentialRemovalLogHasAttributes(t *testing.T) {
 			Value:       strVal("attrremove@example.com"),
 		},
 	)
+}
+
+// testMdocCredentialRemovalCreatesLog covers deleting an mso_mdoc credential.
+//
+// Removal logging does not run through the format-specific disclosure handlers:
+// RemoveCredentialsByHash reads the generic credential metadata list and converts
+// each entry with CredentialToLogCredential, so an mdoc batch is logged by the
+// same code that logs an SD-JWT one. What differs is the shape that code starts
+// from — an mdoc's stored claims are namespace -> elementIdentifier where an
+// SD-JWT's are a flat payload — and until now nothing deleted an mdoc to check
+// that shape survives into the log. Deletion is reachable from a button in the
+// wallet, so a wrong claim path or a missing format here is user-visible.
+func testMdocCredentialRemovalCreatesLog(t *testing.T) {
+	c, _ := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	seedAvMdoc(t, c)
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+
+	cred := findMdocCredentialByDocType(t, creds, avDocType)
+	require.Contains(t, cred.CredentialInstanceIds, clientmodels.Format_MsoMdoc)
+
+	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
+
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+	for _, remaining := range creds {
+		require.NotEqual(t, avDocType, remaining.CredentialId,
+			"the deleted mdoc should no longer appear in the wallet")
+	}
+
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+
+	removalLog := findLog(logs, clientmodels.LogType_CredentialRemoval)
+	require.NotNil(t, removalLog, "removing an mdoc credential should create a removal log")
+	require.NotNil(t, removalLog.RemovalLog)
+	require.Len(t, removalLog.RemovalLog.Credentials, 1)
+
+	removed := removalLog.RemovalLog.Credentials[0]
+	require.Equal(t, avDocType, removed.CredentialId)
+	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc}, removed.Formats,
+		"the removal log must file the entry under mso_mdoc, which is what every format-keyed read depends on")
+
+	// The claim keeps the two-component [namespace, elementIdentifier] path.
+	// Flattening it to a bare element name would put the log at odds with the
+	// disclosure plan, which addresses mdoc claims by the qualified path.
+	requireAttrsInOrder(t, removed.Attributes, expectedAttr{
+		Path:  []any{avDocType, "age_over_18"},
+		Value: boolVal(true),
+	})
+	require.Nil(t, removed.Attributes[0].DisplayName,
+		"the AV profile publishes no claim display metadata, so the log carries no label")
+
+	// The batch timestamps come along; they are what dates the entry in the UI.
+	require.NotNil(t, removed.IssuanceDate, "removal log should carry the issuance date")
+	require.NotNil(t, removed.ExpiryDate, "removal log should carry the expiry date")
+
+	// A locale switch makes the log layer re-resolve its text, and the batch it
+	// would resolve against is now deleted. Removal logs snapshot their text, and
+	// an mdoc batch is the case with no credential display metadata to fall back
+	// on, so this is where a re-resolution that assumes the credential still
+	// exists would surface.
+	c.SetLocale("nl")
+	logs, err = c.LoadNewestLogs(100)
+	require.NoError(t, err)
+
+	removalLog = findLog(logs, clientmodels.LogType_CredentialRemoval)
+	require.NotNil(t, removalLog, "the removal log must survive the credential it describes")
+	require.Len(t, removalLog.RemovalLog.Credentials, 1)
+	require.Equal(t, avDocType, removalLog.RemovalLog.Credentials[0].CredentialId)
+	requireAttrsInOrder(t, removalLog.RemovalLog.Credentials[0].Attributes, expectedAttr{
+		Path:  []any{avDocType, "age_over_18"},
+		Value: boolVal(true),
+	})
 }
 
 // organizationClaimsJSON is the deeply nested structure used by OrganizationCredentialSdJwt.

@@ -8,6 +8,7 @@ import (
 	"encoding/asn1"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -168,6 +169,41 @@ type VerificationResult struct {
 	// callers (e.g. issuance-time storage of IssuedAt/ExpiresAt/NotBefore)
 	// don't need to re-decode the MSO themselves.
 	ValidityInfo ValidityInfo
+}
+
+// RequireElements checks that every element the verifier asked for is actually
+// present in a successful result, and must be called by any verifier that cares
+// which elements it receives.
+//
+// Nothing else in this package can do it. The digest check proves that each
+// element present is authentic, and deviceAuth proves the holder controls the
+// device key and signed this session — but neither covers *which* elements were
+// selected: the signature is over the session transcript and the docType, not
+// over the disclosed set. A holder can therefore drop an element and still
+// produce a document that passes every check here, so "Valid == true" answers
+// "is what I received genuine", never "did I receive what I asked for". A
+// verifier reading result.Attributes["age_over_18"] without this would see a
+// missing element as a zero value and, in the boolean case the AV profile uses,
+// read it as false rather than absent.
+//
+// Extra elements beyond those requested are not an error: they are authentic and
+// the holder is free to over-disclose, though a verifier minimising what it
+// receives may want to check for them separately.
+func (r VerificationResult) RequireElements(elements ...string) error {
+	if !r.Valid {
+		return fmt.Errorf("verification did not succeed: %s", r.Error)
+	}
+
+	var missing []string
+	for _, element := range elements {
+		if _, ok := r.Attributes[element]; !ok {
+			missing = append(missing, element)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("requested element(s) %s were not disclosed", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // verifyIssuerAuthAndMSO performs the format-wide trust checks shared by
