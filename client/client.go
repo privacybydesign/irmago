@@ -711,6 +711,9 @@ func setDeveloperModeOnClients(vciClient *openid4vci.Client, didValidator *openi
 	didValidator.SetAllowInsecureDidWeb(enabled)
 }
 
+// SetPreferences stores prefs and brings the developer mode relaxations in line
+// with it, in both directions. The trust models are rebuilt when the developer
+// mode preference changed, not on every preference write.
 func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
 	developerModeChanged := client.irmaClient.Preferences.DeveloperMode != prefs.DeveloperMode
 	client.irmaClient.SetPreferences(prefs)
