@@ -1,6 +1,7 @@
 package client
 
 import (
+	"crypto/x509"
 	"path/filepath"
 	"testing"
 
@@ -62,8 +63,12 @@ func TestDeveloperModeSurvivesRestart(t *testing.T) {
 	// First run: production-strict until developer mode is switched on.
 	first := newClient()
 	requireDeveloperModeApplied(t, first, false)
+	productionRoots := issuerRoots(first)
 	first.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 	requireDeveloperModeApplied(t, first, true)
+	developerRoots := issuerRoots(first)
+	require.False(t, productionRoots.Equal(developerRoots),
+		"switching developer mode on should add the staging trust anchors")
 	require.NoError(t, first.Close())
 
 	// Restart on the same storage. The preference is persisted, so the
@@ -72,6 +77,8 @@ func TestDeveloperModeSurvivesRestart(t *testing.T) {
 	defer second.Close()
 	require.True(t, second.GetPreferences().DeveloperMode)
 	requireDeveloperModeApplied(t, second, true)
+	require.True(t, developerRoots.Equal(issuerRoots(second)),
+		"the restarted client should come back up with the staging trust anchors loaded, not just the flag set")
 }
 
 // TestDeveloperModeSwitchedOffRevertsRelaxations covers the other direction:
@@ -81,17 +88,16 @@ func TestDeveloperModeSwitchedOffRevertsRelaxations(t *testing.T) {
 	client := newClientOnFreshStorage(t)()
 	defer client.Close()
 
-	conf := client.openid4vpClient.Configuration
-	productionRoots := conf.Issuers.GetVerificationOptionsTemplate().Roots
+	productionRoots := issuerRoots(client)
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 	requireDeveloperModeApplied(t, client, true)
-	require.False(t, productionRoots.Equal(conf.Issuers.GetVerificationOptionsTemplate().Roots),
+	require.False(t, productionRoots.Equal(issuerRoots(client)),
 		"switching developer mode on should add the staging trust anchors")
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: false})
 	requireDeveloperModeApplied(t, client, false)
-	require.True(t, productionRoots.Equal(conf.Issuers.GetVerificationOptionsTemplate().Roots),
+	require.True(t, productionRoots.Equal(issuerRoots(client)),
 		"switching developer mode off should drop the staging trust anchors")
 }
 
@@ -114,8 +120,18 @@ func newClientOnFreshStorage(t *testing.T) func() *Client {
 	}
 }
 
+// issuerRoots returns the issuer trust anchors the client validates against.
+// Configuration.Reload builds this pool, and reads the staging preference while
+// doing so, so unlike the developer mode flags it can only hold the staging
+// anchors if the preference was applied before that Reload ran.
+func issuerRoots(client *Client) *x509.CertPool {
+	return client.openid4vpClient.Configuration.Issuers.GetVerificationOptionsTemplate().Roots
+}
+
 // requireDeveloperModeApplied asserts each of the relaxations developer mode
-// makes, as observed from outside the client.
+// makes, as observed from outside the client. Every one of them is set by a
+// plain setter on both sides of the Reload in New, so these assertions cannot
+// witness that ordering on their own; compare issuerRoots for that.
 func requireDeveloperModeApplied(t *testing.T, client *Client, applied bool) {
 	t.Helper()
 
