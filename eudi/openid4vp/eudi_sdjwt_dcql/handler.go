@@ -854,7 +854,11 @@ func claimMatchesPath(path []any, values []any, payload *sdjwt.ProcessedPayload)
 	// Check if ANY element matches the remaining path after the null.
 	suffix := path[nullIdx+1:]
 	for i := range slice {
-		concretePath := make([]any, 0, len(prefix)+1+len(suffix))
+		// prefix, the index replacing the null, and suffix together are exactly as
+		// long as path, so that is the capacity — written as len(path) rather than
+		// summed from the two halves because the sum reads as arithmetic that could
+		// overflow, which CodeQL's go/allocation-size-overflow flags.
+		concretePath := make([]any, 0, len(path))
 		concretePath = append(concretePath, prefix...)
 		concretePath = append(concretePath, i)
 		concretePath = append(concretePath, suffix...)
@@ -1026,7 +1030,8 @@ func expandNullPaths(path []any, payload *sdjwt.ProcessedPayload) [][]any {
 	suffix := path[nullIdx+1:]
 	var result [][]any
 	for i := range slice {
-		concrete := make([]any, 0, len(prefix)+1+len(suffix))
+		// len(prefix) + 1 + len(suffix) == len(path); see claimMatchesPath.
+		concrete := make([]any, 0, len(path))
 		concrete = append(concrete, prefix...)
 		concrete = append(concrete, i)
 		concrete = append(concrete, suffix...)
