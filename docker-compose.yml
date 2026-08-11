@@ -460,7 +460,22 @@ services:
 
   # The three eudi_openid4vp* services below all run the EUDI reference verifier
   # (eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt, published
-  # as eudi-srv-verifier-endpoint after v0.6.5). Two settings they share need saying:
+  # as eudi-srv-verifier-endpoint after v0.6.5). Three settings they share need saying:
+  #
+  # JAVA_TOOL_OPTIONS and mem_limit: the image is built with Paketo buildpacks, whose
+  # memory calculator hardcodes -XX:MaxDirectMemorySize=10M. Netty 4.2 (as shipped in
+  # v0.11.0) allocates per-core buffer magazines that exhaust 10M under the load these
+  # tests generate, and the resulting OutOfDirectMemoryError leaves the counter pinned at
+  # the maximum: the service then accepts connections but answers none, forever, until it
+  # is restarted. The calculator leaves alone any flag already set here, so these override
+  # only the direct memory cap and the heap. The heap needs saying because the calculator
+  # sizes it off whatever memory it can see, which without a mem_limit is the host's: it
+  # handed each of these three JVMs a 3.4G heap for a job whose resident set is ~500M.
+  # The limit has to cover heap + direct + metaspace + code cache + 50 thread stacks, or
+  # the calculator refuses to start, which is why it is 1280m and not the 1g the resident
+  # set would suggest: metaspace and code cache reserve another ~380M on top of the heap.
+  # Verify both with the "Picked up JAVA_TOOL_OPTIONS" and "Calculated JVM Memory
+  # Configuration" start-up lines if this needs revisiting.
   #
   # VERIFIER_ACCESS_CERTIFICATE_SIGNING_ALGORITHM: the image ships ES512, but
   # verifier_cert in the keystore is P-256 and nimbus rejects the mismatch when it
@@ -474,12 +489,14 @@ services:
   eudi_openid4vp:
     image: ghcr.io/eu-digital-identity-wallet/eudi-srv-verifier-endpoint:v0.11.0
     container_name: eudi_openid4vp
+    mem_limit: 1280m
     ports:
       - "8089:8089"
     volumes:
       - ./testdata/eudi/verifier/keystore.p12:/keystore.p12
     environment:
       - SERVER_PORT=8089
+      - JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=256M -Xmx512m
       - VERIFIER_DEFAULTHTTPRESPONSEMODE=DirectPost
       - VERIFIER_ACCESS_CERTIFICATE_ALIAS=verifier_cert
       - VERIFIER_ACCESS_CERTIFICATE_SIGNING_ALGORITHM=ES256
@@ -496,12 +513,14 @@ services:
   eudi_openid4vp_jwt:
     image: ghcr.io/eu-digital-identity-wallet/eudi-srv-verifier-endpoint:v0.11.0
     container_name: eudi_openid4vp_jwt
+    mem_limit: 1280m
     ports:
       - "8090:8090"
     volumes:
       - ./testdata/eudi/verifier/keystore.p12:/keystore.p12
     environment:
       - SERVER_PORT=8090
+      - JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=256M -Xmx512m
       - VERIFIER_DEFAULTHTTPRESPONSEMODE=DirectPostJwt
       - VERIFIER_ACCESS_CERTIFICATE_ALIAS=verifier_cert
       - VERIFIER_ACCESS_CERTIFICATE_SIGNING_ALGORITHM=ES256
@@ -521,12 +540,14 @@ services:
   eudi_openid4vp_dcapi:
     image: ghcr.io/eu-digital-identity-wallet/eudi-srv-verifier-endpoint:v0.11.0
     container_name: eudi_openid4vp_dcapi
+    mem_limit: 1280m
     ports:
       - "8091:8091"
     volumes:
       - ./testdata/eudi/verifier/keystore.p12:/keystore.p12
     environment:
       - SERVER_PORT=8091
+      - JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=256M -Xmx512m
       # With the x509_hash prefix the client id is the base64url (no padding) SHA-256
       # hash of the DER encoded access certificate, and the verifier refuses to start
       # when it does not match. Recompute it after regenerating the keystore with:

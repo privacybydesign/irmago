@@ -7,12 +7,20 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // Helpers for driving the EUDI reference verifier (the eudi_openid4vp* services in
 // docker-compose.yml) over its management API. These speak to the verifier's own
 // /ui/presentations endpoints, which are not part of OpenID4VP: they are how that
 // service is started and queried from the outside.
+
+// eudiVerifierClient talks to the verifier's management API with a timeout, rather than
+// http.DefaultClient which has none. A verifier that accepts the connection but never
+// answers would otherwise hang the whole suite instead of failing one test: the service
+// gets into exactly that state when it exhausts its Netty direct memory, which is why
+// docker-compose.yml raises MaxDirectMemorySize for it.
+var eudiVerifierClient = &http.Client{Timeout: 15 * time.Second}
 
 // EudiVerifierSession holds the session link and transaction ID from starting a session at the EUDI verifier.
 type EudiVerifierSession struct {
@@ -23,7 +31,7 @@ type EudiVerifierSession struct {
 
 func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest string) (EudiVerifierSession, error) {
 	apiUrl := fmt.Sprintf("%s/ui/presentations", openid4vpHost)
-	response, err := http.Post(apiUrl,
+	response, err := eudiVerifierClient.Post(apiUrl,
 		"application/json",
 		bytes.NewReader([]byte(startSessionRequest)))
 
@@ -80,7 +88,7 @@ type EudiDcApiVerifierSession struct {
 // platform is expected to deliver to the wallet.
 func StartDcApiTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest string) (EudiDcApiVerifierSession, error) {
 	apiUrl := fmt.Sprintf("%s/ui/presentations/dc-api", openid4vpHost)
-	response, err := http.Post(apiUrl,
+	response, err := eudiVerifierClient.Post(apiUrl,
 		"application/json",
 		bytes.NewReader([]byte(startSessionRequest)))
 
@@ -140,7 +148,7 @@ func PostDcApiWalletResponseToEudiVerifier(session EudiDcApiVerifierSession, wal
 	}
 
 	apiUrl := fmt.Sprintf("%s/ui/presentations/%s/dc-api", session.Host, session.TransactionId)
-	response, err := http.Post(apiUrl,
+	response, err := eudiVerifierClient.Post(apiUrl,
 		"application/x-www-form-urlencoded",
 		bytes.NewReader([]byte(values.Encode())))
 
@@ -164,7 +172,7 @@ func PostDcApiWalletResponseToEudiVerifier(session EudiDcApiVerifierSession, wal
 // GetWalletResponseFromEudiVerifier fetches the wallet response (disclosed VP token) from the EUDI verifier.
 func GetWalletResponseFromEudiVerifier(session EudiVerifierSession) (map[string]any, error) {
 	apiUrl := fmt.Sprintf("%s/ui/presentations/%s", session.Host, session.TransactionId)
-	response, err := http.Get(apiUrl)
+	response, err := eudiVerifierClient.Get(apiUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wallet response from eudi verifier: %v", err)
 	}
