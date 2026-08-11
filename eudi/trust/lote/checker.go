@@ -164,12 +164,10 @@ func (c *Checker) Refresh(ctx context.Context) (int, error) {
 
 	var wg sync.WaitGroup
 	for i, source := range c.cfg.Sources {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			changed, err := c.refreshSource(ctx, source)
 			outcomes[i] = outcome{changed: changed, err: err}
-		}()
+		})
 	}
 	wg.Wait()
 
