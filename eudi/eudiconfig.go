@@ -63,6 +63,12 @@ func (c *Configuration) EnableStagingTrustAnchors() {
 	c.useStagingTrustAnchors = true
 }
 
+// UsesStagingTrustAnchors reports whether Reload also loads the staging trust
+// anchors on top of the production ones.
+func (c *Configuration) UsesStagingTrustAnchors() bool {
+	return c.useStagingTrustAnchors
+}
+
 func (c *Configuration) SetCertificateVerificationMode(mode CertificateVerificationMode) {
 	c.Issuers.SetCertificateVerificationMode(mode)
 	c.Verifiers.SetCertificateVerificationMode(mode)

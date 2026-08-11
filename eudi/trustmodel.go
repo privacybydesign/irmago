@@ -42,6 +42,10 @@ func (tm *TrustModel) SetCertificateVerificationMode(mode CertificateVerificatio
 	tm.certificateVerificationMode = mode
 }
 
+func (tm *TrustModel) GetCertificateVerificationMode() CertificateVerificationMode {
+	return tm.certificateVerificationMode
+}
+
 func (tm *TrustModel) clear() {
 	tm.allCerts = []*x509.Certificate{}
 	tm.trustedRootCertificates = x509.NewCertPool()
