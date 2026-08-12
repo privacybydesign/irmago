@@ -75,9 +75,13 @@ func NewClient(httpClient *http.Client,
 	}, nil
 }
 
-func (client *Client) AllowInsecureHttpForTesting() {
-	client.allowInsecureHttp = true
-	client.holderVerifier.SetAllowInsecureDidWeb(true)
+// SetAllowInsecureHttp selects whether plain-HTTP credential issuers, VCT URLs
+// and did:web issuers are accepted. Only developer mode should turn this on.
+// Sessions snapshot the setting when they start, so a session already running
+// keeps the value it began with.
+func (client *Client) SetAllowInsecureHttp(allow bool) {
+	client.allowInsecureHttp = allow
+	client.holderVerifier.SetAllowInsecureDidWeb(allow)
 }
 
 // NewSession starts an OpenID4VCI issuance session. `redirectUri` is the OAuth
