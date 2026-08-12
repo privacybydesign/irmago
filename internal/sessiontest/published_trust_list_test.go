@@ -50,8 +50,8 @@ const (
 	publishedListURL = "https://localhost:8446"
 
 	// publishedListId must equal the LOTE_LIST_ID the compose service declares:
-	// the wallet refuses a document whose list_identifier is not the one its
-	// source expects.
+	// the publisher puts it in the document's English SchemeName, and the wallet
+	// refuses a document whose SchemeName is not the one its source expects.
 	publishedListId = "urn:yivi:trustlist:sessiontest"
 
 	publishedLogoURI = publishedListURL + "/logo.png"
@@ -250,13 +250,13 @@ func listedVerifierEntity(t *testing.T, name string) map[string]any {
 	leaf := eudiVerifierLeaf(t)
 
 	return map[string]any{
-		"name":                    map[string]string{"en": name},
+		"name":                    name,
 		"logo_uri":                publishedLogoURI,
 		"organization_identifier": subjectOrganizationIdentifier(t, leaf),
 		"services": []map[string]any{{
-			"type":             "verifier",
-			"status":           "granted",
-			"digital_identity": map[string]any{"x509_ski": leaf.SubjectKeyId},
+			"role": "Verifier",
+			// []byte marshals to base64, which is what X509SKIs holds.
+			"ski": leaf.SubjectKeyId,
 		}},
 	}
 }
@@ -349,7 +349,12 @@ func newPublishedListClient(t *testing.T) (*client.Client, *irmaclient.MockClien
 func newPublishedListClientAt(t *testing.T, storagePath string) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	t.Helper()
 	return instantiateClientAtPath(t, storagePath, nil, "en", publisherRoot(t),
-		[]lote.Source{{ListId: publishedListId, URL: publishedListURL, Confers: clientmodels.TrustLevel_High}})
+		[]lote.Source{{
+			ListId:   publishedListId,
+			LoTEType: lote.LoTETypeRecognizedParties,
+			URL:      publishedListURL,
+			Confers:  clientmodels.TrustLevel_High,
+		}})
 }
 
 // publisherRoot reads the committed root the publisher's signing leaf chains to.
@@ -393,13 +398,12 @@ func darkenPublisher(t *testing.T) {
 // it signs its credentials with.
 func listedIssuerEntity(name string, markings ...string) map[string]any {
 	return map[string]any{
-		"name":     map[string]string{"en": name},
+		"name":     name,
 		"logo_uri": publishedLogoURI,
 		"services": []map[string]any{{
-			"type":             "issuer",
-			"status":           "granted",
-			"markings":         markings,
-			"digital_identity": map[string]any{"other_ids": []map[string]string{{"type": "did", "value": testIssuerDid}}},
+			"role":     "Issuer",
+			"did":      testIssuerDid,
+			"markings": markings,
 		}},
 	}
 }

@@ -19,11 +19,23 @@ import (
 // Source is one recognized list the wallet consults: where to get it, what it
 // must call itself, and what a grant on it is worth.
 type Source struct {
-	// ListId is the identifier the fetched document must declare in
-	// `scheme_information.list_identifier`. Binding the two stops one
-	// recognized list's document — correctly signed, just not this list — from
-	// being served in another's place.
+	// ListId is the identity the fetched document must declare as its English
+	// `SchemeName` (clause 6.3.6). Binding the two stops one recognized list's
+	// document — correctly signed, just not this list — from being served in
+	// another's place. Clause 6.3.6 makes SchemeName unique per scheme operator
+	// and prescribes its `CC:name` form, which is what makes it usable as an
+	// identity rather than only as a label.
 	ListId string
+
+	// LoTEType is the `LoTEType` URI (clause 6.3.3) the document must declare,
+	// pinned in addition to ListId. It names the *kind* of list, so it is shared
+	// by a scheme's staging and production lists and cannot identify either on
+	// its own — pinning both means neither a list of the wrong kind nor the
+	// wrong list of the right kind is accepted.
+	//
+	// Unset skips the check, for a source whose operator has not published a
+	// type URI.
+	LoTEType string
 
 	// URL is where the signed list is published.
 	URL string
@@ -128,9 +140,8 @@ func (c *Checker) loadPersisted() {
 				eudi.Logger.Warnf("lote: stored list %q no longer verifies, dropping it: %v", source.ListId, err)
 				continue
 			}
-			if verified.list.SchemeInformation.ListIdentifier != source.ListId {
-				eudi.Logger.Warnf("lote: stored list under %q declares %q, dropping it",
-					source.ListId, verified.list.SchemeInformation.ListIdentifier)
+			if err := declares(source, verified.list); err != nil {
+				eudi.Logger.Warnf("lote: stored list under %q %v, dropping it", source.ListId, err)
 				continue
 			}
 			c.held[source.ListId] = verified
@@ -187,6 +198,20 @@ func (c *Checker) Refresh(ctx context.Context) (bool, error) {
 	return changed, errors.Join(failures...)
 }
 
+// declares reports whether this document is the list this source publishes: the
+// identity it names, and the kind of list it claims to be. Stated once so the
+// load path and the refresh path cannot spell the same rule two ways.
+func declares(source Source, list *List) error {
+	if got := list.SchemeInformation.Identity(); got != source.ListId {
+		return fmt.Errorf("declares SchemeName %q, expected %q", got, source.ListId)
+	}
+	if source.LoTEType != "" && list.SchemeInformation.LoTEType != source.LoTEType {
+		return fmt.Errorf("declares LoTEType %q, expected %q",
+			list.SchemeInformation.LoTEType, source.LoTEType)
+	}
+	return nil
+}
+
 // refreshSource fetches one source and adopts the list if it holds up,
 // reporting whether the entries it carries differ from the ones the wallet held.
 func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error) {
@@ -202,8 +227,8 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 
 	// The document must be the list this source publishes, not another
 	// correctly signed one.
-	if got := verified.list.SchemeInformation.ListIdentifier; got != source.ListId {
-		return false, fmt.Errorf("declares list identifier %q, expected %q", got, source.ListId)
+	if err := declares(source, verified.list); err != nil {
+		return false, err
 	}
 
 	if !verified.current(c.cfg.Now()) {

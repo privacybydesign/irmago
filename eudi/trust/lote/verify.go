@@ -82,18 +82,26 @@ func verify(rawJws []byte, x509Context eudi_jwt.X509VerificationContext) (*verif
 		return nil, fmt.Errorf("validate signing certificate: %v", err)
 	}
 
-	var list List
-	if err := json.Unmarshal(payload, &list); err != nil {
+	// Annex A wraps the list in a single `LoTE` member, so the payload is the
+	// document rather than the list itself.
+	var document Document
+	if err := json.Unmarshal(payload, &document); err != nil {
 		return nil, fmt.Errorf("decode list: %v", err)
 	}
-	if list.SchemeInformation.ListIdentifier == "" {
-		return nil, fmt.Errorf("list is missing scheme_information.list_identifier")
+	list := document.LoTE
+
+	// SchemeName is this list's identity (clause 6.3.6), and the wallet stores
+	// and pins it, so a document that does not name itself is unusable rather
+	// than merely incomplete. Only the English entry is required: it is the one
+	// language clause 6.3.6 prescribes a format for.
+	if list.SchemeInformation.Identity() == "" {
+		return nil, fmt.Errorf("list is missing an English SchemeName entry")
 	}
 	if list.SchemeInformation.NextUpdate.IsZero() {
 		// Without it the wallet could not tell a current list from one that was
 		// signed years ago and captured, so a list that does not say when it
 		// stops being current is refused rather than treated as eternal.
-		return nil, fmt.Errorf("list is missing scheme_information.next_update")
+		return nil, fmt.Errorf("list is missing ListAndSchemeInformation.NextUpdate")
 	}
 
 	return &verifiedList{list: &list, rawJws: rawJws}, nil

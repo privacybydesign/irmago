@@ -124,7 +124,7 @@ func TestChecker_WithdrawnServiceIsNotGranted(t *testing.T) {
 	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	service := NewTestCertificateService(trust.RoleVerifier, party)
-	service.Status = ServiceStatusWithdrawn
+	service.Information.Status = ServiceStatusWithdrawn
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1, NewTestEntity("Former BV", "", service)))
 
 	require.Nil(t, f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party}))
@@ -232,10 +232,12 @@ func TestChecker_ServiceNameOverridesTheEntityName(t *testing.T) {
 	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	service := NewTestCertificateService(trust.RoleVerifier, party)
-	service.Name = clientmodels.TranslatedString{"en": "The Service"}
-	service.LogoURI = "https://example.com/service.png"
+	service.Information.Name = MultiLang{"en": "The Service"}
+	service.Information.Extensions = append(service.Information.Extensions,
+		YiviExtension{LogoURI: "https://example.com/service.png"})
 	entity := NewTestEntity("The Operator", "", service)
-	entity.LogoURI = "https://example.com/operator.png"
+	entity.Information.Extensions = append(entity.Information.Extensions,
+		YiviExtension{LogoURI: "https://example.com/operator.png"})
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1, entity))
 
 	listing := f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party})
@@ -453,7 +455,33 @@ func TestVerify_RejectsAListWithoutANextUpdate(t *testing.T) {
 
 	_, err := verify(signer.SignList(t, list), signer.X509VerificationContext())
 
-	require.ErrorContains(t, err, "next_update")
+	require.ErrorContains(t, err, "NextUpdate")
+}
+
+// A document that does not name itself cannot be stored or pinned, so it is
+// refused rather than treated as an anonymous list. Only the English SchemeName
+// counts: it is the one language clause 6.3.6 prescribes a format for.
+func TestVerify_RejectsAListWithoutAnEnglishSchemeName(t *testing.T) {
+	signer := NewTestLoteSigner(t)
+	list := NewTestList(testListId, 1)
+	list.SchemeInformation.SchemeName = MultiLang{"nl": "NL:Yivi Erkende Partijen"}
+
+	_, err := verify(signer.SignList(t, list), signer.X509VerificationContext())
+
+	require.ErrorContains(t, err, "SchemeName")
+}
+
+// The type URI is pinned alongside the identity, so a correctly signed list of
+// the wrong kind is refused even when it names itself as expected.
+func TestChecker_RejectsAListDeclaringAnotherLoTEType(t *testing.T) {
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
+	list := NewTestList(testListId, 1)
+	list.SchemeInformation.LoTEType = "https://yivi.app/19602/LoTEType/SomethingElse"
+	f.server.Serve(t, f.signer, list)
+
+	_, err := NewChecker(f.config).Refresh(context.Background())
+
+	require.ErrorContains(t, err, "LoTEType")
 }
 
 func TestVerify_RejectsWithoutAnAnchorSet(t *testing.T) {

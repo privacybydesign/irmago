@@ -119,8 +119,23 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	require.NoError(t, err, "the committed document must keep verifying")
 
 	scheme := verified.list.SchemeInformation
-	require.Equal(t, goldenListId, scheme.ListIdentifier)
+	require.Equal(t, goldenListId, scheme.Identity(), "SchemeName's English entry is the list's identity")
 	require.Equal(t, uint64(42), scheme.SequenceNumber)
+
+	// The scheme-explicit mandatory fields (Table 1). They are asserted here
+	// rather than only validated against the schema because this is the test that
+	// notices a JSON tag changing, and a renamed mandatory field is exactly the
+	// kind of break that would otherwise pass the whole suite.
+	require.Equal(t, LoTEVersion, scheme.LoTEVersionIdentifier)
+	require.Equal(t, LoTETypeRecognizedParties, scheme.LoTEType)
+	require.Equal(t, "Yivi Golden", scheme.SchemeOperatorName.Translated()["en"])
+	require.Equal(t, "NL", scheme.SchemeTerritory)
+	require.Equal(t, StatusDeterminationApproachYivi, scheme.StatusDeterminationApproach)
+	require.NotEmpty(t, scheme.SchemeInformationURI["en"])
+	require.NotEmpty(t, scheme.SchemeTypeCommunityRules["en"])
+	require.NotEmpty(t, scheme.SchemeOperatorAddress.PostalAddress)
+	require.NotEmpty(t, scheme.SchemeOperatorAddress.ElectronicAddress)
+	require.NotEmpty(t, scheme.PolicyOrLegalNotice)
 	// The timestamps are generation-relative, so the assertion is on their shape
 	// and relationship rather than on literal dates: both must have parsed out of
 	// RFC 3339 into real times, thirty days apart.
@@ -135,32 +150,46 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	require.Len(t, verified.list.Entities, 4)
 
 	// Every field of the first entity, because these are the names on the wire.
-	party := verified.list.Entities[0]
-	require.Equal(t, "VATNL-000000001", party.OrganizationIdentifier)
-	require.Equal(t, clientmodels.TranslatedString{"en": "Gemeente Voorbeeld", "nl": "Gemeente Voorbeeld"}, party.Name)
-	require.Equal(t, "https://trustlist.example/logos/voorbeeld.png", party.LogoURI)
-	require.Len(t, party.Services, 1)
+	party := verified.list.Entities[0].Information
+	require.Equal(t, "VATNL-000000001", party.OrganizationIdentifier())
+	require.Equal(t, clientmodels.TranslatedString{"en": "Gemeente Voorbeeld", "nl": "Gemeente Voorbeeld"},
+		party.Name.Translated())
+	require.Equal(t, "https://trustlist.example/logos/voorbeeld.png", party.LogoURI())
 
-	service := party.Services[0]
-	require.Equal(t, trust.RoleVerifier, service.Type)
+	// TEAddress and TEInformationURI are mandatory (clause 6.5.0), so a document
+	// that omits them is non-conformant even though the wallet never reads them.
+	require.NotEmpty(t, party.Address.PostalAddress, "TEAddress requires a postal address")
+	require.NotEmpty(t, party.Address.ElectronicAddress, "TEAddress requires an electronic address")
+	require.Equal(t, "NL", party.Address.PostalAddress[0].Country)
+	require.NotEmpty(t, party.InformationURI["en"])
+	require.Len(t, verified.list.Entities[0].Services, 1)
+
+	service := verified.list.Entities[0].Services[0].Information
+	require.Equal(t, ServiceTypeVerifier, service.Type)
+	role, ok := service.Type.Role()
+	require.True(t, ok, "the service type URI must map to a ladder role")
+	require.Equal(t, trust.RoleVerifier, role)
 	require.Equal(t, ServiceStatusGranted, service.Status)
-	require.Equal(t, goldenPartyCertificate(t).Raw, service.DigitalIdentity.X509Certificate,
-		"the certificate key form carries the DER")
-	require.Contains(t, service.Markings, "onboarded-by-yivi",
+	require.NotEmpty(t, service.Name, "ServiceName is mandatory (clause 6.6.0)")
+	require.Len(t, service.DigitalIdentity.X509Certificates, 1)
+	require.Equal(t, goldenPartyCertificate(t).Raw, service.DigitalIdentity.X509Certificates[0].Val,
+		"the certificate key form carries the DER in the pkiOb's val")
+	require.Contains(t, service.Markings(), "onboarded-by-yivi",
 		"markings must survive parsing; the wallet carries them without acting on them")
 
 	// The SKI key form, the service-level overrides, and markings that must
 	// survive parsing without being acted on.
-	skiService := verified.list.Entities[1].Services[0]
-	require.Equal(t, goldenPartyCertificate(t).SubjectKeyId, skiService.DigitalIdentity.X509SKI)
-	require.Equal(t, clientmodels.TranslatedString{"en": "Voorbeeld Diplomas"}, skiService.Name)
-	require.Equal(t, "https://trustlist.example/logos/diplomas.png", skiService.LogoURI)
-	require.Contains(t, skiService.Markings, "some-future-qualifier")
+	skiService := verified.list.Entities[1].Services[0].Information
+	require.Equal(t, [][]byte{goldenPartyCertificate(t).SubjectKeyId}, skiService.DigitalIdentity.X509SKIs)
+	require.Equal(t, clientmodels.TranslatedString{"en": "Voorbeeld Diplomas"}, skiService.Name.Translated())
+	require.Equal(t, "https://trustlist.example/logos/diplomas.png", skiService.LogoURI())
+	require.Contains(t, skiService.Markings(), "some-future-qualifier")
 
-	// The DID convention, and a withdrawal that is listed but grants nothing.
-	didService := verified.list.Entities[2].Services[0]
-	require.Equal(t, []OtherId{{Type: OtherIdTypeDid, Value: goldenDid}}, didService.DigitalIdentity.OtherIds)
-	require.Equal(t, ServiceStatusWithdrawn, verified.list.Entities[3].Services[0].Status)
+	// The DID convention — a bare string under Annex A, not a {type,value} pair —
+	// and a withdrawal that is listed but grants nothing.
+	didService := verified.list.Entities[2].Services[0].Information
+	require.Equal(t, []string{goldenDid}, didService.DigitalIdentity.OtherIds)
+	require.Equal(t, ServiceStatusWithdrawn, verified.list.Entities[3].Services[0].Information.Status)
 }
 
 // TestGoldenReadableCopyMatchesTheSignedOne keeps golden/list.json honest: it is
@@ -173,9 +202,9 @@ func TestGoldenReadableCopyMatchesTheSignedOne(t *testing.T) {
 	readable, err := os.ReadFile(filepath.Join(goldenDir(t), "list.json"))
 	require.NoError(t, err)
 
-	var fromReadable List
+	var fromReadable Document
 	require.NoError(t, json.Unmarshal(readable, &fromReadable))
-	require.Equal(t, *verified.list, fromReadable,
+	require.Equal(t, *verified.list, fromReadable.LoTE,
 		"golden/list.json must be the same list as golden/list.jws; re-run mkgolden.sh")
 }
 
@@ -187,7 +216,12 @@ func TestGoldenDocumentGrantsThroughTheChecker(t *testing.T) {
 	require.NoError(t, store.Put(goldenListId, goldenRaw(t)))
 
 	checker := NewChecker(Config{
-		Sources:     []Source{{ListId: goldenListId, URL: "http://unused.example", Confers: clientmodels.TrustLevel_High}},
+		Sources: []Source{{
+			ListId:   goldenListId,
+			LoTEType: LoTETypeRecognizedParties,
+			URL:      "http://unused.example",
+			Confers:  clientmodels.TrustLevel_High,
+		}},
 		X509Context: goldenAnchors(t),
 		Store:       store,
 		Now:         func() time.Time { return goldenTime(t) },

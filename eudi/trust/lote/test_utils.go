@@ -108,7 +108,9 @@ func (s *TestLoteSigner) SignList(t *testing.T, list List) []byte {
 func (s *TestLoteSigner) SignListWithTyp(t *testing.T, list List, typ string) []byte {
 	t.Helper()
 
-	payload, err := json.Marshal(list)
+	// Annex A wraps the list in a `LoTE` member; the signed payload is the whole
+	// document, not the list.
+	payload, err := json.Marshal(Document{LoTE: list})
 	require.NoError(t, err)
 
 	chain := &cert.Chain{}
@@ -171,12 +173,46 @@ func (s *TestLoteSigner) NewTestPartyCertificate(t *testing.T, commonName, organ
 
 // NewTestList builds a list with a NextUpdate a day out, so a test that does
 // not care about expiry gets a current one.
+//
+// Every field Annex A makes mandatory for scheme-explicit information is filled
+// with a workable default, so a test that cares about entities does not have to
+// invent a postal address and a policy URI to get a conformant document. listId
+// becomes the English SchemeName, which is the identity the wallet pins.
+//
+// The listIds the suite passes are not in clause 6.3.6's prescribed `CC:name`
+// form, deliberately: the wallet compares SchemeName against what its source is
+// configured with and does not police the format. Validating it is the
+// publisher's job, at build time.
 func NewTestList(listId string, sequenceNumber uint64, entities ...Entity) List {
 	now := time.Now().UTC()
 	return List{
 		SchemeInformation: SchemeInformation{
-			ListIdentifier:    listId,
-			SequenceNumber:    sequenceNumber,
+			LoTEVersionIdentifier: LoTEVersion,
+			SequenceNumber:        sequenceNumber,
+			LoTEType:              LoTETypeRecognizedParties,
+			SchemeOperatorName:    MultiLang{"en": "Yivi Test"},
+			SchemeOperatorAddress: SchemeOperatorAddress{
+				PostalAddress: []PostalAddress{{
+					Lang:          "en",
+					StreetAddress: "Testlaan 1",
+					Locality:      "Utrecht",
+					PostalCode:    "3512 AA",
+					Country:       "NL",
+				}},
+				ElectronicAddress: []MultiLangURIEntry{{
+					Lang: "en", URIValue: "mailto:trustlist@yivi.test",
+				}},
+			},
+			SchemeName:                  MultiLang{"en": listId},
+			SchemeInformationURI:        MultiLangURI{"en": "https://yivi.test/trustlist"},
+			StatusDeterminationApproach: StatusDeterminationApproachYivi,
+			SchemeTypeCommunityRules:    MultiLangURI{"en": SchemeTypeCommunityRulesYivi},
+			SchemeTerritory:             "NL",
+			PolicyOrLegalNotice: []PolicyOrLegalNotice{{
+				LoTEPolicy: &MultiLangURIEntry{
+					Lang: "en", URIValue: "https://yivi.test/trustlist/policy",
+				},
+			}},
 			ListIssueDateTime: now,
 			NextUpdate:        now.Add(24 * time.Hour),
 		},
@@ -184,44 +220,82 @@ func NewTestList(listId string, sequenceNumber uint64, entities ...Entity) List 
 	}
 }
 
-// NewTestEntity builds a granted entity with the given services.
+// NewTestEntity builds a granted entity with the given services, filling the
+// mandatory TEAddress and TEInformationURI with defaults.
+//
+// A service that names itself keeps its own name; one that does not inherits the
+// entity's. ServiceName is mandatory in Annex A, so something has to fill it, and
+// inheriting is both what the publisher will do and what keeps the service-level
+// name an *override* rather than a required restatement.
 func NewTestEntity(name, organizationIdentifier string, services ...Service) Entity {
-	return Entity{
-		OrganizationIdentifier: organizationIdentifier,
-		Name:                   clientmodels.TranslatedString{"en": name, "nl": name},
-		Services:               services,
+	info := EntityInformation{
+		Name: MultiLang{"en": name, "nl": name},
+		Address: TEAddress{
+			PostalAddress: []PostalAddress{{
+				Lang:          "en",
+				StreetAddress: "Voorbeeldweg 1",
+				Locality:      "Utrecht",
+				PostalCode:    "3512 AA",
+				Country:       "NL",
+			}},
+			ElectronicAddress: []MultiLangURIEntry{{
+				Lang: "en", URIValue: "mailto:info@voorbeeld.test",
+			}},
+		},
+		InformationURI: MultiLangURI{"en": "https://voorbeeld.test/about"},
 	}
+	if organizationIdentifier != "" {
+		info.Extensions = append(info.Extensions, YiviExtension{
+			OrganizationIdentifier: organizationIdentifier,
+		})
+	}
+
+	// Copied rather than mutated in place: the variadic slice may be the
+	// caller's own, and a builder that renamed the caller's services would be a
+	// nasty thing to debug.
+	owned := make([]Service, len(services))
+	copy(owned, services)
+	for i := range owned {
+		if len(owned[i].Information.Name) == 0 {
+			owned[i].Information.Name = MultiLang{"en": name, "nl": name}
+		}
+	}
+
+	return Entity{Information: info, Services: owned}
 }
 
 // NewTestCertificateService builds a granted service keyed on a certificate.
 func NewTestCertificateService(serviceType trust.Role, partyCert *x509.Certificate, markings ...string) Service {
-	return Service{
-		Type:            serviceType,
-		Status:          ServiceStatusGranted,
-		DigitalIdentity: DigitalIdentity{X509Certificate: partyCert.Raw},
-		Markings:        markings,
-	}
+	return newTestService(serviceType, DigitalIdentity{
+		X509Certificates: []PKIObject{{Val: partyCert.Raw}},
+	}, markings...)
 }
 
 // NewTestSkiService builds a granted service keyed on a certificate's subject
 // key identifier rather than on the certificate itself.
 func NewTestSkiService(serviceType trust.Role, partyCert *x509.Certificate, markings ...string) Service {
-	return Service{
-		Type:            serviceType,
-		Status:          ServiceStatusGranted,
-		DigitalIdentity: DigitalIdentity{X509SKI: partyCert.SubjectKeyId},
-		Markings:        markings,
-	}
+	return newTestService(serviceType, DigitalIdentity{
+		X509SKIs: [][]byte{partyCert.SubjectKeyId},
+	}, markings...)
 }
 
 // NewTestDidService builds a granted service keyed on a DID.
 func NewTestDidService(serviceType trust.Role, did string, markings ...string) Service {
-	return Service{
-		Type:            serviceType,
+	return newTestService(serviceType, DigitalIdentity{OtherIds: []string{did}}, markings...)
+}
+
+// newTestService builds a granted service, leaving ServiceName unset so
+// NewTestEntity can fill it from the entity.
+func newTestService(serviceType trust.Role, identity DigitalIdentity, markings ...string) Service {
+	info := ServiceInformation{
+		DigitalIdentity: identity,
+		Type:            ServiceTypeForRole(serviceType),
 		Status:          ServiceStatusGranted,
-		DigitalIdentity: DigitalIdentity{OtherIds: []OtherId{{Type: OtherIdTypeDid, Value: did}}},
-		Markings:        markings,
 	}
+	for _, marking := range markings {
+		info.Extensions = append(info.Extensions, YiviExtension{Marking: marking})
+	}
+	return Service{Information: info}
 }
 
 // TestLoteServer is a mutable httptest server publishing one LoTE. What it
@@ -263,8 +337,17 @@ func (s *TestLoteServer) URL() string { return s.server.URL }
 // identifier, conferring the given level — TrustLevel_High for a fixture
 // standing in for Yivi's own list, TrustLevel_Medium for any other
 // recognized list.
+//
+// LoTEType is pinned to what NewTestList emits, so the type check is exercised
+// by every test that goes through this server rather than only by the tests
+// written for it.
 func (s *TestLoteServer) Source(listId string, confers clientmodels.TrustLevel) Source {
-	return Source{ListId: listId, URL: s.URL(), Confers: confers}
+	return Source{
+		ListId:   listId,
+		LoTEType: LoTETypeRecognizedParties,
+		URL:      s.URL(),
+		Confers:  confers,
+	}
 }
 
 // Serve signs list with signer and serves it on subsequent requests.

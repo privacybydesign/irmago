@@ -1,89 +1,303 @@
 {
-  "entities": [
-    {
-      "logo_uri": "https://trustlist.example/logos/voorbeeld.png",
-      "name": {
-        "en": "Gemeente Voorbeeld",
-        "nl": "Gemeente Voorbeeld"
-      },
-      "organization_identifier": "VATNL-000000001",
-      "services": [
+  "LoTE": {
+    "ListAndSchemeInformation": {
+      "ListIssueDateTime": "2026-08-12T09:35:13Z",
+      "LoTESequenceNumber": 42,
+      "LoTEType": "https://yivi.app/19602/LoTEType/YiviRecognizedPartiesList",
+      "LoTEVersionIdentifier": 1,
+      "NextUpdate": "2026-09-11T09:35:13Z",
+      "PolicyOrLegalNotice": [
         {
-          "digital_identity": {
-            "x509_certificate": "MIICCjCCAa+gAwIBAgIUdDgW9QQX8IL0PgV/GdbKZkkaavYwCgYIKoZIzj0EAwIwQTELMAkGA1UEBhMCTkwxEjAQBgNVBAoMCVlpdmkgVGVzdDEeMBwGA1UEAwwVWWl2aSBHb2xkZW4gTG9URSBSb290MB4XDTI2MDgwNDEyNDE0NVoXDTM2MDgwMTEyNDE0NVowaTELMAkGA1UEBhMCTkwxGzAZBgNVBAoMEkdlbWVlbnRlIFZvb3JiZWVsZDEjMCEGA1UEAwwadmVyaWZpZXIudm9vcmJlZWxkLmV4YW1wbGUxGDAWBgNVBGEMD1ZBVE5MLTAwMDAwMDAwMTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABFmdBw81kCfl/qVuFvOCDYst+IOq6pUp8+e78KD2pCtbRZe/8J2ufpvEnwc74PaE3G4zV/U/HxiGLzLG91ibGVKjXTBbMAsGA1UdDwQEAwIHgDAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBQHR4XkjRf/VKTNGyNWyj1Zatr87TAfBgNVHSMEGDAWgBTke2oYoU7l6pztuMbdn0TaFyYDBjAKBggqhkjOPQQDAgNJADBGAiEAwO0aJ7s6gwLBMVA+0bVEmioCKuyf/74WOQWjsmqhAN0CIQD7f2My+qnJHGRknw5/molbMlz1JgQekfr4bo9f5C7GsA=="
-          },
-          "markings": [
-            "onboarded-by-yivi"
-          ],
-          "status": "granted",
-          "type": "verifier"
+          "LoTEPolicy": {
+            "lang": "en",
+            "uriValue": "https://yivi.test/trustlist/policy"
+          }
         }
-      ]
-    },
-    {
-      "name": {
-        "en": "Voorbeeld Issuing BV"
-      },
-      "services": [
+      ],
+      "SchemeInformationURI": [
         {
-          "digital_identity": {
-            "x509_ski": "B0eF5I0X/1SkzRsjVso9WWra/O0="
-          },
-          "logo_uri": "https://trustlist.example/logos/diplomas.png",
-          "markings": [
-            "some-future-qualifier"
-          ],
-          "name": {
-            "en": "Voorbeeld Diplomas"
-          },
-          "status": "granted",
-          "type": "issuer"
+          "lang": "en",
+          "uriValue": "https://yivi.test/trustlist"
         }
-      ]
-    },
-    {
-      "name": {
-        "en": "DID Verifier BV"
-      },
-      "services": [
+      ],
+      "SchemeName": [
         {
-          "digital_identity": {
-            "other_ids": [
+          "lang": "en",
+          "value": "urn:yivi:trustlist:golden"
+        }
+      ],
+      "SchemeOperatorAddress": {
+        "SchemeOperatorElectronicAddress": [
+          {
+            "lang": "en",
+            "uriValue": "mailto:trustlist@yivi.test"
+          }
+        ],
+        "SchemeOperatorPostalAddress": [
+          {
+            "Country": "NL",
+            "Locality": "Utrecht",
+            "PostalCode": "3512 AA",
+            "StreetAddress": "Testlaan 1",
+            "lang": "en"
+          }
+        ]
+      },
+      "SchemeOperatorName": [
+        {
+          "lang": "en",
+          "value": "Yivi Golden"
+        }
+      ],
+      "SchemeTerritory": "NL",
+      "SchemeTypeCommunityRules": [
+        {
+          "lang": "en",
+          "uriValue": "https://yivi.app/19602/YiviRecognizedParties/schemerules/Yivi"
+        }
+      ],
+      "StatusDeterminationApproach": "https://yivi.app/19602/YiviRecognizedPartiesList/StatusDetn/Yivi"
+    },
+    "TrustedEntitiesList": [
+      {
+        "TrustedEntityInformation": {
+          "TEAddress": {
+            "TEElectronicAddress": [
               {
-                "type": "did",
-                "value": "did:web:verifier.example.com"
+                "lang": "en",
+                "uriValue": "mailto:info@voorbeeld.test"
+              }
+            ],
+            "TEPostalAddress": [
+              {
+                "Country": "NL",
+                "Locality": "Utrecht",
+                "PostalCode": "3512 AA",
+                "StreetAddress": "Voorbeeldweg 1",
+                "lang": "en"
               }
             ]
           },
-          "status": "granted",
-          "type": "verifier"
-        }
-      ]
-    },
-    {
-      "name": {
-        "en": "Withdrawn BV"
+          "TEInformationExtensions": [
+            {
+              "YiviOrganizationIdentifier": "VATNL-000000001"
+            },
+            {
+              "YiviLogoURI": "https://trustlist.example/logos/voorbeeld.png"
+            }
+          ],
+          "TEInformationURI": [
+            {
+              "lang": "en",
+              "uriValue": "https://voorbeeld.test/about"
+            }
+          ],
+          "TEName": [
+            {
+              "lang": "en",
+              "value": "Gemeente Voorbeeld"
+            },
+            {
+              "lang": "nl",
+              "value": "Gemeente Voorbeeld"
+            }
+          ]
+        },
+        "TrustedEntityServices": [
+          {
+            "ServiceInformation": {
+              "ServiceDigitalIdentity": {
+                "X509Certificates": [
+                  {
+                    "val": "MIICCjCCAbGgAwIBAgIUNqPT/bj4iYfEUw+Lnc9limZjUi4wCgYIKoZIzj0EAwIwQzELMAkGA1UEBhMCTkwxFDASBgNVBAoMC1lpdmkgR29sZGVuMR4wHAYDVQQDDBVZaXZpIEdvbGRlbiBMb1RFIFJvb3QwHhcNMjYwODEyMDkzNTEzWhcNMzYwODA5MDkzNTEzWjBpMQswCQYDVQQGEwJOTDEbMBkGA1UECgwSR2VtZWVudGUgVm9vcmJlZWxkMSMwIQYDVQQDDBp2ZXJpZmllci52b29yYmVlbGQuZXhhbXBsZTEYMBYGA1UEYQwPVkFUTkwtMDAwMDAwMDAxMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENtCMUhMZIcTCCopObwL7Ky+kfzL8FR1GDsNXQ0by1/3sy9ZbMelWlAbX+mtQ27JsixCh2byMOMbOFeoCZilUH6NdMFswCwYDVR0PBAQDAgeAMAwGA1UdEwEB/wQCMAAwHQYDVR0OBBYEFGe4Q6/cBENQBBWAFEtPXdDnI5w5MB8GA1UdIwQYMBaAFOF8xRJJir3oSZ+n09mw7CO1ElaHMAoGCCqGSM49BAMCA0cAMEQCICKme/TxZUcFNwDg9QlUBVP7B7vY6LSx1ZMnZ4x0O/BrAiB6SzsAw5c3y/2lyin7GUu/yK7NAxbMjmYay/LwsyXT4A=="
+                  }
+                ]
+              },
+              "ServiceInformationExtensions": [
+                {
+                  "YiviMarking": "onboarded-by-yivi"
+                }
+              ],
+              "ServiceName": [
+                {
+                  "lang": "en",
+                  "value": "Gemeente Voorbeeld"
+                },
+                {
+                  "lang": "nl",
+                  "value": "Gemeente Voorbeeld"
+                }
+              ],
+              "ServiceStatus": "https://yivi.app/19602/Svcstatus/Granted",
+              "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/Verifier"
+            }
+          }
+        ]
       },
-      "services": [
-        {
-          "digital_identity": {
-            "other_ids": [
+      {
+        "TrustedEntityInformation": {
+          "TEAddress": {
+            "TEElectronicAddress": [
               {
-                "type": "did",
-                "value": "did:web:withdrawn.example.com"
+                "lang": "en",
+                "uriValue": "mailto:info@voorbeeld.test"
+              }
+            ],
+            "TEPostalAddress": [
+              {
+                "Country": "NL",
+                "Locality": "Utrecht",
+                "PostalCode": "3512 AA",
+                "StreetAddress": "Voorbeeldweg 1",
+                "lang": "en"
               }
             ]
           },
-          "status": "withdrawn",
-          "type": "issuer"
-        }
-      ]
-    }
-  ],
-  "scheme_information": {
-    "list_identifier": "urn:yivi:trustlist:golden",
-    "list_issue_date_time": "2026-08-04T12:41:45Z",
-    "next_update": "2026-09-03T12:41:45Z",
-    "sequence_number": 42
+          "TEInformationURI": [
+            {
+              "lang": "en",
+              "uriValue": "https://voorbeeld.test/about"
+            }
+          ],
+          "TEName": [
+            {
+              "lang": "en",
+              "value": "Voorbeeld Issuing BV"
+            }
+          ]
+        },
+        "TrustedEntityServices": [
+          {
+            "ServiceInformation": {
+              "ServiceDigitalIdentity": {
+                "X509SKIs": [
+                  "Z7hDr9wEQ1AEFYAUS09d0OcjnDk="
+                ]
+              },
+              "ServiceInformationExtensions": [
+                {
+                  "YiviLogoURI": "https://trustlist.example/logos/diplomas.png"
+                },
+                {
+                  "YiviMarking": "some-future-qualifier"
+                }
+              ],
+              "ServiceName": [
+                {
+                  "lang": "en",
+                  "value": "Voorbeeld Diplomas"
+                }
+              ],
+              "ServiceStatus": "https://yivi.app/19602/Svcstatus/Granted",
+              "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/Issuer"
+            }
+          }
+        ]
+      },
+      {
+        "TrustedEntityInformation": {
+          "TEAddress": {
+            "TEElectronicAddress": [
+              {
+                "lang": "en",
+                "uriValue": "mailto:info@voorbeeld.test"
+              }
+            ],
+            "TEPostalAddress": [
+              {
+                "Country": "NL",
+                "Locality": "Utrecht",
+                "PostalCode": "3512 AA",
+                "StreetAddress": "Voorbeeldweg 1",
+                "lang": "en"
+              }
+            ]
+          },
+          "TEInformationURI": [
+            {
+              "lang": "en",
+              "uriValue": "https://voorbeeld.test/about"
+            }
+          ],
+          "TEName": [
+            {
+              "lang": "en",
+              "value": "DID Verifier BV"
+            }
+          ]
+        },
+        "TrustedEntityServices": [
+          {
+            "ServiceInformation": {
+              "ServiceDigitalIdentity": {
+                "OtherIds": [
+                  "did:web:verifier.example.com"
+                ]
+              },
+              "ServiceName": [
+                {
+                  "lang": "en",
+                  "value": "DID Verifier BV"
+                }
+              ],
+              "ServiceStatus": "https://yivi.app/19602/Svcstatus/Granted",
+              "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/Verifier"
+            }
+          }
+        ]
+      },
+      {
+        "TrustedEntityInformation": {
+          "TEAddress": {
+            "TEElectronicAddress": [
+              {
+                "lang": "en",
+                "uriValue": "mailto:info@voorbeeld.test"
+              }
+            ],
+            "TEPostalAddress": [
+              {
+                "Country": "NL",
+                "Locality": "Utrecht",
+                "PostalCode": "3512 AA",
+                "StreetAddress": "Voorbeeldweg 1",
+                "lang": "en"
+              }
+            ]
+          },
+          "TEInformationURI": [
+            {
+              "lang": "en",
+              "uriValue": "https://voorbeeld.test/about"
+            }
+          ],
+          "TEName": [
+            {
+              "lang": "en",
+              "value": "Withdrawn BV"
+            }
+          ]
+        },
+        "TrustedEntityServices": [
+          {
+            "ServiceInformation": {
+              "ServiceDigitalIdentity": {
+                "OtherIds": [
+                  "did:web:withdrawn.example.com"
+                ]
+              },
+              "ServiceName": [
+                {
+                  "lang": "en",
+                  "value": "Withdrawn BV"
+                }
+              ],
+              "ServiceStatus": "https://yivi.app/19602/Svcstatus/Withdrawn",
+              "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/Issuer"
+            }
+          }
+        ]
+      }
+    ]
   }
 }

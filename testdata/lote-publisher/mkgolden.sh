@@ -25,11 +25,11 @@ cd golden/certs
 # --- the golden signing chain -------------------------------------------------
 openssl ecparam -name prime256v1 -genkey -noout -out root.key
 openssl req -x509 -new -key root.key -sha256 -days 3650 -out root.crt \
-  -subj "/C=NL/O=Yivi Test/CN=Yivi Golden LoTE Root"
+  -subj "/C=NL/O=Yivi Golden/CN=Yivi Golden LoTE Root"
 
 openssl ecparam -name prime256v1 -genkey -noout -out signer.key
 openssl req -new -key signer.key -out signer.csr \
-  -subj "/C=NL/O=Yivi Test/CN=Yivi Golden LoTE Signer"
+  -subj "/C=NL/O=Yivi Golden/CN=Yivi Golden LoTE Signer"
 printf 'keyUsage = digitalSignature\nbasicConstraints = critical, CA:FALSE\nsubjectKeyIdentifier = hash\n' > ext.cfg
 openssl x509 -req -in signer.csr -CA root.crt -CAkey root.key -CAcreateserial \
   -out signer.crt -days 3650 -sha256 -extfile ext.cfg
@@ -68,79 +68,76 @@ party_ski = base64.b64encode(
     )
 ).decode()
 
-# Every shape the wallet understands, in one document: both certificate key
-# forms, a DID, a marking, a withdrawal, service-level overrides, an unknown
+# Every shape the wallet understands, in one Annex A document: both certificate
+# key forms, a DID, a marking, a withdrawal, service-level overrides, an unknown
 # marking that must be carried and ignored, and multilingual names.
+#
+# Built through publish.py's own entity()/service() helpers rather than spelled
+# out, so the golden document and the E2E publisher cannot disagree about what
+# Annex A looks like.
 list_document = {
-    "scheme_information": {
-        "list_identifier": "urn:yivi:trustlist:golden",
-        "sequence_number": 42,
+    "LoTE": {
         # Relative to generation time: the window has to contain a moment after
         # the signing certificate's notBefore for the test's pinned clock to
         # satisfy both.
-        "list_issue_date_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "next_update": time.strftime(
-            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 30 * 86400)
+        "ListAndSchemeInformation": publish.scheme_information(
+            sequence_number=42,
+            next_update_seconds=30 * 86400,
+            operator="Yivi Golden",
         ),
-    },
-    "entities": [
-        {
-            "organization_identifier": "VATNL-000000001",
-            "name": {"en": "Gemeente Voorbeeld", "nl": "Gemeente Voorbeeld"},
-            "logo_uri": "https://trustlist.example/logos/voorbeeld.png",
-            "services": [
-                {
-                    "type": "verifier",
-                    "status": "granted",
-                    "digital_identity": {
-                        "x509_certificate": base64.b64encode(party_der).decode()
-                    },
-                    "markings": ["onboarded-by-yivi"],
-                }
-            ],
-        },
-        {
-            "name": {"en": "Voorbeeld Issuing BV"},
-            "services": [
-                {
-                    "type": "issuer",
-                    "status": "granted",
-                    "digital_identity": {"x509_ski": party_ski},
-                    "name": {"en": "Voorbeeld Diplomas"},
-                    "logo_uri": "https://trustlist.example/logos/diplomas.png",
-                    "markings": ["some-future-qualifier"],
-                }
-            ],
-        },
-        {
-            "name": {"en": "DID Verifier BV"},
-            "services": [
-                {
-                    "type": "verifier",
-                    "status": "granted",
-                    "digital_identity": {
-                        "other_ids": [
-                            {"type": "did", "value": "did:web:verifier.example.com"}
-                        ]
-                    },
-                }
-            ],
-        },
-        {
-            "name": {"en": "Withdrawn BV"},
-            "services": [
-                {
-                    "type": "issuer",
-                    "status": "withdrawn",
-                    "digital_identity": {
-                        "other_ids": [
-                            {"type": "did", "value": "did:web:withdrawn.example.com"}
-                        ]
-                    },
-                }
-            ],
-        },
-    ],
+        "TrustedEntitiesList": [
+            publish.entity(
+                name={"en": "Gemeente Voorbeeld", "nl": "Gemeente Voorbeeld"},
+                organization_identifier="VATNL-000000001",
+                logo_uri="https://trustlist.example/logos/voorbeeld.png",
+                services=[
+                    publish.service(
+                        role="Verifier",
+                        identity={
+                            "X509Certificates": [
+                                {"val": base64.b64encode(party_der).decode()}
+                            ]
+                        },
+                        name={"en": "Gemeente Voorbeeld", "nl": "Gemeente Voorbeeld"},
+                        markings=["onboarded-by-yivi"],
+                    )
+                ],
+            ),
+            publish.entity(
+                name={"en": "Voorbeeld Issuing BV"},
+                services=[
+                    publish.service(
+                        role="Issuer",
+                        identity={"X509SKIs": [party_ski]},
+                        name={"en": "Voorbeeld Diplomas"},
+                        logo_uri="https://trustlist.example/logos/diplomas.png",
+                        markings=["some-future-qualifier"],
+                    )
+                ],
+            ),
+            publish.entity(
+                name={"en": "DID Verifier BV"},
+                services=[
+                    publish.service(
+                        role="Verifier",
+                        identity={"OtherIds": ["did:web:verifier.example.com"]},
+                        name={"en": "DID Verifier BV"},
+                    )
+                ],
+            ),
+            publish.entity(
+                name={"en": "Withdrawn BV"},
+                services=[
+                    publish.service(
+                        role="Issuer",
+                        identity={"OtherIds": ["did:web:withdrawn.example.com"]},
+                        name={"en": "Withdrawn BV"},
+                        status="Withdrawn",
+                    )
+                ],
+            ),
+        ],
+    }
 }
 
 payload = json.dumps(list_document, separators=(",", ":")).encode()

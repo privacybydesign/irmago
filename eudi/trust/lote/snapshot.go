@@ -62,13 +62,15 @@ func (p pinnedList) lookup(role trust.Role, ev trust.Evidence) *trust.Listing {
 // grants reports whether this service is a live grant of this role to the party
 // the evidence describes.
 func grants(entity *Entity, service *Service, role trust.Role, ev trust.Evidence) bool {
-	if service.Status != ServiceStatusGranted {
+	info := &service.Information
+	if info.Status != ServiceStatusGranted {
 		return false
 	}
-	// An entry whose type is not one of the ladder's roles matches nothing: the
-	// caller only ever asks about a real role, so an unknown wire value cannot
-	// equal it.
-	if service.Type != role {
+	// An entry whose service type is not one of the ladder's roles matches
+	// nothing: an unrecognized type URI maps to no role, and the caller only
+	// ever asks about a real one.
+	granted, ok := info.Type.Role()
+	if !ok || granted != role {
 		return false
 	}
 	return matchesIdentity(entity, service, ev)
@@ -86,53 +88,72 @@ func grants(entity *Entity, service *Service, role trust.Role, ev trust.Evidence
 // OtherId entries. Nothing is inferred across the two: a DID entry does not
 // grant a certificate-bearing party and vice versa.
 func matchesIdentity(entity *Entity, service *Service, ev trust.Evidence) bool {
-	identity := &service.DigitalIdentity
+	identity := &service.Information.DigitalIdentity
 
 	if ev.Certificate != nil {
 		if !matchesCertificate(identity, ev.Certificate) {
 			return false
 		}
-		if entity.OrganizationIdentifier == "" {
+		organizationIdentifier := entity.Information.OrganizationIdentifier()
+		if organizationIdentifier == "" {
 			return true
 		}
-		return entity.OrganizationIdentifier == CertificateOrganizationIdentifier(ev.Certificate)
+		return organizationIdentifier == CertificateOrganizationIdentifier(ev.Certificate)
 	}
 
+	// An OtherId is a bare string in Annex A, so there is no type to filter on:
+	// a DID is self-describing and compared verbatim. An empty entry would
+	// match an empty identifier, so it is skipped rather than trusted.
 	for _, other := range identity.OtherIds {
-		if other.Type != OtherIdTypeDid || other.Value == "" {
+		if other == "" {
 			continue
 		}
-		if slices.Contains(ev.Identifiers, other.Value) {
+		if slices.Contains(ev.Identifiers, other) {
 			return true
 		}
 	}
 	return false
 }
 
+// matchesCertificate checks the party's certificate against every certificate
+// and key the entry names. The binding makes both members sequences, so one
+// service may be recognized by several certificates or keys and any one of them
+// matching is enough.
 func matchesCertificate(identity *DigitalIdentity, cert *x509.Certificate) bool {
-	if len(identity.X509Certificate) > 0 && bytes.Equal(identity.X509Certificate, cert.Raw) {
-		return true
+	for _, listed := range identity.X509Certificates {
+		if len(listed.Val) > 0 && bytes.Equal(listed.Val, cert.Raw) {
+			return true
+		}
 	}
 	// An entry keyed on the subject key identifier keeps granting across a
 	// certificate renewal that reuses the key, which is why a scheme operator
 	// would use it instead of pinning the certificate.
-	return len(identity.X509SKI) > 0 && bytes.Equal(identity.X509SKI, cert.SubjectKeyId)
+	for _, ski := range identity.X509SKIs {
+		if len(ski) > 0 && bytes.Equal(ski, cert.SubjectKeyId) {
+			return true
+		}
+	}
+	return false
 }
 
 // listingOf builds the entry the verdict reports, resolving what the service
 // overrides over what the entity says.
 func listingOf(pinned pinnedList, entity *Entity, service *Service) *trust.Listing {
-	name := service.Name
+	// ServiceName is mandatory in Annex A, so unlike the optional override it
+	// replaces it is normally set — a service not presented under its own brand
+	// simply repeats the entity's name. The fallback stays for a document that
+	// omits it anyway: an unnamed listing should still show who it is.
+	name := service.Information.Name
 	if len(name) == 0 {
-		name = entity.Name
+		name = entity.Information.Name
 	}
-	logoURI := service.LogoURI
+	logoURI := service.Information.LogoURI()
 	if logoURI == "" {
-		logoURI = entity.LogoURI
+		logoURI = entity.Information.LogoURI()
 	}
 	return &trust.Listing{
 		ListId:  pinned.source.ListId,
-		Name:    name,
+		Name:    name.Translated(),
 		LogoURI: logoURI,
 		Level:   pinned.source.Confers,
 	}

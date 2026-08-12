@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """A LoTE publisher for the integration tests.
 
-Publishes an ETSI TS 119 602 List of Trusted Entities as a compact JAdES-B-B
-document, and lets a test replace what it publishes between requests.
+Publishes an ETSI TS 119 602 scheme-explicit List of Trusted Entities in the
+**Annex A JSON binding**, signed as a compact JAdES-B-B document, and lets a test
+replace what it publishes between requests.
 
 **It signs with the openssl CLI and stdlib base64 on purpose, never with a JWS
 library.** The wallet verifies with lestrrat-go/jwx; a publisher using the same
@@ -12,12 +13,22 @@ toolchain emits the `x5c` chain, orders the protected header, or encodes an
 ECDSA signature. Everything about the JWS here is assembled by hand for that
 reason. See docs/plans/lote-e2e-tests.md.
 
+The *document* is likewise built by hand here rather than by the Go serialiser,
+so a change to model.go's JSON tags shows up as an integration failure instead of
+agreeing with itself. Note this is the last such independent check: the
+production publisher (`yivi eudi lote`) shares the wallet's structs, so CI
+validates its output against the ETSI JSON Schema and DSS instead. See
+docs/plans/lote-annex-a-publisher.md.
+
 Routes:
 
   GET  /                  the current signed list
   GET  /logo.png          a curated logo, for the display scenario
   POST /admin/publish     {entities, sequence_number, next_update_seconds}
   POST /admin/dark        answer 503 until the next publish
+
+The `entities` are the compact form `expand_entity` takes, not Annex A — see its
+docstring for why.
 
 There is deliberately no fetch-count route: the suite's observability is
 wallet-side only, so a count could only be a debugging aid, and one that invites
@@ -101,24 +112,192 @@ def sign(payload):
     return signing_input + b"." + b64url(der_sig_to_raw(der)).encode()
 
 
-def build(entities, sequence_number, next_update_seconds):
+def stamp(t):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+
+
+def scheme_information(sequence_number, next_update_seconds, operator="Yivi Test"):
+    """The scheme-explicit mandatory fields (TS 119 602 Table 1).
+
+    All twelve are required once the scheme information is explicit, and Annex A
+    binds only the explicit form — there is no standard JSON binding for a
+    scheme-implicit LoTE to fall back on. LIST_ID becomes the English SchemeName,
+    which is the identity the wallet pins.
+    """
     now = time.time()
+    return {
+        "LoTEVersionIdentifier": 1,
+        "LoTESequenceNumber": sequence_number,
+        "LoTEType": "https://yivi.app/19602/LoTEType/YiviRecognizedPartiesList",
+        "SchemeOperatorName": [{"lang": "en", "value": operator}],
+        "SchemeOperatorAddress": {
+            "SchemeOperatorPostalAddress": [
+                {
+                    "lang": "en",
+                    "StreetAddress": "Testlaan 1",
+                    "Locality": "Utrecht",
+                    "PostalCode": "3512 AA",
+                    "Country": "NL",
+                }
+            ],
+            "SchemeOperatorElectronicAddress": [
+                {"lang": "en", "uriValue": "mailto:trustlist@yivi.test"}
+            ],
+        },
+        "SchemeName": [{"lang": "en", "value": LIST_ID}],
+        "SchemeInformationURI": [
+            {"lang": "en", "uriValue": "https://yivi.test/trustlist"}
+        ],
+        "StatusDeterminationApproach": (
+            "https://yivi.app/19602/YiviRecognizedPartiesList/StatusDetn/Yivi"
+        ),
+        "SchemeTypeCommunityRules": [
+            {
+                "lang": "en",
+                "uriValue": "https://yivi.app/19602/YiviRecognizedParties/schemerules/Yivi",
+            }
+        ],
+        "SchemeTerritory": "NL",
+        "PolicyOrLegalNotice": [
+            {
+                "LoTEPolicy": {
+                    "lang": "en",
+                    "uriValue": "https://yivi.test/trustlist/policy",
+                }
+            }
+        ],
+        "ListIssueDateTime": stamp(now),
+        "NextUpdate": stamp(now + next_update_seconds),
+    }
 
-    def stamp(t):
-        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
 
+def build(entities, sequence_number, next_update_seconds):
+    """An Annex A document: the list wrapped in a single `LoTE` member."""
     return json.dumps(
         {
-            "scheme_information": {
-                "list_identifier": LIST_ID,
-                "sequence_number": sequence_number,
-                "list_issue_date_time": stamp(now),
-                "next_update": stamp(now + next_update_seconds),
-            },
-            "entities": entities,
+            "LoTE": {
+                "ListAndSchemeInformation": scheme_information(
+                    sequence_number, next_update_seconds
+                ),
+                "TrustedEntitiesList": entities,
+            }
         },
         separators=(",", ":"),
     ).encode()
+
+
+def entity(name, services, organization_identifier=None, logo_uri=None):
+    """One TrustedEntity, with the mandatory TEAddress and TEInformationURI.
+
+    Clause 6.5.0 makes both mandatory, and TEAddress mandatory in both halves —
+    a postal *and* an electronic address. The wallet reads neither; they are the
+    price of the binding, and the reason listing a party is more expensive to
+    curate than it was.
+
+    Yivi's organization identifier and logo have no Annex A field and go into
+    TEInformationExtensions.
+    """
+    extensions = []
+    if organization_identifier:
+        extensions.append({"YiviOrganizationIdentifier": organization_identifier})
+    if logo_uri:
+        extensions.append({"YiviLogoURI": logo_uri})
+
+    information = {
+        "TEName": [{"lang": lang, "value": value} for lang, value in sorted(name.items())],
+        "TEAddress": {
+            "TEPostalAddress": [
+                {
+                    "lang": "en",
+                    "StreetAddress": "Voorbeeldweg 1",
+                    "Locality": "Utrecht",
+                    "PostalCode": "3512 AA",
+                    "Country": "NL",
+                }
+            ],
+            "TEElectronicAddress": [
+                {"lang": "en", "uriValue": "mailto:info@voorbeeld.test"}
+            ],
+        },
+        "TEInformationURI": [
+            {"lang": "en", "uriValue": "https://voorbeeld.test/about"}
+        ],
+    }
+    if extensions:
+        information["TEInformationExtensions"] = extensions
+
+    return {"TrustedEntityInformation": information, "TrustedEntityServices": services}
+
+
+def service(role, identity, name, status="Granted", logo_uri=None, markings=()):
+    """One TrustedEntityService.
+
+    ServiceName is mandatory (clause 6.6.0), so a service not presented under its
+    own brand repeats the entity's name rather than being left unnamed.
+
+    ServiceTypeIdentifier and ServiceStatus are *optional* in the schema but
+    always emitted: clause 6.6.0's notes give their absence the meaning "all
+    services share one type / one status", which is wrong for a list carrying
+    both roles and visible withdrawals.
+    """
+    extensions = []
+    if logo_uri:
+        extensions.append({"YiviLogoURI": logo_uri})
+    extensions.extend({"YiviMarking": marking} for marking in markings)
+
+    information = {
+        "ServiceName": [
+            {"lang": lang, "value": value} for lang, value in sorted(name.items())
+        ],
+        "ServiceDigitalIdentity": identity,
+        "ServiceTypeIdentifier": f"https://yivi.app/19602/Svctype/{role}",
+        "ServiceStatus": f"https://yivi.app/19602/Svcstatus/{status}",
+    }
+    if extensions:
+        information["ServiceInformationExtensions"] = extensions
+
+    return {"ServiceInformation": information}
+
+
+def expand_entity(spec):
+    """Expand the admin API's compact entity form into an Annex A TrustedEntity.
+
+    The admin API deliberately does *not* take Annex A directly. It is a
+    test-only interface, so its shape is ours to choose, and keeping it compact
+    means the Annex A structure lives in exactly one place — here — rather than
+    being spelled out again in Go test fixtures that would then have to be kept
+    in step with it.
+
+    A service that names itself keeps its own name; one that does not inherits
+    the entity's, because ServiceName is mandatory and something has to fill it.
+    """
+    services = []
+    for svc in spec.get("services", []):
+        identity = {}
+        if svc.get("did"):
+            identity["OtherIds"] = [svc["did"]]
+        if svc.get("ski"):
+            identity["X509SKIs"] = [svc["ski"]]
+        if svc.get("certificate"):
+            identity["X509Certificates"] = [{"val": svc["certificate"]}]
+
+        services.append(
+            service(
+                role=svc.get("role", "Issuer"),
+                identity=identity,
+                name={"en": svc.get("name") or spec["name"]},
+                status=svc.get("status", "Granted"),
+                logo_uri=svc.get("logo_uri"),
+                markings=svc.get("markings") or (),
+            )
+        )
+
+    return entity(
+        name={"en": spec["name"]},
+        services=services,
+        organization_identifier=spec.get("organization_identifier"),
+        logo_uri=spec.get("logo_uri"),
+    )
 
 
 class State:
@@ -165,7 +344,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 STATE.document = sign(
                     build(
-                        body.get("entities", []),
+                        [expand_entity(spec) for spec in body.get("entities", [])],
                         body.get("sequence_number", 1),
                         body.get("next_update_seconds", 86400),
                     )

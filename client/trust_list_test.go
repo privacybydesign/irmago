@@ -279,12 +279,12 @@ func TestTrustListRefreshNotifiesOnContentChange(t *testing.T) {
 	require.Equal(t, 0, handler.CredentialsChangedCount(), "a re-sign with identical entries wakes nobody")
 
 	// The entry is withdrawn: this changes what the wallet says about the party.
-	withdrawn := entity
-	withdrawn.Services = []lote.Service{{
-		Type:            trust.RoleIssuer,
-		Status:          lote.ServiceStatusWithdrawn,
-		DigitalIdentity: lote.DigitalIdentity{OtherIds: []lote.OtherId{{Type: lote.OtherIdTypeDid, Value: issuer}}},
-	}}
+	// Rebuilt through the same builder as the granted entity, so the withdrawal
+	// is the *only* difference between the two issues — the mandatory
+	// ServiceName and TEAddress are identical either way.
+	withdrawnService := lote.NewTestDidService(trust.RoleIssuer, issuer)
+	withdrawnService.Information.Status = lote.ServiceStatusWithdrawn
+	withdrawn := lote.NewTestEntity("Listed Issuer BV", "", withdrawnService)
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 3, withdrawn))
 	require.NoError(t, c.RefreshTrustLists(context.Background()))
 	require.Equal(t, 1, handler.CredentialsChangedCount(), "an entry content change wakes the app exactly once")
