@@ -130,7 +130,15 @@ func newClientOnFreshStorage(t *testing.T) func() *Client {
 	eudiAppDataPath := filepath.Join(storagePath, "eudi")
 
 	return func() *Client {
-		c, err := New(storagePath, irmaConfigurationPath, eudiAppDataPath, &testhelpers.TestClientHandler{}, nil, test.NewSigner(t), aesKey, "en")
+		c, err := New(Config{
+			StoragePath:           storagePath,
+			IrmaConfigurationPath: irmaConfigurationPath,
+			EudiAppDataPath:       eudiAppDataPath,
+			Handler:               &testhelpers.TestClientHandler{},
+			Signer:                test.NewSigner(t),
+			AesKey:                aesKey,
+			Locale:                "en",
+		})
 		require.NoError(t, err)
 		return c
 	}
