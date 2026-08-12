@@ -38,7 +38,7 @@ openssl x509 -in signer.crt -outform DER -out signer.der
 # --- a listed party's certificate, so the entries can key on a real one --------
 openssl ecparam -name prime256v1 -genkey -noout -out party.key
 openssl req -new -key party.key -out party.csr \
-  -subj "/C=NL/O=Gemeente Voorbeeld/CN=verifier.voorbeeld.example/organizationIdentifier=VATNL-000000001"
+  -subj "/C=NL/O=Example Municipality/CN=verifier.example.com/organizationIdentifier=VATNL-000000001"
 openssl x509 -req -in party.csr -CA root.crt -CAkey root.key -CAcreateserial \
   -out party.crt -days 3650 -sha256 -extfile ext.cfg
 openssl x509 -in party.crt -outform DER -out party.der
@@ -87,9 +87,9 @@ list_document = {
         ),
         "TrustedEntitiesList": [
             publish.entity(
-                name={"en": "Gemeente Voorbeeld", "nl": "Gemeente Voorbeeld"},
+                name={"en": "Example Municipality", "nl": "Example Municipality"},
                 organization_identifier="VATNL-000000001",
-                logo_uri="https://trustlist.example/logos/voorbeeld.png",
+                logo_uri="https://trustlist.example/logos/municipality.png",
                 services=[
                     publish.service(
                         role="Verifier",
@@ -98,40 +98,40 @@ list_document = {
                                 {"val": base64.b64encode(party_der).decode()}
                             ]
                         },
-                        name={"en": "Gemeente Voorbeeld", "nl": "Gemeente Voorbeeld"},
+                        name={"en": "Example Municipality", "nl": "Example Municipality"},
                         markings=["onboarded-by-yivi"],
                     )
                 ],
             ),
             publish.entity(
-                name={"en": "Voorbeeld Issuing BV"},
+                name={"en": "Example Issuing Ltd"},
                 services=[
                     publish.service(
                         role="Issuer",
                         identity={"X509SKIs": [party_ski]},
-                        name={"en": "Voorbeeld Diplomas"},
+                        name={"en": "Example Diplomas"},
                         logo_uri="https://trustlist.example/logos/diplomas.png",
                         markings=["some-future-qualifier"],
                     )
                 ],
             ),
             publish.entity(
-                name={"en": "DID Verifier BV"},
+                name={"en": "DID Verifier Ltd"},
                 services=[
                     publish.service(
                         role="Verifier",
                         identity={"OtherIds": ["did:web:verifier.example.com"]},
-                        name={"en": "DID Verifier BV"},
+                        name={"en": "DID Verifier Ltd"},
                     )
                 ],
             ),
             publish.entity(
-                name={"en": "Withdrawn BV"},
+                name={"en": "Withdrawn Ltd"},
                 services=[
                     publish.service(
                         role="Issuer",
                         identity={"OtherIds": ["did:web:withdrawn.example.com"]},
-                        name={"en": "Withdrawn BV"},
+                        name={"en": "Withdrawn Ltd"},
                         status="Withdrawn",
                     )
                 ],

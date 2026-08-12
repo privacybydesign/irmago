@@ -194,7 +194,7 @@ func NewTestList(listId string, sequenceNumber uint64, entities ...Entity) List 
 			SchemeOperatorAddress: SchemeOperatorAddress{
 				PostalAddress: []PostalAddress{{
 					Lang:          "en",
-					StreetAddress: "Testlaan 1",
+					StreetAddress: "Test Lane 1",
 					Locality:      "Utrecht",
 					PostalCode:    "3512 AA",
 					Country:       "NL",
@@ -233,16 +233,16 @@ func NewTestEntity(name, organizationIdentifier string, services ...Service) Ent
 		Address: TEAddress{
 			PostalAddress: []PostalAddress{{
 				Lang:          "en",
-				StreetAddress: "Voorbeeldweg 1",
+				StreetAddress: "Example Street 1",
 				Locality:      "Utrecht",
 				PostalCode:    "3512 AA",
 				Country:       "NL",
 			}},
 			ElectronicAddress: []MultiLangURIEntry{{
-				Lang: "en", URIValue: "mailto:info@voorbeeld.test",
+				Lang: "en", URIValue: "mailto:info@example.test",
 			}},
 		},
-		InformationURI: MultiLangURI{"en": "https://voorbeeld.test/about"},
+		InformationURI: MultiLangURI{"en": "https://example.test/about"},
 	}
 	if organizationIdentifier != "" {
 		info.Extensions = append(info.Extensions, YiviExtension{

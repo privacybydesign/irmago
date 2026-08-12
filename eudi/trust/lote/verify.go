@@ -107,6 +107,26 @@ func verify(rawJws []byte, x509Context eudi_jwt.X509VerificationContext) (*verif
 	return &verifiedList{list: &list, rawJws: rawJws}, nil
 }
 
+// VerifySigned re-checks a signed LoTE exactly as the wallet does — one
+// signature, the `typ` guard, an `x5c` chain validating against x509Context, and
+// the document's own required fields — and returns the list it carries.
+//
+// It exists for the publisher: a tool that emits a document this returns an
+// error for has emitted a document no wallet will accept, and the cheapest place
+// to find that out is before publishing. Deliberately the *whole* check rather
+// than a parse-only variant, so there is no way to read a LoTE in this codebase
+// without its signature having held.
+//
+// As in the wallet, the list's own time bounds are not checked: whether a list is
+// current is a property of the list, not of its signature.
+func VerifySigned(rawJws []byte, x509Context eudi_jwt.X509VerificationContext) (*List, error) {
+	verified, err := verify(rawJws, x509Context)
+	if err != nil {
+		return nil, err
+	}
+	return verified.list, nil
+}
+
 // current reports whether the list may still be relied on at now, i.e. whether
 // it is before its NextUpdate.
 func (v *verifiedList) current(now time.Time) bool {

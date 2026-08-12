@@ -152,9 +152,9 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	// Every field of the first entity, because these are the names on the wire.
 	party := verified.list.Entities[0].Information
 	require.Equal(t, "VATNL-000000001", party.OrganizationIdentifier())
-	require.Equal(t, clientmodels.TranslatedString{"en": "Gemeente Voorbeeld", "nl": "Gemeente Voorbeeld"},
+	require.Equal(t, clientmodels.TranslatedString{"en": "Example Municipality", "nl": "Example Municipality"},
 		party.Name.Translated())
-	require.Equal(t, "https://trustlist.example/logos/voorbeeld.png", party.LogoURI())
+	require.Equal(t, "https://trustlist.example/logos/municipality.png", party.LogoURI())
 
 	// TEAddress and TEInformationURI are mandatory (clause 6.5.0), so a document
 	// that omits them is non-conformant even though the wallet never reads them.
@@ -181,7 +181,7 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	// survive parsing without being acted on.
 	skiService := verified.list.Entities[1].Services[0].Information
 	require.Equal(t, [][]byte{goldenPartyCertificate(t).SubjectKeyId}, skiService.DigitalIdentity.X509SKIs)
-	require.Equal(t, clientmodels.TranslatedString{"en": "Voorbeeld Diplomas"}, skiService.Name.Translated())
+	require.Equal(t, clientmodels.TranslatedString{"en": "Example Diplomas"}, skiService.Name.Translated())
 	require.Equal(t, "https://trustlist.example/logos/diplomas.png", skiService.LogoURI())
 	require.Contains(t, skiService.Markings(), "some-future-qualifier")
 
@@ -231,7 +231,7 @@ func TestGoldenDocumentGrantsThroughTheChecker(t *testing.T) {
 	certificateParty := trust.Evidence{Certificate: goldenPartyCertificate(t)}
 	listing := snapshot.Lookup(trust.RoleVerifier, certificateParty)
 	require.NotNil(t, listing, "the certificate-keyed entry must grant")
-	require.Equal(t, "Gemeente Voorbeeld", listing.Name["en"])
+	require.Equal(t, "Example Municipality", listing.Name["en"])
 	require.Equal(t, clientmodels.TrustLevel_High, listing.Level,
 		"every granted entry confers what the source does")
 
@@ -239,7 +239,7 @@ func TestGoldenDocumentGrantsThroughTheChecker(t *testing.T) {
 	// and picks up that service's overriding name.
 	asIssuer := snapshot.Lookup(trust.RoleIssuer, certificateParty)
 	require.NotNil(t, asIssuer)
-	require.Equal(t, "Voorbeeld Diplomas", asIssuer.Name["en"])
+	require.Equal(t, "Example Diplomas", asIssuer.Name["en"])
 	require.Equal(t, clientmodels.TrustLevel_High, asIssuer.Level,
 		"its markings — known bytes or unknown — neither add nor subtract")
 

@@ -134,7 +134,7 @@ def scheme_information(sequence_number, next_update_seconds, operator="Yivi Test
             "SchemeOperatorPostalAddress": [
                 {
                     "lang": "en",
-                    "StreetAddress": "Testlaan 1",
+                    "StreetAddress": "Test Lane 1",
                     "Locality": "Utrecht",
                     "PostalCode": "3512 AA",
                     "Country": "NL",
@@ -209,18 +209,18 @@ def entity(name, services, organization_identifier=None, logo_uri=None):
             "TEPostalAddress": [
                 {
                     "lang": "en",
-                    "StreetAddress": "Voorbeeldweg 1",
+                    "StreetAddress": "Example Street 1",
                     "Locality": "Utrecht",
                     "PostalCode": "3512 AA",
                     "Country": "NL",
                 }
             ],
             "TEElectronicAddress": [
-                {"lang": "en", "uriValue": "mailto:info@voorbeeld.test"}
+                {"lang": "en", "uriValue": "mailto:info@example.test"}
             ],
         },
         "TEInformationURI": [
-            {"lang": "en", "uriValue": "https://voorbeeld.test/about"}
+            {"lang": "en", "uriValue": "https://example.test/about"}
         ],
     }
     if extensions:
