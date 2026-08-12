@@ -121,6 +121,13 @@ type Config struct {
 	// contract — and it is the seam tests pin a non-Yivi CA through.
 	ExtraIssuerTrustAnchors   []eudi.ExtraTrustAnchor
 	ExtraVerifierTrustAnchors []eudi.ExtraTrustAnchor
+
+	// ExtraTrustListTrustAnchors are anchors a recognized list's *signature* may
+	// chain to, on top of the pinned Yivi trust-list root. Deliberately separate
+	// from the issuer anchors: a certificate that may issue credentials must not
+	// thereby be able to define who is trusted. Integration tests pin their
+	// publisher's root through this seam.
+	ExtraTrustListTrustAnchors []eudi.ExtraTrustAnchor
 }
 
 // New builds a wallet from cfg. It is the only constructor: everything optional
@@ -172,6 +179,7 @@ func New(cfg Config) (*Client, error) {
 	}
 	eudiConf.ExtraIssuerTrustAnchors = cfg.ExtraIssuerTrustAnchors
 	eudiConf.ExtraVerifierTrustAnchors = cfg.ExtraVerifierTrustAnchors
+	eudiConf.ExtraTrustListTrustAnchors = cfg.ExtraTrustListTrustAnchors
 
 	// Initialize DB storage
 	s := clientstorage.NewStorage(cfg.StoragePath, encryptionMiddleware)
@@ -207,14 +215,19 @@ func New(cfg Config) (*Client, error) {
 	// them in memory and persists them, and never fetches on a session's path —
 	// see Client.RefreshTrustLists.
 	//
-	// The lists are signed by Yivi and chain to the Yivi root, so they are
-	// validated against the issuer anchors; both trust models pin the same root.
+	// A list's signature is validated against the **trust-list** anchors, not the
+	// issuer ones. Sharing the issuer pool would make onboarding a credential
+	// issuer silently grant it the power to define who is trusted: any
+	// certificate under those anchors with digitalSignature could sign a document
+	// the wallet accepts as Yivi's list, since the only other things checked are
+	// the SchemeName and LoTEType, both public. See the commentary on
+	// eudi.Production_Yivi_TrustListTrustAnchor.
 	//
 	// An empty source set — what a released wallet passes today, since Yivi does
 	// not publish its LoTE yet — leaves the certificate channel alone in force.
 	trustChecker := lote.NewChecker(lote.Config{
 		Sources:     cfg.RecognizedTrustLists,
-		X509Context: &eudiConf.Issuers,
+		X509Context: &eudiConf.TrustLists,
 		Store:       db.NewTrustListStore(eudiStorage.Db()),
 		HTTPClient:  common.HTTPClient,
 	})

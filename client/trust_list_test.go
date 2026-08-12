@@ -51,15 +51,20 @@ func newClientWithTrustListsAndHandler(
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
 	eudiAppDataPath := filepath.Join(storagePath, "eudi")
-	issuerCertsPath := filepath.Join(eudiAppDataPath, "issuers", "certificates")
-	require.NoError(t, common.EnsureDirectoryExists(issuerCertsPath))
+
+	// The list signer's root goes in the **trustlists** container, not the
+	// issuers one: a list's signature chains to the trust-list anchors, and the
+	// separation is the whole point — a certificate that may issue credentials
+	// must not thereby be able to define who is trusted.
+	trustListCertsPath := filepath.Join(eudiAppDataPath, "trustlists", "certificates")
+	require.NoError(t, common.EnsureDirectoryExists(trustListCertsPath))
 
 	// The EUDI filesystem storage decrypts what it reads, so the anchor has to
 	// go in encrypted.
 	rootPem := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: signer.RootCert.Raw})
 	encrypted, err := encryption.NewAESEncryptionMiddleware(aesKey).Encrypt(rootPem)
 	require.NoError(t, err)
-	require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "lote-test-root.pem"), encrypted))
+	require.NoError(t, common.SaveFile(filepath.Join(trustListCertsPath, "lote-test-root.pem"), encrypted))
 
 	handler := &testhelpers.TestClientHandler{T: t}
 	c, err := New(Config{

@@ -47,6 +47,13 @@ type FileSystemStorage interface {
 	Issuers() FileSystemContainer
 	Verifiers() FileSystemContainer
 
+	// TrustLists holds the anchors a recognized list's *signature* chains to.
+	// Separate from Issuers on purpose: the two answer different questions —
+	// "may this party issue credentials" and "may this key define who is
+	// trusted" — and sharing one pool would make onboarding a credential
+	// issuer silently grant it the second.
+	TrustLists() FileSystemContainer
+
 	// RemoveAllFiles removes all files from all containers (logos, certificates, CRLs).
 	RemoveAllFiles() error
 }
@@ -55,6 +62,7 @@ type fileSystemStorage struct {
 	credentialsContainer FileSystemContainer
 	issuersContainer     FileSystemContainer
 	verifiersContainer   FileSystemContainer
+	trustListsContainer  FileSystemContainer
 }
 
 type FileSystemContainer struct {
@@ -81,6 +89,7 @@ func NewFileSystemStorage(aesKey [32]byte, basePath string) FileSystemStorage {
 		credentialsContainer: *newFileSystemContainer(storage, filepath.Join(basePath, "credentials")),
 		issuersContainer:     *newFileSystemContainer(storage, filepath.Join(basePath, "issuers")),
 		verifiersContainer:   *newFileSystemContainer(storage, filepath.Join(basePath, "verifiers")),
+		trustListsContainer:  *newFileSystemContainer(storage, filepath.Join(basePath, "trustlists")),
 	}
 }
 
@@ -107,7 +116,7 @@ func newFileSystemContainer(storage *fsStorage, basePath string) *FileSystemCont
 }
 
 func (s *fileSystemStorage) RemoveAllFiles() error {
-	for _, c := range []FileSystemContainer{s.credentialsContainer, s.issuersContainer, s.verifiersContainer} {
+	for _, c := range []FileSystemContainer{s.credentialsContainer, s.issuersContainer, s.verifiersContainer, s.trustListsContainer} {
 		if err := c.logoManager.RemoveAll(); err != nil {
 			return err
 		}
@@ -149,6 +158,10 @@ func (s *fileSystemStorage) Issuers() FileSystemContainer {
 
 func (s *fileSystemStorage) Verifiers() FileSystemContainer {
 	return s.verifiersContainer
+}
+
+func (s *fileSystemStorage) TrustLists() FileSystemContainer {
+	return s.trustListsContainer
 }
 
 func (s FileSystemContainer) CertificateManager() CertificateManager {

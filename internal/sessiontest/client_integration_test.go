@@ -1370,11 +1370,17 @@ func newTestClient(t *testing.T, opts testClient) (*client.Client, *irmaclient.M
 		require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), encIssuer))
 	}
 
+	// The list signer's root goes in the trustlists container, not the issuers
+	// one: a list's signature chains to the trust-list anchors, kept separate so
+	// that a certificate which may issue credentials cannot also define who is
+	// trusted.
 	if loteRoot != nil {
+		trustListCertsPath := filepath.Join(storagePath, "eudi", "trustlists", "certificates")
+		require.NoError(t, common.EnsureDirectoryExists(trustListCertsPath))
 		rootPem := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: loteRoot.Raw})
 		encLoteRoot, err := encMiddleware.Encrypt(rootPem)
 		require.NoError(t, err)
-		require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "lote-test-root.pem"), encLoteRoot))
+		require.NoError(t, common.SaveFile(filepath.Join(trustListCertsPath, "lote-test-root.pem"), encLoteRoot))
 	}
 
 	// Add test verifier CA certificate as trusted chain. A nil verifierCA leaves

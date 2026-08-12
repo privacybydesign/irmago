@@ -45,11 +45,22 @@ type Configuration struct {
 	Issuers   TrustModel
 	Verifiers TrustModel
 
+	// TrustLists holds the anchors a recognized list's signature chains to.
+	// Kept apart from Issuers so that onboarding a credential issuer does not
+	// also grant it the power to define who is trusted — see the commentary on
+	// Production_Yivi_TrustListTrustAnchor.
+	TrustLists TrustModel
+
 	// ExtraIssuerTrustAnchors and ExtraVerifierTrustAnchors are anchors added
 	// on top of the pinned Yivi roots, each with the level it confers. Set
 	// them before the first Reload; they survive every Reload after that.
 	ExtraIssuerTrustAnchors   []ExtraTrustAnchor
 	ExtraVerifierTrustAnchors []ExtraTrustAnchor
+
+	// ExtraTrustListTrustAnchors are anchors for list signatures. The level on
+	// each is ignored: what a listing confers is its source's word
+	// (lote.Source.Confers), never the signing chain's.
+	ExtraTrustListTrustAnchors []ExtraTrustAnchor
 }
 
 // NewConfiguration returns a new configuration. After this ParseFolder() should be called to parse the specified path.
@@ -66,6 +77,12 @@ func NewConfiguration(s storage.Storage) (conf *Configuration, err error) {
 		},
 		Verifiers: TrustModel{
 			storageContainer:                  s.FileSystem().Verifiers(),
+			logger:                            Logger,
+			httpClient:                        httpClient,
+			revocationListsDistributionPoints: []string{},
+		},
+		TrustLists: TrustModel{
+			storageContainer:                  s.FileSystem().TrustLists(),
 			logger:                            Logger,
 			httpClient:                        httpClient,
 			revocationListsDistributionPoints: []string{},
@@ -91,6 +108,7 @@ func (c *Configuration) UsesStagingTrustAnchors() bool {
 func (c *Configuration) SetCertificateVerificationMode(mode CertificateVerificationMode) {
 	c.Issuers.SetCertificateVerificationMode(mode)
 	c.Verifiers.SetCertificateVerificationMode(mode)
+	c.TrustLists.SetCertificateVerificationMode(mode)
 }
 
 // Reload assumes the latest files (trust anchors and certificate revocation lists) are downloaded.
@@ -99,6 +117,7 @@ func (c *Configuration) SetCertificateVerificationMode(mode CertificateVerificat
 func (c *Configuration) Reload() error {
 	c.Issuers.clear()
 	c.Verifiers.clear()
+	c.TrustLists.clear()
 
 	if err := c.addProductionTrustAnchors(); err != nil {
 		return err
@@ -120,6 +139,11 @@ func (c *Configuration) Reload() error {
 			return fmt.Errorf("failed to add extra verifier trust anchor: %v", err)
 		}
 	}
+	for _, anchor := range c.ExtraTrustListTrustAnchors {
+		if err := c.TrustLists.addTrustAnchors(anchor.Confers, anchor.PEM); err != nil {
+			return fmt.Errorf("failed to add extra trust list trust anchor: %v", err)
+		}
+	}
 
 	// Read the trust anchors from storage
 	if err := c.Issuers.Reload(); err != nil {
@@ -128,6 +152,10 @@ func (c *Configuration) Reload() error {
 
 	if err := c.Verifiers.Reload(); err != nil {
 		return fmt.Errorf("failed to load verifier trust model: %v", err)
+	}
+
+	if err := c.TrustLists.Reload(); err != nil {
+		return fmt.Errorf("failed to load trust list trust model: %v", err)
 	}
 
 	return nil
@@ -152,6 +180,19 @@ func (c *Configuration) addProductionTrustAnchors() error {
 	if err := c.Verifiers.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Production_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add yivi production verifier trust anchors: %v", err)
 	}
+
+	// The trust-list anchor is loaded only once it exists. An empty pool means no
+	// list verifies, which is the safe direction to fail while Yivi publishes
+	// none — and far safer than falling back to the issuer pool.
+	if Production_Yivi_TrustListTrustAnchor != "" {
+		c.TrustLists.addRevocationListDistributionPoints(
+			Production_Yivi_RootCertificateRevocationListDistributionPoint,
+			Production_Yivi_TrustListCaCertificateRevocationListDistributionPoint,
+		)
+		if err := c.TrustLists.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Production_Yivi_TrustListTrustAnchor)); err != nil {
+			return fmt.Errorf("failed to add yivi production trust list trust anchors: %v", err)
+		}
+	}
 	return nil
 }
 
@@ -170,6 +211,15 @@ func (c *Configuration) addStagingTrustAnchors() error {
 	// so they confer high like the production ones.
 	if err := c.Issuers.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Staging_Yivi_IssuerTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add Yivi staging issuer trust anchors: %v", err)
+	}
+	if Staging_Yivi_TrustListTrustAnchor != "" {
+		c.TrustLists.addRevocationListDistributionPoints(
+			Staging_Yivi_RootCertificateRevocationListDistributionPoint,
+			Staging_Yivi_TrustListCaCertificateRevocationListDistributionPoint,
+		)
+		if err := c.TrustLists.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Staging_Yivi_TrustListTrustAnchor)); err != nil {
+			return fmt.Errorf("failed to add Yivi staging trust list trust anchors: %v", err)
+		}
 	}
 	if err := c.Verifiers.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add Yivi staging verifier trust anchors: %v", err)
