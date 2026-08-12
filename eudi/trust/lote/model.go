@@ -117,17 +117,43 @@ func ServiceTypeForRole(role trust.Role) ServiceTypeIdentifier {
 	return ""
 }
 
-// ServiceStatus is the current status of a grant (clause 6.6.4), as a URI. Only
-// granted counts; every other value, known or not, reads as no grant.
+// ServiceStatus is the current status of a grant (clause 6.6.4), as a URI.
 //
-// As with ServiceTypeIdentifier, clause 6.6.0 NOTE 1 gives an absent status the
-// meaning "all services share one status", so Yivi always emits it.
+// **An absent status means granted.** Clause 6.6.0 NOTE 1: when there is no
+// historical information period and no ServiceStatus, all listed services share
+// one approval status — so being on the list is the approval. Five of the six EU
+// profiles (Annexes D, E, F, G, I) say the component "shall not be used" for
+// exactly this reason, and Yivi follows them: its list carries no status, and
+// off-boarding removes the entry rather than marking it.
+//
+// A status that *is* present is honoured, because a list from another scheme may
+// carry one. Only a URI this package recognises grants; anything else reads as no
+// grant, which fails closed against a vocabulary we do not know.
+//
+// Each scheme has its own vocabulary — Annex H's Pub-EAA list uses
+// `…/PubEAAProvidersList/SvcStatus/notified` for what Yivi would call granted —
+// so "which URI means granted" is properly a property of the source, not a global
+// constant. Consuming another scheme's list will mean carrying its vocabulary on
+// [Source]; until then the constants below are the only ones understood.
 type ServiceStatus string
 
 const (
 	ServiceStatusGranted   ServiceStatus = "https://yivi.app/19602/Svcstatus/Granted"
 	ServiceStatusWithdrawn ServiceStatus = "https://yivi.app/19602/Svcstatus/Withdrawn"
 )
+
+// IsGranted reports whether this service is a live grant.
+//
+// The rule lives here rather than at the lookup site so that the absent-means-
+// granted reading is stated once. Getting it wrong in either direction is quiet:
+// too strict and a conformant list grants nobody with no error, too loose and a
+// withdrawal keeps granting.
+func (si ServiceInformation) IsGranted() bool {
+	if si.Status == "" {
+		return true
+	}
+	return si.Status == ServiceStatusGranted
+}
 
 // organizationIdentifierOID is the X.520 `organizationIdentifier` attribute
 // (id-at-organizationIdentifier, 2.5.4.97) — the subject field an EU
@@ -363,11 +389,10 @@ type ServiceInformation struct {
 	// [ServiceTypeIdentifier].
 	Type ServiceTypeIdentifier `json:"ServiceTypeIdentifier"`
 
-	// Status is `ServiceStatus` (clause 6.6.4). Anything other than granted is
-	// no grant — a withdrawn service is listed so the withdrawal is visible,
-	// not so it still counts. Optional in the binding, mandatory for Yivi —
-	// see [ServiceStatus].
-	Status ServiceStatus `json:"ServiceStatus"`
+	// Status is `ServiceStatus` (clause 6.6.4). **Absent means granted** — see
+	// [ServiceStatus] and [ServiceInformation.IsGranted]. Omitted from Yivi's
+	// own list, and read when another scheme's list carries one.
+	Status ServiceStatus `json:"ServiceStatus,omitempty"`
 
 	// StatusStartingTime is `StatusStartingTime` (clause 6.6.5). Optional and
 	// unread; carried so a document naming it round-trips.

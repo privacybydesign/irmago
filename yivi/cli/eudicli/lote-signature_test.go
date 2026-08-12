@@ -42,7 +42,7 @@ func TestSignature_VerifiesUnderAForeignToolchain(t *testing.T) {
 		t.Skip("openssl not available")
 	}
 
-	list, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
 
 	signer := newTestSigner(t, "NL", "Yivi Example")
@@ -112,7 +112,7 @@ func TestSignature_AForeignToolchainRejectsATamperedPayload(t *testing.T) {
 		t.Skip("openssl not available")
 	}
 
-	list, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
 	signer := newTestSigner(t, "NL", "Yivi Example")
 	alg, err := signatureAlgorithm(signer.key)

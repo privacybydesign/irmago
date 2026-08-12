@@ -169,7 +169,10 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	role, ok := service.Type.Role()
 	require.True(t, ok, "the service type URI must map to a ladder role")
 	require.Equal(t, trust.RoleVerifier, role)
-	require.Equal(t, ServiceStatusGranted, service.Status)
+	// No status at all, which means granted: clause 6.6.0 NOTE 1, and the shape
+	// Yivi publishes.
+	require.Empty(t, service.Status, "a Yivi list carries no ServiceStatus")
+	require.True(t, service.IsGranted(), "and an absent status is a grant")
 	require.NotEmpty(t, service.Name, "ServiceName is mandatory (clause 6.6.0)")
 	require.Len(t, service.DigitalIdentity.X509Certificates, 1)
 	require.Equal(t, goldenPartyCertificate(t).Raw, service.DigitalIdentity.X509Certificates[0].Val,
@@ -189,7 +192,13 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	// and a withdrawal that is listed but grants nothing.
 	didService := verified.list.Entities[2].Services[0].Information
 	require.Equal(t, []string{goldenDid}, didService.DigitalIdentity.OtherIds)
-	require.Equal(t, ServiceStatusWithdrawn, verified.list.Entities[3].Services[0].Information.Status)
+
+	// The fourth entity carries an *explicit* withdrawn status, so the committed
+	// document exercises both branches of the absent-means-granted rule — the one
+	// Yivi emits and the one another scheme's list might.
+	withdrawn := verified.list.Entities[3].Services[0].Information
+	require.Equal(t, ServiceStatusWithdrawn, withdrawn.Status)
+	require.False(t, withdrawn.IsGranted(), "an explicit withdrawal is not a grant")
 }
 
 // TestGoldenReadableCopyMatchesTheSignedOne keeps golden/list.json honest: it is

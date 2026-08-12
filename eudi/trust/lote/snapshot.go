@@ -63,7 +63,7 @@ func (p pinnedList) lookup(role trust.Role, ev trust.Evidence) *trust.Listing {
 // the evidence describes.
 func grants(entity *Entity, service *Service, role trust.Role, ev trust.Evidence) bool {
 	info := &service.Information
-	if info.Status != ServiceStatusGranted {
+	if !info.IsGranted() {
 		return false
 	}
 	// An entry whose service type is not one of the ladder's roles matches

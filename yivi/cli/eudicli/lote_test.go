@@ -46,7 +46,7 @@ func entityNamed(t *testing.T, list lote.List, name string) lote.Entity {
 }
 
 func TestBuild_TheCommittedExampleIsConformant(t *testing.T) {
-	list, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
 
 	scheme := list.SchemeInformation
@@ -74,7 +74,7 @@ func TestBuild_TheCommittedExampleIsConformant(t *testing.T) {
 // certificate, rather than the curator transcribing base64 — so an entry cannot
 // be keyed on a value the wallet's lookup would never match.
 func TestBuild_ReadsTheSubjectKeyIdentifierOutOfTheCertificate(t *testing.T) {
-	list, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
 
 	expected, err := readCertificate(exampleSource(t), "example-verifier.crt")
@@ -86,26 +86,59 @@ func TestBuild_ReadsTheSubjectKeyIdentifierOutOfTheCertificate(t *testing.T) {
 	require.Equal(t, [][]byte{expected.SubjectKeyId}, identity.X509SKIs)
 }
 
-// The curation word becomes the status URI, and a withdrawn service is carried so
-// the withdrawal is visible rather than dropped.
-func TestBuild_MapsRolesAndStatusesOntoURIs(t *testing.T) {
-	list, err := loadSource(exampleSource(t), issuedAt)
+// The curation role becomes the service type URI, and no status is emitted at
+// all: on a list carrying none, being listed is the grant.
+func TestBuild_MapsRolesOntoURIsAndEmitsNoStatus(t *testing.T) {
+	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
 
+	for _, entity := range list.Entities {
+		for _, service := range entity.Services {
+			require.Empty(t, service.Information.Status,
+				"a published Yivi list carries no ServiceStatus")
+			require.True(t, service.Information.IsGranted(),
+				"and every service on it is therefore granted")
+		}
+	}
+
 	services := entityNamed(t, list, "Example Issuing Ltd").Services
-	require.Len(t, services, 2)
+	require.Len(t, services, 1, "the withdrawn service is absent, not marked")
 	require.Equal(t, lote.ServiceTypeIssuer, services[0].Information.Type)
-	require.Equal(t, lote.ServiceStatusGranted, services[0].Information.Status,
-		"an omitted status means granted")
-	require.Equal(t, lote.ServiceTypeVerifier, services[1].Information.Type)
-	require.Equal(t, lote.ServiceStatusWithdrawn, services[1].Information.Status)
+
+	require.Equal(t, lote.ServiceTypeVerifier,
+		entityNamed(t, list, "Example Municipality").Services[0].Information.Type)
+}
+
+// A withdrawal is an absence in the output, so it has to be reported — otherwise
+// off-boarding a party looks identical to never having listed them.
+func TestBuild_ReportsWithdrawnServicesAsExclusions(t *testing.T) {
+	_, stats, err := loadSource(exampleSource(t), issuedAt)
+	require.NoError(t, err)
+	require.Equal(t, 1, stats.WithdrawnServices)
+	require.Empty(t, stats.DroppedEntities)
+}
+
+// An entity whose every service is withdrawn leaves the document entirely: Annex A
+// requires at least one service per entity, and an entity granting nothing says
+// nothing.
+func TestBuild_DropsAnEntityWhoseEveryServiceIsWithdrawn(t *testing.T) {
+	dir := withSource(t, func(_, entity map[string]any) {
+		services := entity["services"].([]any)
+		services[0].(map[string]any)["status"] = "withdrawn"
+	})
+
+	list, stats, err := loadSource(dir, issuedAt)
+	require.NoError(t, err)
+	require.Empty(t, list.Entities)
+	require.Equal(t, 1, stats.WithdrawnServices)
+	require.Len(t, stats.DroppedEntities, 1)
 }
 
 // ServiceName is mandatory in Annex A, and a service that does not name itself
 // inherits the entity's — which is also what keeps the entity name on screen,
 // since a service name overrides it for display.
 func TestBuild_UnnamedServiceInheritsTheEntityName(t *testing.T) {
-	list, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
 
 	require.Equal(t, "Example Municipality",
@@ -116,9 +149,9 @@ func TestBuild_UnnamedServiceInheritsTheEntityName(t *testing.T) {
 }
 
 func TestBuild_IsDeterministic(t *testing.T) {
-	first, err := loadSource(exampleSource(t), issuedAt)
+	first, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
-	second, err := loadSource(exampleSource(t), issuedAt)
+	second, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
 
 	firstRaw, err := json.Marshal(lote.Document{LoTE: first})
@@ -171,7 +204,7 @@ func writeJSON(t *testing.T, path string, value map[string]any) {
 
 func requireBuildFails(t *testing.T, dir, contains string) {
 	t.Helper()
-	_, err := loadSource(dir, issuedAt)
+	_, _, err := loadSource(dir, issuedAt)
 	require.Error(t, err)
 	require.ErrorContains(t, err, contains)
 }
@@ -355,7 +388,7 @@ func newTestSigner(t *testing.T, country, organization string) *testSigner {
 // own verifier accepts and its own snapshot grants from. Everything else in this
 // file is a detail of one of these two steps.
 func TestSign_ACuratedDirectoryGrantsThroughTheWalletsOwnChecker(t *testing.T) {
-	list, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
 
 	signer := newTestSigner(t, "NL", "Yivi Example")
@@ -407,7 +440,7 @@ func (s stubStore) Put(listId string, rawJws []byte) error {
 // Clause 6.8.0 binds the certificate to the scheme it signs for. Nothing at
 // runtime checks it, so these two are the only enforcement that exists.
 func TestSign_RejectsACertificateWhoseOrganizationIsNotTheSchemeOperator(t *testing.T) {
-	list, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
 
 	signer := newTestSigner(t, "NL", "Someone Else BV")
@@ -417,7 +450,7 @@ func TestSign_RejectsACertificateWhoseOrganizationIsNotTheSchemeOperator(t *test
 }
 
 func TestSign_RejectsACertificateWhoseCountryIsNotTheSchemeTerritory(t *testing.T) {
-	list, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
 
 	signer := newTestSigner(t, "BE", "Yivi Example")
@@ -427,7 +460,7 @@ func TestSign_RejectsACertificateWhoseCountryIsNotTheSchemeTerritory(t *testing.
 }
 
 func TestSign_RejectsACertificateWithoutDigitalSignatureKeyUsage(t *testing.T) {
-	list, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
 
 	signer := newTestSigner(t, "NL", "Yivi Example")

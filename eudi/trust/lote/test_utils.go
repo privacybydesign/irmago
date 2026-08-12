@@ -286,11 +286,14 @@ func NewTestDidService(serviceType trust.Role, did string, markings ...string) S
 
 // newTestService builds a granted service, leaving ServiceName unset so
 // NewTestEntity can fill it from the entity.
+//
+// ServiceStatus is deliberately left unset: absent means granted, and that is the
+// shape Yivi publishes, so the fixtures the whole suite runs on exercise the same
+// path a real list does. A test that wants a withdrawal sets Status explicitly.
 func newTestService(serviceType trust.Role, identity DigitalIdentity, markings ...string) Service {
 	info := ServiceInformation{
 		DigitalIdentity: identity,
 		Type:            ServiceTypeForRole(serviceType),
-		Status:          ServiceStatusGranted,
 	}
 	for _, marking := range markings {
 		info.Extensions = append(info.Extensions, YiviExtension{Marking: marking})

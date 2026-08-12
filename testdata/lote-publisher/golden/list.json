@@ -1,11 +1,11 @@
 {
   "LoTE": {
     "ListAndSchemeInformation": {
-      "ListIssueDateTime": "2026-08-12T10:12:52Z",
+      "ListIssueDateTime": "2026-08-12T11:04:23Z",
       "LoTESequenceNumber": 42,
       "LoTEType": "https://yivi.app/19602/LoTEType/YiviRecognizedPartiesList",
       "LoTEVersionIdentifier": 1,
-      "NextUpdate": "2026-09-11T10:12:52Z",
+      "NextUpdate": "2026-09-11T11:04:23Z",
       "PolicyOrLegalNotice": [
         {
           "LoTEPolicy": {
@@ -109,7 +109,7 @@
               "ServiceDigitalIdentity": {
                 "X509Certificates": [
                   {
-                    "val": "MIICBzCCAa2gAwIBAgIUadqNQt2Lv2rzgaOiHuyvbfTAxGcwCgYIKoZIzj0EAwIwQzELMAkGA1UEBhMCTkwxFDASBgNVBAoMC1lpdmkgR29sZGVuMR4wHAYDVQQDDBVZaXZpIEdvbGRlbiBMb1RFIFJvb3QwHhcNMjYwODEyMTAxMjUyWhcNMzYwODA5MTAxMjUyWjBlMQswCQYDVQQGEwJOTDEdMBsGA1UECgwURXhhbXBsZSBNdW5pY2lwYWxpdHkxHTAbBgNVBAMMFHZlcmlmaWVyLmV4YW1wbGUuY29tMRgwFgYDVQRhDA9WQVROTC0wMDAwMDAwMDEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASn+uo9td+f+/G0LGCTOQ32W6UgMA5BOVhK0WAZgVDNRsi9IFb85VR+DJO+Y19x00mZnL7TVw2o7faSgpnKJTATo10wWzALBgNVHQ8EBAMCB4AwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUWA23Tso3NBFQXqbVHwj+EhB92IEwHwYDVR0jBBgwFoAUNW1NrmzT48oOf9Tc/2WBQttzposwCgYIKoZIzj0EAwIDSAAwRQIhAOuWEU2xRTMBURVGuwPznpfIgvrJEc2Wu8v3h7ZVSmsJAiAdF1Y8MEx0yOcXwX6dpQqdRnd2HT5jcHUTjzOs3KStZQ=="
+                    "val": "MIICBjCCAa2gAwIBAgIUUKUepRrVgGzREdWIluS2u6QTfF4wCgYIKoZIzj0EAwIwQzELMAkGA1UEBhMCTkwxFDASBgNVBAoMC1lpdmkgR29sZGVuMR4wHAYDVQQDDBVZaXZpIEdvbGRlbiBMb1RFIFJvb3QwHhcNMjYwODEyMTEwNDIzWhcNMzYwODA5MTEwNDIzWjBlMQswCQYDVQQGEwJOTDEdMBsGA1UECgwURXhhbXBsZSBNdW5pY2lwYWxpdHkxHTAbBgNVBAMMFHZlcmlmaWVyLmV4YW1wbGUuY29tMRgwFgYDVQRhDA9WQVROTC0wMDAwMDAwMDEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQSb43cr22/CXQB6NCZP+Lfp7d/XpbTA8/Gh8ztyG3Z4jiWNRbWT6F5WhLoIR0w5qRuUQs46SiEXOhkBnglNnH+o10wWzALBgNVHQ8EBAMCB4AwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUtPa5SA6MoQRFKX/Qd5qUU1HNlNQwHwYDVR0jBBgwFoAURhi989Bx8kwdntNdxi28zV1xUtQwCgYIKoZIzj0EAwIDRwAwRAIgYVyId46RYELBjuuoHx/aWwpDxvlwg8KKIcKp1IZEdNQCIFA7ZC3lVomoXuWQwxUaqGgFZaOdih/2A1tG+lVRNhHp"
                   }
                 ]
               },
@@ -128,7 +128,6 @@
                   "value": "Example Municipality"
                 }
               ],
-              "ServiceStatus": "https://yivi.app/19602/Svcstatus/Granted",
               "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/Verifier"
             }
           }
@@ -171,7 +170,7 @@
             "ServiceInformation": {
               "ServiceDigitalIdentity": {
                 "X509SKIs": [
-                  "WA23Tso3NBFQXqbVHwj+EhB92IE="
+                  "tPa5SA6MoQRFKX/Qd5qUU1HNlNQ="
                 ]
               },
               "ServiceInformationExtensions": [
@@ -188,7 +187,6 @@
                   "value": "Example Diplomas"
                 }
               ],
-              "ServiceStatus": "https://yivi.app/19602/Svcstatus/Granted",
               "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/Issuer"
             }
           }
@@ -240,7 +238,6 @@
                   "value": "DID Verifier Ltd"
                 }
               ],
-              "ServiceStatus": "https://yivi.app/19602/Svcstatus/Granted",
               "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/Verifier"
             }
           }

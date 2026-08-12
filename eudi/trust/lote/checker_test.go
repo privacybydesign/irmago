@@ -130,6 +130,43 @@ func TestChecker_WithdrawnServiceIsNotGranted(t *testing.T) {
 	require.Nil(t, f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party}))
 }
 
+// An absent ServiceStatus means granted (clause 6.6.0 NOTE 1): with no historical
+// information period and no status, all listed services share one approval
+// status, so being listed is the approval.
+//
+// This is the shape Yivi publishes and the shape five of the six EU profiles
+// mandate — they say the component "shall not be used" — so it is the normal path,
+// not an edge case. Getting it wrong the other way is silent: a conformant list
+// would verify, be stored, and grant nobody without logging anything.
+func TestChecker_AServiceWithNoStatusIsGranted(t *testing.T) {
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
+	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
+
+	service := NewTestCertificateService(trust.RoleVerifier, party)
+	require.Empty(t, service.Information.Status, "the builder emits no status")
+	f.server.Serve(t, f.signer, NewTestList(testListId, 1, NewTestEntity("Listed BV", "", service)))
+
+	listing := f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party})
+	require.NotNil(t, listing, "a service with no status is granted")
+	require.Equal(t, clientmodels.TrustLevel_Medium, listing.Level)
+}
+
+// A status we do not recognise is not a grant. Each scheme has its own status
+// vocabulary — Annex H's Pub-EAA list uses `…/SvcStatus/notified` for what Yivi
+// calls granted — so an unknown URI means "some other scheme's word we cannot
+// interpret", and failing closed is the safe reading.
+func TestChecker_AServiceWithAnUnrecognizedStatusIsNotGranted(t *testing.T) {
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
+	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
+
+	service := NewTestCertificateService(trust.RoleVerifier, party)
+	service.Information.Status = "http://uri.etsi.org/19602/PubEAAProvidersList/SvcStatus/notified"
+	f.server.Serve(t, f.signer, NewTestList(testListId, 1, NewTestEntity("Foreign BV", "", service)))
+
+	require.Nil(t, f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party}),
+		"another scheme's granted-URI is not this scheme's")
+}
+
 func TestChecker_EntryKeyedOnSubjectKeyIdentifier(t *testing.T) {
 	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "VATNL-000000002")

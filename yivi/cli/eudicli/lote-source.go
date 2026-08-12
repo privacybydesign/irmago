@@ -117,9 +117,16 @@ type serviceSource struct {
 	// a curator never types one.
 	Role string `json:"role"`
 
-	// Status is "granted" or "withdrawn"; empty means granted, because an entry
-	// nobody has withdrawn is the common case and a required field there would
-	// only invite copy-paste.
+	// Status is "granted" or "withdrawn"; empty means granted.
+	//
+	// A withdrawn service is **left out of the published document** rather than
+	// marked in it: the published list says who is trusted now, and on a list
+	// carrying no statuses — which is what Yivi and five of the six EU profiles
+	// publish — the only way to express a withdrawal is absence.
+	//
+	// It stays in the curation file so the off-boarding is legible in git, which
+	// is where Yivi's audit trail actually lives, and so it can be reversed by
+	// editing one word. `build` reports what it excluded.
 	Status string `json:"status,omitempty"`
 
 	// Name overrides the entity's name for this service. Annex A makes
@@ -151,25 +158,38 @@ type identitySource struct {
 	DIDs []string `json:"dids,omitempty"`
 }
 
+// buildStats is what `build` reports about a document beyond the document
+// itself. Withdrawals are absences in the output, so they have to be counted
+// here or they happen silently.
+type buildStats struct {
+	// WithdrawnServices is how many services were left out as withdrawn.
+	WithdrawnServices int
+	// DroppedEntities names entities left out entirely because every one of
+	// their services was withdrawn.
+	DroppedEntities []string
+}
+
 // loadSource reads a curation directory and turns it into a conformant list.
 //
 // issuedAt is the moment stamped into ListIssueDateTime, from which NextUpdate is
 // derived. It is a parameter rather than time.Now() so a test can build a
 // byte-identical document twice.
-func loadSource(dir string, issuedAt time.Time) (lote.List, error) {
+func loadSource(dir string, issuedAt time.Time) (lote.List, buildStats, error) {
+	var stats buildStats
+
 	scheme, err := readSchemeSource(dir)
 	if err != nil {
-		return lote.List{}, err
+		return lote.List{}, stats, err
 	}
 
 	entities, err := readEntitySources(dir)
 	if err != nil {
-		return lote.List{}, err
+		return lote.List{}, stats, err
 	}
 
 	schemeInfo, err := scheme.toSchemeInformation(issuedAt)
 	if err != nil {
-		return lote.List{}, fmt.Errorf("%s: %w", schemeFileName, err)
+		return lote.List{}, stats, fmt.Errorf("%s: %w", schemeFileName, err)
 	}
 
 	list := lote.List{SchemeInformation: schemeInfo}
@@ -177,13 +197,21 @@ func loadSource(dir string, issuedAt time.Time) (lote.List, error) {
 	// entries recognizing the same party can be reported with both filenames.
 	claimed := map[string]string{}
 	for _, named := range entities {
-		entity, err := named.source.toEntity(dir, claimed, named.file)
+		entity, withdrawn, err := named.source.toEntity(dir, claimed, named.file)
 		if err != nil {
-			return lote.List{}, fmt.Errorf("%s: %w", named.file, err)
+			return lote.List{}, stats, fmt.Errorf("%s: %w", named.file, err)
+		}
+		stats.WithdrawnServices += withdrawn
+
+		// Annex A requires at least one service per entity, and an entity with
+		// nothing granted says nothing anyway.
+		if len(entity.Services) == 0 {
+			stats.DroppedEntities = append(stats.DroppedEntities, named.file)
+			continue
 		}
 		list.Entities = append(list.Entities, entity)
 	}
-	return list, nil
+	return list, stats, nil
 }
 
 func readSchemeSource(dir string) (schemeSource, error) {
@@ -373,21 +401,24 @@ func (a addressSource) validate(field string) (validatedAddress, error) {
 	return out, nil
 }
 
-func (e entitySource) toEntity(dir string, claimed map[string]string, file string) (lote.Entity, error) {
+// toEntity converts one curation file, reporting how many of its services were
+// left out as withdrawn. An entity whose every service is withdrawn comes back
+// with no services, which the caller drops.
+func (e entitySource) toEntity(dir string, claimed map[string]string, file string) (lote.Entity, int, error) {
 	var entity lote.Entity
 
 	if e.Name["en"] == "" {
-		return entity, fmt.Errorf("name must have an \"en\" entry")
+		return entity, 0, fmt.Errorf("name must have an \"en\" entry")
 	}
 	if e.InformationURI["en"] == "" {
-		return entity, fmt.Errorf("information_uri must have an \"en\" entry: Annex A requires TEInformationURI")
+		return entity, 0, fmt.Errorf("information_uri must have an \"en\" entry: Annex A requires TEInformationURI")
 	}
 	if len(e.Services) == 0 {
-		return entity, fmt.Errorf("services is empty: an entity with no grants says nothing")
+		return entity, 0, fmt.Errorf("services is empty: an entity with no grants says nothing")
 	}
 	address, err := e.Address.validate("address")
 	if err != nil {
-		return entity, err
+		return entity, 0, err
 	}
 
 	information := lote.EntityInformation{
@@ -407,14 +438,28 @@ func (e entitySource) toEntity(dir string, claimed map[string]string, file strin
 	}
 	entity.Information = information
 
+	withdrawn := 0
 	for i, source := range e.Services {
+		excluded, err := source.isWithdrawn()
+		if err != nil {
+			return entity, 0, fmt.Errorf("services[%d]: %w", i, err)
+		}
+		if excluded {
+			// Not converted at all, so its identities are not claimed either: a
+			// key an off-boarded party no longer holds is free for whoever does.
+			// The flip side is that a typo inside a withdrawn entry goes
+			// unnoticed until someone un-withdraws it.
+			withdrawn++
+			continue
+		}
+
 		service, err := source.toService(dir, e.Name, claimed, file)
 		if err != nil {
-			return entity, fmt.Errorf("services[%d]: %w", i, err)
+			return entity, 0, fmt.Errorf("services[%d]: %w", i, err)
 		}
 		entity.Services = append(entity.Services, service)
 	}
-	return entity, nil
+	return entity, withdrawn, nil
 }
 
 func (s serviceSource) toService(
@@ -426,10 +471,6 @@ func (s serviceSource) toService(
 	var service lote.Service
 
 	role, err := parseRole(s.Role)
-	if err != nil {
-		return service, err
-	}
-	status, err := parseStatus(s.Status)
 	if err != nil {
 		return service, err
 	}
@@ -447,11 +488,12 @@ func (s serviceSource) toService(
 		name = entityName
 	}
 
+	// No ServiceStatus is emitted: on a list carrying none, being listed is the
+	// grant. A withdrawal is an absence, handled before this is reached.
 	information := lote.ServiceInformation{
 		Name:            lote.MultiLang(name),
 		DigitalIdentity: identity,
 		Type:            lote.ServiceTypeForRole(role),
-		Status:          status,
 	}
 	if s.LogoURI != "" {
 		information.Extensions = append(information.Extensions, lote.YiviExtension{LogoURI: s.LogoURI})
@@ -566,16 +608,17 @@ func parseRole(role string) (trust.Role, error) {
 	return "", fmt.Errorf("unknown role %q (expected %q or %q)", role, trust.RoleIssuer, trust.RoleVerifier)
 }
 
-// parseStatus maps the curation word onto the status URI. Empty means granted:
-// an entry nobody has withdrawn is the common case.
-func parseStatus(status string) (lote.ServiceStatus, error) {
-	switch status {
+// isWithdrawn reports whether this service is left out of the published document.
+// Empty means granted: an entry nobody has withdrawn is the common case, and a
+// required field there would only invite copy-paste.
+func (s serviceSource) isWithdrawn() (bool, error) {
+	switch s.Status {
 	case "", "granted":
-		return lote.ServiceStatusGranted, nil
+		return false, nil
 	case "withdrawn":
-		return lote.ServiceStatusWithdrawn, nil
+		return true, nil
 	}
-	return "", fmt.Errorf("unknown status %q (expected \"granted\" or \"withdrawn\")", status)
+	return false, fmt.Errorf("unknown status %q (expected \"granted\" or \"withdrawn\")", s.Status)
 }
 
 func orDefault(value, fallback string) string {

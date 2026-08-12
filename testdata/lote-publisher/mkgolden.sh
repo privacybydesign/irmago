@@ -69,8 +69,14 @@ party_ski = base64.b64encode(
 ).decode()
 
 # Every shape the wallet understands, in one Annex A document: both certificate
-# key forms, a DID, a marking, a withdrawal, service-level overrides, an unknown
-# marking that must be carried and ignored, and multilingual names.
+# key forms, a DID, a marking, service-level overrides, an unknown marking that
+# must be carried and ignored, and multilingual names.
+#
+# Statuses are the interesting part. Three services carry none — which is what
+# Yivi publishes, and means granted (clause 6.6.0 NOTE 1) — and the fourth carries
+# an explicit withdrawn status, which a list from another scheme may well do. So
+# the committed document exercises both branches of that rule rather than only the
+# one Yivi emits.
 #
 # Built through publish.py's own entity()/service() helpers rather than spelled
 # out, so the golden document and the E2E publisher cannot disagree about what

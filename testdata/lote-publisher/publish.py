@@ -229,16 +229,21 @@ def entity(name, services, organization_identifier=None, logo_uri=None):
     return {"TrustedEntityInformation": information, "TrustedEntityServices": services}
 
 
-def service(role, identity, name, status="Granted", logo_uri=None, markings=()):
+def service(role, identity, name, status=None, logo_uri=None, markings=()):
     """One TrustedEntityService.
 
     ServiceName is mandatory (clause 6.6.0), so a service not presented under its
     own brand repeats the entity's name rather than being left unnamed.
 
-    ServiceTypeIdentifier and ServiceStatus are *optional* in the schema but
-    always emitted: clause 6.6.0's notes give their absence the meaning "all
-    services share one type / one status", which is wrong for a list carrying
-    both roles and visible withdrawals.
+    ServiceTypeIdentifier is optional in the schema but always emitted: clause
+    6.6.0 NOTE 2 gives its absence the meaning "all listed services are of the
+    same type", which is wrong for a list carrying both roles.
+
+    ServiceStatus is the opposite: **omitted by default**. Clause 6.6.0 NOTE 1
+    makes an absent status mean all listed services share one approval status, so
+    being listed is the grant — which is what Yivi publishes and what five of the
+    six EU profiles mandate ("shall not be used"). Pass status explicitly only to
+    exercise a list that does carry one.
     """
     extensions = []
     if logo_uri:
@@ -251,8 +256,9 @@ def service(role, identity, name, status="Granted", logo_uri=None, markings=()):
         ],
         "ServiceDigitalIdentity": identity,
         "ServiceTypeIdentifier": f"https://yivi.app/19602/Svctype/{role}",
-        "ServiceStatus": f"https://yivi.app/19602/Svcstatus/{status}",
     }
+    if status is not None:
+        information["ServiceStatus"] = f"https://yivi.app/19602/Svcstatus/{status}"
     if extensions:
         information["ServiceInformationExtensions"] = extensions
 
@@ -286,7 +292,7 @@ def expand_entity(spec):
                 role=svc.get("role", "Issuer"),
                 identity=identity,
                 name={"en": svc.get("name") or spec["name"]},
-                status=svc.get("status", "Granted"),
+                status=svc.get("status"),
                 logo_uri=svc.get("logo_uri"),
                 markings=svc.get("markings") or (),
             )

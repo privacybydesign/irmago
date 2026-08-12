@@ -55,9 +55,19 @@ in the same release step.`,
 			issuedAt = issuedAt.UTC()
 		}
 
-		list, err := loadSource(args[0], issuedAt)
+		list, stats, err := loadSource(args[0], issuedAt)
 		if err != nil {
 			return err
+		}
+
+		// Withdrawals are absences in the output, so they are reported rather
+		// than left to be inferred from a shorter document.
+		if stats.WithdrawnServices > 0 {
+			Logger.Infof("excluded %d withdrawn service(s): on a list carrying no statuses, a withdrawal is an absence",
+				stats.WithdrawnServices)
+		}
+		for _, file := range stats.DroppedEntities {
+			Logger.Infof("excluded %s entirely: all of its services are withdrawn", file)
 		}
 
 		raw, err := json.MarshalIndent(lote.Document{LoTE: list}, "", "  ")
