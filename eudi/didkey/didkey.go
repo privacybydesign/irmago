@@ -56,9 +56,11 @@ func parseMultibaseValue(didKey string) (string, error) {
 		return "", fmt.Errorf("did:key multibase value must be base58-btc encoded: %s", didKey)
 	}
 
-	// The verification method id is the DID plus a fragment repeating the multibase
-	// value, so a fragment naming a different key means the DID URL and the key it
-	// resolves to disagree.
+	// For the key the DID itself encodes, the verification method id is the DID plus a
+	// fragment repeating the multibase value, so a fragment naming a different value
+	// means the DID URL and the key it resolves to disagree. (Ed25519 DID documents
+	// also carry a derived X25519 keyAgreement method whose fragment does differ; that
+	// key type is unsupported here, so rejecting it is correct either way.)
 	if hasFragment && fragment != multibase {
 		return "", fmt.Errorf("did:key fragment does not match its multibase value: %s", didKey)
 	}
