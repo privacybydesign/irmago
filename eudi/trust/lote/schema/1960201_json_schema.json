@@ -1,0 +1,680 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "LoTE": {
+      "type": "object",
+      "properties": {
+        "ListAndSchemeInformation": {
+          "$ref": "#/definitions/ListAndSchemeInformation"
+        },
+        "TrustedEntitiesList": {
+          "$ref": "#/definitions/TrustedEntitiesList"
+        }
+      },
+      "required": [
+        "ListAndSchemeInformation"
+      ],
+      "additionalProperties": false
+    },
+    "ListAndSchemeInformation": {
+      "type": "object",
+      "properties": {
+        "LoTEVersionIdentifier": {
+          "$ref": "#/definitions/LoTEVersionIdentifier"
+        },
+        "LoTESequenceNumber": {
+          "$ref": "#/definitions/LoTESequenceNumber"
+        },
+        "LoTEType": {
+          "$ref": "#/definitions/LoTEType"
+        },
+        "SchemeOperatorName": {
+          "$ref": "#/definitions/SchemeOperatorName"
+        },
+        "SchemeOperatorAddress": {
+          "$ref": "#/definitions/SchemeOperatorAddress"
+        },
+        "SchemeName": {
+          "$ref": "#/definitions/SchemeName"
+        },
+        "SchemeInformationURI": {
+          "$ref": "#/definitions/SchemeInformationURI"
+        },
+        "StatusDeterminationApproach": {
+          "$ref": "#/definitions/StatusDeterminationApproach"
+        },
+        "SchemeTypeCommunityRules": {
+          "$ref": "#/definitions/SchemeTypeCommunityRules"
+        },
+        "SchemeTerritory": {
+          "$ref": "#/definitions/SchemeTerritory"
+        },
+        "PolicyOrLegalNotice": {
+          "$ref": "#/definitions/PolicyOrLegalNotice"
+        },
+        "HistoricalInformationPeriod": {
+          "$ref": "#/definitions/HistoricalInformationPeriod"
+        },
+        "PointersToOtherLoTE": {
+          "$ref": "#/definitions/PointersToOtherLoTE"
+        },
+        "ListIssueDateTime": {
+          "$ref": "#/definitions/ListIssueDateTime"
+        },
+        "NextUpdate": {
+          "$ref": "#/definitions/NextUpdate"
+        },
+        "DistributionPoints": {
+          "$ref": "#/definitions/DistributionPoints"
+        },
+        "SchemeExtensions": {
+          "$ref": "#/definitions/SchemeExtensions"
+        }
+      },
+      "required": [
+        "LoTEVersionIdentifier",
+        "LoTESequenceNumber",
+        "SchemeOperatorName",
+        "ListIssueDateTime",
+        "NextUpdate"
+      ],
+      "additionalProperties": false
+    },
+    "LoTEVersionIdentifier": {
+      "type": "integer"
+    },
+    "LoTESequenceNumber": {
+      "type": "integer"
+    },
+    "LoTEType": {
+      "type": "string",
+      "format": "uri"
+    },
+    "multiLangString": {
+      "type": "object",
+      "properties": {
+        "lang": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lang",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "NonEmptyMultiLangURI": {
+      "type": "object",
+      "properties": {
+        "lang": {
+          "type": "string"
+        },
+        "uriValue": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "lang",
+        "uriValue"
+      ],
+      "additionalProperties": false
+    },
+    "SchemeOperatorName": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/multiLangString"
+      },
+      "minItems": 1
+    },
+    "SchemeOperatorAddress": {
+      "type": "object",
+      "properties": {
+        "SchemeOperatorPostalAddress": {
+          "$ref": "#/definitions/PostalAddresses"
+        },
+        "SchemeOperatorElectronicAddress": {
+          "$ref": "#/definitions/ElectronicAddress"
+        }
+      },
+      "required": [
+        "SchemeOperatorPostalAddress",
+        "SchemeOperatorElectronicAddress"
+      ],
+      "additionalProperties": false
+    },
+    "PostalAddresses": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PostalAddress"
+      },
+      "minItems": 1
+    },
+    "PostalAddress": {
+      "type": "object",
+      "properties": {
+        "lang": {
+          "type": "string"
+        },
+        "StreetAddress": {
+          "type": "string"
+        },
+        "Locality": {
+          "type": "string"
+        },
+        "StateOrProvince": {
+          "type": "string"
+        },
+        "PostalCode": {
+          "type": "string"
+        },
+        "Country": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lang",
+        "StreetAddress",
+        "Country"
+      ],
+      "additionalProperties": false
+    },
+    "ElectronicAddress": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/NonEmptyMultiLangURI"
+      },
+      "minItems": 1
+    },
+    "SchemeName": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/multiLangString"
+      },
+      "minItems": 1
+    },
+    "SchemeInformationURI": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/NonEmptyMultiLangURI"
+      },
+      "minItems": 1
+    },
+    "StatusDeterminationApproach": {
+      "type": "string",
+      "format": "uri"
+    },
+    "SchemeTypeCommunityRules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/NonEmptyMultiLangURI"
+      },
+      "minItems": 1
+    },
+    "SchemeTerritory": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 2
+    },
+    "PolicyOrLegalNotice": {
+      "type": "array",
+      "oneOf": [
+        {
+          "items": {
+            "type": "object",
+            "properties": {
+              "LoTEPolicy": {
+                "$ref": "#/definitions/NonEmptyMultiLangURI"
+              }
+            },
+            "required": [
+              "LoTEPolicy"
+            ]
+          }
+        },
+        {
+          "items": {
+            "type": "object",
+            "properties": {
+              "LoTELegalNotice": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "LoTELegalNotice"
+            ]
+          }
+        }
+      ],
+      "minItems": 1
+    },
+    "HistoricalInformationPeriod": {
+      "type": "integer"
+    },
+    "PointersToOtherLoTE": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/OtherLoTEPointer"
+      },
+      "minItems": 1
+    },
+    "OtherLoTEPointer": {
+      "type": "object",
+      "properties": {
+        "LoTELocation": {
+          "type": "string",
+          "format": "uri"
+        },
+        "ServiceDigitalIdentities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ServiceDigitalIdentity"
+          },
+          "minItems": 1
+        },
+        "LoTEQualifiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LoTEQualifier"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "LoTELocation",
+        "ServiceDigitalIdentities",
+        "LoTEQualifiers"
+      ],
+      "additionalProperties": false
+    },
+    "ServiceDigitalIdentity": {
+      "type": "object",
+      "properties": {
+        "X509Certificates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/pkiOb"
+          },
+          "minItems": 1
+        },
+        "X509SubjectNames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/X509SubjectName"
+          },
+          "minItems": 1
+        },
+        "PublicKeyValues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PublicKeyValue"
+          },
+          "minItems": 1
+        },
+        "X509SKIs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/X509SKI"
+          },
+          "minItems": 1
+        },
+        "OtherIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OtherId"
+          },
+          "minItems": 1
+        },
+      "additionalProperties": false
+      }
+    },
+    "pkiOb": {
+      "type": "object",
+      "properties": {
+        "encoding": {
+          "type": "string",
+          "format": "uri"
+        },
+        "specRef": {
+          "type": "string"
+        },
+        "val": {
+          "type": "string",
+          "contentEncoding": "base64"
+        }
+      },
+      "required": [
+        "val"
+      ],
+      "additionalProperties": false
+    },
+    "X509SubjectName": {
+      "type": "string"
+    },
+    "PublicKeyValue": {
+      "$ref": "rfcs/rfc7517.json#/definitions/jwk"
+    },
+    "X509SKI": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "OtherId": {
+      "type": "string"
+    },
+    "LoTEQualifier": {
+      "type": "object",
+      "properties": {
+        "LoTEType": {
+          "$ref": "#/definitions/LoTEType"
+        },
+        "SchemeOperatorName": {
+          "$ref": "#/definitions/SchemeOperatorName"
+        },
+        "SchemeTypeCommunityRules": {
+          "$ref": "#/definitions/SchemeTypeCommunityRules"
+        },
+        "SchemeTerritory": {
+          "$ref": "#/definitions/SchemeTerritory"
+        },
+        "MimeType": {
+          "$ref": "#/definitions/MimeType"
+        }
+      },
+      "required": [
+        "LoTEType",
+        "SchemeOperatorName",
+        "MimeType"
+      ],
+      "additionalProperties": false
+    },
+    "MimeType": {
+      "type": "string"
+    },
+    "ListIssueDateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "NextUpdate": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "DistributionPoints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uri"
+      },
+      "minItems": 1
+    },
+    "SchemeExtensions": {
+      "type": "array",
+      "minItems": 1
+    },
+    "TrustedEntitiesList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/TrustedEntity"
+      },
+      "minItems": 1
+    },
+    "TrustedEntity": {
+      "type": "object",
+      "properties": {
+        "TrustedEntityInformation": {
+          "$ref": "#/definitions/TrustedEntityInformation"
+        },
+        "TrustedEntityServices": {
+          "$ref": "#/definitions/TrustedEntityServices"
+        }
+      },
+      "required": [
+        "TrustedEntityInformation",
+        "TrustedEntityServices"
+      ],
+      "additionalProperties": false
+    },
+    "TrustedEntityServices": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/TrustedEntityService"
+      },
+      "minItems": 1
+    },
+    "TrustedEntityService": {
+      "type": "object",
+      "properties": {
+        "ServiceInformation": {
+          "$ref": "#/definitions/ServiceInformation"
+        },
+        "ServiceHistory": {
+          "$ref": "#/definitions/ServiceHistory"
+        }
+      },
+      "required": [
+        "ServiceInformation"
+      ],
+      "additionalProperties": false
+    },
+    "ServiceInformation": {
+      "type": "object",
+      "properties": {
+        "ServiceName": {
+          "$ref": "#/definitions/ServiceName"
+        },
+        "ServiceDigitalIdentity": {
+          "$ref": "#/definitions/ServiceDigitalIdentity"
+        },
+        "ServiceTypeIdentifier": {
+          "$ref": "#/definitions/ServiceTypeIdentifier"
+        },
+        "ServiceStatus": {
+          "$ref": "#/definitions/ServiceStatus"
+        },
+        "StatusStartingTime": {
+          "$ref": "#/definitions/StatusStartingTime"
+        },
+        "SchemeServiceDefinitionURI": {
+          "$ref": "#/definitions/SchemeServiceDefinitionURI"
+        },
+        "ServiceSupplyPoints": {
+          "$ref": "#/definitions/ServiceSupplyPoints"
+        },
+        "ServiceDefinitionURI": {
+          "$ref": "#/definitions/ServiceDefinitionURI"
+        },
+        "ServiceInformationExtensions": {
+          "$ref": "#/definitions/ServiceInformationExtensions"
+        }
+      },
+      "required": [
+        "ServiceName",
+        "ServiceDigitalIdentity"
+      ],
+      "additionalProperties": false
+    },
+    "ServiceTypeIdentifier": {
+      "type": "string",
+      "format": "uri"
+    },
+    "ServiceName": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/multiLangString"
+      },
+      "minItems": 1
+    },
+    "ServiceStatus": {
+      "type": "string",
+      "format": "uri"
+    },
+    "StatusStartingTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "SchemeServiceDefinitionURI": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/NonEmptyMultiLangURI"
+      },
+      "minItems": 1
+    },
+    "ServiceSupplyPoints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ServiceSupplyPointURI"
+      },
+      "minItems": 1
+    },
+    "ServiceSupplyPointURI": {
+      "type": "object",
+      "properties": {
+        "ServiceType": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1
+        },
+        "uriValue": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "uriValue"
+      ],
+      "additionalProperties": false
+    },
+    "ServiceDefinitionURI": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/NonEmptyMultiLangURI"
+      },
+      "minItems": 1
+    },
+    "ServiceInformationExtensions": {
+      "type": "array",
+      "minItems": 1
+    },
+    "ServiceHistory":{
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ServiceHistoryInstance"
+      },
+      "minItems": 1
+    },
+    "ServiceHistoryInstance": {
+      "type": "object",
+      "properties": {
+        "ServiceName": {
+          "$ref": "#/definitions/ServiceName"
+        },
+        "ServiceDigitalIdentity": {
+          "$ref": "#/definitions/ServiceDigitalIdentity"
+        },
+        "ServiceStatus": {
+          "$ref": "#/definitions/ServiceStatus"
+        },
+        "StatusStartingTime": {
+          "$ref": "#/definitions/StatusStartingTime"
+        },
+        "ServiceTypeIdentifier": {
+          "$ref": "#/definitions/ServiceTypeIdentifier"
+        },
+        "ServiceInformationExtensions": {
+          "$ref": "#/definitions/ServiceInformationExtensions"
+        }
+      },
+      "required": [
+        "ServiceName",
+        "ServiceDigitalIdentity",
+        "ServiceStatus",
+        "StatusStartingTime"
+      ],
+      "additionalProperties": false
+    },
+    "TrustedEntityInformation": {
+      "type": "object",
+      "properties": {
+        "TEName": {
+          "$ref": "#/definitions/TEName"
+        },
+        "TETradeName": {
+          "$ref": "#/definitions/TETradeName"
+        },
+        "TEAddress": {
+          "$ref": "#/definitions/TEAddress"
+        },
+        "TEInformationURI": {
+          "$ref": "#/definitions/TEInformationURI"
+        },
+        "TEInformationExtensions": {
+          "$ref": "#/definitions/TEInformationExtensions"
+        }
+      },
+      "required": [
+        "TEName",
+        "TEAddress",
+        "TEInformationURI"
+      ],
+      "additionalProperties": false
+    },
+    "TEName": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/multiLangString"
+      },
+      "minItems": 1
+    },
+    "TETradeName": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/multiLangString"
+      },
+      "minItems": 1
+    },
+
+
+    "TEAddress": {
+      "type": "object",
+      "properties": {
+        "TEPostalAddress": {
+          "$ref": "#/definitions/PostalAddresses"
+        },
+        "TEElectronicAddress": {
+          "$ref": "#/definitions/ElectronicAddress"
+        }
+      },
+      "required": [
+        "TEPostalAddress",
+        "TEElectronicAddress"
+      ],
+      "additionalProperties": false
+    },
+    "TEInformationURI": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/NonEmptyMultiLangURI"
+      },
+      "minItems": 1
+    },
+    "TEInformationExtensions": {
+      "type": "array",
+      "minItems": 1
+    }
+  },
+
+  "type": "object",
+  "required": [
+    "LoTE"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "LoTE": {
+      "$ref": "#/definitions/LoTE"
+    }
+  }
+}

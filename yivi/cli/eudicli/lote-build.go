@@ -64,6 +64,14 @@ in the same release step.`,
 		if err != nil {
 			return err
 		}
+
+		// Validated against the normative Annex A schema before anything is
+		// written. The curation checks above catch what a curator gets wrong;
+		// this catches what the *serialiser* gets wrong, which is the failure a
+		// publisher would otherwise discover from a third party.
+		if err := lote.ValidateDocument(raw); err != nil {
+			return err
+		}
 		raw = append(raw, '\n')
 
 		if out == "" || out == "-" {
@@ -74,9 +82,9 @@ in the same release step.`,
 			return err
 		}
 
-		Logger.Infof("built %s: %d entities, sequence number %d, next update %s",
+		Logger.Infof("built %s: %d entities, sequence number %d, next update %s (conforms to Annex A %s)",
 			out, len(list.Entities), list.SchemeInformation.SequenceNumber,
-			list.SchemeInformation.NextUpdate.Format(time.RFC3339))
+			list.SchemeInformation.NextUpdate.Format(time.RFC3339), lote.SchemaVersion)
 		return nil
 	},
 }
