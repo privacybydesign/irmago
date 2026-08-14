@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## [1.3.0] - 2026-08-12
 ### Added
 - `TrustModel.RemoveCertificate` and `CertificateManager.RemoveCertificate`: remove an installed EUDI certificate chain by the hex-encoded signature (thumbprint) of its leaf certificate, the inverse of `InstallCertificate`. Enables the irmamobile debug certificate-management screen to delete certificates it installed.
 - Locale-aware client: `client.New` takes an initial UI locale and `Client.SetLocale` changes it at runtime. All app-facing text resolves inside irmago through a fixed fallback chain (exact locale → base language → English → any); text of one object never mixes languages, while fields that are not displayed text — logos and issue URLs — fall back across languages independently, so they survive a locale that does not translate them.
@@ -768,6 +770,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[1.3.0]: https://github.com/privacybydesign/irmago/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/privacybydesign/irmago/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/privacybydesign/irmago/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/privacybydesign/irmago/compare/v1.0.0...v1.1.0
