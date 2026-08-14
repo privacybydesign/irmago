@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwe"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwe"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/scheme"
@@ -586,7 +586,7 @@ func testEncryptionKeys(t *testing.T) (jwk.Key, jwk.Set) {
 	ecPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
-	privateKey, err := jwk.Import(ecPrivateKey)
+	privateKey, err := jwk.Import[jwk.Key](ecPrivateKey)
 	require.NoError(t, err)
 	require.NoError(t, privateKey.Set(jwk.AlgorithmKey, jwa.ECDH_ES()))
 	require.NoError(t, privateKey.Set(jwk.KeyUsageKey, "enc"))

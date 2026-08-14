@@ -11,7 +11,7 @@ import (
 	"math/big"
 	"sync"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 )
 
 // HolderSigner is the source of SD-JWT VC holder binding keys and holder-key
@@ -61,7 +61,7 @@ func derToRawES256(der []byte) ([]byte, error) {
 // used as the stable map key from a credential's cnf public key to a signer
 // reference.
 func ecdsaJWKThumbprint(pub *ecdsa.PublicKey) (string, error) {
-	k, err := jwk.Import(pub)
+	k, err := jwk.Import[jwk.Key](pub)
 	if err != nil {
 		return "", err
 	}

@@ -1,3 +1,6 @@
 FROM golang:1
 
+# Required by github.com/lestrrat-go/jwx/v4, which uses encoding/json/v2.
+ENV GOEXPERIMENT=jsonv2
+
 RUN apt-get update && apt-get install -y libsqlcipher-dev ca-certificates && rm -rf /var/lib/apt/lists/*

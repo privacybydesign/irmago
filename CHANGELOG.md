@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Changed
+- Upgraded `github.com/lestrrat-go/jwx` from v3 to v4. Building irmago now requires `GOEXPERIMENT=jsonv2`, because jwx v4 uses the `encoding/json/v2` standard library experiment; the Dockerfiles set it, CI and downstream builds (such as the irmamobile gomobile bind) must set it themselves ([#705](https://github.com/privacybydesign/irmago/issues/705)). JWK Sets received in verifier and issuer metadata are still rejected in full when any entry is unparseable, matching the v3 behavior, via `jwk.WithStrictKeySetParsing` (jwx v4 by default keeps such entries as placeholder keys).
 
 ## [1.3.0] - 2026-08-12
 ### Added

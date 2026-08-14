@@ -33,3 +33,5 @@ runs:
         GOOS: ${{ inputs.os }}
         GOARCH: ${{ inputs.arch }}
         CGO_ENABLED: "0"
+        # Required by github.com/lestrrat-go/jwx/v4, which uses encoding/json/v2.
+        GOEXPERIMENT: jsonv2

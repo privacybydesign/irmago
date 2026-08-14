@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 )
 

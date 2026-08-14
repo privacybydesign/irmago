@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/cert"
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/cert"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/stretchr/testify/require"
@@ -279,7 +279,7 @@ func Test_KidKeyProvider_FetchKeys_NoMatchingVerificationMethod_ReturnsError(t *
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 
 	// DID document has a key with a different ID
@@ -309,7 +309,7 @@ func Test_KidKeyProvider_FetchKeys_PrivateKeyInVerificationMethod_ReturnsError(t
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	privJWK, err := jwk.Import(privKey) // private key – not allowed in DID document
+	privJWK, err := jwk.Import[jwk.Key](privKey) // private key – not allowed in DID document
 	require.NoError(t, err)
 
 	docBytes := newTestDIDDocument(t, issuerDID, fullKID, privJWK)
@@ -338,7 +338,7 @@ func Test_KidKeyProvider_FetchKeys_ValidPublicKey_FeedsKeyAndAlgorithmToSink(t *
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 
 	docBytes := newTestDIDDocument(t, issuerDID, fullKID, pubJWK)
@@ -373,7 +373,7 @@ func Test_KidKeyProvider_FetchKeys_FullKidHeader_UsedAsIs(t *testing.T) {
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 
 	// DID document uses the full KID, not issuerDID + "#key-1"
@@ -409,7 +409,7 @@ func Test_KidKeyProvider_FetchKeys_FullKidHeader_DoesNotConcatenateWithIss(t *te
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 
 	// DID document only has the concatenated form — should NOT match when kidHeader is already absolute.
@@ -439,7 +439,7 @@ func Test_KidKeyProvider_FetchKeys_NilSignature_ReturnsError(t *testing.T) {
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 
 	docBytes := newTestDIDDocument(t, issuerDID, fullKID, pubJWK)
@@ -467,7 +467,7 @@ func Test_KidKeyProvider_FetchKeys_MissingAlgHeader_ReturnsError(t *testing.T) {
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 
 	docBytes := newTestDIDDocument(t, issuerDID, fullKID, pubJWK)
@@ -500,7 +500,7 @@ func Test_KidKeyProvider_FetchKeys_AlgFromJWSHeaderNotJWK(t *testing.T) {
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 	// Deliberately set a different alg on the JWK than what the JWT is actually signed with.
 	require.NoError(t, pubJWK.Set("alg", jwa.ES384()))
@@ -535,7 +535,7 @@ func Test_KidKeyProvider_FetchKeys_AlgFromJWSHeaderNotJWK(t *testing.T) {
 // newTestDidJwk derives a did:jwk DID from the public part of the given key.
 func newTestDidJwk(t *testing.T, privKey *ecdsa.PrivateKey) string {
 	t.Helper()
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 	doc, err := (&didjwk.DocumentBuilder{}).FromJwk(pubJWK)
 	require.NoError(t, err)

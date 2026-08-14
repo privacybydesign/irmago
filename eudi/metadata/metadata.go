@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -249,7 +249,9 @@ func (c *CredentialRequestEncryption) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("invalid 'jwks': %w", err)
 		}
-		if jwks, err := jwk.Parse(rawJwksBytes); err != nil {
+		// jwx v4 by default keeps unparseable set entries as placeholder keys;
+		// strict parsing preserves the v3 behavior of rejecting the whole set.
+		if jwks, err := jwk.Parse(rawJwksBytes, jwk.WithStrictKeySetParsing(true)); err != nil {
 			return fmt.Errorf("invalid 'jwks': %w", err)
 		} else {
 			c.Jwks = jwks

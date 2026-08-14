@@ -3,7 +3,7 @@ package sdjwtvc
 import (
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/stretchr/testify/require"
 )

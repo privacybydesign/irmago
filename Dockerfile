@@ -2,6 +2,8 @@ FROM golang:1-alpine AS build
 
 # Set build environment
 ENV CGO_ENABLED=0
+# Required by github.com/lestrrat-go/jwx/v4, which uses encoding/json/v2.
+ENV GOEXPERIMENT=jsonv2
 
 # Build irma CLI tool
 COPY . /irmago

@@ -114,6 +114,18 @@ runs:
       run: cp -R ./testdata ./irmago_test_checkout
       shell: bash
 
+    # github.com/lestrrat-go/jwx/v4 needs GOEXPERIMENT=jsonv2, but older test refs
+    # (integration-test-serverside checks out v0.13.2-era code) run on toolchains
+    # that reject unknown GOEXPERIMENT values, so only set it when the checked-out
+    # test code actually depends on jwx/v4.
+    - name: Set GOEXPERIMENT for the test code
+      working-directory: irmago_test_checkout
+      run: |
+        if grep -q 'github.com/lestrrat-go/jwx/v4' go.mod; then
+          echo "GOEXPERIMENT=jsonv2" >> $GITHUB_ENV
+        fi
+      shell: bash
+
     - name: Run integration tests
       working-directory: irmago_test_checkout
       env:
