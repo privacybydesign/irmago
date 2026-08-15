@@ -2,7 +2,6 @@ package eudi
 
 import (
 	"fmt"
-	"net/http"
 	"sync"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -39,7 +38,7 @@ type Configuration struct {
 
 // NewConfiguration returns a new configuration. After this ParseFolder() should be called to parse the specified path.
 func NewConfiguration(s storage.Storage) (conf *Configuration, err error) {
-	httpClient := &http.Client{}
+	httpClient := common.HTTPClient
 
 	conf = &Configuration{
 		Storage: s,
@@ -60,8 +59,17 @@ func NewConfiguration(s storage.Storage) (conf *Configuration, err error) {
 	return
 }
 
-func (c *Configuration) EnableStagingTrustAnchors() {
-	c.useStagingTrustAnchors = true
+// SetUseStagingTrustAnchors selects whether the staging trust anchors are
+// loaded on top of the production ones. The next Reload acts on it: switching
+// this off does not by itself drop staging anchors already in the trust models.
+func (c *Configuration) SetUseStagingTrustAnchors(use bool) {
+	c.useStagingTrustAnchors = use
+}
+
+// UsesStagingTrustAnchors reports whether Reload also loads the staging trust
+// anchors on top of the production ones.
+func (c *Configuration) UsesStagingTrustAnchors() bool {
+	return c.useStagingTrustAnchors
 }
 
 func (c *Configuration) SetCertificateVerificationMode(mode CertificateVerificationMode) {

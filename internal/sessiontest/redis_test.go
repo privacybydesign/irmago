@@ -148,7 +148,7 @@ func TestRedisTLSConfig(t *testing.T) {
 	config := configFunc()
 	config.RedisSettings.DisableTLS = true
 	_, err := requestorserver.New(config)
-	require.EqualError(t, err, "Redis TLS config failed: Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
+	require.EqualError(t, err, "redis TLS config failed: Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
 
 	// Check that specifying a path to a certificate for Redis is not allowed when Redis TLS is disabled
 	config = configFunc()
@@ -156,13 +156,13 @@ func TestRedisTLSConfig(t *testing.T) {
 	config.RedisSettings.TLSCertificate = ""
 	config.RedisSettings.TLSCertificateFile = "/path/to/cert"
 	_, err = requestorserver.New(config)
-	require.EqualError(t, err, "Redis TLS config failed: Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
+	require.EqualError(t, err, "redis TLS config failed: Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
 
 	// Check that specifying both a certificate and a path to a(nother) certificate is not allowed
 	config = configFunc()
 	config.RedisSettings.TLSCertificateFile = "/path/to/cert"
 	_, err = requestorserver.New(config)
-	require.EqualError(t, err, "Redis TLS config failed: provide either key or path to key")
+	require.EqualError(t, err, "redis TLS config failed: provide either key or path to key")
 }
 
 func TestRedisWithTLSCertFile(t *testing.T) {

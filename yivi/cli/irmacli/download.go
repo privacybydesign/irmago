@@ -64,7 +64,7 @@ func downloadSchemeManager(dest string, urls []string) error {
 
 	if len(urls) == 0 {
 		if err := conf.DownloadDefaultSchemes(); err != nil {
-			return errors.WrapPrefix(err, "failed to download default schemes", 0)
+			return fmt.Errorf("failed to download default schemes: %w", err)
 		}
 	} else {
 		for _, u := range urls {

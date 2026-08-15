@@ -86,7 +86,15 @@ type ClientMetadata struct {
 	// Defined in RFC 7591 but not part of the OpenID4VP client_metadata spec (which says
 	// unrecognized parameters MUST be ignored). Used as a fallback display name when
 	// response_uri is absent, to avoid showing a raw did:jwk to the user.
-	ClientName string `json:"client_name,omitempty"`
+	ClientName *string `json:"client_name,omitempty"`
+
+	// OPTIONAL. URI of a webpage from the client (verifier) providing information about the client.
+	// Defined in RFC 7591.
+	ClientUri *string `json:"client_uri,omitempty"`
+
+	// OPTIONAL. A URI to the logo of the client (verifier).
+	// Defined in RFC 7591.
+	LogoUri *string `json:"logo_uri,omitempty"`
 
 	// OPTIONAL. A JSON Web Key Set, as defined in [RFC7591], that contains one or more public keys,
 	// such as those used by the Wallet as an input to a key agreement that may be used for encryption
@@ -134,26 +142,19 @@ const (
 	ResponseMode_DirectPost    ResponseMode = "direct_post"
 	ResponseMode_DirectPostJwt ResponseMode = "direct_post.jwt"
 
+	// The response modes for OpenID4VP over the W3C Digital Credentials API
+	// (Appendix A.2): the wallet returns the Authorization Response through the
+	// platform API instead of transmitting it to a response_uri itself.
+	// dc_api.jwt encrypts the response as described in Section 8.3.
+	ResponseMode_DcApi    ResponseMode = "dc_api"
+	ResponseMode_DcApiJwt ResponseMode = "dc_api.jwt"
+
 	ResponseType_VpToken        ResponseType = "vp_token"
 	ResponseType_VpTokenIdToken ResponseType = "vp_token id_token"
 	ResponseType_Code           ResponseType = "code"
 
 	RequestUriMethod_Get  RequestUriMethod = "get"
 	RequestUriMethod_Post RequestUriMethod = "post"
-
-	Key_Audience         string = "aud"
-	Key_Type             string = "type"
-	Key_ClientId         string = "client_id"
-	Key_ClientMetadata   string = "client_metadata"
-	Key_DcqlQuery        string = "dcql_query"
-	Key_IssuedAt         string = "iat"
-	Key_Nonce            string = "nonce"
-	Key_ResponseMode     string = "response_mode"
-	Key_ResponseType     string = "response_type"
-	Key_ResponseUri      string = "response_uri"
-	Key_RequestUriMethod string = "request_uri_method"
-	Key_Scope            string = "scope"
-	Key_State            string = "state"
 
 	ClientIdentifierPrefix_RedirectUri         ClientIdentifierPrefix = "redirect_uri:"
 	ClientIdentifierPrefix_OpenidFederation    ClientIdentifierPrefix = "openid_federation:"
@@ -169,8 +170,8 @@ type AuthorizationRequest struct {
 	Type     string `json:"type"`
 
 	// REQUIRED:
-	ClientId       string         `json:"client_id"`
-	ClientMetadata ClientMetadata `json:"client_metadata"`
+	ClientId       string          `json:"client_id"`
+	ClientMetadata *ClientMetadata `json:"client_metadata"`
 
 	// OPTIONAL: A query for credentials using DCQL.
 	// MUST NOT exist if `scope` is set, MUST exist if there is no `scope`.
@@ -209,6 +210,13 @@ type AuthorizationRequest struct {
 	// REQUIRED if at least one presentation without holder binding is requested, OPTIONAL otherwise:
 	// MUST only contain ascii url safe characters.
 	State string `json:"state"`
+
+	// REQUIRED for signed requests over the W3C Digital Credentials API, and not
+	// for use in unsigned ones (Appendix A.2). A non-empty array of origins of the
+	// verifier making the request. The wallet compares the origin the platform
+	// reported against these values to detect replay of the request by a
+	// malicious verifier.
+	ExpectedOrigins []string `json:"expected_origins,omitempty"`
 }
 
 type EncryptedResponsePayload struct {

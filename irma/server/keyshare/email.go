@@ -185,8 +185,27 @@ func (conf EmailConfiguration) VerifyEmailServer() error {
 	return nil
 }
 
+// isPermanentDNSError reports whether err is a DNS lookup failure that will not
+// resolve on a retry, i.e. the host definitively does not exist (NXDOMAIN / "no such
+// host"). Such failures must yield ErrInvalidEmailDomain so the address is rejected
+// instead of being retried on every task run.
+//
+// Transient failures (timeouts, "server misbehaving"/SERVFAIL, no active network) are
+// deliberately NOT treated as permanent so the caller can retry later. We rely on the
+// IsNotFound flag only; the IsTemporary flag is populated from net.DNSError's deprecated
+// Temporary() method and is intentionally not consulted.
+func isPermanentDNSError(err error) bool {
+	derr, ok := err.(*net.DNSError)
+	return ok && derr.IsNotFound
+}
+
 // VerifyMXRecord checks if the given email address has a valid MX record. If none is found, it alternatively
-// looks for a valid A or AAAA record as this is used as fallback by mailservers
+// looks for a valid A or AAAA record as this is used as fallback by mailservers (implicit MX per RFC 5321
+// Section 5.1).
+//
+// It distinguishes a permanent failure (the domain does not exist) from a transient one (no network, DNS
+// timeout, server misbehaving): the former returns ErrInvalidEmailDomain so the address is not retried on
+// every run, while the latter returns ErrNoNetwork so it is retried later.
 func VerifyMXRecord(email string) error {
 	if email == "" {
 		return ErrInvalidEmail
@@ -197,18 +216,30 @@ func VerifyMXRecord(email string) error {
 	records, err := DefaultDNSResolver.LookupMX(host)
 
 	if err != nil || len(records) == 0 {
-		if derr, ok := err.(*net.DNSError); ok && (derr.IsTemporary || derr.IsTimeout) {
-			// When DNS is not resolving or there is no active network connection
-			server.Logger.WithField("error", err).Error("No active network connection")
+		// A definitive "no such host" means the domain does not exist and never will on a
+		// retry, so reject it permanently rather than mistaking it for a network problem.
+		if isPermanentDNSError(err) {
+			return ErrInvalidEmailDomain
+		}
+
+		// No usable MX records (and no permanent error yet). Look for a valid A or AAAA
+		// record, which mailservers use as a fallback when no MX records are present. This
+		// IP lookup doubles as the authoritative reachability check: only if it also fails
+		// with a non-permanent error do we conclude there is no active network connection.
+		ipRecords, ipErr := DefaultDNSResolver.LookupIP(host)
+		if ipErr == nil && len(ipRecords) > 0 {
+			return nil
+		}
+		if isPermanentDNSError(ipErr) {
+			return ErrInvalidEmailDomain
+		}
+		if ipErr != nil {
+			server.Logger.WithField("error", ipErr).Error("No active network connection")
 			return ErrNoNetwork
 		}
 
-		// Check if there is a valid A or AAAA record which is used as fallback by mailservers
-		// when there are no MX records present (implicit MX per RFC 5321 Section 5.1)
-		if records, err := DefaultDNSResolver.LookupIP(host); err != nil || len(records) == 0 {
-			return ErrInvalidEmailDomain
-		}
-		return nil
+		// No error but no records either: nothing to deliver mail to.
+		return ErrInvalidEmailDomain
 	}
 
 	hasValidHost := false

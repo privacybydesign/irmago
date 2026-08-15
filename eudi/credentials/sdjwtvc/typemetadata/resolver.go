@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // DefaultMaxExtendsDepth caps the extends chain length to prevent runaway
@@ -47,10 +49,11 @@ type cachedDoc struct {
 }
 
 // NewResolver returns a Resolver that fetches over the given http.Client. Pass
-// nil to use a fresh client with the package default timeout.
+// nil to use the shared default client (common.HTTPClient); each fetch is still
+// bounded by a per-request context deadline (see getJSON).
 func NewResolver(client *http.Client) *Resolver {
 	if client == nil {
-		client = &http.Client{Timeout: defaultRequestTimeout}
+		client = common.HTTPClient
 	}
 	return &Resolver{
 		client:   client,

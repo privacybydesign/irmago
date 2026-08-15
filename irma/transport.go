@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-errors/errors"
 	"github.com/hashicorp/go-retryablehttp"
@@ -126,7 +128,12 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 			return err != nil || resp.StatusCode == 0, err
 		},
 		HTTPClient: &http.Client{
-			Timeout:   time.Second * 5,
+			// No Timeout is set here on purpose: http.Client.Timeout covers the
+			// entire request including reading the response body, and its timer
+			// keeps running after Do returns, interrupting io.ReadAll(res.Body).
+			// The per-request context deadline (responseDeadline, set in
+			// jsonRequest and GetBytes) is the single source of truth for the
+			// overall timeout. See issue #606.
 			Transport: innerTransport,
 			Jar:       cookieJar,
 		},
@@ -295,7 +302,15 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result an
 		apierr := &RemoteError{}
 		err = transport.unmarshal(body, apierr)
 		if err != nil || apierr.ErrorName == "" { // Not an ApiErrorMessage
-			return &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
+			// Don't report the unmarshal error: it only describes how the body failed
+			// to decode (e.g. "cbor: cannot unmarshal negative integer into Go value of
+			// type irma.RemoteError" for a plain 404 body on a binary transport), which
+			// hides the status that actually explains the failure. See issue #695.
+			return &SessionError{
+				ErrorType:    ErrorServerResponse,
+				Err:          unexpectedResponseError(res.StatusCode, body),
+				RemoteStatus: res.StatusCode,
+			}
 		}
 		transport.log("error", apierr, false)
 		return &SessionError{ErrorType: ErrorApi, RemoteStatus: res.StatusCode, RemoteError: apierr}
@@ -315,6 +330,46 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result an
 	}
 
 	return nil
+}
+
+// unexpectedResponseError describes a response other than 200 or 204 whose body
+// is not a RemoteError, in terms of the HTTP status and a short excerpt of the
+// body.
+func unexpectedResponseError(status int, body []byte) error {
+	if snippet := bodySnippet(body); snippet != "" {
+		return errors.Errorf("unexpected response, status %d: %s", status, snippet)
+	}
+	return errors.Errorf("unexpected response, status %d", status)
+}
+
+// bodySnippet returns the first bodySnippetLength characters of body, with
+// whitespace collapsed and unprintable characters (which a CBOR or otherwise
+// binary body consists of) dropped, so that it is safe to put in an error
+// message. It returns the empty string if nothing printable is left.
+func bodySnippet(body []byte) string {
+	const bodySnippetLength = 100
+
+	// Cap the input first: strings.Map, strings.Fields and []rune over a large
+	// body allocate several multiples of its size to produce at most
+	// bodySnippetLength runes. A UTF-8 rune is at most 4 bytes, so this is enough
+	// input for the snippet in practice; a body whose printable characters are
+	// sparsely spread beyond the cap yields a shorter one, which is fine.
+	if len(body) > 4*bodySnippetLength {
+		body = body[:4*bodySnippetLength]
+	}
+
+	printable := strings.Map(func(r rune) rune {
+		if r == utf8.RuneError || !unicode.IsPrint(r) {
+			return ' '
+		}
+		return r
+	}, string(body))
+
+	snippet := strings.Join(strings.Fields(printable), " ")
+	if runes := []rune(snippet); len(runes) > bodySnippetLength {
+		snippet = strings.TrimSpace(string(runes[:bodySnippetLength])) + "..."
+	}
+	return snippet
 }
 
 func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {

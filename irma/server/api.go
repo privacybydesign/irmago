@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"maps"
 	"net"
@@ -163,7 +164,7 @@ func WriteResponse(w http.ResponseWriter, object any, rerr *irma.RemoteError) {
 	w.WriteHeader(status)
 	_, err := w.Write(bts)
 	if err != nil {
-		_ = LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
+		_ = LogWarning(fmt.Errorf("failed to write response: %w", err))
 	}
 }
 
@@ -173,7 +174,7 @@ func WriteString(w http.ResponseWriter, str string) {
 	w.WriteHeader(http.StatusOK)
 	_, err := w.Write([]byte(str))
 	if err != nil {
-		_ = LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
+		_ = LogWarning(fmt.Errorf("failed to write response: %w", err))
 	}
 }
 
@@ -363,7 +364,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 		var err error
 		res, err = ResultJwt(result, issuer, validity, privatekey)
 		if err != nil {
-			_ = LogError(errors.WrapPrefix(err, "Failed to create JWT for result callback", 0))
+			_ = LogError(fmt.Errorf("failed to create JWT for result callback: %w", err))
 			return
 		}
 	} else {
@@ -372,7 +373,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 
 	if err := irma.NewHTTPTransport(callbackUrl, false).Post("", nil, res); err != nil {
 		// not our problem, log it and go on
-		logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
+		logger.Warn(fmt.Errorf("failed to POST session result to callback URL: %w", err))
 	}
 }
 

@@ -17,7 +17,8 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
-	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
@@ -233,7 +234,7 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	eudiStorage, err := storage.NewStorage(aesKey, ":memory:", tempDir)
+	eudiStorage, err := sqlcipherstorage.New(aesKey, ":memory:", tempDir)
 	require.NoError(t, err)
 
 	session := &session{
@@ -376,7 +377,10 @@ func Test_openid4vciSession_configureIssuerSettings_grantSelection(t *testing.T)
 	preAuthGrant := &PreAuthorizedCodeGrant{PreAuthorizedCode: "pre-auth-code"}
 
 	tests := []struct {
-		name        string
+		name string
+		// asMetadata is the authorization server metadata document served to the
+		// session; it determines the grant type for an offer without grants.
+		asMetadata  string
 		grants      *Grants
 		expectGrant GrantType
 		expectErr   string
@@ -397,17 +401,51 @@ func Test_openid4vciSession_configureIssuerSettings_grantSelection(t *testing.T)
 			expectGrant: GrantType_PreAuthorizedCode,
 		},
 		{
-			name:      "no grants returns error",
-			grants:    &Grants{},
-			expectErr: "no supported grant type found",
+			// OID4VCI v1.0 § 4.1.1: no grants means the wallet determines the
+			// grant type from the authorization server metadata.
+			name:        "absent grants derives authorization code from grant_types_supported",
+			asMetadata:  `{"grant_types_supported":["authorization_code","refresh_token"]}`,
+			grants:      nil,
+			expectGrant: GrantType_AuthorizationCode,
+		},
+		{
+			name:        "empty grants object derives authorization code",
+			asMetadata:  `{"grant_types_supported":["authorization_code"]}`,
+			grants:      &Grants{},
+			expectGrant: GrantType_AuthorizationCode,
+		},
+		{
+			// RFC 8414 § 2: an omitted grant_types_supported defaults to
+			// ["authorization_code", "implicit"].
+			name:        "absent grants derives authorization code when grant_types_supported is omitted",
+			asMetadata:  `{}`,
+			grants:      nil,
+			expectGrant: GrantType_AuthorizationCode,
+		},
+		{
+			// The pre-authorized code flow needs a pre-authorized_code, which
+			// only the offer can supply, so it cannot be derived.
+			name:       "absent grants without authorization code support returns error",
+			asMetadata: `{"grant_types_supported":["urn:ietf:params:oauth:grant-type:pre-authorized_code"]}`,
+			grants:     nil,
+			expectErr:  "authorization server does not support the authorization_code grant type",
+		},
+		{
+			name:      "grants with only unsupported grant types returns error",
+			grants:    &Grants{UnsupportedGrantTypes: []string{"urn:example:some-future-grant"}},
+			expectErr: "no supported grant type found in credential offer, which only offers urn:example:some-future-grant",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			asMetadata := tt.asMetadata
+			if asMetadata == "" {
+				asMetadata = `{}`
+			}
 			asServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{}`))
+				_, _ = w.Write([]byte(asMetadata))
 			}))
 			defer asServer.Close()
 
@@ -432,6 +470,47 @@ func Test_openid4vciSession_configureIssuerSettings_grantSelection(t *testing.T)
 			require.Equal(t, tt.expectGrant, s.issuerSettings.grantType.GetGrantType())
 		})
 	}
+}
+
+// An offer without grants carries no authorization_server hint either, so the
+// authorization server has to be picked from the issuer metadata without
+// consulting the (not yet determined) grant.
+func Test_openid4vciSession_configureIssuerSettings_derivesGrantWithAdvertisedAuthorizationServers(t *testing.T) {
+	asServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"grant_types_supported":["authorization_code"]}`))
+	}))
+	defer asServer.Close()
+
+	s := &session{
+		credentialOffer: &CredentialOffer{
+			CredentialIssuer: "https://issuer.example.com",
+		},
+		credentialIssuerMetadata: &metadata.CredentialIssuerMetadata{
+			AuthorizationServers: []string{asServer.URL},
+		},
+		issuerSettings: openid4vciSessionIssuerSettings{},
+	}
+
+	require.NoError(t, s.configureIssuerSettings())
+	require.Equal(t, asServer.URL, s.issuerSettings.authorizationServer)
+	require.Equal(t, GrantType_AuthorizationCode, s.issuerSettings.grantType.GetGrantType())
+}
+
+func Test_openid4vciSession_grantAccessorsUseTheConfiguredGrant(t *testing.T) {
+	s := &session{
+		credentialOffer: &CredentialOffer{CredentialIssuer: "https://issuer.example.com"},
+		issuerSettings:  openid4vciSessionIssuerSettings{grantType: &AuthorizationCodeGrant{}},
+	}
+
+	// The offer has no grants member at all, so a handler reading the grant from
+	// the offer instead of from the session settings would nil dereference here.
+	grant, err := s.authorizationCodeGrant()
+	require.NoError(t, err)
+	require.Nil(t, grant.IssuerState)
+
+	_, err = s.preAuthorizedCodeGrant()
+	require.ErrorContains(t, err, "not configured with a pre-authorized code grant")
 }
 
 func Test_openid4vciSession_obtainCredential_sendsEncryptedRequest(t *testing.T) {
@@ -498,7 +577,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 			Display: []metadata.Display{{Name: "Address", Locale: &en}},
 		},
 	}
-	payload := sdjwtvc.ProcessedSdJwtPayload{
+	payload := sdjwt.ProcessedPayload{
 		"family_name": "Smith",
 		"given_name":  "Alice",
 		"address":     map[string]any{"city": "Amsterdam", "extra": ""},
@@ -507,7 +586,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 		"sub":         "u1",
 	}
 
-	attrs := buildAttributesWithValues(claims, payload)
+	attrs := buildAttributesWithValues(claims, payload, "en")
 
 	byPath := map[string]int{}
 	for i, a := range attrs {
@@ -519,7 +598,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 	}
 
 	// Standard claims are filtered out.
-	for _, key := range []string{"iss", "iat", "sub"} {
+	for _, key := range []string{jwt.IssuerKey, jwt.IssuedAtKey, jwt.SubjectKey} {
 		_, present := byPath[key]
 		require.False(t, present, "standard claim %q should not appear", key)
 	}
@@ -528,7 +607,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 	idx, ok := byPath["family_name"]
 	require.True(t, ok, "family_name should appear")
 	require.NotNil(t, attrs[idx].DisplayName)
-	require.Equal(t, "Family Name", (*attrs[idx].DisplayName)["en"])
+	require.Equal(t, "Family Name", *attrs[idx].DisplayName)
 
 	// given_name is in payload but not metadata → DisplayName nil.
 	idx, ok = byPath["given_name"]
@@ -539,7 +618,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 	idx, ok = byPath["address"]
 	require.True(t, ok, "address section header should appear")
 	require.NotNil(t, attrs[idx].DisplayName)
-	require.Equal(t, "Address", (*attrs[idx].DisplayName)["en"])
+	require.Equal(t, "Address", *attrs[idx].DisplayName)
 	require.Nil(t, attrs[idx].Value)
 
 	// address.city: no metadata → no inherited display.

@@ -43,7 +43,7 @@ IRMA applications.`,
 		if expiryDateString != "" {
 			expiryDate, err = time.Parse(time.RFC3339, expiryDateString)
 			if err != nil {
-				return errors.WrapPrefix(err, "Failed to parse expirydate", 0)
+				return fmt.Errorf("failed to parse expirydate: %w", err)
 			}
 		} else {
 			expiryDate = time.Now()
@@ -80,7 +80,7 @@ IRMA applications.`,
 			}
 		}
 		if err = common.AssertPathExists(path); err != nil {
-			return errors.WrapPrefix(err, "Nonexisting path specified", 0)
+			return fmt.Errorf("nonexisting path specified: %w", err)
 		}
 
 		if counter == 0 {
@@ -102,14 +102,14 @@ IRMA applications.`,
 		if privkeyfile == "" {
 			keypath := filepath.Join(path, "PrivateKeys")
 			if err = common.EnsureDirectoryExists(keypath); err != nil {
-				return errors.WrapPrefix(err, "Failed to create"+keypath, 0)
+				return fmt.Errorf("failed to create %s: %w", keypath, err)
 			}
 			privkeyfile = filepath.Join(keypath, defaultFilename)
 		}
 		if pubkeyfile == "" {
 			keypath := filepath.Join(path, "PublicKeys")
 			if err = common.EnsureDirectoryExists(keypath); err != nil {
-				return errors.WrapPrefix(err, "Failed to create"+keypath, 0)
+				return fmt.Errorf("failed to create %s: %w", keypath, err)
 			}
 			pubkeyfile = filepath.Join(keypath, defaultFilename)
 		}
