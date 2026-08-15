@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -16,12 +17,14 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -35,17 +38,33 @@ import (
 )
 
 type Client struct {
-	storage          *clientstorage.Storage
-	eudiStorage      storage.Storage
-	sdjwtvcStorage   irmaclient.SdJwtVcStorage
-	openid4vpClient  *openid4vp.Client
-	openid4vciClient *openid4vci.Client
-	irmaClient       *irmaclient.IrmaClient
-	logsStorage      irmaclient.LogsStorage
-	keyBinder        sdjwtvc.KeyBinder
-	didValidator     *openid4vp.DidVerifierValidator
-	scheduler        gocron.Scheduler
-	sessionManager   sessionManager
+	storage           *clientstorage.Storage
+	eudiStorage       storage.Storage
+	sdjwtvcStorage    irmaclient.SdJwtVcStorage
+	openid4vpClient   *openid4vp.Client
+	openid4vciClient  *openid4vci.Client
+	irmaClient        *irmaclient.IrmaClient
+	logsStorage       irmaclient.LogsStorage
+	keyBinder         sdjwt.KeyBinder
+	didValidator      *openid4vp.DidVerifierValidator
+	scheduler         gocron.Scheduler
+	sessionManager    sessionManager
+	credentialService services.CredentialService
+	revocationService *services.RevocationService
+
+	// handler is how the wallet wakes the app when what it has already rendered
+	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
+	// cannot survive a session.
+	handler ClientHandler
+
+	// currentLocale is the locale used to resolve all app-facing text and
+	// logos. The app owns it: it supplies the initial value via New and
+	// updates it through SetLocale; irmago does not persist it.
+	currentLocale *clientmodels.CurrentLocale
+
+	// logoBackfill fetches the logos the current locale resolves to but that
+	// were never downloaded, in the background. Closed before eudiStorage.
+	logoBackfill *services.LogoBackfiller
 	// TODO: move preferences from IrmaClient to here
 	//Preferences      clientsettings.Preferences
 }
@@ -54,11 +73,18 @@ func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	eudiAppDataPath string,
-	handler irmaclient.ClientHandler,
+	handler ClientHandler,
 	sessionHandler clientmodels.SessionHandler,
 	signer irmaclient.Signer,
 	aesKey [32]byte,
+	locale string,
 ) (*Client, error) {
+	// Required: the wallet calls it from background jobs and from IrmaClient
+	// without a nil guard, so a nil one would panic on a goroutine no caller
+	// can recover from. Fail here instead, where the app can see it.
+	if handler == nil {
+		return nil, fmt.Errorf("handler is required")
+	}
 	if err := common.AssertPathExists(storagePath); err != nil {
 		return nil, err
 	}
@@ -79,6 +105,8 @@ func New(
 	}
 
 	eudi.Logger = irma.Logger
+
+	currentLocale := clientmodels.NewCurrentLocale(locale)
 
 	// Create the encryption middleware, used by the IRMA classic clientstorage so all data is encrypted at rest.
 	// The EUDI storage layer derives its own AES middleware (and a separate filename-MAC sub-key) directly from the aesKey.
@@ -106,7 +134,24 @@ func New(
 	}
 
 	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(s)
-	irmaKeyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
+	irmaKeyBinder := sdjwt.NewDefaultKeyBinder(keyBindingStorage)
+
+	credStore := db.NewCredentialStore(eudiStorage.Db())
+	hbkStore := db.NewHolderBindingKeyStore(eudiStorage.Db())
+
+	// Token Status List checker + the single revocation service built on it.
+	// The checker is also shared with the holder-side verifier
+	// (sdJwtVcVerificationContext below). The revocation service is the one home
+	// for revocation: the background sweep, the credential list's flags, and the
+	// OpenID4VP disclosure planner's cached Revoked flag all go through it.
+	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
+	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: &eudiConf.Issuers,
+		Clock:       eudi_jwt.NewSystemClock(),
+	}, statusListCache)
+	revocationService := services.NewRevocationService(statusChecker, credStore)
+
+	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale)
 
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
@@ -120,13 +165,16 @@ func New(
 	// blank permission prompt.
 	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(
 		eudiStorage,
+		credStore,
 		typemetadata.NewDefaultVctFetcher(nil),
 		typemetadata.NewDefaultIssuerFetcher(nil),
-		sdjwtvc.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
+		sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
+		currentLocale,
+		revocationService,
 	)
-	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
+	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
 
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator)
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator, currentLocale)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -135,20 +183,23 @@ func New(
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
 		X509VerificationContext: &eudiConf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),
-		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
+		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: true,
+		StatusChecker: statusChecker,
 	}
 
-	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, handler, signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
+	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, newIrmaHandler(handler), signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
 
-	// When developer mode is enabled we want to load the staging trust anchors in addition
-	// to the production trust anchors
-	if irmaClient.Preferences.DeveloperMode {
-		openid4vpClient.Configuration.EnableStagingTrustAnchors()
-	}
+	// The developer mode preference is persisted, so a client that starts up
+	// with it already enabled never passes through SetPreferences. Apply the
+	// same relaxations here, or a restart silently returns the wallet to
+	// production-strict behaviour. The configuration half goes before the
+	// Reload below: that is what validates the stored chains.
+	developerMode := irmaClient.Preferences.DeveloperMode
+	setDeveloperModeOnConfiguration(eudiConf, developerMode)
 
 	if err := openid4vpClient.Configuration.Reload(); err != nil {
 		return nil, fmt.Errorf("reloading eudi configuration failed: %v", err)
@@ -164,8 +215,9 @@ func New(
 	sdJwtVcVerificationContextOpenID4VCI := sdjwtvc.SdJwtVcVerificationContext{
 		X509VerificationContext: &eudiConf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),
-		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
+		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: false,
+		StatusChecker: statusChecker,
 	}
 
 	// Initiate the OpenID4VCI client
@@ -173,12 +225,16 @@ func New(
 		common.HTTPClient,
 		eudiConf,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI),
+		credentialService,
 		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
+		currentLocale,
 	)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate openid4vci client: %v", err)
 	}
+
+	setDeveloperModeOnClients(openid4vciClient, didValidator, developerMode)
 
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,
@@ -186,16 +242,20 @@ func New(
 	irmaClient.SetOnSessionDoneCallback(openid4vpClient.RefreshPendingPermissionRequest)
 
 	client := &Client{
-		storage:          s,
-		sdjwtvcStorage:   sdjwtvcStorage,
-		eudiStorage:      eudiStorage,
-		openid4vpClient:  openid4vpClient,
-		openid4vciClient: openid4vciClient,
-		irmaClient:       irmaClient,
-		logsStorage:      irmaStorage,
-		keyBinder:        irmaKeyBinder,
-		didValidator:     didValidator,
-		scheduler:        scheduler,
+		storage:           s,
+		sdjwtvcStorage:    sdjwtvcStorage,
+		eudiStorage:       eudiStorage,
+		openid4vpClient:   openid4vpClient,
+		openid4vciClient:  openid4vciClient,
+		irmaClient:        irmaClient,
+		logsStorage:       irmaStorage,
+		keyBinder:         irmaKeyBinder,
+		didValidator:      didValidator,
+		scheduler:         scheduler,
+		handler:           handler,
+		currentLocale:     currentLocale,
+		credentialService: credentialService,
+		revocationService: revocationService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,
@@ -203,14 +263,70 @@ func New(
 	}
 
 	client.sessionManager.Client = client
+	client.logoBackfill = services.NewLogoBackfiller(eudiStorage, common.HTTPClient, func(cached int) {
+		// Re-read the credentials the app has already rendered, but only when
+		// the sweep put new logos on disk — nothing new, nothing to redraw.
+		if cached > 0 {
+			client.handler.CredentialsChanged()
+		}
+	})
+
+	// Startup backfill: fetch logos that resolve for the current locale but
+	// are missing from the cache (credentials issued before the wallet became
+	// locale-aware, or whose issuance-time download failed).
+	client.logoBackfill.Request(currentLocale.Get())
+
 	return client, nil
 }
 
+// SetLocale changes the locale used to resolve all app-facing text and logos.
+// Non-blocking: text resolves offline from stored metadata on the next pull;
+// logos missing for the new locale are fetched by a background backfill that
+// signals ClientHandler.CredentialsChanged on completion. Re-setting the locale
+// the wallet already uses does nothing.
+func (client *Client) SetLocale(locale string) {
+	if client.currentLocale.Set(locale) {
+		client.logoBackfill.Request(client.currentLocale.Get())
+	}
+}
+
+// locale returns the current locale for resolving app-facing text and logos.
+func (client *Client) locale() string {
+	return client.currentLocale.Get()
+}
+
 func (client *Client) Close() error {
+	// Before the stores close under it, so Close is deterministic and a sweep
+	// cannot outlive the database it reads.
+	client.logoBackfill.Close()
 	client.scheduler.Shutdown()
 	client.irmaClient.Close()
 	client.eudiStorage.Close()
 	return client.storage.Close()
+}
+
+// RefreshStatuses re-fetches the Token Status List for one representative
+// instance per stored SD-JWT VC batch and updates its LastKnownStatus column.
+// Use this on app resume or when the UI exposes an explicit refresh action.
+// Errors during the sweep are logged; the previous LastKnownStatus persists for
+// any URI that fails to refresh.
+//
+// A status change signals ClientHandler.CredentialsChanged, on the calling
+// goroutine — for the scheduled sweep, the job's own, so a handler that blocks
+// delays the next sweep. Re-confirming a status the wallet already had is
+// silent.
+//
+// A cancelled ctx cuts the sweep short but does not suppress the signal: what
+// the sweep wrote back before it stopped is committed, and a later sweep sees a
+// re-confirmation, so a change dropped here is a change the app never hears
+// about. It is signalled even though the caller gave up, and err reports the
+// cancellation.
+func (client *Client) RefreshStatuses(ctx context.Context) error {
+	changed, err := client.revocationService.RefreshStatuses(ctx)
+	if changed > 0 {
+		client.handler.CredentialsChanged()
+	}
+	return err
 }
 
 type SessionRequestData struct {
@@ -222,6 +338,12 @@ type SessionRequestData struct {
 	// universal link (production vs staging). Required when Protocol is
 	// OpenID4VCI; ignored otherwise.
 	OpenID4VCIRedirectUri string `json:"openid4vci_redirect_uri,omitempty"`
+	// DcApi carries an OpenID4VP request the platform delivered through the W3C
+	// Digital Credentials API rather than through a URL. When set, Protocol must be
+	// OpenID4VP and URL is ignored; the resulting Authorization Response is
+	// reported back on SessionState.DcApiResponse instead of being transmitted by
+	// the wallet.
+	DcApi *openid4vp.DcApiRequest `json:"dc_api,omitempty"`
 }
 
 func (client *Client) DeleteKeyshareTokens() {
@@ -244,7 +366,7 @@ func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 	return client.irmaClient.EnrolledSchemeManagers()
 }
 
-func sdjwtBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMetadata) *irma.CredentialInfo {
+func sdjwtvcBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMetadata) *irma.CredentialInfo {
 	credIdSegments := strings.Split(metadata.CredentialType, ".")
 
 	attrs := map[irma.AttributeTypeIdentifier]irma.TranslatedString{}
@@ -283,8 +405,8 @@ func (client *Client) getIrmaCredentialInfoList() irma.CredentialInfoList {
 
 	result := irma.CredentialInfoList{}
 
-	for _, sdjwt := range sdjwtvcs {
-		result = append(result, sdjwtBatchMetadataToIrmaCredentialInfo(sdjwt))
+	for _, sdjwtvcMeta := range sdjwtvcs {
+		result = append(result, sdjwtvcBatchMetadataToIrmaCredentialInfo(sdjwtvcMeta))
 	}
 
 	result = append(result, idemix...)
@@ -325,7 +447,7 @@ func hashAttributesAndCredType(info *irma.CredentialInfo) (string, error) {
 		hashContent.WriteString(key + string(valueStr))
 	}
 
-	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent.String())
+	return iana.CreateUrlEncodedHash(iana.SHA256, hashContent.String())
 }
 
 func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error) {
@@ -397,8 +519,7 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 
 	// Delete EUDI credentials (read metadata first for the removal log).
 	if len(eudiHashes) > 0 {
-		credentialService := services.NewCredentialService(client.eudiStorage)
-		allEudiCreds, err := credentialService.GetCredentialMetadataList()
+		allEudiCreds, err := client.credentialService.GetCredentialMetadataList()
 		if err != nil {
 			return fmt.Errorf("failed to read eudi credentials for removal log: %v", err)
 		}
@@ -418,15 +539,14 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 		// Create removal log before deleting, so the log service can still
 		// look up batch metadata to resolve the credential logo filename.
 		if len(removedCreds) > 0 {
-			logService := services.NewEudiLogService(client.eudiStorage)
+			logService := services.NewEudiLogService(client.eudiStorage, client.locale())
 			if err := logService.AddRemovalLog(removedCreds); err != nil {
 				return fmt.Errorf("failed to create eudi removal log: %v", err)
 			}
 		}
 
-		credentialStore := db.NewCredentialStore(client.eudiStorage.Db())
 		for _, hash := range eudiHashes {
-			if err := credentialStore.DeleteBatchByHash(hash); err != nil {
+			if err := client.credentialService.DeleteByHash(hash); err != nil {
 				return fmt.Errorf("error while deleting eudi credential: %v", err)
 			}
 		}
@@ -513,7 +633,7 @@ func (client *Client) LoadNewestLogs(max int) ([]clientmodels.LogInfo, error) {
 	}
 
 	// Load EUDI logs from SQLCipher.
-	logService := services.NewEudiLogService(client.eudiStorage)
+	logService := services.NewEudiLogService(client.eudiStorage, client.locale())
 	eudiLogs, err := logService.GetNewestLogs(max)
 	if err != nil {
 		return nil, err
@@ -534,7 +654,7 @@ func (client *Client) LoadLogsBefore(before time.Time, max int) ([]clientmodels.
 	}
 
 	// Load EUDI logs from SQLCipher.
-	logService := services.NewEudiLogService(client.eudiStorage)
+	logService := services.NewEudiLogService(client.eudiStorage, client.locale())
 	eudiLogs, err := logService.GetLogsBefore(before, max)
 	if err != nil {
 		return nil, err
@@ -567,17 +687,59 @@ func mergeLogsByTime(a, b []clientmodels.LogInfo, max int) []clientmodels.LogInf
 	return merged
 }
 
-func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
-	client.irmaClient.SetPreferences(prefs)
-	if prefs.DeveloperMode {
-		client.openid4vciClient.AllowInsecureHttpForTesting()
-		client.openid4vciClient.Configuration.SetCertificateVerificationMode(eudi.DeveloperModeCertificateVerification)
-		client.didValidator.SetAllowInsecureDidWeb(true)
-		client.openid4vpClient.Configuration.EnableStagingTrustAnchors()
+// setDeveloperModeOnConfiguration brings the certificate checks in line with
+// the developer mode preference. It is separate from setDeveloperModeOnClients
+// because New has to call the two at different points: these settings must be
+// in place before Configuration.Reload validates the stored chains, while the
+// OpenID4VCI client the other half needs is only constructed after that reload.
+//
+// The trust anchors themselves only follow on the next Reload.
+func setDeveloperModeOnConfiguration(conf *eudi.Configuration, enabled bool) {
+	mode := eudi.StrictCertificateVerification
+	if enabled {
+		mode = eudi.DeveloperModeCertificateVerification
+	}
+	conf.SetCertificateVerificationMode(mode)
+	conf.SetUseStagingTrustAnchors(enabled)
+}
 
-		if err := client.openid4vpClient.Configuration.Reload(); err != nil {
-			common.Logger.Warnf("error while reloading eudi config: %v", err)
-		}
+// setDeveloperModeOnClients brings the transport checks in line with the
+// developer mode preference: plain-HTTP OpenID4VCI issuers and insecure did:web
+// verifiers.
+func setDeveloperModeOnClients(vciClient *openid4vci.Client, didValidator *openid4vp.DidVerifierValidator, enabled bool) {
+	vciClient.SetAllowInsecureHttp(enabled)
+	didValidator.SetAllowInsecureDidWeb(enabled)
+}
+
+// SetPreferences stores prefs and brings the developer mode relaxations in line
+// with it, in both directions. The trust models are rebuilt when the developer
+// mode preference changed, not on every preference write.
+func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
+	developerModeChanged := client.irmaClient.Preferences.DeveloperMode != prefs.DeveloperMode
+	client.irmaClient.SetPreferences(prefs)
+
+	// Both directions have to take effect: every relaxation developer mode
+	// makes is undone when it is switched off, so the wallet does not keep
+	// accepting plain HTTP and staging chains until the process restarts.
+	// Kept in step with New, which applies the same for the preference that is
+	// already set at startup.
+	setDeveloperModeOnConfiguration(client.openid4vpClient.Configuration, prefs.DeveloperMode)
+	setDeveloperModeOnClients(client.openid4vciClient, client.didValidator, prefs.DeveloperMode)
+
+	if !developerModeChanged {
+		return
+	}
+
+	// Reload rebuilds both trust models from the anchors the new setting
+	// selects: switching developer mode on adds the staging chains, switching
+	// it off drops them again.
+	if err := client.openid4vpClient.Configuration.Reload(); err != nil {
+		common.Logger.Warnf("error while reloading eudi config: %v", err)
+	}
+	// Only the staging anchors bring distribution points whose CRLs the wallet
+	// has not downloaded yet, so this is needed on the way in, not on the way
+	// out: the production CRLs were already on disk for the Reload above.
+	if prefs.DeveloperMode {
 		if err := client.openid4vpClient.Configuration.UpdateCertificateRevocationLists(); err != nil {
 			common.Logger.Warnf("error while updating CRLs: %v", err)
 		}
@@ -588,15 +750,36 @@ func (client *Client) GetPreferences() clientsettings.Preferences {
 	return client.irmaClient.Preferences
 }
 
-func (client *Client) InitJobs(eudiRevocationListUpdateInterval time.Duration) {
+func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInterval time.Duration) {
 	// Future TODO: add Context so we can check for cancellation of the job ?
 	_, err := client.scheduler.NewJob(
-		gocron.DurationJob(eudiRevocationListUpdateInterval),
+		gocron.DurationJob(eudiCrlUpdateInterval),
 		gocron.NewTask(client.openid4vpClient.Configuration.UpdateCertificateRevocationLists),
 		gocron.WithStartAt(gocron.WithStartImmediately()),
 	)
 
 	if err != nil {
-		common.Logger.Warnf("failed to create new cron job for updating CLRs: %v", err)
+		common.Logger.Warnf("failed to create new cron job for updating CRLs: %v", err)
+	}
+
+	// Periodically re-fetch referenced Token Status Lists and update one
+	// representative instance's LastKnownStatus per credential batch (a batch is
+	// revoked all at once, so one entry stands in for the whole batch). Skipped
+	// when the interval is non-positive. The sweep is fail-soft: per-URI errors
+	// are logged inside RefreshStatuses and the previous status is kept. A sweep
+	// that finds a status change signals the app through RefreshStatuses.
+	if statusTokenListRefreshInterval > 0 {
+		_, err = client.scheduler.NewJob(
+			gocron.DurationJob(statusTokenListRefreshInterval),
+			gocron.NewTask(func() {
+				if err := client.RefreshStatuses(context.Background()); err != nil {
+					common.Logger.Warnf("scheduled status refresh failed: %v", err)
+				}
+			}),
+			gocron.WithStartAt(gocron.WithStartImmediately()),
+		)
+		if err != nil {
+			common.Logger.Warnf("failed to create new cron job for refreshing credential statuses: %v", err)
+		}
 	}
 }

@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	clientstorage "github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/stretchr/testify/require"
@@ -41,13 +41,13 @@ func TestKeyBindingStorage(t *testing.T) {
 	)
 }
 
-func testDeletingKeysFromEmptyStorageIsError(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
+func testDeletingKeysFromEmptyStorageIsError(t *testing.T, storage sdjwt.KeyBindingStorage) {
 	privKeys := createPrivateKeys(t, 10)
 	pubKeys := getPubJwkMultiple(t, privKeys)
 	require.Error(t, storage.RemovePrivateKeys(pubKeys))
 }
 
-func testDeletingNoKeysFromEmptyStorageShouldBeFine(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
+func testDeletingNoKeysFromEmptyStorageShouldBeFine(t *testing.T, storage sdjwt.KeyBindingStorage) {
 	require.NoError(t, storage.RemovePrivateKeys([]jwk.Key{}))
 }
 
@@ -66,7 +66,7 @@ func getPubJwkMultiple(t *testing.T, privKeys []*ecdsa.PrivateKey) (result []jwk
 	return
 }
 
-func testRetrieveSinglePrivateKeyCanOnlyBeDoneOnce(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
+func testRetrieveSinglePrivateKeyCanOnlyBeDoneOnce(t *testing.T, storage sdjwt.KeyBindingStorage) {
 	privateKeys := createPrivateKeys(t, 100)
 	require.NoError(t, storage.StorePrivateKeys(privateKeys))
 
@@ -85,12 +85,12 @@ func testRetrieveSinglePrivateKeyCanOnlyBeDoneOnce(t *testing.T, storage sdjwtvc
 	require.Equal(t, privateKeys[1], privKey)
 }
 
-func testStoreManyPrivateKeys(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
+func testStoreManyPrivateKeys(t *testing.T, storage sdjwt.KeyBindingStorage) {
 	privateKeys := createPrivateKeys(t, 100)
 	require.NoError(t, storage.StorePrivateKeys(privateKeys))
 }
 
-func testRemoveSpecificPrivateKeys(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
+func testRemoveSpecificPrivateKeys(t *testing.T, storage sdjwt.KeyBindingStorage) {
 	privateKeys := createPrivateKeys(t, 10)
 	require.NoError(t, storage.StorePrivateKeys(privateKeys))
 
@@ -108,7 +108,7 @@ func testRemoveSpecificPrivateKeys(t *testing.T, storage sdjwtvc.KeyBindingStora
 	}
 }
 
-func testRemoveAllPrivateKeys(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
+func testRemoveAllPrivateKeys(t *testing.T, storage sdjwt.KeyBindingStorage) {
 	privKeys := createPrivateKeys(t, 100)
 	require.NoError(t, storage.StorePrivateKeys(privKeys))
 	require.NoError(t, storage.RemoveAllPrivateKeys())
@@ -129,7 +129,7 @@ func createPrivateKeys(t *testing.T, numKeys int) []*ecdsa.PrivateKey {
 	return privateKeys
 }
 
-func RunTestWithTempBboltKeyBindingStorage(t *testing.T, name string, test func(t *testing.T, storage sdjwtvc.KeyBindingStorage)) {
+func RunTestWithTempBboltKeyBindingStorage(t *testing.T, name string, test func(t *testing.T, storage sdjwt.KeyBindingStorage)) {
 	success := t.Run(name, func(t *testing.T) {
 		withTempBboltDb(t, "sdjwtvc.db", func(db *bbolt.DB) {
 			var aesKey [32]byte

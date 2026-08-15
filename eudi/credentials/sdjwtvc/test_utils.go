@@ -11,18 +11,20 @@ import (
 
 	_ "embed"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
 const (
-	Key_SdHash   string = "sd_hash"
-	Key_Nonce    string = "nonce"
-	Key_Audience string = "aud"
+	SdHashKey string = "sd_hash"
+	NonceKey  string = "nonce"
 )
 
 type x509TestConfig struct {
@@ -32,42 +34,6 @@ type x509TestConfig struct {
 	ShouldFail                     bool
 }
 
-func createDefaultTestingSdJwt(t *testing.T, keyBinder KeyBinder) SdJwtVc {
-	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
-	require.NoError(t, err)
-
-	issuer := "https://irma.app"
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
-
-	holderKey, err := keyBinder.CreateKeyPairs(1)
-	require.NoError(t, err)
-
-	holderKeyClaim, err := HolderKeyClaim(holderKey[0])
-	require.NoError(t, err)
-
-	sdJwt, err := NewSdJwtBuilder().
-		WithPayload(
-			holderKeyClaim,
-			Claim(Key_Issuer, issuer),
-			Claim(Key_VerifiableCredentialType, "pbdf.pbdf.email"),
-			Claim(Key_SdAlg, iana.SHA256),
-			SdClaim("family_name", "Yivi"),
-			SdClaim("location", "Utrecht"),
-		).
-		WithIssuerCertificateChain(irmaAppCert).
-		Build(jwtCreator)
-
-	require.NoError(t, err)
-
-	return sdJwt
-}
-
-func createKbJwt(t *testing.T, sdjwt SdJwtVc, keyBinder KeyBinder) KeyBindingJwt {
-	kbjwt, err := CreateKbJwt(sdjwt, keyBinder, "nonce", "Verifier")
-	require.NoError(t, err)
-	return kbjwt
-}
-
 func jsonToMap(t *testing.T, js string) map[string]any {
 	var result map[string]any
 	err := json.Unmarshal([]byte(js), &result)
@@ -75,17 +41,8 @@ func jsonToMap(t *testing.T, js string) map[string]any {
 	return result
 }
 
-func NewEcdsaJwtCreatorWithIssuerTestkey() *DefaultEcdsaJwtCreator {
-	key, err := readTestIssuerPrivateKey()
-	if err != nil {
-		return nil
-	}
-
-	return &DefaultEcdsaJwtCreator{privateKey: key}
-}
-
 func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
-	key, err := DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
+	key, err := encryption.DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
 	if err != nil || key == nil {
 		return nil, fmt.Errorf("failed to read ecdsa private key: %v", err)
 	}
@@ -93,23 +50,19 @@ func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
 }
 
 func readTestIssuerPrivateKey() (*ecdsa.PrivateKey, error) {
-	key, err := DecodeEcdsaPrivateKey(testdata.IssuerPrivKeyBytes)
+	key, err := encryption.DecodeEcdsaPrivateKey(testdata.IssuerPrivKeyBytes)
 	if err != nil || key == nil {
 		return nil, fmt.Errorf("failed to read ecdsa private key: %v", err)
 	}
 	return key, nil
 }
 
-func NewEcdsaJwtCreatorWithHolderTestKey() (*DefaultEcdsaJwtCreator, error) {
+func NewEcdsaJwtCreatorWithHolderTestKey() (sdjwt.JwtCreator, error) {
 	key, err := readTestHolderPrivateKey()
 	if err != nil {
 		return nil, err
 	}
-	return &DefaultEcdsaJwtCreator{privateKey: key}, nil
-}
-
-func readHolderPublicJwk() (jwk.Key, error) {
-	return jwk.ParseKey(testdata.HolderPubJwkBytes)
+	return sdjwt.NewJwtCreator(key), nil
 }
 
 // =======================================================================
@@ -135,7 +88,7 @@ func CreateTestVerificationContext() SdJwtVcVerificationContext {
 			},
 		},
 		Clock:       &testClock{},
-		JwtVerifier: NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 }
 
@@ -156,7 +109,7 @@ func newEmptyTestConfig() *testSdJwtVcConfig {
 		vct:              nil,
 		sdAlg:            nil,
 		typHeader:        nil,
-		disclosures:      []DisclosureContent{},
+		disclosures:      []sdjwt.DisclosureContent{},
 		holderPrivateKey: nil,
 		issuerPrivateKey: nil,
 	}
@@ -176,9 +129,9 @@ func newEmptyTestConfigWithKbJwt() *testSdJwtVcKbConfig {
 
 // ========================================================================
 
-func createHolderCnfField() CnfField {
+func createHolderCnfField() sdjwt.CnfField {
 	jwk := testdata.ParseHolderPubJwk()
-	return CnfField{
+	return sdjwt.CnfField{
 		Jwk: &jwk,
 	}
 }
@@ -207,7 +160,7 @@ func newWorkingVerifyOptions(trustedChains ...[]byte) x509.VerifyOptions {
 }
 
 func newWorkingSdJwtVcTestConfig() *testSdJwtVcConfig {
-	disclosures, err := MultipleNewDisclosureContents(map[string]string{
+	disclosures, err := sdjwt.MultipleNewDisclosureContents(map[string]string{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
 	})
@@ -247,7 +200,7 @@ func newWorkingSdJwtVcKbTestConfig() *testSdJwtVcKbConfig {
 	config := newEmptyTestConfigWithKbJwt()
 	config.testSdJwtVcConfig = *newWorkingSdJwtVcTestConfig()
 
-	config.withKbTypHeader(KbJwtTyp).
+	config.withKbTypHeader(sdjwt.KbJwtTyp).
 		withAudience("Verifier").
 		withKbNonce("nonce").
 		withValidSdHash().
@@ -290,7 +243,7 @@ func (c *testSdJwtVcConfig) withExpiryTime(time *int64) *testSdJwtVcConfig {
 	return c
 }
 
-func (c *testSdJwtVcConfig) withCnf(field CnfField) *testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withCnf(field sdjwt.CnfField) *testSdJwtVcConfig {
 	c.cnfPubKey = &field
 	return c
 }
@@ -305,8 +258,8 @@ func (c *testSdJwtVcConfig) withNotBefore(time *int64) *testSdJwtVcConfig {
 	return c
 }
 
-func (c *testSdJwtVcConfig) withSdClaims(claims []DisclosureContent, alg iana.HashingAlgorithm) *testSdJwtVcConfig {
-	hashes, err := HashDisclosures(alg, claims)
+func (c *testSdJwtVcConfig) withSdClaims(claims []sdjwt.DisclosureContent, alg iana.HashingAlgorithm) *testSdJwtVcConfig {
+	hashes, err := sdjwt.HashDisclosures(alg, claims)
 	if err != nil {
 		log.Fatalf("failed to create hashes: %v", err)
 	}
@@ -377,7 +330,7 @@ func (c *testSdJwtVcConfig) withKidHeader(kid string) *testSdJwtVcConfig {
 	return c
 }
 
-func (c *testSdJwtVcConfig) withDisclosures(disclosures []DisclosureContent) *testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withDisclosures(disclosures []sdjwt.DisclosureContent) *testSdJwtVcConfig {
 	c.disclosures = disclosures
 	return c
 }
@@ -389,11 +342,12 @@ type testSdJwtVcConfig struct {
 	issuedAt      *int64
 	expiryTime    *int64
 	notBefore     *int64
-	cnfPubKey     *CnfField
-	sdClaims      *[]HashedDisclosure
+	cnfPubKey     *sdjwt.CnfField
+	sdClaims      *[]sdjwt.HashedDisclosure
 	sdAlg         *iana.HashingAlgorithm
 	vct           *string
-	disclosures   []DisclosureContent
+	disclosures   []sdjwt.DisclosureContent
+	status        *statuslist.StatusClaim
 
 	// stuff inside the issuer signed header
 	typHeader *string
@@ -403,6 +357,11 @@ type testSdJwtVcConfig struct {
 	// general signing stuff
 	holderPrivateKey *ecdsa.PrivateKey
 	issuerPrivateKey *ecdsa.PrivateKey
+}
+
+func (c *testSdJwtVcConfig) withStatusListReference(uri string, idx uint64) *testSdJwtVcConfig {
+	c.status = &statuslist.StatusClaim{StatusList: &statuslist.Reference{Index: idx, URI: uri}}
+	return c
 }
 
 type testSdJwtVcKbConfig struct {
@@ -422,25 +381,25 @@ type testSdJwtVcKbConfig struct {
 func addTestKbJwt(config testSdJwtVcKbConfig, sdjwtvc SdJwtVc) (SdJwtVcKb, error) {
 	payload := map[string]any{}
 	if config.nonce != nil {
-		payload[Key_Nonce] = *config.nonce
+		payload[NonceKey] = *config.nonce
 	}
 	if config.useActualSdHash {
-		hash, err := CreateUrlEncodedHash(iana.SHA256, string(sdjwtvc))
+		hash, err := iana.CreateUrlEncodedHash(iana.SHA256, string(sdjwtvc))
 		if err != nil {
 			return "", err
 		}
-		payload[Key_SdHash] = hash
+		payload[SdHashKey] = hash
 	}
 
 	if config.sdHash != nil {
-		payload[Key_SdHash] = *config.sdHash
+		payload[SdHashKey] = *config.sdHash
 	}
 
 	if config.audience != nil {
-		payload[Key_Audience] = *config.audience
+		payload[jwt.AudienceKey] = *config.audience
 	}
 	if config.kbIssuedAt != nil {
-		payload[Key_IssuedAt] = *config.kbIssuedAt
+		payload[jwt.IssuedAtKey] = *config.kbIssuedAt
 	}
 
 	payloadJson, err := json.Marshal(payload)
@@ -450,89 +409,103 @@ func addTestKbJwt(config testSdJwtVcKbConfig, sdjwtvc SdJwtVc) (SdJwtVcKb, error
 
 	header := map[string]any{}
 	if config.kbjwtTypHeader == nil {
-		header[Key_Typ] = ""
+		header[sdjwt.TypHeaderKey] = ""
 	} else {
-		header[Key_Typ] = *config.kbjwtTypHeader
+		header[sdjwt.TypHeaderKey] = *config.kbjwtTypHeader
 	}
 
-	jwtCreator := DefaultEcdsaJwtCreator{privateKey: config.holderPrivateKey}
+	jwtCreator := sdjwt.NewJwtCreator(config.holderPrivateKey)
 	jwt, err := jwtCreator.CreateSignedJwt(header, string(payloadJson))
 
-	return AddKeyBindingJwtToSdJwtVc(sdjwtvc, KeyBindingJwt(jwt)), err
+	return SdJwtVcKb(sdjwt.AddKeyBindingJwt(sdjwt.SdJwt(sdjwtvc), sdjwt.KeyBindingJwt(jwt))), err
 }
 
-func createTestIssuerSignedJwt(config testSdJwtVcConfig) (IssuerSignedJwt, error) {
+func createTestIssuerSignedJwt(config testSdJwtVcConfig) (sdjwt.IssuerSignedJwt, error) {
 	issuerPayload := map[string]any{}
 
-	if config.vct != nil {
-		issuerPayload[Key_VerifiableCredentialType] = *config.vct
-	}
+	// JWT-registered claims
 	if config.issuerUrl != nil {
-		issuerPayload[Key_Issuer] = *config.issuerUrl
+		issuerPayload[jwt.IssuerKey] = *config.issuerUrl
 	}
 	if config.issuedAt != nil {
-		issuerPayload[Key_IssuedAt] = *config.issuedAt
-	}
-	if config.expiryTime != nil {
-		issuerPayload[Key_ExpiryTime] = *config.expiryTime
+		issuerPayload[jwt.IssuedAtKey] = *config.issuedAt
 	}
 	if config.notBefore != nil {
-		issuerPayload[Key_NotBefore] = *config.notBefore
+		issuerPayload[jwt.NotBeforeKey] = *config.notBefore
 	}
+	if config.expiryTime != nil {
+		issuerPayload[jwt.ExpirationKey] = *config.expiryTime
+	}
+
+	// SD-JWT-specific claims
 	if config.cnfPubKey != nil {
-		issuerPayload[Key_Confirmationkey] = *config.cnfPubKey
+		issuerPayload[sdjwt.ConfirmationKey] = *config.cnfPubKey
 	}
 	if config.sdClaims != nil {
-		issuerPayload[Key_Sd] = *config.sdClaims
+		issuerPayload[sdjwt.SdKey] = *config.sdClaims
 	}
 	if config.sdAlg != nil {
-		issuerPayload[Key_SdAlg] = *config.sdAlg
+		issuerPayload[sdjwt.SdAlgKey] = *config.sdAlg
+	}
+
+	// SD-JWT VC-specific claims
+	if config.vct != nil {
+		issuerPayload[VerifiableCredentialTypeKey] = *config.vct
+	}
+
+	if config.status != nil && config.status.StatusList != nil {
+		issuerPayload[StatusKey] = map[string]any{
+			"status_list": map[string]any{
+				"idx": config.status.StatusList.Index,
+				"uri": config.status.StatusList.URI,
+			},
+		}
 	}
 
 	issuerHeader := map[string]any{}
 
 	if config.typHeader != nil {
-		issuerHeader[Key_Typ] = *config.typHeader
+		issuerHeader[sdjwt.TypHeaderKey] = *config.typHeader
 	}
 
 	if config.x5cHeader != nil {
-		issuerHeader[Key_X5c] = config.x5cHeader
+		issuerHeader[sdjwt.X5cHeaderKey] = config.x5cHeader
 	}
 
 	if config.kidHeader != nil {
-		issuerHeader[Key_Kid] = *config.kidHeader
+		issuerHeader[sdjwt.KidHeaderKey] = *config.kidHeader
 	}
 
-	jwtCreator := DefaultEcdsaJwtCreator{privateKey: config.issuerPrivateKey}
+	jwtCreator := sdjwt.NewJwtCreator(config.issuerPrivateKey)
 
 	payloadJson, err := json.Marshal(issuerPayload)
 	if err != nil {
 		return "", err
 	}
 	jwt, err := jwtCreator.CreateSignedJwt(issuerHeader, string(payloadJson))
-	return IssuerSignedJwt(jwt), err
+	return sdjwt.IssuerSignedJwt(jwt), err
 }
 
 func createTestSdJwtVc(t *testing.T, config *testSdJwtVcConfig) SdJwtVc {
 	issuerJwt, err := createTestIssuerSignedJwt(*config)
 	require.NoError(t, err)
 
-	encodedDisclosures, err := EncodeDisclosures(config.disclosures)
+	encodedDisclosures, err := sdjwt.EncodeDisclosures(config.disclosures)
 	require.NoError(t, err)
-	sdjwt := CreateSdJwtVc(issuerJwt, encodedDisclosures)
+	result := sdjwt.Create(issuerJwt, encodedDisclosures)
 
-	return sdjwt
+	return SdJwtVc(result)
 }
 
 func createTestSdJwtVcKb(t *testing.T, config *testSdJwtVcKbConfig) SdJwtVcKb {
 	issuerJwt, err := createTestIssuerSignedJwt(config.testSdJwtVcConfig)
 	require.NoError(t, err)
 
-	encodedDisclosures, err := EncodeDisclosures(config.disclosures)
+	encodedDisclosures, err := sdjwt.EncodeDisclosures(config.disclosures)
 	require.NoError(t, err)
-	sdjwt := CreateSdJwtVc(issuerJwt, encodedDisclosures)
+	result := sdjwt.Create(issuerJwt, encodedDisclosures)
 
-	sdjwtvckb, err := addTestKbJwt(*config, sdjwt)
+	sdjwtvckb, err := addTestKbJwt(*config, SdJwtVc(result))
 	require.NoError(t, err)
 
 	return sdjwtvckb

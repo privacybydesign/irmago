@@ -1,9 +1,19 @@
-package sdjwtvc
+package sdjwt
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 )
+
+type ProcessedPayload map[string]any
+
+// MarshalJSON produces a deterministic encoding for consistent hashing of the payload:
+// encoding/json already sorts map keys at every nesting level, so no extra work is needed here.
+// Array element order is preserved as-is, since it is meaningful in SD-JWT claims.
+func (p *ProcessedPayload) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]any(*p))
+}
 
 // GetClaimValue resolves a claims path pointer against the processed SD-JWT payload,
 // as defined in Appendix C of the OpenID4VCI specification.
@@ -13,14 +23,14 @@ import (
 //   - int: selects the element at the given index in the current array.
 //   - nil: asserts the current value is an array and keeps it as the selection.
 //
-// Navigation descends through nested ProcessedSdJwtPayload values and slices.
+// Navigation descends through nested ProcessedPayload values and slices.
 // Returns the value at the end of the path, or an error if:
 //   - a path component has an unsupported type,
 //   - an intermediate value is not an object when a string key is used,
 //   - an intermediate value is not an array when an integer index or nil is used,
 //   - a key is not present in the current object, or
 //   - an index is out of range.
-func (p *ProcessedSdJwtPayload) GetClaimValue(pathPointer []any) (any, error) {
+func (p *ProcessedPayload) GetClaimValue(pathPointer []any) (any, error) {
 	if p == nil && len(pathPointer) > 0 {
 		return nil, fmt.Errorf("processed SD-JWT payload is nil")
 	}
@@ -34,7 +44,7 @@ func (p *ProcessedSdJwtPayload) GetClaimValue(pathPointer []any) (any, error) {
 		case string:
 			var m map[string]any
 			switch v := current.(type) {
-			case ProcessedSdJwtPayload:
+			case ProcessedPayload:
 				m = v
 			case map[string]any:
 				m = v
