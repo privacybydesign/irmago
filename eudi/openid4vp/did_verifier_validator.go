@@ -28,15 +28,18 @@ type DidVerifierValidator struct {
 // NewDidVerifierValidator creates a new DID-based verifier validator.
 func NewDidVerifierValidator(allowInsecureDidWeb bool) *DidVerifierValidator {
 	return &DidVerifierValidator{
-		didWebResolver: &didweb.DocumentResolver{
-			AllowInsecure: allowInsecureDidWeb,
-		},
+		didWebResolver: didweb.NewDocumentResolver(allowInsecureDidWeb),
 	}
 }
 
 // SetAllowInsecureDidWeb enables resolving did:web DIDs over HTTP (for developer mode).
 func (v *DidVerifierValidator) SetAllowInsecureDidWeb(allow bool) {
 	v.didWebResolver.AllowInsecure = allow
+}
+
+// AllowsInsecureDidWeb reports whether did:web DIDs may be resolved over HTTP.
+func (v *DidVerifierValidator) AllowsInsecureDidWeb() bool {
+	return v.didWebResolver.AllowInsecure
 }
 
 func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (

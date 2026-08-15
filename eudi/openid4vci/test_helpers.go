@@ -11,9 +11,12 @@ import (
 
 // authCodeRequest bundles the callback with the state the grant handler generated for the
 // session, so tests can echo the correct state back (or deliberately echo a wrong one).
+// request is the full authorization code flow request the handler received, so tests can
+// also assert on the endpoint and parameters the wallet built.
 type authCodeRequest struct {
 	callback AuthCodeHandler
 	state    string
+	request  *clientmodels.AuthorizationCodeFlowRequest
 }
 
 type MockSessionHandler struct {
@@ -77,7 +80,7 @@ func (h *MockSessionHandler) RequestAuthorizationCodeFlowPermission(request *cli
 		fmt.Printf("OpenID4VCIIssuanceRequest: %v\n", string(issuanceRequestJson))
 	}
 
-	h.authCodeRequestChannel <- authCodeRequest{callback: callback, state: request.OpenID4VCIState}
+	h.authCodeRequestChannel <- authCodeRequest{callback: callback, state: request.OpenID4VCIState, request: request}
 }
 
 func (h *MockSessionHandler) RequestPreAuthorizedCodeFlowPermission(
