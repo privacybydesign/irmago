@@ -241,10 +241,17 @@ func (c *Configuration) ResolveVerifierLogo(key string) *clientmodels.Image {
 
 func (c *Configuration) UpdateCertificateRevocationLists() error {
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 
 	go updateWorker(c.Issuers.syncCertificateRevocationLists, &wg)
 	go updateWorker(c.Verifiers.syncCertificateRevocationLists, &wg)
+	// The trust lists too: lote.Store states that a stored list is re-verified
+	// against the anchors in force when it is read, so a list-signing certificate
+	// that has since been revoked invalidates the lists already on disk. That
+	// only holds if the CRLs for those certificates are actually fetched. No-op
+	// while Production_Yivi_TrustListTrustAnchor is empty, since then no
+	// distribution point is registered on this model.
+	go updateWorker(c.TrustLists.syncCertificateRevocationLists, &wg)
 
 	wg.Wait()
 
