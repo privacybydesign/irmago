@@ -116,7 +116,7 @@ func indentValidationError(err error) string {
 	}
 
 	var out strings.Builder
-	for _, line := range strings.Split(detailed.Error(), "\n") {
+	for line := range strings.SplitSeq(detailed.Error(), "\n") {
 		out.WriteString("  ")
 		out.WriteString(strings.TrimSpace(line))
 		out.WriteString("\n")
