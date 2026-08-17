@@ -135,7 +135,7 @@ The `github.com/lestrrat-go/jwx/v4` dependency uses the `encoding/json/v2` stand
 
     export GOEXPERIMENT=jsonv2
 
-The Dockerfiles in this repository already set it, so this only applies when running the Go toolchain directly.
+The Dockerfiles in this repository already set it, so this only applies when running the Go toolchain directly. The same goes for anything that compiles irmago as a dependency, such as the gomobile bind in irmamobile.
 
 ## Running the unit tests
 
