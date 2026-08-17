@@ -216,8 +216,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 		return nil, nil, nil, nil, err
 	}
 
-	var vct string
-	vct, err = jwt.Get[string](token, VerifiableCredentialTypeKey)
+	vct, err := jwt.Get[string](token, VerifiableCredentialTypeKey)
 	if err != nil {
 		return nil, nil, nil, nil, errors.New("missing vct field")
 	}
@@ -243,10 +242,8 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 		}
 	}
 
-	var sdRaw, cnfRaw any
-
 	var sd []sdjwt.HashedDisclosure
-	sdRaw, err = jwt.Get[any](token, sdjwt.SdKey)
+	sdRaw, err := jwt.Get[any](token, sdjwt.SdKey)
 	if err == nil {
 		sd, err = sdjwt.ParseSdField(sdRaw)
 		if err != nil {
@@ -255,7 +252,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	}
 
 	var cnf *sdjwt.CnfField
-	cnfRaw, err = jwt.Get[any](token, sdjwt.ConfirmationKey)
+	cnfRaw, err := jwt.Get[any](token, sdjwt.ConfirmationKey)
 	if err == nil {
 		cnf, err = sdjwt.ParseConfirmField(cnfRaw)
 		if err != nil {
