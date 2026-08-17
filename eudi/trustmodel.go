@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -37,7 +38,16 @@ type TrustModel struct {
 	// under contract, which is a change to this data rather than to code.
 	// Every path that adds an anchor states the level explicitly; nothing
 	// defaults to high.
-	anchorLevels map[[sha256.Size]byte]clientmodels.TrustLevel
+	//
+	// anchorLevelsMu guards it. Classify reads the map on the session path while
+	// the CRL refresh job reassigns and rewrites it from another goroutine, and a
+	// map is the one shape Go answers that with a process-killing throw rather
+	// than a stale read. The model's other reloaded fields are raced too — see
+	// the TODO on Configuration.UpdateCertificateRevocationLists, which is where
+	// that gets fixed as a whole — but they are pointers and slice headers, which
+	// at worst read stale.
+	anchorLevelsMu sync.RWMutex
+	anchorLevels   map[[sha256.Size]byte]clientmodels.TrustLevel
 }
 
 type CertificateVerificationMode int
@@ -65,6 +75,16 @@ func (tm *TrustModel) clear() {
 	tm.trustedIntermediateCertificates = x509.NewCertPool()
 	tm.revocationLists = []*x509.RevocationList{}
 	tm.revocationListsDistributionPoints = []string{}
+	tm.clearAnchorLevels()
+}
+
+// clearAnchorLevels drops every recorded anchor level. Kept apart from clear so
+// that every write to the map goes through anchorLevelsMu — see the field
+// comment for why this map in particular has to be guarded.
+func (tm *TrustModel) clearAnchorLevels() {
+	tm.anchorLevelsMu.Lock()
+	defer tm.anchorLevelsMu.Unlock()
+
 	tm.anchorLevels = map[[sha256.Size]byte]clientmodels.TrustLevel{}
 }
 
@@ -470,6 +490,9 @@ func (tm *TrustModel) RemoveCertificate(thumbprint string) error {
 // that arrives twice — the same CA pinned by two callers — keeps the strongest
 // statement made about it.
 func (tm *TrustModel) recordAnchorLevel(root *x509.Certificate, confers clientmodels.TrustLevel) {
+	tm.anchorLevelsMu.Lock()
+	defer tm.anchorLevelsMu.Unlock()
+
 	if tm.anchorLevels == nil {
 		tm.anchorLevels = map[[sha256.Size]byte]clientmodels.TrustLevel{}
 	}
@@ -478,6 +501,17 @@ func (tm *TrustModel) recordAnchorLevel(root *x509.Certificate, confers clientmo
 		return
 	}
 	tm.anchorLevels[key] = confers
+}
+
+// anchorLevel reports the level this root's certificates confer, and whether
+// the root is anchored at all. The read side of anchorLevelsMu: Classify runs on
+// the session path while a reload rewrites the map underneath it.
+func (tm *TrustModel) anchorLevel(root *x509.Certificate) (clientmodels.TrustLevel, bool) {
+	tm.anchorLevelsMu.RLock()
+	defer tm.anchorLevelsMu.RUnlock()
+
+	level, ok := tm.anchorLevels[sha256.Sum256(root.Raw)]
+	return level, ok
 }
 
 // Classify implements [trust.CertificateClassifier]: the trust level conferred
@@ -521,7 +555,7 @@ func (tm *TrustModel) Classify(leaf *x509.Certificate) clientmodels.TrustLevel {
 	best := clientmodels.TrustLevel_Unevaluated
 	for _, chain := range chains {
 		root := chain[len(chain)-1]
-		if level, ok := tm.anchorLevels[sha256.Sum256(root.Raw)]; ok && trust.Stronger(level, best) {
+		if level, ok := tm.anchorLevel(root); ok && trust.Stronger(level, best) {
 			best = level
 		}
 	}
