@@ -3,6 +3,9 @@ package openid4vp
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -217,6 +220,16 @@ type AuthorizationRequest struct {
 	// reported against these values to detect replay of the request by a
 	// malicious verifier.
 	ExpectedOrigins []string `json:"expected_origins,omitempty"`
+
+	// OPTIONAL: the request object's own expiry and not-before. Neither is
+	// required by OpenID4VP, but a verifier that sets them is stating how long
+	// the request may be used, and RFC 7519 requires a recipient that processes
+	// them to honour it. They are read here so that GetExpirationTime and
+	// GetNotBefore below can report them to the JWT parser; without the fields
+	// there is nothing for the parser to check and a request object never goes
+	// stale.
+	Expiry    int64 `json:"exp,omitempty"`
+	NotBefore int64 `json:"nbf,omitempty"`
 }
 
 type EncryptedResponsePayload struct {
@@ -227,12 +240,146 @@ type EncryptedResponsePayload struct {
 type VpToken map[string][]string
 
 // implement jwt.Claims interface, so we can decode the auth request JWT
+//
+// These are what the JWT parser validates against, so returning a nil time from
+// all of them — as this type used to — means exp, nbf and iat are carried on the
+// wire and then ignored: a request object stayed usable forever, and one dated
+// in the future was accepted as readily as a current one. Each accessor now
+// reports the claim it has, and leaves nil only where the request genuinely
+// carries no value, which is the case the parser is meant to skip.
 
-func (ar *AuthorizationRequest) GetExpirationTime() (*jwt.NumericDate, error) { return nil, nil }
-func (ar *AuthorizationRequest) GetIssuedAt() (*jwt.NumericDate, error)       { return nil, nil }
-func (ar *AuthorizationRequest) GetNotBefore() (*jwt.NumericDate, error)      { return nil, nil }
-func (ar *AuthorizationRequest) GetIssuer() (string, error)                   { return "", nil }
-func (ar *AuthorizationRequest) GetSubject() (string, error)                  { return "", nil }
-func (ar *AuthorizationRequest) GetAudience() (jwt.ClaimStrings, error)       { return nil, nil }
+func (ar *AuthorizationRequest) GetExpirationTime() (*jwt.NumericDate, error) {
+	return numericDateOrNil(ar.Expiry), nil
+}
+
+func (ar *AuthorizationRequest) GetIssuedAt() (*jwt.NumericDate, error) {
+	return numericDateOrNil(ar.IssuedAt), nil
+}
+
+func (ar *AuthorizationRequest) GetNotBefore() (*jwt.NumericDate, error) {
+	return numericDateOrNil(ar.NotBefore), nil
+}
+
+func (ar *AuthorizationRequest) GetIssuer() (string, error)  { return "", nil }
+func (ar *AuthorizationRequest) GetSubject() (string, error) { return "", nil }
+
+func (ar *AuthorizationRequest) GetAudience() (jwt.ClaimStrings, error) {
+	if ar.Audience == "" {
+		return nil, nil
+	}
+	return jwt.ClaimStrings{ar.Audience}, nil
+}
+
+// numericDateOrNil converts a unix timestamp claim to the parser's type,
+// reporting nil for the zero value so an absent claim stays absent rather than
+// becoming a 1970 deadline that would reject every request.
+func numericDateOrNil(unix int64) *jwt.NumericDate {
+	if unix == 0 {
+		return nil
+	}
+	return jwt.NewNumericDate(time.Unix(unix, 0))
+}
 
 const AuthRequestJwtTyp string = "oauth-authz-req+jwt"
+
+// The aud claim is deliberately not checked against a fixed value.
+//
+// It is reported by GetAudience so the parser could enforce it, but nothing
+// tells this wallet what to expect: OpenID4VP states no requirement for aud on
+// a signed request object beyond RFC 9101's general JAR processing, and RFC 9101
+// ties it to an issuer identifier a wallet does not have. The EUDI reference
+// verifier sends SIOPv2's "https://self-issued.me/v2" while other verifiers use
+// other values, so pinning any one of them would reject conformant requests.
+// Enforcing it needs a decision about what a Yivi wallet's identifier is, which
+// is a policy question rather than a missing check.
+
+// authRequestParserOptions are the validations the JWT parser applies to every
+// authorization request object, wherever it arrived from.
+//
+// WithIssuedAt is what makes a future-dated iat an error; the parser ignores the
+// claim otherwise. The leeway absorbs ordinary clock drift between a wallet and
+// a verifier, which is not the same thing as a request being stale by a margin
+// anyone would notice.
+func authRequestParserOptions() []jwt.ParserOption {
+	return []jwt.ParserOption{
+		jwt.WithIssuedAt(),
+		jwt.WithLeeway(2 * time.Minute),
+	}
+}
+
+// validateRedirectAuthorizationRequest checks the parameters OpenID4VP
+// constrains for a session invoked from a URL, and is the counterpart to
+// validateDcApiRequest.
+//
+// The two transports had drifted: the DC API path checked response_type, the
+// nonce, scope-versus-dcql_query and a non-empty query, while the redirect path
+// checked only the nonce and left the rest to fail — or not fail — further down.
+// A verifier could send response_type=code over a URL and still be answered with
+// a vp_token, or send both scope and dcql_query, which the spec forbids
+// outright. Everything common to both now lives in one place.
+func validateRedirectAuthorizationRequest(request *AuthorizationRequest) error {
+	if ResponseType(request.ResponseType) != ResponseType_VpToken {
+		return fmt.Errorf("response_type must be %q, but got %q", ResponseType_VpToken, request.ResponseType)
+	}
+	if err := validateNonce(request.Nonce); err != nil {
+		return err
+	}
+	// "Either a dcql_query or a scope parameter representing a DCQL Query MUST
+	// be present in the Authorization Request, but not both."
+	hasQuery := len(request.DcqlQuery.Credentials) > 0
+	if request.Scope != "" && hasQuery {
+		return fmt.Errorf("scope and dcql_query must not both be present")
+	}
+	if request.Scope == "" && !hasQuery {
+		return fmt.Errorf("request carries neither a dcql_query nor a scope")
+	}
+	if hasQuery {
+		if err := request.DcqlQuery.Validate(); err != nil {
+			return fmt.Errorf("invalid dcql_query: %v", err)
+		}
+	}
+	return nil
+}
+
+// validateResponseUriBinding constrains where a response may be sent for the
+// x509_san_dns client identifier scheme.
+//
+// OpenID4VP Section 5.10 lets a wallet allow a freely chosen response location
+// only when it can establish trust in the client identifier by some other means,
+// such as a list of trusted client identifiers; otherwise the host of the
+// response location MUST match the client identifier. This wallet authenticates
+// the client identifier against the certificate alone, which binds who is
+// asking but says nothing about where the answer goes, so the second rule is the
+// applicable one: without this check a certificate valid for one host could
+// direct a credential to any other.
+//
+// Only x509_san_dns is constrained here. x509_hash names a certificate rather
+// than a host, and the DC API returns the response through the platform instead
+// of transmitting it, so neither carries a host to compare against.
+func validateResponseUriBinding(request *AuthorizationRequest) error {
+	if !strings.HasPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns)) {
+		return nil
+	}
+	expected := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns))
+
+	// Whichever of the two the verifier used to say where the response goes.
+	target := request.ResponseUri
+	if target == "" {
+		target = request.RedirectUri
+	}
+	if target == "" {
+		return nil
+	}
+
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return fmt.Errorf("response location %q is not a URL: %v", target, err)
+	}
+	if !strings.EqualFold(parsed.Hostname(), expected) {
+		return fmt.Errorf(
+			"response location host %q does not match client_id %q",
+			parsed.Hostname(), expected,
+		)
+	}
+	return nil
+}

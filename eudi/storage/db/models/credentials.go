@@ -76,6 +76,22 @@ type CredentialBatch struct {
 	// Decremented on each use; the batch is exhausted when it reaches 0.
 	RemainingCount uint
 
+	// IssuerVerified records that the issuer's signature and certificate chain
+	// were verified against a trust anchor before this batch was stored.
+	//
+	// It is stored rather than re-derived. The check happens once, inside
+	// CredentialFormatParser.ParseAndVerify, and its result is not something the
+	// wallet otherwise keeps: re-deriving it at read time would mean walking the
+	// chain and fetching CRLs on every credential list, and would answer "is this
+	// issuer trusted now" rather than "was it trusted at issuance" — two claims
+	// that part company as soon as a document signer expires or is revoked. The
+	// same reasoning, and the same wording, as EudiLogEntry.RequestorVerified.
+	//
+	// Batches written before this column existed read back false. That understates
+	// them, since they went through the same verifying parser, but a stored false
+	// is the conservative direction and matches the log table's precedent.
+	IssuerVerified bool
+
 	// CredentialIssuer is the canonical URL of the credential issuer (credential_issuer claim).
 	CredentialIssuer string
 	IssuerDisplay    []IssuerMetadataDisplay `gorm:"constraint:OnDelete:CASCADE"`

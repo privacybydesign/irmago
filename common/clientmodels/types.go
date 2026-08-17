@@ -25,7 +25,23 @@ type TrustedParty struct {
 	Image *Image `json:"image,omitempty"`
 	// The trust chain for this party (if any)
 	Parent *TrustedParty `json:"parent"`
-	// Whether this party is verified by the scheme manager
+	// Whether this party was authenticated, which means something different for
+	// each kind of party and is never a scheme-manager assertion:
+	//
+	//   - a verifier: its authorization request was signed by an end-entity
+	//     certificate that chained to a trusted relying-party root, or, over the
+	//     Digital Credentials API, false — an unsigned request carries no
+	//     certificate to authenticate.
+	//   - a credential's issuer: the credential's signature and certificate chain
+	//     verified against a trust anchor before it was stored.
+	//   - an issuer built from OpenID4VCI metadata: false. That document is
+	//     fetched over TLS and unsigned, so nothing binds its name and logo to the
+	//     document signer the credentials are checked against, and saying
+	//     "verified" would vouch for branding that was never authenticated.
+	//
+	// It records what was true at the time, and is stored rather than re-derived
+	// for anything historical: the certificate that authenticated a past session
+	// is not something the wallet keeps.
 	Verified bool `json:"verified"`
 }
 

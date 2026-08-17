@@ -132,12 +132,16 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			Image:        credentialImage,
 			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
-				Id:       batch.CredentialIssuer,
-				Name:     issuerName,
-				Image:    issuerImage,
-				Url:      nil,
-				Parent:   nil,
-				Verified: false,
+				Id:     batch.CredentialIssuer,
+				Name:   issuerName,
+				Image:  issuerImage,
+				Url:    nil,
+				Parent: nil,
+				// Was false for every credential, unconditionally, which said the
+				// opposite of what is true of all of them: the wallet refuses to
+				// store a credential whose issuer it cannot authenticate, so a
+				// stored batch is by construction one whose chain verified.
+				Verified: batch.IssuerVerified,
 			},
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,
@@ -252,12 +256,19 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		Format:                first.Format,
 		Hash:                  hash,
 		ProcessedSdJwtPayload: datatypes.JSON(first.ResolvedClaims),
-		CredentialIssuer:      first.IssuerURL,
-		IssuerDisplay:         slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
-		CredentialMetadata:    convertCredentialMetadata(credentialConfiguration),
-		BatchSize:             uint(len(parsedCredentials)),
-		RemainingCount:        uint(len(parsedCredentials)),
-		Instances:             buildInstances(parsedCredentials),
+		// Reaching this point means the issuer was authenticated. Every credential
+		// here came from CredentialFormatParser.ParseAndVerify, which returns an
+		// error rather than a ParsedCredential when the signature or the chain to a
+		// trust anchor does not hold, so an unauthenticated issuer never gets as far
+		// as a batch. Recording it here, at the one place where that is guaranteed,
+		// avoids a per-parser flag that a new format could silently forget to set.
+		IssuerVerified:     true,
+		CredentialIssuer:   first.IssuerURL,
+		IssuerDisplay:      slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
+		CredentialMetadata: convertCredentialMetadata(credentialConfiguration),
+		BatchSize:          uint(len(parsedCredentials)),
+		RemainingCount:     uint(len(parsedCredentials)),
+		Instances:          buildInstances(parsedCredentials),
 	}
 
 	if first.IssuedAt != nil {

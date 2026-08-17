@@ -427,6 +427,25 @@ func verifyNamespaceDigests(items []Tag24Item, nsDigests map[uint64][]byte) (map
 			return nil, fmt.Errorf("decode item: %v", err)
 		}
 
+		// A salt shorter than the ISO floor is refused rather than tolerated.
+		// The salt is the only thing standing between an undisclosed element and
+		// a verifier that brute-forces it: the MSO carries a digest for every
+		// element whether or not the item travels, and for a low-entropy value
+		// (age_over_NN is one bit) a short random makes that digest a lookup
+		// rather than a commitment. Checked here, on receipt, because the party
+		// this protects is the holder — Issue enforces the same floor on the
+		// credentials we mint, but says nothing about credentials minted
+		// elsewhere, and a trust anchor attests to who an issuer is rather than
+		// to whether it implements 18013-5 correctly.
+		//
+		// Placed before the digest comparison so a defective credential is
+		// rejected as defective rather than reported as a digest mismatch.
+		if len(item.Random) < minSaltLength {
+			return nil, fmt.Errorf(
+				"element %s carries a %d-byte random value; ISO/IEC 18013-5 requires at least %d",
+				item.ElementIdentifier, len(item.Random), minSaltLength)
+		}
+
 		hash := sha256.Sum256(tag24item.EncodedItem)
 		expectedDigest, exists := nsDigests[item.DigestID]
 		if !exists {

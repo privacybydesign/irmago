@@ -40,7 +40,8 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	error,
 ) {
 	var authRequest AuthorizationRequest
-	token, err := jwt.ParseWithClaims(requestJwt, &authRequest, v.createAuthRequestVerifier())
+	token, err := jwt.ParseWithClaims(requestJwt, &authRequest, v.createAuthRequestVerifier(),
+		authRequestParserOptions()...)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
 	}

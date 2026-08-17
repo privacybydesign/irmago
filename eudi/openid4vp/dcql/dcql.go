@@ -1,6 +1,7 @@
 package dcql
 
 import (
+	"fmt"
 	"iter"
 	"slices"
 
@@ -14,6 +15,46 @@ type DcqlQuery struct {
 	// OPTIONAL: A non-empty array of credential set queries that specify specific additional constraints
 	// on which of the requested verifiable credentials to return.
 	CredentialSets []CredentialSetQuery `json:"credential_sets,omitempty"`
+}
+
+// Validate checks the structural rules a DCQL query must satisfy before any of
+// it is matched against what the wallet holds, and is transport-independent: the
+// same query is illegal over the redirect flow and over the Digital Credentials
+// API.
+//
+// Uniqueness of the ids is the load-bearing one. The vp_token a wallet returns
+// is an object keyed by credential query id, so two queries sharing an id have
+// no distinct place to put their answers, and which of the two a verifier
+// believes it received is left to chance.
+func (q DcqlQuery) Validate() error {
+	if len(q.Credentials) == 0 {
+		return fmt.Errorf("dcql_query must contain at least one credential query")
+	}
+
+	seen := make(map[string]struct{}, len(q.Credentials))
+	for _, credential := range q.Credentials {
+		if credential.Id == "" {
+			return fmt.Errorf("credential query id must not be empty")
+		}
+		if _, duplicate := seen[credential.Id]; duplicate {
+			return fmt.Errorf("credential query id %q is present more than once", credential.Id)
+		}
+		seen[credential.Id] = struct{}{}
+	}
+
+	// A credential set may only reference ids the query actually defines;
+	// otherwise a required set can never be satisfied and the wallet would go
+	// looking for a credential the verifier never described.
+	for _, set := range q.CredentialSets {
+		for _, option := range set.Options {
+			for _, id := range option {
+				if _, known := seen[id]; !known {
+					return fmt.Errorf("credential set references unknown credential query id %q", id)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // CredentialSetQuery is an object representing a request for one or more Credentials

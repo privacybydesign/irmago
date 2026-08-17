@@ -223,8 +223,13 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			return
 		}
 
-		if err := validateNonce(request.Nonce); err != nil {
+		if err := validateRedirectAuthorizationRequest(request); err != nil {
 			handleFailure(handler, "openid4vp: invalid authorization request: %v", err)
+			return
+		}
+
+		if err := validateResponseUriBinding(request); err != nil {
+			handleFailure(handler, "openid4vp: refusing to answer this request: %v", err)
 			return
 		}
 

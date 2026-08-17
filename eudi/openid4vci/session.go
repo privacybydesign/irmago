@@ -465,6 +465,11 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 				Id:    s.credentialIssuerMetadata.CredentialIssuer,
 				Name:  issuerName,
 				Image: issuerImage,
+				// These credentials have been fetched and verified — an issuer whose
+				// signature or chain did not check out fails the session before this
+				// is built — so the issuance log records an authenticated issuer
+				// rather than leaving the flag at its zero value.
+				Verified: true,
 			},
 			Image:                 image,
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},

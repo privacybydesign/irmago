@@ -70,7 +70,7 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 			return nil, fmt.Errorf("auth request JWT typ should be %v but was %v", AuthRequestJwtTyp, typ)
 		}
 		return pubKey, nil
-	})
+	}, authRequestParserOptions()...)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to verify auth request jwt: %v", err)
 	}

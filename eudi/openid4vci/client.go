@@ -459,9 +459,15 @@ func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.C
 		metadata.LogoURIsByLanguage(credentialIssuerMetadata.Display), locale)
 
 	return &clientmodels.TrustedParty{
-		Id:       credentialIssuerMetadata.CredentialIssuer,
-		Name:     clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
-		Image:    issuerImage,
+		Id:    credentialIssuerMetadata.CredentialIssuer,
+		Name:  clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
+		Image: issuerImage,
+		// Deliberately false, unlike the per-credential issuer elsewhere. This
+		// party is built from the issuer's metadata document, which is fetched over
+		// TLS and is not signed: nothing binds this name or logo to the document
+		// signer whose certificate the credentials are checked against. Saying
+		// "verified" here would vouch for branding the wallet has not
+		// authenticated. The TODO above is what would change that.
 		Verified: false,
 	}
 }

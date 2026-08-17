@@ -1,6 +1,6 @@
 # eudicli — EUDI command line tools
 
-Three `package main` programs for working with the EUDI credential code by hand.
+Four `package main` programs for working with the EUDI credential code by hand.
 They live here rather than beside the packages they exercise because Go does not
 allow a `func main()` to sit in the same package as library code.
 
@@ -9,6 +9,7 @@ allow a `func main()` to sit in the same package as library code.
 | [`mdoc-decode`](#mdoc-decode--cosecbor-inspector) | decodes a hex-encoded COSE_Sign1 or CBOR blob and prints its structure | nothing |
 | [`mdoc-demo`](#mdoc-demo--selective-disclosure-in-process) | walks one credential through issue → disclose → verify in-process, printing what each side sees | nothing |
 | [`mdoc-e2e`](#mdoc-e2e--the-real-protocols-against-the-reference-containers) | the same story over real OpenID4VCI and OpenID4VP against the EUDI reference containers | `docker compose up -d` |
+| [`mdoc-violations`](#mdoc-violations--protocol-violations-end-to-end) | runs protocol violations through the same real stack and reports whether each was refused | `docker compose up -d` |
 
 Each program's own package comment is the detailed reference; this file is the
 map. Run any of them from the repository root.
@@ -43,6 +44,36 @@ The walkthrough goes to stdout and the wallet's own log to stderr, so they can b
 read apart (`2> e2e.log`) or together (`2>&1 | tee e2e.log`). Neither is the
 wallet's *activity* log — the entries the app shows the user; step 7 prints those
 as JSON, and `-logs <path>` writes them somewhere they outlive the run.
+
+---
+
+## mdoc-violations — protocol violations, end to end
+
+```bash
+docker compose up -d
+go run ./yivi/cli/eudicli/mdoc-violations
+go run ./yivi/cli/eudicli/mdoc-violations -only 22,33,34   # a subset
+```
+
+Where `mdoc-e2e` shows the happy path, this drives the same stack — real issuer
+container, real `client.Client` on fresh storage, real verifier container —
+through a battery of things a conformant party would never send, and reports for
+each whether it was refused. A scenario passes only when the real wallet or the
+real container rejects the session; no verification function is called directly.
+
+Requests that have to differ from what the reference verifier sends are made by
+taking the container's own signed request JWT, changing exactly one field, and
+re-signing with the verifier private key from `testdata/eudi/verifier`. The
+modified request is served from a throwaway local HTTP server standing in for
+`request_uri`. Scenario 1 is the control for that rig: an unmodified re-signed
+request must still succeed, or every later rejection would be an artifact of the
+minting rather than a property of the wallet.
+
+Two results are expected not to be refused, and the summary says so rather than
+hiding them. One depends on a trust anchor not being compiled in (see the note it
+prints); the other is the `aud` claim, which is reported but deliberately
+unchecked — the reasoning is in the CHANGELOG entry for the request-object
+claims.
 
 ---
 

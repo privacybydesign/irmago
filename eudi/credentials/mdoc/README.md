@@ -40,7 +40,7 @@ the same over the real protocols against the EUDI reference containers.
 | `IssuerSignedItem` (4-field envelope) | ✓ | digestID, random, elementIdentifier, elementValue |
 | CBOR encoding | ✓ | shortest-form deterministic, fxamacker/cbor |
 | Tag-24 wrapping | ✓ | freezes bytes before hashing |
-| Per-item random value (salt) | ✓ | 16 bytes from `crypto/rand`, one per item. ISO/IEC 18013-5 puts the floor at 16; `Issue` sits on it, and both a compile-time assertion and a runtime check in `Issue` reject anything shorter. The salt is what stops a verifier brute-forcing an undisclosed boolean claim, since the digest of every item travels whether or not the item does |
+| Per-item random value (salt) | ✓ | 16 bytes from `crypto/rand`, one per item. ISO/IEC 18013-5 puts the floor at 16; `Issue` sits on it, and both a compile-time assertion and a runtime check in `Issue` reject anything shorter. The salt is what stops a verifier brute-forcing an undisclosed boolean claim, since the digest of every item travels whether or not the item does. Enforced on receipt as well — see "Short-salt rejection" below |
 | SHA-256 valueDigests | ✓ | `hash(Tag24(CBOR(item)))` per item |
 | Randomized digest-ID assignment | ✓ | claim order is cryptographically shuffled before digestID assignment (not sorted) — prevents a verifier inferring undisclosed claims' relative order from a disclosed claim's digestID, matching Multipaz's `MdocUtil.generateIssuerNameSpaces` |
 | MSO construction | ✓ | version, digestAlgorithm, valueDigests, docType, validityInfo, deviceKeyInfo |
@@ -58,6 +58,7 @@ the same over the real protocols against the EUDI reference containers.
 | Requested-element check | ✓ | `VerificationResult.RequireElements` — the digests prove every disclosed element is authentic and `deviceAuth` proves the session, but neither covers *which* elements were selected: the device signature is over the session transcript and docType, not the disclosed set. A holder can drop an element and still pass every other check, so a verifier that cares what it received must ask separately. Left to the caller rather than folded into `Verify`, which does not know what was requested |
 | Digest verification | ✓ | constant-time comparison via `crypto/subtle` |
 | Tamper detection | ✓ | digest mismatch on value tampering |
+| Short-salt rejection | ✓ | an `IssuerSignedItem` whose `random` is under the ISO floor of 16 bytes is refused on receipt, before the digest comparison, so a defective credential is reported as defective rather than as a digest mismatch. `Issue` enforces the same floor on what this package mints, but that says nothing about credentials minted elsewhere, and a trust anchor attests to who an issuer is rather than to whether it implements 18013-5 correctly. The party this protects is the holder: the MSO carries a digest for every element whether or not the item travels, so for a one-bit value like `age_over_NN` a short salt turns that digest into a lookup instead of a commitment |
 | `docType` bound to the signed MSO | ✓ | `MDoc.docType` is covered by no digest and no signature, so it is compared against `MSO.docType` and a mismatch is rejected; `VerificationResult.DocType` reports the signed value and stays empty on failures rather than echoing an unauthenticated one. Without this, re-labelling one unsigned field yielded a valid result carrying the attacker's docType — which `credential_format_parser_mdoc.go` stores as the credential's type, and DCQL `doctype_value` matching keys off. See `verifier_doctype_test.go` |
 | `deviceSigned` / `deviceAuth` | ✓ | `SignDeviceAuth` + `VerifyWithDeviceAuth` — fresh COSE_Sign1 per session, checked against `deviceKeyInfo` |
 | Device-binding replay/clone rejection | ✓ | wrong signer and wrong-session deviceAuth both rejected |
@@ -117,6 +118,14 @@ monolithic test file:
 | `verifier_test.go` | `TestDeviceAuthWrongSignerIsRejected` | Cloned mdoc — deviceAuth signed by a different device's key — rejected |
 | `verifier_test.go` | `TestDeviceAuthWrongSessionIsRejected` | Correct device key, but signed over a different session transcript (replay) — rejected |
 | `verifier_test.go` | `TestUnknownDigestIDIsRejected` | A digestID absent from the MSO's `valueDigests` is rejected |
+| `verifier_salt_test.go` | `TestVerifyNamespaceDigestsRejectsShortSalt` | A 15-byte `random` — one byte under the ISO floor — is refused, and the error names the random value rather than surfacing as a digest mismatch. The item is paired with a matching digest so the rejection is attributable to the salt alone |
+| `verifier_salt_test.go` | `TestVerifyNamespaceDigestsAcceptsSaltAtFloor` | Exactly 16 bytes passes — a check written `>` rather than `>=` would reject every credential this issuer mints |
+| `verifier_salt_test.go` | `TestVerifyNamespaceDigestsRejectsMissingSalt` | A nil `random` decodes fine from CBOR, so the zero value is refused explicitly rather than by relying on the length comparison being reached |
+| `verifier_salt_credential_test.go` | `TestShortSaltIsRejectedAtIssuance` | The same floor through `VerifyAllDisclosedNamespaces`, on a complete credential signed by a real document signer with a real x5chain and digests that match — everything verifies except the salt. The unit tests above pin the comparison; this pins that it is *reached* from the entry point a wallet uses on what an issuer hands it |
+| `verifier_salt_credential_test.go` | `TestLegalSaltFromTheSameConstructionIsAccepted` | The control for the file: the identical hand-assembled credential at 16 bytes must verify, so a passing rejection test cannot be explained by the envelope being broken some other way |
+| `verifier_salt_credential_test.go` | `TestSaltLengthBoundary` | 0, 1, 8 and 15 bytes rejected; 16, 17 and 32 accepted — pins the comparison at exactly the floor rather than somewhere near it |
+| `verifier_salt_credential_test.go` | `TestShortSaltIsRejectedAtPresentation` | The other entry point: a short-salted credential taken through `SelectiveDisclose` and then `Verify` is still refused |
+| `verifier_salt_credential_test.go` | `TestShortSaltRejectedEvenWhenOnlyOneItemIsDefective` | Two sound items and one defective one under the same MSO — guards the loop rather than the comparison, since every other salt test uses a single-item namespace and so cannot show the check runs past the first item |
 | `verifier_test.go` | `TestFreshCertsVerifyUnderCurrentTime` | Sanity check — freshly issued certs verify under the real current time (no off-by-one in validity math) |
 | `verifier_test.go` | `TestExpiredDSCertIsRejected` | Verifier clock pinned ~400 days ahead (past the DS cert's 365-day window) — chain correctly rejected as expired |
 | `verifier_test.go` | `TestExpiredMSOValidityIsRejected` | Verifier clock pinned ~100 days ahead (past the MSO's 90-day `validUntil`, but still within the DS cert's 365-day window) — rejected on the MSO's own validity, distinct from the cert check |
@@ -360,6 +369,34 @@ undisclosed ones. Values are hidden — count is not.
 cryptographically random shuffle, not a sorted/deterministic order — see the comment on
 `shuffleIdentifiers` in `issuer.go` — so a disclosed claim's digestID reveals nothing
 about undisclosed claims' relative position. Only the *count* remains visible.)
+
+### Issuer-advertised `batch_size` is unbounded
+
+Batch issuance is what buys unlinkability: because the issuer fixes each item's `random`
+salt before signing, the disclosed bytes of one credential instance are identical on
+every presentation, so two verifiers shown the same instance can trivially correlate
+them. One instance per presentation is the mitigation, and `RemainingCount` reaching
+zero is what the exhausted-batch path in `mdoc_dcql` reports.
+
+How many instances to mint is the *issuer's* policy — it knows its own unlinkability
+requirements and how often its users present — so the wallet honours the advertised
+`batch_credential_issuance.batch_size` rather than holding an opinion
+(`eudi/openid4vci/session.go`). That part is deliberate: a wallet hardcoding the AV
+Blueprint's recommended 30 would under-request from an issuer offering more, and refuse
+a conformant issuer offering fewer.
+
+**What is missing is an upper bound.** The only check is that the value exceeds 1
+(`eudi/openid4vci/metadata_validators.go`). An issuer advertising `batch_size: 100000`
+would have the wallet generate that many device keys and proof JWTs, on a phone, inside
+a session the user is waiting on — so a hostile or merely misconfigured issuer turns a
+metadata field into a client-side resource exhaustion. Neither OpenID4VCI nor the AV
+Blueprint states a ceiling, so a conformant implementation has to pick its own.
+
+For calibration: the AV Blueprint recommends **30**; the EU reference Python issuer we
+test against advertises **100** as its own default (not configured by us — it is absent
+from `testdata/eudi-pid-issuer-py/conf/config_issuer_backend.yaml`). A cap somewhere
+above the latter, refusing anything larger with a clear error rather than silently
+truncating the batch, would close this without breaking either.
 
 ### No verifier-side certificate / relying-party authentication
 
