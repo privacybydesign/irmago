@@ -163,8 +163,9 @@ func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
-	require.NotEmpty(t, conf.Issuers)
-	require.NotEmpty(t, conf.Verifiers)
+	// The two trust models are asserted through their pools below: a TrustModel
+	// carries a mutex now, so passing one by value to require would copy a lock.
+	require.NotEmpty(t, conf.Verifiers.trustedRootCertificates)
 	require.NotNil(t, conf.Issuers.trustedRootCertificates)
 	require.NotEmpty(t, conf.Issuers.trustedRootCertificates)
 	require.NotNil(t, conf.Issuers.trustedIntermediateCertificates)
