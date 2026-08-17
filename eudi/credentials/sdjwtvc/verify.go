@@ -649,7 +649,6 @@ func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (
 // ====== Utils ======
 
 func getOptional[T any](token jwt.Token, key string) T {
-	var value T
 	value, err := jwt.Get[T](token, key)
 	if err != nil {
 		return *new(T)
