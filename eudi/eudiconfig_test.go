@@ -165,9 +165,14 @@ func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 	require.NoError(t, conf.Reload())
 	// The two trust models are asserted through their pools below: a TrustModel
 	// carries a mutex now, so passing one by value to require would copy a lock.
-	require.NotEmpty(t, conf.Verifiers.trustedRootCertificates)
-	require.NotNil(t, conf.Issuers.trustedRootCertificates)
-	require.NotEmpty(t, conf.Issuers.trustedRootCertificates)
-	require.NotNil(t, conf.Issuers.trustedIntermediateCertificates)
-	require.NotEmpty(t, conf.Issuers.trustedIntermediateCertificates)
+	//
+	// Emptiness is asserted against a fresh pool rather than with NotEmpty: a
+	// *x509.CertPool is a struct of non-nil maps, so testify sees a pool holding
+	// zero certificates as non-empty and the assertion could never fail.
+	require.False(t, conf.Verifiers.trustedRootCertificates.Equal(x509.NewCertPool()),
+		"the pinned verifier root anchors are loaded")
+	require.False(t, conf.Issuers.trustedRootCertificates.Equal(x509.NewCertPool()),
+		"the pinned issuer root anchors are loaded")
+	require.False(t, conf.Issuers.trustedIntermediateCertificates.Equal(x509.NewCertPool()),
+		"the pinned issuer intermediate anchors are loaded")
 }
