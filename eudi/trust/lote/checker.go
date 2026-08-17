@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/trust"
+	"github.com/sirupsen/logrus"
 )
 
 // Source is one recognized list the wallet consults: where to get it, what it
@@ -122,6 +124,26 @@ func NewChecker(cfg Config) *Checker {
 	}
 }
 
+// logger is where the checker writes its fail-soft notes. eudi.Logger is a
+// package global that client.New assigns, so it is nil until a wallet has been
+// built: a Checker constructed directly — by a test, or by an embedder — would
+// otherwise take down the process on the very paths that are meant never to
+// fail. Discarding is the right fallback; a missing logger is not a reason to
+// drop a list, let alone to crash.
+func (c *Checker) logger() *logrus.Logger {
+	if eudi.Logger != nil {
+		return eudi.Logger
+	}
+	return discardingLogger()
+}
+
+// discardingLogger is built at most once, and only when it is needed.
+var discardingLogger = sync.OnceValue(func() *logrus.Logger {
+	logger := logrus.New()
+	logger.SetOutput(io.Discard)
+	return logger
+})
+
 func (c *Checker) loadPersisted() {
 	if c.cfg.Store == nil {
 		return
@@ -136,11 +158,11 @@ func (c *Checker) loadPersisted() {
 			}
 			verified, err := verify(raw, c.cfg.X509Context)
 			if err != nil {
-				eudi.Logger.Warnf("lote: stored list %q no longer verifies, dropping it: %v", source.ListId, err)
+				c.logger().Warnf("lote: stored list %q no longer verifies, dropping it: %v", source.ListId, err)
 				continue
 			}
 			if err := declares(source, verified.list); err != nil {
-				eudi.Logger.Warnf("lote: stored list under %q %v, dropping it", source.ListId, err)
+				c.logger().Warnf("lote: stored list under %q %v, dropping it", source.ListId, err)
 				continue
 			}
 			c.held[source.ListId] = verified
@@ -188,7 +210,7 @@ func (c *Checker) Refresh(ctx context.Context) (bool, error) {
 	var failures []error
 	for i, source := range c.cfg.Sources {
 		if err := outcomes[i].err; err != nil {
-			eudi.Logger.Warnf("lote: refreshing %q: %v", source.ListId, err)
+			c.logger().Warnf("lote: refreshing %q: %v", source.ListId, err)
 			failures = append(failures, fmt.Errorf("%s: %w", source.ListId, err))
 			continue
 		}
@@ -260,7 +282,7 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 		if err := c.cfg.Store.Put(source.ListId, verified.rawJws); err != nil {
 			// The list is good; only persisting it failed. Use it for this run
 			// rather than throwing away a valid download over a storage problem.
-			eudi.Logger.Warnf("lote: persisting list %q: %v", source.ListId, err)
+			c.logger().Warnf("lote: persisting list %q: %v", source.ListId, err)
 		}
 	}
 	c.held[source.ListId] = verified
@@ -317,7 +339,7 @@ func (c *Checker) Snapshot() trust.ListSnapshot {
 			continue
 		}
 		if !held.current(now) {
-			eudi.Logger.Infof("lote: list %q is past its next_update, ignoring it", source.ListId)
+			c.logger().Infof("lote: list %q is past its next_update, ignoring it", source.ListId)
 			continue
 		}
 		pinned = append(pinned, pinnedList{source: source, list: held.list})
