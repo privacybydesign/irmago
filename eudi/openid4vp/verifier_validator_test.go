@@ -11,6 +11,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/irmago/eudi"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -18,11 +19,12 @@ import (
 const EndEntityCN = "END ENTITY CERT"
 
 // The gate is internal validity: signature against the certificate the
-// client_id binds the request to, presented within its own validity window.
-// Anchoring is not the gate's question — a chain to a root the wallet does not
-// anchor passes, with the certificate's contents demoted to the verifier's own
-// word — so the failure tests split in two: broken requests still fail, while
-// legitimate-looking strangers now pass unattested.
+// client_id binds the request to, presented within its own validity window, and
+// not revoked. Anchoring is not the gate's question — a chain to a root the
+// wallet does not anchor passes, with the certificate's contents demoted to the
+// verifier's own word — so the failure tests split in two: broken requests and
+// revoked certificates still fail, while legitimate-looking strangers now pass
+// unattested.
 func TestVerifierValidator(t *testing.T) {
 	// Happy flow tests
 	t.Run("ParseAndVerifyAuthorizationRequest validates a JWT successfully", testParseAndVerifyAuthorizationRequestSuccess)
@@ -40,9 +42,10 @@ func TestVerifierValidator(t *testing.T) {
 	t.Run("ParseAndVerifyAuthorizationRequest fails with expired x5c certificate", testParseAndVerifyAuthorizationRequestFailureExpiredX5C)
 
 	// The certificate channel demotes rather than blocks: a certificate no
-	// anchor stands behind — revoked, unknown root, broken chain — passes the
-	// gate with its contents counted as self-asserted.
-	t.Run("ParseAndVerifyAuthorizationRequest demotes a revoked x5c certificate to self-asserted", testParseAndVerifyAuthorizationRequestRevokedX5C_DemotesToSelfAsserted)
+	// anchor stands behind — unknown root, broken chain — passes the gate with
+	// its contents counted as self-asserted. Revocation is the exception, and
+	// stays a refusal.
+	t.Run("ParseAndVerifyAuthorizationRequest refuses a revoked x5c certificate", testParseAndVerifyAuthorizationRequestRevokedX5C_IsRefused)
 	t.Run("ParseAndVerifyAuthorizationRequest demotes an unknown root to self-asserted", testParseAndVerifyAuthorizationRequestMissingRoot_DemotesToSelfAsserted)
 	t.Run("ParseAndVerifyAuthorizationRequest demotes an expired root to self-asserted", testParseAndVerifyAuthorizationRequestExpiredRoot_DemotesToSelfAsserted)
 	t.Run("ParseAndVerifyAuthorizationRequest demotes a missing intermediate to self-asserted", testParseAndVerifyAuthorizationRequestMissingIntermediate_DemotesToSelfAsserted)
@@ -203,20 +206,18 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredX5C(t *testing.T) {
 	require.Contains(t, err.Error(), "relying party certificate is not valid at the current time")
 }
 
-func testParseAndVerifyAuthorizationRequestRevokedX5C_DemotesToSelfAsserted(t *testing.T) {
-	// Revocation withdraws the anchor's word, it does not break the request:
-	// the signature still verifies, so the session may proceed with nobody
-	// vouching — the certificate's contents are the party's own word now, and
-	// the trust ladder will rank it low.
+func testParseAndVerifyAuthorizationRequestRevokedX5C_IsRefused(t *testing.T) {
+	// Revocation is the CA withdrawing a certificate it issued, not the wallet
+	// failing to place a stranger, and it is how a compromised relying party is
+	// cut off: the request is refused rather than shown at a lower rung. The
+	// demotion tests below cover the other direction — a chain that leads
+	// nowhere the wallet knows.
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_RevokedEndEntity)
 
-	_, requestor, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+	_, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
-	require.NoError(t, err)
-	require.NotNil(t, requestor.Certificate)
-	require.Nil(t, requestor.Attested, "a revoked certificate attests nothing")
-	require.NotEmpty(t, requestor.SelfAssertedName)
-	require.Equal(t, EndEntityCN, requestor.SelfAssertedName)
+	require.ErrorIs(t, err, eudi_jwt.ErrCertificateRevoked)
+	require.ErrorContains(t, err, "relying party certificate is refused")
 }
 
 func testParseAndVerifyAuthorizationRequestMissingRoot_DemotesToSelfAsserted(t *testing.T) {

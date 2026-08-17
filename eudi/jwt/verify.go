@@ -61,6 +61,22 @@ func VerificationTime(context X509VerificationContext) time.Time {
 // unanchored certificate as ordinary can still single a revoked one out.
 var ErrCertificateRevoked = errors.New("certificate is revoked")
 
+// CheckCertificateNotRevoked reports whether any revocation list the context
+// holds names cert. Wraps ErrCertificateRevoked when one does.
+//
+// This is the one acceptance rule a caller can ask for on its own, and the one
+// it must: the lists are signed by the anchors the wallet already holds, so the
+// answer does not depend on building cert's own chain — which is what lets a
+// gate that deliberately skips chain building still refuse a certificate its CA
+// withdrew. Unanchored is an absence of trust and demotes; revoked is an act of
+// distrust and refuses.
+func CheckCertificateNotRevoked(context X509VerificationContext, cert *x509.Certificate) error {
+	if err := utils.VerifyCertificateAgainstIssuerRevocationLists(cert, context.GetRevocationLists()); err != nil {
+		return fmt.Errorf("%w: %v", ErrCertificateRevoked, err)
+	}
+	return nil
+}
+
 // CheckCertificateValidAt reports whether cert is inside its own validity
 // window at the context's verification time, allowing skew on either bound.
 // what names the certificate in the error message.
@@ -112,8 +128,8 @@ func VerifyCertificateChains(context X509VerificationContext, cert *x509.Certifi
 	}
 
 	// Check the end-entity cert against all revocation lists from the issuing cert
-	if err := utils.VerifyCertificateAgainstIssuerRevocationLists(cert, context.GetRevocationLists()); err != nil {
-		return nil, fmt.Errorf("%w: failed to verify x5c end-entity certificate against revocation lists: %v", ErrCertificateRevoked, err)
+	if err := CheckCertificateNotRevoked(context, cert); err != nil {
+		return nil, err
 	}
 
 	return chains, nil

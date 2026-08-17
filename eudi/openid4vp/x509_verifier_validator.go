@@ -22,10 +22,12 @@ import (
 //
 // The gate is internal validity: the request's signature must verify against
 // the certificate its client_id binds it to, presented within its own validity
-// window. Whether any anchor stands behind that certificate is deliberately not
-// the gate's question — a chain the wallet cannot trace to an anchor proves
-// nothing, so its holder passes as a legitimate-looking stranger and the trust
-// ladder ranks it low, exactly like a bare self-asserted key.
+// window, and not revoked. Whether any anchor stands behind that certificate is
+// deliberately not the gate's question — a chain the wallet cannot trace to an
+// anchor proves nothing, so its holder passes as a legitimate-looking stranger
+// and the trust ladder ranks it low, exactly like a bare self-asserted key.
+// Revocation is the exception, because it is the CA withdrawing a certificate
+// rather than the wallet failing to place one.
 type RequestorCertificateStoreVerifierValidator struct {
 	verificationContext eudi_jwt.X509VerificationContext
 	validatorFactory    QueryValidatorFactory
@@ -54,15 +56,25 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 		return nil, nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 	}
 
+	// Revocation is the one certificate failure that stays in the gate: the CA
+	// went out of its way to withdraw this certificate, which is an act of
+	// distrust rather than the absence of trust an untraceable chain shows, and
+	// it is how a compromised relying party is cut off. Asked on its own rather
+	// than read off the chain verification below because the answer needs no
+	// chain: the lists are signed by anchors the wallet already holds.
+	if err := eudi_jwt.CheckCertificateNotRevoked(v.verificationContext, leafCert); err != nil {
+		return nil, nil, fmt.Errorf("relying party certificate is refused: %w", err)
+	}
+
 	requestor := &VerifiedRequestor{Certificate: leafCert}
 
 	// Does any anchor the wallet holds stand behind this certificate? This is
-	// classification, not the gate: chain building, revocation and the
-	// digitalSignature key usage, against the same trust model the ladder's
-	// certificate channel consults. Anchored decides whether the certificate's
-	// contents count as attested — and whether the authorization it carries is
-	// worth enforcing, since an unanchored certificate's contents are the
-	// party's own word about itself.
+	// classification, not the gate: chain building and the digitalSignature key
+	// usage, against the same trust model the ladder's certificate channel
+	// consults. Anchored decides whether the certificate's contents count as
+	// attested — and whether the authorization it carries is worth enforcing,
+	// since an unanchored certificate's contents are the party's own word about
+	// itself.
 	anchored := eudi_jwt.VerifyCertificate(v.verificationContext, leafCert, nil) == nil
 
 	if anchored {

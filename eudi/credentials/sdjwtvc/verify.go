@@ -477,6 +477,16 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 			return nil, nil, err
 		}
 
+		// Revocation is the one certificate failure that stays a gate on every
+		// path: the CA went out of its way to withdraw this certificate, which is
+		// an act of distrust rather than the absence of trust an unanchored issuer
+		// shows, and it is how a compromised issuer is cut off. Asked on its own
+		// rather than through VerifyCertificate below because the answer needs no
+		// chain: the lists are signed by anchors the wallet already holds.
+		if err := eudi_jwt.CheckCertificateNotRevoked(v.verificationContext.X509VerificationContext, cert); err != nil {
+			return nil, nil, fmt.Errorf("issuer certificate is refused: %w", err)
+		}
+
 		// Verify the SD-JWT against the credentials the issuer is authorized to issue
 		// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
 		// until we can issue SD-JWT VCs that fit our scheme
@@ -484,12 +494,12 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 			// This path demands the issuer's authorization artifact (the Yivi
 			// scheme extension), and an authorization is only worth reading off a
 			// certificate an anchor stands behind: grant enforcement stays a hard
-			// gate here. Chain building, revocation and key usage against the
-			// pinned anchors are asked only here, because only this path reads the
-			// answer — the OpenID4VCI context leaves the flag off and ranks the
-			// issuer through TrustModel.Classify instead, so asking
-			// unconditionally would build a chain and scan a CRL per credential
-			// for nobody.
+			// gate here. Chain building and the key usage check against the pinned
+			// anchors are asked only here, because only this path reads the answer
+			// — the OpenID4VCI context leaves the flag off and ranks the issuer
+			// through TrustModel.Classify instead, so asking unconditionally would
+			// build a chain per credential for nobody. Revocation is the
+			// exception, checked above on every path.
 			if err := eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil); err != nil {
 				return nil, nil, fmt.Errorf("failed to verify certificate: no trust anchor stands behind the issuer certificate")
 			}

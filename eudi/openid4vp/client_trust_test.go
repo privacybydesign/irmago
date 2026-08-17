@@ -143,25 +143,25 @@ func TestNewSession_ExpiredVerifierCertificate_ReportsPartyValidationFailed(t *t
 	require.Equal(t, int32(0), handler.successes.Load(), "nothing may be disclosed")
 }
 
-func TestNewSession_RevokedVerifierCertificate_RanksLowAndProceeds(t *testing.T) {
-	// Revocation withdraws the vouching, it does not break the request: the
-	// signature still verifies, so the session proceeds with the verifier
-	// demoted to a legitimate-looking stranger — low, under its own name, with
-	// nothing attested. (The classifier stub confers high on every certificate
-	// here, which is exactly the point: the validator already stripped the
-	// revoked certificate out of the attested account, so what reaches the
-	// screen is the self-asserted name.)
+func TestNewSession_RevokedVerifierCertificate_ReportsPartyValidationFailed(t *testing.T) {
+	// Revocation is the CA withdrawing a certificate it issued — an act of
+	// distrust, not the absence of trust an untraceable chain shows — and it is
+	// how a compromised relying party is cut off. So the session is refused
+	// rather than shown at a lower rung, and the app can say the verifier was
+	// rejected. (The classifier stub confers high on every certificate here, so
+	// nothing but the refusal keeps this request off the screen.)
 	authRequestJwt, validator := setupTest(t, withClientName("Test Verifier"), testdata.PkiOption_RevokedEndEntity)
 
 	client := newTrustTestClient(validator)
 	handler := newSpyHandler()
 
-	defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
+	client.NewSession(serveAuthRequest(t, authRequestJwt), handler)
 
-	requestor := handler.awaitRequestor(t)
-	require.Equal(t, "Test Verifier", requestor.Name,
-		"a revoked certificate attests nothing, so the verifier is shown under its own word")
-	require.Nil(t, requestor.Image, "and it gets no logo")
+	err := handler.awaitFailure(t)
+	require.Equal(t, clientmodels.ErrorType_PartyValidationFailed, err.ErrorType,
+		"a rejected verifier must be distinguishable from a network or protocol error")
+	require.Equal(t, int32(0), handler.requests.Load(), "nothing may be asked of the user")
+	require.Equal(t, int32(0), handler.successes.Load(), "nothing may be disclosed")
 }
 
 func TestNewSession_GenericFailures_CarryNoPartyValidationCode(t *testing.T) {
