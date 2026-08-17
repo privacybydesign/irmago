@@ -481,20 +481,16 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 		// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
 		// until we can issue SD-JWT VCs that fit our scheme
 		if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
-			// Does any anchor the wallet holds stand behind this certificate?
-			// Chain building, revocation and key usage, against the pinned
-			// anchors. Asked only here, because only this path reads the
-			// answer: the OpenID4VCI context leaves the flag off and ranks the
-			// issuer through TrustModel.Classify instead, so computing it
+			// This path demands the issuer's authorization artifact (the Yivi
+			// scheme extension), and an authorization is only worth reading off a
+			// certificate an anchor stands behind: grant enforcement stays a hard
+			// gate here. Chain building, revocation and key usage against the
+			// pinned anchors are asked only here, because only this path reads the
+			// answer — the OpenID4VCI context leaves the flag off and ranks the
+			// issuer through TrustModel.Classify instead, so asking
 			// unconditionally would build a chain and scan a CRL per credential
 			// for nobody.
-			anchored := eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil) == nil
-
-			// This path demands the issuer's authorization artifact (the Yivi
-			// scheme extension), and an authorization is only worth reading
-			// off a certificate an anchor stands behind: grant enforcement
-			// stays a hard gate here.
-			if !anchored {
+			if err := eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil); err != nil {
 				return nil, nil, fmt.Errorf("failed to verify certificate: no trust anchor stands behind the issuer certificate")
 			}
 			// The artifact itself is not carried out of here — nothing downstream
@@ -504,7 +500,6 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 			if _, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert); err != nil {
 				return nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
 			}
-			return token, cert, nil
 		}
 		return token, cert, nil
 	}

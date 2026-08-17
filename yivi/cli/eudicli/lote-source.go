@@ -1,12 +1,15 @@
 package eudicli
 
 import (
+	"cmp"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -326,7 +329,7 @@ func (s schemeSource) toSchemeInformation(issuedAt time.Time) (lote.SchemeInform
 	return lote.SchemeInformation{
 		LoTEVersionIdentifier: lote.LoTEVersion,
 		SequenceNumber:        s.SequenceNumber,
-		LoTEType:              orDefault(s.LoTEType, lote.LoTETypeRecognizedParties),
+		LoTEType:              cmp.Or(s.LoTEType, lote.LoTETypeRecognizedParties),
 		SchemeOperatorName:    lote.MultiLang(s.OperatorName),
 		SchemeOperatorAddress: lote.SchemeOperatorAddress{
 			PostalAddress:     operatorAddress.postal,
@@ -334,7 +337,7 @@ func (s schemeSource) toSchemeInformation(issuedAt time.Time) (lote.SchemeInform
 		},
 		SchemeName:                  lote.MultiLang(s.SchemeName),
 		SchemeInformationURI:        lote.MultiLangURI(s.InformationURI),
-		StatusDeterminationApproach: orDefault(s.StatusDeterminationApproach, lote.StatusDeterminationApproachYivi),
+		StatusDeterminationApproach: cmp.Or(s.StatusDeterminationApproach, lote.StatusDeterminationApproachYivi),
 		SchemeTypeCommunityRules:    communityRules,
 		SchemeTerritory:             s.Territory,
 		PolicyOrLegalNotice:         policy,
@@ -355,7 +358,7 @@ func (s schemeSource) policyOrLegalNotice() ([]lote.PolicyOrLegalNotice, error) 
 		return nil, fmt.Errorf("policy_uri and legal_notice are mutually exclusive: the binding forbids a document carrying both")
 	case hasPolicy:
 		notices := make([]lote.PolicyOrLegalNotice, 0, len(s.PolicyURI))
-		for _, lang := range sortedKeys(s.PolicyURI) {
+		for _, lang := range slices.Sorted(maps.Keys(s.PolicyURI)) {
 			notices = append(notices, lote.PolicyOrLegalNotice{
 				LoTEPolicy: &lote.MultiLangURIEntry{Lang: lang, URIValue: s.PolicyURI[lang]},
 			})
@@ -395,7 +398,7 @@ func (a addressSource) validate(field string) (validatedAddress, error) {
 			Country:         postal.Country,
 		})
 	}
-	for _, lang := range sortedKeys(a.Electronic) {
+	for _, lang := range slices.Sorted(maps.Keys(a.Electronic)) {
 		out.electronic = append(out.electronic, lote.MultiLangURIEntry{Lang: lang, URIValue: a.Electronic[lang]})
 	}
 	return out, nil
@@ -619,22 +622,6 @@ func (s serviceSource) isWithdrawn() (bool, error) {
 		return true, nil
 	}
 	return false, fmt.Errorf("unknown status %q (expected \"granted\" or \"withdrawn\")", s.Status)
-}
-
-func orDefault(value, fallback string) string {
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // translated is a small helper for the human-facing commands, which want one

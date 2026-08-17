@@ -114,9 +114,8 @@ func NewChecker(cfg Config) *Checker {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	if cfg.HTTPClient == nil {
-		cfg.HTTPClient = http.DefaultClient
-	}
+	// HTTPClient is deliberately not defaulted here: Fetch states that fallback,
+	// so it holds for every caller rather than only for a Checker-built one.
 	return &Checker{
 		cfg:  cfg,
 		held: map[string]*verifiedList{},
@@ -215,7 +214,7 @@ func declares(source Source, list *List) error {
 // refreshSource fetches one source and adopts the list if it holds up,
 // reporting whether the entries it carries differ from the ones the wallet held.
 func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error) {
-	raw, err := fetch(ctx, c.cfg.HTTPClient, source.URL)
+	raw, err := Fetch(ctx, c.cfg.HTTPClient, source.URL)
 	if err != nil {
 		return false, fmt.Errorf("fetch: %w", err)
 	}
@@ -248,6 +247,15 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 			previous.list.SchemeInformation.SequenceNumber, verified.list.SchemeInformation.SequenceNumber)
 	}
 
+	// An operator re-serving the identical document is the common case, and
+	// identical bytes are already held, already persisted, and cannot say
+	// anything different about anybody — so there is nothing to write and
+	// nothing to report. Checked before the store write because persisting a
+	// multi-megabyte blob the store already holds is the expensive half.
+	if held && bytes.Equal(previous.rawJws, verified.rawJws) {
+		return false, nil
+	}
+
 	if c.cfg.Store != nil {
 		if err := c.cfg.Store.Put(source.ListId, verified.rawJws); err != nil {
 			// The list is good; only persisting it failed. Use it for this run
@@ -275,12 +283,11 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 // strictly need. That is the accepted side of the trade: list content changes
 // are human acts, rare enough that a spurious one costs a redraw, while missing
 // a real one leaves a delisted issuer showing a rung it no longer holds.
+//
+// A byte-identical re-issue never reaches here: refreshSource returns before the
+// store write in that case, since identical bytes cannot say anything different
+// about anybody.
 func entriesDiffer(previous, current *verifiedList) bool {
-	// An operator re-serving the identical document is the common case, and
-	// identical bytes cannot say anything different about anybody.
-	if bytes.Equal(previous.rawJws, current.rawJws) {
-		return false
-	}
 	previousEntities, err := json.Marshal(previous.list.Entities)
 	if err != nil {
 		return true

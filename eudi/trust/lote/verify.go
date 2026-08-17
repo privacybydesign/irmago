@@ -47,24 +47,26 @@ func verify(rawJws []byte, x509Context eudi_jwt.X509VerificationContext) (*verif
 		return nil, fmt.Errorf("no X509 verification context configured")
 	}
 
-	msg, err := jws.Parse(rawJws)
-	if err != nil {
-		return nil, fmt.Errorf("parse JWS: %v", err)
-	}
-	signatures := msg.Signatures()
-	if len(signatures) != 1 {
-		// JAdES-B-B compact serialization carries exactly one signature.
-		return nil, fmt.Errorf("expected exactly one signature, got %d", len(signatures))
-	}
 	// Resolve the signing key through the wallet's shared JWS key provider: it
 	// enforces the `typ` allow-list and rejects an ambiguous key reference (both
 	// `x5c` and `kid`), and it hands the end-entity certificate back so the
 	// chain can be validated against the anchors. A signature that verifies
 	// under a certificate nobody trusts is worth nothing, so both have to hold.
+	//
+	// WithMessage collects the parsed message from the verification pass, so the
+	// signature count is checked without decoding a multi-megabyte payload a
+	// second time.
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{LoteTyp}, false)
-	payload, err := jws.Verify(rawJws, jws.WithKeyProvider(keyProvider))
+	var msg jws.Message
+	payload, err := jws.Verify(rawJws, jws.WithKeyProvider(keyProvider), jws.WithMessage(&msg))
 	if err != nil {
 		return nil, fmt.Errorf("verify signature: %v", err)
+	}
+	if signatures := msg.Signatures(); len(signatures) != 1 {
+		// JAdES-B-B compact serialization carries exactly one signature. Verify
+		// accepts a document as soon as any one signature holds, so a
+		// multi-signature JWS is refused here rather than by the pass above.
+		return nil, fmt.Errorf("expected exactly one signature, got %d", len(signatures))
 	}
 
 	// A LoTE is signed with an x5c chain; a `kid`-resolved key would skip the

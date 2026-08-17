@@ -33,6 +33,7 @@ import (
 	"encoding/asn1"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -536,18 +537,9 @@ type multiLangEntry struct {
 // so map iteration order would manufacture spurious changes and wake the app.
 func (m MultiLang) MarshalJSON() ([]byte, error) {
 	entries := make([]multiLangEntry, 0, len(m))
-	for lang, value := range m {
-		entries = append(entries, multiLangEntry{Lang: lang, Value: value})
+	for _, lang := range slices.Sorted(maps.Keys(m)) {
+		entries = append(entries, multiLangEntry{Lang: lang, Value: m[lang]})
 	}
-	slices.SortFunc(entries, func(a, b multiLangEntry) int {
-		if a.Lang != b.Lang {
-			if a.Lang < b.Lang {
-				return -1
-			}
-			return 1
-		}
-		return 0
-	})
 	return json.Marshal(entries)
 }
 
@@ -587,18 +579,9 @@ type MultiLangURIEntry struct {
 
 func (m MultiLangURI) MarshalJSON() ([]byte, error) {
 	entries := make([]MultiLangURIEntry, 0, len(m))
-	for lang, uri := range m {
-		entries = append(entries, MultiLangURIEntry{Lang: lang, URIValue: uri})
+	for _, lang := range slices.Sorted(maps.Keys(m)) {
+		entries = append(entries, MultiLangURIEntry{Lang: lang, URIValue: m[lang]})
 	}
-	slices.SortFunc(entries, func(a, b MultiLangURIEntry) int {
-		if a.Lang != b.Lang {
-			if a.Lang < b.Lang {
-				return -1
-			}
-			return 1
-		}
-		return 0
-	})
 	return json.Marshal(entries)
 }
 

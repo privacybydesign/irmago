@@ -43,10 +43,9 @@ func NewTrustService(checker *lote.Checker, issuerCerts, verifierCerts trust.Cer
 // Snapshot pins the state a single session evaluates against, so a list refresh
 // landing halfway through cannot change that session's verdicts.
 //
-// The context is the session's. Nothing here reads it: pinning is a read of
-// state the checker already holds, never a fetch, so there is nothing for a
-// cancellation to cut short and a cancelled context still yields a usable view.
-func (s *TrustService) Snapshot(_ context.Context) trust.View {
+// It takes no context: pinning is a read of state the checker already holds,
+// never a fetch, so there is nothing for a cancellation to cut short.
+func (s *TrustService) Snapshot() trust.View {
 	var lists trust.ListSnapshot
 	if s.checker != nil {
 		lists = s.checker.Snapshot()

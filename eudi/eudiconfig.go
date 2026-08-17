@@ -57,10 +57,12 @@ type Configuration struct {
 	ExtraIssuerTrustAnchors   []ExtraTrustAnchor
 	ExtraVerifierTrustAnchors []ExtraTrustAnchor
 
-	// ExtraTrustListTrustAnchors are anchors for list signatures. The level on
-	// each is ignored: what a listing confers is its source's word
-	// (lote.Source.Confers), never the signing chain's.
-	ExtraTrustListTrustAnchors []ExtraTrustAnchor
+	// ExtraTrustListTrustAnchors are anchors for list signatures. Bare PEM rather
+	// than [ExtraTrustAnchor]: a signing chain confers no level, because what a
+	// listing is worth is its source's word (lote.Source.Confers). This model is
+	// only ever consulted as a signature-verification context, never classified
+	// against, so a level here would have nothing to read it.
+	ExtraTrustListTrustAnchors [][]byte
 }
 
 // NewConfiguration returns a new configuration. After this ParseFolder() should be called to parse the specified path.
@@ -139,8 +141,10 @@ func (c *Configuration) Reload() error {
 			return fmt.Errorf("failed to add extra verifier trust anchor: %v", err)
 		}
 	}
-	for _, anchor := range c.ExtraTrustListTrustAnchors {
-		if err := c.TrustLists.addTrustAnchors(anchor.Confers, anchor.PEM); err != nil {
+	for _, pem := range c.ExtraTrustListTrustAnchors {
+		// Unevaluated: nothing classifies against this model, so the level is not
+		// a statement anyone reads.
+		if err := c.TrustLists.addTrustAnchors(clientmodels.TrustLevel_Unevaluated, pem); err != nil {
 			return fmt.Errorf("failed to add extra trust list trust anchor: %v", err)
 		}
 	}

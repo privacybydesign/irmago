@@ -86,7 +86,7 @@ func newClientWithTrustListsAndHandler(
 // now, taken through the same evaluator a session uses.
 func verifierLevel(c *Client, did string) clientmodels.TrustLevel {
 	return c.trustService.
-		Snapshot(context.Background()).
+		Snapshot().
 		Verifier(trust.Evidence{Identifiers: []string{did}}).
 		Level
 }

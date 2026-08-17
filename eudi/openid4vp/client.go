@@ -323,7 +323,7 @@ func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
 	// One pinned view for the whole session, taken before the first party is
 	// ranked, so a list refresh landing mid-session cannot change what this
 	// session decided about the verifier.
-	verdict := client.trustEvaluator.Snapshot(context.Background()).Verifier(trust.Evidence{
+	verdict := client.trustEvaluator.Snapshot().Verifier(trust.Evidence{
 		Certificate: verifiedRequestor.Certificate,
 		Identifiers: verifierIdentifiers(request.ClientId),
 	})

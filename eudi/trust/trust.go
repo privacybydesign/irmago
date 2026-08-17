@@ -13,7 +13,6 @@
 package trust
 
 import (
-	"context"
 	"crypto/sha256"
 	"crypto/x509"
 	"sync"
@@ -116,19 +115,22 @@ type View interface {
 }
 
 // Evaluator hands out one pinned View per session.
+//
+// Snapshot takes no context: pinning is a read of state the wallet already
+// holds, never a fetch, so there is nothing for a cancellation to cut short.
 type Evaluator interface {
-	Snapshot(ctx context.Context) View
+	Snapshot() View
 }
 
 // SnapshotOf pins the view to evaluate one pass against, tolerating the absence
 // of an evaluator: a wallet component built without one ranks nobody rather than
 // failing the read it was asked for. It exists so that fallback is stated once,
 // here, instead of every caller spelling out what a viewless wallet does.
-func SnapshotOf(ctx context.Context, evaluator Evaluator) View {
+func SnapshotOf(evaluator Evaluator) View {
 	if evaluator == nil {
 		return DarkView()
 	}
-	return evaluator.Snapshot(ctx)
+	return evaluator.Snapshot()
 }
 
 // DarkView is the view with no channels at all: every party ranks low, because

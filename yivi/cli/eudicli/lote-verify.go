@@ -1,10 +1,9 @@
 package eudicli
 
 import (
+	"context"
 	"crypto/x509"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"time"
 
@@ -63,7 +62,7 @@ bump loud, so it fails on equal too.`,
 		if against == "" {
 			return nil
 		}
-		return compareToPublished(against, anchors, scheme.SequenceNumber)
+		return compareToPublished(cmd.Context(), against, anchors, scheme.SequenceNumber)
 	},
 }
 
@@ -77,8 +76,11 @@ func init() {
 
 // compareToPublished fetches the live list and refuses to let a document through
 // that would not advance it.
-func compareToPublished(url string, anchors eudi_jwt.X509VerificationContext, sequenceNumber uint64) error {
-	published, err := fetchPublished(url)
+func compareToPublished(ctx context.Context, url string, anchors eudi_jwt.X509VerificationContext, sequenceNumber uint64) error {
+	// Downloaded through the wallet's own fetcher, so the release gate reads the
+	// published list under the same cap, timeout and status rules the wallet
+	// applies to it.
+	published, err := lote.Fetch(ctx, nil, url)
 	if err != nil {
 		// A first publish has nothing to compare against, and so does an outage —
 		// which are not the same thing, so this reports rather than passing.
@@ -100,45 +102,20 @@ func compareToPublished(url string, anchors eudi_jwt.X509VerificationContext, se
 	return nil
 }
 
-func fetchPublished(url string) ([]byte, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("non-2xx response: %s", resp.Status)
-	}
-	return io.ReadAll(io.LimitReader(resp.Body, 5<<20))
-}
-
-// verifyAnchors builds the pool for `verify`. With no --anchor the document's own
-// signing certificate stands in as its own root, which checks everything except
-// whether a wallet would trust the chain.
+// verifyAnchors builds the pool for `verify`, which differs from `sign` only in
+// where the fallback leaf comes from: the document being checked carries its own
+// signing certificate, so it is read out of the `x5c` header rather than supplied
+// by the caller. The "no anchor means the leaf is its own root" policy itself
+// lives in verificationAnchors, stated once.
 func verifyAnchors(anchorPath string, signed []byte) (eudi_jwt.X509VerificationContext, bool, error) {
-	pool := x509.NewCertPool()
-	checksChain := false
-
-	if anchorPath != "" {
-		anchors, err := readCertificateChain(anchorPath)
-		if err != nil {
+	// Only needed as a stand-in root, so it is not read when there is a real
+	// anchor to check against.
+	var leaf *x509.Certificate
+	if anchorPath == "" {
+		var err error
+		if leaf, err = signingCertificateOf(signed); err != nil {
 			return nil, false, err
 		}
-		for _, anchor := range anchors {
-			pool.AddCert(anchor)
-		}
-		checksChain = true
-	} else {
-		leaf, err := signingCertificateOf(signed)
-		if err != nil {
-			return nil, false, err
-		}
-		pool.AddCert(leaf)
 	}
-
-	return &eudi_jwt.StaticVerificationContext{VerifyOpts: x509.VerifyOptions{
-		Roots:     pool,
-		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-	}}, checksChain, nil
+	return verificationAnchors(anchorPath, leaf)
 }

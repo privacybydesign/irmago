@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"crypto/x509"
 	"testing"
 
@@ -21,7 +20,7 @@ func (s staticClassifier) Classify(*x509.Certificate) clientmodels.TrustLevel {
 func TestTrustService_RunsDark(t *testing.T) {
 	view := NewTrustService(nil,
 		staticClassifier(clientmodels.TrustLevel_High),
-		staticClassifier(clientmodels.TrustLevel_High)).Snapshot(context.Background())
+		staticClassifier(clientmodels.TrustLevel_High)).Snapshot()
 
 	certified := view.Verifier(trust.Evidence{Certificate: &x509.Certificate{}})
 	require.Equal(t, clientmodels.TrustLevel_High, certified.Level)
@@ -32,14 +31,11 @@ func TestTrustService_RunsDark(t *testing.T) {
 	require.Nil(t, bare.Listing)
 }
 
-func TestTrustService_SnapshotSurvivesACancelledContext(t *testing.T) {
-	// Evaluation is fail-soft: a session whose context is already done still
-	// gets a usable view rather than an error it would have to turn into a
-	// session failure.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	view := NewTrustService(nil, nil, nil).Snapshot(ctx)
+func TestTrustService_RanksNobodyWithoutChannels(t *testing.T) {
+	// Evaluation is fail-soft: a wallet holding no lists and no trust models
+	// still hands out a usable view rather than an error a session would have to
+	// turn into a failure.
+	view := NewTrustService(nil, nil, nil).Snapshot()
 	require.NotNil(t, view)
 	require.Equal(t, clientmodels.TrustLevel_Low, view.Verifier(trust.Evidence{}).Level)
 }

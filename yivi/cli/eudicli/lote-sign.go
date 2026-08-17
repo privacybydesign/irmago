@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jws"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/trust/lote"
+	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -168,10 +170,7 @@ func checkSigningCertificate(leaf *x509.Certificate, scheme lote.SchemeInformati
 			leaf.Subject.Country, scheme.SchemeTerritory)
 	}
 
-	operatorNames := make([]string, 0, len(scheme.SchemeOperatorName))
-	for _, name := range scheme.SchemeOperatorName {
-		operatorNames = append(operatorNames, name)
-	}
+	operatorNames := slices.Collect(maps.Values(scheme.SchemeOperatorName))
 	if len(operatorNames) == 0 {
 		return fmt.Errorf("the document declares no SchemeOperatorName, so the certificate's organization cannot be checked")
 	}
@@ -190,7 +189,8 @@ func checkSigningCertificate(leaf *x509.Certificate, scheme lote.SchemeInformati
 //
 // With no anchor the leaf stands in as its own root, which still exercises the
 // signature, the typ guard, the single-signature rule and the payload — but says
-// nothing about whether a wallet would trust the chain. The caller warns.
+// nothing about whether a wallet would trust the chain. The caller warns. leaf is
+// read only in that case, so a caller passing an anchorPath may leave it nil.
 func verificationAnchors(anchorPath string, leaf *x509.Certificate) (eudi_jwt.X509VerificationContext, bool, error) {
 	pool := x509.NewCertPool()
 	checksChain := false
@@ -222,22 +222,9 @@ func readCertificateChain(path string) ([]*x509.Certificate, error) {
 		return nil, err
 	}
 
-	var chain []*x509.Certificate
-	rest := raw
-	for {
-		var block *pem.Block
-		block, rest = pem.Decode(rest)
-		if block == nil {
-			break
-		}
-		if block.Type != "CERTIFICATE" {
-			continue
-		}
-		certificate, err := x509.ParseCertificate(block.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", path, err)
-		}
-		chain = append(chain, certificate)
+	chain, err := utils.ParsePemCertificateChain(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 
 	if len(chain) == 0 {

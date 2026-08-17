@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"crypto"
 	"crypto/sha256"
 	"encoding/hex"
@@ -97,7 +96,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 	// One trust view for the whole listing: a refresh landing halfway through
 	// must not rank the first half of the list against one state of the
 	// recognized lists and the second half against another.
-	trustView := trust.SnapshotOf(context.Background(), s.trustEvaluator)
+	trustView := trust.SnapshotOf(s.trustEvaluator)
 
 	// Convert storage models to client models
 	clientModels := make([]*clientmodels.Credential, len(m))

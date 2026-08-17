@@ -146,7 +146,7 @@ func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointU
 		// One pinned trust view for the whole flow, for the same reason the
 		// locale is pinned above: what this session decided about the issuer
 		// must not shift halfway through.
-		trustView := client.trustEvaluator.Snapshot(ctx)
+		trustView := client.trustEvaluator.Snapshot()
 
 		// SD-JWT VC type metadata is the spec-preferred source for credential
 		// display/claims (OID4VCI v1.0 § 12.2.4: format-specific mechanisms are

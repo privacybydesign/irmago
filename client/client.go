@@ -122,12 +122,15 @@ type Config struct {
 	ExtraIssuerTrustAnchors   []eudi.ExtraTrustAnchor
 	ExtraVerifierTrustAnchors []eudi.ExtraTrustAnchor
 
-	// ExtraTrustListTrustAnchors are anchors a recognized list's *signature* may
-	// chain to, on top of the pinned Yivi trust-list root. Deliberately separate
-	// from the issuer anchors: a certificate that may issue credentials must not
-	// thereby be able to define who is trusted. Integration tests pin their
-	// publisher's root through this seam.
-	ExtraTrustListTrustAnchors []eudi.ExtraTrustAnchor
+	// ExtraTrustListTrustAnchors are PEM anchors a recognized list's *signature*
+	// may chain to, on top of the pinned Yivi trust-list root. Deliberately
+	// separate from the issuer anchors: a certificate that may issue credentials
+	// must not thereby be able to define who is trusted.
+	//
+	// No trust level accompanies them, unlike the two above: a list's signing
+	// chain only decides whether the list is genuine, never what a grant on it is
+	// worth — that is the source's word (lote.Source.Confers).
+	ExtraTrustListTrustAnchors [][]byte
 }
 
 // New builds a wallet from cfg. It is the only constructor: everything optional
@@ -874,45 +877,44 @@ func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInte
 		common.Logger.Warnf("failed to create new cron job for updating CRLs: %v", err)
 	}
 
-	// Periodically re-fetch referenced Token Status Lists and update one
+	// The fail-soft background sweeps. Both are skipped when their interval is
+	// non-positive, both log their failures and carry on, and both wake the app
+	// themselves when they find something changed — so they are wired from one
+	// table rather than written out once each, which is how a guard or a
+	// WithStartImmediately drifts between them unnoticed.
+	//
+	// The status sweep re-fetches referenced Token Status Lists and updates one
 	// representative instance's LastKnownStatus per credential batch (a batch is
-	// revoked all at once, so one entry stands in for the whole batch). Skipped
-	// when the interval is non-positive. The sweep is fail-soft: per-URI errors
-	// are logged inside RefreshStatuses and the previous status is kept. A sweep
-	// that finds a status change signals the app through RefreshStatuses.
-	if statusTokenListRefreshInterval > 0 {
-		_, err = client.scheduler.NewJob(
-			gocron.DurationJob(statusTokenListRefreshInterval),
-			gocron.NewTask(func() {
-				if err := client.RefreshStatuses(context.Background()); err != nil {
-					common.Logger.Warnf("scheduled status refresh failed: %v", err)
-				}
-			}),
-			gocron.WithStartAt(gocron.WithStartImmediately()),
-		)
-		if err != nil {
-			common.Logger.Warnf("failed to create new cron job for refreshing credential statuses: %v", err)
-		}
+	// revoked all at once, so one entry stands in for the whole batch); per-URI
+	// errors are logged inside RefreshStatuses and the previous status is kept.
+	//
+	// The trust list sweep re-downloads the recognized lists: this is where the
+	// wallet learns that a party it vouched for was delisted. A stored
+	// credential's issuer rung is read fresh on every listing, so the refresh
+	// only has to wake the app, which RefreshTrustLists does when entry content
+	// changed. The lists already held stay in force when it fails.
+	sweeps := []struct {
+		every time.Duration
+		what  string
+		run   func(context.Context) error
+	}{
+		{statusTokenListRefreshInterval, "credential statuses", client.RefreshStatuses},
+		{trustListRefreshInterval, "trust lists", client.RefreshTrustLists},
 	}
-
-	// Periodically re-download the recognized trust lists. Skipped when the
-	// interval is non-positive. Like the status sweep, this is where the wallet
-	// learns that a party it vouched for was delisted — a stored credential's
-	// issuer rung is read fresh on every listing, so the refresh only has to
-	// wake the app, which RefreshTrustLists does when entry content changed.
-	// Failures are logged and the lists already held stay in force.
-	if trustListRefreshInterval > 0 {
-		_, err = client.scheduler.NewJob(
-			gocron.DurationJob(trustListRefreshInterval),
+	for _, sweep := range sweeps {
+		if sweep.every <= 0 {
+			continue
+		}
+		if _, err := client.scheduler.NewJob(
+			gocron.DurationJob(sweep.every),
 			gocron.NewTask(func() {
-				if err := client.RefreshTrustLists(context.Background()); err != nil {
-					common.Logger.Warnf("scheduled trust list refresh failed: %v", err)
+				if err := sweep.run(context.Background()); err != nil {
+					common.Logger.Warnf("scheduled %s refresh failed: %v", sweep.what, err)
 				}
 			}),
 			gocron.WithStartAt(gocron.WithStartImmediately()),
-		)
-		if err != nil {
-			common.Logger.Warnf("failed to create new cron job for refreshing trust lists: %v", err)
+		); err != nil {
+			common.Logger.Warnf("failed to create new cron job for refreshing %s: %v", sweep.what, err)
 		}
 	}
 }

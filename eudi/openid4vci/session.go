@@ -465,6 +465,15 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 	batch := s.credentialIssuerMetadata.BatchCredentialIssuance
 	result := make([]*clientmodels.Credential, 0, len(fetched))
 
+	// The issuer's own account of itself, and both logo managers, are the same for
+	// every credential in one offer — resolved once here rather than per credential,
+	// where resolving the issuer logo also meant a disk read per row.
+	issuerDisplays := metadata.ToTranslateableList(s.credentialIssuerMetadata.Display)
+	issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
+	credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
+	issuerImage := services.LoadResolvedLogo(s.storage.FileSystem().Issuers().LogoManager(),
+		metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale)
+
 	for _, fc := range fetched {
 		config, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId]
 		if !ok || config.CredentialMetadata == nil {
@@ -480,16 +489,8 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
 		name := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), s.locale)
 
-		issuerDisplays := metadata.ToTranslateableList(s.credentialIssuerMetadata.Display)
-		issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
-
-		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
 		image := services.LoadResolvedLogo(credentialLogoManager,
 			metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), s.locale)
-
-		issuerLogoManager := s.storage.FileSystem().Issuers().LogoManager()
-		issuerImage := services.LoadResolvedLogo(issuerLogoManager,
-			metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale)
 
 		attrs := buildAttributesWithValues(config.CredentialMetadata.Claims, payload, s.locale)
 

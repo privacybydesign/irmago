@@ -89,8 +89,12 @@ func writeService(out *strings.Builder, service lote.ServiceInformation) {
 	if mapped, ok := service.Type.Role(); ok {
 		role = string(mapped)
 	}
+	// Through IsGranted, so the absent-means-granted rule is read the way the
+	// wallet reads it: Yivi's own list omits ServiceStatus entirely, and
+	// comparing against the granted URI directly would label every entry of a
+	// conformant list NOT GRANTED.
 	status := "NOT GRANTED"
-	if service.Status == lote.ServiceStatusGranted {
+	if service.IsGranted() {
 		status = "granted"
 	}
 
