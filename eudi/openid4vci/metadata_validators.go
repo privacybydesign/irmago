@@ -189,10 +189,11 @@ func (v *CredentialConfigurationValidator) ValidateSupportedFeatures(c *metadata
 		return fmt.Errorf("no supported signing algorithms in 'credential_signing_alg_values_supported'")
 	}
 
-	// We only support JWK and DID cryptographic binding method, for now
+	// We support JWK, did:key and did:jwk as cryptographic binding method, for now
 	if len(c.CryptographicBindingMethodsSupported) > 0 {
 		if !slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_JWK) &&
-			!slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_KEY) {
+			!slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_KEY) &&
+			!slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_JWK) {
 			return fmt.Errorf("unsupported cryptographic binding method(s) %q", c.CryptographicBindingMethodsSupported)
 		}
 
@@ -406,18 +407,22 @@ func isValidCSSColorLevel3(s string) bool {
 		rgb.MatchString(s) || rgba.MatchString(s) || hsl.MatchString(s) || hsla.MatchString(s)
 }
 
-func getSupportedSignatureAlgorithms(input []string) []string {
-	supportedAlgs := []string{}
+func getSupportedSignatureAlgorithms(input []string) []jwa.SignatureAlgorithm {
+	supportedAlgs := []string{"ES256", "ES256K", "PS256", "RS256"}
+
+	supported := []jwa.SignatureAlgorithm{}
 	for _, alg := range input {
-		// Skip ES256K for now, since it's not widely supported among JWT libraries and we tests have shown to fail
-		if alg == "ES256K" {
+		// Update: since our KeyBinder only uses P256 for now, we have to filter out all algorithms that cannot be used with that key type. This is a temporary measure until we support more key types in the KeyBinder.
+		if !slices.Contains(supportedAlgs, alg) {
 			continue
 		}
-		if _, ok := jwa.LookupSignatureAlgorithm(alg); ok {
-			supportedAlgs = append(supportedAlgs, alg)
+
+		if s, ok := jwa.LookupSignatureAlgorithm(alg); ok {
+			supported = append(supported, s)
 		}
 	}
-	return supportedAlgs
+
+	return supported
 }
 
 func DisplaysToTranslateableList[T metadata.Display | metadata.CredentialDisplay | metadata.CredentialIssuerDisplay](displays []T) []metadata.Translateable {

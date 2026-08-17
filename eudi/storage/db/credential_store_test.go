@@ -38,8 +38,9 @@ func newTestCredentialStore(t *testing.T) CredentialStore {
 }
 
 func newBatch(hash string) *models.CredentialBatch {
+	iss := "https://issuer.example.com"
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
+		IssuerURL:                &iss,
 		VerifiableCredentialType: "https://vct.example.com/MyCredential",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
@@ -47,7 +48,7 @@ func newBatch(hash string) *models.CredentialBatch {
 		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                1,
 		RemainingCount:           1,
-		CredentialIssuer:         "https://issuer.example.com",
+		CredentialIssuer:         &iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			models.IssuerMetadataDisplay{
 				Locale: datatypes.NullString{V: "nl", Valid: true},
@@ -104,11 +105,12 @@ func newBatch(hash string) *models.CredentialBatch {
 
 func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBatch {
 	instances := make([]models.IssuedCredentialInstance, instanceCount)
+	iss := "https://issuer.example.com"
 	for i := range instances {
 		instances[i] = models.IssuedCredentialInstance{RawCredential: []byte("raw-credential-token")}
 	}
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
+		IssuerURL:                &iss,
 		VerifiableCredentialType: "https://vct.example.com/MyCredential",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
@@ -116,7 +118,7 @@ func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBat
 		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                uint(instanceCount),
 		RemainingCount:           uint(instanceCount),
-		CredentialIssuer:         "https://issuer.example.com",
+		CredentialIssuer:         &iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			models.IssuerMetadataDisplay{
 				Locale: datatypes.NullString{V: "nl", Valid: true},
@@ -133,6 +135,7 @@ func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBat
 
 func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.CredentialBatch {
 	instances := make([]models.IssuedCredentialInstance, instanceCount)
+	iss := "https://issuer.example.com"
 	for i := range instances {
 		instances[i] = models.IssuedCredentialInstance{
 			RawCredential: []byte("raw-credential-token"),
@@ -145,7 +148,7 @@ func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.Creden
 		}
 	}
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
+		IssuerURL:                &iss,
 		VerifiableCredentialType: "https://vct.example.com/MyCredential",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
@@ -153,7 +156,7 @@ func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.Creden
 		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                uint(instanceCount),
 		RemainingCount:           uint(instanceCount),
-		CredentialIssuer:         "https://issuer.example.com",
+		CredentialIssuer:         &iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			{Locale: datatypes.NullString{V: "en", Valid: true}, Name: "Issuer Name"},
 		},

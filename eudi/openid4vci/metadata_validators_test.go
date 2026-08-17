@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/stretchr/testify/require"
@@ -546,23 +547,6 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			expectedErr: "no supported signing algorithms in 'proof_signing_alg_values_supported' for JWT proof type",
 		},
 		{
-			name: "cryptographic binding method present, proof type JWT, only ES256K - unsupported",
-			config: metadata.CredentialConfiguration{
-				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
-				Scope:  &scope,
-				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
-					proofs.CryptographicBindingMethod_JWK,
-				},
-				ProofTypesSupported: map[metadata.ProofTypeIdentifier]metadata.ProofType{
-					metadata.ProofTypeIdentifier_JWT: {
-						ProofSigningAlgValuesSupported: []string{"ES256K"},
-					},
-				},
-			},
-			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'proof_signing_alg_values_supported' for JWT proof type",
-		},
-		{
 			name: "cryptographic binding method present, proof type JWT, multiple proof signing algorithms, at least one supported",
 			config: metadata.CredentialConfiguration{
 				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
@@ -1008,37 +992,32 @@ func TestGetSupportedSignatureAlgorithms(t *testing.T) {
 	tests := []struct {
 		name  string
 		input []string
-		want  []string
+		want  []jwa.SignatureAlgorithm
 	}{
 		{
 			name:  "empty input",
 			input: []string{},
-			want:  []string{},
+			want:  []jwa.SignatureAlgorithm{},
 		},
 		{
 			name:  "valid algorithms",
 			input: []string{"ES256", "RS256"},
-			want:  []string{"ES256", "RS256"},
+			want:  []jwa.SignatureAlgorithm{jwa.ES256(), jwa.RS256()},
 		},
 		{
-			name:  "ES256K is excluded",
-			input: []string{"ES256K"},
-			want:  []string{},
-		},
-		{
-			name:  "ES256K filtered out alongside valid algorithms",
+			name:  "ES256K included",
 			input: []string{"ES256", "ES256K", "RS256"},
-			want:  []string{"ES256", "RS256"},
+			want:  []jwa.SignatureAlgorithm{jwa.ES256(), jwa.ES256K(), jwa.RS256()},
 		},
 		{
 			name:  "unknown algorithm is excluded",
 			input: []string{"NOT_AN_ALG"},
-			want:  []string{},
+			want:  []jwa.SignatureAlgorithm{},
 		},
 		{
 			name:  "mix of valid, ES256K, and unknown",
 			input: []string{"ES256", "ES256K", "NOT_AN_ALG"},
-			want:  []string{"ES256"},
+			want:  []jwa.SignatureAlgorithm{jwa.ES256(), jwa.ES256K()},
 		},
 	}
 

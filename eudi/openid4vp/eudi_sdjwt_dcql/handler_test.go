@@ -65,8 +65,9 @@ func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.CredentialStore) {
 
 func newTestBatch(hash, vct string, payload map[string]any) *models.CredentialBatch {
 	payloadJSON, _ := json.Marshal(payload)
+	iss := "https://issuer.example.com"
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
+		IssuerURL:                &iss,
 		VerifiableCredentialType: vct,
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
@@ -74,7 +75,7 @@ func newTestBatch(hash, vct string, payload map[string]any) *models.CredentialBa
 		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                1,
 		RemainingCount:           1,
-		CredentialIssuer:         "https://issuer.example.com",
+		CredentialIssuer:         &iss,
 		Instances: []models.IssuedCredentialInstance{
 			{RawCredential: []byte("fake-raw-credential")},
 		},

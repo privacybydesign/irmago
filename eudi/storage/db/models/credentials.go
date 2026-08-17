@@ -27,7 +27,7 @@ type CredentialBatch struct {
 	// IssuerURL is the iss claim from the issuer-signed JWT, equal to the credential_issuer
 	// in the credential offer (OID4VCI §7.1.1 requires iss == credential_issuer).
 	// This is the value used for DCQL TrustedAuthority resolution in OID4VP.
-	IssuerURL string
+	IssuerURL *string
 
 	// VerifiableCredentialType is the vct claim from the issued SD-JWT VC.
 	VerifiableCredentialType string
@@ -61,7 +61,7 @@ type CredentialBatch struct {
 	RemainingCount uint
 
 	// CredentialIssuer is the canonical URL of the credential issuer (credential_issuer claim).
-	CredentialIssuer string
+	CredentialIssuer *string
 	IssuerDisplay    []IssuerMetadataDisplay `gorm:"constraint:OnDelete:CASCADE"`
 
 	CredentialMetadata *CredentialMetadata `gorm:"constraint:OnDelete:CASCADE"`
@@ -90,9 +90,6 @@ func (b *CredentialBatch) normalizeChildren() {
 }
 
 func (b *CredentialBatch) validate() error {
-	if b.IssuerURL == "" {
-		return fmt.Errorf("issuer_url is required")
-	}
 	if b.VerifiableCredentialType == "" {
 		return fmt.Errorf("verifiable_credential_type is required")
 	}
@@ -110,9 +107,6 @@ func (b *CredentialBatch) validate() error {
 	}
 	if b.RemainingCount > b.BatchSize {
 		return fmt.Errorf("remaining_count cannot exceed batch_size")
-	}
-	if b.CredentialIssuer == "" {
-		return fmt.Errorf("credential_issuer is required")
 	}
 	return nil
 }

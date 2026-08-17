@@ -3,6 +3,7 @@ package statuslist
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwt"
@@ -74,6 +75,7 @@ func (v *verifiedStatusList) payloadTTLSignal() (time.Duration, bool) {
 // is trusted and sub matches.
 func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedURI string, now time.Time) (*verifiedStatusList, error) {
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{StatusListTokenTyp}, ctx.AllowInsecureDidWeb)
+	oauthDiscoveryKeyProvider := eudi_jwt.NewOAuthDiscoveryJwkKeyProvider([]string{StatusListTokenTyp}, http.DefaultClient)
 
 	clock := ctx.Clock
 	if clock == nil {
@@ -81,6 +83,7 @@ func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedURI s
 	}
 
 	token, err := jwt.Parse(rawJwt,
+		jwt.WithKeyProvider(oauthDiscoveryKeyProvider),
 		jwt.WithKeyProvider(keyProvider),
 		jwt.WithClock(clock),
 		jwt.WithAcceptableSkew(ClockSkewSeconds*time.Second),

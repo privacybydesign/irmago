@@ -24,7 +24,7 @@ func newRefreshService(db *gorm.DB, checker *statuslist.Checker) *RevocationServ
 func seedBatch(t *testing.T, db *gorm.DB, hash, issuer string, instances []models.IssuedCredentialInstance) *models.CredentialBatch {
 	t.Helper()
 	batch := &models.CredentialBatch{
-		IssuerURL:                issuer,
+		IssuerURL:                &issuer,
 		VerifiableCredentialType: "https://vct.example/x",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
@@ -32,7 +32,7 @@ func seedBatch(t *testing.T, db *gorm.DB, hash, issuer string, instances []model
 		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                uint(len(instances)),
 		RemainingCount:           uint(len(instances)),
-		CredentialIssuer:         issuer,
+		CredentialIssuer:         &issuer,
 		Instances:                instances,
 	}
 	require.NoError(t, db.Create(batch).Error)

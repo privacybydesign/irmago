@@ -123,13 +123,18 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			credentialImage = LoadResolvedLogo(credentialLogoManager, CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale)
 		}
 
+		partyId := "unknown"
+		if batch.CredentialIssuer != nil {
+			partyId = *batch.CredentialIssuer
+		}
+
 		clientModels[i] = &clientmodels.Credential{
 			CredentialId: batch.VerifiableCredentialType,
 			Hash:         batch.Hash,
 			Image:        credentialImage,
 			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
-				Id:       batch.CredentialIssuer,
+				Id:       partyId,
 				Name:     issuerName,
 				Image:    issuerImage,
 				Url:      nil,

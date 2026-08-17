@@ -223,15 +223,11 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	}
 
 	// Get optional fields
-	sub, _ := token.Subject()
+	sub, subPresent := token.Subject()
 	exp, expPresent := token.Expiration()
 	iat, iatPresent := token.IssuedAt()
 	nbf, nbfPresent := token.NotBefore()
 	iss, issPresent := token.Issuer()
-
-	if !issPresent {
-		return nil, nil, nil, nil, errors.New("missing iss field")
-	}
 
 	// Check if the hashing algorithm was specified and supported, or use SHA-256 as default if the claim is not present
 	sdAlg := iana.SHA256
@@ -282,14 +278,20 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	// Construct payload — use 0 for missing time claims instead of time.Time{}.Unix()
 	payload := &IssuerSignedJwtPayload{
 		RegisteredClaims: sdjwt.RegisteredClaims{
-			Subject: sub,
-			Issuer:  iss,
 			Sd:      sd,
 			SdAlg:   iana.HashingAlgorithm(sdAlg),
 			Confirm: cnf,
 		},
 		VerifiableCredentialType: vct,
 		Status:                   status,
+	}
+
+	if subPresent {
+		payload.Subject = &sub
+	}
+
+	if issPresent {
+		payload.Issuer = &iss
 	}
 
 	if expPresent {

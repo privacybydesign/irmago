@@ -57,8 +57,9 @@ func storeBackfillBatch(t *testing.T, s *backfillTestStorage, baseURL string) {
 // backfillBatch builds the batch storeBackfillBatch persists, so a test that
 // needs a different logo layout can adjust it before storing.
 func backfillBatch(baseURL string) *models.CredentialBatch {
+	iss := "https://issuer.example.com"
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
+		IssuerURL:                &iss,
 		VerifiableCredentialType: "https://vct.example.com/Test",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     "hash1",
@@ -66,7 +67,7 @@ func backfillBatch(baseURL string) *models.CredentialBatch {
 		IssuedAt:                 datatypes.NullTime{V: time.Now(), Valid: true},
 		BatchSize:                1,
 		RemainingCount:           1,
-		CredentialIssuer:         "https://issuer.example.com",
+		CredentialIssuer:         &iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			{Name: "Issuer EN", Locale: nullStr("en"), LogoURI: nullStr(baseURL + "/issuer-en.png")},
 			{Name: "Issuer NL", Locale: nullStr("nl"), LogoURI: nullStr(baseURL + "/issuer-nl.png")},

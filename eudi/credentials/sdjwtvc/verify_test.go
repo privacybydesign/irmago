@@ -21,7 +21,6 @@ import (
 // - [x] issuer signed jwt with key binding jwt
 // - [x] typ in issuer signed jwt is not vc+sd-jwt or dc+sd-jwt
 // - [x] invalid sd-jwt (missing trailing ~)
-// - [x] iss link missing
 // - [x] valid self-signed x509 certificate that doesn't match a trusted certificate
 // - [x] missing vct link
 // - [x] clock.now + skew is before iat
@@ -30,11 +29,12 @@ import (
 // - [x] empty but not missing _sd field
 // - [x] unsupported _sd_alg
 // - [x] failing to get issuer metadata fails the verification
-// - [x] no iss value provided
 // - [x] invalid disclosures (different than in _sd field)
 
 // success for
 // - [x] iss link is non-https, but is accepted (for testing purposes)
+// - [x] iss claim missing entirely (OPTIONAL claim; Issuer stays nil)
+// - [x] sub claim missing entirely (OPTIONAL claim; Subject stays nil)
 // - [x] missing _sd_alg claim, falls back to sha-256
 // - [x] valid SD-JWT, no disclosures, no KB-JWT
 // - [x] valid SD-JWT, with disclosures, no KB-JWT
@@ -99,10 +99,57 @@ func Test_HolderVerificationProcessor_InvalidSdJwtVc_MissingTrailingTilde_Fails(
 	require.Error(t, err)
 }
 
-func Test_HolderVerificationProcessor_MissingIssuerUrl_Fails(t *testing.T) {
-	missingIssuerUrl := newWorkingSdJwtVcTestConfig()
-	missingIssuerUrl.issuerUrl = nil
-	errorTestCaseHolder(t, missingIssuerUrl, "missing iss field")
+// ─── optional iss / sub ──────────────────────────────────────────────────────
+// draft-ietf-oauth-sd-jwt-vc makes both `iss` and `sub` OPTIONAL: `iss` may be
+// conveyed by other means (here: the x5c end-entity certificate), and `sub` is
+// only a hint. Both are therefore modelled as pointers, and absence must be
+// preserved as nil rather than collapsed into "".
+
+func Test_HolderVerificationProcessor_MissingIssuerUrl_Succeeds_IssuerIsNil(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig()
+	config.issuerUrl = nil
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err, "iss is optional when the issuer is conveyed by the x5c certificate")
+	require.Nil(t, verified.IssuerSignedJwtPayload.Issuer, "an absent iss must stay absent, not become an empty string")
+}
+
+func Test_HolderVerificationProcessor_IssuerUrlPresent_IssuerIsSet(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig()
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.NotNil(t, verified.IssuerSignedJwtPayload.Issuer)
+	require.Equal(t, "https://openid4vc.staging.yivi.app", *verified.IssuerSignedJwtPayload.Issuer)
+}
+
+func Test_HolderVerificationProcessor_MissingSubject_SubjectIsNil(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig() // no sub claim
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.Nil(t, verified.IssuerSignedJwtPayload.Subject)
+}
+
+func Test_HolderVerificationProcessor_SubjectPresent_SubjectIsSet(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig().withSubject("urn:example:holder-42")
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.NotNil(t, verified.IssuerSignedJwtPayload.Subject)
+	require.Equal(t, "urn:example:holder-42", *verified.IssuerSignedJwtPayload.Subject)
 }
 
 func Test_HolderVerificationProcessor_ValidButUntrusted_SelfSigned_X509Cert_Fails(t *testing.T) {

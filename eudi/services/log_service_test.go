@@ -256,7 +256,7 @@ func TestGetLogsBefore_Pagination(t *testing.T) {
 
 // newLiveBatch stores a credential batch with en+nl display metadata so log
 // read paths can re-resolve text against it.
-func newLiveBatch(t *testing.T, svc *eudiLogService, vct, issuer string) {
+func newLiveBatch(t *testing.T, svc *eudiLogService, vct string, issuer *string) {
 	t.Helper()
 	batch := &models.CredentialBatch{
 		IssuerURL:                issuer,
@@ -301,8 +301,8 @@ func TestLogReadReResolvesTextFromLiveMetadata(t *testing.T) {
 	svc := newTestLogServiceWithLocale(t, "en")
 
 	const vct = "https://example.com/vct/test"
-	const issuer = "https://example.com/issuer"
-	newLiveBatch(t, svc, vct, issuer)
+	issuer := "https://example.com/issuer"
+	newLiveBatch(t, svc, vct, &issuer)
 
 	emailName := "Email"
 	require.NoError(t, svc.AddDisclosureLog(
@@ -366,7 +366,8 @@ func TestLogReadDoesNotBorrowIssuerNameFromDifferentIssuer(t *testing.T) {
 	svc := newTestLogServiceWithLocale(t, "en")
 
 	const vct = "https://example.com/vct/test"
-	newLiveBatch(t, svc, vct, "https://other-issuer.example.com")
+	otherIssuer := "https://other-issuer.example.com"
+	newLiveBatch(t, svc, vct, &otherIssuer)
 
 	require.NoError(t, svc.AddDisclosureLog(
 		clientmodels.TrustedParty{Id: "https://verifier.example.com", Name: "Test Verifier"},

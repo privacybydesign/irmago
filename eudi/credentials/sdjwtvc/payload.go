@@ -15,8 +15,8 @@ import (
 func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, error) {
 	jsonValues := make(map[string]any)
 
-	if !strings.HasPrefix(payload.Issuer, "https://") {
-		return "", fmt.Errorf("issuer (`iss`) field is required to be an https link, but is %s", payload.Issuer)
+	if payload.Issuer != nil && !strings.HasPrefix(*payload.Issuer, "https://") {
+		return "", fmt.Errorf("issuer (`iss`) field is required to be an https link, but is %s", *payload.Issuer)
 	}
 
 	if len(payload.Sd) != 0 {
@@ -35,10 +35,22 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 		jsonValues[StatusKey] = payload.Status
 	}
 
-	jsonValues[jwt.SubjectKey] = payload.Subject
-	jsonValues[jwt.IssuerKey] = payload.Issuer
-	jsonValues[jwt.IssuedAtKey] = payload.IssuedAt
-	jsonValues[jwt.ExpirationKey] = payload.Expiry
+	if payload.Subject != nil {
+		jsonValues[jwt.SubjectKey] = payload.Subject
+	}
+
+	if payload.Issuer != nil {
+		jsonValues[jwt.IssuerKey] = payload.Issuer
+	}
+
+	if payload.IssuedAt != nil {
+		jsonValues[jwt.IssuedAtKey] = payload.IssuedAt
+	}
+
+	if payload.Expiry != nil {
+		jsonValues[jwt.ExpirationKey] = payload.Expiry
+	}
+
 	jsonValues[VerifiableCredentialTypeKey] = payload.VerifiableCredentialType
 
 	jsonBytes, err := json.Marshal(jsonValues)

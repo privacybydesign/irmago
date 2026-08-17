@@ -84,10 +84,11 @@ func (s *cancellingStore) UpdateInstanceStatus(instanceID datatypes.UUID, status
 func seedStatusBearingBatch(t *testing.T, gdb *gorm.DB, hash, uri string, idx uint64) {
 	t.Helper()
 
+	iss := "https://issuer.example.com"
 	u, i, now := uri, idx, time.Now().UTC()
 	require.NoError(t, gdb.Create(&models.CredentialBatch{
-		IssuerURL:                "https://issuer.example",
-		CredentialIssuer:         "https://issuer.example",
+		IssuerURL:                &iss,
+		CredentialIssuer:         &iss,
 		VerifiableCredentialType: "https://vct.example/x",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,

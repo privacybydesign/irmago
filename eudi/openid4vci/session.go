@@ -85,6 +85,7 @@ type openid4vciSessionIssuerSettings struct {
 // We define this struct, so that we apply logic to the credential metadata, and choose the preferences from the available options, in case multiple options are offered by the issuer metadata (e.g. multiple supported encryption algorithms, or multiple supported key binding methods)
 type sessionCredentialRequestPreferences struct {
 	cryptographicBindingMethod *proofs.CryptographicBindingMethod
+	proofSigningAlg            jwa.SignatureAlgorithm
 }
 
 func (s *session) perform() {
@@ -583,6 +584,13 @@ func getCredentialRequestPreferences(c metadata.CredentialConfiguration) *sessio
 			cryptoBindingMethod = proofs.CryptographicBindingMethod_COSE
 		}
 		s.cryptographicBindingMethod = &cryptoBindingMethod
+
+		// Only require proofs if the issuer advertises a supported cryptographic binding method. If the issuer does not advertise any supported cryptographic binding methods, then we do not require any proofs.
+		proofType := c.ProofTypesSupported[metadata.ProofTypeIdentifier_JWT]
+
+		// The presence of a supported proof signing algorithm should already have been validated in the credential configuration validation step, so we can safely pick the first one here
+		algs := getSupportedSignatureAlgorithms(proofType.ProofSigningAlgValuesSupported)
+		s.proofSigningAlg = algs[0] // pick the first supported algorithm as the preferred one
 	}
 
 	return s
@@ -691,26 +699,10 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 			num = s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize
 		}
 
-		proofType := credentialConfig.ProofTypesSupported[metadata.ProofTypeIdentifier_JWT]
-
-		// Determine the signing algorithm to use for the proofs, based on the supported algorithms in the credential metadata. We'll just pick the first supported algorithm that we also support, since we expect most issuers to only support one algorithm per proof type, and if they support multiple, it doesn't give us any indication of which one to prefer.
-		var alg jwa.SignatureAlgorithm
-		for _, algName := range proofType.ProofSigningAlgValuesSupported {
-			// Skip ES256K for now, since it's not widely supported among JWT libraries and we tests have shown to fail
-			if algName == "ES256K" {
-				continue
-			}
-			foundAlg, ok := jwa.LookupSignatureAlgorithm(algName)
-			if ok {
-				alg = foundAlg
-				break
-			}
-		}
-
 		// The issuer should be equal to the client ID registered with the authorization server
 		// TODO: omit the issuer, in case the access token being used, was obtained via Pre-Authorized Code flow
 		issuer := YiviClientId
-		proofBuilder := proofs.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, alg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
+		proofBuilder := proofs.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, credentialRequestPreferences.proofSigningAlg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
 
 		var proofs []string
 		var err error

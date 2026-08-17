@@ -135,7 +135,7 @@ func TestGetCredentialMetadataList_MapsIssuerDisplay(t *testing.T) {
 	result, err := svc.GetCredentialMetadataList()
 
 	require.NoError(t, err)
-	assert.Equal(t, batch.CredentialIssuer, result[0].Issuer.Id)
+	assert.Equal(t, *batch.CredentialIssuer, result[0].Issuer.Id)
 	assert.Equal(t, "Test Issuer", result[0].Issuer.Name)
 }
 
@@ -624,8 +624,8 @@ func TestVerifyAndStoreIssuedCredentials_SetsIssuerMetadata(t *testing.T) {
 
 	require.NoError(t, err)
 	batch := mock.storedBatches[0]
-	assert.Equal(t, issuer, batch.IssuerURL)
-	assert.Equal(t, issuer, batch.CredentialIssuer)
+	assert.Equal(t, issuer, *batch.IssuerURL)
+	assert.Equal(t, issuer, *batch.CredentialIssuer)
 }
 
 func TestVerifyAndStoreIssuedCredentials_SetsVCT(t *testing.T) {
@@ -1097,7 +1097,7 @@ func newVerifiedVcWithCnf(vct, issuer string, cnf *sdjwt.CnfField) *sdjwtvc.Veri
 	return &sdjwtvc.VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 			RegisteredClaims: sdjwt.RegisteredClaims{
-				Issuer:   issuer,
+				Issuer:   &issuer,
 				IssuedAt: &now,
 				Confirm:  cnf,
 			},
@@ -1332,7 +1332,7 @@ func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwt
 	return &sdjwtvc.VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 			RegisteredClaims: sdjwt.RegisteredClaims{
-				Issuer:    issuer,
+				Issuer:    &issuer,
 				IssuedAt:  &issuedAt,
 				Expiry:    &expiry,
 				NotBefore: &notBefore,
@@ -1391,9 +1391,10 @@ func newFullIssuerMetadata(configID string) metadata.CredentialIssuerMetadata {
 func newStorageBatch() *models.CredentialBatch {
 	now := time.Now().UTC().Truncate(time.Second)
 	exp := now.Add(24 * time.Hour)
+	iss := "https://issuer.example.com"
 	remaining := uint(1)
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
+		IssuerURL:                &iss,
 		VerifiableCredentialType: "https://vct.example.com/MyCredential",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     "testhash",
@@ -1402,7 +1403,7 @@ func newStorageBatch() *models.CredentialBatch {
 		ExpiresAt:                datatypes.NullTime{V: exp, Valid: true},
 		BatchSize:                1,
 		RemainingCount:           remaining,
-		CredentialIssuer:         "https://issuer.example.com",
+		CredentialIssuer:         &iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			{Name: "Test Issuer", Locale: datatypes.NullString{V: "en", Valid: true}},
 		},

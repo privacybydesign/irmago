@@ -101,6 +101,7 @@ func (c *testClock) Now() time.Time { return time.Unix(c.time, 0) }
 func newEmptyTestConfig() *testSdJwtVcConfig {
 	return &testSdJwtVcConfig{
 		issuerUrl:        nil,
+		subject:          nil,
 		issuedAt:         nil,
 		expiryTime:       nil,
 		notBefore:        nil,
@@ -228,6 +229,12 @@ func (c *testSdJwtVcConfig) withIssuerUrl(url string, allowNonHttps bool) *testS
 	return c
 }
 
+// withSubject sets the OPTIONAL `sub` claim. The zero-value config omits it.
+func (c *testSdJwtVcConfig) withSubject(subject string) *testSdJwtVcConfig {
+	c.subject = &subject
+	return c
+}
+
 func (c *testSdJwtVcConfig) withVct(vct string) *testSdJwtVcConfig {
 	c.vct = &vct
 	return c
@@ -338,6 +345,7 @@ func (c *testSdJwtVcConfig) withDisclosures(disclosures []sdjwt.DisclosureConten
 type testSdJwtVcConfig struct {
 	// stuff inside the issuer signed payload
 	issuerUrl     *string
+	subject       *string
 	allowNonHttps bool
 	issuedAt      *int64
 	expiryTime    *int64
@@ -426,6 +434,9 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (sdjwt.IssuerSignedJwt,
 	// JWT-registered claims
 	if config.issuerUrl != nil {
 		issuerPayload[jwt.IssuerKey] = *config.issuerUrl
+	}
+	if config.subject != nil {
+		issuerPayload[jwt.SubjectKey] = *config.subject
 	}
 	if config.issuedAt != nil {
 		issuerPayload[jwt.IssuedAtKey] = *config.issuedAt
