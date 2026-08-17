@@ -108,6 +108,17 @@ type Claim struct {
 
 	// OPTIONAL: A list of strings, integers or boolean values that specifies the expected values of the claim
 	Values []any `json:"values,omitempty"`
+
+	// OPTIONAL, mso_mdoc only: whether the verifier intends to retain the
+	// disclosed value beyond the transaction. ISO 18013-5 carries this per data
+	// element in the reader's DeviceRequest, and OpenID4VP's mso_mdoc profile
+	// carries it here. SD-JWT VC has no equivalent, so it stays absent for every
+	// other format; an absent value means false, per the spec's default.
+	//
+	// The wallet does not act on it: it changes what the user is consenting to,
+	// not what is disclosed, so the only correct handling is to carry it to the
+	// consent screen.
+	IntentToRetain bool `json:"intent_to_retain,omitempty"`
 }
 
 type TrustedAuthorityType string

@@ -446,6 +446,7 @@ func TestLogReadDecodesLegacyMapFormat(t *testing.T) {
 func TestDecodeStoredAttributes_RoundTripsEveryAttributeField(t *testing.T) {
 	displayName, description := "Email address", "The address you receive mail on"
 	value, requested := "a@b.com", "b@c.com"
+	intentToRetain := true
 
 	original := clientmodels.Attribute{
 		ClaimPath:      []any{"address", "street", float64(1)},
@@ -453,6 +454,7 @@ func TestDecodeStoredAttributes_RoundTripsEveryAttributeField(t *testing.T) {
 		Description:    &description,
 		Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &value},
 		RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &requested},
+		IntentToRetain: &intentToRetain,
 	}
 	// A field left unset would round-trip as zero either way, proving nothing.
 	rv := reflect.ValueOf(original)

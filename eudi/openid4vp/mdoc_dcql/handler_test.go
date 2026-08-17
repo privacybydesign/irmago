@@ -29,6 +29,9 @@ import (
 const (
 	testDocType   = "eu.europa.ec.av.1"
 	testNamespace = "eu.europa.ec.av.1"
+	// A doctype with more than one namespace, which the AV profile never has --
+	// the shape mDL uses, and the only way to reach the per-namespace merge.
+	secondNamespace = "org.iso.18013.5.1.aamva"
 	testIssuerURL = "https://issuer.example.com"
 	testClientId  = "x509_san_dns:verifier.example.com"
 	testNonce     = "n-0S6_WzA2Mj"
@@ -251,6 +254,225 @@ func TestCanHandleCredentialQuery(t *testing.T) {
 	assert.False(t, handler.CanHandleCredentialQuery(dcql.CredentialQuery{}))
 }
 
+// TestFindCandidatesWithClaimSetsPicksFirstSatisfiableSet covers claim_sets,
+// which this handler implements by copying eudi_sdjwt_dcql and which, until now,
+// had no test in any format's package except irma_sdjwt_dcql -- so the mdoc copy
+// had never executed.
+//
+// One query exercises all three behaviours at once: an unsatisfiable set is
+// skipped (age_over_65 is not stored), the first satisfiable one wins over a
+// later one that would also match, and only that set's claims are offered.
+func TestFindCandidatesWithClaimSetsPicksFirstSatisfiableSet(t *testing.T) {
+	env := newTestEnv(t)
+
+	result, err := env.handler.FindCandidates(dcql.CredentialQuery{
+		Id:     "av",
+		Format: string(clientmodels.Format_MsoMdoc),
+		Meta:   &dcql.Meta{DocTypeValue: testDocType},
+		Claims: []dcql.Claim{
+			{Id: "over65", Path: []any{testNamespace, "age_over_65"}},
+			{Id: "over18", Path: []any{testNamespace, "age_over_18"}},
+			{Id: "over16", Path: []any{testNamespace, "age_over_16"}},
+		},
+		ClaimSets: [][]string{{"over65"}, {"over18"}, {"over16"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+
+	attrs := result.OwnedCandidates[0].Attributes
+	require.Len(t, attrs, 1, "only the satisfied set's claims may be offered")
+	assert.Equal(t, []any{testNamespace, "age_over_18"}, attrs[0].ClaimPath)
+}
+
+// TestFindCandidatesWithClaimSetsRequiresEveryClaimInASet pins the allFound
+// half: a set is satisfied only when every claim in it matches, so a set that
+// matches partially must be passed over rather than offered short.
+func TestFindCandidatesWithClaimSetsRequiresEveryClaimInASet(t *testing.T) {
+	env := newTestEnv(t)
+
+	result, err := env.handler.FindCandidates(dcql.CredentialQuery{
+		Id:     "av",
+		Format: string(clientmodels.Format_MsoMdoc),
+		Meta:   &dcql.Meta{DocTypeValue: testDocType},
+		Claims: []dcql.Claim{
+			{Id: "over18", Path: []any{testNamespace, "age_over_18"}},
+			{Id: "over65", Path: []any{testNamespace, "age_over_65"}},
+			{Id: "over16", Path: []any{testNamespace, "age_over_16"}},
+		},
+		// The first set is only half-satisfiable, so the second must win whole.
+		ClaimSets: [][]string{{"over18", "over65"}, {"over18", "over16"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+
+	paths := make([][]any, 0, 2)
+	for _, attr := range result.OwnedCandidates[0].Attributes {
+		paths = append(paths, attr.ClaimPath)
+	}
+	assert.Equal(t, [][]any{
+		{testNamespace, "age_over_18"},
+		{testNamespace, "age_over_16"},
+	}, paths, "a partially satisfiable set must not be offered with its missing claim dropped")
+}
+
+// TestFindCandidatesWithClaimSetsNoneSatisfiable covers both ways a set fails:
+// a claim that is not stored, and an id in claim_sets naming no claim at all.
+func TestFindCandidatesWithClaimSetsNoneSatisfiable(t *testing.T) {
+	env := newTestEnv(t)
+
+	result, err := env.handler.FindCandidates(dcql.CredentialQuery{
+		Id:     "av",
+		Format: string(clientmodels.Format_MsoMdoc),
+		Meta:   &dcql.Meta{DocTypeValue: testDocType},
+		Claims: []dcql.Claim{
+			{Id: "over65", Path: []any{testNamespace, "age_over_65"}},
+		},
+		ClaimSets: [][]string{{"over65"}, {"nosuchclaim"}},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, result.OwnedCandidates)
+	assert.Len(t, result.ObtainableDescriptors, 1)
+}
+
+// TestFindCandidatesRefusesQueryWithoutClaims pins the mso_mdoc reading of an
+// absent claims member. eudi_sdjwt_dcql treats it as "no selectively disclosable
+// claims requested" and still matches, which leaves an SD-JWT its always-
+// disclosed payload to present; an mdoc has no such payload, so the same reading
+// would sign an empty namespaces map and offer the user an attribute-less
+// credential. See the comment in FindCandidates.
+func TestFindCandidatesRefusesQueryWithoutClaims(t *testing.T) {
+	env := newTestEnv(t)
+
+	_, err := env.handler.FindCandidates(dcql.CredentialQuery{
+		Id:     "av",
+		Format: string(clientmodels.Format_MsoMdoc),
+		Meta:   &dcql.Meta{DocTypeValue: testDocType},
+	})
+	require.Error(t, err, "a claim-less mdoc query can only produce a signature over no elements")
+	assert.Contains(t, err.Error(), "no claims")
+}
+
+// TestFindCandidatesCarriesIntentToRetain covers the OpenID4VP mso_mdoc claims
+// parameter the wallet cannot act on but must show: it changes what the user is
+// consenting to. SD-JWT VC has no equivalent, so no SD-JWT test would ever have
+// surfaced its absence.
+func TestFindCandidatesCarriesIntentToRetain(t *testing.T) {
+	env := newTestEnv(t)
+
+	result, err := env.handler.FindCandidates(dcql.CredentialQuery{
+		Id:     "av",
+		Format: string(clientmodels.Format_MsoMdoc),
+		Meta:   &dcql.Meta{DocTypeValue: testDocType},
+		Claims: []dcql.Claim{
+			{Path: []any{testNamespace, "age_over_18"}, IntentToRetain: true},
+			{Path: []any{testNamespace, "age_over_16"}},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+
+	flagByPath := map[string]*bool{}
+	for _, attr := range result.OwnedCandidates[0].Attributes {
+		flagByPath[clientmodels.ClaimPathKey(attr.ClaimPath)] = attr.IntentToRetain
+	}
+	retained := flagByPath[clientmodels.ClaimPathKey([]any{testNamespace, "age_over_18"})]
+	notRetained := flagByPath[clientmodels.ClaimPathKey([]any{testNamespace, "age_over_16"})]
+
+	require.NotNil(t, retained)
+	require.NotNil(t, notRetained,
+		"every mdoc attribute carries the flag, so the UI can tell a declared false from a format that cannot declare")
+	assert.True(t, *retained)
+	assert.False(t, *notRetained)
+}
+
+// TestFindCandidatesRefusesMalformedClaimPath pins that a path which is not
+// exactly [namespace, elementIdentifier] never matches a stored mdoc. The shape
+// check is also what keeps such a path out of authorization
+// (dcql.AuthorizationAttributeNames contributes no name for one), so the two
+// have to agree: if a malformed path matched here it would disclose an element
+// no relying party was authorized for.
+func TestFindCandidatesRefusesMalformedClaimPath(t *testing.T) {
+	for name, path := range map[string][]any{
+		"one component":        {"age_over_18"},
+		"three components":     {testNamespace, "age_over_18", "extra"},
+		"non-string namespace": {0, "age_over_18"},
+		"non-string element":   {testNamespace, 0},
+		"empty":                {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			env := newTestEnv(t)
+
+			result, err := env.handler.FindCandidates(dcql.CredentialQuery{
+				Id:     "av",
+				Format: string(clientmodels.Format_MsoMdoc),
+				Meta:   &dcql.Meta{DocTypeValue: testDocType},
+				Claims: []dcql.Claim{{Path: path}},
+			})
+			require.NoError(t, err)
+			assert.Empty(t, result.OwnedCandidates,
+				"a claim path that is not [namespace, elementIdentifier] must not match a stored mdoc")
+		})
+	}
+}
+
+// TestSelectiveDiscloseByPathsSpansNamespaces covers the per-namespace grouping
+// and merge, which every other test in this package leaves untouched because the
+// AV profile has exactly one namespace. An mDL request spanning
+// org.iso.18013.5.1 and its aamva companion would otherwise reach the merge for
+// the first time in production, and the merge is the part that rebuilds
+// IssuerSigned.NameSpaces from scratch.
+func TestSelectiveDiscloseByPathsSpansNamespaces(t *testing.T) {
+	doc := newTwoNamespaceMdoc(t, secondNamespace)
+
+	disclosed, err := selectiveDiscloseByPaths(doc, [][]any{
+		{testNamespace, "age_over_18"},
+		{secondNamespace, "age_over_21"},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, disclosed.IssuerSigned.NameSpaces, 2, "both requested namespaces must survive the merge")
+	assert.Equal(t, []string{"age_over_18"},
+		disclosedElements(t, disclosed.IssuerSigned.NameSpaces[testNamespace]))
+	assert.Equal(t, []string{"age_over_21"},
+		disclosedElements(t, disclosed.IssuerSigned.NameSpaces[secondNamespace]))
+}
+
+// TestSelectiveDiscloseByPathsOmitsUnrequestedNamespace is the privacy half: a
+// namespace nothing was asked from must be absent entirely, not present and
+// empty. The credential carries both.
+func TestSelectiveDiscloseByPathsOmitsUnrequestedNamespace(t *testing.T) {
+	doc := newTwoNamespaceMdoc(t, secondNamespace)
+
+	disclosed, err := selectiveDiscloseByPaths(doc, [][]any{{testNamespace, "age_over_18"}})
+	require.NoError(t, err)
+
+	require.Len(t, disclosed.IssuerSigned.NameSpaces, 1)
+	_, present := disclosed.IssuerSigned.NameSpaces[secondNamespace]
+	assert.False(t, present, "a namespace nothing was requested from must not appear at all")
+}
+
+// TestSelectiveDiscloseByPathsMalformedPathNeverWidensDisclosure pins the
+// invariant that survives whichever way the malformed-path handling is settled:
+// a path of the wrong shape may cause an element to be withheld, but it must
+// never cause one to be revealed. Note age_over_21 stays undisclosed even though
+// a three-component path names it.
+func TestSelectiveDiscloseByPathsMalformedPathNeverWidensDisclosure(t *testing.T) {
+	doc := newTwoNamespaceMdoc(t, secondNamespace)
+
+	disclosed, err := selectiveDiscloseByPaths(doc, [][]any{
+		{testNamespace, "age_over_18"},
+		{testNamespace},
+		{testNamespace, "age_over_21", "extra"},
+		{secondNamespace, 0},
+		{},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, disclosed.IssuerSigned.NameSpaces, 1)
+	assert.Equal(t, []string{"age_over_18"},
+		disclosedElements(t, disclosed.IssuerSigned.NameSpaces[testNamespace]))
+}
+
 // ---------------------------------------------------------------------------
 // Test environment
 // ---------------------------------------------------------------------------
@@ -469,6 +691,54 @@ func (e *testEnv) disclose(t *testing.T) (*dcql.PreparedDisclosure, error) {
 		RequireHolderBinding: true,
 		ResponseUri:          testResponseU,
 	}}, testNonce, testClientId)
+}
+
+// newTwoNamespaceMdoc issues a real mdoc and grafts a second namespace onto it
+// carrying the same items.
+//
+// The grafted namespace's digests are not in the MSO, so the result would not
+// verify -- which is fine for what the tests using it assert: how
+// selectiveDiscloseByPaths groups paths by namespace and merges the per-namespace
+// results, not whether the merged document verifies. Issuing a genuinely
+// two-namespace mdoc would mean extending stdmdoc.Issuer.Issue, which signs one
+// namespace at a time, and that is production surface these tests do not need.
+func newTwoNamespaceMdoc(t *testing.T, second string) *stdmdoc.MDoc {
+	t.Helper()
+
+	issuer, err := stdmdoc.NewIssuer()
+	require.NoError(t, err)
+
+	holderKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	doc, err := issuer.Issue(testDocType, testNamespace, map[string]any{
+		"age_over_18": true,
+		"age_over_21": false,
+	}, &holderKey.PublicKey)
+	require.NoError(t, err)
+
+	doc.IssuerSigned.NameSpaces[second] = doc.IssuerSigned.NameSpaces[testNamespace]
+	return doc
+}
+
+// disclosedElements names the elements actually present in a namespace's
+// disclosed items, unwrapping Tag 24 the way a verifier does. Asserting on the
+// identifiers rather than the item count is what distinguishes "one element
+// disclosed" from "the right one disclosed".
+func disclosedElements(t *testing.T, items []stdmdoc.Tag24Item) []string {
+	t.Helper()
+
+	names := make([]string, 0, len(items))
+	for _, item := range items {
+		var rawTag cbor.RawTag
+		require.NoError(t, cbor.Unmarshal(item.EncodedItem, &rawTag))
+		var innerBytes []byte
+		require.NoError(t, cbor.Unmarshal(rawTag.Content, &innerBytes))
+		var decoded stdmdoc.IssuerSignedItem
+		require.NoError(t, cbor.Unmarshal(innerBytes, &decoded))
+		names = append(names, decoded.ElementIdentifier)
+	}
+	return names
 }
 
 func newTestStorage(t *testing.T) storage.Storage {

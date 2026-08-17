@@ -2,6 +2,7 @@
 
 | file | description |
 |---|---
+| `cert.pem` | leftover output of an earlier `gen-issuer-cert.sh` run (self-signed, `CN=irma.app`); nothing references it, and the script now writes into `cert_issuer/` |
 | `holder_ec_priv.pem` | test holder ECDSA private key |
 | `holder_ec_pub.jwk` | jwk formatted version of the test holder ECDSA public key |
 | `holder_ec_pub.pem` | test holder ECDSA public key |
@@ -26,8 +27,8 @@ openssl ec -in ec_private.pem -pubout -out ec_public.pem
 PEM formatted keys are converted to jwk formatted keys using [jwker](https://github.com/jphastings/jwker).
 
 
-Self-signed certificates are generated using the `gen-cert.sh` script.
+Self-signed certificates are generated using the `gen-issuer-cert.sh` script.
 You can change the private key and DNS/URI by changing the parameters on the first two lines.
 
-Certificate chains are generated with the `gen-cert-chain.sh` script.
+Certificate chains are generated with the `gen-issuer-cert-chain.sh` script.
 You can change the private key and DNS/URI by changing the parameters on the first two lines.

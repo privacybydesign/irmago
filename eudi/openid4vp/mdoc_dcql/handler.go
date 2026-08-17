@@ -61,6 +61,29 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 		return nil, fmt.Errorf("mso_mdoc credential query %q has no doctype_value", query.Id)
 	}
 
+	// An absent claims member is refused for mso_mdoc, where eudi_sdjwt_dcql
+	// treats it as "no selectively disclosable claims requested" and still
+	// matches the credential.
+	//
+	// That reading is sound for SD-JWT VC, which has an always-disclosed payload
+	// left to present. mso_mdoc has none: every element lives in
+	// IssuerSigned.NameSpaces and is selectively disclosed, so carrying the same
+	// reading here builds a device-signed DeviceResponse over an empty namespaces
+	// map -- a valid issuer and device signature over no elements at all, offered
+	// to the user beforehand as a credential with an empty attribute list. Both
+	// halves are silent: nothing errors, and the verifier receives a well-formed
+	// response it can only reject.
+	//
+	// Refusing matches the Multipaz reference, which treats claims as mandatory
+	// when parsing a DCQL query (DcqlQuery.kt reads c["claims"]!!). Neither
+	// implementation reads an absent claims member as "disclose everything", so
+	// the choice here is between refusing and disclosing nothing.
+	if len(query.Claims) == 0 {
+		return nil, fmt.Errorf(
+			"mso_mdoc credential query %q requests no claims; an mdoc presentation has no always-disclosed payload, so it must name the elements to disclose",
+			query.Id)
+	}
+
 	batches, err := h.credentialStore.GetBatchesByDocType(docType)
 	if err != nil {
 		return nil, err
@@ -270,8 +293,12 @@ func mdocPathParts(path []any) (namespace, elementIdentifier string, ok bool) {
 // claim_sets, all claims must match. Returns nil if the credential doesn't
 // satisfy the query.
 func selectClaims(query dcql.CredentialQuery, resolved map[string]map[string]any) []dcql.Claim {
+	// Unreachable through FindCandidates, which refuses a claim-less mso_mdoc
+	// query outright (see the comment there). Kept as a no-match rather than
+	// dropped so a future caller cannot reach the empty-disclosure behaviour by
+	// bypassing that check.
 	if len(query.Claims) == 0 {
-		return []dcql.Claim{}
+		return nil
 	}
 
 	if len(query.ClaimSets) == 0 {
@@ -409,10 +436,16 @@ func buildAttributes(batch *models.CredentialBatch, claims []dcql.Claim, resolve
 
 		dn := claimDisplayName(batch, namespace, elementIdentifier, locale)
 
+		// Always set, never omitted when false: the consent screen has to be able
+		// to tell "the verifier said it will not retain this" from "this format
+		// cannot say", and only mso_mdoc can say it at all.
+		intentToRetain := claim.IntentToRetain
+
 		attr := clientmodels.Attribute{
-			ClaimPath:   []any{namespace, elementIdentifier},
-			DisplayName: dn,
-			Value:       value,
+			ClaimPath:      []any{namespace, elementIdentifier},
+			DisplayName:    dn,
+			Value:          value,
+			IntentToRetain: &intentToRetain,
 		}
 		if len(claim.Values) > 0 {
 			attr.RequestedValue = value
@@ -496,6 +529,12 @@ func credentialDisplayName(batch *models.CredentialBatch, locale string) string 
 // credential's own name still resolving, which is a hard failure to attribute to
 // the issuer's metadata. The fallback only applies once the exact match has been
 // ruled out across every claim, so a correctly published path always wins.
+//
+// The credential list needs the same rule for the same reason and applies it
+// separately, in services.ResolveBatchDisplay (aliasMdocBareElementPaths): it
+// resolves names by claim-path key rather than per claim, so it cannot call this.
+// If the rule changes, change both — the two views disagreeing about one claim is
+// exactly the bug that motivated it.
 func claimDisplayName(batch *models.CredentialBatch, namespace, elementIdentifier string, locale string) *string {
 	if batch.CredentialMetadata == nil {
 		return nil

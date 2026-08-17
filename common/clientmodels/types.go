@@ -132,6 +132,16 @@ type Attribute struct {
 
 	// The value that a verifier requested for this attribute (if any).
 	RequestedValue *AttributeValue `json:"requested_value,omitempty"`
+
+	// IntentToRetain reports whether the verifier declared it will retain this
+	// value beyond the transaction (the OpenID4VP mso_mdoc claims parameter of
+	// the same name).
+	//
+	// Set on every mso_mdoc attribute and nil on every other format, rather than
+	// set only when true: a declared "will not be retained" is worth showing, and
+	// a format with no such concept must not be rendered as though the verifier
+	// had declared anything. The distinction is only available through a pointer.
+	IntentToRetain *bool `json:"intent_to_retain,omitempty"`
 }
 
 // ClaimPathKey produces a deterministic string key from a claim path for use

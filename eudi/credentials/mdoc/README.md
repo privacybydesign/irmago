@@ -11,9 +11,11 @@ protocol packages that also serve SD-JWT:
 
 - **Presentation (OpenID4VP):** `eudi/openid4vp/mdoc_dcql` implements
   `dcql.DcqlCredentialQueryHandler` for `mso_mdoc`, mirroring `eudi_sdjwt_dcql` for
-  SD-JWT. The one mdoc-specific piece of session-transcript construction
-  (`newOpenID4VPSessionTranscript`) lives there too, next to the rest of the real
-  disclosure logic, rather than in a separate subpackage here.
+  SD-JWT. The mdoc-specific session-transcript construction lives there too, next to
+  the rest of the real disclosure logic rather than in a separate subpackage here —
+  both handover variants: `newOpenID4VPSessionTranscript` for a URL-invoked session
+  and `newDcApiSessionTranscript` for one delivered through the Digital Credentials
+  API.
 - **Issuance (OpenID4VCI):** `eudi/openid4vci` is the real, format-agnostic issuance
   client (credential offer, token/nonce endpoints, proof-of-possession JWT via
   `eudi/credentials/proofs.JwtProofBuilder` — none of that is mdoc-specific).
@@ -24,7 +26,10 @@ protocol packages that also serve SD-JWT:
 This package previously carried its own hand-rolled copies of both protocols
 (`openid4vp/`, `openid4vci/` subpackages) plus a standalone `cmd/demo` driving them —
 built before mdoc was wired into the real client. That duplication has been removed now
-that both directions are wired for real; see the sections below for what's left.
+that both directions are wired for real; see the sections below for what's left. What
+replaced the old demo lives in `yivi/cli/eudicli`: `mdoc-demo` walks a credential
+through issue → disclose → verify against this package in-process, and `mdoc-e2e` does
+the same over the real protocols against the EUDI reference containers.
 
 ---
 
@@ -35,6 +40,7 @@ that both directions are wired for real; see the sections below for what's left.
 | `IssuerSignedItem` (4-field envelope) | ✓ | digestID, random, elementIdentifier, elementValue |
 | CBOR encoding | ✓ | shortest-form deterministic, fxamacker/cbor |
 | Tag-24 wrapping | ✓ | freezes bytes before hashing |
+| Per-item random value (salt) | ✓ | 16 bytes from `crypto/rand`, one per item. ISO/IEC 18013-5 puts the floor at 16; `Issue` sits on it, and both a compile-time assertion and a runtime check in `Issue` reject anything shorter. The salt is what stops a verifier brute-forcing an undisclosed boolean claim, since the digest of every item travels whether or not the item does |
 | SHA-256 valueDigests | ✓ | `hash(Tag24(CBOR(item)))` per item |
 | Randomized digest-ID assignment | ✓ | claim order is cryptographically shuffled before digestID assignment (not sorted) — prevents a verifier inferring undisclosed claims' relative order from a disclosed claim's digestID, matching Multipaz's `MdocUtil.generateIssuerNameSpaces` |
 | MSO construction | ✓ | version, digestAlgorithm, valueDigests, docType, validityInfo, deviceKeyInfo |
@@ -142,7 +148,7 @@ Tests for the protocol layers live with the code they cover, not here:
 
 | Location | Covers |
 |---|---|
-| `eudi/openid4vp/mdoc_dcql/sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptShape`, `…BindsAllInputs`, `…IntegratesWithDeviceAuth` — the byte-level handover formula, and that a `deviceAuth` signed over it verifies. `…CarriesEncryptionKeyThumbprint` covers the other axis: the third handover slot, which carries the response encryption key's thumbprint when the response is encrypted and CBOR null when it is not |
+| `eudi/openid4vp/mdoc_dcql/sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptShape`, `…BindsAllInputs`, `…IntegratesWithDeviceAuth`, the same pair for `TestDcApiSessionTranscript…`, and `TestSessionTranscriptVariantsNeverCollide` — the byte-level handover formula, and that a `deviceAuth` signed over it verifies. `…CarriesEncryptionKeyThumbprint` covers the other axis: the third handover slot, which carries the response encryption key's thumbprint when the response is encrypted and CBOR null when it is not |
 | `eudi/services/credential_format_parser_mdoc_test.go` | `TestMdocCredentialFormatParser_ParseAndVerify` (+ `_UntrustedRootRejected`, `_InvalidBase64`) and `_CheckBatchUniqueness` — the issuance-side parse/verify path |
 | `eudi/services/credential_service_test.go` | `TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames`, `…_NoMetadataStillEmitsValues` — permission-dialog attribute building |
 | `eudi/openid4vci/metadata_validators_test.go` | `mso_mdoc` accepted as a supported credential format, and `credential_signing_alg_values_supported` validated as COSE algorithm identifiers — ES256 (`-7`) required, an identifier ISO 18013-5 permits but this wallet cannot verify distinguished from one it does not permit at all |

@@ -39,9 +39,11 @@ package main
 
 import (
 	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -557,6 +559,16 @@ func createVerifierSession() (*verifierSession, error) {
 		return nil, fmt.Errorf("read issuer CA: %w", err)
 	}
 
+	// A fresh nonce per run. The nonce is the verifier's replay control -- it is
+	// what ties a DeviceResponse to one request -- so a constant would let the
+	// same response be presented again, and this demo is meant to show what a real
+	// deployment looks like. The integration tests deliberately do the opposite
+	// and pin it, because they want reproducible bytes.
+	nonceBytes := make([]byte, 16)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		return nil, fmt.Errorf("generate nonce: %w", err)
+	}
+
 	body, err := json.Marshal(map[string]any{
 		"type": "vp_token",
 		"dcql_query": map[string]any{
@@ -567,7 +579,7 @@ func createVerifierSession() (*verifierSession, error) {
 				"claims": []map[string]any{{"path": []string{docType, "age_over_18"}}},
 			}},
 		},
-		"nonce":              "nonce",
+		"nonce":              hex.EncodeToString(nonceBytes),
 		"jar_mode":           "by_reference",
 		"request_uri_method": "get",
 		"intended_use_id":    intendedUseID,

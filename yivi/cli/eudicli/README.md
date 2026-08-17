@@ -1,18 +1,63 @@
-# mdoc-decode — COSE/CBOR inspector
+# eudicli — EUDI command line tools
 
-A standalone CLI for manually inspecting any hex-encoded COSE_Sign1 or CBOR
-blob produced by `eudi/credentials/mdoc` (`issuerAuth`, `deviceAuth`, a full
-presented mdoc, or any raw CBOR bytes). Read-only — it does not verify
-signatures, certificate chains, or digests; it only decodes and prints
-structure so you can eyeball what's actually inside.
+Three `package main` programs for working with the EUDI credential code by hand.
+They live here rather than beside the packages they exercise because Go does not
+allow a `func main()` to sit in the same package as library code.
 
-Lives here rather than beside the `mdoc` package because it's a separate
-`package main` — Go doesn't allow a `func main()` to sit in the same package
-as library code, so it cannot share a folder with the package it inspects.
+| Tool | What it does | Needs |
+|---|---|---|
+| [`mdoc-decode`](#mdoc-decode--cosecbor-inspector) | decodes a hex-encoded COSE_Sign1 or CBOR blob and prints its structure | nothing |
+| [`mdoc-demo`](#mdoc-demo--selective-disclosure-in-process) | walks one credential through issue → disclose → verify in-process, printing what each side sees | nothing |
+| [`mdoc-e2e`](#mdoc-e2e--the-real-protocols-against-the-reference-containers) | the same story over real OpenID4VCI and OpenID4VP against the EUDI reference containers | `docker compose up -d` |
+
+Each program's own package comment is the detailed reference; this file is the
+map. Run any of them from the repository root.
 
 ---
 
-## Usage
+## mdoc-demo — selective disclosure, in process
+
+```bash
+go run ./yivi/cli/eudicli/mdoc-demo
+```
+
+Issues an age-verification credential with two claims, presents one, and verifies
+it as a party that trusts only the issuer's root — printing the MSO's digests next
+to the disclosed items at each step, so it is visible *why* withholding a claim is
+safe for the verifier and private for the holder. No containers, no wallet storage,
+no network: everything runs against `eudi/credentials/mdoc` directly.
+
+## mdoc-e2e — the real protocols, against the reference containers
+
+```bash
+docker compose up -d
+go run ./yivi/cli/eudicli/mdoc-e2e
+```
+
+The counterpart to `mdoc-demo`: same story, but issued over OpenID4VCI by the EUDI
+reference issuer and presented over OpenID4VP to the EUDI reference verifier, with
+a real `client.Client` wallet in between. Nothing is mocked, so what fails here
+fails on a phone too.
+
+The walkthrough goes to stdout and the wallet's own log to stderr, so they can be
+read apart (`2> e2e.log`) or together (`2>&1 | tee e2e.log`). Neither is the
+wallet's *activity* log — the entries the app shows the user; step 7 prints those
+as JSON, and `-logs <path>` writes them somewhere they outlive the run.
+
+---
+
+## mdoc-decode — COSE/CBOR inspector
+
+Inspects any hex-encoded COSE_Sign1 or CBOR blob produced by
+`eudi/credentials/mdoc` (`issuerAuth`, `deviceAuth`, a full presented mdoc, or any
+raw CBOR bytes). Read-only — it does not verify signatures, certificate chains, or
+digests; it only decodes and prints structure so you can eyeball what's actually
+inside. The decoding itself lives in `internal/mdocdecode` so the demos can call
+it too.
+
+---
+
+### Usage
 
 From the repository root:
 
@@ -24,7 +69,7 @@ go run ./yivi/cli/eudicli/mdoc-decode.go -    # reads hex from stdin instead
 Input can have spaces or newlines in it (e.g. pasted from a wrapped
 terminal output) — they're stripped before decoding.
 
-### Examples
+#### Examples
 
 ```bash
 # decode a deviceAuth COSE_Sign1
@@ -52,7 +97,7 @@ response clear of the Windows command-line length limit.
 
 ---
 
-## What it does
+### What it does
 
 **If the input is a well-formed COSE_Sign1** (a 4-element CBOR array:
 `[protected, unprotected, payload, signature]`), it prints:
@@ -64,7 +109,7 @@ response clear of the Windows command-line length limit.
 
 **If it's not a COSE_Sign1**, it falls back to generic CBOR pretty-printing of whatever structure is there (maps, arrays, byte strings, etc.).
 
-### Automatic recursion
+#### Automatic recursion
 
 Any `[]byte` field encountered during decoding — payload, a nested claim, whatever — is checked to see if *it itself* contains embedded CBOR:
 
@@ -73,7 +118,7 @@ Any `[]byte` field encountered during decoding — payload, a nested claim, what
 
 This is what lets one invocation walk all the way from a full mdoc → `issuerSigned.nameSpaces[...].EncodedItem` (Tag-24 wrapped claim) and → `issuerAuth`/`deviceAuth` (nested COSE_Sign1 → MSO/DeviceAuthentication payload) without needing separate commands per layer.
 
-### Readable timestamps
+#### Readable timestamps
 
 Known mdoc/MSO timestamp fields (`signed`, `validFrom`, `validUntil`) are shown as both the raw epoch integer and a human-readable UTC date, e.g.:
 
@@ -83,7 +128,7 @@ validUntil: 1791452553  (2027-07-10T08:42:33Z)
 
 ---
 
-## Limitations
+### Limitations
 
 - **Does not verify anything.** No signature checking, no cert chain walk, no digest recomputation. Use the actual `Verifier` (in `eudi/credentials/mdoc`) for that — this tool only tells you what bytes are present, not whether they're trustworthy.
 - **Heuristic recursion, not exhaustive.** `looksLikeNestedCBOR` only recognizes Tag-24 and 4-element COSE_Sign1 arrays; other nested CBOR shapes fall through to a flat hex dump.
@@ -91,7 +136,7 @@ validUntil: 1791452553  (2027-07-10T08:42:33Z)
 
 ---
 
-## Why this exists
+### Why this exists
 
 Handy for sanity-checking that the main program's output is actually
 spec-shaped CBOR/COSE — e.g. confirming `deviceKeyInfo`'s map keys are real

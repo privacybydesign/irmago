@@ -218,3 +218,105 @@ func TestOpenID4VPSessionTranscriptCarriesEncryptionKeyThumbprint(t *testing.T) 
 		t.Fatal("an empty thumbprint must produce the same transcript as no thumbprint at all")
 	}
 }
+
+// TestDcApiSessionTranscriptShape is the DC API mirror of
+// TestOpenID4VPSessionTranscriptShape: [null, null, ["OpenID4VPDCAPIHandover",
+// digest]] where digest is an independently computed SHA-256(CBOR([origin,
+// nonce, null])). Three elements, not four — there is no response_uri over this
+// transport — and the bare origin rather than a client identifier.
+func TestDcApiSessionTranscriptShape(t *testing.T) {
+	origin := "https://verifier.example.com"
+	nonce := "abc123"
+
+	st, err := newDcApiSessionTranscript(origin, nonce, nil)
+	if err != nil {
+		t.Fatalf("newDcApiSessionTranscript: %v", err)
+	}
+
+	if st.DeviceEngagementBytes != nil || st.EReaderKeyBytes != nil {
+		t.Fatalf("expected both leading elements nil, got %v / %v", st.DeviceEngagementBytes, st.EReaderKeyBytes)
+	}
+
+	handover, ok := st.Handover.([]any)
+	if !ok || len(handover) != 2 {
+		t.Fatalf("expected Handover to be a 2-element []any, got %#v", st.Handover)
+	}
+	if handoverType, ok := handover[0].(string); !ok || handoverType != "OpenID4VPDCAPIHandover" {
+		t.Fatalf("expected handover[0] = \"OpenID4VPDCAPIHandover\", got %#v", handover[0])
+	}
+	gotDigest, ok := handover[1].([]byte)
+	if !ok || len(gotDigest) != 32 {
+		t.Fatalf("expected handover[1] to be a 32-byte SHA-256 digest, got %#v", handover[1])
+	}
+
+	wantInfoBytes, err := cbor.Marshal([]any{origin, nonce, nil})
+	if err != nil {
+		t.Fatalf("marshal expected handoverInfo: %v", err)
+	}
+	wantDigest := sha256.Sum256(wantInfoBytes)
+	if string(gotDigest) != string(wantDigest[:]) {
+		t.Fatalf("digest mismatch: got %x, want %x", gotDigest, wantDigest)
+	}
+}
+
+// TestDcApiSessionTranscriptBindsAllInputs confirms each of the three inputs
+// reaches the digest. The thumbprint matters for the same reason as in the URL
+// flow: dc_api.jwt encrypts the response, and a wallet that ignored the key it
+// encrypted to would sign a handover the verifier cannot reconstruct.
+func TestDcApiSessionTranscriptBindsAllInputs(t *testing.T) {
+	thumbprint := sha256.Sum256([]byte("response encryption key"))
+
+	base, err := newDcApiSessionTranscript("https://a.example.com", "nonce-a", nil)
+	if err != nil {
+		t.Fatalf("newDcApiSessionTranscript base: %v", err)
+	}
+	baseDigest := base.Handover.([]any)[1].([]byte)
+
+	variants := map[string]mdoc.SessionTranscript{}
+	variants["origin"], _ = newDcApiSessionTranscript("https://b.example.com", "nonce-a", nil)
+	variants["nonce"], _ = newDcApiSessionTranscript("https://a.example.com", "nonce-b", nil)
+	variants["thumbprint"], _ = newDcApiSessionTranscript("https://a.example.com", "nonce-a", thumbprint[:])
+
+	for field, variant := range variants {
+		if string(variant.Handover.([]any)[1].([]byte)) == string(baseDigest) {
+			t.Fatalf("changing %s did not change the handover digest — that field isn't actually bound", field)
+		}
+	}
+
+	// An empty thumbprint means the same as none, matching the URL flow.
+	empty, err := newDcApiSessionTranscript("https://a.example.com", "nonce-a", []byte{})
+	if err != nil {
+		t.Fatalf("newDcApiSessionTranscript (empty thumbprint): %v", err)
+	}
+	if string(empty.Handover.([]any)[1].([]byte)) != string(baseDigest) {
+		t.Fatal("an empty thumbprint must produce the same transcript as no thumbprint at all")
+	}
+}
+
+// TestSessionTranscriptVariantsNeverCollide is the property that makes picking
+// the wrong variant a detectable error rather than a silent one: the same
+// session values must not hash to the same handover on both transports. If they
+// ever did, a wallet signing the wrong variant would still be accepted, and the
+// transport plumbing that selects between them would be untestable.
+func TestSessionTranscriptVariantsNeverCollide(t *testing.T) {
+	origin := "https://verifier.example.com"
+	nonce := "abc123"
+
+	// What the DC API path passes, and what the URL path would make of the same
+	// session: an origin-prefixed audience and no response_uri.
+	dcApi, err := newDcApiSessionTranscript(origin, nonce, nil)
+	if err != nil {
+		t.Fatalf("newDcApiSessionTranscript: %v", err)
+	}
+	urlFlow, err := newOpenID4VPSessionTranscript("origin:"+origin, nonce, "", nil)
+	if err != nil {
+		t.Fatalf("newOpenID4VPSessionTranscript: %v", err)
+	}
+
+	if dcApi.Handover.([]any)[0] == urlFlow.Handover.([]any)[0] {
+		t.Fatal("the two handovers must not share a label")
+	}
+	if string(dcApi.Handover.([]any)[1].([]byte)) == string(urlFlow.Handover.([]any)[1].([]byte)) {
+		t.Fatal("the two handovers hashed to the same digest for one session")
+	}
+}

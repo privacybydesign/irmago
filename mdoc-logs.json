@@ -1,7 +1,7 @@
 [
   {
     "type": "disclosure",
-    "time": "2026-08-11T15:20:38.1337353+02:00",
+    "time": "2026-08-11T16:17:12.960341+02:00",
     "disclosure_log": {
       "protocol": "openid4vp",
       "credentials": [
@@ -38,20 +38,20 @@
         }
       ],
       "verifier": {
-        "id": "406029387936982878083113394765101392849886441027",
+        "id": "x509_san_dns:localhost",
         "name": "Yivi B.V.",
         "url": null,
         "image": {
           "base64": "\u003c6112 base64 chars of unknown type, elided\u003e"
         },
         "parent": null,
-        "verified": false
+        "verified": true
       }
     }
   },
   {
     "type": "issuance",
-    "time": "2026-08-11T15:20:38.0459024+02:00",
+    "time": "2026-08-11T16:17:12.7058984+02:00",
     "issuance_log": {
       "protocol": "openid4vci",
       "credentials": [

@@ -93,13 +93,13 @@ func mustMarshal(v any) []byte {
 
 // COSEKey is the CBOR-encoded public key format per RFC 9053 (COSE Key).
 //
-// FIX: struct tags now use ",keyasint" so fxamacker/cbor encodes these as
-// actual CBOR integer map keys (major type 0/1), not text-string keys like
-// "1" / "-1". Without keyasint, the previous version silently produced a
-// non-conformant COSE_Key — it round-tripped fine against *this* codebase
-// (since decoding used the same wrong mapping) but would fail against any
-// spec-compliant verifier, and worse, the bad encoding gets baked into the
-// signed MSO digest, so it can't be patched after issuance.
+// The struct tags carry ",keyasint" so fxamacker/cbor encodes the labels as
+// actual CBOR integer map keys (major type 0/1) rather than text-string keys
+// like "1" / "-1". Dropping it produces a non-conformant COSE_Key that still
+// round-trips against this codebase — decoding would use the same wrong
+// mapping — while failing against every spec-compliant verifier. Worse, the
+// encoding is covered by the signed MSO digest, so an mdoc issued with the
+// wrong one cannot be repaired after the fact.
 //
 //	1  = kty  (key type:  2 = EC2)
 //	-1 = crv  (curve:    1 = P-256)

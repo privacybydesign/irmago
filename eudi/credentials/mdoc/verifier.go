@@ -155,7 +155,7 @@ type VerificationResult struct {
 	Attributes      map[string]any
 	Valid           bool
 	Error           string
-	DeviceAuthValid bool // FIX: now actually populated — see VerifyWithDeviceAuth
+	DeviceAuthValid bool // only set by VerifyWithDeviceAuth; Verify leaves it false
 
 	// DeviceKey is the holder's device public key embedded in the MSO's
 	// deviceKeyInfo, reconstructed on a best-effort basis: if it can't be
@@ -515,12 +515,10 @@ func (v *Verifier) VerifyAllDisclosedNamespaces(mdoc *MDoc) (map[string]map[stri
 // validates deviceAuth against the deviceKey embedded in the (now-trusted)
 // MSO, using the SAME session transcript the verifier itself generated.
 //
-// FIX: this closes the gap explicitly called out in the original comment
-// ("deviceAuth verification not yet implemented"). Device binding is one
-// of the main anti-cloning/anti-replay protections in 18013-5 — without
-// checking it, a cloned mdoc (issuerSigned copied to another device) would
-// still verify successfully, since Verify() never touches deviceAuth or
-// deviceKeyInfo at all.
+// Device binding is one of the main anti-cloning and anti-replay protections
+// in 18013-5, and it is the reason to prefer this over Verify: Verify never
+// touches deviceAuth or deviceKeyInfo, so a cloned mdoc — issuerSigned copied
+// to another device — passes it.
 func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType string, transcript SessionTranscript, deviceAuthBytes []byte) VerificationResult {
 	result := v.Verify(mdoc, namespace)
 	if !result.Valid {

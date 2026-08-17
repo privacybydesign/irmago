@@ -131,7 +131,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 }
 
 // ============================================================================
-// Claim matching (ported from eudi/openid4vp/client/dcql.go)
+// Claim matching
 // ============================================================================
 
 type dcqlClaimMatch struct {

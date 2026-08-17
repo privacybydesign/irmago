@@ -249,9 +249,9 @@ func requireMdocAvDisclosureLog(t *testing.T, c *client.Client, approvedRequesto
 	require.Equal(t, approvedRequestor.Id, disclosureLog.DisclosureLog.Verifier.Id)
 	require.Equal(t, approvedRequestor.Name, disclosureLog.DisclosureLog.Verifier.Name)
 	// The log must agree with the screen the user approved. This one was dropped
-	// on write, so an entry could name the verifier by its certificate serial --
-	// an id the wallet only assigns once a certificate has authenticated the
-	// request -- and call it unverified in the same breath.
+	// on write, so an entry could carry the id and name of a verifier whose
+	// request a certificate had authenticated, and call it unverified in the
+	// same breath.
 	require.Equal(t, approvedRequestor.Verified, disclosureLog.DisclosureLog.Verifier.Verified,
 		"the disclosure log must record the verifier the same way the permission screen showed it")
 

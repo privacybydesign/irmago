@@ -291,10 +291,29 @@ func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
 		return nil, nil, fmt.Errorf("failed to verify authorization request: %v", err)
 	}
 
-	// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
-	if endEntityCert != nil && requestorSchemeData.Organization.Logo != nil {
+	// The verifier is identified by its client_id, not by its certificate.
+	//
+	// Both are authenticated: the validator binds the leaf to the client_id,
+	// by SAN for the x509_san_dns: prefix and by leaf hash for x509_hash:,
+	// and rejects a request whose client_id carries neither. But a serial
+	// number names one certificate rather than the party holding it, so a
+	// routine re-issue filed the same organization under a second identity --
+	// splitting its disclosure history in two and orphaning the logo cached
+	// under the retired serial. A client_id also exists in the DID trust
+	// model, which has no certificate at all and so left the id empty,
+	// collapsing every DID verifier onto one blank key.
+	//
+	// Note that x509_hash: is a digest of the leaf and so still rotates with
+	// the certificate; only x509_san_dns: survives a re-issue. This is no
+	// worse than the serial in that case, and better in the other two.
+	requestorId := request.ClientId
+
+	// Store the verifier logo in the cache. The storage layer hashes a key
+	// into its on-disk filename, so the prefix and its colon need no
+	// escaping here.
+	if requestorId != "" && requestorSchemeData.Organization.Logo != nil {
 		err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().Save(
-			endEntityCert.SerialNumber.String(),
+			requestorId,
 			requestorSchemeData.Organization.Logo.Data,
 			requestorSchemeData.Organization.Logo.MimeType,
 		)
@@ -304,11 +323,9 @@ func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
 	}
 
 	requestor := &clientmodels.TrustedParty{
+		Id:       requestorId,
 		Name:     clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), client.currentLocale.Get()),
 		Verified: endEntityCert != nil,
-	}
-	if endEntityCert != nil {
-		requestor.Id = endEntityCert.SerialNumber.String()
 	}
 
 	if requestorSchemeData.Organization.Logo != nil && len(requestorSchemeData.Organization.Logo.Data) > 0 {
