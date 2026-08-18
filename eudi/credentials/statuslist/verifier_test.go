@@ -247,8 +247,7 @@ func Test_VerifyStatusListToken_OAuthDiscoveredKey_Accepted(t *testing.T) {
 }
 
 func Test_VerifyStatusListToken_OAuthDiscoveredKey_WrongTyp_Rejected(t *testing.T) {
-	// The `statuslist+jwt` typ allow-list is enforced inside JwtKeyProvider. The
-	// OAuth-discovery provider runs first and never looks at typ, so any JWT the
+	// Both key providers check the `statuslist+jwt` typ allow-list, so any JWT the
 	// issuer signed with a published key — an ID token, an access token — must
 	// not be accepted here just because its claims happen to fit.
 	signer := NewTestStatusListSigner(t)
