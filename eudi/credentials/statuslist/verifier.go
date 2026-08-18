@@ -75,7 +75,7 @@ func (v *verifiedStatusList) payloadTTLSignal() (time.Duration, bool) {
 // is trusted and sub matches.
 func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedURI string, now time.Time) (*verifiedStatusList, error) {
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{StatusListTokenTyp}, ctx.AllowInsecureDidWeb)
-	oauthDiscoveryKeyProvider := eudi_jwt.NewOAuthDiscoveryJwkKeyProvider([]string{StatusListTokenTyp}, http.DefaultClient)
+	oauthDiscoveryKeyProvider := eudi_jwt.NewOAuthDiscoveryJwkKeyProvider([]string{StatusListTokenTyp}, &http.Client{Timeout: 10 * time.Second})
 
 	clock := ctx.Clock
 	if clock == nil {
