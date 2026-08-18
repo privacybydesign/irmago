@@ -19,6 +19,7 @@ package main
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
@@ -212,6 +213,36 @@ func main() {
 		{39, "", scenarioWrongState},
 		{40, "", scenarioDoubleSubmission},
 		{41, "", scenarioEmptyConfigurationIds},
+
+		{-1, "RP CERTIFICATE DEFECTS — chains to a trusted root, but is wrong", nil},
+		{42, "", scenarioLeafExpired},
+		{43, "", scenarioLeafNotYetValid},
+		{44, "", scenarioCaCertUsedAsLeaf},
+		{45, "", scenarioX5cLeafIsNotTheSigner},
+		{46, "", scenarioX5cEmptyArray},
+
+		{-1, "JOSE HEADER — algorithm and envelope", nil},
+		{47, "", scenarioAlgConfusionHS256},
+		{48, "", scenarioAlgMismatchES384},
+		{49, "", scenarioTwoSegmentJwt},
+
+		{-1, "REQUEST_URI TRANSPORT — what the wallet fetches", nil},
+		{50, "", scenarioRequestUriServesHtml},
+		{51, "", scenarioRequestUriServerError},
+		{52, "", scenarioLinkClientIdMismatch},
+
+		{-1, "REQUEST PARAMETERS — combinations OpenID4VP constrains", nil},
+		{53, "", scenarioNonceNotUrlSafe},
+		{54, "", scenarioResponseUriAbsent},
+		{55, "", scenarioResponseAndRedirectUriTogether},
+		{56, "", scenarioClientIdEmpty},
+		{57, "", scenarioClientIdNoPrefix},
+
+		{-1, "DCQL DETAIL — query members", nil},
+		{58, "", scenarioClaimPathEmpty},
+		{59, "", scenarioMdocQueryWithoutMeta},
+		{60, "", scenarioCredentialSetEmptyOptions},
+		{61, "", scenarioClaimValuesUnsatisfiable},
 	}
 	for _, s := range steps {
 		if s.fn == nil {
@@ -1126,6 +1157,456 @@ func issuerSigningIdentity() (*ecdsa.PrivateKey, [][]byte, error) {
 }
 
 // ============================================================================
+// RP certificate defects
+// ============================================================================
+//
+// These are the cases the earlier certificate scenarios cannot reach. [37] and
+// [38] cover a certificate that does not chain to a trusted root at all, and [10]
+// covers the genuine certificate under a client_id it has no SAN for. What
+// neither can produce is a certificate the wallet's own trust store vouches for
+// and that is nonetheless unusable — because minting one needs the relying-party
+// CA's private key, which testdata carries.
+
+func scenarioLeafExpired() {
+	err := withIssuedWallet(func(w *wallet) error {
+		key, leaf, mintErr := mintRpLeaf(
+			time.Now().Add(-400*24*time.Hour),
+			time.Now().Add(-30*24*time.Hour),
+			[]string{"localhost"}, false)
+		if mintErr != nil {
+			return mintErr
+		}
+		return discloseMintedChain(w, key, [][]byte{leaf}, "", nil)
+	})
+	rejected(42, "rp cert", "relying party certificate expired a month ago",
+		"RFC 5280 §6.1.3", "an expired certificate cannot authenticate a verifier", err,
+		"issued by the CA the wallet trusts, correct SAN, valid signature — only the dates are wrong")
+}
+
+func scenarioLeafNotYetValid() {
+	err := withIssuedWallet(func(w *wallet) error {
+		key, leaf, mintErr := mintRpLeaf(
+			time.Now().Add(30*24*time.Hour),
+			time.Now().Add(400*24*time.Hour),
+			[]string{"localhost"}, false)
+		if mintErr != nil {
+			return mintErr
+		}
+		return discloseMintedChain(w, key, [][]byte{leaf}, "", nil)
+	})
+	rejected(43, "rp cert", "relying party certificate not valid for another month",
+		"RFC 5280 §6.1.3", "a certificate is unusable before its notBefore", err, "")
+}
+
+func scenarioCaCertUsedAsLeaf() {
+	err := withIssuedWallet(func(w *wallet) error {
+		caCert, caKey, loadErr := relyingPartyCA()
+		if loadErr != nil {
+			return loadErr
+		}
+		// The trust anchor itself, presented as the end-entity certificate and
+		// signing the request with its own key. It is the most trusted certificate
+		// the wallet holds, which is exactly why it must not be able to act as a
+		// relying party.
+		return discloseMintedChain(w, caKey, [][]byte{caCert.Raw}, "", nil)
+	})
+	rejected(44, "rp cert", "the trust anchor itself used as the signing leaf",
+		"RFC 5280 §4.2.1.9", "a CA certificate must not act as an end entity", err,
+		"signed by the root's own key, and the root is in the wallet's trust store")
+}
+
+func scenarioX5cLeafIsNotTheSigner() {
+	err := withIssuedWallet(func(w *wallet) error {
+		// Two certificates, both legitimately issued by the trusted CA for
+		// localhost. The request is signed by the second key while the first is
+		// presented as the leaf, so every certificate here is trustworthy and the
+		// signature is well formed — they simply do not belong together.
+		_, decoy, mintErr := mintRpLeaf(time.Now().Add(-time.Hour), time.Now().Add(24*time.Hour),
+			[]string{"localhost"}, false)
+		if mintErr != nil {
+			return mintErr
+		}
+		signingKey, _, mintErr := mintRpLeaf(time.Now().Add(-time.Hour), time.Now().Add(24*time.Hour),
+			[]string{"localhost"}, false)
+		if mintErr != nil {
+			return mintErr
+		}
+		return discloseMintedChain(w, signingKey, [][]byte{decoy}, "", nil)
+	})
+	rejected(45, "rp cert", "x5c leaf is a valid certificate, but not the signer's",
+		"OID4VP 1.0 §5.10", "the signature must verify against the leaf that was presented", err,
+		"both certificates are trusted and issued for localhost; only the pairing is wrong")
+}
+
+func scenarioX5cEmptyArray() {
+	err := withIssuedWallet(func(w *wallet) error {
+		return discloseMinted(w, func(hdr, claims map[string]any) {
+			hdr["x5c"] = []any{}
+		})
+	})
+	rejected(46, "rp cert", "x5c present but an empty array",
+		"OID4VP 1.0 §5.10", "an empty chain names no certificate", err,
+		"distinct from [12], where the header is absent altogether")
+}
+
+// ============================================================================
+// JOSE header
+// ============================================================================
+
+func scenarioAlgConfusionHS256() {
+	err := withIssuedWallet(func(w *wallet) error {
+		return discloseMintedRaw(w, func(jwtStr string) string {
+			return resignAsHS256(jwtStr)
+		})
+	})
+	rejected(47, "jose", "alg switched to HS256 while x5c still carries a key",
+		"RFC 8725 §3.1", "an asymmetric key must never be accepted as an HMAC secret", err,
+		"the classic algorithm-confusion attack: the certificate's public key is public")
+}
+
+func scenarioAlgMismatchES384() {
+	err := withIssuedWallet(func(w *wallet) error {
+		return discloseMinted(w, func(hdr, claims map[string]any) {
+			hdr["alg"] = "ES384"
+		})
+	})
+	rejected(48, "jose", "alg claims ES384 over a P-256 key",
+		"RFC 7518 §3.4", "the algorithm must match the key's curve", err, "")
+}
+
+func scenarioTwoSegmentJwt() {
+	err := withIssuedWallet(func(w *wallet) error {
+		return discloseMintedRaw(w, func(jwtStr string) string {
+			parts := strings.Split(jwtStr, ".")
+			return parts[0] + "." + parts[1] // signature segment dropped entirely
+		})
+	})
+	rejected(49, "jose", "request object with two segments, no signature part",
+		"RFC 7515 §3.1", "a JWS has three segments", err, "")
+}
+
+// ============================================================================
+// request_uri transport
+// ============================================================================
+
+func scenarioRequestUriServesHtml() {
+	err := withIssuedWallet(func(w *wallet) error {
+		return discloseServing(w,
+			"<!doctype html><html><body>not a request object</body></html>",
+			http.StatusOK, "text/html")
+	})
+	rejected(50, "transport", "request_uri serves HTML instead of a request object",
+		"OID4VP 1.0 §5.6", "a non-JWT body cannot be parsed as a request", err, "")
+}
+
+func scenarioRequestUriServerError() {
+	err := withIssuedWallet(func(w *wallet) error {
+		return discloseServing(w, `{"error":"server_error"}`,
+			http.StatusInternalServerError, "application/json")
+	})
+	rejected(51, "transport", "request_uri returns HTTP 500",
+		"OID4VP 1.0 §5.6", "a failed fetch must fail the session, not proceed", err, "")
+}
+
+func scenarioLinkClientIdMismatch() {
+	err := withIssuedWallet(func(w *wallet) error {
+		// The request object is the container's own, untouched and validly signed
+		// for x509_san_dns:localhost. Only the client_id in the link the wallet was
+		// handed says something else.
+		return discloseMintedWithClientId(w, "x509_san_dns:other.example",
+			func(hdr, claims map[string]any) {})
+	})
+	rejected(52, "transport", "link's client_id differs from the request object's",
+		"OID4VP 1.0 §5.6", "the two must agree, or the link tells the user a different verifier", err,
+		"tests whether the client_id delivered out of band is bound to the signed one")
+}
+
+// ============================================================================
+// Request parameters
+// ============================================================================
+
+func scenarioNonceNotUrlSafe() {
+	err := withIssuedWallet(func(w *wallet) error {
+		return discloseMinted(w, func(hdr, claims map[string]any) {
+			claims["nonce"] = "nonce with spaces & symbols"
+		})
+	})
+	rejected(53, "parameters", "nonce carries non-URL-safe characters",
+		"OID4VP 1.0 §5.2", "a nonce must be ASCII URL-safe", err,
+		"distinct from [23] and [24], which cover absent and empty")
+}
+
+func scenarioResponseUriAbsent() {
+	err := withIssuedWallet(func(w *wallet) error {
+		return discloseMinted(w, func(hdr, claims map[string]any) {
+			claims["response_mode"] = "direct_post"
+			delete(claims, "response_uri")
+			delete(claims, "redirect_uri")
+		})
+	})
+	rejected(54, "parameters", "direct_post with no response_uri to answer",
+		"OID4VP 1.0 §5.1", "response_uri is REQUIRED for direct_post", err, "")
+}
+
+func scenarioResponseAndRedirectUriTogether() {
+	err := withIssuedWallet(func(w *wallet) error {
+		return discloseMinted(w, func(hdr, claims map[string]any) {
+			claims["redirect_uri"] = "https://localhost/redirect"
+		})
+	})
+	rejected(55, "parameters", "response_uri and redirect_uri both present",
+		"OID4VP 1.0 §5.1", "when response_uri is present, redirect_uri must not be", err, "")
+}
+
+func scenarioClientIdEmpty() {
+	err := withIssuedWallet(func(w *wallet) error {
+		return discloseMintedWithClientId(w, "x509_san_dns:localhost",
+			func(hdr, claims map[string]any) {
+				claims["client_id"] = ""
+			})
+	})
+	rejected(56, "parameters", "client_id is the empty string",
+		"OID4VP 1.0 §5.10", "a verifier with no identifier cannot be authenticated", err, "")
+}
+
+func scenarioClientIdNoPrefix() {
+	err := withIssuedWallet(func(w *wallet) error {
+		return discloseMintedWithClientId(w, "some-preregistered-verifier",
+			func(hdr, claims map[string]any) {
+				claims["client_id"] = "some-preregistered-verifier"
+			})
+	})
+	rejected(57, "parameters", "client_id with no scheme prefix (pre-registered)",
+		"OID4VP 1.0 §5.10", "there is no registry to resolve a bare identifier against", err,
+		"distinct from [11]: that names a scheme this wallet declines, this names none at all")
+}
+
+// ============================================================================
+// DCQL detail
+// ============================================================================
+
+func scenarioClaimPathEmpty() {
+	q := map[string]any{
+		"credentials": []map[string]any{{
+			"id":     queryID,
+			"format": "mso_mdoc",
+			"meta":   map[string]any{"doctype_value": docType},
+			"claims": []map[string]any{{"path": []string{}}},
+		}},
+	}
+	err := discloseQuery(q)
+	rejected(58, "dcql", "claims entry with an empty path array",
+		"OID4VP 1.0 §6.4", "a claim path must be non-empty", err, "")
+}
+
+func scenarioMdocQueryWithoutMeta() {
+	q := map[string]any{
+		"credentials": []map[string]any{{
+			"id":     queryID,
+			"format": "mso_mdoc",
+			"claims": []map[string]any{{"path": []string{namespace, "age_over_18"}}},
+		}},
+	}
+	err := discloseQuery(q)
+	rejected(59, "dcql", "mso_mdoc query with no meta.doctype_value",
+		"OID4VP 1.0 §6.1", "doctype_value is REQUIRED for mso_mdoc", err, "")
+}
+
+func scenarioCredentialSetEmptyOptions() {
+	err := withIssuedWallet(func(w *wallet) error {
+		return discloseMinted(w, func(hdr, claims map[string]any) {
+			query, ok := claims["dcql_query"].(map[string]any)
+			if !ok {
+				return
+			}
+			query["credential_sets"] = []any{
+				map[string]any{"options": []any{}, "required": true},
+			}
+		})
+	})
+	rejected(60, "dcql", "credential_sets entry with an empty options array",
+		"OID4VP 1.0 §6.2", "options must be a non-empty array", err,
+		"distinct from [36], where options name an id the query does not define")
+}
+
+func scenarioClaimValuesUnsatisfiable() {
+	q := map[string]any{
+		"credentials": []map[string]any{{
+			"id":     queryID,
+			"format": "mso_mdoc",
+			"meta":   map[string]any{"doctype_value": docType},
+			// The wallet holds age_over_18 = true, so a query constrained to false
+			// matches nothing and must not be answered with the value it does hold.
+			"claims": []map[string]any{{
+				"path":   []string{namespace, "age_over_18"},
+				"values": []any{false},
+			}},
+		}},
+	}
+	err := discloseQuery(q)
+	rejected(61, "dcql", "claim values constraint the credential does not satisfy",
+		"OID4VP 1.0 §6.4.1", "a value constraint that matches nothing yields no presentation", err,
+		"the danger is answering with age_over_18=true when only false was acceptable")
+}
+
+// ============================================================================
+// Certificate minting against the relying-party CA
+// ============================================================================
+
+// relyingPartyCA loads the CA the wallet trusts for verifiers, together with its
+// private key. Holding the key is what lets these scenarios produce
+// certificates that genuinely chain to the wallet's trust anchor.
+func relyingPartyCA() (*x509.Certificate, *ecdsa.PrivateKey, error) {
+	base := filepath.Join(*testdataDir, "eudi", "verifier")
+
+	certPEM, err := os.ReadFile(filepath.Join(base, "ca.crt"))
+	if err != nil {
+		return nil, nil, err
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return nil, nil, fmt.Errorf("verifier CA is not PEM")
+	}
+	caCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	keyPEM, err := os.ReadFile(filepath.Join(base, "ca_ec_priv.pem"))
+	if err != nil {
+		return nil, nil, err
+	}
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil {
+		return nil, nil, fmt.Errorf("verifier CA key is not PEM")
+	}
+	if key, perr := x509.ParseECPrivateKey(keyBlock.Bytes); perr == nil {
+		return caCert, key, nil
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	key, ok := parsed.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, nil, fmt.Errorf("verifier CA key is %T, not ECDSA", parsed)
+	}
+	return caCert, key, nil
+}
+
+// mintRpLeaf issues an end-entity certificate from the relying-party CA with the
+// given validity window and DNS names, returning its key and DER.
+func mintRpLeaf(notBefore, notAfter time.Time, dnsNames []string, isCA bool) (*ecdsa.PrivateKey, []byte, error) {
+	caCert, caKey, err := relyingPartyCA()
+	if err != nil {
+		return nil, nil, err
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 96))
+	if err != nil {
+		return nil, nil, err
+	}
+	template := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: "localhost", Organization: []string{"Yivi"}},
+		DNSNames:              dnsNames,
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  isCA,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, caCert, &key.PublicKey, caKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	return key, der, nil
+}
+
+// resignAsHS256 rewrites the header to alg:HS256 and appends an HMAC computed
+// with the leaf's public key as the secret — the shape an algorithm-confusion
+// attack takes, since that key is published in the x5c header for anyone to read.
+func resignAsHS256(jwtStr string) string {
+	parts := strings.Split(jwtStr, ".")
+	if len(parts) != 3 {
+		return jwtStr
+	}
+	hdrRaw, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return jwtStr
+	}
+	var hdr map[string]any
+	if err := json.Unmarshal(hdrRaw, &hdr); err != nil {
+		return jwtStr
+	}
+
+	// The public key the original header advertises, used as the HMAC secret.
+	secret := []byte("unknown")
+	if chain, ok := hdr["x5c"].([]any); ok && len(chain) > 0 {
+		if first, ok := chain[0].(string); ok {
+			if der, derr := base64.StdEncoding.DecodeString(first); derr == nil {
+				if cert, cerr := x509.ParseCertificate(der); cerr == nil {
+					if spki, serr := x509.MarshalPKIXPublicKey(cert.PublicKey); serr == nil {
+						secret = spki
+					}
+				}
+			}
+		}
+	}
+
+	hdr["alg"] = "HS256"
+	newHdr, err := json.Marshal(hdr)
+	if err != nil {
+		return jwtStr
+	}
+	input := base64.RawURLEncoding.EncodeToString(newHdr) + "." + parts[1]
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(input))
+	return input + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// discloseMintedChain re-signs the container's request with the given key and
+// presents the given x5c chain. clientID defaults to the session's own.
+func discloseMintedChain(
+	w *wallet,
+	key *ecdsa.PrivateKey,
+	chain [][]byte,
+	clientID string,
+	mutate func(hdr, claims map[string]any),
+) error {
+	return discloseMintedKeyed(w, key, func(hdr, claims map[string]any) {
+		encoded := make([]any, 0, len(chain))
+		for _, der := range chain {
+			encoded = append(encoded, base64.StdEncoding.EncodeToString(der))
+		}
+		hdr["x5c"] = encoded
+		if mutate != nil {
+			mutate(hdr, claims)
+		}
+	})
+}
+
+// discloseServing points the wallet at a request_uri returning an arbitrary body
+// and status, for the cases where the transport itself is what misbehaves.
+func discloseServing(w *wallet, body string, status int, contentType string) error {
+	s, err := createVerifierSession(*verifierJwt, defaultDcql(docType, namespace, "age_over_18", "mso_mdoc"), nil)
+	if err != nil {
+		return err
+	}
+	r, err := startRogue("")
+	if err != nil {
+		return err
+	}
+	defer r.stop()
+	r.serveRaw(body, status, contentType)
+	return w.disclose(r.link(s.ClientID))
+}
+
+// ============================================================================
 // Scenario plumbing
 // ============================================================================
 
@@ -1344,6 +1825,7 @@ type rogue struct {
 	srv      *http.Server
 	base     string
 	jwt      atomic.Pointer[string]
+	raw      atomic.Pointer[rawResponse]
 	captured chan string
 }
 
@@ -1356,6 +1838,12 @@ func startRogue(jwt string) (*rogue, error) {
 	r.jwt.Store(&jwt)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/request.jwt", func(w http.ResponseWriter, _ *http.Request) {
+		if override := r.raw.Load(); override != nil {
+			w.Header().Set("Content-Type", override.contentType)
+			w.WriteHeader(override.status)
+			_, _ = io.WriteString(w, override.body)
+			return
+		}
 		w.Header().Set("Content-Type", "application/oauth-authz-req+jwt")
 		if current := r.jwt.Load(); current != nil {
 			_, _ = io.WriteString(w, *current)
@@ -1379,6 +1867,18 @@ func startRogue(jwt string) (*rogue, error) {
 // serve sets the JWT this server hands out, for scenarios that need the
 // server's own URL before the request can be built.
 func (r *rogue) serve(jwt string) { r.jwt.Store(&jwt) }
+
+// rawResponse replaces the request_uri response wholesale, so a scenario can
+// misbehave at the transport level rather than in the request object.
+type rawResponse struct {
+	body        string
+	status      int
+	contentType string
+}
+
+func (r *rogue) serveRaw(body string, status int, contentType string) {
+	r.raw.Store(&rawResponse{body: body, status: status, contentType: contentType})
+}
 
 // exfiltrated reports whether the wallet posted anything to the rogue host.
 func (r *rogue) exfiltrated() (string, bool) {

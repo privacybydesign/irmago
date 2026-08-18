@@ -282,16 +282,13 @@ func numericDateOrNil(unix int64) *jwt.NumericDate {
 
 const AuthRequestJwtTyp string = "oauth-authz-req+jwt"
 
-// The aud claim is deliberately not checked against a fixed value.
-//
-// It is reported by GetAudience so the parser could enforce it, but nothing
-// tells this wallet what to expect: OpenID4VP states no requirement for aud on
-// a signed request object beyond RFC 9101's general JAR processing, and RFC 9101
-// ties it to an issuer identifier a wallet does not have. The EUDI reference
-// verifier sends SIOPv2's "https://self-issued.me/v2" while other verifiers use
-// other values, so pinning any one of them would reject conformant requests.
-// Enforcing it needs a decision about what a Yivi wallet's identifier is, which
-// is a policy question rather than a missing check.
+// WalletAudience is how a verifier addresses a statically discovered wallet in a
+// signed request object. OpenID4VP § 5.8 covers both discovery cases: under
+// dynamic discovery the aud claim must equal the iss claim, and otherwise it
+// "MUST be https://self-issued.me/v2". This wallet publishes no issuer
+// identifier for a verifier to address it by, so the static case is the one that
+// applies, and the symbolic value stands even though nothing here uses SIOPv2.
+const WalletAudience = "https://self-issued.me/v2"
 
 // authRequestParserOptions are the validations the JWT parser applies to every
 // authorization request object, wherever it arrived from.
@@ -324,6 +321,22 @@ func validateRedirectAuthorizationRequest(request *AuthorizationRequest) error {
 	if err := validateNonce(request.Nonce); err != nil {
 		return err
 	}
+	// An absent aud is tolerated, a wrong one is not. Section 5.8 tells a verifier
+	// what to send but puts no validation duty on the wallet, so refusing a
+	// request that merely omits the claim would turn a permission into a
+	// requirement and reject verifiers doing nothing harmful. A request that names
+	// some other audience is a different matter: it was written for someone else,
+	// and honouring it means answering a question that was not addressed here.
+	//
+	// Checked only on this path. Over the Digital Credentials API the response is
+	// bound to the platform-authenticated origin rather than to a client
+	// identifier, and Appendix A gives that transport its own audience handling,
+	// so § 5.8's static-discovery value is not the rule to hold it to.
+	if request.Audience != "" && request.Audience != WalletAudience {
+		return fmt.Errorf(
+			"request names audience %q, but a statically discovered wallet is addressed as %q",
+			request.Audience, WalletAudience)
+	}
 	// "Either a dcql_query or a scope parameter representing a DCQL Query MUST
 	// be present in the Authorization Request, but not both."
 	hasQuery := len(request.DcqlQuery.Credentials) > 0
@@ -336,6 +349,23 @@ func validateRedirectAuthorizationRequest(request *AuthorizationRequest) error {
 	if hasQuery {
 		if err := request.DcqlQuery.Validate(); err != nil {
 			return fmt.Errorf("invalid dcql_query: %v", err)
+		}
+	}
+
+	// "When `response_uri` is present, the `redirect_uri` must not be present" —
+	// the rule the AuthorizationRequest field comment already states. They name
+	// two different places to send the answer, so a request carrying both leaves
+	// where the response goes up to whichever the wallet happens to read first.
+	if request.ResponseUri != "" && request.RedirectUri != "" {
+		return fmt.Errorf("response_uri and redirect_uri must not both be present")
+	}
+
+	// direct_post has to say where the response goes. Without this the session
+	// failed anyway, but only later and as an unreadable transport error — a POST
+	// to the empty string, reported as an unsupported protocol scheme.
+	if request.ResponseMode == ResponseMode_DirectPost || request.ResponseMode == ResponseMode_DirectPostJwt {
+		if request.ResponseUri == "" {
+			return fmt.Errorf("response_mode %s requires a response_uri", request.ResponseMode)
 		}
 	}
 	return nil

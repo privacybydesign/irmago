@@ -173,7 +173,7 @@ func run() error {
 	}
 	fmt.Printf("  DeviceResponse: %d bytes of CBOR\n", len(responseBytes))
 	fmt.Printf("  Inspect any of these yourself with:\n")
-	fmt.Printf("    go run ./yivi/cli/eudicli/mdoc-decode.go <hex>\n")
+	fmt.Printf("    go run ./yivi/cli/eudicli/mdoc-decode <hex>\n")
 
 	subsection("issuerAuth — the COSE_Sign1 the issuer produced")
 	mdocdecode.Dump(presented.IssuerSigned.IssuerAuth)

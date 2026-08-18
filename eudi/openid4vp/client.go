@@ -197,6 +197,17 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			return
 		}
 
+		// The client_id the link carries is unauthenticated, so nothing downstream
+		// reads it — everything comes from the signed request object instead. It is
+		// still compared against the signed one, because RFC 9101 § 5.2.3 requires
+		// the two to match and a mismatch means the link and the request it points
+		// at disagree about who is asking. Ignoring that silently would let a
+		// tampered link pass unnoticed even though the wallet happens to act on the
+		// trustworthy half. An absent client_id is tolerated: the value is only
+		// useful for this comparison, and refusing a link that omits it would fail
+		// verifiers that are otherwise conformant.
+		linkClientId := parsedUrl.Query().Get("client_id")
+
 		eudi.Logger.Infof("starting openid4vp session: %v", requestUri)
 		response, err := common.HTTPClient.Get(requestUri)
 		if err != nil {
@@ -220,6 +231,13 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 		request, requestor, err := client.verifySignedAuthorizationRequest(string(authRequestJwt))
 		if err != nil {
 			handleFailure(handler, "openid4vp: %v", err)
+			return
+		}
+
+		if linkClientId != "" && linkClientId != request.ClientId {
+			handleFailure(handler,
+				"openid4vp: the link names client_id %q but the signed request names %q",
+				linkClientId, request.ClientId)
 			return
 		}
 
