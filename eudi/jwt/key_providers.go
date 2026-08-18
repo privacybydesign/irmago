@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/cert"
-	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
@@ -129,6 +128,13 @@ func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *
 	if !ok {
 		return fmt.Errorf("missing alg header in JWS signature")
 	}
+
+	// Only allow the algorithms this module accepts, to prevent the use of weak, unsupported or
+	// substituted algorithms. See SupportedSignatureAlgorithms for the list and its rationale.
+	if !IsSupportedSignatureAlgorithm(alg) {
+		return fmt.Errorf("unsupported signature algorithm %q in JWS protected header", alg)
+	}
+
 	sink.Key(alg, cert.PublicKey)
 
 	return nil
@@ -158,6 +164,12 @@ func (p *DidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 	alg, ok := sig.ProtectedHeaders().Algorithm()
 	if !ok {
 		return nil
+	}
+
+	// Only allow the algorithms this module accepts, to prevent the use of weak, unsupported or
+	// substituted algorithms. See SupportedSignatureAlgorithms for the list and its rationale.
+	if !IsSupportedSignatureAlgorithm(alg) {
+		return fmt.Errorf("unsupported signature algorithm %q in JWS protected header", alg)
 	}
 
 	// Parse the JWT payload, without verifying the signature, to obtain the iss claim value
@@ -262,7 +274,7 @@ func (p *OAuthDiscoveryJwkKeyProvider) FetchKeys(ctx context.Context, sink jws.K
 	}
 
 	// Only allow supported algorithms for OAuth2 discovered keys. This is a security measure to prevent the use of weak, unsupported or substituted algorithms.
-	if !slices.Contains([]jwa.SignatureAlgorithm{jwa.RS256(), jwa.RS384(), jwa.RS512(), jwa.ES256(), jwa.ES256K(), jwa.ES384(), jwa.ES512(), jwa.EdDSA(), jwa.EdDSAEd25519(), jwa.EdDSAEd448(), jwa.PS256(), jwa.PS384(), jwa.PS512()}, alg) {
+	if !IsSupportedSignatureAlgorithm(alg) {
 		return nil
 	}
 

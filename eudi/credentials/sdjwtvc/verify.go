@@ -549,7 +549,9 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 	var sigAlg jwa.SignatureAlgorithm
 	if alg, ok := header["alg"]; ok {
 		if algStr, ok := alg.(string); ok {
-			s, found := jwa.LookupSignatureAlgorithm(algStr)
+			// The accepted set is shared with the rest of JWT verification; see
+			// eudi_jwt.SupportedSignatureAlgorithms.
+			s, found := eudi_jwt.LookupSupportedSignatureAlgorithm(algStr)
 			if !found {
 				return nil, fmt.Errorf("unsupported signing algorithm in kbjwt header: %s", algStr)
 			}

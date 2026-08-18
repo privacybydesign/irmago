@@ -567,35 +567,6 @@ func (s *session) configureIssuerSettings() error {
 	return nil
 }
 
-func getCredentialRequestPreferences(c metadata.CredentialConfiguration) *sessionCredentialRequestPreferences {
-	s := &sessionCredentialRequestPreferences{}
-
-	if len(c.CryptographicBindingMethodsSupported) > 0 {
-		var cryptoBindingMethod proofs.CryptographicBindingMethod
-
-		// Order of preferred cryptographic binding methods: JWK > DID > COSE, based on ease of implementation and expected level of support among issuers
-		if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_JWK) {
-			cryptoBindingMethod = proofs.CryptographicBindingMethod_JWK
-		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_KEY) {
-			cryptoBindingMethod = proofs.CryptographicBindingMethod_DID_KEY
-		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_JWK) {
-			cryptoBindingMethod = proofs.CryptographicBindingMethod_DID_JWK
-		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_COSE) {
-			cryptoBindingMethod = proofs.CryptographicBindingMethod_COSE
-		}
-		s.cryptographicBindingMethod = &cryptoBindingMethod
-
-		// Only require proofs if the issuer advertises a supported cryptographic binding method. If the issuer does not advertise any supported cryptographic binding methods, then we do not require any proofs.
-		proofType := c.ProofTypesSupported[metadata.ProofTypeIdentifier_JWT]
-
-		// The presence of a supported proof signing algorithm should already have been validated in the credential configuration validation step, so we can safely pick the first one here
-		algs := getSupportedSignatureAlgorithms(proofType.ProofSigningAlgValuesSupported)
-		s.proofSigningAlg = algs[0] // pick the first supported algorithm as the preferred one
-	}
-
-	return s
-}
-
 // selectOfferedGrant picks the grant to use from the offer's grants member,
 // preferring the Pre-Authorized Code grant over the Authorization Code grant.
 // It returns a nil grant when the offer names no grant type at all, in which
@@ -679,11 +650,11 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	}
 
 	credentialConfigurationValidator := CredentialConfigurationValidator{}
-	if err := credentialConfigurationValidator.ValidateSupportedFeatures(&credentialConfig); err != nil {
+	credentialRequestPreferences, err := credentialConfigurationValidator.ValidateAndGetSupportedFeatures(&credentialConfig)
+	if err != nil {
 		return nil, fmt.Errorf("credential configuration %q is not supported: %v", credentialConfigurationId, err)
 	}
 
-	credentialRequestPreferences := getCredentialRequestPreferences(credentialConfig)
 	requireCryptographicKeyBinding := credentialRequestPreferences.cryptographicBindingMethod != nil
 
 	request := &CredentialRequest{

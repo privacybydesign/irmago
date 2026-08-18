@@ -3,6 +3,7 @@ package eudi_jwt
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
@@ -1101,4 +1102,94 @@ func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_KidNotInJwks_ReturnsError(t *te
 
 	require.ErrorContains(t, err, "no key found in JWKS with kid unpublished-key")
 	require.Empty(t, sink.keys)
+}
+
+// The credential and status list token verification paths must refuse an algorithm the metadata
+// validators refuse up front, otherwise a strict validator only advertises strictness while
+// verification honours the algorithm anyway. HS256 is the case with teeth: it is symmetric, so
+// honouring it would mean verifying an issuer signature against a shared secret.
+func Test_X509KeyProvider_FetchKeys_RejectedAlg_ReturnsError(t *testing.T) {
+	derBytes, _, _ := newTestECDSACert(t)
+
+	p := NewX509KeyProvider(newTestCertChain(t, derBytes))
+	sink := &testKeySink{}
+
+	msg := newTestJWSMessageSigned(t, "test", []byte("a-shared-secret-of-sufficient-length"), jwa.HS256())
+	err := p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, `unsupported signature algorithm "HS256"`)
+	require.Empty(t, sink.keys, "no key may reach the sink for a rejected algorithm")
+}
+
+// RFC 9864 deprecates the EdDSA algorithm name in favour of Ed25519, but issuers still sign with
+// it and jwx verifies it, so both names must reach the sink. Refusing EdDSA would reject tokens
+// this module can verify.
+func Test_X509KeyProvider_FetchKeys_EdDSANames_FeedKeyToSink(t *testing.T) {
+	derBytes, _, _ := newTestECDSACert(t)
+
+	_, edPrivKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+
+	for _, alg := range []jwa.SignatureAlgorithm{jwa.EdDSA(), jwa.EdDSAEd25519()} {
+		t.Run(alg.String(), func(t *testing.T) {
+			p := NewX509KeyProvider(newTestCertChain(t, derBytes))
+			sink := &testKeySink{}
+
+			msg := newTestJWSMessageSigned(t, "test", edPrivKey, alg)
+			err := p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+			require.NoError(t, err)
+			require.Len(t, sink.keys, 1)
+			require.Equal(t, alg, sink.keys[0].alg)
+		})
+	}
+}
+
+func Test_DidKeyProvider_FetchKeys_RejectedAlg_ReturnsError(t *testing.T) {
+	const issuerDID = "did:web:example.com"
+	const kidHeader = "#key-1"
+
+	p := &DidKeyProvider{kidHeader: kidHeader, allowInsecure: true}
+	sink := &testKeySink{}
+
+	msg := newTestJWSMessageSigned(t, issuerDID, []byte("a-shared-secret-of-sufficient-length"), jwa.HS256())
+	err := p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, `unsupported signature algorithm "HS256"`)
+	require.Empty(t, sink.keys, "no key may reach the sink for a rejected algorithm")
+}
+
+func Test_DidKeyProvider_FetchKeys_EdDSANames_FeedKeyToSink(t *testing.T) {
+	const issuerDID = "did:web:example.com"
+	const kidHeader = "#key-1"
+
+	pub, privKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	pubJWK, err := jwk.Import(pub)
+	require.NoError(t, err)
+
+	docBytes := newTestDIDDocument(t, issuerDID, issuerDID+kidHeader, pubJWK)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(docBytes)
+	}))
+	defer server.Close()
+
+	for _, alg := range []jwa.SignatureAlgorithm{jwa.EdDSA(), jwa.EdDSAEd25519()} {
+		t.Run(alg.String(), func(t *testing.T) {
+			p := &DidKeyProvider{
+				kidHeader:     kidHeader,
+				allowInsecure: true,
+				httpClient:    &http.Client{Transport: &testRedirectTransport{targetAddr: server.Listener.Addr().String()}},
+			}
+			sink := &testKeySink{}
+
+			msg := newTestJWSMessageSigned(t, issuerDID, privKey, alg)
+			err := p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+			require.NoError(t, err)
+			require.Len(t, sink.keys, 1)
+			require.Equal(t, alg, sink.keys[0].alg)
+		})
+	}
 }

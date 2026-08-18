@@ -9,6 +9,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/internal/arrays"
 	"golang.org/x/text/language"
@@ -117,14 +118,9 @@ func (v CredentialIssuerMetadataValidator) ValidateAgainstCredentialOffer(m *met
 	credentialConfigurationValidator := CredentialConfigurationValidator{}
 	for _, credConfigId := range credentialOffer.CredentialConfigurationIds {
 		if credConfig, ok := m.CredentialConfigurationsSupported[credConfigId]; ok {
-			// Verify the issuer metadata for this credential configuration
+			// Verify the minimum requirements for this credential configuration
 			if err := credentialConfigurationValidator.Verify(&credConfig); err != nil {
 				return fmt.Errorf("invalid credential configuration %q: %w", credConfigId, err)
-			}
-
-			// Validate that we support the credential configuration
-			if err := credentialConfigurationValidator.ValidateSupportedFeatures(&credConfig); err != nil {
-				return fmt.Errorf("credential configuration %q is not supported: %v", credConfigId, err)
 			}
 		} else {
 			return fmt.Errorf("unsupported credential configuration %q in credential offer", credConfigId)
@@ -173,46 +169,74 @@ func (v *CredentialConfigurationValidator) Verify(c *metadata.CredentialConfigur
 
 // ValidateSupportedFeatures verifies that the credential configuration is supported by our client. It is split from the credential configuration validation, so it can be used at the moment a configuration is used to request credentials,
 // because it makes no sense to validate configurations up front, which will not be requested either way.
-func (v *CredentialConfigurationValidator) ValidateSupportedFeatures(c *metadata.CredentialConfiguration) error {
+func (v *CredentialConfigurationValidator) ValidateAndGetSupportedFeatures(c *metadata.CredentialConfiguration) (*sessionCredentialRequestPreferences, error) {
+	s := &sessionCredentialRequestPreferences{}
+
 	// We only support SD-JWT VC, for now
 	if c.Format != metadata.CredentialFormatIdentifier_SdJwtVc && c.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy {
-		return fmt.Errorf("unsupported credential format %q", c.Format)
+		return nil, fmt.Errorf("unsupported credential format %q", c.Format)
 	}
 
 	// Validate at least one credential signing algorithms is supported (which should be string values for SD-JWTs)
+	// TODO: when we support ISO mDoc, we need to validate the COSE algorithm identifiers
 	credentialSigningAlgValuesStrings := arrays.ConvertTo(c.CredentialSigningAlgValuesSupported, func(v any) (string, bool) {
 		str, ok := v.(string)
 		return str, ok
 	})
-	if len(c.CredentialSigningAlgValuesSupported) != 0 &&
-		len(getSupportedSignatureAlgorithms(credentialSigningAlgValuesStrings)) == 0 {
-		return fmt.Errorf("no supported signing algorithms in 'credential_signing_alg_values_supported'")
+	if len(c.CredentialSigningAlgValuesSupported) != 0 {
+		// Check if we support the credential signing algorithm(s) in the credential configuration
+		_, err := getSupportedCredentialSigningAlgorithm(credentialSigningAlgValuesStrings)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// We support JWK, did:key and did:jwk as cryptographic binding method, for now
 	if len(c.CryptographicBindingMethodsSupported) > 0 {
-		if !slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_JWK) &&
-			!slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_KEY) &&
-			!slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_JWK) {
-			return fmt.Errorf("unsupported cryptographic binding method(s) %q", c.CryptographicBindingMethodsSupported)
+		// Order of preferred cryptographic binding methods: JWK > DID > COSE, based on ease of implementation and expected level of support among issuers
+		var bindingMethod proofs.CryptographicBindingMethod
+		if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_JWK) {
+			bindingMethod = proofs.CryptographicBindingMethod_JWK
+		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_KEY) {
+			bindingMethod = proofs.CryptographicBindingMethod_DID_KEY
+		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_JWK) {
+			bindingMethod = proofs.CryptographicBindingMethod_DID_JWK
+		} else {
+			return nil, fmt.Errorf("no supported cryptographic binding method found in 'cryptographic_binding_methods_supported'")
 		}
+
+		s.cryptographicBindingMethod = &bindingMethod
 
 		// We only support JWT proof type, for now
 		if jwtProofType, ok := c.ProofTypesSupported[metadata.ProofTypeIdentifier_JWT]; !ok {
-			return fmt.Errorf("missing 'proof_types_supported' for JWT")
+			return nil, fmt.Errorf("no supported proof-type found in 'proof_types_supported'")
 		} else {
-			if len(getSupportedSignatureAlgorithms(jwtProofType.ProofSigningAlgValuesSupported)) == 0 {
-				return fmt.Errorf("no supported signing algorithms in 'proof_signing_alg_values_supported' for JWT proof type")
+			if len(jwtProofType.ProofSigningAlgValuesSupported) == 0 {
+				return nil, fmt.Errorf("no proof signing algorithm found in 'proof_signing_alg_values_supported'")
 			}
+
+			// For now, we only support `ES256` as proof signing algorithm, because our current keybinder only uses P-256 key type. This is a temporary limitation until we implement support for other key types. See keybinder_service.go for more details on the current keybinder implementation.
+			if !slices.Contains(jwtProofType.ProofSigningAlgValuesSupported, jwa.ES256().String()) {
+				return nil, fmt.Errorf("no supported proof signing algorithm found, only 'ES256' is supported")
+			}
+
+			s.proofSigningAlg = jwa.ES256()
+
+			// TODO: For the future: keep in mind restrictions for the did:key cryptographic binding method
+			// if bindingMethod == proofs.CryptographicBindingMethod_DID_KEY {
+			// 	// If cryptographic binding method is did:key, the signature algorithm must be compatible,
+			// 	// as did:key only supports: Ed25519, Ed25519+X25519, secp256k1, P-256, P-384, BLS12-381
+			// 	supportedAlgs := supported-algs(jwtProofType.ProofSigningAlgValuesSupported)
+			// }
 
 			// We don't support key attestations, for now
 			if jwtProofType.KeyAttestationsRequired != nil {
-				return fmt.Errorf("unsupported 'key_attestations_required' in 'proof_types_supported' for JWT proof type")
+				return nil, fmt.Errorf("unsupported 'key_attestations_required' in 'proof_types_supported' for JWT proof type")
 			}
 		}
 	}
 
-	return nil
+	return s, nil
 }
 
 type W3CVCFormatVerifier struct{}
@@ -407,22 +431,17 @@ func isValidCSSColorLevel3(s string) bool {
 		rgb.MatchString(s) || rgba.MatchString(s) || hsl.MatchString(s) || hsla.MatchString(s)
 }
 
-func getSupportedSignatureAlgorithms(input []string) []jwa.SignatureAlgorithm {
-	supportedAlgs := []string{"ES256", "ES256K", "PS256", "RS256"}
-
-	supported := []jwa.SignatureAlgorithm{}
-	for _, alg := range input {
-		// Update: since our KeyBinder only uses P256 for now, we have to filter out all algorithms that cannot be used with that key type. This is a temporary measure until we support more key types in the KeyBinder.
-		if !slices.Contains(supportedAlgs, alg) {
-			continue
-		}
-
-		if s, ok := jwa.LookupSignatureAlgorithm(alg); ok {
-			supported = append(supported, s)
+// getSupportedCredentialSigningAlgorithm returns the first algorithm from the input list whose
+// signatures we can actually verify, so that we do not request a credential we would then have to
+// reject. The accepted set is shared with JWT verification; see eudi_jwt.SupportedSignatureAlgorithms.
+func getSupportedCredentialSigningAlgorithm(input []string) (*jwa.SignatureAlgorithm, error) {
+	for _, x := range input {
+		if alg, found := eudi_jwt.LookupSupportedSignatureAlgorithm(x); found {
+			return &alg, nil
 		}
 	}
 
-	return supported
+	return nil, fmt.Errorf("no supported credential signing algorithms found")
 }
 
 func DisplaysToTranslateableList[T metadata.Display | metadata.CredentialDisplay | metadata.CredentialIssuerDisplay](displays []T) []metadata.Translateable {
