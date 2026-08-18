@@ -44,12 +44,12 @@ func ResolveDocument(didJwk string) (*did.Document, error) {
 // It returns the DID without its fragment alongside the key.
 func resolve(didJwk string) (string, jwk.Key, error) {
 	didOnly, fragment, hasFragment := strings.Cut(didJwk, "#")
-	if hasFragment && fragment != keyFragment {
-		return "", nil, fmt.Errorf("invalid did:jwk fragment %q: only #%s exists", fragment, keyFragment)
-	}
-
 	if !strings.HasPrefix(didOnly, Prefix) {
 		return "", nil, fmt.Errorf("invalid did:jwk: %s", didJwk)
+	}
+
+	if hasFragment && fragment != keyFragment {
+		return "", nil, fmt.Errorf("invalid did:jwk fragment %q: only #%s exists", fragment, keyFragment)
 	}
 
 	encoded := strings.TrimPrefix(didOnly, Prefix)
