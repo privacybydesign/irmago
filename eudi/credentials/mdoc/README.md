@@ -50,7 +50,7 @@ the same over the real protocols against the EUDI reference containers.
 | ISO wire shape at every CBOR position | ✓ | `issuerAuth`/`deviceSignature` inline COSE arrays, `IssuerSignedItemBytes` and `deviceSigned.nameSpaces` bare `#6.24(bstr)`. A Go `[]byte` field encodes as a byte string *wrapping* the value, and a one-field struct as a map keyed by the Go field name — both round-trip against this package and no other implementation, so `wireformat_test.go` decodes a real `DeviceResponse` generically (into `any`) and asserts each position |
 | Two-level certificate chain | ✓ | IACA root CA → DS cert, real x509 chain walk |
 | Chain attack rejection | ✓ | untrusted root rejected before signature check |
-| Document Signer extended key usage | ✓ | the DS cert must be authorized for `1.0.18013.5.1.2` (ISO 18013-5 Annex B.1.2) — see `checkDocumentSignerEKU`. Chaining to a trusted IACA root is not on its own evidence of being a document signer: a real trust model issues for several roles under one root, so a certificate issued for another purpose (TLS, reader auth) must not be able to sign an MSO. A certificate with no EKU extension is accepted, per RFC 5280 §4.2.1.12 |
+| Document Signer extended key usage | ✓ | the DS cert must be authorized for an mdoc document-signer usage: `1.0.18013.5.1.2` (ISO 18013-5 Annex B.1.2) or `1.0.23220.4.1.2` (ISO 23220-4, the generic-mdoc equivalent, which is what a non-mDL doctype such as `eu.europa.ec.av.1` may legitimately carry) — see `checkDocumentSignerEKU`. Chaining to a trusted IACA root is not on its own evidence of being a document signer: a real trust model issues for several roles under one root, so a certificate issued for another purpose (TLS, reader auth) must not be able to sign an MSO. A certificate with no EKU extension is accepted, per RFC 5280 §4.2.1.12 |
 | Configurable verifier clock | ✓ | `NewVerifierWithClock` — tests expired / not-yet-valid certs and MSO validity deterministically |
 | Unlinkable `validityInfo` timestamps | ✓ | `Issue` coarsens `signed`/`validFrom`/`validUntil` to midnight UTC. Single-use attestations issued in batches are only unlinkable if their timestamps are: at second precision every attestation in a batch carries a distinct `validUntil`, correlating what the batch exists to hide. Annex A sets hh/mm/ss to the same value on every attestation, as the EU reference issuer does for batch credentials |
 | MSO `validityInfo` check (validFrom/validUntil) | ✓ | checked separately from X.509 cert expiry — both are mandatory per ISO 18013-5 |
@@ -165,16 +165,20 @@ Tests for the protocol layers live with the code they cover, not here:
 | `eudi/openid4vp/mdoc_age_verification_test.go` | `TestOpenID4VP_MdocAgeVerification` — the EU Age Verification profile (`eu.europa.ec.av.1`) across the two stages that decide a presentation and fail independently: whether the relying party is authorized to ask (its certificate's authorized sets, via the real `SchemeQueryValidator`) and whether the wallet can answer (a genuinely issued mdoc in storage, matched by `mdoc_dcql`). Also pins display-name resolution, including from the one-component claim path an issuer may publish |
 | `internal/sessiontest/openid4vp_mdoc_av_disclosure_test.go` | `TestSessionHandler/openid4vp/mdoc-av` — the only mdoc disclosure that runs end to end against a real verifier (the EU reference `eudi-srv-web-verifier-endpoint` container): DCQL matching, the device-signed `DeviceResponse`, and the verifier accepting it, with the returned `vp_token` decoded from CBOR and its Tag-24 items unwrapped. A second subtest asks for an unauthorized docType and requires the refusal, so the passing case cannot pass by a skipped authorization check |
 
-### `decode/` — standalone CBOR/COSE inspector
+### `mdoc-decode` — standalone CBOR/COSE inspector
 
-A separate CLI tool (own `package main`, own directory — Go requires each binary to
-live in its own package) for manually inspecting any hex-encoded COSE_Sign1 or CBOR
-blob produced by the program:
+A separate CLI tool, in `yivi/cli/eudicli/mdoc-decode` with the other command line
+programs (Go requires each binary its own package), for manually inspecting any
+hex-encoded COSE_Sign1 or CBOR blob produced by this package:
 
 ```bash
-cd decode
-go run decode.go <hex-string>
+go run ./yivi/cli/eudicli/mdoc-decode <hex-string>
+go run ./yivi/cli/eudicli/mdoc-decode -      # hex on stdin
 ```
+
+For a whole presentation rather than a fragment, reach for `vptoken-decode`
+instead: it takes a verifier's `vp_token` directly and resolves the Tag-24 items
+and the x5chain that this tool leaves raw.
 
 Detects COSE_Sign1 structures (breaks out protected/unprotected headers, `x5chain`
 cert previews, payload, and ECDSA `r`/`s` signature halves), recursively unwraps
@@ -201,7 +205,10 @@ X.509 chain (`x509.Verify`) — not from the COSE signature, since x5chain lives
 *unprotected* header.
 
 The chain walk is followed by a role check: the DS certificate must be authorized for
-the mdoc Document Signer extended key usage, `1.0.18013.5.1.2`. Go's
+an mdoc Document Signer extended key usage — either `1.0.18013.5.1.2` from ISO
+18013-5, or `1.0.23220.4.1.2`, which is ISO 23220-4's equivalent for mdocs that are
+not mobile driving licences and so the one a conformant `eu.europa.ec.av.1` issuer may
+well use. Go's
 `x509.VerifyOptions.KeyUsages` cannot express that OID (its `ExtKeyUsage` enum has no
 member for it), which is why the walk still passes `ExtKeyUsageAny` — that only stops
 Go defaulting to `ExtKeyUsageServerAuth` — and the EKU is checked separately against

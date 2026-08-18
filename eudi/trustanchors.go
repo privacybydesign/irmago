@@ -117,6 +117,63 @@ MEQCIDCSNbPoyhDZ5A3SWupsyPj/tDF4xNoHYnE0WFIs2pz8AiA9mhXswiJPFbVR
 -----END CERTIFICATE-----
 `
 
+	// LOCAL DEVELOPMENT ONLY -- DO NOT COMMIT.
+	//
+	// The self-signed CA from testdata/eudi-pid-issuer-py/certs/ca.pem, the root
+	// the eudi_pid_issuer_py container's document signer chains to. Without it the
+	// wallet fetches a credential successfully and then refuses to store it, since
+	// it verifies the MSO's chain against a trust anchor before anything is
+	// written — "mdoc verification failed: chain verification failed".
+	//
+	// This is a separate store from the verifier anchor below: an issuer anchor
+	// must not be able to authenticate a relying party, or vice versa. Registering
+	// it here rather than in Verifiers is what keeps that boundary.
+	Local_Demo_IssuerTrustAnchor = `
+Subject: CN=Yivi Test EUDI Root CA
+Issuer: CN=Yivi Test EUDI Root CA
+-----BEGIN CERTIFICATE-----
+MIIBljCCAT2gAwIBAgIUQV5HaZKiMElhN+N1AuRLk7PJvOgwCgYIKoZIzj0EAwIw
+ITEfMB0GA1UEAwwWWWl2aSBUZXN0IEVVREkgUm9vdCBDQTAeFw0yNjA1MTkxMTM5
+MTlaFw0zNjA1MTYxMTM5MTlaMCExHzAdBgNVBAMMFllpdmkgVGVzdCBFVURJIFJv
+b3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAS5gZajtxbEX9SRRDLM06zh
+R27Ui/vAyTp8l+a/6MnoWkcF/96Nxyb9ejFNB0pxf601OZYrO7lBIH3KsZQTwJVD
+o1MwUTAdBgNVHQ4EFgQUbRtcp/I/esL49jc0k2509Wd6JRgwHwYDVR0jBBgwFoAU
+bRtcp/I/esL49jc0k2509Wd6JRgwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQD
+AgNHADBEAiAl3QlSoUhzlnRP6ewQH67IIIV6iybC3FegBsFi24/zLgIgWeUPY83K
+WTiL/Ir3Vw28eyT/vH82rx6wlkYbhRrKEzk=
+-----END CERTIFICATE-----
+`
+
+	// LOCAL DEVELOPMENT ONLY -- DO NOT COMMIT.
+	//
+	// The self-signed CA from testdata/eudi/verifier/ca.crt, which signs the
+	// relying party certificate the eudi_openid4vp / eudi_openid4vp_jwt containers
+	// present. Added so an on-device run can use the local verifier while the
+	// staging RP certificate is not yet authorized for eu.europa.ec.av.1.
+	//
+	// It is registered through its own addTrustAnchors call rather than appended
+	// to Staging_Yivi_VerifierTrustAnchor: addTrustAnchors treats the LAST
+	// certificate of a chain as the root, so appending it there would make this CA
+	// the root of the real staging chain and both Yivi staging certificates would
+	// be skipped with only a log warning.
+	Local_Demo_VerifierTrustAnchor = `
+Subject: CN=Demo Requestors Root,O=Demo Verifier CA,C=NL
+Issuer: CN=Demo Requestors Root,O=Demo Verifier CA,C=NL
+-----BEGIN CERTIFICATE-----
+MIIB5DCCAYmgAwIBAgIUKp3l1e+X2zF9p49OH70NS4rA3VcwCgYIKoZIzj0EAwIw
+RzELMAkGA1UEBhMCTkwxGTAXBgNVBAoMEERlbW8gVmVyaWZpZXIgQ0ExHTAbBgNV
+BAMMFERlbW8gUmVxdWVzdG9ycyBSb290MB4XDTI1MDgwNTA5MjQzOFoXDTM1MDgw
+MzA5MjQzOFowRzELMAkGA1UEBhMCTkwxGTAXBgNVBAoMEERlbW8gVmVyaWZpZXIg
+Q0ExHTAbBgNVBAMMFERlbW8gUmVxdWVzdG9ycyBSb290MFkwEwYHKoZIzj0CAQYI
+KoZIzj0DAQcDQgAElfHqkpjpSmmijr87vW0ruduYTL/KKMTdzZFPBm3EMV8xzZAL
+seXE5MY0bUbBkqAG5bWJUPf1KewjhlwMuTNTI6NTMFEwHQYDVR0OBBYEFDz3b3XV
+Izc6lHcdBjuEo5SA4pZ2MB8GA1UdIwQYMBaAFDz3b3XVIzc6lHcdBjuEo5SA4pZ2
+MA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSQAwRgIhALfx43cubHCyMgts
+23wjCKEPHUfoO9b5mI3qqIPZzwzbAiEA1iNh6vj9xUt5G0NPEd4ToTl1p6nqjKYE
+s7X4XJAYkfM=
+-----END CERTIFICATE-----
+`
+
 	Staging_Yivi_VerifierTrustAnchor = `
 Subject: CN=Yivi Staging Relying Parties CA,O=Yivi,C=NL
 Issuer: CN=Yivi Staging Requestors Root CA,O=Yivi,C=NL

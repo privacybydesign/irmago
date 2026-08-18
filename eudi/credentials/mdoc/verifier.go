@@ -30,6 +30,32 @@ import (
 // certificate it arrives in UnknownExtKeyUsage rather than ExtKeyUsage.
 var isoMdocDocumentSignerEKU = asn1.ObjectIdentifier{1, 0, 18013, 5, 1, 2}
 
+// isoGenericMdocDocumentSignerEKU is ISO/IEC 23220-4's document signer usage:
+// 1.0.23220.4.1.2. 23220-4 profiles mdocs that are not mobile driving licences,
+// which is exactly what eu.europa.ec.av.1 is, so an issuer following it stamps
+// this OID rather than 18013-5's mDL-specific one.
+//
+// Accepted alongside the 18013-5 OID because this package targets mso_mdoc in
+// general: enforcing only the mDL usage against non-mDL doctypes would reject
+// conformant credentials. Multipaz lists both as first-class in its own OID
+// table (ISO_18013_5_MDL_DS and ISO_23220_4_MDOC_DS in asn1/OID.kt).
+//
+// Note what is deliberately NOT here: the AV Blueprint's own worked example
+// carries 1.3.130.2.0.0.1.2, an OID with no basis in the AV profile (which
+// specifies no EKU at all and defers to 18013-5 and 23220), none in Multipaz's
+// table, and none findable in any published registry. Treating an undocumented
+// OID as proof of signing authority would defeat the point of the check, so a
+// certificate carrying only that one is still refused — pending confirmation
+// from the AV team of what production certificates actually carry.
+var isoGenericMdocDocumentSignerEKU = asn1.ObjectIdentifier{1, 0, 23220, 4, 1, 2}
+
+// mdocDocumentSignerEKUs are the extended key usages accepted as evidence that
+// a leaf certificate is authorized to sign an MSO.
+var mdocDocumentSignerEKUs = []asn1.ObjectIdentifier{
+	isoMdocDocumentSignerEKU,
+	isoGenericMdocDocumentSignerEKU,
+}
+
 // decodeCoseSign1 decodes either COSE_Sign1 serialization into the same
 // message type.
 //
@@ -88,13 +114,13 @@ func checkDocumentSignerEKU(cert *x509.Certificate) error {
 		return nil
 	}
 	for _, oid := range cert.UnknownExtKeyUsage {
-		if oid.Equal(isoMdocDocumentSignerEKU) {
+		if slices.ContainsFunc(mdocDocumentSignerEKUs, oid.Equal) {
 			return nil
 		}
 	}
 	return fmt.Errorf(
-		"document signer certificate is not authorized to sign mdocs: extended key usage does not include %s (ISO 18013-5 Annex B.1.2)",
-		isoMdocDocumentSignerEKU,
+		"document signer certificate is not authorized to sign mdocs: extended key usage includes neither %s (ISO 18013-5 Annex B.1.2) nor %s (ISO 23220-4)",
+		isoMdocDocumentSignerEKU, isoGenericMdocDocumentSignerEKU,
 	)
 }
 

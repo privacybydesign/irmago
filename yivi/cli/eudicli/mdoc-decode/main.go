@@ -8,12 +8,12 @@
 //
 // Usage, from the repository root:
 //
-//	go run ./yivi/cli/eudicli/mdoc-decode.go <hex-string>
-//	go run ./yivi/cli/eudicli/mdoc-decode.go -    (reads hex from stdin)
+//	go run ./yivi/cli/eudicli/mdoc-decode <hex-string>
+//	go run ./yivi/cli/eudicli/mdoc-decode -    (reads hex from stdin)
 //
 // Example:
 //
-//	go run ./yivi/cli/eudicli/mdoc-decode.go d28443a10126a0585c84...988b
+//	go run ./yivi/cli/eudicli/mdoc-decode d28443a10126a0585c84...988b
 package main
 
 import (
@@ -28,7 +28,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: go run ./yivi/cli/eudicli/mdoc-decode.go <hex-string>   (or '-' to read hex from stdin)")
+		fmt.Fprintln(os.Stderr, "usage: go run ./yivi/cli/eudicli/mdoc-decode <hex-string>   (or '-' to read hex from stdin)")
 		os.Exit(1)
 	}
 

@@ -39,16 +39,11 @@ package main
 
 import (
 	"crypto/ecdsa"
-	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,6 +60,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/yivi/cli/eudicli/internal/localstack"
 	"github.com/privacybydesign/irmago/yivi/cli/eudicli/internal/mdocdecode"
 )
 
@@ -108,7 +104,9 @@ func run() error {
 	// is the actual record of what the protocols did — every HTTP call, the CRL
 	// fetches, the session state changes. Redirect stderr to read it on its own,
 	// which the package comment shows.
-	trustProxyCertificate()
+	if err := localstack.TrustProxyCertificate(stackConfig()); err != nil {
+		return err
+	}
 
 	// ── 1. A wallet ─────────────────────────────────────────────────────
 	section("1. A wallet, from scratch")
@@ -465,154 +463,42 @@ func disclosureChoice(bundle *clientmodels.DisclosureBundle) clientmodels.Disclo
 // The issuer and verifier, over HTTP
 // ============================================================================
 
-type offerResponse struct {
-	URI    string
-	TxCode string
-}
+type offerResponse = localstack.Offer
 
-// createOffer asks the reference issuer for a credential offer. The endpoint
-// decodes the payload segment without verifying it, so header and signature can
-// be empty — see app/preauthorization.py upstream.
+// createOffer asks the reference issuer for a credential offer. The element set
+// is this demo's own choice: age_over_18 deliberately false, so the run proves
+// the verifier's value constraint below is actually enforced rather than
+// coincidentally satisfied.
 func createOffer() (*offerResponse, error) {
-	payload, err := json.Marshal(map[string]any{
-		"credentials": []map[string]any{{
-			"credential_configuration_id": credentialConfigID,
-			"data": map[string]any{
-				"age_over_18": true,
-				"age_over_21": true,
-			},
-		}},
-	})
-	if err != nil {
-		return nil, err
-	}
-	jwtShaped := base64.RawURLEncoding.EncodeToString([]byte("{}")) + "." +
-		base64.RawURLEncoding.EncodeToString(payload) + "."
-
-	form := url.Values{}
-	form.Set("request", jwtShaped)
-	resp, err := http.Post(*issuerURL+"/credentialOfferReq2",
-		"application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("post credential offer request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("issuer refused the offer request: HTTP %d", resp.StatusCode)
-	}
-
-	var offer map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&offer); err != nil {
-		return nil, fmt.Errorf("decode offer: %w", err)
-	}
-	txCode, err := transactionCode(offer)
-	if err != nil {
-		return nil, err
-	}
-	encoded, err := json.Marshal(offer)
-	if err != nil {
-		return nil, err
-	}
-	return &offerResponse{
-		URI:    "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(encoded)),
-		TxCode: txCode,
-	}, nil
+	return localstack.CreateOffer(stackConfig(), localstack.AVCredentialConfigID,
+		localstack.DefaultAVElements())
 }
 
-// transactionCode digs out the value the issuer ships alongside the offer — a
-// non-standard convenience of the reference implementation, which a real wallet
-// would receive out of band.
-func transactionCode(offer map[string]any) (string, error) {
-	grants, ok := offer["grants"].(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("offer carries no grants")
-	}
-	preAuth, ok := grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"].(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("offer carries no pre-authorized_code grant")
-	}
-	tx, ok := preAuth["tx_code"].(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("offer carries no tx_code")
-	}
-	switch value := tx["value"].(type) {
-	case string:
-		return value, nil
-	case float64:
-		return fmt.Sprintf("%d", int64(value)), nil
-	default:
-		return "", fmt.Errorf("offer's tx_code has no usable value")
-	}
-}
-
-type verifierSession struct {
-	TransactionID string
-	ClientID      string
-	Link          string
-}
+type verifierSession = localstack.Session
 
 // createVerifierSession starts a presentation at the reference verifier, asking
 // for one element, and returns the link a wallet would receive by QR.
+//
+// The value constraint is false to match what createOffer minted: a demo that
+// asked for true against a false credential would show the refusal path, which
+// is a different demo.
 func createVerifierSession() (*verifierSession, error) {
-	issuerCA, err := os.ReadFile(filepath.Join(*testdataDir, "eudi-pid-issuer-py", "certs", "ca.pem"))
-	if err != nil {
-		return nil, fmt.Errorf("read issuer CA: %w", err)
-	}
+	req := localstack.NewSessionRequest(docType, "age_over_18")
+	req.QueryID = queryID
+	req.Namespace = namespace
+	req.IntendedUseID = intendedUseID
+	wantFalse := false
+	req.Value = &wantFalse
+	return localstack.CreateSession(stackConfig(), req)
+}
 
-	// A fresh nonce per run. The nonce is the verifier's replay control -- it is
-	// what ties a DeviceResponse to one request -- so a constant would let the
-	// same response be presented again, and this demo is meant to show what a real
-	// deployment looks like. The integration tests deliberately do the opposite
-	// and pin it, because they want reproducible bytes.
-	nonceBytes := make([]byte, 16)
-	if _, err := rand.Read(nonceBytes); err != nil {
-		return nil, fmt.Errorf("generate nonce: %w", err)
+// stackConfig points the shared helpers at whatever this run's flags say.
+func stackConfig() localstack.Config {
+	return localstack.Config{
+		IssuerURL:    *issuerURL,
+		VerifierHost: *verifierHost,
+		TestdataDir:  *testdataDir,
 	}
-
-	body, err := json.Marshal(map[string]any{
-		"type": "vp_token",
-		"dcql_query": map[string]any{
-			"credentials": []map[string]any{{
-				"id":     queryID,
-				"format": string(clientmodels.Format_MsoMdoc),
-				"meta":   map[string]any{"doctype_value": docType},
-				"claims": []map[string]any{{"path": []string{docType, "age_over_18"}}},
-			}},
-		},
-		"nonce":              hex.EncodeToString(nonceBytes),
-		"jar_mode":           "by_reference",
-		"request_uri_method": "get",
-		"intended_use_id":    intendedUseID,
-		// The anchor the verifier walks the credential's document-signer chain to.
-		"issuer_chain": string(issuerCA),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := http.Post(*verifierHost+"/ui/presentations", "application/json", strings.NewReader(string(body)))
-	if err != nil {
-		return nil, fmt.Errorf("start verifier session: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("verifier refused the session request: HTTP %d", resp.StatusCode)
-	}
-
-	var fields map[string]string
-	if err := json.NewDecoder(resp.Body).Decode(&fields); err != nil {
-		return nil, fmt.Errorf("decode verifier response: %w", err)
-	}
-
-	query := url.Values{}
-	for key, value := range fields {
-		query.Add(key, value)
-	}
-	return &verifierSession{
-		TransactionID: fields["transaction_id"],
-		ClientID:      fields["client_id"],
-		Link:          "eudi-openid4vp://?" + query.Encode(),
-	}, nil
 }
 
 // fetchPresentedDocument reads the wallet's answer back from the verifier and
@@ -728,23 +614,6 @@ func (s *ecdsaSigner) PublicKey(string) ([]byte, error) {
 
 func (s *ecdsaSigner) Sign(_ string, message []byte) ([]byte, error) {
 	return signed.Sign(s.key, message)
-}
-
-// trustProxyCertificate teaches this process about the self-signed certificate
-// the docker TLS proxy serves, the same way internal/sessiontest does. Without
-// it every call to the issuer fails as an unknown authority — and if it fails
-// even with this, something is intercepting TLS (an antivirus web shield will).
-func trustProxyCertificate() {
-	pem, err := os.ReadFile(filepath.Join(*testdataDir, "configurations", "certs", "localhost.crt"))
-	if err != nil {
-		return
-	}
-	pool, err := x509.SystemCertPool()
-	if err != nil {
-		pool = x509.NewCertPool()
-	}
-	pool.AppendCertsFromPEM(pem)
-	http.DefaultTransport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}
 }
 
 // ============================================================================

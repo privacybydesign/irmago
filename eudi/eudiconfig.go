@@ -137,6 +137,15 @@ func (c *Configuration) addStagingTrustAnchors() error {
 		return fmt.Errorf("failed to add Yivi staging verifier trust anchors: %v", err)
 	}
 
+	// LOCAL DEVELOPMENT ONLY -- DO NOT COMMIT. See Local_Demo_IssuerTrustAnchor
+	// and Local_Demo_VerifierTrustAnchor.
+	if err := c.Issuers.addTrustAnchors([]byte(Local_Demo_IssuerTrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add local demo issuer trust anchor: %v", err)
+	}
+	if err := c.Verifiers.addTrustAnchors([]byte(Local_Demo_VerifierTrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add local demo verifier trust anchor: %v", err)
+	}
+
 	return nil
 }
 

@@ -587,6 +587,34 @@ func TestDocumentSignerEKUIsEnforced(t *testing.T) {
 		}
 	})
 
+	t.Run("DS cert with the ISO 23220-4 generic mdoc document-signer EKU is accepted", func(t *testing.T) {
+		// eu.europa.ec.av.1 is an mdoc but not an mDL, so an issuer following
+		// 23220-4 stamps 1.0.23220.4.1.2 instead of 18013-5's mDL-specific OID.
+		// Rejecting it would refuse conformant credentials while claiming to
+		// support mso_mdoc generally.
+		doc, v := issueWithDSEKU(t, nil, []asn1.ObjectIdentifier{isoGenericMdocDocumentSignerEKU})
+		if result := v.Verify(doc, namespace); !result.Valid {
+			t.Fatalf("expected valid, got error: %s", result.Error)
+		}
+	})
+
+	t.Run("an undocumented EKU is still rejected", func(t *testing.T) {
+		// 1.3.130.2.0.0.1.2 is what the AV Blueprint's own worked example
+		// carries. It appears in no published registry, and the AV profile
+		// specifies no EKU at all, deferring to 18013-5 and 23220 — so it must
+		// not be treated as evidence of signing authority just because a
+		// reference implementation emits it.
+		undocumented := asn1.ObjectIdentifier{1, 3, 130, 2, 0, 0, 1, 2}
+		doc, v := issueWithDSEKU(t, nil, []asn1.ObjectIdentifier{undocumented})
+		result := v.Verify(doc, namespace)
+		if result.Valid {
+			t.Fatal("an EKU with no basis in any specification must not authorize signing")
+		}
+		if !strings.Contains(result.Error, "not authorized to sign mdocs") {
+			t.Fatalf("expected an EKU rejection, got: %s", result.Error)
+		}
+	})
+
 	t.Run("DS cert with no EKU extension is accepted as unrestricted", func(t *testing.T) {
 		// RFC 5280 4.2.1.12: an absent EKU means the certificate is not
 		// restricted as to purpose, so there is nothing to contradict.
