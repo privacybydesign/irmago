@@ -176,7 +176,7 @@ func (v *CredentialConfigurationValidator) Verify(c *metadata.CredentialConfigur
 	return verifier.Verify(c)
 }
 
-// ValidateSupportedFeatures verifies that the credential configuration is supported by our client. It is split from the credential configuration validation, so it can be used at the moment a configuration is used to request credentials,
+// ValidateAndGetSupportedFeatures verifies that the credential configuration is supported by our client. It is split from the credential configuration validation, so it can be used at the moment a configuration is used to request credentials,
 // because it makes no sense to validate configurations up front, which will not be requested either way.
 func (v *CredentialConfigurationValidator) ValidateAndGetSupportedFeatures(c *metadata.CredentialConfiguration) (*sessionCredentialRequestPreferences, error) {
 	s := &sessionCredentialRequestPreferences{}

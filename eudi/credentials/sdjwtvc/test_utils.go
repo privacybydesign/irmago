@@ -34,13 +34,6 @@ type x509TestConfig struct {
 	ShouldFail                     bool
 }
 
-func jsonToMap(t *testing.T, js string) map[string]any {
-	var result map[string]any
-	err := json.Unmarshal([]byte(js), &result)
-	require.NoError(t, err)
-	return result
-}
-
 func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
 	key, err := encryption.DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
 	if err != nil || key == nil {
