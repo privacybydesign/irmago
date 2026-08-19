@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fixed
+- `irma.HTTPTransport` now honours the `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` environment variables, so irmago can run where outgoing traffic must pass through a proxy; it was the only outbound transport in irmago that ignored them. Operators with a system-wide proxy can keep internal traffic (requestor callbacks, keyshare and revocation servers) off it with `NO_PROXY`; loopback addresses are never proxied ([#423](https://github.com/privacybydesign/irmago/issues/423))
 
 ### Added
 - A session that ends because the party on the other end failed identity validation now reports `error_type: "party_validation_failed"` on `clientmodels.SessionError`, set by both EUDI protocol paths: a verifier whose request signature, certificate validity window or client_id binding does not hold up, or whose DID does not resolve, and an issuer whose credential does not verify against the certificate it names. The app can switch on it to say the request was not trustworthy and that nothing was shared, instead of showing the generic error screen a network or protocol failure gets. Those keep reporting no error type ([#656](https://github.com/privacybydesign/irmago/issues/656)).

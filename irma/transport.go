@@ -86,8 +86,11 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 	}
 
 	// Create a transport that dials with a SIGPIPE handler (which is only active on iOS).
-	// The settings are inspired on the defaults of http.DefaultTransport.
+	// The settings are inspired on the defaults of http.DefaultTransport, including its
+	// Proxy: outbound requests honour the HTTP_PROXY, HTTPS_PROXY and NO_PROXY environment
+	// variables, as the rest of irmago already does through http.DefaultTransport.
 	innerTransport := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
 		TLSClientConfig:       tlsClientConfig,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          100,
