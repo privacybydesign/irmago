@@ -2,6 +2,7 @@ package sdjwtvc
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 // ============================ SD-JWT VC processing descriptions =====================================
 
 type VerifiedSdJwtVc struct {
+	IssuerIdentifier       string
 	IssuerSignedJwtPayload IssuerSignedJwtPayload
 	Disclosures            []sdjwt.DisclosureContent
 	ProcessedSdJwtPayload  sdjwt.ProcessedPayload
@@ -164,7 +166,7 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 	}
 	rawSdJwtVc := SdJwtVc(rawSdJwtVcSdJwt)
 
-	issuerSignedJwtPayload, requestorInfo, decodedDisclosures, processedSdJwtPayload, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
+	issuerIdentifier, issuerSignedJwtPayload, requestorInfo, decodedDisclosures, processedSdJwtPayload, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
 	if err != nil {
 		return nil, err
 	}
@@ -196,6 +198,7 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 
 	// Valid SD-JWT, optionally with valid key binding JWT, depending on the key binding processor used
 	return &VerifiedSdJwtVc{
+		IssuerIdentifier:       issuerIdentifier,
 		IssuerSignedJwtPayload: *issuerSignedJwtPayload,
 		Disclosures:            decodedDisclosures,
 		KeyBindingJwt:          kbJwtPayload,
@@ -204,34 +207,35 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 	}, nil
 }
 
+// parseAndVerifyIssuerSignedJwt parses and verifies the issuer signed JWT of an SD-JWT VC, including signature verification, time field validation, and disclosure processing.
+// It returns the issuer string, signed payload, requestor info, decoded disclosures, processed SD-JWT payload, and any error encountered.
 func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerSignedJwt, disclosures []sdjwt.EncodedDisclosure) (
+	string,
 	*IssuerSignedJwtPayload,
 	*scheme.AttestationProviderRequestor,
 	[]sdjwt.DisclosureContent,
 	*sdjwt.ProcessedPayload,
 	error,
 ) {
-	token, requestorInfo, err := v.decodeJwtAndVerifyFromX5cHeader([]byte(signedJwt))
+	issuerIdentifier := ""
+
+	token, cert, requestorInfo, err := v.decodeJwtAndVerifyFromX5cHeader([]byte(signedJwt))
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return issuerIdentifier, nil, nil, nil, nil, err
 	}
 
 	var vct string
 	err = token.Get(VerifiableCredentialTypeKey, &vct)
 	if err != nil {
-		return nil, nil, nil, nil, errors.New("missing vct field")
+		return issuerIdentifier, nil, nil, nil, nil, errors.New("missing vct field")
 	}
 
 	// Get optional fields
-	sub, _ := token.Subject()
+	sub, subPresent := token.Subject()
 	exp, expPresent := token.Expiration()
 	iat, iatPresent := token.IssuedAt()
 	nbf, nbfPresent := token.NotBefore()
 	iss, issPresent := token.Issuer()
-
-	if !issPresent {
-		return nil, nil, nil, nil, errors.New("missing iss field")
-	}
 
 	// Check if the hashing algorithm was specified and supported, or use SHA-256 as default if the claim is not present
 	sdAlg := iana.SHA256
@@ -239,7 +243,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 		if h := getOptional[string](token, sdjwt.SdAlgKey); iana.IsSupportedHashingAlgorithm(iana.HashingAlgorithm(h)) {
 			sdAlg = iana.HashingAlgorithm(h)
 		} else {
-			return nil, nil, nil, nil, fmt.Errorf("unsupported _sd_alg: %s", h)
+			return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("unsupported _sd_alg: %s", h)
 		}
 	}
 
@@ -250,7 +254,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	if err == nil {
 		sd, err = sdjwt.ParseSdField(sdRaw)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to parse sd field: %v", err)
+			return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("failed to parse sd field: %v", err)
 		}
 	}
 
@@ -259,7 +263,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	if err == nil {
 		cnf, err = sdjwt.ParseConfirmField(cnfRaw)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to parse cnf field: %v", err)
+			return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("failed to parse cnf field: %v", err)
 		}
 	}
 
@@ -268,7 +272,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	if token.Has(StatusKey) {
 		status, err = parseStatusClaim(token)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to parse status claim: %v", err)
+			return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("failed to parse status claim: %v", err)
 		}
 	}
 
@@ -276,20 +280,44 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	// Get structured SD-JWT claims, which we can check for embedded disclosure digests
 	issuerSignedJwtClaims, err := sdjwt.ExtractClaimsAndDisclosureDigestsFromToken(token)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
+		return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
 	}
 
 	// Construct payload — use 0 for missing time claims instead of time.Time{}.Unix()
 	payload := &IssuerSignedJwtPayload{
 		RegisteredClaims: sdjwt.RegisteredClaims{
-			Subject: sub,
-			Issuer:  iss,
 			Sd:      sd,
 			SdAlg:   iana.HashingAlgorithm(sdAlg),
 			Confirm: cnf,
 		},
 		VerifiableCredentialType: vct,
 		Status:                   status,
+	}
+
+	if cert == nil {
+		if !issPresent {
+			return issuerIdentifier, nil, nil, nil, nil, errors.New("missing iss: issuer cannot be determined without an x5c header")
+		}
+		payload.Issuer = &iss
+		issuerIdentifier = iss
+	} else {
+		if issPresent {
+			// An x5c-authenticated issuer must not be able to claim an arbitrary identity
+			if err := utils.VerifyCertificateUri(cert, iss); err != nil {
+				return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("iss %q is not a SAN of the issuer certificate: %w", iss, err)
+			}
+			payload.Issuer = &iss
+			issuerIdentifier = iss
+		} else if issuerIdentity, err := utils.ObtainIssuerFromCert(cert); err != nil {
+			return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("failed to obtain issuer URL from certificate: %v", err)
+		} else {
+			issuerIdentifier = issuerIdentity
+			// Explicitly do not set payload.Issuer, as this is not part of the JWT claimset.
+		}
+	}
+
+	if subPresent {
+		payload.Subject = &sub
 	}
 
 	if expPresent {
@@ -310,13 +338,13 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	// Verify times
 	err = v.verifyTimeFields(payload)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return issuerIdentifier, nil, nil, nil, nil, err
 	}
 
 	// Parse and verify disclosures
 	processedSdJwtPayload, decodedDisclosures, err := sdjwt.VerifyAndProcessDisclosures(payload.SdAlg, &issuerSignedJwtClaims, disclosures)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return issuerIdentifier, nil, nil, nil, nil, err
 	}
 
 	// Convert pointer to disclosures to values for return  (TODO: optimize to avoid this copy?)
@@ -325,7 +353,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 		decodedDisclosuresValues[i] = *discPtr
 	}
 
-	return payload, requestorInfo, decodedDisclosuresValues, &processedSdJwtPayload, nil
+	return issuerIdentifier, payload, requestorInfo, decodedDisclosuresValues, &processedSdJwtPayload, nil
 }
 
 func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *IssuerSignedJwtPayload) error {
@@ -410,10 +438,10 @@ func parseStatusClaim(token jwt.Token) (*statuslist.StatusClaim, error) {
 }
 
 // Decode the JWT into a token, verify the signature with the X.509 certificate in the header and verify the certificate is trusted (both against root/intermediate certs and CRLs).
-// Function returns the token and the requestor info from the certificate.
+// Function returns the token, certificate and the requestor info read from the certificate.
 func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 	signedJwt []byte,
-) (jwt.Token, *scheme.AttestationProviderRequestor, error) {
+) (jwt.Token, *x509.Certificate, *scheme.AttestationProviderRequestor, error) {
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{SdJwtVcTyp, SdJwtVcTyp_Legacy}, v.allowInsecureDidWeb)
 
 	// Create a context for the verification where we can retrieve the requestor info back
@@ -424,7 +452,7 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 		jwt.WithVerify(true),
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
 	}
 
 	// If the key provider used was a X509KeyProvider, we can get the certificate and verify it against the trusted roots/intermediates and CRLs.
@@ -432,7 +460,7 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 		cert := x509KeyProvider.GetCert()
 		err = eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to verify certificate: %v", err)
+			return nil, nil, nil, fmt.Errorf("failed to verify certificate: %v", err)
 		}
 
 		// Verify the SD-JWT against the credentials the issuer is authorized to issue
@@ -441,13 +469,15 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 		if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
 			requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
+				return nil, nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
 			}
-			return token, requestorInfo, nil
+			return token, cert, requestorInfo, nil
 		}
+
+		return token, cert, nil, nil
 	}
 
-	return token, nil, nil
+	return token, nil, nil, nil
 }
 
 func CheckKeyBindingConfirmationUniqueness(verifiedSdJwtVcs []*VerifiedSdJwtVc) error {
@@ -547,7 +577,9 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 	var sigAlg jwa.SignatureAlgorithm
 	if alg, ok := header["alg"]; ok {
 		if algStr, ok := alg.(string); ok {
-			s, found := jwa.LookupSignatureAlgorithm(algStr)
+			// The accepted set is shared with the rest of JWT verification; see
+			// eudi_jwt.SupportedSignatureAlgorithms.
+			s, found := eudi_jwt.LookupSupportedSignatureAlgorithm(algStr)
 			if !found {
 				return nil, fmt.Errorf("unsupported signing algorithm in kbjwt header: %s", algStr)
 			}

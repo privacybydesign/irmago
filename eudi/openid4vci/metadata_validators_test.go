@@ -2,9 +2,12 @@ package openid4vci
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
+	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/stretchr/testify/require"
 )
@@ -122,10 +125,11 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 		VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
 	}
 	tests := []struct {
-		name     string
-		metadata metadata.CredentialIssuerMetadata
-		offer    *CredentialOffer
-		wantErr  string
+		name              string
+		metadata          metadata.CredentialIssuerMetadata
+		offer             *CredentialOffer
+		allowInsecureHttp bool
+		wantErr           string
 	}{
 		{
 			name: "missing credential_issuer",
@@ -134,6 +138,32 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: "missing 'credential_issuer'",
+		},
+		{
+			name: "invalid credential_issuer (non-HTTPS)",
+			metadata: metadata.CredentialIssuerMetadata{
+				CredentialIssuer:                  "http://issuer.example.com/",
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: "invalid 'credential_issuer' URL \"http://issuer.example.com/\": scheme must be https",
+		},
+		{
+			name: "invalid credential_issuer (non-HTTPS), valid with `allowInsecureHttp` enabled",
+			metadata: metadata.CredentialIssuerMetadata{
+				CredentialIssuer:                  "http://issuer.example.com/",
+				CredentialEndpoint:                "https://issuer.example.com/credential",
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
+			},
+			allowInsecureHttp: true,
+			wantErr:           "",
+		},
+		{
+			name: "invalid credential_issuer (non-URI)",
+			metadata: metadata.CredentialIssuerMetadata{
+				CredentialIssuer:                  ":|invalid uri|:",
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: "invalid 'credential_issuer' URL \":|invalid uri|:\"",
 		},
 		{
 			name: "missing credential_endpoint",
@@ -255,7 +285,9 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			validator := CredentialIssuerMetadataValidator{}
+			validator := CredentialIssuerMetadataValidator{
+				allowInsecureHttp: tt.allowInsecureHttp,
+			}
 			err := validator.Verify(tt.metadata)
 			if tt.wantErr == "" && err != nil {
 				t.Errorf("Verify() unexpected error: %v", err)
@@ -291,10 +323,6 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 		CredentialConfigurationIds: []string{"test"},
 	}
 
-	unsupportedFeatureCredentialConfig := metadata.CredentialConfiguration{
-		Format: metadata.CredentialFormatIdentifier_MsoMdoc,
-	}
-
 	tests := []struct {
 		name     string
 		metadata metadata.CredentialIssuerMetadata
@@ -324,24 +352,13 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 			},
 			wantErr: `unsupported credential configuration "unavailable" in credential offer`,
 		},
-		{
-			name: "unsupported feature(s) in credential config",
-			metadata: metadata.CredentialIssuerMetadata{
-				CredentialIssuer:                  "https://issuer.example.com",
-				CredentialEndpoint:                "https://issuer.example.com/credential",
-				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": unsupportedFeatureCredentialConfig},
-			},
-			offer: &CredentialOffer{
-				CredentialIssuer:           "https://issuer.example.com",
-				CredentialConfigurationIds: []string{"test"},
-			},
-			wantErr: `credential configuration "test" is not supported: unsupported credential format "mso_mdoc"`,
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			validator := CredentialIssuerMetadataValidator{}
+			validator := CredentialIssuerMetadataValidator{
+				allowInsecureHttp: false,
+			}
 			err := validator.ValidateAgainstCredentialOffer(&tt.metadata, tt.offer)
 			if tt.wantErr == "" && err != nil {
 				t.Errorf("Verify() unexpected error: %v", err)
@@ -410,7 +427,7 @@ func TestCredentialConfiguration_Verify(t *testing.T) {
 	}
 }
 
-func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
+func TestCredentialConfiguration_ValidateAndGetSupportedFeatures(t *testing.T) {
 	validFullConfiguration := metadata.CredentialConfiguration{
 		Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 		Scope:  &scope,
@@ -467,7 +484,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 				CredentialSigningAlgValuesSupported: []any{"invalid-alg"},
 			},
 			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported'",
+			expectedErr: "no supported credential signing algorithms found",
 		},
 		{
 			name: "single credential signing algorithm - supported",
@@ -497,7 +514,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 				},
 			},
 			wantErr:     true,
-			expectedErr: `unsupported cryptographic binding method(s) ["cose_key"]`,
+			expectedErr: `no supported cryptographic binding method found in 'cryptographic_binding_methods_supported'`,
 		},
 		{
 			name: "cryptographic binding method present, no proof type supported present",
@@ -509,7 +526,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 				},
 			},
 			wantErr:     true,
-			expectedErr: `missing 'proof_types_supported' for JWT`,
+			expectedErr: `no supported proof-type found in 'proof_types_supported'`,
 		},
 		{
 			name: "cryptographic binding method present, no proof type JWT available",
@@ -526,7 +543,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 				},
 			},
 			wantErr:     true,
-			expectedErr: `missing 'proof_types_supported' for JWT`,
+			expectedErr: `no supported proof-type found in 'proof_types_supported'`,
 		},
 		{
 			name: "cryptographic binding method present, proof type JWT, unsupported proof signing algorithms",
@@ -543,24 +560,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 				},
 			},
 			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'proof_signing_alg_values_supported' for JWT proof type",
-		},
-		{
-			name: "cryptographic binding method present, proof type JWT, only ES256K - unsupported",
-			config: metadata.CredentialConfiguration{
-				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
-				Scope:  &scope,
-				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
-					proofs.CryptographicBindingMethod_JWK,
-				},
-				ProofTypesSupported: map[metadata.ProofTypeIdentifier]metadata.ProofType{
-					metadata.ProofTypeIdentifier_JWT: {
-						ProofSigningAlgValuesSupported: []string{"ES256K"},
-					},
-				},
-			},
-			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'proof_signing_alg_values_supported' for JWT proof type",
+			expectedErr: "no supported proof signing algorithm found, only 'ES256' is supported",
 		},
 		{
 			name: "cryptographic binding method present, proof type JWT, multiple proof signing algorithms, at least one supported",
@@ -609,16 +609,16 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			validator := CredentialConfigurationValidator{}
-			err := validator.ValidateSupportedFeatures(&tt.config)
+			_, err := validator.ValidateAndGetSupportedFeatures(&tt.config)
 			if tt.wantErr {
 				if err == nil {
-					t.Errorf("ValidateSupportedFeatures() expected error, got nil")
+					t.Errorf("ValidateAndGetSupportedFeatures() expected error, got nil")
 				} else if tt.expectedErr != "" && err.Error() != tt.expectedErr {
-					t.Errorf("ValidateSupportedFeatures() error = %q, want %q", err.Error(), tt.expectedErr)
+					t.Errorf("ValidateAndGetSupportedFeatures() error = %q, want %q", err.Error(), tt.expectedErr)
 				}
 			} else {
 				if err != nil {
-					t.Errorf("ValidateSupportedFeatures() unexpected error: %v", err)
+					t.Errorf("ValidateAndGetSupportedFeatures() unexpected error: %v", err)
 				}
 			}
 		})
@@ -1004,48 +1004,142 @@ func TestCredentialRequestEncryption_UnmarshalJSON_Success(t *testing.T) {
 	require.Equal(t, true, creqEnc.EncryptionRequired)
 }
 
-func TestGetSupportedSignatureAlgorithms(t *testing.T) {
+func TestGetSupportedCredentialSigningAlgorithm_Success(t *testing.T) {
 	tests := []struct {
 		name  string
 		input []string
-		want  []string
+		want  jwa.SignatureAlgorithm
 	}{
 		{
-			name:  "empty input",
-			input: []string{},
-			want:  []string{},
-		},
-		{
 			name:  "valid algorithms",
-			input: []string{"ES256", "RS256"},
-			want:  []string{"ES256", "RS256"},
+			input: []string{"ES256"},
+			want:  jwa.ES256(),
 		},
 		{
-			name:  "ES256K is excluded",
-			input: []string{"ES256K"},
-			want:  []string{},
+			name:  "multiple valid algorithms, should return ES512",
+			input: []string{"ES512", "ES384", "PS512", "PS384", "ES256", "PS256", "ES256K"},
+			want:  jwa.ES512(),
 		},
 		{
-			name:  "ES256K filtered out alongside valid algorithms",
-			input: []string{"ES256", "ES256K", "RS256"},
-			want:  []string{"ES256", "RS256"},
+			name:  "multiple valid algorithms, should return ES384",
+			input: []string{"ES384", "PS512", "PS384", "ES256", "PS256", "ES256K"},
+			want:  jwa.ES384(),
 		},
 		{
-			name:  "unknown algorithm is excluded",
-			input: []string{"NOT_AN_ALG"},
-			want:  []string{},
+			name:  "multiple valid algorithms, should return PS512",
+			input: []string{"PS512", "PS384", "ES256", "PS256", "ES256K"},
+			want:  jwa.PS512(),
 		},
 		{
-			name:  "mix of valid, ES256K, and unknown",
-			input: []string{"ES256", "ES256K", "NOT_AN_ALG"},
-			want:  []string{"ES256"},
+			name:  "multiple valid algorithms, should return PS384",
+			input: []string{"PS384", "ES256", "PS256", "ES256K"},
+			want:  jwa.PS384(),
+		},
+		{
+			name:  "multiple valid algorithms, should return ES256",
+			input: []string{"ES256", "PS256", "ES256K"},
+			want:  jwa.ES256(),
+		},
+		{
+			name:  "multiple valid algorithms, should return PS256",
+			input: []string{"PS256", "ES256K"},
+			want:  jwa.PS256(),
+		},
+		{
+			name:  "a rejected algorithm is skipped in favour of a usable one",
+			input: []string{"HS256", "ES256", "RS256"},
+			want:  jwa.ES256(),
+		},
+		{
+			name:  "EdDSA is accepted",
+			input: []string{"EdDSA"},
+			want:  jwa.EdDSA(),
+		},
+		{
+			name:  "Ed25519 is accepted",
+			input: []string{"Ed25519"},
+			want:  jwa.EdDSAEd25519(),
+		},
+		{
+			name:  "mix of valid and invalid",
+			input: []string{"ES256", "NOT_AN_ALG"},
+			want:  jwa.ES256(),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getSupportedSignatureAlgorithms(tt.input)
-			require.Equal(t, tt.want, got)
+			got, err := getSupportedCredentialSigningAlgorithm(tt.input)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, *got)
 		})
 	}
+}
+
+func TestGetSupportedCredentialSigningAlgorithm_Failure(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   []string
+		wantErr error
+	}{
+		{
+			name:    "empty input",
+			input:   []string{},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+		{
+			name:    "unknown algorithm is excluded",
+			input:   []string{"NOT_AN_ALG"},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+		{
+			name:    "reject symmetric algorithm HS256",
+			input:   []string{"HS256"},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+		{
+			name:    "reject symmetric algorithm HS384",
+			input:   []string{"HS384"},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+		{
+			name:    "reject symmetric algorithm HS512",
+			input:   []string{"HS512"},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+		{
+			name:    "reject 'none'",
+			input:   []string{"none"},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+		{
+			name:    "reject Ed448, which jwx does not register",
+			input:   []string{"Ed448"},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := getSupportedCredentialSigningAlgorithm(tt.input)
+			require.Error(t, err)
+			require.Equal(t, tt.wantErr, err)
+		})
+	}
+}
+
+// ES256K's availability depends on the jwx_es256k build tag (see eudi_jwt.SupportedSignatureAlgorithms).
+// The validator must follow that, so a build which can verify secp256k1 signatures does not turn
+// away an issuer offering them, and a build which cannot does not accept a credential
+// configuration it would later fail to verify.
+func TestGetSupportedCredentialSigningAlgorithm_ES256K_FollowsBuildTag(t *testing.T) {
+	got, err := getSupportedCredentialSigningAlgorithm([]string{"ES256K"})
+
+	if eudi_jwt.IsSupportedSignatureAlgorithm(jwa.ES256K()) {
+		require.NoError(t, err)
+		require.Equal(t, jwa.ES256K(), *got)
+		return
+	}
+
+	require.EqualError(t, err, "no supported credential signing algorithms found")
 }
