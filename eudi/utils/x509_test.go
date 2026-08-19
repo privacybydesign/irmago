@@ -80,15 +80,33 @@ func TestVerifyCertificateUri(t *testing.T) {
 	cert := newTestEndEntityCert(t, "issuer.example.com", testdata.PkiOption_None)
 
 	require.NoError(t, VerifyCertificateUri(cert, "https://issuer.example.com"))
-	require.ErrorContains(t, VerifyCertificateUri(cert, "https://other.example.com"), "is not in the SANs")
+	require.ErrorContains(t, VerifyCertificateUri(cert, "https://other.example.com"), "is not in the URI or DNS SANs")
 	// The DNS SAN carries the same host, but is not a URI SAN and must not match.
-	require.ErrorContains(t, VerifyCertificateUri(cert, "issuer.example.com"), "is not in the SANs")
+	require.ErrorContains(t, VerifyCertificateUri(cert, "issuer.example.com"), "is not in the URI or DNS SANs")
 	require.Error(t, VerifyCertificateUri(cert, ""))
 	require.Error(t, VerifyCertificateUri(nil, "https://issuer.example.com"))
 }
 
-func TestVerifyCertificateUriWithoutUriSan(t *testing.T) {
+func TestVerifyCertificateUriWithoutDnsSan_SucceedsOnUri(t *testing.T) {
+	cert := newTestEndEntityCert(t, "issuer.example.com", testdata.PkiOption_MissingDnsSan)
+
+	require.NoError(t, VerifyCertificateUri(cert, "https://issuer.example.com"))
+}
+
+func TestVerifyCertificateUriWithoutUriSan_SucceedsOnDns(t *testing.T) {
 	cert := newTestEndEntityCert(t, "issuer.example.com", testdata.PkiOption_MissingUriSan)
+
+	require.NoError(t, VerifyCertificateUri(cert, "https://issuer.example.com"))
+}
+
+func TestVerifyCertificateUri_WithExtendedPath_WithoutUriSan_SucceedsOnDns(t *testing.T) {
+	cert := newTestEndEntityCert(t, "issuer.example.com", testdata.PkiOption_MissingUriSan)
+
+	require.NoError(t, VerifyCertificateUri(cert, "https://issuer.example.com/path/to/resource"))
+}
+
+func TestVerifyCertificateUriWithoutUriOrDnsSan(t *testing.T) {
+	cert := newTestEndEntityCert(t, "issuer.example.com", testdata.PkiOption_MissingUriSan|testdata.PkiOption_MissingDnsSan)
 
 	require.Error(t, VerifyCertificateUri(cert, "https://issuer.example.com"))
 }

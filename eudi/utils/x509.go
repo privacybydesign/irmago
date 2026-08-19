@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"net/url"
 
 	"github.com/privacybydesign/irmago/eudi/scheme"
 )
@@ -167,7 +168,20 @@ func VerifyCertificateUri(cert *x509.Certificate, uri string) error {
 		}
 	}
 
-	return fmt.Errorf("URI %q is not in the SANs of the certificate", uri)
+	// If the URI is not found in the SANs, parse the URI and check if the host matches any of the DNS names in the SANs
+	parsedUri, err := url.Parse(uri)
+	if err != nil {
+		return fmt.Errorf("failed to parse URI: %v", err)
+	}
+
+	host := parsedUri.Hostname()
+	for _, dnsName := range cert.DNSNames {
+		if dnsName == host {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("URI %q is not in the URI or DNS SANs of the certificate", uri)
 }
 
 // VerifyRevocationListsSignatures verifies the signatures of the revocation lists for a given parent certificate.
