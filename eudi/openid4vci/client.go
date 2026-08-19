@@ -331,7 +331,9 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 	}
 
 	// Validate the Credential Issuer metadata against the spec
-	validator := CredentialIssuerMetadataValidator{}
+	validator := CredentialIssuerMetadataValidator{
+		allowInsecureHttp: client.allowInsecureHttp,
+	}
 	err = validator.Verify(credentialIssuerMetadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate credential issuer metadata: %v", err)

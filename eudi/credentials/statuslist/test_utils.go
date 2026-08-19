@@ -82,6 +82,12 @@ type TestStatusListOpts struct {
 	// default to 0 (Valid). The lst is sized to fit max(idx)+1
 	// entries at the requested bits per entry.
 	Statuses map[uint64]uint8
+	// KidHeader, when set, adds a `kid` protected header — the key
+	// reference used by the DID and OAuth-discovery key providers.
+	KidHeader string
+	// OmitX5c builds a token without the x5c header, so key
+	// resolution has to go through `kid` instead of the certificate.
+	OmitX5c bool
 }
 
 // SignToken builds a JWT carrying the Status List Token claims and
@@ -125,12 +131,16 @@ func (s *TestStatusListSigner) SignTokenWithTyp(t *testing.T, opts TestStatusLis
 	tok, err := builder.Build()
 	require.NoError(t, err)
 
-	chain := &cert.Chain{}
-	require.NoError(t, chain.Add([]byte(base64.StdEncoding.EncodeToString(s.DERBytes))))
-
 	headers := jws.NewHeaders()
 	require.NoError(t, headers.Set(jws.TypeKey, typ))
-	require.NoError(t, headers.Set(jws.X509CertChainKey, chain))
+	if !opts.OmitX5c {
+		chain := &cert.Chain{}
+		require.NoError(t, chain.Add([]byte(base64.StdEncoding.EncodeToString(s.DERBytes))))
+		require.NoError(t, headers.Set(jws.X509CertChainKey, chain))
+	}
+	if opts.KidHeader != "" {
+		require.NoError(t, headers.Set(jws.KeyIDKey, opts.KidHeader))
+	}
 
 	signed, err := jwt.Sign(tok, jwt.WithKey(jwa.ES256(), s.PrivKey, jws.WithProtectedHeaders(headers)))
 	require.NoError(t, err)

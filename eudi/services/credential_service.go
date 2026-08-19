@@ -129,7 +129,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			Image:        credentialImage,
 			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
-				Id:       batch.CredentialIssuer,
+				Id:       batch.CredentialIssuerIdentifier,
 				Name:     issuerName,
 				Image:    issuerImage,
 				Url:      nil,
@@ -223,17 +223,17 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
 
 	batch := &models.CredentialBatch{
-		IssuerURL:                first.IssuerSignedJwtPayload.Issuer,
-		VerifiableCredentialType: first.IssuerSignedJwtPayload.VerifiableCredentialType,
-		Format:                   models.CredentialFormat(credentialConfiguration.Format),
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(processedPayload),
-		CredentialIssuer:         first.IssuerSignedJwtPayload.Issuer,
-		IssuerDisplay:            slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
-		CredentialMetadata:       convertCredentialMetadata(credentialConfiguration),
-		BatchSize:                uint(len(verifiedSdJwtVcs)),
-		RemainingCount:           uint(len(verifiedSdJwtVcs)),
-		Instances:                buildInstances(verifiedSdJwtVcs),
+		IssuerIdentifier:           first.IssuerIdentifier,
+		VerifiableCredentialType:   first.IssuerSignedJwtPayload.VerifiableCredentialType,
+		Format:                     models.CredentialFormat(credentialConfiguration.Format),
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(processedPayload),
+		CredentialIssuerIdentifier: issuerMetadata.CredentialIssuer,
+		IssuerDisplay:              slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
+		CredentialMetadata:         convertCredentialMetadata(credentialConfiguration),
+		BatchSize:                  uint(len(verifiedSdJwtVcs)),
+		RemainingCount:             uint(len(verifiedSdJwtVcs)),
+		Instances:                  buildInstances(verifiedSdJwtVcs),
 	}
 
 	if first.IssuerSignedJwtPayload.IssuedAt != nil {

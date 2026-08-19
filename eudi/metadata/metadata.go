@@ -66,7 +66,7 @@ type Proofs map[ProofTypeIdentifier][]any
 type CredentialConfiguration struct {
 	Format                               CredentialFormatIdentifier          `json:"format"`
 	Scope                                *string                             `json:"scope,omitempty"`
-	CredentialSigningAlgValuesSupported  []any                               `json:"credential_signing_alg_values_supported,omitempty"` // Can be string values for SD-JWTs, or objects for ISO mDoc
+	CredentialSigningAlgValuesSupported  []any                               `json:"credential_signing_alg_values_supported,omitempty"` // Can be string values for SD-JWTs, or numeric COSE algorithm identifiers for ISO mDoc
 	CryptographicBindingMethodsSupported []proofs.CryptographicBindingMethod `json:"cryptographic_binding_methods_supported,omitempty"`
 	ProofTypesSupported                  map[ProofTypeIdentifier]ProofType   `json:"proof_types_supported,omitempty"`
 	CredentialMetadata                   *CredentialMetadata                 `json:"credential_metadata,omitempty"`
