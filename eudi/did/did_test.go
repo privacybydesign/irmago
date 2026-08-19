@@ -168,7 +168,7 @@ func Test_Unmarshal_VerificationMethod_WithPublicKeyMultibase_DecodesPublicKey(t
 
 	require.NotNil(t, vm.PublicKey())
 	var rawKey ed25519.PublicKey
-	require.NoError(t, jwk.Export(*vm.PublicKey(), &rawKey))
+	require.NoError(t, jwk.Export(vm.PublicKey(), &rawKey))
 	require.Equal(t, testEd25519PubKey, rawKey)
 }
 
@@ -238,7 +238,7 @@ func Test_Unmarshal_VerificationMethod_WithPublicKeyBase58_DecodesPublicKey(t *t
 
 	require.NotNil(t, vm.PublicKey())
 	var rawKey ed25519.PublicKey
-	require.NoError(t, jwk.Export(*vm.PublicKey(), &rawKey))
+	require.NoError(t, jwk.Export(vm.PublicKey(), &rawKey))
 	require.Equal(t, testEd25519PubKey, rawKey)
 }
 
@@ -257,7 +257,7 @@ func Test_Unmarshal_VerificationMethod_WithPublicKeyBase58_JsonWebKey2020_Decode
 	require.NotNil(t, vm.PublicKey())
 
 	var rawKey ed25519.PublicKey
-	require.NoError(t, jwk.Export(*vm.PublicKey(), &rawKey))
+	require.NoError(t, jwk.Export(vm.PublicKey(), &rawKey))
 	require.Equal(t, testEd25519PubKey, rawKey)
 }
 
