@@ -23,6 +23,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/testhelpers"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
@@ -121,6 +122,44 @@ func testRevocationAll(t *testing.T, dbType string) {
 		defer client.Close()
 		defer storage.Close()
 		testRevocation(t, revocationTestAttr, storage, client, handler, revServer.irma)
+	})
+
+	// Unlike its siblings here, this one drives client.Client rather than
+	// IrmaClient: what it pins is that a revocation reaches the app through
+	// ClientHandler.CredentialsChanged.
+	t.Run("NotifiesApp", func(t *testing.T) {
+		revServer := startRevocationServer(t, true, dbType)
+		defer revServer.Stop()
+
+		c, clientHandler, sessionHandler := instantiateClient(t, nil, "en")
+		defer c.Close()
+
+		issue(t, revServer, c, sessionHandler, 1, revocationIssuanceRequest(t, revocationTestCred))
+		requireSessionState(t, awaitSessionState(t, sessionHandler), 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+		// Issuance is a credentials change too, so only the delta counts.
+		changesBefore := clientHandler.CredentialsChangedCount()
+
+		require.NoError(t, revServer.irma.Revoke(revocationTestCred, "key", time.Time{}))
+
+		// Requesting a non-revocation proof makes the client update its witness,
+		// which is where it discovers the credential is gone. That happens while
+		// candidates are computed, lining up with no particular session state, so
+		// wait on the callback itself.
+		c.NewSession(2, startSameDeviceIrmaSessionAtServer(t, revServer, revocationRequest(revocationTestAttr)))
+		require.Eventually(t,
+			func() bool { return clientHandler.CredentialsChangedCount() > changesBefore },
+			20*time.Second, 50*time.Millisecond,
+			"discovering an idemix revocation must tell the app",
+		)
+
+		creds, err := c.GetCredentials()
+		require.NoError(t, err)
+		revoked := false
+		for _, cred := range creds {
+			revoked = revoked || cred.Revoked
+		}
+		require.True(t, revoked, "the revocation the app was told about")
 	})
 
 	t.Run("RevocationServerSessions", func(t *testing.T) {

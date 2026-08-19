@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
+	"sync/atomic"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
@@ -19,6 +21,10 @@ type Handler interface {
 	Failure(err *clientmodels.SessionError)
 	Cancelled()
 	Success(result string, credentialLogs []clientmodels.LogCredential)
+	// DeliverDcApiResponse hands the Authorization Response back to the platform
+	// that delivered the request through the Digital Credentials API. It is only
+	// called for sessions started with NewDcApiSession, and always before Success.
+	DeliverDcApiResponse(response string)
 	RequestVerificationPermission(
 		disclosurePlan *clientmodels.DisclosurePlan,
 		requestor *clientmodels.TrustedParty,
@@ -30,7 +36,7 @@ type Handler interface {
 // PermissionHandler is the callback the UI invokes after the user grants or denies permission.
 type PermissionHandler func(proceed bool, selections []dcql.DisclosureSelection)
 
-// SessionDismisser allows dismissing the current session.
+// SessionDismisser allows dismissing the session it was obtained for.
 type SessionDismisser interface {
 	Dismiss()
 }
@@ -42,15 +48,50 @@ type Client struct {
 	Configuration     *eudi.Configuration
 	dcqlHandler       *dcql.DcqlHandler
 	verifierValidator VerifierValidator
-	currentSession    *openid4vpSession
 	currentLocale     *clientmodels.CurrentLocale
+
+	// Sessions currently performing, each on its own goroutine. Sessions may
+	// overlap: a second disclosure can arrive while one is parked awaiting
+	// permission, so a single pointer would misroute answers between them.
+	// Registered/deregistered by the session goroutines, read by
+	// RefreshPendingPermissionRequest on its caller's goroutine.
+	mu       sync.Mutex
+	sessions map[*openid4vpSession]struct{}
 }
 
-// RefreshPendingPermissionRequest sends another, updated verification request if there's an active session.
+// RefreshPendingPermissionRequest re-asks every awaiting session for permission with
+// a freshly built plan, so issuance-during-disclosure re-shows a plan containing the
+// obtained credential. Called on every completed IRMA session (see
+// IrmaClient.SetOnSessionDoneCallback), hence silent unless someone is actually
+// parked waiting for an answer.
 func (client *Client) RefreshPendingPermissionRequest() {
-	if client.currentSession != nil {
-		client.currentSession.requestPermission()
+	client.mu.Lock()
+	sessions := make([]*openid4vpSession, 0, len(client.sessions))
+	for session := range client.sessions {
+		sessions = append(sessions, session)
 	}
+	client.mu.Unlock()
+
+	for _, session := range sessions {
+		if session.awaiting.Load() {
+			session.requestPermission()
+		}
+	}
+}
+
+func (client *Client) register(session *openid4vpSession) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.sessions == nil {
+		client.sessions = map[*openid4vpSession]struct{}{}
+	}
+	client.sessions[session] = struct{}{}
+}
+
+func (client *Client) deregister(session *openid4vpSession) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	delete(client.sessions, session)
 }
 
 // NewClient creates a new OpenID4VP client.
@@ -64,20 +105,36 @@ func NewClient(
 		Configuration:     eudiConf,
 		dcqlHandler:       dcql.NewDcqlHandler(handlers),
 		verifierValidator: verifierValidator,
-		currentSession:    nil,
 		currentLocale:     currentLocale,
 	}, nil
 }
 
-// NewSession starts a new OpenID4VP session from the given URL and returns a SessionDismisser.
+// NewSession starts a new OpenID4VP session from the given URL and returns a
+// SessionDismisser bound to that session. Sessions may overlap, and each dismisser
+// dismisses only its own session, so dismissing one never cancels another.
 func (client *Client) NewSession(fullUrl string, handler Handler) SessionDismisser {
-	client.handleSessionAsync(fullUrl, handler)
-	return client
+	session := client.newSession(handler)
+	client.handleSessionAsync(fullUrl, session)
+	return session
 }
 
-// Dismiss dismisses the current session.
-func (client *Client) Dismiss() {
-	eudi.Logger.Info("openid4vp: session dismissed")
+// NewDcApiSession starts a new OpenID4VP session from a request the platform
+// delivered through the W3C Digital Credentials API, and returns a
+// SessionDismisser bound to that session. The Authorization Response is handed
+// back to the platform via Handler.DeliverDcApiResponse instead of being
+// transmitted by the wallet.
+func (client *Client) NewDcApiSession(request *DcApiRequest, handler Handler) SessionDismisser {
+	session := client.newSession(handler)
+	client.handleDcApiSessionAsync(request, session)
+	return session
+}
+
+func (client *Client) newSession(handler Handler) *openid4vpSession {
+	return &openid4vpSession{
+		handler:     handler,
+		dcqlHandler: client.dcqlHandler,
+		answers:     make(chan *permissionResponse, 1),
+	}
 }
 
 func handleFailure(handler Handler, message string, fmtArgs ...any) {
@@ -87,8 +144,9 @@ func handleFailure(handler Handler, message string, fmtArgs ...any) {
 	})
 }
 
-func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
+func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSession) {
 	go func() {
+		handler := session.handler
 		parsedUrl, err := url.Parse(fullUrl)
 
 		if err != nil {
@@ -122,11 +180,9 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			return
 		}
 
-		request, endEntityCert, requestorSchemeData, err := client.verifierValidator.
-			ParseAndVerifyAuthorizationRequest(string(authRequestJwt))
-
+		request, requestor, err := client.verifySignedAuthorizationRequest(string(authRequestJwt))
 		if err != nil {
-			handleFailure(handler, "openid4vp: failed to verify authorization request: %v", err)
+			handleFailure(handler, "openid4vp: %v", err)
 			return
 		}
 
@@ -135,35 +191,20 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			return
 		}
 
-		// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
-		if endEntityCert != nil && requestorSchemeData.Organization.Logo != nil {
-			err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().Save(
-				endEntityCert.SerialNumber.String(),
-				requestorSchemeData.Organization.Logo.Data,
-				requestorSchemeData.Organization.Logo.MimeType,
-			)
-			if err != nil {
-				handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
-				return
-			}
-		}
-
-		requestor := &clientmodels.TrustedParty{
-			Name:     clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), client.currentLocale.Get()),
-			Verified: endEntityCert != nil,
-		}
-		if endEntityCert != nil {
-			requestor.Id = endEntityCert.SerialNumber.String()
-		}
-
-		if requestorSchemeData.Organization.Logo != nil && len(requestorSchemeData.Organization.Logo.Data) > 0 {
-			requestor.Image = &clientmodels.Image{
-				Base64: base64.StdEncoding.EncodeToString(requestorSchemeData.Organization.Logo.Data),
-			}
+		// A session started from a URL has no platform to hand the response to, so the
+		// DC API response modes cannot be honoured here. Rejecting them keeps the
+		// response-delivery branch in perform() out of reach from this entry point:
+		// without this check the session would report success while nothing had been
+		// transmitted to the verifier.
+		if isDcApiResponseMode(request.ResponseMode) {
+			handleFailure(handler, "openid4vp: response_mode %s is only valid for a session started over the digital credentials api", request.ResponseMode)
+			return
 		}
 
 		eudi.Logger.Infof("auth request: %#v", request)
-		err = client.handleAuthorizationRequest(request, requestor, handler)
+
+		// Without the DC API the response is bound to the client identifier.
+		err = client.handleAuthorizationRequest(session, request, requestor, request.ClientId)
 
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
@@ -171,21 +212,83 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 	}()
 }
 
+func (client *Client) handleDcApiSessionAsync(request *DcApiRequest, session *openid4vpSession) {
+	go func() {
+		handler := session.handler
+		authRequest, requestor, err := client.parseDcApiRequest(request)
+		if err != nil {
+			handleFailure(handler, "openid4vp: %v", err)
+			return
+		}
+
+		eudi.Logger.Infof("dc api auth request: %#v", authRequest)
+
+		// Over the DC API the response is bound to the origin the platform
+		// authenticated, never to the client identifier (Appendix A.4).
+		err = client.handleAuthorizationRequest(session, authRequest, requestor, OriginAudience(request.Origin))
+
+		if err != nil {
+			handleFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
+		}
+	}()
+}
+
+// verifySignedAuthorizationRequest verifies a signed authorization request JWT
+// against the configured trust models, caches the verifier logo, and builds the
+// requestor to show to the user.
+func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
+	*AuthorizationRequest,
+	*clientmodels.TrustedParty,
+	error,
+) {
+	request, endEntityCert, requestorSchemeData, err := client.verifierValidator.
+		ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to verify authorization request: %v", err)
+	}
+
+	// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
+	if endEntityCert != nil && requestorSchemeData.Organization.Logo != nil {
+		err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().Save(
+			endEntityCert.SerialNumber.String(),
+			requestorSchemeData.Organization.Logo.Data,
+			requestorSchemeData.Organization.Logo.MimeType,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to store verifier logo: %v", err)
+		}
+	}
+
+	requestor := &clientmodels.TrustedParty{
+		Name:     clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), client.currentLocale.Get()),
+		Verified: endEntityCert != nil,
+	}
+	if endEntityCert != nil {
+		requestor.Id = endEntityCert.SerialNumber.String()
+	}
+
+	if requestorSchemeData.Organization.Logo != nil && len(requestorSchemeData.Organization.Logo.Data) > 0 {
+		requestor.Image = &clientmodels.Image{
+			Base64: base64.StdEncoding.EncodeToString(requestorSchemeData.Organization.Logo.Data),
+		}
+	}
+
+	return request, requestor, nil
+}
+
 func (client *Client) handleAuthorizationRequest(
+	session *openid4vpSession,
 	request *AuthorizationRequest,
 	requestor *clientmodels.TrustedParty,
-	handler Handler,
+	audience string,
 ) error {
-	client.currentSession = &openid4vpSession{
-		request:     request,
-		requestor:   requestor,
-		handler:     handler,
-		dcqlHandler: client.dcqlHandler,
-	}
-	defer func() {
-		client.currentSession = nil
-	}()
-	return client.currentSession.perform()
+	session.request = request
+	session.requestor = requestor
+	session.audience = audience
+	client.register(session)
+	defer client.deregister(session)
+	return session.perform()
 }
 
 // ========================================================================
@@ -193,28 +296,67 @@ func (client *Client) handleAuthorizationRequest(
 // ========================================================================
 
 type openid4vpSession struct {
-	request                  *AuthorizationRequest
-	requestor                *clientmodels.TrustedParty
-	handler                  Handler
-	dcqlHandler              *dcql.DcqlHandler
-	pendingPermissionRequest *permissionRequest
-	lastPlan                 *clientmodels.DisclosurePlan
-	lastResult               *dcql.DcqlResult
+	request     *AuthorizationRequest
+	requestor   *clientmodels.TrustedParty
+	handler     Handler
+	dcqlHandler *dcql.DcqlHandler
+	// audience is the value the disclosed presentations are bound to (the aud of
+	// a Key Binding JWT): the client identifier for a URL-invoked session, the
+	// origin-prefixed caller origin for a Digital Credentials API session.
+	audience   string
+	lastPlan   *clientmodels.DisclosurePlan
+	lastResult *dcql.DcqlResult
 	// preExistingHashes tracks owned credential hashes at session start,
 	// used to detect newly issued credentials for WrongCredentialIssued.
 	preExistingHashes map[string]struct{}
-}
-
-type permissionRequest struct {
-	channel chan *permissionResponse
+	// True only while the session goroutine is parked in awaitPermission, i.e. only
+	// while an answer has somewhere to go. Claiming it by CAS is what makes an
+	// answer exclusive. Also read by [Client.RefreshPendingPermissionRequest].
+	awaiting atomic.Bool
+	// Latched by Dismiss. A dismissal can arrive before the permission window opens
+	// — the session is still fetching and verifying the authorization request —
+	// where answer would discard it; requestPermission reads the latch and delivers
+	// the denial itself once there is a parked goroutine to receive it.
+	dismissed atomic.Bool
+	// Carries the verdict to the parked goroutine. Buffered, so nobody blocks.
+	answers chan *permissionResponse
 }
 
 type permissionResponse struct {
 	selections []dcql.DisclosureSelection
 }
 
+// Dismiss dismisses this session. A dismissal is a denial, so it travels the same
+// channel the user's own "no" does: one path unwinds the session and reports
+// Cancelled. Without it the session goroutine stayed parked in awaitPermission
+// forever, so every later refresh re-asked the dismissed session for permission.
+func (session *openid4vpSession) Dismiss() {
+	// Latched before answering: if the goroutine is not parked yet, the ordering
+	// against requestPermission's arm-then-check guarantees exactly one delivery.
+	session.dismissed.Store(true)
+	// This log is the only diagnostic for the path, so report what happened: a
+	// dismissal racing the user's own answer, or following one, delivers nothing.
+	if session.answer(nil) {
+		eudi.Logger.Info("openid4vp: session dismissed")
+	} else {
+		eudi.Logger.Info("openid4vp: dismissal latched, session was not awaiting an answer")
+	}
+}
+
+// answer hands a verdict to the goroutine parked in awaitPermission and reports
+// whether it was delivered. Only the first answer per parked window is, so a second
+// Dismiss — or the callback of a permission request a refresh has superseded — is a
+// no-op instead of a stray value the next await picks up.
+func (session *openid4vpSession) answer(response *permissionResponse) bool {
+	if !session.awaiting.CompareAndSwap(true, false) {
+		return false
+	}
+	session.answers <- response
+	return true
+}
+
 func (session *openid4vpSession) awaitPermission() *permissionResponse {
-	return <-session.pendingPermissionRequest.channel
+	return <-session.answers
 }
 
 func (session *openid4vpSession) requestPermission() error {
@@ -224,17 +366,26 @@ func (session *openid4vpSession) requestPermission() error {
 	}
 	session.lastPlan = plan
 
+	// Armed before dispatching: a handler may answer synchronously, and an answer
+	// arriving before the window opens is discarded.
+	session.awaiting.Store(true)
+	// Arm first, then read the latch: a dismissal that ran in between delivered its
+	// own answer, and this one is dropped by answer's CAS; one that ran before found
+	// the window closed, so deliver its denial now instead of asking the UI for
+	// permission on a session the user already dismissed.
+	if session.dismissed.Load() {
+		session.answer(nil)
+		return nil
+	}
 	session.handler.RequestVerificationPermission(
 		plan,
 		session.requestor,
 		session.lastResult.HashToQueryId,
 		func(proceed bool, selections []dcql.DisclosureSelection) {
 			if proceed {
-				session.pendingPermissionRequest.channel <- &permissionResponse{
-					selections: selections,
-				}
+				session.answer(&permissionResponse{selections: selections})
 			} else {
-				session.pendingPermissionRequest.channel <- nil
+				session.answer(nil)
 			}
 		},
 	)
@@ -260,21 +411,15 @@ func (session *openid4vpSession) buildDisclosurePlan() (*clientmodels.Disclosure
 }
 
 func (session *openid4vpSession) perform() error {
-	session.pendingPermissionRequest = &permissionRequest{
-		channel: make(chan *permissionResponse, 1),
-	}
-	defer func() {
-		session.pendingPermissionRequest = nil
-	}()
-
 	err := session.requestPermission()
 	if err != nil {
 		return fmt.Errorf("failed to request permission: %v", err)
 	}
 	permResp := session.awaitPermission()
 
+	// Nothing to disclose: the user picked nothing, or the session was dismissed.
 	if permResp == nil {
-		eudi.Logger.Info("openid4vp: no attributes selected for disclosure, cancelling")
+		eudi.Logger.Info("openid4vp: nothing to disclose, cancelling")
 		session.handler.Cancelled()
 		return nil
 	}
@@ -295,12 +440,24 @@ func (session *openid4vpSession) perform() error {
 		ResponseMode:   session.request.ResponseMode,
 	}
 
-	if session.request.ResponseMode == ResponseMode_DirectPostJwt {
+	if session.request.ResponseMode == ResponseMode_DirectPostJwt || session.request.ResponseMode == ResponseMode_DcApiJwt {
 		if session.request.ClientMetadata == nil || session.request.ClientMetadata.Jwks == nil {
-			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", ResponseMode_DirectPostJwt)
+			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", session.request.ResponseMode)
 		}
 		responseConfig.EncryptionKeys = &session.request.ClientMetadata.Jwks.Set
 		responseConfig.EncryptedResponseEncValuesSupported = session.request.ClientMetadata.EncryptedResponseEncValuesSupported
+	}
+
+	// Over the DC API the platform, not the wallet, transports the response back
+	// to the verifier, so there is nothing to POST.
+	if isDcApiResponseMode(session.request.ResponseMode) {
+		dcApiResponse, err := createDcApiResponse(responseConfig)
+		if err != nil {
+			return err
+		}
+		session.handler.DeliverDcApiResponse(dcApiResponse)
+		session.handler.Success("managed to complete openid4vp session over the digital credentials api", credLogs)
+		return nil
 	}
 
 	responseReq, err := createAuthorizationResponseHttpRequest(responseConfig)
@@ -327,7 +484,7 @@ func (session *openid4vpSession) prepareDisclosures(
 	selections []dcql.DisclosureSelection,
 ) ([]dcql.QueryResponse, []clientmodels.LogCredential, error) {
 	prepared, err := session.dcqlHandler.PrepareDisclosure(
-		session.request.DcqlQuery, selections, session.request.Nonce, session.request.ClientId,
+		session.request.DcqlQuery, selections, session.request.Nonce, session.audience,
 	)
 	if err != nil {
 		return nil, nil, err

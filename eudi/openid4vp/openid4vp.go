@@ -142,26 +142,19 @@ const (
 	ResponseMode_DirectPost    ResponseMode = "direct_post"
 	ResponseMode_DirectPostJwt ResponseMode = "direct_post.jwt"
 
+	// The response modes for OpenID4VP over the W3C Digital Credentials API
+	// (Appendix A.2): the wallet returns the Authorization Response through the
+	// platform API instead of transmitting it to a response_uri itself.
+	// dc_api.jwt encrypts the response as described in Section 8.3.
+	ResponseMode_DcApi    ResponseMode = "dc_api"
+	ResponseMode_DcApiJwt ResponseMode = "dc_api.jwt"
+
 	ResponseType_VpToken        ResponseType = "vp_token"
 	ResponseType_VpTokenIdToken ResponseType = "vp_token id_token"
 	ResponseType_Code           ResponseType = "code"
 
 	RequestUriMethod_Get  RequestUriMethod = "get"
 	RequestUriMethod_Post RequestUriMethod = "post"
-
-	Key_Audience         string = "aud"
-	Key_Type             string = "type"
-	Key_ClientId         string = "client_id"
-	Key_ClientMetadata   string = "client_metadata"
-	Key_DcqlQuery        string = "dcql_query"
-	Key_IssuedAt         string = "iat"
-	Key_Nonce            string = "nonce"
-	Key_ResponseMode     string = "response_mode"
-	Key_ResponseType     string = "response_type"
-	Key_ResponseUri      string = "response_uri"
-	Key_RequestUriMethod string = "request_uri_method"
-	Key_Scope            string = "scope"
-	Key_State            string = "state"
 
 	ClientIdentifierPrefix_RedirectUri         ClientIdentifierPrefix = "redirect_uri:"
 	ClientIdentifierPrefix_OpenidFederation    ClientIdentifierPrefix = "openid_federation:"
@@ -217,6 +210,13 @@ type AuthorizationRequest struct {
 	// REQUIRED if at least one presentation without holder binding is requested, OPTIONAL otherwise:
 	// MUST only contain ascii url safe characters.
 	State string `json:"state"`
+
+	// REQUIRED for signed requests over the W3C Digital Credentials API, and not
+	// for use in unsigned ones (Appendix A.2). A non-empty array of origins of the
+	// verifier making the request. The wallet compares the origin the platform
+	// reported against these values to detect replay of the request by a
+	// malicious verifier.
+	ExpectedOrigins []string `json:"expected_origins,omitempty"`
 }
 
 type EncryptedResponsePayload struct {

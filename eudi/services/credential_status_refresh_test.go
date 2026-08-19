@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -22,19 +24,27 @@ func newRefreshService(db *gorm.DB, checker *statuslist.Checker) *RevocationServ
 func seedBatch(t *testing.T, db *gorm.DB, hash, issuer string, instances []models.IssuedCredentialInstance) *models.CredentialBatch {
 	t.Helper()
 	batch := &models.CredentialBatch{
-		IssuerURL:                issuer,
-		VerifiableCredentialType: "https://vct.example/x",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"u"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                uint(len(instances)),
-		RemainingCount:           uint(len(instances)),
-		CredentialIssuer:         issuer,
-		Instances:                instances,
+		IssuerIdentifier:           issuer,
+		VerifiableCredentialType:   "https://vct.example/x",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"u"}`),
+		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:                  uint(len(instances)),
+		RemainingCount:             uint(len(instances)),
+		CredentialIssuerIdentifier: issuer,
+		Instances:                  instances,
 	}
 	require.NoError(t, db.Create(batch).Error)
 	return batch
+}
+
+// refresh runs one sweep and returns the number of status changes it observed.
+func refresh(t *testing.T, svc *RevocationService) int {
+	t.Helper()
+	changed, err := svc.RefreshStatuses(context.Background())
+	require.NoError(t, err)
+	return changed
 }
 
 func instanceWithStatus(uri string, idx uint64) models.IssuedCredentialInstance {
@@ -50,7 +60,7 @@ func instanceWithStatus(uri string, idx uint64) models.IssuedCredentialInstance 
 func Test_RefreshStatuses_NilChecker_NoOp(t *testing.T) {
 	db := newTestHolderDB(t)
 	svc := newRefreshService(db, nil)
-	require.NoError(t, svc.RefreshStatuses(context.Background()))
+	require.Zero(t, refresh(t, svc))
 }
 
 func Test_RefreshStatuses_NoInstancesWithStatus_NoOp(t *testing.T) {
@@ -65,7 +75,7 @@ func Test_RefreshStatuses_NoInstancesWithStatus_NoOp(t *testing.T) {
 	})
 
 	svc := newRefreshService(db, checker)
-	require.NoError(t, svc.RefreshStatuses(context.Background()))
+	require.Zero(t, refresh(t, svc))
 }
 
 func Test_RefreshStatuses_OneFetchPerSharedURI_OneRepresentativePerBatch(t *testing.T) {
@@ -93,7 +103,9 @@ func Test_RefreshStatuses_OneFetchPerSharedURI_OneRepresentativePerBatch(t *test
 	})
 
 	svc := newRefreshService(db, checker)
-	require.NoError(t, svc.RefreshStatuses(context.Background()))
+	// One change per batch, not per row: both representatives moved off their
+	// seeded default, and batch A's second instance was never looked at.
+	require.Equal(t, 2, refresh(t, svc))
 
 	// Shared URI fetched exactly once (Refresh warms the cache; each
 	// representative's Check reads from it).
@@ -150,7 +162,9 @@ func Test_RefreshStatuses_MultiInstanceBatch_OneRepresentativeDrivesRevocation(t
 	})
 
 	svc := newRefreshService(db, checker)
-	require.NoError(t, svc.RefreshStatuses(context.Background()))
+	// A three-instance batch yields one change, not three: the count is per
+	// batch, because only the representative is ever checked.
+	require.Equal(t, 1, refresh(t, svc))
 
 	// Only one representative was checked and flipped to Invalid; the others
 	// keep their default status.
@@ -207,10 +221,14 @@ func Test_RefreshStatuses_DetectsRevocationTransition(t *testing.T) {
 	svc := newRefreshService(db, checker)
 
 	// First sweep: the wallet records the credential as Valid.
-	require.NoError(t, svc.RefreshStatuses(context.Background()))
+	require.Equal(t, 1, refresh(t, svc), "moving off the seeded default is a change")
 	var row models.IssuedCredentialInstance
 	require.NoError(t, db.First(&row, "status_list_uri = ?", srv.URL()).Error)
 	require.Equal(t, uint8(statuslist.StatusValid), row.LastKnownStatus)
+
+	// Sweeping again over an unchanged list re-confirms Valid and reports no
+	// change: the freshness stamp moves, the status does not.
+	require.Zero(t, refresh(t, svc), "re-confirming the same status is not a change")
 
 	// The issuer revokes the credential by flipping the bit at idx 4.
 	srv.Serve(t, signer, statuslist.TestStatusListOpts{
@@ -221,9 +239,12 @@ func Test_RefreshStatuses_DetectsRevocationTransition(t *testing.T) {
 
 	// Next sweep must pick up the revocation despite the earlier cached
 	// Valid value — RefreshStatuses re-fetches by design.
-	require.NoError(t, svc.RefreshStatuses(context.Background()))
+	require.Equal(t, 1, refresh(t, svc), "Valid -> Invalid is a change")
 	require.NoError(t, db.First(&row, "status_list_uri = ?", srv.URL()).Error)
 	require.Equal(t, uint8(statuslist.StatusInvalid), row.LastKnownStatus)
+
+	// And the revocation, once recorded, is not re-reported on every later sweep.
+	require.Zero(t, refresh(t, svc), "a known revocation is re-confirmed silently")
 }
 
 func Test_RefreshStatuses_OneURIFailure_DoesNotAbortSweep(t *testing.T) {
@@ -249,7 +270,9 @@ func Test_RefreshStatuses_OneURIFailure_DoesNotAbortSweep(t *testing.T) {
 	})
 
 	svc := newRefreshService(db, checker)
-	require.NoError(t, svc.RefreshStatuses(context.Background()))
+	// Only the reachable batch counts: the failure left the other's status
+	// alone, so nothing about it changed.
+	require.Equal(t, 1, refresh(t, svc))
 
 	// The good one should be updated to Valid; the failing one
 	// should remain at default (Unknown == 0).
@@ -261,6 +284,44 @@ func Test_RefreshStatuses_OneURIFailure_DoesNotAbortSweep(t *testing.T) {
 	}
 	require.Equal(t, uint8(statuslist.StatusValid), statusesByURI[good.URL()])
 	require.Equal(t, uint8(0), statusesByURI["http://127.0.0.1:0/nope"])
+}
+
+// Test_RefreshStatuses_CancelledFetch_ReportsCancellation separates the two
+// kinds of fetch failure: an unreachable URI is fail-soft and skipped, but a
+// fetch aborted because ctx was cancelled means the sweep was cut short, and the
+// caller has to be able to tell that from a sweep that looked at everything.
+// Without it, cancellation landing in the last group's fetch returns nil.
+func Test_RefreshStatuses_CancelledFetch_ReportsCancellation(t *testing.T) {
+	db := newTestHolderDB(t)
+	signer := statuslist.NewTestStatusListSigner(t)
+	checker := statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: signer.X509VerificationContext(),
+	}, statuslist.NewInMemoryCache())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// A status list whose fetch never completes: it cancels the sweep and then
+	// waits for the aborted request to be dropped.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cancel()
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+
+	seedBatch(t, db, "h1", "https://issuer.example", []models.IssuedCredentialInstance{
+		instanceWithStatus(srv.URL, 0),
+	})
+
+	svc := newRefreshService(db, checker)
+	changed, err := svc.RefreshStatuses(ctx)
+	require.ErrorIs(t, err, context.Canceled, "a cancelled fetch is a cut-short sweep, not a skipped URI")
+	require.Zero(t, changed)
+
+	// And nothing was written back, so the change is still there to find.
+	var row models.IssuedCredentialInstance
+	require.NoError(t, db.First(&row, "status_list_uri = ?", srv.URL).Error)
+	require.Nil(t, row.LastStatusCheckAt)
 }
 
 func Test_RefreshStatuses_OnlyUpdatesOnSuccess(t *testing.T) {
@@ -286,7 +347,8 @@ func Test_RefreshStatuses_OnlyUpdatesOnSuccess(t *testing.T) {
 	seedBatch(t, db, "h1", "https://issuer.example", []models.IssuedCredentialInstance{inst})
 
 	svc := newRefreshService(db, checker)
-	require.NoError(t, svc.RefreshStatuses(context.Background()))
+	// A sweep whose every fetch failed changed nothing, so it reports nothing.
+	require.Zero(t, refresh(t, svc), "a failed refresh is not a status change")
 
 	var row models.IssuedCredentialInstance
 	require.NoError(t, db.First(&row, "status_list_uri = ?", uri).Error)
@@ -301,11 +363,10 @@ func Test_RefreshStatuses_OnlyUpdatesOnSuccess(t *testing.T) {
 // proves the *automatic*, timer-driven path detects a Valid -> revoked
 // transition without any manual RefreshStatuses call.
 //
-// A literal through-client.New() test is not achievable today: no issuer-side
-// code emits a status_list claim (so real issuance can't produce a
-// status-bearing credential), and the Client exposes no seam to seed one into
-// its eudi DB. This test therefore mirrors the client's wiring at the service
-// layer instead.
+// The client-side wiring — that a status change reaches the app — is pinned
+// separately in client/status_change_notification_test.go, which seeds a
+// status-bearing batch into a real Client's eudi DB. This test stays at the
+// service layer and covers the timer.
 func Test_ScheduledRefresh_PicksUpRevocation(t *testing.T) {
 	db := newTestHolderDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
@@ -329,7 +390,7 @@ func Test_ScheduledRefresh_PicksUpRevocation(t *testing.T) {
 	require.NoError(t, err)
 	_, err = scheduler.NewJob(
 		gocron.DurationJob(30*time.Millisecond),
-		gocron.NewTask(func() { _ = svc.RefreshStatuses(context.Background()) }),
+		gocron.NewTask(func() { _, _ = svc.RefreshStatuses(context.Background()) }),
 		gocron.WithStartAt(gocron.WithStartImmediately()),
 	)
 	require.NoError(t, err)

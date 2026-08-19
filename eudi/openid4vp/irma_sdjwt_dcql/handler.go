@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
@@ -17,12 +17,12 @@ import (
 type SdJwtVcDcqlHandler struct {
 	storage       irmaclient.SdJwtVcStorage
 	config        *irma.Configuration
-	keyBinder     sdjwtvc.KeyBinder
+	keyBinder     sdjwt.KeyBinder
 	currentLocale *clientmodels.CurrentLocale
 }
 
 // NewIrmaSdJwtVcDcqlHandler creates a new handler for DCQL credential queries for SD-JWT-VC credentials issued over IRMA.
-func NewIrmaSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.Configuration, keyBinder sdjwtvc.KeyBinder, currentLocale *clientmodels.CurrentLocale) *SdJwtVcDcqlHandler {
+func NewIrmaSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.Configuration, keyBinder sdjwt.KeyBinder, currentLocale *clientmodels.CurrentLocale) *SdJwtVcDcqlHandler {
 	return &SdJwtVcDcqlHandler{
 		storage:       storage,
 		config:        config,
@@ -90,7 +90,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 }
 
 // PrepareDisclosure prepares the selected credentials for inclusion in the VP token.
-func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, clientId string) (*dcql.PreparedDisclosure, error) {
+func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
 	for _, sel := range selections {
@@ -104,18 +104,18 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			return nil, fmt.Errorf("failed to remove instance of credential %s: %w", sel.CredentialHash, err)
 		}
 
-		sdjwtSelected, err := sdjwtvc.CreatePresentation(cred.SdJwtVc, sel.ClaimPaths)
+		sdjwtSelected, err := sdjwt.CreatePresentation(sdjwt.SdJwt(cred.SdJwtVc), sel.ClaimPaths)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
 
 		presentation := string(sdjwtSelected)
 		if sel.RequireHolderBinding {
-			kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, h.keyBinder, nonce, clientId)
+			kbjwt, err := sdjwt.CreateKbJwt(sdjwtSelected, h.keyBinder, nonce, audience)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create kbjwt: %w", err)
 			}
-			presentation = string(sdjwtvc.AddKeyBindingJwtToSdJwtVc(sdjwtSelected, kbjwt))
+			presentation = string(sdjwt.AddKeyBindingJwt(sdjwtSelected, kbjwt))
 		}
 
 		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{

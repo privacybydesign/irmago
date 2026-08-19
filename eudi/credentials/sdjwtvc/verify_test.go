@@ -1,723 +1,22 @@
 package sdjwtvc
 
 import (
-	"encoding/json"
+	"crypto/x509"
 	"testing"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/didjwk"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
-
-// ========================== Base Processor Tests ================================
-// fails for:
-// - [x] flat SD-JWT: _sd field is present but empty
-// - [x] flat SD-JWT: _sd field is not an array
-// - [x] flat SD-JWT: _sd field contains non-string values
-// - [x] flat SD-JWT: disclosure contains an _sd field
-// - [x] flat SD-JWT: disclosure contains an ... field
-// - [x] flat SD-JWT: disclosure already contains a fieldname at the same level
-// - [x] flat SD-JWT: invalid digest element in array
-// - [x] flat SD-JWT: disclosures that are not in the _sd field
-// - [x] flat SD-JWT: digest is processed multiple times (single _sd field)
-// - [x] flat SD-JWT: digest is processed multiple times (in single array)
-// - [x] flat SD-JWT: digest is processed multiple times (in multiple array)
-// - [x] structured SD-JWT: disclosure structures, digest is processed multiple times
-
-// success for:
-// - [x] flat SD-JWT: disclosures for non-array claims
-// - [x] flat SD-JWT: disclosures for array claims
-// - [x] flat SD-JWT: non-array permanent disclosure element stays after processing
-// - [x] flat SD-JWT: array with disclosures and permanently disclosed values in the array
-// - [x] flat SD-JWT: array with disclosures and decoy digests in the array
-// - [x] structured SD-JWT: without array
-// - [x] structured SD-JWT: with array, containing decoy digests
-// - [x] structured SD-JWT: with recursive disclosure structures
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_EmptySdField_Fails(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{}
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{},
-	}
-
-	// Act
-	_, _, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.ErrorContains(t, err, "when the _sd field is present it may not be empty")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_SdFieldIsNotAnArray_Fails(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{}
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": 42,
-	}
-
-	// Act
-	_, _, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.ErrorContains(t, err, "failed to convert _sd field to []any")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_NonStringSdField_Fails(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{}
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{42},
-	}
-
-	// Act
-	_, _, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.ErrorContains(t, err, "failed to convert value in _sd array to string")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_DisclosureContainsSdField_Fails(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// disclosure: ["_3JoPNqbcqtsdax9J0xMvA","_sd","test"]
-		"WyJfM0pvUE5xYmNxdHNkYXg5SjB4TXZBIiwiX3NkIiwidGVzdCJd",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			"uaqRlJ33nALYusFITW0nuk67ZynCsLdwTI4EymZB5Rw",
-		},
-	}
-
-	// Act
-	_, _, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.ErrorContains(t, err, "has an `_sd` field, which is not allowed")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_DisclosureContainsEllipsisField_Fails(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// disclosure: ["_3JoPNqbcqtsdax9J0xMvA","...","test"]
-		"WyJfM0pvUE5xYmNxdHNkYXg5SjB4TXZBIiwiLi4uIiwidGVzdCJd",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			"YRYvIY_GmMyi58Byf6JCg3CZvC7D6MGmKOaEx2plM1k",
-		},
-	}
-
-	// Act
-	_, _, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.ErrorContains(t, err, "has an `...` field, which is not allowed")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_AlreadyContainsFieldnameAtSameLevel_Fails(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// disclosure: ["_3JoPNqbcqtsdax9J0xMvA","name","Alpha"]
-		"WyJfM0pvUE5xYmNxdHNkYXg5SjB4TXZBIiwibmFtZSIsIkFscGhhIl0",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			"c3DYrtRZ3zLEKH2fcTrkRymiT4T5ZkwQuFfj3TlnRQQ",
-		},
-		"name": "Bravo",
-	}
-
-	// Act
-	_, _, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.ErrorContains(t, err, "embedded disclosure key \"name\" already exists at this level")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_DisclosuresThatAreNotInSdField_Fails(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// disclosure: ["_3JoPNqbcqtsdax9J0xMvA","family_name","T"]
-		"WyJfM0pvUE5xYmNxdHNkYXg5SjB4TXZBIiwiZmFtaWx5X25hbWUiLCJUIl0",
-		// disclosure: ["OKyl8ky692IYD_W9OPP8xg","given_name","T"]
-		"WyJPS3lsOGt5NjkySVlEX1c5T1BQOHhnIiwiZ2l2ZW5fbmFtZSIsIlQiXQ",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			"dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU",
-		},
-	}
-
-	// Act
-	_, _, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.ErrorContains(t, err, "one or more disclosures were not referenced in the issuer signed jwt")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_DigigestIsProcessedMultipleTimes_Fails(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// disclosure: ["_3JoPNqbcqtsdax9J0xMvA","family_name","T"]
-		"WyJfM0pvUE5xYmNxdHNkYXg5SjB4TXZBIiwiZmFtaWx5X25hbWUiLCJUIl0",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			"dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU",
-			"dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU",
-		},
-	}
-
-	// Act
-	_, _, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.ErrorContains(t, err, "digest dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU has been referenced multiple time in the SD-JWT")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_DigigestIsProcessedMultipleTimesInSingleArrays_Fails(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// array element: ["dIvfpaioiTep5orz6eEZxw","NL"]
-		"WyJkSXZmcGFpb2lUZXA1b3J6NmVFWnh3IiwiTkwiXQ",
-		// array: ["PW8uSwHPfOh3fENJGCeEBQ","nationalities",[{"...":"b7MTXRZmMyE22_ZyiNvAp6hygI5Y8Ey6KNuKUaH6lio"},{"...":"b7MTXRZmMyE22_ZyiNvAp6hygI5Y8Ey6KNuKUaH6lio"}]]
-		"WyJQVzh1U3dIUGZPaDNmRU5KR0NlRUJRIiwibmF0aW9uYWxpdGllcyIsW3siLi4uIjoiYjdNVFhSWm1NeUUyMl9aeWlOdkFwNmh5Z0k1WThFeTZLTnVLVWFINmxpbyJ9LHsiLi4uIjoiYjdNVFhSWm1NeUUyMl9aeWlOdkFwNmh5Z0k1WThFeTZLTnVLVWFINmxpbyJ9XV0",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			// Hash for array (NOT the array element)
-			"VSrHGnWHF4kq8bqP8PXoWCKa-hMkyfiJP8yUiACwNcM",
-		},
-	}
-
-	// Act
-	_, _, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.ErrorContains(t, err, "digest b7MTXRZmMyE22_ZyiNvAp6hygI5Y8Ey6KNuKUaH6lio has been referenced multiple time in the SD-JWT")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_DigigestIsProcessedMultipleTimesInMultipleArrays_Fails(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// array element: ["dIvfpaioiTep5orz6eEZxw","NL"]
-		"WyJkSXZmcGFpb2lUZXA1b3J6NmVFWnh3IiwiTkwiXQ",
-		// array: ["PW8uSwHPfOh3fENJGCeEBQ","nationalities",[{"...":"b7MTXRZmMyE22_ZyiNvAp6hygI5Y8Ey6KNuKUaH6lio"}]]
-		"WyJQVzh1U3dIUGZPaDNmRU5KR0NlRUJRIiwibmF0aW9uYWxpdGllcyIsW3siLi4uIjoiYjdNVFhSWm1NeUUyMl9aeWlOdkFwNmh5Z0k1WThFeTZLTnVLVWFINmxpbyJ9XV0",
-		// array: ["PW8uSwHPfOh3fENJGCeEBQ","countries",[{"...":"b7MTXRZmMyE22_ZyiNvAp6hygI5Y8Ey6KNuKUaH6lio"}]]
-		"WyJQVzh1U3dIUGZPaDNmRU5KR0NlRUJRIiwiY291bnRyaWVzIixbeyIuLi4iOiJiN01UWFJabU15RTIyX1p5aU52QXA2aHlnSTVZOEV5NktOdUtVYUg2bGlvIn1dXQ",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			// Hash for arrays (NOT the array element)
-			"3KpnrnSJV9ING3MqFexvxLLkAEQDs4suq3MgG0RnE54",
-			"qt0kqMISbwENMMG5np5ABItPxlRMr4Wo3GhaIFdgE8A",
-		},
-	}
-
-	// Act
-	_, _, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.ErrorContains(t, err, "digest b7MTXRZmMyE22_ZyiNvAp6hygI5Y8Ey6KNuKUaH6lio has been referenced multiple time in the SD-JWT")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_StructuredSdJwt_DigigestIsProcessedMultipleTimes_Fails(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// disclosure: ["_3JoPNqbcqtsdax9J0xMvA","family_name","T"]
-		"WyJfM0pvUE5xYmNxdHNkYXg5SjB4TXZBIiwiZmFtaWx5X25hbWUiLCJUIl0",
-	}
-
-	issuerSignedJwtPayload := `{
-		"_sd": [
-			"dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU"
-		],
-		"name": {
-			"_sd": [
-				"dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU"
-			]
-		}
-	}`
-
-	var issuerSignedJwtPayloadFromJson map[string]any
-	err := json.Unmarshal([]byte(issuerSignedJwtPayload), &issuerSignedJwtPayloadFromJson)
-	require.NoError(t, err)
-
-	// Act
-	_, _, err = verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayloadFromJson, encodedDisclosures)
-
-	// Assert
-	require.ErrorContains(t, err, "digest dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU has been referenced multiple time in the SD-JWT")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsNoArrays_Succeeds(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// disclosure: ["_3JoPNqbcqtsdax9J0xMvA","family_name","T"]
-		"WyJfM0pvUE5xYmNxdHNkYXg5SjB4TXZBIiwiZmFtaWx5X25hbWUiLCJUIl0",
-		// disclosure: ["OKyl8ky692IYD_W9OPP8xg","given_name","T"]
-		"WyJPS3lsOGt5NjkySVlEX1c5T1BQOHhnIiwiZ2l2ZW5fbmFtZSIsIlQiXQ",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			"dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU",
-			"K4oRic8I4m2y8lMUAN7MttLYrynKgocsENANMvPoHYQ",
-		},
-	}
-
-	// Act
-	_, disclosures, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.NoError(t, err)
-	require.Len(t, disclosures, 2)
-
-	// Check that _sd field is removed from issuer signed jwt payload
-	_, ok := issuerSignedJwtPayload["_sd"]
-	require.False(t, ok)
-
-	// Check the claims are present/replaced correctly
-	_, ok = issuerSignedJwtPayload["family_name"]
-	require.True(t, ok)
-	_, ok = issuerSignedJwtPayload["given_name"]
-	require.True(t, ok)
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_SingleDisclosure_TestDifferentHashes_Succeeds(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// disclosure: ["_3JoPNqbcqtsdax9J0xMvA","family_name","T"]
-		"WyJfM0pvUE5xYmNxdHNkYXg5SjB4TXZBIiwiZmFtaWx5X25hbWUiLCJUIl0",
-	}
-	hashesToTest := map[iana.HashingAlgorithm]string{
-		iana.SHA256:     "dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU",
-		iana.SHA384:     "jq03BsgTeA0UuE5s7EMnSdXHP35d1DROgK9C1FAT_aV9GCqmW6HEqsEBCSp7jBFt",
-		iana.SHA512:     "4xoBB4X6C56fq2Vkz5J_xl_RS8c-CMOOJkWwlCgHxum3w2AFlEEd6PnqGE6BNBv1JBuQt7Cv21l6nfVsVWJ1tA",
-		iana.SHA3_224:   "KttLY32VE3PowLQLwhI0xy19JggL1ql_rnZw4g",
-		iana.SHA3_256:   "xcIlD3Mz0Mb3xUq0nKv0kozqQoa-H5Y_xJo-qi5QD2M",
-		iana.SHA3_384:   "69Yq7MXjvlhddV-iYYicC_dy1IqmqjS2dVZcfV4da6C2tHPPBcG16_lEsIBUJV7n",
-		iana.SHA3_512:   "3O8jzRqGPYewnc9O7T3KwSNpnRWnD0FSigT0A_x7hOhsrQ1457FERQbNqMDt73iSgBDCYvIOBwNWESmqftTmxA",
-		iana.SHA256_128: "dUbKLep3EvcBWZm6Y30WAg",
-		iana.SHA256_120: "dUbKLep3EvcBWZm6Y30W",
-		iana.SHA256_96:  "dUbKLep3EvcBWZm6",
-		iana.SHA256_64:  "dUbKLep3Evc",
-		iana.SHA256_32:  "dUbKLQ",
-	}
-
-	for hashAlg, expectedDigest := range hashesToTest {
-		t.Run(string(hashAlg), func(t *testing.T) {
-			// Arrange
-			issuerSignedJwtPayload := map[string]any{
-				"_sd": []any{
-					expectedDigest,
-				},
-			}
-
-			// Act
-			_, disclosures, err := verifyAndProcessDisclosures(hashAlg, &issuerSignedJwtPayload, encodedDisclosures)
-
-			// Assert
-			require.NoError(t, err)
-			require.Len(t, disclosures, 1)
-
-			// Check that _sd field is removed from issuer signed jwt payload
-			_, ok := issuerSignedJwtPayload["_sd"]
-			require.False(t, ok)
-
-			// Check the claims are present/replaced correctly
-			_, ok = issuerSignedJwtPayload["family_name"]
-			require.True(t, ok)
-		})
-	}
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAnArray_Succeeds(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// array element: ["dIvfpaioiTep5orz6eEZxw","NL"]
-		"WyJkSXZmcGFpb2lUZXA1b3J6NmVFWnh3IiwiTkwiXQ",
-		// array: ["PW8uSwHPfOh3fENJGCeEBQ","nationalities",[{"...":"b7MTXRZmMyE22_ZyiNvAp6hygI5Y8Ey6KNuKUaH6lio"}]]
-		"WyJQVzh1U3dIUGZPaDNmRU5KR0NlRUJRIiwibmF0aW9uYWxpdGllcyIsW3siLi4uIjoiYjdNVFhSWm1NeUUyMl9aeWlOdkFwNmh5Z0k1WThFeTZLTnVLVWFINmxpbyJ9XV0",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			// Hash for array (NOT the array element)
-			"3KpnrnSJV9ING3MqFexvxLLkAEQDs4suq3MgG0RnE54",
-		},
-	}
-
-	// Act
-	_, disclosures, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.NoError(t, err)
-	require.Len(t, disclosures, 2)
-
-	// Check that _sd field is removed from issuer signed jwt payload
-	_, ok := issuerSignedJwtPayload["_sd"]
-	require.False(t, ok)
-
-	arrVal, ok := issuerSignedJwtPayload["nationalities"]
-	require.True(t, ok)
-	require.NotNil(t, arrVal)
-
-	// The array should now contain 1 element
-	arr, ok := arrVal.([]any)
-	require.True(t, ok)
-	require.Len(t, arr, 1)
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_WithPermanentDisclosure_Succeeds(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// flat object: ["2GLC42sKQveCfGfryNRN9w", "street_address", "Schulstr. 12"]
-		"WyIyR0xDNDJzS1F2ZUNmR2ZyeU5STjl3IiwgInN0cmVldF9hZGRyZXNzIiwgIlNjaHVsc3RyLiAxMiJd",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			"9gjVuXtdFROCgRrtNcGUXmF65rdezi_6Er_j76kmYyM",
-		},
-		"country": "DE",
-	}
-
-	// Act
-	_, disclosures, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.NoError(t, err)
-	require.Len(t, disclosures, 1)
-
-	// Check that _sd field is removed from issuer signed jwt payload
-	_, ok := issuerSignedJwtPayload["_sd"]
-	require.False(t, ok)
-
-	// Map should now contain the permanently disclosed value + the selectively disclosed value
-	require.Len(t, issuerSignedJwtPayload, 2)
-
-	arrVal, ok := issuerSignedJwtPayload["street_address"]
-	require.True(t, ok)
-	require.Equal(t, arrVal, "Schulstr. 12")
-
-	// The array should now contain 1 element
-	arrVal, ok = issuerSignedJwtPayload["country"]
-	require.True(t, ok)
-	require.Equal(t, arrVal, "DE")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAnArray_WithPermanentlyDisclosedValues_Succeeds(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// array element: ["dIvfpaioiTep5orz6eEZxw","NL"]
-		"WyJkSXZmcGFpb2lUZXA1b3J6NmVFWnh3IiwiTkwiXQ",
-		// array: ["PW8uSwHPfOh3fENJGCeEBQ","nationalities",["DE","FR",{"...":"b7MTXRZmMyE22_ZyiNvAp6hygI5Y8Ey6KNuKUaH6lio"}]]
-		"WyJQVzh1U3dIUGZPaDNmRU5KR0NlRUJRIiwibmF0aW9uYWxpdGllcyIsWyJERSIsIkZSIix7Ii4uLiI6ImI3TVRYUlptTXlFMjJfWnlpTnZBcDZoeWdJNVk4RXk2S051S1VhSDZsaW8ifV1d",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			// Hash for array
-			"bH_IUnOFqaa2MAX1YNxrSyYv4OzPFC9cWwEMI3gn72w",
-		},
-	}
-
-	// Act
-	_, disclosures, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.NoError(t, err)
-	require.Len(t, disclosures, 2)
-
-	// Check that _sd field is removed from issuer signed jwt payload
-	_, ok := issuerSignedJwtPayload["_sd"]
-	require.False(t, ok)
-
-	arrVal, ok := issuerSignedJwtPayload["nationalities"]
-	require.True(t, ok)
-	require.NotNil(t, arrVal)
-
-	// The array should now contain 3 elements: "DE", "FR", and the disclosed object
-	arr, ok := arrVal.([]any)
-	require.True(t, ok)
-	require.Len(t, arr, 3)
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAnArray_GivenInvalidDigestElement_Fails(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// valid array element: ["dIvfpaioiTep5orz6eEZxw","NL"]
-		"WyJkSXZmcGFpb2lUZXA1b3J6NmVFWnh3IiwiTkwiXQ",
-		// invalid array element digest (extra field): ["invalid_extra_element_in_digest_element", "dIvfpaioiTep5orz6eEZxw","NL"]
-		"WyJpbnZhbGlkX2V4dHJhX2VsZW1lbnRfaW5fZGlnZXN0X2VsZW1lbnQiLCAiZEl2ZnBhaW9pVGVwNW9yejZlRVp4dyIsIk5MIl0",
-		// array: ["PW8uSwHPfOh3fENJGCeEBQ","nationalities",[{"...":"b7MTXRZmMyE22_ZyiNvAp6hygI5Y8Ey6KNuKUaH6lio"},{"...":"h-CQlbsh70pquZdVagjwYSojWUT41ZzXfvr3FLCo4Ks"}]]
-		"WyJQVzh1U3dIUGZPaDNmRU5KR0NlRUJRIiwibmF0aW9uYWxpdGllcyIsW3siLi4uIjoiYjdNVFhSWm1NeUUyMl9aeWlOdkFwNmh5Z0k1WThFeTZLTnVLVWFINmxpbyJ9LHsiLi4uIjoiaC1DUWxic2g3MHBxdVpkVmFnandZU29qV1VUNDFaelhmdnIzRkxDbzRLcyJ9XV0",
-	}
-	payload := IssuerSignedJwtPayload{
-		SdAlg: "sha-256",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			// Hash for array (NOT the array element)
-			"3mhS5a0J_TxEK5ZHlES0_MRx7qV7FERCHbX2lSEz94Q",
-		},
-	}
-
-	// Act
-	_, disclosures, err := verifyAndProcessDisclosures(payload.SdAlg, &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.Error(t, err)
-	require.ErrorContains(t, err, "is expected to be an array element, but is not")
-	require.Nil(t, disclosures)
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAnArray_WithDecoyDigests_Succeeds(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		// array element: ["dIvfpaioiTep5orz6eEZxw","NL"]
-		"WyJkSXZmcGFpb2lUZXA1b3J6NmVFWnh3IiwiTkwiXQ",
-		// array with valid element (element 0) and one decoy digest (element 1, which is a hash over a 'secure random' value)
-		// array: ["PW8uSwHPfOh3fENJGCeEBQ","nationalities",[{"...":"b7MTXRZmMyE22_ZyiNvAp6hygI5Y8Ey6KNuKUaH6lio"},{"...":"wBIalkzxNqdBbT-eotJFegKmirdUPyyXLxIbtFugdsI"}]]
-		"WyJQVzh1U3dIUGZPaDNmRU5KR0NlRUJRIiwibmF0aW9uYWxpdGllcyIsW3siLi4uIjoiYjdNVFhSWm1NeUUyMl9aeWlOdkFwNmh5Z0k1WThFeTZLTnVLVWFINmxpbyJ9LHsiLi4uIjoid0JJYWxrenhOcWRCYlQtZW90SkZlZ0ttaXJkVVB5eVhMeElidEZ1Z2RzSSJ9XV0",
-	}
-
-	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
-			// Hash for array (NOT the array element)
-			"FxetI8EvzLU8v49U8JdbN0FsQs4UtwudaT7xdPLYU3g",
-		},
-	}
-
-	// Act
-	_, disclosures, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
-
-	// Assert
-	require.NoError(t, err)
-	require.Len(t, disclosures, 2)
-
-	// Check that _sd field is removed from issuer signed jwt payload
-	_, ok := issuerSignedJwtPayload["_sd"]
-	require.False(t, ok)
-
-	arrVal, ok := issuerSignedJwtPayload["nationalities"]
-	require.True(t, ok)
-	require.NotNil(t, arrVal)
-
-	// The array should only contain the valid element, the decoy digest should be ignored
-	arr, ok := arrVal.([]any)
-	require.True(t, ok)
-	require.Len(t, arr, 1)
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_StructuredSdJwt_ContainsNoArrays_Succeeds(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		"WyIyR0xDNDJzS1F2ZUNmR2ZyeU5STjl3IiwgInN0cmVldF9hZGRyZXNzIiwgIlNjaHVsc3RyLiAxMiJd",
-		"WyJlbHVWNU9nM2dTTklJOEVZbnN4QV9BIiwgImxvY2FsaXR5IiwgIlNjaHVscGZvcnRhIl0",
-		"WyI2SWo3dE0tYTVpVlBHYm9TNXRtdlZBIiwgInJlZ2lvbiIsICJTYWNoc2VuLUFuaGFsdCJd",
-		"WyJlSThaV205UW5LUHBOUGVOZW5IZGhRIiwgImNvdW50cnkiLCAiREUiXQ",
-	}
-
-	issuerSignedJwtPayload := `{
-		"address": {
-			"_sd": [
-				"6vh9bq-zS4GKM_7GpggVbYzzu6oOGXrmNVGPHP75Ud0",
-				"9gjVuXtdFROCgRrtNcGUXmF65rdezi_6Er_j76kmYyM",
-				"KURDPh4ZC19-3tiz-Df39V8eidy1oV3a3H1Da2N0g88",
-				"WN9r9dCBJ8HTCsS2jKASxTjEyW5m5x65_Z_2ro2jfXM"
-			]
-		}
-	}`
-
-	var issuerSignedJwtPayloadFromJson map[string]any
-	err := json.Unmarshal([]byte(issuerSignedJwtPayload), &issuerSignedJwtPayloadFromJson)
-	require.NoError(t, err)
-
-	// Act
-	_, disclosures, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayloadFromJson, encodedDisclosures)
-
-	// Assert
-	require.NoError(t, err)
-	require.Len(t, disclosures, 4)
-
-	addr, ok := issuerSignedJwtPayloadFromJson["address"]
-	require.True(t, ok)
-	require.NotNil(t, addr)
-
-	addrMap, ok := addr.(map[string]any)
-	require.True(t, ok)
-
-	// Check that _sd field is removed from `address` field in the issuer signed jwt payload
-	_, ok = addrMap["_sd"]
-	require.False(t, ok)
-
-	// The object should contain 4 fields now: street_address, locality, region, country
-	require.Len(t, addrMap, 4)
-	require.Contains(t, addrMap["street_address"], "Schulstr. 12")
-	require.Contains(t, addrMap["locality"], "Schulpforta")
-	require.Contains(t, addrMap["region"], "Sachsen-Anhalt")
-	require.Contains(t, addrMap["country"], "DE")
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_StructuredSdJwt_ContainsArraysWithDecoyDigest_Succeeds(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		"WyIyR0xDNDJzS1F2ZUNmR2ZyeU5STjl3IiwgInN0cmVldF9hZGRyZXNzIiwgIlNjaHVsc3RyLiAxMiJd",
-		"WyJlbHVWNU9nM2dTTklJOEVZbnN4QV9BIiwgImxvY2FsaXR5IiwgIlNjaHVscGZvcnRhIl0",
-		"WyI2SWo3dE0tYTVpVlBHYm9TNXRtdlZBIiwgInJlZ2lvbiIsICJTYWNoc2VuLUFuaGFsdCJd",
-		"WyJlSThaV205UW5LUHBOUGVOZW5IZGhRIiwgImNvdW50cnkiLCAiREUiXQ",
-		// array element: ["dIvfpaioiTep5orz6eEZxw","NL"]
-		"WyJkSXZmcGFpb2lUZXA1b3J6NmVFWnh3IiwiTkwiXQ",
-		// array with valid element (element 0) and one decoy digest (element 1, which is a hash over a 'secure random' value)
-		// array: ["PW8uSwHPfOh3fENJGCeEBQ","nationalities",[{"...":"b7MTXRZmMyE22_ZyiNvAp6hygI5Y8Ey6KNuKUaH6lio"},{"...":"wBIalkzxNqdBbT-eotJFegKmirdUPyyXLxIbtFugdsI"}]]
-		"WyJQVzh1U3dIUGZPaDNmRU5KR0NlRUJRIiwibmF0aW9uYWxpdGllcyIsW3siLi4uIjoiYjdNVFhSWm1NeUUyMl9aeWlOdkFwNmh5Z0k1WThFeTZLTnVLVWFINmxpbyJ9LHsiLi4uIjoid0JJYWxrenhOcWRCYlQtZW90SkZlZ0ttaXJkVVB5eVhMeElidEZ1Z2RzSSJ9XV0",
-	}
-
-	issuerSignedJwtPayload := `{
-		"address": {
-			"_sd": [
-				"6vh9bq-zS4GKM_7GpggVbYzzu6oOGXrmNVGPHP75Ud0",
-				"9gjVuXtdFROCgRrtNcGUXmF65rdezi_6Er_j76kmYyM",
-				"KURDPh4ZC19-3tiz-Df39V8eidy1oV3a3H1Da2N0g88",
-				"WN9r9dCBJ8HTCsS2jKASxTjEyW5m5x65_Z_2ro2jfXM",
-				"FxetI8EvzLU8v49U8JdbN0FsQs4UtwudaT7xdPLYU3g"
-			]
-		}
-	}`
-
-	var issuerSignedJwtPayloadFromJson map[string]any
-	err := json.Unmarshal([]byte(issuerSignedJwtPayload), &issuerSignedJwtPayloadFromJson)
-	require.NoError(t, err)
-
-	// Act
-	_, disclosures, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayloadFromJson, encodedDisclosures)
-
-	// Assert
-	require.NoError(t, err)
-	require.Len(t, disclosures, 6)
-
-	addr, ok := issuerSignedJwtPayloadFromJson["address"]
-	require.True(t, ok)
-	require.NotNil(t, addr)
-
-	addrMap, ok := addr.(map[string]any)
-	require.True(t, ok)
-
-	// Check that _sd field is removed from `address` field in the issuer signed jwt payload
-	_, ok = addrMap["_sd"]
-	require.False(t, ok)
-
-	// The object should contain 5 fields now: street_address, locality, region, country, nationalities
-	require.Len(t, addrMap, 5)
-	require.Contains(t, addrMap["street_address"], "Schulstr. 12")
-	require.Contains(t, addrMap["locality"], "Schulpforta")
-	require.Contains(t, addrMap["region"], "Sachsen-Anhalt")
-	require.Contains(t, addrMap["country"], "DE")
-
-	natVal, ok := addrMap["nationalities"]
-	require.True(t, ok)
-	require.NotNil(t, natVal)
-
-	// The array should only contain the valid element, the decoy digest should be ignored
-	natArr, ok := natVal.([]any)
-	require.True(t, ok)
-	require.Len(t, natArr, 1)
-}
-
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_RecursiveDisclosures_Succeeds(t *testing.T) {
-	// Arrange
-	encodedDisclosures := []EncodedDisclosure{
-		"WyJlSThaV205UW5LUHBOUGVOZW5IZGhRIiwgImV4dGVuc2lvbiIsICJiaXMiXQ", // extension disclosure
-		"WyJlbHVWNU9nM2dTTklJOEVZbnN4QV9BIiwgIm51bWJlciIsICIxMiJd",       // number disclosure
-		"WyIyR0xDNDJzS1F2ZUNmR2ZyeU5STjl3IiwgImhvdXNlbnVtYmVyIiwgeyJfc2QiOlsiMW9mOW82ZXRjNWdTWkpXQmVERHl3eGI1RVcwbE14Z2diWUdHQ1RiWG9VNCIsIjExZEZzM0ZVWTdUa0hDdmIwZDU2T2p6bU5yZVJWMl9pdDVwNXZtS0FXY0UiXX1d", // housenumber disclosure
-		"WyI2SWo3dE0tYTVpVlBHYm9TNXRtdlZBIiwgInN0cmVldCIsICJTY2h1bHN0ci4iXQ", // street disclosure
-		"WyI2SWo3dE0tYTVpVlBHYm9TNXRtdlZBIiwgInN0cmVldF9hZGRyZXNzIiwgeyJfc2QiOlsic1BTT1VmTkVJSW5FUE14cTlrVC1YU0ptT0tyRkpVTC0yZElQektPcmNhVSIsIndQNG9kbFJDUzlybmlZZjJ6UTNjNEVrU2JySUpKTHdTR21MY0ZrWDVKNVkiXX1d", // street_address disclosure
-	}
-
-	// Format:
-	// {
-	//   "address": {
-	//     "street_address": {
-	//       "street": "Schulstr."
-	//     	 "housenumber": {
-	//			"number": "12"
-	//		    "extension": "bis"
-	//		 }
-	//     }
-	// 	 }
-	// }
-	// Where the address only contains a pointer to the street_address disclosure, which will need to (recursively) build the full structure
-	issuerSignedJwtPayload := `{
-		"address": {
-			"_sd": [
-				"2c7XHh7XAUa0NknanfXW1vTWsJ7tqgOnDzsnZGEFtl4"
-			]
-		}
-	}`
-
-	var issuerSignedJwtPayloadFromJson map[string]any
-	err := json.Unmarshal([]byte(issuerSignedJwtPayload), &issuerSignedJwtPayloadFromJson)
-	require.NoError(t, err)
-
-	// Act
-	_, disclosures, err := verifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayloadFromJson, encodedDisclosures)
-
-	// Assert
-	require.NoError(t, err)
-	require.Len(t, disclosures, 5)
-
-	addr, ok := issuerSignedJwtPayloadFromJson["address"]
-	require.True(t, ok)
-	require.NotNil(t, addr)
-
-	addrMap, ok := addr.(map[string]any)
-	require.True(t, ok)
-
-	// Check that _sd field is removed from `address` field in the issuer signed jwt payload
-	_, ok = addrMap["_sd"]
-	require.False(t, ok)
-
-	// The object should contain 1 field now: street_address
-	require.Len(t, addrMap, 1)
-
-	streetAddrVal, ok := addrMap["street_address"]
-	require.True(t, ok)
-	require.NotNil(t, streetAddrVal)
-
-	streetAddrMap, ok := streetAddrVal.(map[string]any)
-	require.True(t, ok)
-
-	// The street_address object should contain 2 fields now: street, housenumber
-	require.Len(t, streetAddrMap, 2)
-	require.Contains(t, streetAddrMap["street"], "Schulstr.")
-
-	housenumberVal, ok := streetAddrMap["housenumber"]
-	require.True(t, ok)
-	require.NotNil(t, housenumberVal)
-
-	housenumberMap, ok := housenumberVal.(map[string]any)
-	require.True(t, ok)
-
-	// The housenumber object should contain 2 fields now: number, extension
-	require.Len(t, housenumberMap, 2)
-	require.Contains(t, housenumberMap["number"], "12")
-	require.Contains(t, housenumberMap["extension"], "bis")
-}
 
 // ======================= Holder verification tests ==============================
 // fails for:
@@ -725,7 +24,6 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_RecursiveDisclosures
 // - [x] issuer signed jwt with key binding jwt
 // - [x] typ in issuer signed jwt is not vc+sd-jwt or dc+sd-jwt
 // - [x] invalid sd-jwt (missing trailing ~)
-// - [x] iss link missing
 // - [x] valid self-signed x509 certificate that doesn't match a trusted certificate
 // - [x] missing vct link
 // - [x] clock.now + skew is before iat
@@ -734,11 +32,15 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_RecursiveDisclosures
 // - [x] empty but not missing _sd field
 // - [x] unsupported _sd_alg
 // - [x] failing to get issuer metadata fails the verification
-// - [x] no iss value provided
 // - [x] invalid disclosures (different than in _sd field)
+// - [x] iss claim that is not a URI SAN of the x5c end-entity certificate
+// - [x] iss claim missing and an x5c end-entity certificate without a URI SAN
+// - [x] iss claim missing on the kid path, where no certificate can supply the issuer
 
 // success for
 // - [x] iss link is non-https, but is accepted (for testing purposes)
+// - [x] iss claim missing entirely (OPTIONAL claim; Issuer stays nil)
+// - [x] sub claim missing entirely (OPTIONAL claim; Subject stays nil)
 // - [x] missing _sd_alg claim, falls back to sha-256
 // - [x] valid SD-JWT, no disclosures, no KB-JWT
 // - [x] valid SD-JWT, with disclosures, no KB-JWT
@@ -751,6 +53,9 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_RecursiveDisclosures
 // - [x] clock.now - 1 minute is before iat (valid because of skew)
 // - [x] clock.now - 1 minute is before nbf (valid because of skew)
 // - [x] clock.now + 1 minute is after exp (valid because of skew)
+// - [x] iss claim present: it is the resolved issuer identifier
+// - [x] iss claim missing: the certificate's URI SAN is the resolved issuer identifier
+// - [x] kid path with a did:jwk iss: the DID is the resolved issuer identifier
 
 func Test_HolderVerificationProcessor_InvalidJwtForIssuerSignedJwt_Fails(t *testing.T) {
 	sdJwt := SdJwtVc("slkjfaslkgdjaglj")
@@ -803,10 +108,217 @@ func Test_HolderVerificationProcessor_InvalidSdJwtVc_MissingTrailingTilde_Fails(
 	require.Error(t, err)
 }
 
-func Test_HolderVerificationProcessor_MissingIssuerUrl_Fails(t *testing.T) {
-	missingIssuerUrl := newWorkingSdJwtVcTestConfig()
-	missingIssuerUrl.issuerUrl = nil
-	errorTestCaseHolder(t, missingIssuerUrl, "missing iss field")
+// ─── optional iss / sub ──────────────────────────────────────────────────────
+// draft-ietf-oauth-sd-jwt-vc makes both `iss` and `sub` OPTIONAL: `iss` may be
+// conveyed by other means (here: the x5c end-entity certificate), and `sub` is
+// only a hint. Both are therefore modelled as pointers, and absence must be
+// preserved as nil rather than collapsed into "".
+
+func Test_HolderVerificationProcessor_MissingIssuerUrl_Succeeds_IssuerIsNil(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig()
+	config.issuerUrl = nil
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err, "iss is optional when the issuer is conveyed by the x5c certificate")
+	require.Nil(t, verified.IssuerSignedJwtPayload.Issuer, "an absent iss must stay absent, not become an empty string")
+}
+
+func Test_HolderVerificationProcessor_IssuerUrlPresent_IssuerIsSet(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig()
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.NotNil(t, verified.IssuerSignedJwtPayload.Issuer)
+	require.Equal(t, "https://openid4vc.staging.yivi.app", *verified.IssuerSignedJwtPayload.Issuer)
+}
+
+// ─── issuer identifier resolution ────────────────────────────────────────────
+// Whoever consumes a verified credential needs an issuer to attribute it to, even
+// though `iss` is OPTIONAL. VerifiedSdJwtVc.IssuerIdentifier carries that identity,
+// resolved per draft-ietf-oauth-sd-jwt-vc §2.5: `iss` when present, otherwise the
+// subject of the x5c end-entity certificate. Verification fails when neither is
+// available, so the identifier is never empty on success.
+
+func Test_HolderVerificationProcessor_IssPresent_IssuerIdentifierIsIss(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig() // iss == the certificate's URI SAN
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.Equal(t, "https://openid4vc.staging.yivi.app", verified.IssuerIdentifier)
+}
+
+func Test_HolderVerificationProcessor_MissingIss_IssuerIdentifierFromCertificateUriSan(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig()
+	config.issuerUrl = nil
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err, "iss is optional when the issuer is conveyed by the x5c certificate")
+	require.Equal(t, "https://openid4vc.staging.yivi.app", verified.IssuerIdentifier,
+		"an absent iss falls back to the URI SAN of the end-entity certificate")
+	require.Nil(t, verified.IssuerSignedJwtPayload.Issuer,
+		"the resolved identifier must not be written back into the claim set")
+}
+
+func Test_HolderVerificationProcessor_IssNotInCertificateSans_Fails(t *testing.T) {
+	// An issuer holding a certificate trusted for one identity must not be able to
+	// issue credentials in the name of another.
+	config := newWorkingSdJwtVcTestConfig().
+		withIssuerUrl("https://attacker.example.com", false)
+
+	errorTestCaseHolder(t, config, "is not a SAN of the issuer certificate")
+}
+
+func Test_HolderVerificationProcessor_MissingIss_CertificateWithoutUriSan_Fails(t *testing.T) {
+	// Neither source of identity is available: no iss claim, and an end-entity
+	// certificate that carries no URI SAN to fall back to.
+	config, context := newGeneratedIssuerConfig(t, "issuer.example.com", testdata.PkiOption_MissingUriSan|testdata.PkiOption_MissingDnsSan)
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+
+	_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.ErrorContains(t, err, "failed to obtain issuer URL from certificate")
+}
+
+func Test_HolderVerificationProcessor_GeneratedCertificateWithUriSan_ResolvesIssuerIdentifier(t *testing.T) {
+	// Control for the test above: the same generated PKI, but with the URI SAN in
+	// place, resolves the issuer identifier instead of failing.
+	config, context := newGeneratedIssuerConfig(t, "issuer.example.com", testdata.PkiOption_None)
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.Equal(t, "https://issuer.example.com", verified.IssuerIdentifier)
+}
+
+func Test_HolderVerificationProcessor_KidHeader_IssuerIdentifierIsIss(t *testing.T) {
+	// On the kid path there is no certificate, so iss is the only source of identity —
+	// here a did:jwk, which is also what the signing key is resolved from.
+	config, context, did := newDidJwkIssuerConfig(t)
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.Equal(t, did, verified.IssuerIdentifier)
+}
+
+func Test_HolderVerificationProcessor_KidHeaderWithoutIss_Fails(t *testing.T) {
+	// Same credential as the test above with only the iss claim dropped. Without a
+	// certificate to fall back to there is no identity left, and the credential is in
+	// fact already rejected during signature verification, because DidKeyProvider
+	// resolves the signing key from iss too — the explicit check in
+	// parseAndVerifyIssuerSignedJwt guards the case defensively.
+	config, context, _ := newDidJwkIssuerConfig(t)
+	config.issuerUrl = nil
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+
+	_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.Error(t, err)
+}
+
+// newDidJwkIssuerConfig builds a working SD-JWT VC config signed on the kid path: no
+// x5c header, and an iss claim holding the did:jwk that the issuer test key derives to.
+// It returns the config, a verification context for it, and that DID. The context
+// carries no trust anchors, because on the kid path the signing key comes from the DID
+// itself and the X.509 material is never consulted.
+func newDidJwkIssuerConfig(t *testing.T) (*testSdJwtVcConfig, SdJwtVcVerificationContext, string) {
+	issuerKey, err := readTestIssuerPrivateKey()
+	require.NoError(t, err)
+
+	pubJwk, err := jwk.Import(issuerKey.Public())
+	require.NoError(t, err)
+	doc, err := (&didjwk.DocumentBuilder{}).FromJwk(pubJwk)
+	require.NoError(t, err)
+
+	config := newWorkingSdJwtVcTestConfig().
+		withIssuerUrl(doc.ID, false).
+		withKidHeader(doc.ID + "#0")
+	config.x5cHeader = nil
+
+	context := SdJwtVcVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{},
+		Clock:                   eudi_jwt.NewSystemClock(),
+		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
+	}
+
+	return config, context, doc.ID
+}
+
+// newGeneratedIssuerConfig builds a working SD-JWT VC config signed by a freshly
+// generated end-entity certificate for hostname, together with a verification context
+// that trusts that certificate's chain. opts is forwarded to the certificate
+// generation, so a test can ask for an issuer certificate that deliberately lacks a
+// URI SAN. The `iss` claim is left out, since a generated certificate never matches
+// the shared test fixture's iss; a caller that wants one sets it to a URI SAN of the
+// generated certificate.
+func newGeneratedIssuerConfig(t *testing.T, hostname string, opts testdata.PkiGenerationOptions) (*testSdJwtVcConfig, SdJwtVcVerificationContext) {
+	_, rootCert, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(
+		t, testdata.CreateDistinguishedName("ROOT CERT"), 1, testdata.PkiOption_None, nil)
+	issuerKey, issuerCert, _ := testdata.CreateEndEntityCertificate(
+		t, testdata.CreateDistinguishedName(hostname), hostname, caCerts[0], caKeys[0], "", opts)
+
+	x5c, err := utils.ConvertPemCertificateChainToX5cFormat([]*x509.Certificate{issuerCert})
+	require.NoError(t, err)
+
+	config := newWorkingSdJwtVcTestConfig().withIssuerPrivateKey(issuerKey)
+	config.x5cHeader = x5c
+	config.issuerUrl = nil
+
+	roots := x509.NewCertPool()
+	roots.AddCert(rootCert)
+	intermediates := x509.NewCertPool()
+	intermediates.AddCert(caCerts[0])
+
+	context := SdJwtVcVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: x509.VerifyOptions{
+				Roots:         roots,
+				Intermediates: intermediates,
+				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+			},
+		},
+		Clock:       eudi_jwt.NewSystemClock(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
+	}
+
+	return config, context
+}
+
+func Test_HolderVerificationProcessor_MissingSubject_SubjectIsNil(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig() // no sub claim
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.Nil(t, verified.IssuerSignedJwtPayload.Subject)
+}
+
+func Test_HolderVerificationProcessor_SubjectPresent_SubjectIsSet(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig().withSubject("urn:example:holder-42")
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.NotNil(t, verified.IssuerSignedJwtPayload.Subject)
+	require.Equal(t, "urn:example:holder-42", *verified.IssuerSignedJwtPayload.Subject)
 }
 
 func Test_HolderVerificationProcessor_ValidButUntrusted_SelfSigned_X509Cert_Fails(t *testing.T) {
@@ -832,7 +344,7 @@ func Test_HolderVerificationProcessor_IatIsAfterVerification_Fails(t *testing.T)
 
 	context := SdJwtVcVerificationContext{
 		Clock:       &testClock{time: now},
-		JwtVerifier: NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -852,7 +364,7 @@ func Test_HolderVerificationProcessor_VerificationIsAfterExp_Fails(t *testing.T)
 
 	context := SdJwtVcVerificationContext{
 		Clock:       &testClock{time: now},
-		JwtVerifier: NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -877,7 +389,7 @@ func Test_HolderVerificationProcessor_VerificationIsBeforeNotBefore_Fails(t *tes
 			VerifyOpts: newWorkingVerifyOptions(),
 		},
 		Clock:       &testClock{time: now},
-		JwtVerifier: NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -889,8 +401,8 @@ func Test_HolderVerificationProcessor_VerificationIsBeforeNotBefore_Fails(t *tes
 
 func Test_HolderVerificationProcessor_EmptyButNotMissingSdField_Fails(t *testing.T) {
 	emptyNotMissingSdField := newWorkingSdJwtVcTestConfig().
-		withSdClaims([]DisclosureContent{}, iana.SHA256).
-		withDisclosures([]DisclosureContent{})
+		withSdClaims([]sdjwt.DisclosureContent{}, iana.SHA256).
+		withDisclosures([]sdjwt.DisclosureContent{})
 	errorTestCaseHolder(t, emptyNotMissingSdField, "failed to parse sd field: when the _sd field is present it may not be empty")
 }
 
@@ -1042,7 +554,7 @@ func Test_HolderVerificationProcessor_StatusCheck_NoStatusClaim_PassesWithChecke
 
 func Test_HolderVerificationProcessor_FewerDisclosuresThanSdHashes_Succeeds(t *testing.T) {
 	config := newWorkingSdJwtVcTestConfig()
-	config.disclosures = []DisclosureContent{
+	config.disclosures = []sdjwt.DisclosureContent{
 		config.disclosures[1],
 	}
 	noErrorTestCaseHolder(t, config, "fewer disclosures than _sd field hashes is valid")
@@ -1050,7 +562,7 @@ func Test_HolderVerificationProcessor_FewerDisclosuresThanSdHashes_Succeeds(t *t
 
 func Test_HolderVerificationProcessor_DifferentOrderDisclosures_Succeeds(t *testing.T) {
 	config := newWorkingSdJwtVcTestConfig()
-	config.disclosures = []DisclosureContent{
+	config.disclosures = []sdjwt.DisclosureContent{
 		config.disclosures[1],
 		config.disclosures[0],
 	}
@@ -1061,7 +573,7 @@ func Test_HolderVerificationProcessor_NoSdsAtAll_Succeeds(t *testing.T) {
 	config := newWorkingSdJwtVcTestConfig()
 
 	config.sdClaims = nil
-	config.disclosures = []DisclosureContent{}
+	config.disclosures = []sdjwt.DisclosureContent{}
 
 	noErrorTestCaseHolder(t, config, "no _sd claims at all is valid (if no disclosures either)")
 }
@@ -1094,7 +606,7 @@ func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeIat_Give
 			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now - 60},
-		JwtVerifier: NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -1116,7 +628,7 @@ func Test_HolderVerificationProcessor_VerificationPlusOneMinuteIsAfterExp_GivenC
 			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now + 60},
-		JwtVerifier: NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -1138,7 +650,7 @@ func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeNotBefor
 			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now - 60},
-		JwtVerifier: NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -1163,7 +675,7 @@ func Test_HolderVerificationProcessor_TimeFieldsAreParsedCorrectly(t *testing.T)
 			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now},
-		JwtVerifier: NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -1190,7 +702,7 @@ func Test_HolderVerificationProcessor_MissingTimeFieldsAreParsedCorrectly(t *tes
 			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now},
-		JwtVerifier: NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -1210,7 +722,7 @@ func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedCla
 	now := time.Now().Unix()
 	exp := now + 86400
 
-	disclosures, err := MultipleNewDisclosureContents(map[string]string{
+	disclosures, err := sdjwt.MultipleNewDisclosureContents(map[string]string{
 		"email":  "holder@example.com",
 		"domain": "example.com",
 	})
@@ -1230,7 +742,7 @@ func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedCla
 			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now},
-		JwtVerifier: NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 	holderVerifier := NewHolderVerificationProcessor(context)
 
@@ -1243,17 +755,17 @@ func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedCla
 	payload := result.ProcessedSdJwtPayload
 
 	// Standard JWT claims must be present
-	require.Equal(t, "https://openid4vc.staging.yivi.app", payload["iss"], "iss claim should be present in processed payload")
-	require.Equal(t, "test.test.email", payload["vct"], "vct claim should be present in processed payload")
+	require.Equal(t, "https://openid4vc.staging.yivi.app", payload[jwt.IssuerKey], "iss claim should be present in processed payload")
+	require.Equal(t, "test.test.email", payload[VerifiableCredentialTypeKey], "vct claim should be present in processed payload")
 
 	// Selectively-disclosed claims must be embedded directly in the processed payload
 	require.Equal(t, "holder@example.com", payload["email"], "email disclosure should be embedded in processed payload")
 	require.Equal(t, "example.com", payload["domain"], "domain disclosure should be embedded in processed payload")
 
 	// _sd and _sd_alg must be stripped from the processed payload
-	_, hasSd := payload["_sd"]
+	_, hasSd := payload[sdjwt.SdKey]
 	require.False(t, hasSd, "_sd field should be removed from processed payload")
-	_, hasSdAlg := payload["_sd_alg"]
+	_, hasSdAlg := payload[sdjwt.SdAlgKey]
 	require.False(t, hasSdAlg, "_sd_alg field should be removed from processed payload")
 }
 
@@ -1417,15 +929,15 @@ func runCertChainTestCase(t *testing.T, config x509TestConfig) {
 	chain, err := utils.ParsePemCertificateChainToX5cFormat(config.IssuerCert)
 	require.NoError(t, err)
 
-	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	creator := sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey()
 
-	sdjwt, err := NewSdJwtBuilder().
+	builtSdJwtVc, err := NewSdJwtVcBuilder().
 		WithPayload(
-			Claim(Key_ExpiryTime, time.Now().Unix()),
-			Claim(Key_Issuer, config.IssUrl),
-			Claim(Key_VerifiableCredentialType, "test.test.email"),
-			Claim(Key_SdAlg, iana.SHA256),
-			SdClaim("email", "test@gmail.com"),
+			sdjwt.Claim(jwt.IssuerKey, config.IssUrl),
+			sdjwt.Claim(jwt.ExpirationKey, time.Now().Unix()),
+			sdjwt.Claim(sdjwt.SdAlgKey, iana.SHA256),
+			sdjwt.Claim(VerifiableCredentialTypeKey, "test.test.email"),
+			sdjwt.SdClaim("email", "test@gmail.com"),
 		).
 		WithIssuerCertificateChain(chain).Build(creator)
 
@@ -1439,11 +951,11 @@ func runCertChainTestCase(t *testing.T, config x509TestConfig) {
 			VerifyOpts: *verifyOpts,
 		},
 		Clock:       eudi_jwt.NewSystemClock(),
-		JwtVerifier: NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 
 	holderVerifier := NewHolderVerificationProcessor(context)
-	_, err = holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwt))
+	_, err = holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(builtSdJwtVc))
 
 	if config.ShouldFail {
 		require.Error(t, err)

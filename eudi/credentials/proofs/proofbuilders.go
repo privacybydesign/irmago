@@ -180,9 +180,9 @@ func (b *JwtProofBuilder) BuildWithES256Signer(pub *ecdsa.PublicKey, sign ES256S
 
 	// Payload — aud flattened to a single string, matching Build's FlattenAudience.
 	payload := map[string]any{
-		"aud": b.audience,
-		"iss": b.issuer,
-		"iat": b.clock.Now().Unix(),
+		jwt.AudienceKey: b.audience,
+		jwt.IssuerKey:   b.issuer,
+		jwt.IssuedAtKey: b.clock.Now().Unix(),
 	}
 	if b.nonce != nil {
 		payload["nonce"] = *b.nonce
