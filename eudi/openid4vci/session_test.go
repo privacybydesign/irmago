@@ -176,7 +176,7 @@ func Test_openid4vciSession_obtainCredential_successResponses(t *testing.T) {
 
 	testCredential, err := createTestSdJwtVcWithHolderKey(
 		"test.credential.type",
-		"https://test-issuer.example.com",
+		"https://openid4vc.staging.yivi.app",
 		map[string]string{"name": "Test User"},
 		certChain,
 		holderJwkKey,

@@ -1,12 +1,23 @@
 package didjwk
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/stretchr/testify/require"
 )
+
+// encodeDid base64url-encodes the given JWK JSON verbatim into a did:jwk, so tests can
+// control the exact serialization the DID is built from.
+func encodeDid(jwkJson string) string {
+	return Prefix + base64.RawURLEncoding.EncodeToString([]byte(jwkJson))
+}
 
 func Test_FromJwk_Given_AsymmetricKeyWithSignatureKeyUsage_Succeeds(t *testing.T) {
 	// Arrange
@@ -46,11 +57,11 @@ func Test_FromJwk_Given_AsymmetricKeyWithSignatureKeyUsage_Succeeds(t *testing.T
 	require.Equal(t, doc.VerificationMethod[0].Controller, expectedDid)
 	require.NotNil(t, doc.VerificationMethod[0].PublicKeyJwk)
 
-	// Validate `sig` key usage results in correct authentication and assertionMethod entries
-	require.Len(t, doc.Authentication, 1)
-	require.Equal(t, doc.Authentication[0], expectedKid)
-	require.Len(t, doc.AssertionMethod, 1)
-	require.Equal(t, doc.AssertionMethod[0], expectedKid)
+	// The spec says `sig` key usage yields every verification relationship except keyAgreement
+	require.Equal(t, []did.VerificationRef{expectedKid}, doc.Authentication)
+	require.Equal(t, []did.VerificationRef{expectedKid}, doc.AssertionMethod)
+	require.Equal(t, []did.VerificationRef{expectedKid}, doc.CapabilityInvocation)
+	require.Equal(t, []did.VerificationRef{expectedKid}, doc.CapabilityDelegation)
 
 	require.Nil(t, doc.KeyAgreement)
 }
@@ -93,10 +104,179 @@ func Test_FromJwk_Given_AsymmetricKeyWithEncryptionKeyUsage_Succeeds(t *testing.
 	require.Equal(t, doc.VerificationMethod[0].Controller, expectedDid)
 	require.NotNil(t, doc.VerificationMethod[0].PublicKeyJwk)
 
-	// Validate `enc` key usage results in correct keyAgreement entry
-	require.Len(t, doc.KeyAgreement, 1)
-	require.Equal(t, doc.KeyAgreement[0], expectedKid)
+	// The spec says `enc` key usage yields keyAgreement and nothing else
+	require.Equal(t, []did.VerificationRef{expectedKid}, doc.KeyAgreement)
 
 	require.Nil(t, doc.Authentication)
 	require.Nil(t, doc.AssertionMethod)
+	require.Nil(t, doc.CapabilityInvocation)
+	require.Nil(t, doc.CapabilityDelegation)
+}
+
+func Test_FromJwk_Given_AsymmetricKeyWithoutKeyUsage_IncludesAllVerificationRelationships(t *testing.T) {
+	// Arrange
+	// A JWK without a `use` member. The spec's DID Document template lists every
+	// verification relationship, and only a `use` member narrows that set down.
+	jwkJson := `{
+		"crv": "P-256",
+		"kty": "EC",
+		"x": "cnKeKYmS4GCKMX6ubyQ4im_i8ZoA3ZVBmRkGLq3DmP0",
+		"y": "4Rk1oMpRjQSL75S2BI6KRDqmJTpEQM3NkvVJnqd2qx4"
+	}`
+
+	key, err := jwk.ParseKey([]byte(jwkJson))
+	require.NoError(t, err)
+
+	// Act
+	doc, err := (&DocumentBuilder{}).FromJwk(key)
+
+	// Assert
+	require.NoError(t, err)
+
+	expectedKid := doc.ID + "#0"
+	require.Equal(t, []did.VerificationRef{expectedKid}, doc.Authentication)
+	require.Equal(t, []did.VerificationRef{expectedKid}, doc.AssertionMethod)
+	require.Equal(t, []did.VerificationRef{expectedKid}, doc.CapabilityInvocation)
+	require.Equal(t, []did.VerificationRef{expectedKid}, doc.CapabilityDelegation)
+	require.Equal(t, []did.VerificationRef{expectedKid}, doc.KeyAgreement)
+}
+
+func Test_FromJwk_Given_PrivateKey_ReturnsError(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	key, err := jwk.Import[jwk.Key](privKey)
+	require.NoError(t, err)
+
+	_, err = (&DocumentBuilder{}).FromJwk(key)
+	require.ErrorContains(t, err, "cannot contain private key material")
+}
+
+func Test_FromJwk_Given_SymmetricKey_ReturnsError(t *testing.T) {
+	key, err := jwk.Import[jwk.Key]([]byte("0123456789abcdef"))
+	require.NoError(t, err)
+
+	_, err = (&DocumentBuilder{}).FromJwk(key)
+	require.ErrorContains(t, err, "requires an asymmetric public key")
+}
+
+func Test_Resolve_Given_OkpPublicKey_Succeeds(t *testing.T) {
+	didJwk := encodeDid(`{"crv":"Ed25519","kty":"OKP","x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}`)
+
+	key, err := Resolve(didJwk)
+
+	require.NoError(t, err)
+	require.Equal(t, "OKP", key.KeyType().String())
+}
+
+func Test_Resolve_Given_PrivateKey_ReturnsError(t *testing.T) {
+	// The spec: "a JWK for a private key must never be used and must be rejected by all
+	// implementations". Without this check the private key would be handed to callers as
+	// if it were a legitimately resolved public key.
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	key, err := jwk.Import[jwk.Key](privKey)
+	require.NoError(t, err)
+	privJson, err := json.Marshal(key)
+	require.NoError(t, err)
+
+	_, err = Resolve(encodeDid(string(privJson)))
+	require.ErrorContains(t, err, "cannot contain private key material")
+}
+
+func Test_Resolve_Given_SymmetricKey_ReturnsError(t *testing.T) {
+	didJwk := encodeDid(`{"kty":"oct","k":"MDEyMzQ1Njc4OWFiY2RlZg"}`)
+
+	_, err := Resolve(didJwk)
+	require.ErrorContains(t, err, "requires an asymmetric public key")
+}
+
+func Test_Resolve_Given_PaddedBase64_ReturnsError(t *testing.T) {
+	// The spec's syntax is "base64url-value := [A-Za-z0-9_-]+", so the "=" of a padded
+	// encoding is not part of a did:jwk. The JWK below is 79 bytes, which pads.
+	const jwkJson = `{"crv":"Ed25519","kty":"OKP","x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}`
+	padded := Prefix + base64.URLEncoding.EncodeToString([]byte(jwkJson))
+	require.Contains(t, padded, "=", "test needs an input that actually pads")
+
+	_, err := Resolve(padded)
+	require.ErrorContains(t, err, "failed to base64url-decode did:jwk")
+
+	// The same JWK without padding resolves.
+	_, err = Resolve(encodeDid(jwkJson))
+	require.NoError(t, err)
+}
+
+func Test_Resolve_Given_UnknownFragment_ReturnsError(t *testing.T) {
+	didJwk := encodeDid(`{"crv":"Ed25519","kty":"OKP","x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}`)
+
+	// A did:jwk DID Document only ever holds the verification method "#0", so no other
+	// fragment can be dereferenced.
+	_, err := Resolve(didJwk + "#1")
+	require.ErrorContains(t, err, `invalid did:jwk fragment "1"`)
+
+	_, err = Resolve(didJwk + "#key-1")
+	require.ErrorContains(t, err, `invalid did:jwk fragment "key-1"`)
+
+	_, err = Resolve(didJwk + "#0")
+	require.NoError(t, err)
+}
+
+func Test_ResolveDocument_Given_JwkWithKid_StillReferencesFragmentZero(t *testing.T) {
+	// The spec: "If the JWK contains a `kid` value it is _not_ used as the reference, `#0`
+	// is the only valid value." A DID minted by another party may well carry a `kid`.
+	didJwk := encodeDid(`{"kty":"OKP","crv":"Ed25519","kid":"my-signing-key-2026","x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}`)
+
+	doc, err := ResolveDocument(didJwk)
+
+	require.NoError(t, err)
+	require.Equal(t, didJwk+"#0", doc.VerificationMethod[0].ID)
+	require.Equal(t, []did.VerificationRef{did.VerificationRef(didJwk + "#0")}, doc.AssertionMethod)
+
+	// And the JWK's own kid is not accepted as a fragment.
+	_, err = Resolve(didJwk + "#my-signing-key-2026")
+	require.ErrorContains(t, err, `invalid did:jwk fragment "my-signing-key-2026"`)
+}
+
+func Test_ResolveDocument_Given_ForeignMemberOrdering_KeepsTheDidUnchanged(t *testing.T) {
+	// A did:jwk minted by another implementation that serializes "kty" first. The spec
+	// puts no ordering requirement on the JWK, so this DID is as valid as our own, but
+	// re-encoding the parsed key produces a different (member-sorted) DID string.
+	didJwk := encodeDid(`{"kty":"EC","crv":"P-256","x":"cnKeKYmS4GCKMX6ubyQ4im_i8ZoA3ZVBmRkGLq3DmP0","y":"4Rk1oMpRjQSL75S2BI6KRDqmJTpEQM3NkvVJnqd2qx4"}`)
+
+	doc, err := ResolveDocument(didJwk)
+
+	require.NoError(t, err)
+	require.Equal(t, didJwk, doc.ID)
+	require.Len(t, doc.VerificationMethod, 1)
+	require.Equal(t, didJwk+"#0", doc.VerificationMethod[0].ID)
+	require.Equal(t, didJwk, doc.VerificationMethod[0].Controller)
+	require.Equal(t, did.VerificationMethodType_JsonWebKey2020, doc.VerificationMethod[0].Type)
+	require.NotNil(t, doc.VerificationMethod[0].PublicKeyJwk)
+}
+
+func Test_ResolveDocument_Given_DidWithFragment_KeepsTheDidWithoutFragment(t *testing.T) {
+	didJwk := encodeDid(`{"crv":"Ed25519","kty":"OKP","x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}`)
+
+	doc, err := ResolveDocument(didJwk + "#0")
+
+	require.NoError(t, err)
+	require.Equal(t, didJwk, doc.ID)
+	require.Equal(t, didJwk+"#0", doc.VerificationMethod[0].ID)
+}
+
+func Test_ResolveDocument_RoundTripsADocumentBuiltFromAJwk(t *testing.T) {
+	jwkJson := `{"crv":"P-256","kty":"EC","use":"sig","x":"cnKeKYmS4GCKMX6ubyQ4im_i8ZoA3ZVBmRkGLq3DmP0","y":"4Rk1oMpRjQSL75S2BI6KRDqmJTpEQM3NkvVJnqd2qx4"}`
+	key, err := jwk.ParseKey([]byte(jwkJson))
+	require.NoError(t, err)
+
+	built, err := (&DocumentBuilder{}).FromJwk(key)
+	require.NoError(t, err)
+
+	resolved, err := ResolveDocument(built.ID)
+	require.NoError(t, err)
+
+	require.Equal(t, built.ID, resolved.ID)
+	require.Equal(t, built.Context, resolved.Context)
+	require.Equal(t, built.VerificationMethod[0].ID, resolved.VerificationMethod[0].ID)
+	require.Equal(t, built.AssertionMethod, resolved.AssertionMethod)
+	require.Equal(t, built.KeyAgreement, resolved.KeyAgreement)
 }

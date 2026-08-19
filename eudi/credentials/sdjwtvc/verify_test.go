@@ -1,11 +1,14 @@
 package sdjwtvc
 
 import (
+	"crypto/x509"
 	"testing"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/didjwk"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
@@ -21,7 +24,6 @@ import (
 // - [x] issuer signed jwt with key binding jwt
 // - [x] typ in issuer signed jwt is not vc+sd-jwt or dc+sd-jwt
 // - [x] invalid sd-jwt (missing trailing ~)
-// - [x] iss link missing
 // - [x] valid self-signed x509 certificate that doesn't match a trusted certificate
 // - [x] missing vct link
 // - [x] clock.now + skew is before iat
@@ -30,11 +32,15 @@ import (
 // - [x] empty but not missing _sd field
 // - [x] unsupported _sd_alg
 // - [x] failing to get issuer metadata fails the verification
-// - [x] no iss value provided
 // - [x] invalid disclosures (different than in _sd field)
+// - [x] iss claim that is not a URI SAN of the x5c end-entity certificate
+// - [x] iss claim missing and an x5c end-entity certificate without a URI SAN
+// - [x] iss claim missing on the kid path, where no certificate can supply the issuer
 
 // success for
 // - [x] iss link is non-https, but is accepted (for testing purposes)
+// - [x] iss claim missing entirely (OPTIONAL claim; Issuer stays nil)
+// - [x] sub claim missing entirely (OPTIONAL claim; Subject stays nil)
 // - [x] missing _sd_alg claim, falls back to sha-256
 // - [x] valid SD-JWT, no disclosures, no KB-JWT
 // - [x] valid SD-JWT, with disclosures, no KB-JWT
@@ -47,6 +53,9 @@ import (
 // - [x] clock.now - 1 minute is before iat (valid because of skew)
 // - [x] clock.now - 1 minute is before nbf (valid because of skew)
 // - [x] clock.now + 1 minute is after exp (valid because of skew)
+// - [x] iss claim present: it is the resolved issuer identifier
+// - [x] iss claim missing: the certificate's URI SAN is the resolved issuer identifier
+// - [x] kid path with a did:jwk iss: the DID is the resolved issuer identifier
 
 func Test_HolderVerificationProcessor_InvalidJwtForIssuerSignedJwt_Fails(t *testing.T) {
 	sdJwt := SdJwtVc("slkjfaslkgdjaglj")
@@ -99,10 +108,217 @@ func Test_HolderVerificationProcessor_InvalidSdJwtVc_MissingTrailingTilde_Fails(
 	require.Error(t, err)
 }
 
-func Test_HolderVerificationProcessor_MissingIssuerUrl_Fails(t *testing.T) {
-	missingIssuerUrl := newWorkingSdJwtVcTestConfig()
-	missingIssuerUrl.issuerUrl = nil
-	errorTestCaseHolder(t, missingIssuerUrl, "missing iss field")
+// ─── optional iss / sub ──────────────────────────────────────────────────────
+// draft-ietf-oauth-sd-jwt-vc makes both `iss` and `sub` OPTIONAL: `iss` may be
+// conveyed by other means (here: the x5c end-entity certificate), and `sub` is
+// only a hint. Both are therefore modelled as pointers, and absence must be
+// preserved as nil rather than collapsed into "".
+
+func Test_HolderVerificationProcessor_MissingIssuerUrl_Succeeds_IssuerIsNil(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig()
+	config.issuerUrl = nil
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err, "iss is optional when the issuer is conveyed by the x5c certificate")
+	require.Nil(t, verified.IssuerSignedJwtPayload.Issuer, "an absent iss must stay absent, not become an empty string")
+}
+
+func Test_HolderVerificationProcessor_IssuerUrlPresent_IssuerIsSet(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig()
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.NotNil(t, verified.IssuerSignedJwtPayload.Issuer)
+	require.Equal(t, "https://openid4vc.staging.yivi.app", *verified.IssuerSignedJwtPayload.Issuer)
+}
+
+// ─── issuer identifier resolution ────────────────────────────────────────────
+// Whoever consumes a verified credential needs an issuer to attribute it to, even
+// though `iss` is OPTIONAL. VerifiedSdJwtVc.IssuerIdentifier carries that identity,
+// resolved per draft-ietf-oauth-sd-jwt-vc §2.5: `iss` when present, otherwise the
+// subject of the x5c end-entity certificate. Verification fails when neither is
+// available, so the identifier is never empty on success.
+
+func Test_HolderVerificationProcessor_IssPresent_IssuerIdentifierIsIss(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig() // iss == the certificate's URI SAN
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.Equal(t, "https://openid4vc.staging.yivi.app", verified.IssuerIdentifier)
+}
+
+func Test_HolderVerificationProcessor_MissingIss_IssuerIdentifierFromCertificateUriSan(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig()
+	config.issuerUrl = nil
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err, "iss is optional when the issuer is conveyed by the x5c certificate")
+	require.Equal(t, "https://openid4vc.staging.yivi.app", verified.IssuerIdentifier,
+		"an absent iss falls back to the URI SAN of the end-entity certificate")
+	require.Nil(t, verified.IssuerSignedJwtPayload.Issuer,
+		"the resolved identifier must not be written back into the claim set")
+}
+
+func Test_HolderVerificationProcessor_IssNotInCertificateSans_Fails(t *testing.T) {
+	// An issuer holding a certificate trusted for one identity must not be able to
+	// issue credentials in the name of another.
+	config := newWorkingSdJwtVcTestConfig().
+		withIssuerUrl("https://attacker.example.com", false)
+
+	errorTestCaseHolder(t, config, "is not a SAN of the issuer certificate")
+}
+
+func Test_HolderVerificationProcessor_MissingIss_CertificateWithoutUriSan_Fails(t *testing.T) {
+	// Neither source of identity is available: no iss claim, and an end-entity
+	// certificate that carries no URI SAN to fall back to.
+	config, context := newGeneratedIssuerConfig(t, "issuer.example.com", testdata.PkiOption_MissingUriSan|testdata.PkiOption_MissingDnsSan)
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+
+	_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.ErrorContains(t, err, "failed to obtain issuer URL from certificate")
+}
+
+func Test_HolderVerificationProcessor_GeneratedCertificateWithUriSan_ResolvesIssuerIdentifier(t *testing.T) {
+	// Control for the test above: the same generated PKI, but with the URI SAN in
+	// place, resolves the issuer identifier instead of failing.
+	config, context := newGeneratedIssuerConfig(t, "issuer.example.com", testdata.PkiOption_None)
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.Equal(t, "https://issuer.example.com", verified.IssuerIdentifier)
+}
+
+func Test_HolderVerificationProcessor_KidHeader_IssuerIdentifierIsIss(t *testing.T) {
+	// On the kid path there is no certificate, so iss is the only source of identity —
+	// here a did:jwk, which is also what the signing key is resolved from.
+	config, context, did := newDidJwkIssuerConfig(t)
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.Equal(t, did, verified.IssuerIdentifier)
+}
+
+func Test_HolderVerificationProcessor_KidHeaderWithoutIss_Fails(t *testing.T) {
+	// Same credential as the test above with only the iss claim dropped. Without a
+	// certificate to fall back to there is no identity left, and the credential is in
+	// fact already rejected during signature verification, because DidKeyProvider
+	// resolves the signing key from iss too — the explicit check in
+	// parseAndVerifyIssuerSignedJwt guards the case defensively.
+	config, context, _ := newDidJwkIssuerConfig(t)
+	config.issuerUrl = nil
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+
+	_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.Error(t, err)
+}
+
+// newDidJwkIssuerConfig builds a working SD-JWT VC config signed on the kid path: no
+// x5c header, and an iss claim holding the did:jwk that the issuer test key derives to.
+// It returns the config, a verification context for it, and that DID. The context
+// carries no trust anchors, because on the kid path the signing key comes from the DID
+// itself and the X.509 material is never consulted.
+func newDidJwkIssuerConfig(t *testing.T) (*testSdJwtVcConfig, SdJwtVcVerificationContext, string) {
+	issuerKey, err := readTestIssuerPrivateKey()
+	require.NoError(t, err)
+
+	pubJwk, err := jwk.Import[jwk.Key](issuerKey.Public())
+	require.NoError(t, err)
+	doc, err := (&didjwk.DocumentBuilder{}).FromJwk(pubJwk)
+	require.NoError(t, err)
+
+	config := newWorkingSdJwtVcTestConfig().
+		withIssuerUrl(doc.ID, false).
+		withKidHeader(doc.ID + "#0")
+	config.x5cHeader = nil
+
+	context := SdJwtVcVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{},
+		Clock:                   eudi_jwt.NewSystemClock(),
+		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
+	}
+
+	return config, context, doc.ID
+}
+
+// newGeneratedIssuerConfig builds a working SD-JWT VC config signed by a freshly
+// generated end-entity certificate for hostname, together with a verification context
+// that trusts that certificate's chain. opts is forwarded to the certificate
+// generation, so a test can ask for an issuer certificate that deliberately lacks a
+// URI SAN. The `iss` claim is left out, since a generated certificate never matches
+// the shared test fixture's iss; a caller that wants one sets it to a URI SAN of the
+// generated certificate.
+func newGeneratedIssuerConfig(t *testing.T, hostname string, opts testdata.PkiGenerationOptions) (*testSdJwtVcConfig, SdJwtVcVerificationContext) {
+	_, rootCert, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(
+		t, testdata.CreateDistinguishedName("ROOT CERT"), 1, testdata.PkiOption_None, nil)
+	issuerKey, issuerCert, _ := testdata.CreateEndEntityCertificate(
+		t, testdata.CreateDistinguishedName(hostname), hostname, caCerts[0], caKeys[0], "", opts)
+
+	x5c, err := utils.ConvertPemCertificateChainToX5cFormat([]*x509.Certificate{issuerCert})
+	require.NoError(t, err)
+
+	config := newWorkingSdJwtVcTestConfig().withIssuerPrivateKey(issuerKey)
+	config.x5cHeader = x5c
+	config.issuerUrl = nil
+
+	roots := x509.NewCertPool()
+	roots.AddCert(rootCert)
+	intermediates := x509.NewCertPool()
+	intermediates.AddCert(caCerts[0])
+
+	context := SdJwtVcVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: x509.VerifyOptions{
+				Roots:         roots,
+				Intermediates: intermediates,
+				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+			},
+		},
+		Clock:       eudi_jwt.NewSystemClock(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
+	}
+
+	return config, context
+}
+
+func Test_HolderVerificationProcessor_MissingSubject_SubjectIsNil(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig() // no sub claim
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.Nil(t, verified.IssuerSignedJwtPayload.Subject)
+}
+
+func Test_HolderVerificationProcessor_SubjectPresent_SubjectIsSet(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig().withSubject("urn:example:holder-42")
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.NotNil(t, verified.IssuerSignedJwtPayload.Subject)
+	require.Equal(t, "urn:example:holder-42", *verified.IssuerSignedJwtPayload.Subject)
 }
 
 func Test_HolderVerificationProcessor_ValidButUntrusted_SelfSigned_X509Cert_Fails(t *testing.T) {

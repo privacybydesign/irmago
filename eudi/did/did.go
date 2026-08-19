@@ -42,16 +42,16 @@ type VerificationMethod struct {
 	Controller   string                 `json:"controller"`
 	Expires      *string                `json:"expires,omitempty"`
 	Revoked      *string                `json:"revoked,omitempty"`
-	PublicKeyJwk *jwk.Key               `json:"publicKeyJwk,omitempty"`
+	PublicKeyJwk jwk.Key                `json:"publicKeyJwk,omitempty"`
 
 	PublicKeyMultibase        *string `json:"publicKeyMultibase,omitempty"`
-	decodedMultibasePublicKey *jwk.Key
+	decodedMultibasePublicKey jwk.Key
 
 	PublicKeyBase58        *string `json:"publicKeyBase58,omitempty"`
-	decodedBase58PublicKey *jwk.Key
+	decodedBase58PublicKey jwk.Key
 }
 
-func (v *VerificationMethod) PublicKey() *jwk.Key {
+func (v *VerificationMethod) PublicKey() jwk.Key {
 	if v.PublicKeyJwk != nil {
 		return v.PublicKeyJwk
 	}
@@ -156,7 +156,7 @@ func (v *VerificationMethod) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("failed to parse publicKeyJwk: %v", err)
 		}
-		v.PublicKeyJwk = &key
+		v.PublicKeyJwk = key
 	}
 
 	present := 0
@@ -182,7 +182,7 @@ func (v *VerificationMethod) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("failed to convert publicKeyMultibase to JWK: %w", err)
 		}
-		v.decodedMultibasePublicKey = &key
+		v.decodedMultibasePublicKey = key
 	}
 
 	if v.PublicKeyBase58 != nil {
@@ -196,13 +196,13 @@ func (v *VerificationMethod) UnmarshalJSON(data []byte) error {
 			if err != nil {
 				return fmt.Errorf("failed to convert publicKeyBase58 to JWK: %w", err)
 			}
-			v.decodedBase58PublicKey = &key
+			v.decodedBase58PublicKey = key
 		case VerificationMethodType_JsonWebKey2020:
 			key, err := jwk.ParseKey(decodedBytes)
 			if err != nil {
 				return fmt.Errorf("failed to parse publicKeyBase58 as JWK: %w", err)
 			}
-			v.decodedBase58PublicKey = &key
+			v.decodedBase58PublicKey = key
 		default:
 			return fmt.Errorf("unsupported verification method type for publicKeyBase58: %s", v.Type)
 		}

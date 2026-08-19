@@ -192,8 +192,7 @@ func findVerificationKey(doc *did.Document, header map[string]any) (any, error) 
 			continue
 		}
 
-		jwkKey := *pk
-		rawKey, err := jwk.Export[any](jwkKey)
+		rawKey, err := jwk.Export[any](pk)
 		if err != nil {
 			return nil, fmt.Errorf("failed to export raw key from verification method %s: %v", vm.ID, err)
 		}
