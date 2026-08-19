@@ -636,9 +636,8 @@ func (s *session) getAuthorizationServer() (string, error) {
 	return "", fmt.Errorf("no valid authorization server found in credential issuer metadata")
 }
 
-// fetchCredential requests and verifies a credential for a given configuration
-// ID without storing it. The caller stores via storeCredentials or cleans up
-// via cleanupKeys.
+// obtainCredential requests and verifies a credential for a given configuration
+// ID without storing it. The caller stores via storeCredentials or cleans up via cleanupKeys.
 func (s *session) obtainCredential(credentialConfigurationId string, cNonce *string, accessToken string) (*fetchedCredential, error) {
 	if s.credentialIssuerMetadata.NonceEndpoint != "" && cNonce == nil {
 		return nil, fmt.Errorf("credential request requires nonce but none was provided")

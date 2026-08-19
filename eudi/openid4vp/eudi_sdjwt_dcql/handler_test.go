@@ -67,15 +67,15 @@ func newTestBatch(hash, vct string, payload map[string]any) *models.CredentialBa
 	payloadJSON, _ := json.Marshal(payload)
 	iss := "https://issuer.example.com"
 	return &models.CredentialBatch{
-		IssuerURL:                &iss,
-		VerifiableCredentialType: vct,
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(payloadJSON),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
-		CredentialIssuer:         &iss,
+		IssuerIdentifier:           iss,
+		VerifiableCredentialType:   vct,
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(payloadJSON),
+		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             1,
+		CredentialIssuerIdentifier: iss,
 		Instances: []models.IssuedCredentialInstance{
 			{RawCredential: []byte("fake-raw-credential")},
 		},

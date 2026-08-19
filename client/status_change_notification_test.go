@@ -87,15 +87,15 @@ func seedStatusBearingBatch(t *testing.T, gdb *gorm.DB, hash, uri string, idx ui
 	iss := "https://issuer.example.com"
 	u, i, now := uri, idx, time.Now().UTC()
 	require.NoError(t, gdb.Create(&models.CredentialBatch{
-		IssuerURL:                &iss,
-		CredentialIssuer:         &iss,
-		VerifiableCredentialType: "https://vct.example/x",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"u"}`),
-		IssuedAt:                 datatypes.NullTime{V: now.Truncate(time.Second), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
+		IssuerIdentifier:           iss,
+		CredentialIssuerIdentifier: iss,
+		VerifiableCredentialType:   "https://vct.example/x",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"u"}`),
+		IssuedAt:                   datatypes.NullTime{V: now.Truncate(time.Second), Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             1,
 		Instances: []models.IssuedCredentialInstance{{
 			RawCredential:     []byte("raw"),
 			StatusListURI:     &u,

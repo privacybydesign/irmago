@@ -59,15 +59,15 @@ func storeBackfillBatch(t *testing.T, s *backfillTestStorage, baseURL string) {
 func backfillBatch(baseURL string) *models.CredentialBatch {
 	iss := "https://issuer.example.com"
 	return &models.CredentialBatch{
-		IssuerURL:                &iss,
-		VerifiableCredentialType: "https://vct.example.com/Test",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     "hash1",
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now(), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
-		CredentialIssuer:         &iss,
+		IssuerIdentifier:           iss,
+		VerifiableCredentialType:   "https://vct.example.com/Test",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       "hash1",
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                   datatypes.NullTime{V: time.Now(), Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             1,
+		CredentialIssuerIdentifier: iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			{Name: "Issuer EN", Locale: nullStr("en"), LogoURI: nullStr(baseURL + "/issuer-en.png")},
 			{Name: "Issuer NL", Locale: nullStr("nl"), LogoURI: nullStr(baseURL + "/issuer-nl.png")},

@@ -129,12 +129,8 @@ type ResolvedBatchDisplay struct {
 // ResolveBatchDisplay resolves everything a batch's display metadata says, for
 // one locale, in one pass.
 func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedBatchDisplay {
-	issuerId := ""
-	if batch.CredentialIssuer != nil {
-		issuerId = *batch.CredentialIssuer
-	}
 	d := ResolvedBatchDisplay{
-		IssuerId:    issuerId,
+		IssuerId:    batch.CredentialIssuerIdentifier,
 		IssuerNames: IssuerNamesByLanguage(batch.IssuerDisplay),
 		ClaimNames:  map[string]string{},
 		ClaimOrder:  map[string]int{},

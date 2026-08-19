@@ -125,10 +125,11 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 		VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
 	}
 	tests := []struct {
-		name     string
-		metadata metadata.CredentialIssuerMetadata
-		offer    *CredentialOffer
-		wantErr  string
+		name              string
+		metadata          metadata.CredentialIssuerMetadata
+		offer             *CredentialOffer
+		allowInsecureHttp bool
+		wantErr           string
 	}{
 		{
 			name: "missing credential_issuer",
@@ -137,6 +138,32 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: "missing 'credential_issuer'",
+		},
+		{
+			name: "invalid credential_issuer (non-HTTPS)",
+			metadata: metadata.CredentialIssuerMetadata{
+				CredentialIssuer:                  "http://issuer.example.com/",
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: "invalid 'credential_issuer' URL \"http://issuer.example.com/\": scheme must be https",
+		},
+		{
+			name: "invalid credential_issuer (non-HTTPS), valid with `allowInsecureHttp` enabled",
+			metadata: metadata.CredentialIssuerMetadata{
+				CredentialIssuer:                  "http://issuer.example.com/",
+				CredentialEndpoint:                "https://issuer.example.com/credential",
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
+			},
+			allowInsecureHttp: true,
+			wantErr:           "",
+		},
+		{
+			name: "invalid credential_issuer (non-URI)",
+			metadata: metadata.CredentialIssuerMetadata{
+				CredentialIssuer:                  ":|invalid uri|:",
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: "invalid 'credential_issuer' URL \":|invalid uri|:\"",
 		},
 		{
 			name: "missing credential_endpoint",
@@ -258,7 +285,9 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			validator := CredentialIssuerMetadataValidator{}
+			validator := CredentialIssuerMetadataValidator{
+				allowInsecureHttp: tt.allowInsecureHttp,
+			}
 			err := validator.Verify(tt.metadata)
 			if tt.wantErr == "" && err != nil {
 				t.Errorf("Verify() unexpected error: %v", err)
@@ -327,7 +356,9 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			validator := CredentialIssuerMetadataValidator{}
+			validator := CredentialIssuerMetadataValidator{
+				allowInsecureHttp: false,
+			}
 			err := validator.ValidateAgainstCredentialOffer(&tt.metadata, tt.offer)
 			if tt.wantErr == "" && err != nil {
 				t.Errorf("Verify() unexpected error: %v", err)

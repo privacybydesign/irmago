@@ -1213,12 +1213,8 @@ func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch, loca
 // issuerTrustedParty builds a TrustedParty from the stored issuer display metadata,
 // including the issuer logo if available on disk.
 func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, locale string) clientmodels.TrustedParty {
-	id := ""
-	if batch.CredentialIssuer != nil {
-		id = *batch.CredentialIssuer
-	}
 	return clientmodels.TrustedParty{
-		Id:    id,
+		Id:    batch.CredentialIssuerIdentifier,
 		Name:  clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
 		Image: h.issuerImage(batch, locale),
 	}

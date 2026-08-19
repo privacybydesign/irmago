@@ -25,6 +25,7 @@ type RegisteredClaims struct {
 
 	// OPTIONAL. As defined in Section 4.1.1 of [RFC7519] this claim explicitly indicates the Issuer of the credential
 	// when it is not conveyed by other means (e.g., the subject of the end-entity certificate of an x5c header)
+	// Although the claim is optional, the issuer should always be known in one way or another, either through the iss claim or through the x5c header.
 	Issuer *string
 
 	// OPTIONAL: list of hashed -> base64url encoded disclosures

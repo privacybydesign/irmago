@@ -135,7 +135,7 @@ func TestGetCredentialMetadataList_MapsIssuerDisplay(t *testing.T) {
 	result, err := svc.GetCredentialMetadataList()
 
 	require.NoError(t, err)
-	assert.Equal(t, *batch.CredentialIssuer, result[0].Issuer.Id)
+	assert.Equal(t, batch.CredentialIssuerIdentifier, result[0].Issuer.Id)
 	assert.Equal(t, "Test Issuer", result[0].Issuer.Name)
 }
 
@@ -624,8 +624,8 @@ func TestVerifyAndStoreIssuedCredentials_SetsIssuerMetadata(t *testing.T) {
 
 	require.NoError(t, err)
 	batch := mock.storedBatches[0]
-	assert.Equal(t, issuer, *batch.IssuerURL)
-	assert.Equal(t, issuer, *batch.CredentialIssuer)
+	assert.Equal(t, issuer, batch.IssuerIdentifier)
+	assert.Equal(t, issuer, batch.CredentialIssuerIdentifier)
 }
 
 func TestVerifyAndStoreIssuedCredentials_SetsVCT(t *testing.T) {
@@ -1330,6 +1330,7 @@ func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesys
 
 func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwtvc.VerifiedSdJwtVc {
 	return &sdjwtvc.VerifiedSdJwtVc{
+		IssuerIdentifier: issuer,
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 			RegisteredClaims: sdjwt.RegisteredClaims{
 				Issuer:    &issuer,
@@ -1394,16 +1395,16 @@ func newStorageBatch() *models.CredentialBatch {
 	iss := "https://issuer.example.com"
 	remaining := uint(1)
 	return &models.CredentialBatch{
-		IssuerURL:                &iss,
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     "testhash",
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: now, Valid: true},
-		ExpiresAt:                datatypes.NullTime{V: exp, Valid: true},
-		BatchSize:                1,
-		RemainingCount:           remaining,
-		CredentialIssuer:         &iss,
+		IssuerIdentifier:           iss,
+		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       "testhash",
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                   datatypes.NullTime{V: now, Valid: true},
+		ExpiresAt:                  datatypes.NullTime{V: exp, Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             remaining,
+		CredentialIssuerIdentifier: iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			{Name: "Test Issuer", Locale: datatypes.NullString{V: "en", Valid: true}},
 		},

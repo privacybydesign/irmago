@@ -15,7 +15,9 @@ import (
 	"golang.org/x/text/language"
 )
 
-type CredentialIssuerMetadataValidator struct{}
+type CredentialIssuerMetadataValidator struct {
+	allowInsecureHttp bool
+}
 type CredentialConfigurationValidator struct{}
 type CredentialMetadataValidator struct{}
 type CredentialIssuerDisplaysValidator struct{}
@@ -28,6 +30,13 @@ func (v *CredentialIssuerMetadataValidator) Verify(m metadata.CredentialIssuerMe
 	// Required field validation
 	if m.CredentialIssuer == "" {
 		return fmt.Errorf("missing 'credential_issuer'")
+	} else {
+		// According to OID4VCI §12.2.1, the Credential Issuer Identifier should always be a https schemed uri.
+		if u, err := url.Parse(m.CredentialIssuer); err != nil {
+			return fmt.Errorf("invalid 'credential_issuer' URL %q", m.CredentialIssuer)
+		} else if !v.allowInsecureHttp && u.Scheme != "https" {
+			return fmt.Errorf("invalid 'credential_issuer' URL %q: scheme must be https", m.CredentialIssuer)
+		}
 	}
 	if m.CredentialEndpoint == "" {
 		return fmt.Errorf("missing 'credential_endpoint'")

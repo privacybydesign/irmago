@@ -40,15 +40,15 @@ func newTestCredentialStore(t *testing.T) CredentialStore {
 func newBatch(hash string) *models.CredentialBatch {
 	iss := "https://issuer.example.com"
 	return &models.CredentialBatch{
-		IssuerURL:                &iss,
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
-		CredentialIssuer:         &iss,
+		IssuerIdentifier:           iss,
+		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             1,
+		CredentialIssuerIdentifier: iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			models.IssuerMetadataDisplay{
 				Locale: datatypes.NullString{V: "nl", Valid: true},
@@ -110,15 +110,15 @@ func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBat
 		instances[i] = models.IssuedCredentialInstance{RawCredential: []byte("raw-credential-token")}
 	}
 	return &models.CredentialBatch{
-		IssuerURL:                &iss,
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                uint(instanceCount),
-		RemainingCount:           uint(instanceCount),
-		CredentialIssuer:         &iss,
+		IssuerIdentifier:           iss,
+		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:                  uint(instanceCount),
+		RemainingCount:             uint(instanceCount),
+		CredentialIssuerIdentifier: iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			models.IssuerMetadataDisplay{
 				Locale: datatypes.NullString{V: "nl", Valid: true},
@@ -148,15 +148,15 @@ func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.Creden
 		}
 	}
 	return &models.CredentialBatch{
-		IssuerURL:                &iss,
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                uint(instanceCount),
-		RemainingCount:           uint(instanceCount),
-		CredentialIssuer:         &iss,
+		IssuerIdentifier:           iss,
+		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:                  uint(instanceCount),
+		RemainingCount:             uint(instanceCount),
+		CredentialIssuerIdentifier: iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			{Locale: datatypes.NullString{V: "en", Valid: true}, Name: "Issuer Name"},
 		},
@@ -309,7 +309,7 @@ func TestGetCredentialBatchList_ContainsBatchFields(t *testing.T) {
 	require.Len(t, batches, 1)
 
 	got := batches[0]
-	assert.Equal(t, batch.IssuerURL, got.IssuerURL)
+	assert.Equal(t, batch.IssuerIdentifier, got.IssuerIdentifier)
 	assert.Equal(t, batch.VerifiableCredentialType, got.VerifiableCredentialType)
 	assert.Equal(t, batch.Hash, got.Hash)
 	assert.Equal(t, batch.Format, got.Format)
@@ -326,7 +326,7 @@ func TestGetCredentialBatchList_ContainsIssuerAndCredentialMetadataDisplays(t *t
 	require.Len(t, batches, 1)
 
 	got := batches[0]
-	assert.Equal(t, batch.CredentialIssuer, got.CredentialIssuer)
+	assert.Equal(t, batch.CredentialIssuerIdentifier, got.CredentialIssuerIdentifier)
 	assert.Greater(t, len(got.IssuerDisplay), 0)
 	require.NotNil(t, got.CredentialMetadata)
 	assert.Greater(t, len(got.CredentialMetadata.Display), 0)

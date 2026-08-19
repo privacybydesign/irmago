@@ -29,6 +29,27 @@ func ObtainIssuerUrlFromCertChain(certChain []*x509.Certificate) (string, error)
 	return "", fmt.Errorf("all URIs are nil")
 }
 
+// ObtainIssuerFromCert returns the issuer URL from the given x509 certificate.
+// It checks the URIs in the Subject Alternative Name (SAN) extension of the certificate and returns the first non-nil URI as a string.
+// If there are no URIs or all URIs are nil, it will try to fall back to SAN DNS.
+func ObtainIssuerFromCert(cert *x509.Certificate) (string, error) {
+	if cert == nil {
+		return "", fmt.Errorf("no certificate to get host name from")
+	}
+	if len(cert.URIs) == 0 && len(cert.DNSNames) == 0 {
+		return "", fmt.Errorf("no URIs or DNS names in certificate")
+	}
+	for _, uri := range cert.URIs {
+		if uri != nil {
+			return uri.String(), nil
+		}
+	}
+	if len(cert.DNSNames) > 0 {
+		return cert.DNSNames[0], nil
+	}
+	return "", fmt.Errorf("all URIs are nil and no DNS names available")
+}
+
 // ParsePemCertificateChain takes in the raw contents of a PEM formatted certificate
 // file and returns the contents as a list of x509 certificates.
 func ParsePemCertificateChain(data []byte) ([]*x509.Certificate, error) {
