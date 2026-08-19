@@ -212,7 +212,7 @@ func (p *DidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 			}
 
 			// Verify the key is a public key, or throw an error if it contains private key material (which should not be used in a did:web document, but we want to be sure)
-			isPrivateKey, err := jwk.IsPrivateKey(*pk)
+			isPrivateKey, err := jwk.IsPrivateKey(pk)
 			if err != nil {
 				return fmt.Errorf("failed to determine if JWK contains private key material: %v", err)
 			}
@@ -220,7 +220,12 @@ func (p *DidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 				return nil
 			}
 
-			sink.Key(alg, *pk)
+			// Check if the key does not have the "sig" key usage, and if so, skip it. This is a security measure to prevent the use of keys that are not intended for signature verification.
+			if use, found := pk.KeyUsage(); found && use != "sig" {
+				return nil
+			}
+
+			sink.Key(alg, pk)
 			return nil
 		}
 	}

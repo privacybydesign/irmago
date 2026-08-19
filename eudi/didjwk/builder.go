@@ -123,7 +123,7 @@ func newDocument(didJwk string, key jwk.Key) *did.Document {
 				ID:           kid,
 				Type:         did.VerificationMethodType_JsonWebKey2020,
 				Controller:   didJwk,
-				PublicKeyJwk: &key,
+				PublicKeyJwk: key,
 			},
 		},
 	}

@@ -125,7 +125,7 @@ func newTestDIDDocument(t *testing.T, didID, keyID string, pubKey jwk.Key) []byt
 				ID:           keyID,
 				Type:         "JsonWebKey2020",
 				Controller:   didID,
-				PublicKeyJwk: &pubKey,
+				PublicKeyJwk: pubKey,
 			},
 		},
 	}
@@ -352,6 +352,41 @@ func Test_DidKeyProvider_FetchKeys_PrivateKeyInVerificationMethod_NotReturned_No
 
 	require.NoError(t, err)
 	require.Empty(t, sink.keys)
+}
+
+func Test_DidKeyProvider_FetchKeys_ValidPublicKey_EncryptionUsage_ReturnsNoKeysNoError(t *testing.T) {
+	const issuerDID = "did:web:example.com"
+	const kidHeader = "#key-1"
+	fullKID := issuerDID + kidHeader
+
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	pubJWK, err := jwk.Import(privKey.Public())
+	require.NoError(t, err)
+
+	pubJWK.Set("use", "enc") // key usage is "enc" (encryption) – not allowed for signature verification
+
+	docBytes := newTestDIDDocument(t, issuerDID, fullKID, pubJWK)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(docBytes)
+	}))
+	defer server.Close()
+
+	msg := newTestJWSMessage(t, issuerDID)
+	sig := msg.Signatures()[0]
+	p := &DidKeyProvider{
+		kidHeader:     kidHeader,
+		allowInsecure: true,
+		httpClient:    &http.Client{Transport: &testRedirectTransport{targetAddr: server.Listener.Addr().String()}},
+	}
+
+	sink := &testKeySink{}
+	err = p.FetchKeys(context.Background(), sink, sig, msg)
+
+	require.NoError(t, err)
+	require.Len(t, sink.keys, 0)
 }
 
 func Test_DidKeyProvider_FetchKeys_ValidPublicKey_FeedsKeyAndAlgorithmToSink(t *testing.T) {
