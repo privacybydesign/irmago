@@ -28,15 +28,18 @@ type DidVerifierValidator struct {
 // NewDidVerifierValidator creates a new DID-based verifier validator.
 func NewDidVerifierValidator(allowInsecureDidWeb bool) *DidVerifierValidator {
 	return &DidVerifierValidator{
-		didWebResolver: &didweb.DocumentResolver{
-			AllowInsecure: allowInsecureDidWeb,
-		},
+		didWebResolver: didweb.NewDocumentResolver(allowInsecureDidWeb),
 	}
 }
 
 // SetAllowInsecureDidWeb enables resolving did:web DIDs over HTTP (for developer mode).
 func (v *DidVerifierValidator) SetAllowInsecureDidWeb(allow bool) {
 	v.didWebResolver.AllowInsecure = allow
+}
+
+// AllowsInsecureDidWeb reports whether did:web DIDs may be resolved over HTTP.
+func (v *DidVerifierValidator) AllowsInsecureDidWeb() bool {
+	return v.didWebResolver.AllowInsecure
 }
 
 func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (
@@ -189,9 +192,8 @@ func findVerificationKey(doc *did.Document, header map[string]any) (any, error) 
 			continue
 		}
 
-		jwkKey := *pk
 		var rawKey any
-		if err := jwk.Export(jwkKey, &rawKey); err != nil {
+		if err := jwk.Export(pk, &rawKey); err != nil {
 			return nil, fmt.Errorf("failed to export raw key from verification method %s: %v", vm.ID, err)
 		}
 		return rawKey, nil

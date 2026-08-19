@@ -66,7 +66,7 @@ type Proofs map[ProofTypeIdentifier][]any
 type CredentialConfiguration struct {
 	Format                               CredentialFormatIdentifier          `json:"format"`
 	Scope                                *string                             `json:"scope,omitempty"`
-	CredentialSigningAlgValuesSupported  []any                               `json:"credential_signing_alg_values_supported,omitempty"` // Can be string values for SD-JWTs, or objects for ISO mDoc
+	CredentialSigningAlgValuesSupported  []any                               `json:"credential_signing_alg_values_supported,omitempty"` // Can be string values for SD-JWTs, or numeric COSE algorithm identifiers for ISO mDoc
 	CryptographicBindingMethodsSupported []proofs.CryptographicBindingMethod `json:"cryptographic_binding_methods_supported,omitempty"`
 	ProofTypesSupported                  map[ProofTypeIdentifier]ProofType   `json:"proof_types_supported,omitempty"`
 	CredentialMetadata                   *CredentialMetadata                 `json:"credential_metadata,omitempty"`
@@ -193,17 +193,7 @@ func (m CredentialIssuerMetadata) GetAllBaseLanguages() []string {
 }
 
 func TryGetBaseLanguageFromLocale(locale string) (string, bool) {
-	if locale == "" {
-		return "", false
-	}
-
-	baseLang, err := language.Parse(locale)
-	if err != nil {
-		return "", false
-	}
-	lang, _ := baseLang.Base()
-
-	return lang.String(), true
+	return clientmodels.BaseLanguage(locale)
 }
 
 func (m CredentialIssuerMetadata) GetAllLanguages() []string {
@@ -291,6 +281,36 @@ func ToTranslateableList[T Display | CredentialDisplay | CredentialIssuerDisplay
 		translations[i] = any(display).(Translateable)
 	}
 	return translations
+}
+
+// LogoURIsByLanguage maps base language → logo URI over the displays that
+// carry a logo, keyed like ConvertDisplayToTranslatedString keys names
+// (no-locale displays map to the raw "" key). The resulting map feeds
+// clientmodels.Resolve so the logo falls back across languages independently
+// of the text.
+func LogoURIsByLanguage[T CredentialDisplay | CredentialIssuerDisplay](displays []T) clientmodels.TranslatedString {
+	result := clientmodels.TranslatedString{}
+	for _, display := range displays {
+		var locale *string
+		var logo *RemoteImage
+		switch d := any(display).(type) {
+		case CredentialDisplay:
+			locale, logo = d.Locale, d.Logo
+		case CredentialIssuerDisplay:
+			locale, logo = d.Locale, d.Logo
+		}
+		if logo == nil || logo.Uri == "" {
+			continue
+		}
+		if locale == nil {
+			result[""] = logo.Uri
+			continue
+		}
+		if base, ok := TryGetBaseLanguageFromLocale(*locale); ok {
+			result[base] = logo.Uri
+		}
+	}
+	return result
 }
 
 func ConvertDisplayToTranslatedString(displays []Translateable) clientmodels.TranslatedString {

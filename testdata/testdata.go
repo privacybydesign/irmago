@@ -78,6 +78,8 @@ const (
 	PkiOption_MissingSchemeData     PkiGenerationOptions = 64
 	PkiOption_InvalidAsnSchemeData  PkiGenerationOptions = 128
 	PkiOption_InvalidJsonSchemeData PkiGenerationOptions = 256
+	PkiOption_MissingUriSan         PkiGenerationOptions = 512
+	PkiOption_MissingDnsSan         PkiGenerationOptions = 1024
 )
 
 func ParseHolderPubJwk() jwk.Key {
@@ -96,6 +98,13 @@ func ParseIssuerPubJwk() jwk.Key {
 	return key
 }
 
+// CreateTestAuthorizationRequestRequest builds a request that starts a session at the
+// EUDI reference verifier. intended_use_id names the intended use the verifier image
+// configures out of the box; request_uri_method is "get" because that is how the client
+// fetches the request object, and the verifier enforces the method from v0.11.0. The
+// request queries test.test.email and test.test.mobilephone, so a verifier that is to
+// validate the presentation needs both in its VERIFIER_ATTESTATIONCLASSIFICATIONS; the
+// three docker-compose services list them.
 func CreateTestAuthorizationRequestRequest(issuerCert []byte) string {
 	return fmt.Sprintf(`
 {
@@ -130,7 +139,8 @@ func CreateTestAuthorizationRequestRequest(issuerCert []byte) string {
   },
   "nonce": "nonce",
   "jar_mode": "by_reference",
-  "request_uri_method": "post",
+  "request_uri_method": "get",
+  "intended_use_id": "1",
   "issuer_chain": "%s"
 }
 `,
@@ -305,6 +315,14 @@ func CreateEndEntityCertificate(t *testing.T, subject pkix.Name, hostname string
 		certTemplate.ExtraExtensions = []pkix.Extension{}
 	}
 
+	if opts&PkiOption_MissingUriSan != 0 {
+		certTemplate.URIs = nil
+	}
+
+	if opts&PkiOption_MissingDnsSan != 0 {
+		certTemplate.DNSNames = nil
+	}
+
 	certDerBytes, err = x509.CreateCertificate(rand.Reader, certTemplate, caCert, key.Public(), caKey)
 	require.NoError(t, err)
 	cert, err = x509.ParseCertificate(certDerBytes)
@@ -381,6 +399,9 @@ const (
 
 	// Eudi verifier server with direct_post.jwt as the response_mode
 	OpenID4VP_DirectPostJwt_Host = "http://127.0.0.1:8090"
+
+	// Eudi verifier server that serves requests over the Digital Credentials API
+	OpenID4VP_DcApi_Host = "http://127.0.0.1:8091"
 )
 
 func WriteCertAsPemFile(t *testing.T, path string, certs ...*x509.Certificate) {

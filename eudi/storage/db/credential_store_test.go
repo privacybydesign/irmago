@@ -38,16 +38,17 @@ func newTestCredentialStore(t *testing.T) CredentialStore {
 }
 
 func newBatch(hash string) *models.CredentialBatch {
+	iss := "https://issuer.example.com"
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
-		CredentialIssuer:         "https://issuer.example.com",
+		IssuerIdentifier:           iss,
+		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             1,
+		CredentialIssuerIdentifier: iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			models.IssuerMetadataDisplay{
 				Locale: datatypes.NullString{V: "nl", Valid: true},
@@ -104,19 +105,20 @@ func newBatch(hash string) *models.CredentialBatch {
 
 func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBatch {
 	instances := make([]models.IssuedCredentialInstance, instanceCount)
+	iss := "https://issuer.example.com"
 	for i := range instances {
 		instances[i] = models.IssuedCredentialInstance{RawCredential: []byte("raw-credential-token")}
 	}
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                uint(instanceCount),
-		RemainingCount:           uint(instanceCount),
-		CredentialIssuer:         "https://issuer.example.com",
+		IssuerIdentifier:           iss,
+		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:                  uint(instanceCount),
+		RemainingCount:             uint(instanceCount),
+		CredentialIssuerIdentifier: iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			models.IssuerMetadataDisplay{
 				Locale: datatypes.NullString{V: "nl", Valid: true},
@@ -133,6 +135,7 @@ func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBat
 
 func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.CredentialBatch {
 	instances := make([]models.IssuedCredentialInstance, instanceCount)
+	iss := "https://issuer.example.com"
 	for i := range instances {
 		instances[i] = models.IssuedCredentialInstance{
 			RawCredential: []byte("raw-credential-token"),
@@ -145,15 +148,15 @@ func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.Creden
 		}
 	}
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                uint(instanceCount),
-		RemainingCount:           uint(instanceCount),
-		CredentialIssuer:         "https://issuer.example.com",
+		IssuerIdentifier:           iss,
+		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:                  uint(instanceCount),
+		RemainingCount:             uint(instanceCount),
+		CredentialIssuerIdentifier: iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			{Locale: datatypes.NullString{V: "en", Valid: true}, Name: "Issuer Name"},
 		},
@@ -209,6 +212,63 @@ func TestStoreBatch_UniqueHashConstraint(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestStoreBatch_PersistsStatusListColumns(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	uri := "https://issuer.example/sl/1"
+	idx := uint64(42)
+	checked := time.Now().UTC().Truncate(time.Second)
+	batch := newBatch("hash-status-cols")
+	batch.Instances[0].StatusListURI = &uri
+	batch.Instances[0].StatusListIdx = &idx
+	batch.Instances[0].LastKnownStatus = 1 // StatusValid
+	batch.Instances[0].LastStatusCheckAt = &checked
+
+	require.NoError(t, store.StoreBatch(batch))
+
+	got, err := store.GetUnusedInstance(batch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.StatusListURI)
+	require.Equal(t, uri, *got.StatusListURI)
+	require.NotNil(t, got.StatusListIdx)
+	require.Equal(t, idx, *got.StatusListIdx)
+	require.Equal(t, uint8(1), got.LastKnownStatus)
+	require.NotNil(t, got.LastStatusCheckAt)
+	require.WithinDuration(t, checked, got.LastStatusCheckAt.UTC(), time.Second)
+}
+
+func TestListStatusReferencedInstanceStatuses(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	uri := "https://issuer.example/sl/1"
+	idx := uint64(7)
+	withStatus := newBatch("hash-with-status")
+	withStatus.Instances[0].StatusListURI = &uri
+	withStatus.Instances[0].StatusListIdx = &idx
+	withStatus.Instances[0].LastKnownStatus = 2 // StatusInvalid
+	require.NoError(t, store.StoreBatch(withStatus))
+
+	// Batch without a status reference must be excluded (status_list_uri IS NULL).
+	require.NoError(t, store.StoreBatch(newBatch("hash-no-status")))
+
+	got, err := store.ListStatusReferencedInstanceStatuses()
+	require.NoError(t, err)
+	require.Equal(t, []BatchInstanceStatus{{Hash: "hash-with-status", LastKnownStatus: 2}}, got)
+}
+
+func TestStoreBatch_StatusListColumnsDefaultToNil(t *testing.T) {
+	store := newTestCredentialStore(t)
+	batch := newBatch("hash-no-status")
+	require.NoError(t, store.StoreBatch(batch))
+
+	got, err := store.GetUnusedInstance(batch.ID)
+	require.NoError(t, err)
+	require.Nil(t, got.StatusListURI)
+	require.Nil(t, got.StatusListIdx)
+	require.Equal(t, uint8(0), got.LastKnownStatus)
+	require.Nil(t, got.LastStatusCheckAt)
+}
+
 func TestStoreBatch_MultipleInstances(t *testing.T) {
 	store := newTestCredentialStore(t)
 
@@ -249,7 +309,7 @@ func TestGetCredentialBatchList_ContainsBatchFields(t *testing.T) {
 	require.Len(t, batches, 1)
 
 	got := batches[0]
-	assert.Equal(t, batch.IssuerURL, got.IssuerURL)
+	assert.Equal(t, batch.IssuerIdentifier, got.IssuerIdentifier)
 	assert.Equal(t, batch.VerifiableCredentialType, got.VerifiableCredentialType)
 	assert.Equal(t, batch.Hash, got.Hash)
 	assert.Equal(t, batch.Format, got.Format)
@@ -266,7 +326,7 @@ func TestGetCredentialBatchList_ContainsIssuerAndCredentialMetadataDisplays(t *t
 	require.Len(t, batches, 1)
 
 	got := batches[0]
-	assert.Equal(t, batch.CredentialIssuer, got.CredentialIssuer)
+	assert.Equal(t, batch.CredentialIssuerIdentifier, got.CredentialIssuerIdentifier)
 	assert.Greater(t, len(got.IssuerDisplay), 0)
 	require.NotNil(t, got.CredentialMetadata)
 	assert.Greater(t, len(got.CredentialMetadata.Display), 0)

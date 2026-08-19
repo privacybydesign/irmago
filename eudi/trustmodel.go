@@ -42,6 +42,10 @@ func (tm *TrustModel) SetCertificateVerificationMode(mode CertificateVerificatio
 	tm.certificateVerificationMode = mode
 }
 
+func (tm *TrustModel) GetCertificateVerificationMode() CertificateVerificationMode {
+	return tm.certificateVerificationMode
+}
+
 func (tm *TrustModel) clear() {
 	tm.allCerts = []*x509.Certificate{}
 	tm.trustedRootCertificates = x509.NewCertPool()
@@ -430,4 +434,11 @@ func (tm *TrustModel) downloadVerifyAndCacheCrl(crlDistPoint string) error {
 
 func (tm *TrustModel) InstallCertificate(pemData []byte) error {
 	return tm.storageContainer.CertificateManager().InstallCertificate(pemData)
+}
+
+// RemoveCertificate removes the installed certificate chain whose leaf
+// certificate signature (hex-encoded) matches the given thumbprint. Call
+// Reload afterwards to drop the chain from the in-memory trust pools.
+func (tm *TrustModel) RemoveCertificate(thumbprint string) error {
+	return tm.storageContainer.CertificateManager().RemoveCertificate(thumbprint)
 }
