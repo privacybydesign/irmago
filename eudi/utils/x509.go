@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"net/url"
+	"slices"
 
 	"github.com/privacybydesign/irmago/eudi/scheme"
 )
@@ -175,10 +176,8 @@ func VerifyCertificateUri(cert *x509.Certificate, uri string) error {
 	}
 
 	host := parsedUri.Hostname()
-	for _, dnsName := range cert.DNSNames {
-		if dnsName == host {
-			return nil
-		}
+	if slices.Contains(cert.DNSNames, host) {
+		return nil
 	}
 
 	return fmt.Errorf("URI %q is not in the URI or DNS SANs of the certificate", uri)

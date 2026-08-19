@@ -183,7 +183,7 @@ func Test_HolderVerificationProcessor_IssNotInCertificateSans_Fails(t *testing.T
 func Test_HolderVerificationProcessor_MissingIss_CertificateWithoutUriSan_Fails(t *testing.T) {
 	// Neither source of identity is available: no iss claim, and an end-entity
 	// certificate that carries no URI SAN to fall back to.
-	config, context := newGeneratedIssuerConfig(t, "issuer.example.com", testdata.PkiOption_MissingUriSan)
+	config, context := newGeneratedIssuerConfig(t, "issuer.example.com", testdata.PkiOption_MissingUriSan|testdata.PkiOption_MissingDnsSan)
 
 	sdjwtvc := createTestSdJwtVc(t, config)
 
