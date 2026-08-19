@@ -4,6 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
@@ -11,24 +14,24 @@ import (
 )
 
 func TestNewBuilder(t *testing.T) {
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	jwtCreator := sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey()
 	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
 	require.NoError(t, err)
-	sdJwt, err := NewSdJwtBuilder().
+	sdJwt, err := NewSdJwtVcBuilder().
 		WithPayload(
-			Claim("iat", 13853353),
-			Claim("vct", "pbdf.sidn-pbdf.email"),
-			Claim(Key_SdAlg, iana.SHA256),
-			SdObject("address",
-				SdClaim("street", "Schulstr 3"),
-				SdClaim("country", "Germany"),
-				// SdClaim("null", Null{}),
+			sdjwt.Claim(jwt.IssuedAtKey, 13853353),
+			sdjwt.Claim(sdjwt.SdAlgKey, iana.SHA256),
+			sdjwt.Claim(VerifiableCredentialTypeKey, "pbdf.sidn-pbdf.email"),
+			sdjwt.SdObject("address",
+				sdjwt.SdClaim("street", "Schulstr 3"),
+				sdjwt.SdClaim("country", "Germany"),
+				// sdjwt.SdClaim("null", sdjwt.Null{}),
 			),
-			Object("personal_data",
-				SdClaim("first_name", "Gerrit"),
-				SdClaim("last_name", "Dijkstra"),
+			sdjwt.Object("personal_data",
+				sdjwt.SdClaim("first_name", "Gerrit"),
+				sdjwt.SdClaim("last_name", "Dijkstra"),
 			),
-			Array("nationalities", Item("NL"), SdItem("FR")),
+			sdjwt.Array("nationalities", sdjwt.Item("NL"), sdjwt.SdItem("FR")),
 		).
 		WithIssuerCertificateChain(irmaAppCert).
 		Build(jwtCreator)
@@ -41,12 +44,12 @@ func Test_BuildSdJwtVc_ValidX509_Success(t *testing.T) {
 	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
 	require.NoError(t, err)
 
-	builder := NewSdJwtBuilder().
+	builder := NewSdJwtVcBuilder().
 		WithPayload(
-			Claim(Key_VerifiableCredentialType, "test.test.email"),
-			Claim(Key_SdAlg, iana.SHA256),
-			Claim(Key_Issuer, "https://irma.app"),
-			Claim(Key_ExpiryTime, time.Now().Unix()),
+			sdjwt.Claim(jwt.IssuerKey, "https://irma.app"),
+			sdjwt.Claim(jwt.ExpirationKey, time.Now().Unix()),
+			sdjwt.Claim(sdjwt.SdAlgKey, iana.SHA256),
+			sdjwt.Claim(VerifiableCredentialTypeKey, "test.test.email"),
 		).
 		WithIssuerCertificateChain(irmaAppCert)
 
@@ -57,10 +60,10 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_BuildFailure(t *testing.T) {
 	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
 	require.NoError(t, err)
 
-	builder := NewSdJwtBuilder().WithPayload(
-		Claim(Key_ExpiryTime, time.Now().Unix()),
-		Claim(Key_VerifiableCredentialType, "test.test.email"),
-		Claim(Key_Issuer, "http://irma.app"),
+	builder := NewSdJwtVcBuilder().WithPayload(
+		sdjwt.Claim(jwt.IssuerKey, "http://irma.app"),
+		sdjwt.Claim(jwt.ExpirationKey, time.Now().Unix()),
+		sdjwt.Claim(VerifiableCredentialTypeKey, "test.test.email"),
 	).
 		WithIssuerCertificateChain(irmaAppCert)
 
@@ -73,14 +76,14 @@ func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
 
 	require.NoError(t, err)
 
-	builder := NewSdJwtBuilder().
+	builder := NewSdJwtVcBuilder().
 		WithPayload(
-			Claim(Key_ExpiryTime, time.Now().Unix()),
-			Claim(Key_SdAlg, iana.SHA256),
-			Claim(Key_VerifiableCredentialType, "test.test.email"),
-			Claim(Key_Issuer, "https://irma.app"),
-			SdClaim("email", "test@gmail.com"),
-			SdClaim("domain", "gmail.com"),
+			sdjwt.Claim(jwt.IssuerKey, "https://irma.app"),
+			sdjwt.Claim(jwt.ExpirationKey, time.Now().Unix()),
+			sdjwt.Claim(sdjwt.SdAlgKey, iana.SHA256),
+			sdjwt.Claim(VerifiableCredentialTypeKey, "test.test.email"),
+			sdjwt.SdClaim("email", "test@gmail.com"),
+			sdjwt.SdClaim("domain", "gmail.com"),
 		).
 		WithIssuerCertificateChain(irmaAppCert)
 
@@ -93,13 +96,13 @@ func Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_DefaultsToSha256(t *testing.
 	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
 	require.NoError(t, err)
 
-	builder := NewSdJwtBuilder().
+	builder := NewSdJwtVcBuilder().
 		WithPayload(
-			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_ExpiryTime, time.Now().Unix()),
-			Claim(Key_VerifiableCredentialType, "test.test.email"),
-			SdClaim("email", "test@gmail.com"),
-			SdClaim("domain", "gmail.com"),
+			sdjwt.Claim(jwt.IssuerKey, "https://irma.app"),
+			sdjwt.Claim(jwt.ExpirationKey, time.Now().Unix()),
+			sdjwt.Claim(VerifiableCredentialTypeKey, "test.test.email"),
+			sdjwt.SdClaim("email", "test@gmail.com"),
+			sdjwt.SdClaim("domain", "gmail.com"),
 		).
 		WithIssuerCertificateChain(irmaAppCert)
 
@@ -107,18 +110,18 @@ func Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_DefaultsToSha256(t *testing.
 }
 
 func Test_BuildSdJwtVc_NoVct_BuildFailure(t *testing.T) {
-	builder := NewSdJwtBuilder().WithPayload(Claim(Key_ExpiryTime, time.Now().Unix()))
+	builder := NewSdJwtVcBuilder().WithPayload(sdjwt.Claim(jwt.ExpirationKey, time.Now().Unix()))
 	requireBuildFailure(t, builder)
 }
 
-func requireBuildFailure(t *testing.T, builder *SdJwtBuilder) {
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
+func requireBuildFailure(t *testing.T, builder *SdJwtVcBuilder) {
+	jwtCreator := sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey()
 	_, err := builder.Build(jwtCreator)
 	require.Error(t, err)
 }
 
-func requireValidSdJwtVc(t *testing.T, builder *SdJwtBuilder) {
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
+func requireValidSdJwtVc(t *testing.T, builder *SdJwtVcBuilder) {
+	jwtCreator := sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey()
 	sdjwtvc, err := builder.Build(jwtCreator)
 	require.NoError(t, err)
 	context := CreateTestVerificationContext()

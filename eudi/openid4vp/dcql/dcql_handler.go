@@ -85,7 +85,7 @@ func (h *DcqlHandler) PrepareDisclosure(
 	query DcqlQuery,
 	selections []DisclosureSelection,
 	nonce string,
-	clientId string,
+	audience string,
 ) (*PreparedDisclosure, error) {
 	// Build a map from queryId -> CredentialQuery
 	queryById := make(map[string]CredentialQuery, len(query.Credentials))
@@ -121,7 +121,7 @@ func (h *DcqlHandler) PrepareDisclosure(
 
 	for idx, sels := range selectionsByHandler {
 		handler := h.credentialQueryHandlers[idx]
-		prepared, err := handler.PrepareDisclosure(sels, nonce, clientId)
+		prepared, err := handler.PrepareDisclosure(sels, nonce, audience)
 		if err != nil {
 			return nil, fmt.Errorf("failed to prepare disclosure: %w", err)
 		}

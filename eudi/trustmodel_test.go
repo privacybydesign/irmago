@@ -37,6 +37,9 @@ func TestTrustModel(t *testing.T) {
 	t.Run("Reload reads chain (valid root + expired sub-CA), should only add root cert", testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert)
 	t.Run("Reload reads invalid certificate chain (root + CA in reversed order), not add any certificates to the pools", testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates)
 
+	// Certificate removal tests
+	t.Run("RemoveCertificate removes installed chain and Reload drops it from the pools", testRemoveCertificateRemovesInstalledChainAndReloadDropsItFromThePools)
+
 	// Certificate revocation lists tests
 	t.Run("syncCertificateRevocationLists does nothing, given no certificate chains", testSyncCertificateRevocationListsDoesNothingGivenNoCertificateChains)
 	t.Run("syncCertificateRevocationLists downloads file for non-cached CRL successfully", testSyncCertificateRevocationListsDownloadsFileForNonCachedCrlSuccessfully)
@@ -528,6 +531,37 @@ func testDownloadVerifyAndCacheCrlThrowsErrorOnInvalidCRLSignature(t *testing.T)
 	require.ErrorContains(t, err, "CRL signature is invalid")
 }
 
+func testRemoveCertificateRemovesInstalledChainAndReloadDropsItFromThePools(t *testing.T) {
+	tm, _ := setupTrustModelWithStoragePath(t)
+
+	// Create two (root > CA) chains sharing the same root and write to storage
+	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
+	_, rootCert, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, rootDN, 2, testdata.PkiOption_None, nil)
+
+	installCertChain(t, tm, caCerts[0], rootCert)
+	installCertChain(t, tm, caCerts[1], rootCert)
+
+	require.NoError(t, tm.Reload())
+	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 2)
+
+	// Remove the first chain by its leaf's thumbprint
+	require.NoError(t, tm.RemoveCertificate(fmt.Sprintf("%x", caCerts[0].Signature)))
+
+	// The other chain is untouched on disk
+	chains, err := tm.GetSavedTrustChains()
+	require.NoError(t, err)
+	require.Len(t, chains, 1)
+
+	// After a reload the removed chain is gone from the in-memory pools too
+	tm.clear()
+	require.NoError(t, tm.Reload())
+	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
+	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 1)
+
+	// Removing it again fails, as it is no longer installed
+	require.ErrorContains(t, tm.RemoveCertificate(fmt.Sprintf("%x", caCerts[0].Signature)), "no certificate found")
+}
+
 // installCertChain encodes the given certs as a single PEM block (in the order
 // given) and installs them through the trust model's certificate manager, so
 // the data lands at the hashed filename and is encrypted at rest. Replaces
@@ -588,11 +622,12 @@ func testCacheLogoCachesLogoSuccessfully(t *testing.T) {
 	}
 
 	mgr := conf.Storage.FileSystem().Verifiers().LogoManager()
-	require.NoError(t, mgr.Save("test_logo", logo.Data))
+	require.NoError(t, mgr.Save("test_logo", logo.Data, logo.MimeType))
 
-	got, err := mgr.Get("test_logo")
+	got, gotMimeType, err := mgr.Get("test_logo")
 	require.NoError(t, err)
 	require.Equal(t, logo.Data, got)
+	require.Equal(t, logo.MimeType, gotMimeType)
 }
 
 func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
@@ -618,15 +653,16 @@ func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
 		Data:     []byte("test logo data"),
 		MimeType: "image/png",
 	}
-	require.NoError(t, mgr.Save("test_logo", logo.Data))
+	require.NoError(t, mgr.Save("test_logo", logo.Data, logo.MimeType))
 
 	// A second Save with the same key should overwrite.
 	logo.Data = []byte("updated logo data")
-	require.NoError(t, mgr.Save("test_logo", logo.Data))
+	require.NoError(t, mgr.Save("test_logo", logo.Data, logo.MimeType))
 
-	got, err := mgr.Get("test_logo")
+	got, gotMimeType, err := mgr.Get("test_logo")
 	require.NoError(t, err)
 	require.Equal(t, logo.Data, got)
+	require.Equal(t, logo.MimeType, gotMimeType)
 }
 
 func testCacheVerifierLogoReturnsErrorOnNilLogo(t *testing.T) {
@@ -646,7 +682,7 @@ func testCacheVerifierLogoReturnsErrorOnNilLogo(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 
-	err = conf.Storage.FileSystem().Verifiers().LogoManager().Save("test_logo", nil)
+	err = conf.Storage.FileSystem().Verifiers().LogoManager().Save("test_logo", nil, "")
 	require.Error(t, err)
 	require.EqualError(t, err, "invalid logo: data cannot be nil or empty")
 }
@@ -670,11 +706,11 @@ func testCacheVerifierLogoReturnsErrorOnEmptyLogoData(t *testing.T) {
 
 	mgr := conf.Storage.FileSystem().Verifiers().LogoManager()
 
-	err = mgr.Save("test_logo", []byte(""))
+	err = mgr.Save("test_logo", []byte(""), "")
 	require.Error(t, err)
 	require.EqualError(t, err, "invalid logo: data cannot be nil or empty")
 
-	err = mgr.Save("test_logo", nil)
+	err = mgr.Save("test_logo", nil, "")
 	require.Error(t, err)
 	require.EqualError(t, err, "invalid logo: data cannot be nil or empty")
 }

@@ -3,6 +3,7 @@ package filesystem
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -140,18 +141,69 @@ func TestCertificateManager_InstallCertificate_Idempotent(t *testing.T) {
 	require.Len(t, certs, 1)
 }
 
+func TestCertificateManager_RemoveCertificate_RemovesInstalledChain(t *testing.T) {
+	storage, _ := newTestStorage(t)
+	rootKey, rootCert := testdata.CreateRootCertificate(t, testdata.CreateDistinguishedName("SHARED ROOT"), testdata.PkiOption_None)
+	_, caCert1, _ := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("CA 1"), rootCert, rootKey, testdata.PkiOption_None, nil)
+	_, caCert2, _ := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("CA 2"), rootCert, rootKey, testdata.PkiOption_None, nil)
+
+	require.NoError(t, storage.CertificateManager().InstallCertificate(certsToPem(caCert1, rootCert)))
+	require.NoError(t, storage.CertificateManager().InstallCertificate(certsToPem(caCert2, rootCert)))
+
+	// The thumbprint is the hex-encoded signature of the chain's leaf, the
+	// same value InstallCertificate derived the filename from.
+	require.NoError(t, storage.CertificateManager().RemoveCertificate(fmt.Sprintf("%x", caCert1.Signature)))
+
+	certs, err := storage.CertificateManager().GetRawCertificates()
+	require.NoError(t, err)
+	require.Len(t, certs, 1)
+	require.Equal(t, certsToPem(caCert2, rootCert), certs[0])
+}
+
+func TestCertificateManager_RemoveCertificate_UnknownThumbprint(t *testing.T) {
+	storage, _ := newTestStorage(t)
+
+	err := storage.CertificateManager().RemoveCertificate("abcdef012345")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no certificate found")
+}
+
+func TestCertificateManager_RemoveCertificate_EmptyThumbprint(t *testing.T) {
+	storage, _ := newTestStorage(t)
+
+	err := storage.CertificateManager().RemoveCertificate("")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no thumbprint provided")
+}
+
+func TestCertificateManager_RemoveCertificate_RejectsNonHexThumbprint(t *testing.T) {
+	// The thumbprint doubles as the filename, so anything that is not plain
+	// hex (like a path traversal attempt) must be rejected before it reaches
+	// the filesystem.
+	storage, certsPath := newTestStorage(t)
+
+	// Sits next to the certificates directory, where "../escaped" would land.
+	outside := filepath.Join(certsPath, "escaped.pem")
+	require.NoError(t, os.WriteFile(outside, []byte("data"), 0o600))
+
+	err := storage.CertificateManager().RemoveCertificate("../escaped")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid thumbprint")
+	require.FileExists(t, outside)
+}
+
 // --- LogoManager tests ---
 
 func TestLogoManager_Save_ValidData(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	require.NoError(t, storage.LogoManager().Save("https://example.org/a.png", []byte("logo data")))
+	require.NoError(t, storage.LogoManager().Save("https://example.org/a.png", []byte("logo data"), "image/png"))
 }
 
 func TestLogoManager_Save_EmptyData(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	err := storage.LogoManager().Save("https://example.org/a.png", []byte{})
+	err := storage.LogoManager().Save("https://example.org/a.png", []byte{}, "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "data cannot be nil or empty")
 }
@@ -159,7 +211,7 @@ func TestLogoManager_Save_EmptyData(t *testing.T) {
 func TestLogoManager_Save_NilData(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	err := storage.LogoManager().Save("https://example.org/a.png", nil)
+	err := storage.LogoManager().Save("https://example.org/a.png", nil, "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "data cannot be nil or empty")
 }
@@ -167,7 +219,7 @@ func TestLogoManager_Save_NilData(t *testing.T) {
 func TestLogoManager_Save_EmptyKey(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	err := storage.LogoManager().Save("", []byte("logo data"))
+	err := storage.LogoManager().Save("", []byte("logo data"), "image/png")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "key cannot be empty")
 }
@@ -176,29 +228,56 @@ func TestLogoManager_Get_RoundTrip(t *testing.T) {
 	storage, _ := newTestStorage(t)
 	originalData := []byte("logo content")
 
-	require.NoError(t, storage.LogoManager().Save("mylogo", originalData))
+	require.NoError(t, storage.LogoManager().Save("mylogo", originalData, "image/png"))
 
-	readData, err := storage.LogoManager().Get("mylogo")
+	readData, mimeType, err := storage.LogoManager().Get("mylogo")
 	require.NoError(t, err)
 	require.Equal(t, originalData, readData)
+	require.Equal(t, "image/png", mimeType)
 }
 
 func TestLogoManager_Get_MissingKey(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	_, err := storage.LogoManager().Get("nonexistent")
+	_, _, err := storage.LogoManager().Get("nonexistent")
 	require.Error(t, err)
+}
+
+func TestLogoManager_Get_WithoutMimeType(t *testing.T) {
+	storage, _ := newTestStorage(t)
+
+	// Logos saved before MIME types were recorded (or whose download had no
+	// Content-Type) have no sidecar; Get must return them with an empty MIME type.
+	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("logo content"), ""))
+
+	readData, mimeType, err := storage.LogoManager().Get("mylogo")
+	require.NoError(t, err)
+	require.Equal(t, []byte("logo content"), readData)
+	require.Empty(t, mimeType)
 }
 
 func TestLogoManager_Save_Overwrites(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("original")))
-	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("updated")))
+	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("original"), "image/png"))
+	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("updated"), "image/svg+xml"))
 
-	readData, err := storage.LogoManager().Get("mylogo")
+	readData, mimeType, err := storage.LogoManager().Get("mylogo")
 	require.NoError(t, err)
 	require.Equal(t, []byte("updated"), readData)
+	require.Equal(t, "image/svg+xml", mimeType)
+}
+
+func TestLogoManager_Save_OverwriteClearsMimeType(t *testing.T) {
+	storage, _ := newTestStorage(t)
+
+	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("original"), "image/png"))
+	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("updated"), ""))
+
+	readData, mimeType, err := storage.LogoManager().Get("mylogo")
+	require.NoError(t, err)
+	require.Equal(t, []byte("updated"), readData)
+	require.Empty(t, mimeType, "a Save without MIME type must not leave a stale sidecar behind")
 }
 
 func TestLogoManager_Exists(t *testing.T) {
@@ -208,7 +287,7 @@ func TestLogoManager_Exists(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, exists)
 
-	require.NoError(t, storage.LogoManager().Save("k", []byte("v")))
+	require.NoError(t, storage.LogoManager().Save("k", []byte("v"), ""))
 	exists, err = storage.LogoManager().Exists("k")
 	require.NoError(t, err)
 	require.True(t, exists)

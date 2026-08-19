@@ -9,6 +9,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
@@ -326,7 +327,7 @@ func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStor
 	require.Equal(t, len(result), 1)
 }
 
-func createMultipleSdJwtVcs[T sdjwtvc.LeafClaimDataType](
+func createMultipleSdJwtVcs[T sdjwt.LeafClaimDataType](
 	t *testing.T,
 	vct string,
 	issuer string,
@@ -334,7 +335,7 @@ func createMultipleSdJwtVcs[T sdjwtvc.LeafClaimDataType](
 	num uint,
 	useSingleHolderKey bool,
 ) (SdJwtVcBatchMetadata, []sdjwtvc.SdJwtVc) {
-	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
+	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 	result := []sdjwtvc.SdJwtVc{}
 
 	chain := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
@@ -349,9 +350,9 @@ func createMultipleSdJwtVcs[T sdjwtvc.LeafClaimDataType](
 			holderKeys, err = keyBinder.CreateKeyPairs(1)
 			require.NoError(t, err)
 		}
-		sdjwt, err := CreateTestSdJwtVcWithHolderKey(vct, issuer, claims, certChain, holderKeys[0])
+		vc, err := CreateTestSdJwtVcWithHolderKey(vct, issuer, claims, certChain, holderKeys[0])
 		require.NoError(t, err)
-		result = append(result, sdjwt)
+		result = append(result, vc)
 	}
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdjwtvc.CreateDefaultVerificationContext(chain))
 	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwtvc.SdJwtVcKb(result[0]), holderVerifier, eudi.StrictSdJwtVerificationMode) // Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
@@ -401,7 +402,7 @@ func withTempBboltDb(t *testing.T, fileName string, closure func(db *bbolt.DB)) 
 
 func extractHolderKeys(t *testing.T, sdjwts []sdjwtvc.SdJwtVc) (result []jwk.Key) {
 	for _, cred := range sdjwts {
-		_, pubKey, err := sdjwtvc.ExtractHashingAlgorithmAndHolderPubKey(cred)
+		_, pubKey, err := sdjwt.ExtractHashingAlgorithmAndHolderPubKey(sdjwt.SdJwt(cred))
 		require.NoError(t, err)
 		result = append(result, pubKey)
 	}

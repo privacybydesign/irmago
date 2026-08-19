@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha3"
 	"crypto/sha512"
+	"encoding/base64"
 	"fmt"
 	"hash"
 	"io"
@@ -92,4 +93,12 @@ func Sum(algorithm HashingAlgorithm, content string) ([]byte, error) {
 	}
 
 	return hash, nil
+}
+
+func CreateUrlEncodedHash(algorithm HashingAlgorithm, content string) (string, error) {
+	hash, err := Sum(algorithm, content)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(hash), nil
 }
