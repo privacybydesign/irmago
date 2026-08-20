@@ -14,7 +14,7 @@ import (
 
 const Prefix = "did:key:"
 
-// CreateWithVerificationMethod encodes a public key as a did:key DID. The method-specific identifier is
+// CreateWithVerificationMethodIdentifier encodes a public key as a did:key DID. The method-specific identifier is
 // always base58-btc encoded, which is what the spec's creation algorithm prescribes
 // (https://w3c-ccg.github.io/did-key-spec/#format).
 //
