@@ -154,13 +154,15 @@ func TestMerge_CredentialLevelDisplayFieldLevelFallback(t *testing.T) {
 			// fields VCT leaves empty (Description, BackgroundImage) are
 			// inherited from this VCI entry.
 			{
-				Name: "Card (VCI)", Locale: &en,
+				Name:            "Card (VCI)",
+				Locale:          &en,
 				Description:     "Description (VCI)",
 				BackgroundImage: &metadata.RemoteImage{Uri: "https://example/bg.png"},
 			},
 			// VCI-only locale survives unchanged.
 			{
-				Name: "Tarjeta", Locale: &es,
+				Name:            "Tarjeta",
+				Locale:          &es,
 				Description:     "Descripción (VCI)",
 				BackgroundImage: &metadata.RemoteImage{Uri: "https://example/bg-es.png"},
 			},
@@ -197,12 +199,14 @@ func TestMerge_VciLogoInheritedWhenVctOmitsIt(t *testing.T) {
 	vci := &metadata.CredentialMetadata{
 		Display: metadata.CredentialDisplays{
 			{
-				Name: "Employee (VCI)", Locale: &en,
-				Logo: &metadata.RemoteImage{Uri: "data:image/svg+xml;base64,AAAA", AltText: "logo"},
+				Name:   "Employee (VCI)",
+				Locale: &en,
+				Logo:   &metadata.RemoteImage{Uri: "data:image/svg+xml;base64,AAAA", AltText: "logo"},
 			},
 			{
-				Name: "Werknemer (VCI)", Locale: &nl,
-				Logo: &metadata.RemoteImage{Uri: "data:image/svg+xml;base64,BBBB"},
+				Name:   "Werknemer (VCI)",
+				Locale: &nl,
+				Logo:   &metadata.RemoteImage{Uri: "data:image/svg+xml;base64,BBBB"},
 			},
 		},
 	}
@@ -231,8 +235,9 @@ func TestMerge_VctLogoWinsOverVciLogo(t *testing.T) {
 	vci := &metadata.CredentialMetadata{
 		Display: metadata.CredentialDisplays{
 			{
-				Name: "Card (VCI)", Locale: &en,
-				Logo: &metadata.RemoteImage{Uri: "https://vci/logo.png"},
+				Name:   "Card (VCI)",
+				Locale: &en,
+				Logo:   &metadata.RemoteImage{Uri: "https://vci/logo.png"},
 			},
 		},
 	}
