@@ -179,7 +179,7 @@ func (v *DidVerifierValidator) resolvePublicKey(clientId string, header map[stri
 	did := strings.TrimPrefix(clientId, "decentralized_identifier:")
 	switch {
 	case strings.HasPrefix(clientId, clientIdPrefixDidJwk):
-		key, cert, err := v.resolveDidJwk(did, header)
+		key, cert, err := v.resolveDidJwk(did)
 		return key, cert, did, err
 
 	case strings.HasPrefix(clientId, clientIdPrefixDidWeb):
@@ -193,7 +193,7 @@ func (v *DidVerifierValidator) resolvePublicKey(clientId string, header map[stri
 
 // resolveDidJwk extracts the public key from a did:jwk DID, which is itself a JWK
 // and so may carry an x5c like any other verification method key.
-func (v *DidVerifierValidator) resolveDidJwk(didJwk string, header map[string]any) (any, *x509.Certificate, error) {
+func (v *DidVerifierValidator) resolveDidJwk(didJwk string) (any, *x509.Certificate, error) {
 	key, err := didjwk.Resolve(didJwk)
 	if err != nil {
 		return nil, nil, err

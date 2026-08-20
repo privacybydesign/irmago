@@ -1053,6 +1053,60 @@ func TestMatchHolderBindingKey_ByDidUrl(t *testing.T) {
 	assert.Equal(t, expectedID, keyID)
 }
 
+// An issuer may echo the kid with the verification method fragment the DID method
+// uses to reference the key, where the proof sent the fragmentless DID (as the
+// did:key proofs do), and vice versa. Either way it is the same key.
+func TestMatchHolderBindingKey_ByDidUrl_FragmentAddedByIssuer(t *testing.T) {
+	expectedID := datatypes.NewUUIDv4()
+	storedDidUrl := "did:key:zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
+	cnfKid := storedDidUrl + "#zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
+
+	keyByDidUrl := map[string]datatypes.UUID{storedDidUrl: expectedID}
+
+	cnf := &sdjwt.CnfField{Kid: &cnfKid}
+	keyID, err := matchHolderBindingKey(cnf, map[string]datatypes.UUID{}, keyByDidUrl)
+
+	require.NoError(t, err)
+	assert.Equal(t, expectedID, keyID)
+}
+
+func TestMatchAllHolderBindingKeys_FragmentDroppedByIssuer(t *testing.T) {
+	expectedID := datatypes.NewUUIDv4()
+	baseDid := "did:key:zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
+	storedDidUrl := baseDid + "#zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
+
+	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwt.CnfField{Kid: &baseDid})
+
+	keyIDs, err := matchAllHolderBindingKeys(
+		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		[]models.PublicHolderBindingKey{{ID: expectedID, DidUrl: &storedDidUrl}},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, []datatypes.UUID{expectedID}, keyIDs)
+}
+
+// The fragmentless alias must not let one key answer for another.
+func TestMatchAllHolderBindingKeys_ExactDidUrlWinsOverAlias(t *testing.T) {
+	aliasID := datatypes.NewUUIDv4()
+	exactID := datatypes.NewUUIDv4()
+	baseDid := "did:key:zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
+	fragmented := baseDid + "#zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
+
+	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwt.CnfField{Kid: &baseDid})
+
+	keyIDs, err := matchAllHolderBindingKeys(
+		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		[]models.PublicHolderBindingKey{
+			{ID: aliasID, DidUrl: &fragmented},
+			{ID: exactID, DidUrl: &baseDid},
+		},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, []datatypes.UUID{exactID}, keyIDs)
+}
+
 func TestMatchHolderBindingKey_DidUrlTakesPrecedence(t *testing.T) {
 	pubKey, thumbprint := generateTestJwk(t)
 	thumbprintKeyID := datatypes.NewUUIDv4()

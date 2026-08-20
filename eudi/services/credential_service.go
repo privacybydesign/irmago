@@ -440,6 +440,21 @@ func matchAllHolderBindingKeys(
 		}
 	}
 
+	// An issuer may echo the kid with the verification method fragment the DID method
+	// uses to reference the key (`did:key:z…#z…`) where the proof sent it without, so
+	// register the fragmentless form too. Second pass, so an exact DID URL always wins
+	// over a fragmentless alias.
+	for _, pk := range publicKeyIdentifiers {
+		if pk.DidUrl == nil {
+			continue
+		}
+		if base := stripFragment(*pk.DidUrl); base != *pk.DidUrl {
+			if _, taken := keyByDidUrl[base]; !taken {
+				keyByDidUrl[base] = pk.ID
+			}
+		}
+	}
+
 	result := make([]datatypes.UUID, len(vcs))
 	for i, v := range vcs {
 		cnf := v.IssuerSignedJwtPayload.Confirm
@@ -480,6 +495,13 @@ func matchHolderBindingKey(cnf *sdjwt.CnfField, keyByThumbprint map[string]datat
 	if cnf.Kid != nil {
 		if keyID, ok := keyByDidUrl[*cnf.Kid]; ok {
 			return keyID, nil
+		}
+		// Then the base DID, for a kid that carries a verification method fragment the
+		// stored DID URL does not (mirrors GetAndRemovePrivateKey).
+		if base := stripFragment(*cnf.Kid); base != *cnf.Kid {
+			if keyID, ok := keyByDidUrl[base]; ok {
+				return keyID, nil
+			}
 		}
 	}
 
