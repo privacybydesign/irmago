@@ -202,7 +202,7 @@ func Test_JwtProofBuilder_Build_DIDKeyMethod_SetsKidToResolvableDIDKey(t *testin
 	kid, hasKid := headers.KeyID()
 	require.True(t, hasKid, "kid header should be present for DID_KEY binding method")
 	require.True(t, strings.HasPrefix(kid, didkey.Prefix), "kid should be a did:key DID, got: %s", kid)
-	require.NotContains(t, kid, "#", "kid is emitted without a verification method fragment; see issue #687")
+	require.Contains(t, kid, "#", "kid is emitted without a verification method fragment, but it should be resolvable to the key that signed the proof")
 
 	// The kid must resolve back to the key that signed the proof, otherwise the issuer
 	// cannot bind the credential to it.
