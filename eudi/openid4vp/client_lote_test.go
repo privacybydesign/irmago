@@ -12,29 +12,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The tests below drive whole OpenID4VP sessions against a recognized trust
-// list the test controls, and assert the rung the verifier reaches. They use
-// the bare did:web verifier, whose certificate channel says nothing, so the
-// rung reported is the list channel's alone.
+// Whole OpenID4VP sessions against a recognized trust list the test controls,
+// asserting the rung the verifier reaches. The bare did:web verifier says nothing
+// through the certificate channel, so the rung is the list channel's alone.
 
 const trustListId = "urn:yivi:trustlist:openid4vp-test"
 
-// listFixture is a recognized list the test publishes and can change.
 type listFixture struct {
 	signer *lote.TestLoteSigner
 	server *lote.TestLoteServer
 	source lote.Source
 }
 
-// newListFixture is a recognized list that is not Yivi's own: its entries
-// confer medium.
+// A recognized list that is not Yivi's own: its entries confer medium.
 func newListFixture(t *testing.T) *listFixture {
 	t.Helper()
 	return newListFixtureConferring(t, clientmodels.TrustLevel_Medium)
 }
 
-// newYiviListFixture is a fixture for Yivi's own list, whose entries confer
-// high: being listed there is being onboarded.
+// Yivi's own list, whose entries confer high.
 func newYiviListFixture(t *testing.T) *listFixture {
 	t.Helper()
 	return newListFixtureConferring(t, clientmodels.TrustLevel_High)
@@ -47,22 +43,20 @@ func newListFixtureConferring(t *testing.T, confers clientmodels.TrustLevel) *li
 	return &listFixture{signer: signer, server: server, source: server.Source(trustListId, confers)}
 }
 
-// grant publishes a list granting did the verifier role.
 func (f *listFixture) grant(t *testing.T, sequenceNumber uint64, did string) {
 	t.Helper()
 	f.server.Serve(t, f.signer, lote.NewTestList(trustListId, sequenceNumber,
 		lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(trust.RoleVerifier, did))))
 }
 
-// checker returns a checker over this list, refreshed once.
 func (f *listFixture) checker(t *testing.T) *lote.Checker {
 	t.Helper()
 	checker := lote.NewChecker(lote.Config{
 		Sources:     []lote.Source{f.source},
 		X509Context: f.signer.X509VerificationContext(),
 	})
-	// The refresh may well fail — that is the point of the degradation cases —
-	// and the session is expected to run either way.
+	// The refresh may fail — that is the point of the degradation cases — and the
+	// session runs either way.
 	_, _ = checker.Refresh(context.Background())
 	return checker
 }
@@ -96,9 +90,9 @@ func TestNewSession_UnlistedVerifier_RanksLow(t *testing.T) {
 	require.Equal(t, clientmodels.TrustLevel_Low, handler.awaitRequestor(t).TrustLevel)
 }
 
-// A list the wallet cannot rely on is absent evidence, not a failure: however
-// it went bad, the verifier caps at low, the session reaches the permission
-// screen, and nothing about the list surfaces to the user.
+// A list the wallet cannot rely on is absent evidence, not a failure: however it
+// went bad, the verifier caps at low and the session still reaches the permission
+// screen.
 func TestNewSession_ListDegradations_CapTheVerifierAtLow(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -150,9 +144,8 @@ func TestNewSession_ReplayedOlderList_DoesNotGrant(t *testing.T) {
 	list.server.Serve(t, list.signer, lote.NewTestList(trustListId, 5))
 	checker := list.checker(t)
 
-	// Issue 4 is served in its place: correctly signed, still current, and it
-	// does list the verifier. Adopting it would let a captured older list
-	// re-grant a party the scheme operator has since removed.
+	// Issue 4 is served in its place: correctly signed, still current, and it does
+	// list the verifier. Adopting it would re-grant a party since removed.
 	list.grant(t, 4, did)
 	_, refreshErr := checker.Refresh(context.Background())
 	require.Error(t, refreshErr)
@@ -167,8 +160,8 @@ func TestNewSession_ReplayedOlderList_DoesNotGrant(t *testing.T) {
 }
 
 func TestNewSession_X509Verifier_StaysHighWithTheListUnavailable(t *testing.T) {
-	// The two channels are independent: Yivi's own certificate does not stop
-	// counting because a trust list is down.
+	// The channels are independent: a certificate does not stop counting because a
+	// list is down.
 	authRequestJwt, validator := setupTest(t, withClientName("Test Verifier"), testdata.PkiOption_None)
 	list := newListFixture(t)
 	list.server.Close()

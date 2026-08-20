@@ -309,13 +309,8 @@ func (s *eudiLogService) modelCredentialsToLogCredentials(creds []models.EudiLog
 
 // loggedIssuerTrustLevel reads a logged issuer's rung, preferring the level the
 // row recorded at session time and falling back to the legacy IssuerVerified
-// boolean it replaced. That boolean only ever recorded "Yivi vouches for this
-// issuer", so it maps to high or to nothing at all: a row that carries no level
-// and a false renders levelless, which is what a pre-feature entry does.
-//
-// A row that recorded TrustLevel_Unevaluated is stored as the empty string and
-// reads back as the same absence — nothing writes IssuerVerified any more, so
-// there is no case where the two disagree.
+// boolean it replaced. That boolean only ever recorded "Yivi vouches", so it maps
+// to high or to nothing: a pre-feature row with neither renders levelless.
 func loggedIssuerTrustLevel(stored string, issuerVerified bool) clientmodels.TrustLevel {
 	if stored == "" && issuerVerified {
 		return clientmodels.TrustLevel_High

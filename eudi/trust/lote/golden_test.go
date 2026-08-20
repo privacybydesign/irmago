@@ -16,30 +16,21 @@ import (
 )
 
 // A committed, signed LoTE — the one document in the suite that this package did
-// not marshal itself.
+// not marshal itself, and so the only test that notices a JSON tag changing. Every
+// other test builds its list out of the structs in model.go, so a rename passes
+// the whole suite while breaking every list a real publisher emits.
 //
-// Every other test builds its list out of the structs in model.go, so a change to
-// their JSON tags (renaming `next_update`, dropping `other_ids`, moving
-// `markings` onto the entity) passes the entire suite while breaking every list a
-// real publisher emits. Those tags are the wire contract with whatever publishes
-// Yivi's list, and this is the only test that can notice them changing.
+// testdata/lote-publisher/golden/list.json is the same list in readable form, kept
+// honest by TestGoldenReadableCopyMatchesTheSignedOne. Between them they cover
+// every shape the wallet understands: both certificate key forms, a DID, a
+// withdrawal, service-level overrides, carried-but-ignored markings, and
+// multilingual names.
 //
-// It also documents the format: testdata/lote-publisher/golden/list.json is the
-// same list in readable form, and TestGoldenReadableCopyMatchesTheSignedOne
-// proves the two agree — so the readable copy cannot drift into a lie. Between
-// them they show every shape the wallet understands: both certificate key forms,
-// a DID, a withdrawal, service-level name and logo overrides, markings (the
-// retired onboarded-by-yivi bytes among them) that must be carried and
-// ignored, and multilingual names.
+// It must not rot: verify() does not check the list's own time bounds, and the
+// assertions pin a clock inside the validity window rather than reading the wall
+// clock, so only the signing certificate's notAfter bounds this test.
 //
-// **It must never rot.** verify() deliberately does not check the list's own time
-// bounds, so a committed document verifies forever; the currency and lookup
-// assertions pin a clock inside the validity window instead of reading the wall
-// clock. Only the signing certificate's own notAfter (ten years) bounds this
-// test, like the rest of the committed material.
-//
-// Regenerate with testdata/lote-publisher/mkgolden.sh, which signs through the
-// publisher's own code path rather than reimplementing it.
+// Regenerate with testdata/lote-publisher/mkgolden.sh.
 
 const (
 	goldenListId = "urn:yivi:trustlist:golden"
@@ -61,9 +52,8 @@ func goldenRaw(t *testing.T) []byte {
 	return raw
 }
 
-// goldenAnchors is the trust store the golden document's chain validates against,
-// with its clock pinned so the certificate's own validity window is checked as of
-// a fixed date rather than today.
+// goldenAnchors pins its clock, so the certificate's validity window is checked
+// as of a fixed date rather than today.
 func goldenAnchors(t *testing.T) eudi_jwt.X509VerificationContext {
 	t.Helper()
 	rootPem, err := os.ReadFile(filepath.Join(goldenDir(t), "certs", "root.crt"))
@@ -82,13 +72,10 @@ func goldenAnchors(t *testing.T) eudi_jwt.X509VerificationContext {
 }
 
 // goldenTime is the moment every assertion here is evaluated at: the golden
-// signing certificate's notBefore plus a day.
-//
-// Derived rather than hardcoded, and derived from the *certificate* rather than
-// the list, because the verification context needs it before the list has been
-// parsed. It is inside both validity windows by construction — mkgolden.sh dates
-// the list from the same generation moment — and it does not move with the wall
-// clock, so this test means the same thing whenever it runs.
+// signing certificate's notBefore plus a day. Derived from the certificate rather
+// than the list, because the verification context needs it before the list has
+// been parsed, and inside both validity windows by construction — mkgolden.sh
+// dates the list from the same generation moment.
 func goldenTime(t *testing.T) time.Time {
 	t.Helper()
 	return goldenSignerCertificate(t).NotBefore.Add(24 * time.Hour)
@@ -112,8 +99,8 @@ func goldenPartyCertificate(t *testing.T) *x509.Certificate {
 	return cert
 }
 
-// TestGoldenDocumentVerifiesAndParses is the regression guard: a document nobody
-// re-signed, parsed by whatever model.go currently says a LoTE looks like.
+// A document nobody re-signed, parsed by whatever model.go currently says a LoTE
+// looks like.
 func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	verified, err := verify(goldenRaw(t), goldenAnchors(t))
 	require.NoError(t, err, "the committed document must keep verifying")
@@ -122,10 +109,8 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	require.Equal(t, goldenListId, scheme.Identity(), "SchemeName's English entry is the list's identity")
 	require.Equal(t, uint64(42), scheme.SequenceNumber)
 
-	// The scheme-explicit mandatory fields (Table 1). They are asserted here
-	// rather than only validated against the schema because this is the test that
-	// notices a JSON tag changing, and a renamed mandatory field is exactly the
-	// kind of break that would otherwise pass the whole suite.
+	// The scheme-explicit mandatory fields (Table 1), asserted rather than merely
+	// schema-validated: this is the test that notices a tag changing.
 	require.Equal(t, LoTEVersion, scheme.LoTEVersionIdentifier)
 	require.Equal(t, LoTETypeRecognizedParties, scheme.LoTEType)
 	require.Equal(t, "Yivi Golden", scheme.SchemeOperatorName.Translated()["en"])
@@ -136,9 +121,8 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	require.NotEmpty(t, scheme.SchemeOperatorAddress.PostalAddress)
 	require.NotEmpty(t, scheme.SchemeOperatorAddress.ElectronicAddress)
 	require.NotEmpty(t, scheme.PolicyOrLegalNotice)
-	// The timestamps are generation-relative, so the assertion is on their shape
-	// and relationship rather than on literal dates: both must have parsed out of
-	// RFC 3339 into real times, thirty days apart.
+	// Generation-relative, so the assertion is on shape and relationship: parsed
+	// out of RFC 3339, thirty days apart.
 	require.False(t, scheme.ListIssueDateTime.IsZero(), "list_issue_date_time must parse")
 	require.False(t, scheme.NextUpdate.IsZero(), "next_update must parse")
 	require.Equal(t, 30*24*time.Hour, scheme.NextUpdate.Sub(scheme.ListIssueDateTime))
@@ -149,15 +133,14 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 
 	require.Len(t, verified.list.Entities, 4)
 
-	// Every field of the first entity, because these are the names on the wire.
 	party := verified.list.Entities[0].Information
 	require.Equal(t, "VATNL-000000001", party.OrganizationIdentifier())
 	require.Equal(t, clientmodels.TranslatedString{"en": "Example Municipality", "nl": "Example Municipality"},
 		party.Name.Translated())
 	require.Equal(t, "https://trustlist.example/logos/municipality.png", party.LogoURI())
 
-	// TEAddress and TEInformationURI are mandatory (clause 6.5.0), so a document
-	// that omits them is non-conformant even though the wallet never reads them.
+	// TEAddress and TEInformationURI are mandatory (clause 6.5.0) even though the
+	// wallet never reads them.
 	require.NotEmpty(t, party.Address.PostalAddress, "TEAddress requires a postal address")
 	require.NotEmpty(t, party.Address.ElectronicAddress, "TEAddress requires an electronic address")
 	require.Equal(t, "NL", party.Address.PostalAddress[0].Country)
@@ -169,8 +152,7 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	role, ok := service.Type.Role()
 	require.True(t, ok, "the service type URI must map to a ladder role")
 	require.Equal(t, trust.RoleVerifier, role)
-	// No status at all, which means granted: clause 6.6.0 NOTE 1, and the shape
-	// Yivi publishes.
+	// No status at all, which means granted (clause 6.6.0 NOTE 1).
 	require.Empty(t, service.Status, "a Yivi list carries no ServiceStatus")
 	require.True(t, service.IsGranted(), "and an absent status is a grant")
 	require.NotEmpty(t, service.Name, "ServiceName is mandatory (clause 6.6.0)")
@@ -180,30 +162,25 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	require.Contains(t, service.Markings(), "onboarded-by-yivi",
 		"markings must survive parsing; the wallet carries them without acting on them")
 
-	// The SKI key form, the service-level overrides, and markings that must
-	// survive parsing without being acted on.
+	// The SKI key form, service-level overrides, and carried-but-unread markings.
 	skiService := verified.list.Entities[1].Services[0].Information
 	require.Equal(t, [][]byte{goldenPartyCertificate(t).SubjectKeyId}, skiService.DigitalIdentity.X509SKIs)
 	require.Equal(t, clientmodels.TranslatedString{"en": "Example Diplomas"}, skiService.Name.Translated())
 	require.Equal(t, "https://trustlist.example/logos/diplomas.png", skiService.LogoURI())
 	require.Contains(t, skiService.Markings(), "some-future-qualifier")
 
-	// The DID convention — a bare string under Annex A, not a {type,value} pair —
-	// and a withdrawal that is listed but grants nothing.
+	// A DID as a bare string under Annex A, and a withdrawal that grants nothing.
 	didService := verified.list.Entities[2].Services[0].Information
 	require.Equal(t, []string{goldenDid}, didService.DigitalIdentity.OtherIds)
 
-	// The fourth entity carries an *explicit* withdrawn status, so the committed
-	// document exercises both branches of the absent-means-granted rule — the one
-	// Yivi emits and the one another scheme's list might.
+	// The fourth entity carries an explicit withdrawn status, so the document
+	// exercises both branches of the absent-means-granted rule.
 	withdrawn := verified.list.Entities[3].Services[0].Information
 	require.Equal(t, ServiceStatusWithdrawn, withdrawn.Status)
 	require.False(t, withdrawn.IsGranted(), "an explicit withdrawal is not a grant")
 }
 
-// TestGoldenReadableCopyMatchesTheSignedOne keeps golden/list.json honest: it is
-// there to be read by humans, so it must parse to exactly the list that was
-// signed.
+// golden/list.json must parse to exactly the list that was signed.
 func TestGoldenReadableCopyMatchesTheSignedOne(t *testing.T) {
 	verified, err := verify(goldenRaw(t), goldenAnchors(t))
 	require.NoError(t, err)
@@ -217,9 +194,8 @@ func TestGoldenReadableCopyMatchesTheSignedOne(t *testing.T) {
 		"golden/list.json must be the same list as golden/list.jws; re-run mkgolden.sh")
 }
 
-// TestGoldenDocumentGrantsThroughTheChecker runs the committed document through
-// the whole channel — store, checker, snapshot, keying — as of the pinned date,
-// so the shapes above are not merely parsed but acted on.
+// The committed document through the whole channel — store, checker, snapshot,
+// keying — so the shapes above are acted on and not merely parsed.
 func TestGoldenDocumentGrantsThroughTheChecker(t *testing.T) {
 	store := memoryStore{}
 	require.NoError(t, store.Put(goldenListId, goldenRaw(t)))

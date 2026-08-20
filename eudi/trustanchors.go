@@ -155,27 +155,18 @@ MEQCIDCSNbPoyhDZ5A3SWupsyPj/tDF4xNoHYnE0WFIs2pz8AiA9mhXswiJPFbVR
 
 // ------------------------------------------------------------------------------
 
-// Trust-list signing anchors.
+// Trust-list signing anchors: what a recognized list's signature chains to,
+// deliberately not the issuer anchors. Sharing one pool would let any certificate
+// that may issue credentials sign a document the wallet accepts as Yivi's list,
+// since the only other things checked (SchemeName, LoTEType) are public.
 //
-// These are the anchors a recognized list's *signature* chains to, and they are
-// deliberately NOT the issuer anchors. The two answer different questions — "may
-// this party issue credentials" and "may this key define who is trusted" — and
-// sharing one pool makes onboarding a credential issuer silently grant it the
-// second: any certificate under the issuer anchors carrying digitalSignature
-// could sign a document the wallet accepts as Yivi's list, because the only other
-// things checked are the SchemeName and LoTEType, both public values.
+// Clause 6.8.0 would not substitute for this: it binds the signing certificate's
+// subject to the document's own SchemeTerritory and SchemeOperatorName, which a
+// forger controls.
 //
-// Note that enforcing TS 119 602 clause 6.8.0 in the wallet would *not* substitute
-// for this. That clause binds the signing certificate's subject to the document's
-// own SchemeTerritory and SchemeOperatorName — and a forger controls the document,
-// so it would set those to match its own certificate. Clause 6.8.0 catches an
-// operator signing with the wrong certificate; only a separate anchor catches
-// someone else signing.
-//
-// **The Yivi Trust List CA does not exist yet**, so these are empty and the trust
-// model loads no pinned anchor: with nothing anchored, no list verifies, which is
-// the safe direction to fail while nothing is published. Fill them in from the
-// CA once it is issued, together with its CRL distribution point. See
+// The Yivi Trust List CA does not exist yet, so these are empty and no list
+// verifies — the safe direction to fail while nothing is published. Fill them in
+// once the CA is issued, together with its CRL distribution point. See
 // docs/plans/lote-annex-a-publisher.md § Phase 4.
 const (
 	Production_Yivi_TrustListCaCertificateRevocationListDistributionPoint = ""

@@ -23,22 +23,20 @@ import (
 const testTrustListId = "urn:yivi:trustlist:client-test"
 
 // These tests go through the real client wiring — the construction seam, the
-// SQLCipher-backed document store, the trust models the list signature is
-// checked against — rather than around it, because what they are about is that
-// the pieces are connected, not what the lote package decides.
+// SQLCipher-backed document store, the trust models the list signature is checked
+// against — because what they are about is that the pieces are connected.
 
-// newClientWithTrustLists builds a client whose recognized-list set is the
-// given one, at a storage path the caller supplies so a second client can be
-// built over the same data. The signer's root is installed as an issuer trust anchor,
-// which is where the wallet looks for the key a list signature has to chain to.
+// newClientWithTrustLists builds a client whose recognized-list set is the given
+// one, at a caller-supplied storage path so a second client can be built over the
+// same data. The signer's root is installed as an issuer trust anchor.
 func newClientWithTrustLists(t *testing.T, storagePath string, signer *lote.TestLoteSigner, sources []lote.Source) *Client {
 	t.Helper()
 	c, _ := newClientWithTrustListsAndHandler(t, storagePath, signer, sources)
 	return c
 }
 
-// newClientWithTrustListsAndHandler is newClientWithTrustLists, handing back the
-// app-facing handler so a test can count how often the wallet woke the app.
+// newClientWithTrustLists, handing back the app-facing handler so a test can count
+// how often the wallet woke the app.
 func newClientWithTrustListsAndHandler(
 	t *testing.T,
 	storagePath string,
@@ -52,10 +50,9 @@ func newClientWithTrustListsAndHandler(
 
 	eudiAppDataPath := filepath.Join(storagePath, "eudi")
 
-	// The list signer's root goes in the **trustlists** container, not the
-	// issuers one: a list's signature chains to the trust-list anchors, and the
-	// separation is the whole point — a certificate that may issue credentials
-	// must not thereby be able to define who is trusted.
+	// The list signer's root goes in the trustlists container, not the issuers
+	// one: a certificate that may issue credentials must not thereby be able to
+	// define who is trusted.
 	trustListCertsPath := filepath.Join(eudiAppDataPath, "trustlists", "certificates")
 	require.NoError(t, common.EnsureDirectoryExists(trustListCertsPath))
 
@@ -124,8 +121,8 @@ func TestClient_TrustListSurvivesARestart(t *testing.T) {
 	require.NoError(t, first.RefreshTrustLists(context.Background()))
 	require.NoError(t, first.Close())
 
-	// A second wallet over the same storage, with the publisher gone: what it
-	// knows about the verifier has to come off disk.
+	// A second wallet over the same storage, publisher gone: everything comes off
+	// disk.
 	server.Close()
 	second := newClientWithTrustLists(t, storagePath, signer, []lote.Source{source})
 
@@ -141,15 +138,14 @@ func TestClient_UnreachableTrustList_LeavesTheWalletUsable(t *testing.T) {
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
 	c := newClientWithTrustLists(t, storagePath, signer, []lote.Source{source})
 
-	// The refresh reports the failure to whoever asked for it, and the wallet
-	// carries on ranking parties by the channels it does have.
+	// Reported to the caller; the wallet carries on with the channels it has.
 	require.Error(t, c.RefreshTrustLists(context.Background()))
 	require.Equal(t, clientmodels.TrustLevel_Low, verifierLevel(c, "did:web:verifier.example.com"))
 }
 
 func TestClient_NoRecognizedLists_RefreshHasNothingToDo(t *testing.T) {
-	// What a released wallet does today: it names no recognized lists, so the
-	// list channel contributes nothing and a refresh has nothing to fail at.
+	// What a released wallet does today: no recognized lists, so a refresh has
+	// nothing to fail at.
 	signer := lote.NewTestLoteSigner(t)
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
 	c := newClientWithTrustLists(t, storagePath, signer, nil)
@@ -168,10 +164,8 @@ func TestClient_RefreshTrustLists_ListingConfersTheSourcesLevel(t *testing.T) {
 			lote.NewTestDidService(trust.RoleVerifier, did))))
 
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
-	// The same list, once configured as Yivi's own and once as another
-	// operator's: identical bytes on the wire, and the rung is the source's
-	// word — being on Yivi's list is being onboarded, another list's word is
-	// worth what the wallet decided it is worth.
+	// The same list, once configured as Yivi's own and once as another operator's:
+	// identical bytes, and the rung is the source's word.
 	yivis := newClientWithTrustLists(t, storagePath, signer,
 		[]lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_High)})
 	require.NoError(t, yivis.RefreshTrustLists(context.Background()))
@@ -192,8 +186,8 @@ func TestClient_RefreshTrustLists_ListingConfersTheSourcesLevel(t *testing.T) {
 // ----------------------------------------------------------------------------
 
 // seedBatchWithoutIssuerEvidence stores a batch the way a version before the
-// trust ladder did: no issuer certificate recorded, only the issuer identifier
-// the credential named. Those batches must still rank through the list channel.
+// trust ladder did: only the issuer identifier, no certificate. Those batches
+// must still rank through the list channel.
 func seedBatchWithoutIssuerEvidence(t *testing.T, gdb *gorm.DB, issuer string) {
 	t.Helper()
 
@@ -223,11 +217,10 @@ func storedIssuerLevel(t *testing.T, c *Client) clientmodels.TrustLevel {
 }
 
 // TestStoredCredentialIssuerRanksAtRead pins evaluate-at-read: the wallet stores
-// what it knew about the issuer, not the rung it gave it, so listing the same
-// credential after the list changed gives the rung the list says now.
-//
-// The batch here carries no issuer certificate, which is also what a batch stored
-// before the ladder existed looks like: it ranks through the list channel alone.
+// what it knew about the issuer, not the rung it gave it, so the same credential
+// listed after the list changed shows the rung the list says now. The batch here
+// carries no certificate, as a pre-ladder one would, so it ranks through the list
+// channel alone.
 func TestStoredCredentialIssuerRanksAtRead(t *testing.T) {
 	const issuer = "did:web:issuer.example.com"
 
@@ -255,11 +248,9 @@ func TestStoredCredentialIssuerRanksAtRead(t *testing.T) {
 		"a delisted issuer demotes on the next read, without a migration")
 }
 
-// TestTrustListRefreshNotifiesOnContentChange pins the wiring between the list
-// refresh and the app, and the line between a change and a re-confirmation: a
-// list that says something different about the parties on it wakes the app once,
-// and a re-issue that says the same thing stays silent — the same principle the
-// status sweep follows.
+// TestTrustListRefreshNotifiesOnContentChange pins the line between a change and
+// a re-confirmation: a list saying something different about the parties on it
+// wakes the app once, a re-issue saying the same thing stays silent.
 func TestTrustListRefreshNotifiesOnContentChange(t *testing.T) {
 	const issuer = "did:web:issuer.example.com"
 
@@ -273,20 +264,18 @@ func TestTrustListRefreshNotifiesOnContentChange(t *testing.T) {
 		[]lote.Source{server.Source(testTrustListId, clientmodels.TrustLevel_Medium)})
 
 	// The first fetch is not a change: the app was showing no verdict from this
-	// list, so there is nothing it has to go back on.
+	// list.
 	require.NoError(t, c.RefreshTrustLists(context.Background()))
 	require.Equal(t, 0, handler.CredentialsChangedCount(), "adopting a list for the first time is silent")
 
-	// A re-issue of the same entries: fresh next_update, new sequence number,
-	// new signature, nothing said about anybody that was not said before.
+	// A re-issue of the same entries: fresh next_update, new sequence number, new
+	// signature, nothing new said about anybody.
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 2, entity))
 	require.NoError(t, c.RefreshTrustLists(context.Background()))
 	require.Equal(t, 0, handler.CredentialsChangedCount(), "a re-sign with identical entries wakes nobody")
 
-	// The entry is withdrawn: this changes what the wallet says about the party.
-	// Rebuilt through the same builder as the granted entity, so the withdrawal
-	// is the *only* difference between the two issues — the mandatory
-	// ServiceName and TEAddress are identical either way.
+	// The entry is withdrawn. Rebuilt through the same builder as the granted
+	// entity, so the withdrawal is the only difference between the two issues.
 	withdrawnService := lote.NewTestDidService(trust.RoleIssuer, issuer)
 	withdrawnService.Information.Status = lote.ServiceStatusWithdrawn
 	withdrawn := lote.NewTestEntity("Listed Issuer BV", "", withdrawnService)

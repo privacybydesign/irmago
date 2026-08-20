@@ -21,28 +21,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Why the wallet checks a list's signature against a *trust-list* anchor set of
-// its own rather than against the issuer anchors.
+// Why a list's signature is checked against a trust-list anchor set of its own
+// rather than against the issuer anchors.
 //
 // The checker's contract is narrow: chain to an anchor, digitalSignature key
-// usage, CRL, then SchemeName and LoTEType. Both of the latter are public values,
-// so anyone who can produce a certificate under the anchor set can produce a list
-// the wallet accepts — and grant themselves, or anyone, the top rung. Point the
-// checker at the pool that also anchors credential issuers and onboarding an
-// issuer silently confers that.
+// usage, CRL, then SchemeName and LoTEType — both public values. So anyone who can
+// produce a certificate under the anchor set can produce a list the wallet
+// accepts, and pointing it at the issuer pool confers that on every issuer.
 //
-// Note this is *not* something clause 6.8.0 fixes. That clause binds the signing
-// certificate's subject to the document's own SchemeTerritory and
-// SchemeOperatorName — and a forger writes the document, so it sets those to match
-// its own certificate. 6.8.0 catches an operator signing with the wrong
-// certificate; only a separate anchor catches someone else signing.
-//
-// These two tests are the same forgery against the two anchor arrangements.
+// Clause 6.8.0 does not fix it: it binds the signing certificate's subject to the
+// document's own SchemeTerritory and SchemeOperatorName, which a forger writes to
+// match. These two tests are the same forgery against the two arrangements.
 
-// forgedList is a list granting the forger the top rung, naming the scheme it is
-// impersonating and claiming the forger's own organization as the scheme
-// operator — so that even a clause 6.8.0 check would find the document
-// internally consistent.
+// forgedList grants the forger the top rung, naming the scheme it impersonates
+// and claiming its own organization as the scheme operator, so even a clause
+// 6.8.0 check would find the document internally consistent.
 func forgedList(listId, did, organization string) List {
 	list := NewTestList(listId, 999,
 		NewTestEntity(organization, "", NewTestDidService(trust.RoleIssuer, did)))
@@ -69,8 +62,8 @@ func signAs(t *testing.T, list List, key *ecdsa.PrivateKey, certificate *x509.Ce
 }
 
 // newEndEntityUnder issues a certificate under the given root with its own
-// organization and digitalSignature key usage — what any party certificate looks
-// like, including a credential issuer's.
+// organization and digitalSignature key usage: what any party certificate looks
+// like, a credential issuer's included.
 func newEndEntityUnder(
 	t *testing.T,
 	rootCert *x509.Certificate,
@@ -99,12 +92,9 @@ func newEndEntityUnder(
 	return key, parsed
 }
 
-// The failure this design avoids: when the anchor set the checker uses is the same
-// one that anchors party certificates, a party can sign the list.
-//
-// Asserted rather than merely described, because it is the reason the wallet wires
-// a separate pool — and a future refactor that "simplified" the two pools back
-// into one would otherwise look harmless.
+// The failure this design avoids: when the checker's anchor set is the one that
+// anchors party certificates, a party can sign the list. Asserted rather than
+// described, so collapsing the two pools back into one does not look harmless.
 func TestAnchorIsolation_ASharedAnchorSetLetsAPartySignTheList(t *testing.T) {
 	signer := NewTestLoteSigner(t)
 	forgerKey, forgerCert := newEndEntityUnder(t, signer.RootCert, signer.RootKey, "Someone Else BV")
@@ -114,8 +104,8 @@ func TestAnchorIsolation_ASharedAnchorSetLetsAPartySignTheList(t *testing.T) {
 		forgedList(testListId, "did:web:forger.example.com", "Someone Else BV"),
 		forgerKey, forgerCert))
 
-	// The signer's root stands in for a pool that anchors both list signers and
-	// parties — what passing &eudiConf.Issuers to the checker would give.
+	// The signer's root stands in for a pool anchoring both list signers and
+	// parties: what passing &eudiConf.Issuers to the checker would give.
 	checker := NewChecker(Config{
 		Sources:     []Source{server.Source(testListId, clientmodels.TrustLevel_High)},
 		X509Context: signer.X509VerificationContext(),

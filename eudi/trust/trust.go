@@ -1,15 +1,14 @@
 // Package trust holds the vocabulary of the trust ladder: the evidence one
 // party's identity check produced, and the verdict the wallet draws from it.
 //
-// The ladder has three rungs (clientmodels.TrustLevel) and answers one
-// question: how strongly is this party vouched for? It never answers whether
-// the party is who it claims to be — that is the identity gate, which runs
-// first and fails the session outright when it rejects a party (see
-// [github.com/privacybydesign/irmago/eudi.PartyValidationFailed]).
+// The ladder has three rungs (clientmodels.TrustLevel) and answers only how
+// strongly a party is vouched for, never whether it is who it claims to be —
+// that is the identity gate, which runs first and fails the session outright
+// (see [github.com/privacybydesign/irmago/eudi.PartyValidationFailed]).
 //
-// Evaluation is fail-soft by construction: no signature in this package returns
-// an error, so no evaluation path can fail a session. A channel that is
-// unavailable contributes no evidence, and the party lands on a lower rung.
+// Evaluation is fail-soft by construction: no signature here returns an error,
+// so no evaluation path can fail a session. An unavailable channel contributes
+// no evidence and the party lands on a lower rung.
 package trust
 
 import (
@@ -24,18 +23,13 @@ import (
 // evaluation channels key on. Every field is optional: absent evidence is
 // simply a channel that has nothing to say about this party.
 type Evidence struct {
-	// Certificate is the certificate that attests the party's key: the
-	// end-entity certificate an x5c party presented, or the certificate a DID
-	// party's verification method carries over its key (RFC 7517 §4.7). Nil
-	// when the party carries none — a bare DID, or issuer metadata alone. How
-	// the party authenticated (a certificate, or a DID) is not the question
-	// here; whether a certificate vouches for its key is.
+	// Certificate attests the party's key: the end-entity certificate an x5c
+	// party presented, or the one a DID party's verification method carries
+	// (RFC 7517 §4.7). Nil for a bare DID or issuer metadata alone.
 	//
-	// A certificate here is a claim, not a verdict: the certificate channel
-	// classifies it against the wallet's anchors at evaluation time, and only
-	// a chain that validates to an anchor confers that anchor's level. A leaf
-	// that chains to nothing is evidentially a self-asserted key — it lifts no
-	// rung, and the recognized-list channel can still match the party on it.
+	// It is a claim, not a verdict: only a chain validating to an anchor confers
+	// that anchor's level, and a leaf chaining to nothing lifts no rung while
+	// still being matchable by the recognized-list channel.
 	Certificate *x509.Certificate
 
 	// Identifiers are the party's stable identifiers, most specific first: the
@@ -48,27 +42,20 @@ type Evidence struct {
 type Verdict struct {
 	// Level is the strongest vouching found across the channels.
 	Level clientmodels.TrustLevel
-	// Listing is the recognized-list entry the verdict was granted on, or nil
-	// when no list vouched for the party. It carries the curated display
-	// metadata that outranks what the party asserts about itself.
+	// Listing is the entry the verdict was granted on, or nil when no list vouched
+	// for the party. It carries the curated display metadata, which outranks what
+	// the party asserts about itself.
 	Listing *Listing
-	// CertificateLevel is the certificate channel's own contribution: the
-	// level conferred by the anchor the party's chain validated to, or
-	// unevaluated when no anchored certificate vouches for the party.
-	//
-	// It is reported separately from Level so the two channels can be told
-	// apart — Level alone cannot say whether a high rung came from an anchor or
-	// from a listing. Note that the protocol paths do not read it to decide
-	// attested-ness: each identity gate establishes that for itself, because it
-	// needs the answer before a verdict exists (an unanchored certificate's
-	// authorization is not worth enforcing, which is a gate decision).
+	// CertificateLevel is the certificate channel's own contribution, reported
+	// separately because Level alone cannot say whether a high rung came from an
+	// anchor or from a listing. Unevaluated when no anchored certificate vouches
+	// for the party. The identity gates do not read it — each establishes
+	// attested-ness for itself, before a verdict exists.
 	CertificateLevel clientmodels.TrustLevel
 }
 
 // CuratedLogoURI is the logo the granting listing names, or "" when no list
-// vouched for the party or its entry carries none. It exists so that every
-// composition path reaches for the curated logo the same way, rather than each
-// one guarding on Listing before dereferencing it.
+// vouched for the party or its entry carries none.
 func (v Verdict) CuratedLogoURI() string {
 	if v.Listing == nil {
 		return ""
@@ -76,28 +63,23 @@ func (v Verdict) CuratedLogoURI() string {
 	return v.Listing.LogoURI
 }
 
-// Listing is a party's entry on a recognized trust list, produced by the
-// recognized-list channel (the lote package). A Verdict carries a nil Listing
-// when no list vouched for the party, which includes every verdict the wallet
-// draws while it holds no usable list.
+// Listing is a party's entry on a recognized trust list, produced by the lote
+// package. A Verdict carries nil when no list vouched for the party, which
+// includes every verdict drawn while the wallet holds no usable list.
 type Listing struct {
-	// ListId identifies the recognized list the entry was found on.
-	ListId string
-	// Name is the curated display name of the party.
-	Name clientmodels.TranslatedString
-	// LogoURI is the curated logo, empty when the entry carries none.
+	ListId  string
+	Name    clientmodels.TranslatedString
 	LogoURI string
-	// Level is the rung this listing confers: the level the granting list's
-	// source is configured with. Yivi's own LoTE confers high — being listed
-	// there is being onboarded, so Yivi cannot name a party on its list
-	// without vouching for it — and any other recognized list confers what
-	// its source declares.
+
+	// Level is the rung this listing confers: the level the granting list's source
+	// is configured with. Yivi's own LoTE confers high — being listed there is
+	// being onboarded — and any other list confers what its source declares.
 	Level clientmodels.TrustLevel
 }
 
 // Role is which of the two grants a party is being asked about. It exists for
-// [ListSnapshot], where the role has to travel as data; callers of [View] name
-// the role by picking a method instead.
+// [ListSnapshot], where the role travels as data; callers of [View] pick a
+// method instead.
 type Role string
 
 const (
@@ -106,71 +88,56 @@ const (
 )
 
 // View evaluates parties against one pinned state of the world. A session takes
-// a View once and asks it about every party it meets, so a list refresh landing
-// mid-session cannot change that session's verdicts.
-//
-// The party's role is the method rather than a parameter, because trust as an
-// issuer and trust as a verifier are separate grants and a caller must not be
-// able to forget which one it is asking about.
+// a View once, so a list refresh landing mid-session cannot change its verdicts.
+// The role is a method rather than a parameter because issuing and verifying are
+// separate grants.
 type View interface {
 	Verifier(ev Evidence) Verdict
 	Issuer(ev Evidence) Verdict
 }
 
-// Evaluator hands out one pinned View per session.
-//
-// Snapshot takes no context: pinning is a read of state the wallet already
-// holds, never a fetch, so there is nothing for a cancellation to cut short.
+// Evaluator hands out one pinned View per session. Snapshot takes no context:
+// pinning reads state the wallet already holds, never fetches.
 type Evaluator interface {
 	Snapshot() View
 }
 
-// SnapshotOf pins the view to evaluate one pass against, tolerating the absence
-// of an evaluator: a wallet component built without one ranks nobody rather than
-// failing the read it was asked for. It exists so that fallback is stated once,
-// here, instead of every caller spelling out what a viewless wallet does.
+// SnapshotOf pins the view to evaluate one pass against, tolerating a missing
+// evaluator: a wallet component built without one ranks nobody rather than
+// failing the read it was asked for.
 func SnapshotOf(evaluator Evaluator) View {
 	if evaluator == nil {
-		// No channels at all: every party ranks low, because nothing is
-		// consulted that could vouch for one.
 		return NewView(nil, nil, nil)
 	}
 	return evaluator.Snapshot()
 }
 
 // ListSnapshot is the recognized-list channel, pinned to one state of the
-// wallet's lists. It answers with the entry that grants the party in that role,
-// or nil when no list grants it — including when there is no usable list at
-// all, which is what makes an unreachable or expired list absent evidence
-// rather than a failure.
+// wallet's lists. Nil when no list grants the party — including when there is no
+// usable list at all, which is what makes an unreachable or expired list absent
+// evidence rather than a failure.
 //
-// Implemented by the lote package; declared here so the evaluation seam does
-// not depend on the list format.
+// Implemented by the lote package; declared here so the evaluation seam does not
+// depend on the list format.
 type ListSnapshot interface {
 	Lookup(role Role, ev Evidence) *Listing
 }
 
-// CertificateClassifier is the certificate channel's evidence source: it
-// reports the level conferred by the anchor a leaf certificate's chain
-// validates to right now, or unevaluated when the leaf does not chain to any
-// anchor the wallet holds — a broken chain, a revoked certificate, an unknown
-// root. Classification never errors: a chain that does not hold up is absent
-// evidence, and the party lands where the other channels put it.
+// CertificateClassifier is the certificate channel's evidence source: the level
+// conferred by the anchor a leaf's chain validates to right now, or unevaluated
+// when it chains to nothing the wallet holds. It never errors — a chain that does
+// not hold up is absent evidence.
 //
-// Implemented by the wallet's TrustModel, which holds the anchor pools and the
-// level each anchored root confers: Yivi's own roots confer high, an anchored
-// third-party CA confers medium (or high, once promoted under contract).
-// Classification is per anchor set, so trust as an issuer and trust as a
-// verifier each consult their own classifier.
+// Implemented by the wallet's TrustModel, per anchor set, so the two roles
+// consult separate classifiers.
 type CertificateClassifier interface {
 	Classify(leaf *x509.Certificate) clientmodels.TrustLevel
 }
 
-// NewView combines the channels into the view a session evaluates against. A
-// nil snapshot leaves only the certificate channel, which is what the wallet
-// runs on before it has ever fetched a list; a nil classifier leaves that
-// role's certificate channel dark, which only a wallet without trust models
-// (in practice: a test) does.
+// NewView combines the channels into the view a session evaluates against. A nil
+// snapshot leaves only the certificate channel, which is what the wallet runs on
+// before it has ever fetched a list; a nil classifier leaves that role's
+// certificate channel dark.
 func NewView(lists ListSnapshot, issuerCerts, verifierCerts CertificateClassifier) View {
 	return &layeredView{
 		lists:         lists,
@@ -180,39 +147,33 @@ func NewView(lists ListSnapshot, issuerCerts, verifierCerts CertificateClassifie
 	}
 }
 
-// layeredView is the whole ladder: the certificate channel and the
-// recognized-list channel, each asked independently, the party landing on
-// whichever rung is higher. Independence is the point — a Yivi-certified
-// party stays high while the list is down, and a listed party keeps its
-// listing's rung while it holds no certificate.
+// layeredView is the whole ladder: both channels asked independently, the party
+// landing on whichever rung is higher. Independence is the point — a certified
+// party stays high while the list is down, and a listed one keeps its rung while
+// it holds no certificate.
 type layeredView struct {
 	lists         ListSnapshot
 	issuerCerts   CertificateClassifier
 	verifierCerts CertificateClassifier
 
 	// classified memoizes the certificate channel's answers for the life of the
-	// view. A view is pinned to one state of the world, so asking about the same
-	// certificate twice must give the same answer twice — which makes remembering
-	// it a saving with no semantics of its own. The saving is the point: one
-	// classification is a chain build plus a revocation scan, and the paths that
-	// rank a whole wallet ask about one issuer's certificate once per credential.
+	// view, which is pinned to one state of the world and so must answer the same
+	// twice anyway. One classification is a chain build plus a revocation scan,
+	// and ranking a whole wallet asks about one issuer once per credential.
 	mu         sync.Mutex
 	classified map[classifiedKey]clientmodels.TrustLevel
 }
 
-// classifiedKey identifies one certificate asked about in one role. The roles are
-// separate grants consulting separate anchor sets, so a level found for one says
-// nothing about the other.
+// classifiedKey identifies one certificate asked about in one role. The roles
+// consult separate anchor sets, so a level found for one says nothing about the
+// other.
 type classifiedKey struct {
 	role Role
 	leaf [sha256.Size]byte
 }
 
-// Verifier implements [View].
 func (v *layeredView) Verifier(ev Evidence) Verdict { return v.evaluate(RoleVerifier, ev) }
-
-// Issuer implements [View].
-func (v *layeredView) Issuer(ev Evidence) Verdict { return v.evaluate(RoleIssuer, ev) }
+func (v *layeredView) Issuer(ev Evidence) Verdict   { return v.evaluate(RoleIssuer, ev) }
 
 func (v *layeredView) evaluate(role Role, ev Evidence) Verdict {
 	verdict := Verdict{
@@ -236,9 +197,8 @@ func (v *layeredView) evaluate(role Role, ev Evidence) Verdict {
 	return verdict
 }
 
-// classify is the certificate channel: the level the role's anchor set confers
-// on the party's leaf, or unevaluated when the party presented no certificate,
-// the role has no classifier, or the chain does not hold up.
+// classify is the certificate channel: the level the role's anchor set confers on
+// the leaf, or unevaluated when nothing anchors it.
 func (v *layeredView) classify(role Role, leaf *x509.Certificate) clientmodels.TrustLevel {
 	if leaf == nil {
 		return clientmodels.TrustLevel_Unevaluated
@@ -253,8 +213,8 @@ func (v *layeredView) classify(role Role, leaf *x509.Certificate) clientmodels.T
 
 	key := classifiedKey{role: role, leaf: sha256.Sum256(leaf.Raw)}
 
-	// Held across the classification so concurrent askers about one certificate
-	// wait for the first answer rather than each building the chain themselves.
+	// Held across the classification so concurrent askers wait for the first
+	// answer rather than each building the chain.
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if level, ok := v.classified[key]; ok {
@@ -265,15 +225,12 @@ func (v *layeredView) classify(role Role, leaf *x509.Certificate) clientmodels.T
 	return level
 }
 
-// Stronger reports whether a outranks b on the ladder. It is how independent
-// channels combine — the party lands on the strongest rung any channel earns
-// it — and unevaluated ranks below every verdict: it is the absence of one.
+// Stronger reports whether a outranks b on the ladder: how independent channels
+// combine. Unevaluated ranks below every verdict, being the absence of one.
 func Stronger(a, b clientmodels.TrustLevel) bool {
 	return levelRank(a) > levelRank(b)
 }
 
-// levelRank orders the rungs so channels can be combined by taking the
-// strongest.
 func levelRank(l clientmodels.TrustLevel) int {
 	switch l {
 	case clientmodels.TrustLevel_Low:

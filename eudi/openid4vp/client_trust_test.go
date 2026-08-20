@@ -24,13 +24,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The tests below drive a whole OpenID4VP session — an authorization request
-// served over HTTP, verified, and carried up to the permission screen — and
-// assert the rung the wallet puts the verifier on, plus that a rejected
-// verifier is reported as such.
+// Whole OpenID4VP sessions — an authorization request served over HTTP, verified,
+// carried up to the permission screen — asserting the rung the wallet puts the
+// verifier on, and that a rejected verifier is reported as such.
 
-// serveAuthRequest publishes an authorization request JWT and returns the
-// openid4vp URL a wallet would be handed for it.
 func serveAuthRequest(t *testing.T, authRequestJwt string) string {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -40,8 +37,8 @@ func serveAuthRequest(t *testing.T, authRequestJwt string) string {
 	return "openid4vp://?request_uri=" + url.QueryEscape(server.URL)
 }
 
-// newTrustTestClient builds a client that runs sessions against the given
-// verifier validator, ranking parties the way the wallet does today.
+// A client that runs sessions against the given verifier validator, ranking
+// parties the way the wallet does today.
 func newTrustTestClient(validator VerifierValidator) *Client {
 	return newTrustTestClientWithLists(validator, nil)
 }
@@ -55,8 +52,6 @@ func (s staticClassifier) Classify(*x509.Certificate) clientmodels.TrustLevel {
 	return clientmodels.TrustLevel(s)
 }
 
-// newTrustTestClientWithLists is newTrustTestClient with the recognized-list
-// channel wired up to checker.
 func newTrustTestClientWithLists(validator VerifierValidator, checker *lote.Checker) *Client {
 	trustService := services.NewTrustService(checker,
 		staticClassifier(clientmodels.TrustLevel_High),
@@ -66,9 +61,8 @@ func newTrustTestClientWithLists(validator VerifierValidator, checker *lote.Chec
 }
 
 // stubQueryHandler answers every query with one credential the wallet does not
-// own. That is enough to build a disclosure plan and reach the permission
-// screen, which is where the verifier's rung shows up, without dragging a
-// credential store into the test.
+// own: enough to build a disclosure plan and reach the permission screen, where
+// the verifier's rung shows up.
 type stubQueryHandler struct{}
 
 func (stubQueryHandler) CanHandleCredentialQuery(dcql.CredentialQuery) bool { return true }
@@ -87,8 +81,7 @@ func (stubQueryHandler) PrepareDisclosure([]dcql.DisclosureSelection, string, st
 }
 
 // withClientName makes the requestor's display name come from client_metadata,
-// which keeps the certificate's own scheme data (and its logo, which would need
-// a storage-backed configuration to cache) out of the session.
+// keeping the certificate's own scheme data out of the session.
 func withClientName(name string) func(token *jwt.Token) {
 	return func(token *jwt.Token) {
 		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{"client_name": name}
@@ -117,8 +110,8 @@ func TestNewSession_DidWebVerifier_RanksLowAndProceeds(t *testing.T) {
 
 	defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
 
-	// The session reaching the permission screen at all is the fail-soft
-	// assertion: nobody vouches for a bare DID, and it still gets to ask.
+	// Reaching the permission screen at all is the fail-soft assertion: nobody
+	// vouches for a bare DID, and it still gets to ask.
 	requestor := handler.awaitRequestor(t)
 	require.Equal(t, clientmodels.TrustLevel_Low, requestor.TrustLevel,
 		"nobody vouches for a bare did:web verifier")
@@ -127,9 +120,8 @@ func TestNewSession_DidWebVerifier_RanksLowAndProceeds(t *testing.T) {
 }
 
 func TestNewSession_ExpiredVerifierCertificate_ReportsPartyValidationFailed(t *testing.T) {
-	// A certificate presented outside its own validity window is a broken
-	// request — the gate rejects it, and the app must be able to say the
-	// verifier was rejected rather than that the network misbehaved.
+	// A certificate outside its validity window is a broken request: the gate
+	// rejects it, and the app must be able to say so.
 	authRequestJwt, validator := setupTest(t, withClientName("Test Verifier"), testdata.PkiOption_ExpiredEndEntity)
 
 	client := newTrustTestClient(validator)
@@ -145,12 +137,10 @@ func TestNewSession_ExpiredVerifierCertificate_ReportsPartyValidationFailed(t *t
 }
 
 func TestNewSession_RevokedVerifierCertificate_ReportsPartyValidationFailed(t *testing.T) {
-	// Revocation is the CA withdrawing a certificate it issued — an act of
-	// distrust, not the absence of trust an untraceable chain shows — and it is
-	// how a compromised relying party is cut off. So the session is refused
-	// rather than shown at a lower rung, and the app can say the verifier was
-	// rejected. (The classifier stub confers high on every certificate here, so
-	// nothing but the refusal keeps this request off the screen.)
+	// Revocation is an act of distrust, not the absence of trust an untraceable
+	// chain shows, so the session is refused rather than shown at a lower rung.
+	// The classifier stub confers high on everything, so nothing but the refusal
+	// keeps this request off the screen.
 	authRequestJwt, validator := setupTest(t, withClientName("Test Verifier"), testdata.PkiOption_RevokedEndEntity)
 
 	client := newTrustTestClient(validator)
@@ -191,12 +181,9 @@ func TestNewSession_GenericFailures_CarryNoPartyValidationCode(t *testing.T) {
 }
 
 // didWebLoopbackTransport routes a did:web fetch to a plain-HTTP test server on
-// loopback, whatever host and scheme the DID resolves to.
-//
-// The resolver's own HTTPS→HTTP fallback cannot be used for this: it fires only
-// when the real host answers 404 over authenticated TLS, which is what keeps a
-// hostile host from downgrading key resolution, and a plain-HTTP test server
-// cannot produce that. So the test routes the request itself instead.
+// loopback, whatever host and scheme the DID resolves to. The resolver's own
+// HTTPS→HTTP fallback cannot be used: it fires only when the real host answers
+// 404 over authenticated TLS, which a plain-HTTP test server cannot produce.
 type didWebLoopbackTransport struct{ addr string }
 
 func (t *didWebLoopbackTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -206,16 +193,13 @@ func (t *didWebLoopbackTransport) RoundTrip(req *http.Request) (*http.Response, 
 	return http.DefaultTransport.RoundTrip(clone)
 }
 
-// didWebLoopbackClient is the HTTP client that reaches a did:web document
-// served by a test server at addr.
 func didWebLoopbackClient(addr string) *http.Client {
 	return &http.Client{Transport: &didWebLoopbackTransport{addr: addr}}
 }
 
 // setupDidWebTest publishes a DID document for a loopback did:web verifier and
-// returns an authorization request signed with the key in that document, plus
-// the verifier's DID — what a trust list would name it by. The verifier has no
-// certificate at all: it is the bare-DID case.
+// returns an authorization request signed with the key in it, plus the verifier's
+// DID. The verifier carries no certificate: the bare-DID case.
 func setupDidWebTest(t *testing.T) (authRequestJwt string, validator VerifierValidator, did string) {
 	t.Helper()
 
@@ -253,9 +237,8 @@ func setupDidWebTest(t *testing.T) (authRequestJwt string, validator VerifierVal
 		"decentralized_identifier:"+didWeb, key, &x509.Certificate{},
 		func(token *jwt.Token) { delete(token.Header, "x5c") },
 	)
-	// A bare did:web carries no attesting certificate, so the verification
-	// context is never consulted; an empty one keeps these tests to the bare
-	// path. The attested-DID cases build a real trust model of their own.
+	// A bare did:web carries no attesting certificate, so an empty verification
+	// context keeps these tests to the bare path.
 	didValidator := NewDidVerifierValidator(true, &eudi_jwt.StaticVerificationContext{}, &MockQueryValidatorFactory{})
 	didValidator.didWebResolver.HTTPClient = didWebLoopbackClient(serverURL.Host)
 	return authRequestJwt, didValidator, didWeb

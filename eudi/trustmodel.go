@@ -32,20 +32,16 @@ type TrustModel struct {
 	logger                            *logrus.Logger
 	certificateVerificationMode       CertificateVerificationMode
 
-	// anchorLevels records, per anchored root (keyed by the SHA-256 of its
-	// DER), the trust level its certificates confer: the Yivi roots confer
-	// high, an anchored third-party CA confers medium — or high, once promoted
-	// under contract, which is a change to this data rather than to code.
-	// Every path that adds an anchor states the level explicitly; nothing
-	// defaults to high.
+	// anchorLevels records, per anchored root (keyed by the SHA-256 of its DER),
+	// the trust level its certificates confer. Every path that adds an anchor
+	// states the level explicitly; nothing defaults to high.
 	//
-	// anchorLevelsMu guards it. Classify reads the map on the session path while
-	// the CRL refresh job reassigns and rewrites it from another goroutine, and a
-	// map is the one shape Go answers that with a process-killing throw rather
-	// than a stale read. The model's other reloaded fields are raced too — see
-	// the TODO on Configuration.UpdateCertificateRevocationLists, which is where
-	// that gets fixed as a whole — but they are pointers and slice headers, which
-	// at worst read stale.
+	// anchorLevelsMu guards it: Classify reads the map on the session path while
+	// the CRL refresh job rewrites it from another goroutine, and a map is the one
+	// shape Go answers that with a throw rather than a stale read. The model's
+	// other reloaded fields are raced too — see the TODO on
+	// Configuration.UpdateCertificateRevocationLists — but they at worst read
+	// stale.
 	anchorLevelsMu sync.RWMutex
 	anchorLevels   map[[sha256.Size]byte]clientmodels.TrustLevel
 }
@@ -79,8 +75,7 @@ func (tm *TrustModel) clear() {
 }
 
 // clearAnchorLevels drops every recorded anchor level. Kept apart from clear so
-// that every write to the map goes through anchorLevelsMu — see the field
-// comment for why this map in particular has to be guarded.
+// that every write to the map goes through anchorLevelsMu.
 func (tm *TrustModel) clearAnchorLevels() {
 	tm.anchorLevelsMu.Lock()
 	defer tm.anchorLevelsMu.Unlock()
@@ -184,10 +179,9 @@ func (tm *TrustModel) loadTrustChains() error {
 	if err != nil {
 		return err
 	}
-	// Locally installed chains confer high: this storage is the dev, staging
-	// and test seam that stands in for the Yivi CA (nothing writes here in a
-	// released wallet). A third-party CA anchored at medium is pinned in code
-	// with its level, never installed here.
+	// Locally installed chains confer high: this storage is the dev, staging and
+	// test seam standing in for the Yivi CA, and nothing writes here in a released
+	// wallet. A third-party CA is pinned in code with its level instead.
 	return tm.addTrustAnchors(clientmodels.TrustLevel_High, trustedChainFiles...)
 }
 
@@ -230,8 +224,6 @@ func (tm *TrustModel) getIntermediateCertificateVerificationOptions() x509.Verif
 
 // addTrustAnchors installs trust anchor chains, recording confers as the trust
 // level every root in them passes on to the certificates that validate to it.
-// The level is a required statement by the caller: pinned Yivi roots say high,
-// a pinned third-party CA says the level Yivi granted it.
 func (tm *TrustModel) addTrustAnchors(confers clientmodels.TrustLevel, trustAnchors ...[]byte) error {
 	for _, bts := range trustAnchors {
 		chain, err := utils.ParsePemCertificateChain(bts)
@@ -503,9 +495,8 @@ func (tm *TrustModel) recordAnchorLevel(root *x509.Certificate, confers clientmo
 	tm.anchorLevels[key] = confers
 }
 
-// anchorLevel reports the level this root's certificates confer, and whether
-// the root is anchored at all. The read side of anchorLevelsMu: Classify runs on
-// the session path while a reload rewrites the map underneath it.
+// anchorLevel reports the level this root's certificates confer, and whether the
+// root is anchored at all. The read side of anchorLevelsMu.
 func (tm *TrustModel) anchorLevel(root *x509.Certificate) (clientmodels.TrustLevel, bool) {
 	tm.anchorLevelsMu.RLock()
 	defer tm.anchorLevelsMu.RUnlock()
@@ -514,34 +505,28 @@ func (tm *TrustModel) anchorLevel(root *x509.Certificate) (clientmodels.TrustLev
 	return level, ok
 }
 
-// Classify implements [trust.CertificateClassifier]: the trust level conferred
-// by the anchor the leaf's chain validates to, or unevaluated when no anchored
-// chain holds up. It never errors — an unclassifiable certificate is absent
-// evidence for the trust ladder, not a failure — and it is on the evaluation
-// path, so it must also serve stored evidence: a stored credential's issuer
-// leaf is re-classified against the current anchors on every read.
+// Classify implements [trust.CertificateClassifier]: the trust level conferred by
+// the anchor the leaf's chain validates to, or unevaluated when no anchored chain
+// holds up. It never errors, and it serves stored evidence too — a stored
+// credential's issuer leaf is re-classified on every read.
 //
-// Classification is expiry-tolerant: the chain is verified at a time inside
-// the leaf's validity window, because the vouching question about stored
-// evidence concerns the signing act, which happened inside that window, and
-// issuer leaves routinely expire before the credentials they signed. Demotion
-// is reserved for acts of distrust — a revoked certificate or an anchor no
-// longer in the set. Live parties are not thereby exempt from expiry: the
-// session gate checks the leaf's validity window against the wall clock
-// before evaluation ever sees the certificate.
+// Classification is expiry-tolerant, verifying the chain at a time inside the
+// leaf's validity window: the vouching question about stored evidence concerns
+// the signing act, and issuer leaves routinely expire before the credentials they
+// signed. Demotion is reserved for acts of distrust. Live parties are not exempt
+// from expiry — the session gate checks the validity window against the wall
+// clock before evaluation sees the certificate.
 func (tm *TrustModel) Classify(leaf *x509.Certificate) clientmodels.TrustLevel {
 	if leaf == nil || tm.trustedRootCertificates == nil {
 		return clientmodels.TrustLevel_Unevaluated
 	}
 
-	// The acceptance rules — chain to an anchor, digitalSignature key usage, not
-	// revoked — are the wallet's one policy, shared with the session gate, so a
-	// rule added there also governs ranking. Only the moment differs.
+	// The acceptance rules are shared with the session gate, so a rule added there
+	// also governs ranking. Only the moment differs.
 	chains, err := eudi_jwt.VerifyCertificateChains(tm, leaf, nil, classificationTime(time.Now(), leaf))
 	if err != nil {
-		// A revoked certificate is an act of distrust rather than the ordinary
-		// absence of an anchor, so it is worth saying out loud; anything else is
-		// the expected outcome for a party the wallet holds no anchor for.
+		// A revocation is an act of distrust rather than the ordinary absence of an
+		// anchor, so it is worth saying out loud.
 		if errors.Is(err, eudi_jwt.ErrCertificateRevoked) {
 			tm.logger.Warnf("trust: certificate %s fails the revocation check, not classifying it: %v", leaf.Subject.ToRDNSequence().String(), err)
 		} else {

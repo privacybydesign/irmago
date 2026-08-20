@@ -8,8 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// stubClassifier confers one fixed level on every certificate, standing in for
-// a trust model whose anchors all say the same thing.
+// stubClassifier confers one fixed level on every certificate.
 type stubClassifier clientmodels.TrustLevel
 
 func (s stubClassifier) Classify(*x509.Certificate) clientmodels.TrustLevel {
@@ -17,9 +16,6 @@ func (s stubClassifier) Classify(*x509.Certificate) clientmodels.TrustLevel {
 }
 
 func TestCertificateChannel_ConfersTheAnchorsLevel(t *testing.T) {
-	// The certificate channel confers whatever the anchor the chain validates
-	// to confers — high under a Yivi root, medium under an anchored
-	// third-party CA — and the verdict records the channel's own contribution.
 	ev := Evidence{Certificate: &x509.Certificate{}}
 	view := NewView(nil,
 		stubClassifier(clientmodels.TrustLevel_Medium),
@@ -38,9 +34,8 @@ func TestCertificateChannel_ConfersTheAnchorsLevel(t *testing.T) {
 }
 
 func TestCertificateChannel_UnclassifiableCertificateIsAbsentEvidence(t *testing.T) {
-	// A certificate that chains to no anchor is evidentially a self-asserted
-	// key: it lifts no rung, and the verdict says the channel contributed
-	// nothing — which is what display keys attested-ness off.
+	// A certificate chaining to no anchor is a self-asserted key: no rung, and a
+	// verdict recording that the channel contributed nothing.
 	view := NewView(nil,
 		stubClassifier(clientmodels.TrustLevel_Unevaluated),
 		stubClassifier(clientmodels.TrustLevel_Unevaluated))
@@ -64,8 +59,8 @@ func TestCertificateChannel_WithoutCertificateRanksLow(t *testing.T) {
 }
 
 func TestNewView_EmptyEvidenceRanksLow(t *testing.T) {
-	// A party the wallet knows nothing about still gets a verdict rather than
-	// an error: no evaluation path may fail a session.
+	// A party the wallet knows nothing about still gets a verdict: no evaluation
+	// path may fail a session.
 	view := NewView(nil, nil, nil)
 	require.Equal(t, clientmodels.TrustLevel_Low, view.Verifier(Evidence{}).Level)
 	require.Equal(t, clientmodels.TrustLevel_Low, view.Issuer(Evidence{}).Level)

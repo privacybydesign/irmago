@@ -9,16 +9,12 @@ import (
 
 // ErrPartyValidation marks an error as the identity gate rejecting the party on
 // the other end of a session: a broken or revoked certificate chain, an invalid
-// request signature, an unresolvable DID.
+// request signature, an unresolvable DID. Wrapped around the failure that
+// actually happened, so the session error carries a code the app can switch on —
+// "the request is not trustworthy, nothing was shared" rather than "try again".
 //
-// It is a marker wrapped around the failure that actually happened, so the
-// session error the app receives can carry a code it can switch on. That
-// distinction matters to the user: a rejected party means "the request is not
-// trustworthy, no data has been shared", while a network or protocol error means
-// "something went wrong, try again".
-//
-// A party the wallet cannot find any vouching for is not this. That is a low
-// trust level, and the session proceeds.
+// A party nobody vouches for is not this: that is a low trust level, and the
+// session proceeds.
 var ErrPartyValidation = errors.New("party validation failed")
 
 // PartyValidationFailed marks err as an identity gate failure. It returns nil
@@ -38,9 +34,8 @@ func IsPartyValidationFailure(err error) bool {
 }
 
 // SessionErrorType is the code a failed session reports err under: the one the
-// app switches on when the party itself was rejected, and the empty generic code
-// for everything else. It lives next to the marker so both protocols read the
-// marker the same way rather than each mapping it for itself.
+// app switches on when the party itself was rejected, the empty generic code
+// otherwise. Next to the marker so both protocols map it the same way.
 func SessionErrorType(err error) string {
 	if IsPartyValidationFailure(err) {
 		return clientmodels.ErrorType_PartyValidationFailed

@@ -15,21 +15,16 @@ type pinnedList struct {
 	list   *List
 }
 
-// snapshot is an immutable set of current lists. It is handed to a session and
-// answers the same way for the whole of it, however many refreshes land in the
-// meantime.
+// snapshot is an immutable set of current lists, answering the same way for a
+// whole session however many refreshes land meanwhile.
 type snapshot struct {
 	lists []pinnedList
 }
 
-// Lookup implements [trust.ListSnapshot]. It returns the strongest granting
-// entry across the lists — the rung a listing confers is its source's, so a
-// party granted on two lists must get the better of the two words, whatever
-// order the sources were configured in. Within one list the first granting
-// entry stands: every entry on a list confers the same level.
-//
-// Ties go to configuration order, which keeps the answer deterministic when
-// two equally-strong lists both grant.
+// Lookup implements [trust.ListSnapshot]: the strongest granting entry across the
+// lists, since a party granted on two must get the better of the two words. Within
+// one list the first granting entry stands, every entry conferring the same level,
+// and ties go to configuration order.
 func (s snapshot) Lookup(role trust.Role, ev trust.Evidence) *trust.Listing {
 	var best *trust.Listing
 	for _, pinned := range s.lists {
@@ -44,8 +39,6 @@ func (s snapshot) Lookup(role trust.Role, ev trust.Evidence) *trust.Listing {
 	return best
 }
 
-// lookup returns the first entry on this list granting the party in this role,
-// or nil when none does.
 func (p pinnedList) lookup(role trust.Role, ev trust.Evidence) *trust.Listing {
 	for i := range p.list.Entities {
 		entity := &p.list.Entities[i]
@@ -59,16 +52,12 @@ func (p pinnedList) lookup(role trust.Role, ev trust.Evidence) *trust.Listing {
 	return nil
 }
 
-// grants reports whether this service is a live grant of this role to the party
-// the evidence describes.
 func grants(entity *Entity, service *Service, role trust.Role, ev trust.Evidence) bool {
 	info := &service.Information
 	if !info.IsGranted() {
 		return false
 	}
-	// An entry whose service type is not one of the ladder's roles matches
-	// nothing: an unrecognized type URI maps to no role, and the caller only
-	// ever asks about a real one.
+	// An unrecognized service type maps to no role and so matches nothing.
 	granted, ok := info.Type.Role()
 	if !ok || granted != role {
 		return false
@@ -76,20 +65,15 @@ func grants(entity *Entity, service *Service, role trust.Role, ev trust.Evidence
 	return matchesIdentity(entity, service, ev)
 }
 
-// matchesIdentity checks the party against the service's digital identities.
+// matchesIdentity checks the party against the service's digital identities. A
+// party may carry two handles onto its identity — the certificate (plus the legal
+// entity, when the entry names one) and an identifier such as a DID or issuer URL
+// — and an entry granting either grants the party.
 //
-// A party may carry two handles onto its identity, and an entry granting
-// either one grants the party. The certificate handle is the whole certificate
-// or the key it carries, AND the legal entity when the entry names one. The
-// identifier handle is a DID or issuer URL against the OtherId entries.
-//
-// The two are a union because a DID party that also carries an attesting
-// certificate has both handles genuinely — the certificate vouches for the key
-// it authenticated with, it is not how it authenticated. Keying only on
-// whether a certificate is present would drop such a party's DID-keyed listing
-// the moment it attested. The handles are judged independently rather than in
-// sequence, so the certificate handle's organization-identifier cross-check is
-// never rescued by the identifier handle: a reassigned key still fails.
+// A union, because a DID party that also carries an attesting certificate has
+// both handles genuinely, and keying on the certificate's presence would drop its
+// DID-keyed listing the moment it attested. Judged independently, so the
+// organization-identifier cross-check is never rescued by the other handle.
 func matchesIdentity(entity *Entity, service *Service, ev trust.Evidence) bool {
 	return matchesCertificateHandle(entity, service, ev) ||
 		matchesIdentifierHandle(service, ev)
@@ -115,10 +99,8 @@ func matchesCertificateHandle(entity *Entity, service *Service, ev trust.Evidenc
 }
 
 // matchesIdentifierHandle grants when one of the party's identifiers matches an
-// OtherId entry. An OtherId is a bare string in Annex A, so there is no type to
-// filter on: a DID or issuer URL is self-describing and compared verbatim. An
-// empty entry would match an empty identifier, so it is skipped rather than
-// trusted.
+// OtherId entry. An OtherId is a bare string in Annex A, compared verbatim. An
+// empty entry would match an empty identifier, so it is skipped.
 func matchesIdentifierHandle(service *Service, ev trust.Evidence) bool {
 	for _, other := range service.Information.DigitalIdentity.OtherIds {
 		if other == "" {
@@ -131,19 +113,16 @@ func matchesIdentifierHandle(service *Service, ev trust.Evidence) bool {
 	return false
 }
 
-// matchesCertificate checks the party's certificate against every certificate
-// and key the entry names. The binding makes both members sequences, so one
-// service may be recognized by several certificates or keys and any one of them
-// matching is enough.
+// matchesCertificate checks the party's certificate against every certificate and
+// key the entry names; any one of them matching is enough.
 func matchesCertificate(identity *DigitalIdentity, cert *x509.Certificate) bool {
 	for _, listed := range identity.X509Certificates {
 		if len(listed.Val) > 0 && bytes.Equal(listed.Val, cert.Raw) {
 			return true
 		}
 	}
-	// An entry keyed on the subject key identifier keeps granting across a
-	// certificate renewal that reuses the key, which is why a scheme operator
-	// would use it instead of pinning the certificate.
+	// An entry keyed on the subject key identifier keeps granting across a renewal
+	// that reuses the key.
 	for _, ski := range identity.X509SKIs {
 		if len(ski) > 0 && bytes.Equal(ski, cert.SubjectKeyId) {
 			return true
@@ -152,13 +131,11 @@ func matchesCertificate(identity *DigitalIdentity, cert *x509.Certificate) bool 
 	return false
 }
 
-// listingOf builds the entry the verdict reports, resolving what the service
+// listingOf builds the entry the verdict reports, resolving the service's
 // overrides over what the entity says.
 func listingOf(pinned pinnedList, entity *Entity, service *Service) *trust.Listing {
-	// ServiceName is mandatory in Annex A, so unlike the optional override it
-	// replaces it is normally set — a service not presented under its own brand
-	// simply repeats the entity's name. The fallback stays for a document that
-	// omits it anyway: an unnamed listing should still show who it is.
+	// ServiceName is mandatory in Annex A, so it is normally set. The fallback is
+	// for a document that omits it anyway.
 	name := service.Information.Name
 	if len(name) == 0 {
 		name = entity.Information.Name

@@ -2,23 +2,16 @@
 """A LoTE publisher for the integration tests.
 
 Publishes an ETSI TS 119 602 scheme-explicit List of Trusted Entities in the
-**Annex A JSON binding**, signed as a compact JAdES-B-B document, and lets a test
+Annex A JSON binding, signed as a compact JAdES-B-B document, and lets a test
 replace what it publishes between requests.
 
-**It signs with the openssl CLI and stdlib base64 on purpose, never with a JWS
-library.** The wallet verifies with lestrrat-go/jwx; a publisher using the same
-library would test that library against itself and leave untested the thing that
-actually breaks when a real backend publishes its first list — how a foreign
-toolchain emits the `x5c` chain, orders the protected header, or encodes an
-ECDSA signature. Everything about the JWS here is assembled by hand for that
-reason. See docs/plans/lote-e2e-tests.md.
-
-The *document* is likewise built by hand here rather than by the Go serialiser,
-so a change to model.go's JSON tags shows up as an integration failure instead of
-agreeing with itself. Note this is the last such independent check: the
-production publisher (`yivi eudi lote`) shares the wallet's structs, so CI
-validates its output against the ETSI JSON Schema and DSS instead. See
-docs/plans/lote-annex-a-publisher.md.
+It signs with the openssl CLI and stdlib base64 on purpose, never with a JWS
+library: the wallet verifies with lestrrat-go/jwx, and a publisher on the same
+library would test it against itself instead of against a foreign toolchain's
+`x5c` chain, header order and ECDSA encoding. The document is likewise built by
+hand rather than by the Go serialiser. This is the last such independent check —
+the production publisher shares the wallet's structs, so CI validates its output
+against the ETSI JSON Schema instead. See docs/plans/lote-e2e-tests.md.
 
 Routes:
 
@@ -27,19 +20,15 @@ Routes:
   POST /admin/publish     {entities, sequence_number, next_update_seconds}
   POST /admin/dark        answer 503 until the next publish
 
-The `entities` are the compact form `expand_entity` takes, not Annex A — see its
-docstring for why.
+The `entities` are the compact form `expand_entity` takes, not Annex A.
 
-There is deliberately no fetch-count route: the suite's observability is
-wallet-side only, so a count could only be a debugging aid, and one that invites
-assertions the tests do not make. There is deliberately no tamper route either —
-an invalid document is invalid whoever signed it, so tamper coverage stays with
-the in-process list server.
+There is deliberately no fetch-count route (the suite observes wallet-side only)
+and no tamper route (an invalid document is invalid whoever signed it, so that
+coverage stays with the in-process list server).
 
-`next_update_seconds` may be negative. That is not a curiosity: the wallet treats
-a list as current while `now - ClockSkew < next_update`, so backdating to just
-inside that window is how a test gets a *held* list to expire in seconds instead
-of waiting out the three-minute skew.
+`next_update_seconds` may be negative: the wallet is current while
+`now - ClockSkew < next_update`, so backdating to just inside that window expires
+a held list in seconds instead of three minutes.
 """
 
 import base64
@@ -54,8 +43,8 @@ CERTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "certs")
 LIST_ID = os.environ.get("LOTE_LIST_ID", "urn:yivi:trustlist:sessiontest")
 PORT = int(os.environ.get("LOTE_PORT", sys.argv[1] if len(sys.argv) > 1 else 9800))
 
-# A 1x1 red PNG. Small on purpose: the display scenario asserts that the bytes
-# the wallet cached are the bytes served, not that they render nicely.
+# A 1x1 red PNG: the display scenario asserts the bytes the wallet cached are the
+# bytes served, not that they render nicely.
 LOGO_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAwAB/AF/pV1cAAAAAElFTkSuQmCC"
 )
@@ -83,7 +72,7 @@ def der_sig_to_raw(der):
             raise ValueError("expected a DER INTEGER")
         length = der[i + 1]
         # DER strips leading zeros and may add one to keep the integer positive;
-        # JWS wants a fixed 32-byte field either way.
+        # JWS wants a fixed 32-byte field.
         value = der[i + 2 : i + 2 + length].lstrip(b"\x00")
         out += value.rjust(32, b"\x00")
         i += 2 + length
@@ -308,8 +297,8 @@ def expand_entity(spec):
 
 class State:
     def __init__(self):
-        # An empty list until a test publishes one, so a wallet that refreshes
-        # before any test has spoken gets a valid document granting nobody.
+        # An empty list until a test publishes one, so an early refresh gets a
+        # valid document granting nobody.
         self.document = sign(build([], 1, 86400))
         self.dark = False
 

@@ -51,9 +51,7 @@ bump loud, so it fails on equal too.`,
 		Logger.Infof("%s verifies: %q, sequence number %d, %d entities",
 			args[0], scheme.Identity(), scheme.SequenceNumber, len(list.Entities))
 
-		// Reported, not enforced: an expired document is still a genuine one, and
-		// signing a list whose window has already closed is a mistake worth
-		// naming rather than a verification failure.
+		// Reported, not enforced: an expired document is still a genuine one.
 		if scheme.NextUpdate.Before(time.Now()) {
 			return fmt.Errorf("this document is already past its NextUpdate (%s)",
 				scheme.NextUpdate.Format(time.RFC3339))
@@ -74,16 +72,14 @@ func init() {
 		"URL of the currently published list; fails unless this document's sequence number is higher")
 }
 
-// compareToPublished fetches the live list and refuses to let a document through
-// that would not advance it.
+// compareToPublished refuses a document that would not advance the live list.
 func compareToPublished(ctx context.Context, url string, anchors eudi_jwt.X509VerificationContext, sequenceNumber uint64) error {
-	// Downloaded through the wallet's own fetcher, so the release gate reads the
-	// published list under the same cap, timeout and status rules the wallet
-	// applies to it.
+	// Through the wallet's own fetcher, so the release gate reads the published
+	// list under the same cap, timeout and status rules.
 	published, err := lote.Fetch(ctx, nil, url)
 	if err != nil {
-		// A first publish has nothing to compare against, and so does an outage —
-		// which are not the same thing, so this reports rather than passing.
+		// A first publish and an outage look alike here, so this reports rather
+		// than passing.
 		return fmt.Errorf("fetch the published list at %s: %w", url, err)
 	}
 
@@ -102,14 +98,11 @@ func compareToPublished(ctx context.Context, url string, anchors eudi_jwt.X509Ve
 	return nil
 }
 
-// verifyAnchors builds the pool for `verify`, which differs from `sign` only in
-// where the fallback leaf comes from: the document being checked carries its own
-// signing certificate, so it is read out of the `x5c` header rather than supplied
-// by the caller. The "no anchor means the leaf is its own root" policy itself
-// lives in verificationAnchors, stated once.
+// verifyAnchors builds the pool for `verify`, differing from `sign` only in where
+// the fallback leaf comes from: out of the document's own `x5c` header. The
+// no-anchor policy itself lives in verificationAnchors.
 func verifyAnchors(anchorPath string, signed []byte) (eudi_jwt.X509VerificationContext, bool, error) {
-	// Only needed as a stand-in root, so it is not read when there is a real
-	// anchor to check against.
+	// Only needed as a stand-in root.
 	var leaf *x509.Certificate
 	if anchorPath == "" {
 		var err error

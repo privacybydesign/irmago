@@ -45,8 +45,7 @@ func (v *mockVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt st
 	if v.err != nil {
 		return nil, nil, v.err
 	}
-	// No certificate, so nothing is attested: the mock verifier passes the
-	// identity gate and describes itself, which is the DID-identified shape.
+	// No certificate, so nothing is attested: the verifier describes itself.
 	return v.request, &VerifiedRequestor{SelfAssertedName: "Verifier Example"}, nil
 }
 
@@ -405,9 +404,8 @@ func TestParseDcApiRequest_Signed_Succeeds(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "x509_san_dns:rp.example.com", request.ClientId)
 	require.Equal(t, "Verifier Example", requestor.Name)
-	// A signed request goes past the identity gate and is then ranked like any
-	// other party. This verifier presented no certificate and no list vouches for
-	// it, so it lands on the bottom rung and still gets to ask.
+	// A signed request passes the identity gate and is ranked like any other
+	// party: no certificate, no listing, so the bottom rung — and it still asks.
 	require.Equal(t, clientmodels.TrustLevel_Low, requestor.TrustLevel)
 }
 
@@ -461,9 +459,8 @@ func TestParseDcApiRequest_Signed_ReportsVerificationFailure(t *testing.T) {
 	require.ErrorContains(t, err, "failed to verify authorization request")
 }
 
-// The identity gate rejecting a verifier means the wallet does not know who it
-// is talking to and nothing was disclosed. A session started over the DC API has
-// to be able to say so too, the same way one started from a request_uri does.
+// A session started over the DC API must be able to report a gate rejection the
+// same way one started from a request_uri does.
 func TestNewDcApiSession_RejectedVerifier_ReportsPartyValidationFailed(t *testing.T) {
 	client := newTestClient()
 	client.verifierValidator = &mockVerifierValidator{err: fmt.Errorf("bad signature")}
@@ -481,9 +478,8 @@ func TestNewDcApiSession_RejectedVerifier_ReportsPartyValidationFailed(t *testin
 		"a rejected verifier must be distinguishable from a network or protocol error")
 }
 
-// Everything else that goes wrong while a DC API request is being parsed is a
-// plain failure: the verifier was never rejected, so reporting it as one would
-// tell the user the request was untrustworthy when it merely did not parse.
+// Everything else that goes wrong while parsing is a plain failure: reporting it
+// as a rejection would call an unparseable request untrustworthy.
 func TestNewDcApiSession_MalformedRequest_ReportsGenericFailure(t *testing.T) {
 	client := newTestClient()
 
@@ -854,9 +850,8 @@ func TestParseDcApiRequest_Unsigned_DisplayNameDistinguishesOrigins(t *testing.T
 
 			require.NoError(t, err)
 			require.Equal(t, test.displayName, requestor.Name)
-			// Id is what the app renders next to the name at the low rung, and it
-			// is serialized without omitempty, so leaving it unset ships an empty
-			// identifier rather than no identifier at all.
+			// Id is what the app renders next to the name at the low rung, and it is
+			// serialized without omitempty, so unset ships an empty identifier.
 			require.Equal(t, test.displayName, requestor.Id)
 		})
 	}

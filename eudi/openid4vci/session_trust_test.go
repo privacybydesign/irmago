@@ -17,10 +17,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// An issuer whose credential does not hold up against its own certificate
-// chain has failed the identity gate, not merely earned a low rung. The wallet
-// has to be able to tell the app which of the two happened, so the app can say
-// "the request is not trustworthy" instead of "something went wrong".
+// An issuer whose credential does not hold up against its own certificate chain
+// has failed the identity gate, not merely earned a low rung, and the app has to
+// be able to tell the two apart.
 
 func Test_openid4vciSession_obtainCredential_issuerValidationFailureIsTyped(t *testing.T) {
 	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -45,10 +44,9 @@ func Test_openid4vciSession_obtainCredential_issuerValidationFailureIsTyped(t *t
 }
 
 // The marker is set one call deeper than it is read: obtainCredential marks the
-// failure, obtainCredentials wraps it per credential configuration, and perform
-// reads it to type the session error. Regression: that wrapping used %v, which
-// stripped the marker, so the app got a generic error for every rejected issuer
-// in a real session while the check one frame down still passed.
+// failure, obtainCredentials wraps it, and perform reads it to type the session
+// error. Regression: that wrapping used %v, which stripped the marker while the
+// check one frame down still passed.
 func Test_openid4vciSession_obtainCredentials_validationFailureSurvivesWrapping(t *testing.T) {
 	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -89,8 +87,7 @@ func Test_openid4vciSession_obtainCredential_protocolFailureIsNotTyped(t *testin
 }
 
 // tamperedTestCredential builds a well-formed SD-JWT VC and then breaks the
-// issuer's signature over it, which is what a party whose vouching does not
-// hold up looks like on the wire.
+// issuer's signature over it.
 func tamperedTestCredential(t *testing.T) string {
 	t.Helper()
 
@@ -111,8 +108,8 @@ func tamperedTestCredential(t *testing.T) string {
 	)
 	require.NoError(t, err)
 
-	// The issuer-signed JWT is the first ~-separated part; flip a character of
-	// its signature so the chain no longer vouches for these claims.
+	// The issuer-signed JWT is the first ~-separated part; flip a character of its
+	// signature.
 	parts := strings.SplitN(string(credential), "~", 2)
 	require.Len(t, parts, 2)
 	jwtParts := strings.Split(parts[0], ".")

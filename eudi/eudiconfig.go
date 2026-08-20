@@ -24,11 +24,10 @@ func init() {
 	Logger = common.Logger
 }
 
-// ExtraTrustAnchor is one trust anchor a wallet is built with beyond the
-// pinned Yivi roots: the PEM chain (leaf-to-root order, root last) and the
-// trust level certificates under it confer. This is how a third-party CA is
-// anchored at medium — and how a test pins one — and how a CA promoted under
-// contract would be raised to high: as data on the anchor, not as code.
+// ExtraTrustAnchor is one trust anchor a wallet is built with beyond the pinned
+// Yivi roots: the PEM chain (leaf-to-root order, root last) and the trust level
+// certificates under it confer. Promoting a CA is a change to this data rather
+// than to code.
 type ExtraTrustAnchor struct {
 	PEM     []byte
 	Confers clientmodels.TrustLevel
@@ -45,9 +44,9 @@ type Configuration struct {
 	Issuers   TrustModel
 	Verifiers TrustModel
 
-	// TrustLists holds the anchors a recognized list's signature chains to.
-	// Kept apart from Issuers so that onboarding a credential issuer does not
-	// also grant it the power to define who is trusted — see the commentary on
+	// TrustLists holds the anchors a recognized list's signature chains to, apart
+	// from Issuers so that onboarding a credential issuer does not also grant it
+	// the power to define who is trusted. See
 	// Production_Yivi_TrustListTrustAnchor.
 	TrustLists TrustModel
 
@@ -58,10 +57,8 @@ type Configuration struct {
 	ExtraVerifierTrustAnchors []ExtraTrustAnchor
 
 	// ExtraTrustListTrustAnchors are anchors for list signatures. Bare PEM rather
-	// than [ExtraTrustAnchor]: a signing chain confers no level, because what a
-	// listing is worth is its source's word (lote.Source.Confers). This model is
-	// only ever consulted as a signature-verification context, never classified
-	// against, so a level here would have nothing to read it.
+	// than [ExtraTrustAnchor]: a signing chain confers no level, since what a
+	// listing is worth is its source's word (lote.Source.Confers).
 	ExtraTrustListTrustAnchors [][]byte
 }
 
@@ -187,7 +184,7 @@ func (c *Configuration) addProductionTrustAnchors() error {
 
 	// The trust-list anchor is loaded only once it exists. An empty pool means no
 	// list verifies, which is the safe direction to fail while Yivi publishes
-	// none — and far safer than falling back to the issuer pool.
+	// none.
 	if Production_Yivi_TrustListTrustAnchor != "" {
 		c.TrustLists.addRevocationListDistributionPoints(
 			Production_Yivi_RootCertificateRevocationListDistributionPoint,
@@ -245,12 +242,10 @@ func (c *Configuration) UpdateCertificateRevocationLists() error {
 
 	go updateWorker(c.Issuers.syncCertificateRevocationLists, &wg)
 	go updateWorker(c.Verifiers.syncCertificateRevocationLists, &wg)
-	// The trust lists too: lote.Store states that a stored list is re-verified
-	// against the anchors in force when it is read, so a list-signing certificate
-	// that has since been revoked invalidates the lists already on disk. That
-	// only holds if the CRLs for those certificates are actually fetched. No-op
-	// while Production_Yivi_TrustListTrustAnchor is empty, since then no
-	// distribution point is registered on this model.
+	// The trust lists too: a stored list is re-verified against the anchors in
+	// force when it is read (see lote.Store), which only invalidates a revoked
+	// list-signing certificate if its CRL is actually fetched. No-op while
+	// Production_Yivi_TrustListTrustAnchor is empty.
 	go updateWorker(c.TrustLists.syncCertificateRevocationLists, &wg)
 
 	wg.Wait()

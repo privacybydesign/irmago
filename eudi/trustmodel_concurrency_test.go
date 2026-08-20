@@ -11,12 +11,10 @@ import (
 )
 
 // Classify runs on the session path while the CRL refresh job reloads the trust
-// model from its own goroutine (Client.startCrlUpdateJob →
-// Configuration.UpdateCertificateRevocationLists → Reload), so the anchor level
-// map is read and rewritten at the same time. Unlike the pointers and slice
-// headers the reload also replaces, an unsynchronised map is the one shape Go
-// answers with "fatal error: concurrent map read and map write" — a throw no
-// recover catches, so the wallet goes down rather than reading a stale level.
+// model from its own goroutine, so the anchor level map is read and rewritten at
+// once. Unlike the pointers and slice headers the reload also replaces, an
+// unsynchronised map throws "concurrent map read and map write", which no recover
+// catches.
 //
 // Both subtests below fail on an unguarded map: the first reliably, since
 // nothing slows its readers down, the second under -race.

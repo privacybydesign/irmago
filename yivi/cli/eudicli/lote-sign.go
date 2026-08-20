@@ -120,8 +120,8 @@ func init() {
 	loteSignCmd.Flags().StringP("output", "o", "", "write the signed document here (default stdout)")
 }
 
-// signDocument produces the compact JAdES-B-B. Baseline B means everything needed
-// to validate is in the protected header: no timestamps, no archival material.
+// signDocument produces the compact JAdES-B-B: everything needed to validate is
+// in the protected header, with no timestamps or archival material.
 func signDocument(
 	document lote.Document,
 	chain []*x509.Certificate,
@@ -133,8 +133,7 @@ func signDocument(
 		return nil, err
 	}
 
-	// RFC 7515 x5c is *standard* base64, not base64url — one of the two places a
-	// hand-rolled signer characteristically diverges from a library one.
+	// RFC 7515 x5c is standard base64, not base64url.
 	x5c := &cert.Chain{}
 	for _, certificate := range chain {
 		if err := x5c.Add([]byte(base64.StdEncoding.EncodeToString(certificate.Raw))); err != nil {
@@ -185,12 +184,10 @@ func checkSigningCertificate(leaf *x509.Certificate, scheme lote.SchemeInformati
 }
 
 // verificationAnchors builds the pool the freshly signed document is checked
-// against, reporting whether the chain is genuinely being verified.
-//
-// With no anchor the leaf stands in as its own root, which still exercises the
-// signature, the typ guard, the single-signature rule and the payload — but says
-// nothing about whether a wallet would trust the chain. The caller warns. leaf is
-// read only in that case, so a caller passing an anchorPath may leave it nil.
+// against, reporting whether the chain is genuinely being verified. With no
+// anchor the leaf stands in as its own root, which still exercises the signature,
+// the typ guard, the single-signature rule and the payload, but says nothing
+// about the chain — the caller warns. leaf is read only in that case.
 func verificationAnchors(anchorPath string, leaf *x509.Certificate) (eudi_jwt.X509VerificationContext, bool, error) {
 	pool := x509.NewCertPool()
 	checksChain := false
@@ -214,8 +211,6 @@ func verificationAnchors(anchorPath string, leaf *x509.Certificate) (eudi_jwt.X5
 	}}, checksChain, nil
 }
 
-// readCertificateChain reads one or more concatenated PEM certificates, or a
-// single raw DER certificate, leaf first.
 func readCertificateChain(path string) ([]*x509.Certificate, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -228,7 +223,7 @@ func readCertificateChain(path string) ([]*x509.Certificate, error) {
 	}
 
 	if len(chain) == 0 {
-		// No PEM at all: try raw DER, so a .der file works without conversion.
+		// No PEM at all: try raw DER.
 		certificate, err := x509.ParseCertificate(raw)
 		if err != nil {
 			return nil, fmt.Errorf("%s holds neither PEM nor DER certificates", path)
@@ -242,10 +237,10 @@ func readCertificateChain(path string) ([]*x509.Certificate, error) {
 // is encrypted.
 //
 // RFC 1423 PEM encryption (what `openssl ec -aes256` writes) is supported because
-// operators have such files, but its key derivation is one round of MD5 and Go
-// has deprecated it. For a key that can vouch for any party at the top rung it is
-// a stopgap: the intended end state is a key that never leaves hardware, which is
-// why `sign` is a separate command from `build`.
+// operators have such files, but its key derivation is one round of MD5 and Go has
+// deprecated it. A stopgap for a key that can vouch for any party at the top rung
+// — the intended end state is a key that never leaves hardware, which is why
+// `sign` is a separate command from `build`.
 func readSigningKey(path string) (crypto.Signer, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -293,9 +288,8 @@ func parsePrivateKey(der []byte, path string) (crypto.Signer, error) {
 	return nil, fmt.Errorf("%s holds no EC, PKCS#8 or PKCS#1 private key", path)
 }
 
-// signatureAlgorithm picks the JWS algorithm the key requires. The curve decides
-// it for an EC key, so there is nothing for an operator to choose — and nothing
-// to get wrong.
+// signatureAlgorithm picks the JWS algorithm the key requires; for an EC key the
+// curve decides it, so there is nothing for an operator to choose.
 func signatureAlgorithm(key crypto.Signer) (jwa.SignatureAlgorithm, error) {
 	switch typed := key.(type) {
 	case *ecdsa.PrivateKey:
@@ -314,9 +308,8 @@ func signatureAlgorithm(key crypto.Signer) (jwa.SignatureAlgorithm, error) {
 	return jwa.SignatureAlgorithm{}, fmt.Errorf("unsupported key type %T", key)
 }
 
-// signingCertificateOf reads the end-entity certificate out of a signed
-// document's `x5c` header, for the commands that need it before they have an
-// anchor to check it against.
+// signingCertificateOf reads the end-entity certificate out of a signed document's
+// `x5c` header, for the commands that need it before they have an anchor.
 func signingCertificateOf(signed []byte) (*x509.Certificate, error) {
 	message, err := jws.Parse(signed)
 	if err != nil {

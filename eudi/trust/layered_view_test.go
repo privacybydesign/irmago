@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// stubSnapshot grants every party it is asked about, or none.
 type stubSnapshot struct {
 	listing   *Listing
 	grantRole Role
@@ -36,9 +35,6 @@ func TestNewView_NilSnapshotLeavesTheCertificateChannel(t *testing.T) {
 }
 
 func TestNewView_ListingConfersItsSourcesLevel(t *testing.T) {
-	// The rung a listing earns is whatever its source confers: high on Yivi's
-	// own list — being listed there is being onboarded — and medium on any
-	// other recognized list.
 	for _, level := range []clientmodels.TrustLevel{clientmodels.TrustLevel_Medium, clientmodels.TrustLevel_High} {
 		verdict := NewView(grantingVerifiers(level), nil, nil).Verifier(Evidence{Identifiers: []string{"did:web:verifier.example.com"}})
 
@@ -56,7 +52,6 @@ func TestNewView_UnlistedPartyRanksLow(t *testing.T) {
 }
 
 func TestNewView_RoleIsPartOfTheGrant(t *testing.T) {
-	// The same party, listed as a verifier, is not thereby listed as an issuer.
 	ev := Evidence{Identifiers: []string{"did:web:party.example.com"}}
 	view := NewView(grantingVerifiers(clientmodels.TrustLevel_High), nil, nil)
 
@@ -65,9 +60,8 @@ func TestNewView_RoleIsPartOfTheGrant(t *testing.T) {
 }
 
 func TestNewView_AListingWithoutALevelLiftsNothing(t *testing.T) {
-	// A listing from a source that declares no level is curated display without
-	// vouching: the party keeps the rung the other channels give it, and the
-	// listing still travels for its name and logo.
+	// A source that declares no level is curated display without vouching: the
+	// party keeps the other channels' rung, and the listing still travels.
 	verdict := NewView(grantingVerifiers(clientmodels.TrustLevel_Unevaluated), nil, nil).
 		Verifier(Evidence{Identifiers: []string{"did:web:verifier.example.com"}})
 
@@ -76,9 +70,8 @@ func TestNewView_AListingWithoutALevelLiftsNothing(t *testing.T) {
 }
 
 func TestNewView_ChannelsAreIndependent(t *testing.T) {
-	// A certificate under the Yivi anchors already reaches the top rung, so
-	// being on a list on top of it changes the rung not at all — but the
-	// listing still travels, because it carries the curated display metadata.
+	// A certificate already at the top rung is not lifted further by a listing,
+	// but the listing still travels for its curated display metadata.
 	view := NewView(grantingVerifiers(clientmodels.TrustLevel_Medium),
 		nil, stubClassifier(clientmodels.TrustLevel_High))
 	verdict := view.Verifier(Evidence{

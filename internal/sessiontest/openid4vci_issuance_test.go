@@ -98,9 +98,8 @@ func testOpenID4VCIPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	require.InDelta(t, now, *offered.IssuanceDate, 60,
 		"issuance date should be approximately now")
 
-	// Every party the wallet puts in front of the user carries a rung. This
-	// issuer identifies itself by did:web, so no channel vouches for it, and it
-	// still gets to offer its credential: the level is rendered, not enforced.
+	// This issuer identifies itself by did:web, so no channel vouches for it — and
+	// it still gets to offer its credential: the level is rendered, not enforced.
 	require.Equal(t, clientmodels.TrustLevel_Low, session.Requestor.TrustLevel,
 		"a did:web issuer has nobody vouching for it")
 	require.Equal(t, clientmodels.TrustLevel_Low, offered.Issuer.TrustLevel,

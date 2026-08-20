@@ -35,9 +35,8 @@ type JwtKeyProvider struct {
 	allowInsecure bool
 
 	// DidWebHTTPClient overrides the client the DID path resolves did:web
-	// documents with. Nil takes the default timeout-bounded client, which is
-	// what production uses. It exists for callers that must reach a DID host the
-	// default client cannot: a test serving its document on loopback.
+	// documents with. Nil takes the default timeout-bounded client; a test serving
+	// its document on loopback sets its own.
 	DidWebHTTPClient *http.Client
 
 	// InnerKeyProvider is populated by FetchKeys and exposes the concrete
@@ -174,13 +173,10 @@ type DidKeyProvider struct {
 	allowInsecure bool
 
 	// cert is the attesting certificate the resolved verification method's key
-	// carries in its x5c, or nil when it carries none. Populated by FetchKeys,
-	// read back through GetCert once the signature has verified — the same
-	// shape X509KeyProvider uses. A certificate here is a claim, not a verdict:
-	// FetchKeys asserts only that it certifies the key that signed (RFC 7517
-	// §4.7); whether an anchor stands behind it, whether it is in date and
-	// whether it is revoked are the caller's checks, exactly as on the x5c-header
-	// path.
+	// carries in its x5c, or nil when it carries none. Populated by FetchKeys and
+	// read back through GetCert, as X509KeyProvider does. FetchKeys asserts only
+	// that it certifies the key that signed (RFC 7517 §4.7); anchoring, validity
+	// and revocation are the caller's checks.
 	cert *x509.Certificate
 }
 
@@ -192,10 +188,9 @@ func NewDidKeyProvider(kidHeader string, allowInsecure bool) *DidKeyProvider {
 	}
 }
 
-// GetCert returns the attesting certificate the signing verification method's
-// key carried, or nil when it carried none. Valid only after FetchKeys has run
-// and the JWT signature has verified — a certificate whose key signed nothing
-// vouches for nothing.
+// GetCert returns the attesting certificate the signing verification method's key
+// carried, or nil when it carried none. Valid only after FetchKeys has run and
+// the signature has verified.
 func (p *DidKeyProvider) GetCert() *x509.Certificate {
 	return p.cert
 }
@@ -269,11 +264,9 @@ func (p *DidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 				return nil
 			}
 
-			// Capture the attesting certificate the signing key carries, if any.
-			// Key equality (RFC 7517 §4.7) is enforced here because this is the
-			// one site holding the verification method's JWK; an x5c that does
-			// not certify the key that signs is a malformed document and refuses.
-			// Absent is not an error — the party simply carries no attestation.
+			// Key equality (RFC 7517 §4.7) is enforced here, the one site holding
+			// the verification method's JWK. Absent is not an error; an x5c that
+			// does not certify the signing key is a malformed document.
 			cert, err := AttestingCertificate(pk)
 			if err != nil {
 				return fmt.Errorf("verification method %s carries an invalid attesting certificate: %w", vm.ID, err)

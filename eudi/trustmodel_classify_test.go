@@ -26,8 +26,8 @@ func TestTrustModel_Classify(t *testing.T) {
 	t.Run("nil confers nothing", testClassifyNilConfersNothing)
 }
 
-// classifyFixture is a trust model with one CA chain anchored at the given
-// level, plus that CA's certificate and key so tests can mint leaves under it.
+// A trust model with one CA chain anchored at the given level, plus that CA's
+// certificate and key so tests can mint leaves under it.
 func classifyFixture(t *testing.T, confers clientmodels.TrustLevel) (*TrustModel, *x509.Certificate, *ecdsa.PrivateKey) {
 	t.Helper()
 
@@ -43,14 +43,11 @@ func classifyFixture(t *testing.T, confers clientmodels.TrustLevel) (*TrustModel
 	return tm, caCert, caKey
 }
 
-// mintLeaf issues an end-entity certificate under the given CA, delegating the
-// construction to the shared testdata builder so these leaves stay in step with
-// every other test certificate in the repo as the x509 policy tightens.
-//
-// opts carries the validity window the test asks for: PkiOption_None is a
-// currently-valid leaf, PkiOption_ExpiredEndEntity one whose window closed an
-// hour ago — still inside the CA's own validity, which is the shape a real
-// expired issuer leaf has.
+// mintLeaf issues an end-entity certificate under the given CA through the shared
+// testdata builder, so these leaves stay in step with every other test
+// certificate as the x509 policy tightens. opts carries the validity window:
+// PkiOption_None is currently valid, PkiOption_ExpiredEndEntity closed an hour
+// ago.
 func mintLeaf(t *testing.T, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, opts testdata.PkiGenerationOptions) *x509.Certificate {
 	t.Helper()
 
@@ -62,8 +59,8 @@ func mintLeaf(t *testing.T, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, o
 }
 
 func testClassifyInstalledAnchorConfersHigh(t *testing.T) {
-	// A chain installed through storage is the dev/test stand-in for the Yivi
-	// CA, so it confers high — the level loadTrustChains states.
+	// A chain installed through storage is the dev/test stand-in for the Yivi CA,
+	// so it confers high.
 	rootKey, rootCert := testdata.CreateRootCertificate(t, testdata.CreateDistinguishedName("Installed Root"), testdata.PkiOption_None)
 	caKey, caCert, _ := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("Installed CA"), rootCert, rootKey, testdata.PkiOption_None, nil)
 
@@ -76,9 +73,8 @@ func testClassifyInstalledAnchorConfersHigh(t *testing.T) {
 }
 
 func testClassifyPinnedAnchorConfersItsLevel(t *testing.T) {
-	// The same machinery, at the level the anchor was pinned at: this is the
-	// anchored-third-party-CA case, and promotion under contract is this data
-	// changing to high.
+	// The same machinery at the level the anchor was pinned at: the
+	// anchored-third-party-CA case.
 	tm, caCert, caKey := classifyFixture(t, clientmodels.TrustLevel_Medium)
 
 	leaf := mintLeaf(t, caCert, caKey, testdata.PkiOption_None)
@@ -86,9 +82,6 @@ func testClassifyPinnedAnchorConfersItsLevel(t *testing.T) {
 }
 
 func testClassifyUnknownRootConfersNothing(t *testing.T) {
-	// A chain the wallet cannot trace to any anchor proves nothing: the
-	// certificate's contents count as self-asserted, and the ladder sees
-	// absent evidence rather than a failure.
 	tm, _, _ := classifyFixture(t, clientmodels.TrustLevel_High)
 
 	strangerRootKey, strangerRoot := testdata.CreateRootCertificate(t, testdata.CreateDistinguishedName("Stranger Root"), testdata.PkiOption_None)
@@ -99,21 +92,18 @@ func testClassifyUnknownRootConfersNothing(t *testing.T) {
 }
 
 func testClassifyToleratesAnExpiredLeaf(t *testing.T) {
-	// Classification serves stored evidence: the vouching question about a
-	// stored credential concerns the signing act, which happened inside the
-	// leaf's validity window, and issuer leaves routinely expire before the
-	// credentials they signed. Expiry is routine hygiene, not distrust.
+	// Classification serves stored evidence, and the vouching question there
+	// concerns the signing act, which happened inside the validity window.
 	tm, caCert, caKey := classifyFixture(t, clientmodels.TrustLevel_High)
 
-	// Expired ten minutes ago, still inside the CA's own validity — the shape
-	// a real expired issuer leaf has, since a CA cannot sign before it exists.
+	// Expired ten minutes ago, still inside the CA's own validity: the shape a
+	// real expired issuer leaf has.
 	leaf := mintLeaf(t, caCert, caKey, testdata.PkiOption_ExpiredEndEntity)
 	require.Equal(t, clientmodels.TrustLevel_High, tm.Classify(leaf))
 }
 
 func testClassifyRevokedLeafConfersNothing(t *testing.T) {
-	// Revocation is an act of distrust, so it stops the anchor's word — unlike
-	// expiry above.
+	// Revocation is an act of distrust, so it stops the anchor's word.
 	tm, caCert, caKey := classifyFixture(t, clientmodels.TrustLevel_High)
 	leaf := mintLeaf(t, caCert, caKey, testdata.PkiOption_None)
 

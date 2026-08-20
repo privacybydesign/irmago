@@ -22,114 +22,85 @@ import (
 // must call itself, and what a grant on it is worth.
 type Source struct {
 	// ListId is the identity the fetched document must declare as its English
-	// `SchemeName` (clause 6.3.6). Binding the two stops one recognized list's
-	// document — correctly signed, just not this list — from being served in
-	// another's place. Clause 6.3.6 makes SchemeName unique per scheme operator
-	// and prescribes its `CC:name` form, which is what makes it usable as an
-	// identity rather than only as a label.
+	// `SchemeName` (clause 6.3.6, unique per operator). Binding the two stops one
+	// recognized list's document — correctly signed, just not this list — from
+	// being served in another's place.
 	ListId string
 
 	// LoTEType is the `LoTEType` URI (clause 6.3.3) the document must declare,
-	// pinned in addition to ListId. It names the *kind* of list, so it is shared
-	// by a scheme's staging and production lists and cannot identify either on
-	// its own — pinning both means neither a list of the wrong kind nor the
-	// wrong list of the right kind is accepted.
-	//
-	// Unset skips the check, for a source whose operator has not published a
-	// type URI.
+	// pinned in addition to ListId: it names the kind of list, so staging and
+	// production share it. Unset skips the check.
 	LoTEType string
 
-	// URL is where the signed list is published.
 	URL string
 
-	// Confers is the rung a granted entry on this list earns a party. It is a
-	// property of the source rather than of the entry, because vouching is the
-	// list operator's word and every entry carries the same amount of it:
-	// Yivi's own LoTE confers high — being listed there is being onboarded,
-	// Yivi cannot name a party on its list without vouching for it — and any
-	// other recognized list confers what whoever compiled it in decided that
-	// operator's word is worth.
-	//
-	// Unset confers nothing: a granted entry still carries its curated display
-	// metadata, but lifts no rung.
+	// Confers is the rung a granted entry on this list earns a party — a property
+	// of the source, not the entry, because vouching is the operator's word.
+	// Yivi's own LoTE confers high; any other list confers what it was compiled
+	// in as. Unset lifts no rung, though the entry still carries its curated
+	// display metadata.
 	Confers clientmodels.TrustLevel
 }
 
 // Config is what a Checker needs. Only Sources and X509Context have no sensible
 // default.
 type Config struct {
-	// Sources are the recognized lists, in no particular order — a party
-	// granted on any of them is granted.
+	// A party granted on any source is granted.
 	Sources []Source
 
-	// X509Context supplies the pinned anchors a list's signing chain must
-	// validate against.
+	// The pinned anchors a list's signing chain must validate against.
 	X509Context eudi_jwt.X509VerificationContext
 
-	// Store persists the signed documents. Nil keeps them in memory only, so
-	// the wallet re-fetches on every start.
+	// Store persists the signed documents. Nil keeps them in memory only, so the
+	// wallet re-fetches on every start.
 	Store Store
 
-	// HTTPClient is used for list downloads. Nil falls back to
-	// http.DefaultClient, bounded by the package's own fetch timeout.
+	// HTTPClient is used for list downloads. Nil falls back to http.DefaultClient,
+	// bounded by the package's own fetch timeout.
 	HTTPClient *http.Client
 
-	// Now supplies the clock the currency checks read. Nil falls back to
-	// time.Now.
+	// Now supplies the clock the currency checks read. Nil falls back to time.Now.
 	Now func() time.Time
 }
 
 // Checker holds the wallet's recognized lists and hands out snapshots of them.
-//
-// It never fetches on the evaluation path: [Checker.Snapshot] reads whatever
-// the checker currently holds and returns immediately, so a session is never
-// slowed down, and never failed, by the state of a trust list. Downloading is
-// [Checker.Refresh]'s job, driven by the app or by a background schedule.
+// It never fetches on the evaluation path — [Checker.Snapshot] reads what it
+// already holds and returns immediately, so a session is never slowed down or
+// failed by the state of a trust list. Downloading is [Checker.Refresh]'s job.
 //
 // A Checker is safe for concurrent use.
 type Checker struct {
-	// cfg is the configuration as normalized by NewChecker, so the defaults are
-	// applied in one place rather than re-derived per use.
 	cfg Config
 
-	// loadOnce defers reading the persisted lists to the first use rather than
-	// doing it in the constructor. The wallet builds its trust models — the
-	// anchors a stored list is re-verified against — after it builds the
-	// services that use them, so a constructor-time load would find an empty
+	// loadOnce defers reading the persisted lists to first use. The wallet builds
+	// its trust models — the anchors a stored list is re-verified against — after
+	// the services that use them, so a constructor-time load would find an empty
 	// anchor set and throw every stored list away on every start.
 	loadOnce sync.Once
 
 	mu sync.RWMutex
-	// held is the last list that verified, per source, whether or not it is
-	// still current. An expired list is kept because its sequence number is
-	// still the floor a replayed older list has to clear; Snapshot is where
-	// currency is applied. The verified bytes are kept alongside the parsed
-	// list so a re-issue that is byte-identical can be recognized without
-	// re-marshalling anything.
+	// held is the last list that verified, per source, current or not: an expired
+	// list's sequence number is still the floor a replay has to clear, and
+	// Snapshot is where currency is applied. The verified bytes are kept
+	// alongside so a byte-identical re-issue needs no re-marshalling.
 	held map[string]*verifiedList
 }
 
-// NewChecker builds a Checker. The lists already persisted are read and
-// re-verified against the anchors on first use; one that no longer verifies is
-// dropped, exactly as if it had never been fetched.
+// NewChecker builds a Checker. Persisted lists are read and re-verified against
+// the anchors on first use; one that no longer verifies is dropped.
 func NewChecker(cfg Config) *Checker {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	// HTTPClient is deliberately not defaulted here: Fetch states that fallback,
-	// so it holds for every caller rather than only for a Checker-built one.
 	return &Checker{
 		cfg:  cfg,
 		held: map[string]*verifiedList{},
 	}
 }
 
-// logger is where the checker writes its fail-soft notes. eudi.Logger is a
-// package global that client.New assigns, so it is nil until a wallet has been
-// built: a Checker constructed directly — by a test, or by an embedder — would
-// otherwise take down the process on the very paths that are meant never to
-// fail. Discarding is the right fallback; a missing logger is not a reason to
-// drop a list, let alone to crash.
+// logger is where the checker writes its fail-soft notes. eudi.Logger is nil
+// until client.New assigns it, so a Checker built directly — by a test, or an
+// embedder — would otherwise panic on the very paths meant never to fail.
 func (c *Checker) logger() *logrus.Logger {
 	if eudi.Logger != nil {
 		return eudi.Logger
@@ -137,7 +108,6 @@ func (c *Checker) logger() *logrus.Logger {
 	return discardingLogger()
 }
 
-// discardingLogger is built at most once, and only when it is needed.
 var discardingLogger = sync.OnceValue(func() *logrus.Logger {
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
@@ -170,22 +140,14 @@ func (c *Checker) loadPersisted() {
 	})
 }
 
-// Refresh downloads every configured list and adopts the ones that hold up.
+// Refresh downloads every configured list, concurrently, and adopts the ones
+// that hold up. Sources are independent: a failing one keeps whatever the wallet
+// already held for it. The returned error names the sources that failed, for the
+// caller's log; it is not a session-facing failure.
 //
-// Sources are independent: one list being unreachable or bad does not touch the
-// others, and a source that fails keeps whatever the wallet already held for
-// it. The returned error reports the sources that failed, for the caller's log;
-// it is not a session-facing failure, and callers on a schedule are expected to
-// log it and carry on.
-//
-// changed reports whether any list's *entries* came back different, which is the
-// only kind of refresh that can change a verdict the wallet already showed. A
-// re-issue that says the same thing about the same parties — a fresh
-// next_update, a new sequence number, a new signature — does not count, so
-// re-confirmation never wakes the app.
-//
-// Sources are refreshed concurrently: they are independent downloads, so a slow
-// or unreachable one must not add its timeout to every other source's wait.
+// changed reports whether any list's entries came back different, which is the
+// only kind of refresh that can change a verdict the wallet already showed — a
+// re-issue saying the same thing about the same parties never wakes the app.
 func (c *Checker) Refresh(ctx context.Context) (bool, error) {
 	c.loadPersisted()
 
@@ -204,8 +166,7 @@ func (c *Checker) Refresh(ctx context.Context) (bool, error) {
 	}
 	wg.Wait()
 
-	// Reported in configuration order, so the log reads the same way whatever
-	// order the downloads happened to finish in.
+	// Reported in configuration order, not completion order.
 	changed := false
 	var failures []error
 	for i, source := range c.cfg.Sources {
@@ -220,8 +181,7 @@ func (c *Checker) Refresh(ctx context.Context) (bool, error) {
 }
 
 // declares reports whether this document is the list this source publishes: the
-// identity it names, and the kind of list it claims to be. Stated once so the
-// load path and the refresh path cannot spell the same rule two ways.
+// identity it names, and the kind of list it claims to be.
 func declares(source Source, list *List) error {
 	if got := list.SchemeInformation.Identity(); got != source.ListId {
 		return fmt.Errorf("declares SchemeName %q, expected %q", got, source.ListId)
@@ -233,8 +193,8 @@ func declares(source Source, list *List) error {
 	return nil
 }
 
-// refreshSource fetches one source and adopts the list if it holds up,
-// reporting whether the entries it carries differ from the ones the wallet held.
+// refreshSource adopts the fetched list if it holds up, reporting whether its
+// entries differ from the ones the wallet held.
 func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error) {
 	raw, err := Fetch(ctx, c.cfg.HTTPClient, source.URL)
 	if err != nil {
@@ -246,8 +206,6 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 		return false, err
 	}
 
-	// The document must be the list this source publishes, not another
-	// correctly signed one.
 	if err := declares(source, verified.list); err != nil {
 		return false, err
 	}
@@ -261,34 +219,28 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 
 	previous, held := c.held[source.ListId]
 
-	// A re-issue may repeat a sequence number (the same issue served twice) but
-	// never go backwards: that is an older list being replayed, which would
-	// silently un-list everyone added since.
+	// A re-issue may repeat a sequence number but never go backwards: that is a
+	// replay, which would silently un-list everyone added since.
 	if held && verified.list.SchemeInformation.SequenceNumber < previous.list.SchemeInformation.SequenceNumber {
 		return false, fmt.Errorf("sequence number regressed from %d to %d",
 			previous.list.SchemeInformation.SequenceNumber, verified.list.SchemeInformation.SequenceNumber)
 	}
 
-	// An operator re-serving the identical document is the common case, and
-	// identical bytes are already held, already persisted, and cannot say
-	// anything different about anybody — so there is nothing to write and
-	// nothing to report. Checked before the store write because persisting a
-	// multi-megabyte blob the store already holds is the expensive half.
+	// Identical bytes are already held and persisted. Checked before the store
+	// write, which is the expensive half.
 	if held && bytes.Equal(previous.rawJws, verified.rawJws) {
 		return false, nil
 	}
 
 	if c.cfg.Store != nil {
 		if err := c.cfg.Store.Put(source.ListId, verified.rawJws); err != nil {
-			// The list is good; only persisting it failed. Use it for this run
-			// rather than throwing away a valid download over a storage problem.
+			// The list is good; only persisting it failed. Use it for this run.
 			c.logger().Warnf("lote: persisting list %q: %v", source.ListId, err)
 		}
 	}
 	c.held[source.ListId] = verified
 
-	// A first fetch is not a change: the wallet showed no verdict from this list
-	// before, so there is nothing it has to go back on.
+	// A first fetch is not a change: no verdict from this list was showing.
 	if !held {
 		return false, nil
 	}
@@ -296,19 +248,12 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 }
 
 // entriesDiffer reports whether two issues of the same list say different things
-// about the parties on it. The scheme information is deliberately not compared:
-// a new sequence number and a later next_update are what every re-issue carries,
-// and they say nothing about anybody.
+// about the parties on it. The scheme information is not compared: a new sequence
+// number and a later next_update are what every re-issue carries.
 //
-// The comparison is over the marshalled entities, so it also reports a change
-// when the operator merely reorders them — a wake-up the wallet does not
-// strictly need. That is the accepted side of the trade: list content changes
-// are human acts, rare enough that a spurious one costs a redraw, while missing
-// a real one leaves a delisted issuer showing a rung it no longer holds.
-//
-// A byte-identical re-issue never reaches here: refreshSource returns before the
-// store write in that case, since identical bytes cannot say anything different
-// about anybody.
+// Comparing marshalled entities also reports a mere reorder as a change. That is
+// the cheap side of the trade — a spurious wake-up costs a redraw, while missing
+// a real change leaves a delisted issuer showing a rung it no longer holds.
 func entriesDiffer(previous, current *verifiedList) bool {
 	previousEntities, err := json.Marshal(previous.list.Entities)
 	if err != nil {
@@ -321,10 +266,9 @@ func entriesDiffer(previous, current *verifiedList) bool {
 	return !bytes.Equal(previousEntities, currentEntities)
 }
 
-// Snapshot pins the lists a single session evaluates against. It never blocks
-// on the network and never fails: lists that are absent, unreadable or past
-// their NextUpdate are simply not in it, and a party they would have granted
-// falls back to what the other channels say.
+// Snapshot pins the lists a single session evaluates against. It never blocks on
+// the network and never fails: an absent, unreadable or expired list is simply not
+// in it.
 func (c *Checker) Snapshot() trust.ListSnapshot {
 	c.loadPersisted()
 	now := c.cfg.Now()

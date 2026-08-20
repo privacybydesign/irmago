@@ -11,12 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// eudi.Logger is a package global that client.New assigns, so it is nil in any
-// process that has not built a wallet — and NewChecker takes no logger, so
-// nothing in this package's API tells a caller that one has to exist first. Every
-// fail-soft path here logs, which is precisely where a nil logger would turn
-// "carry on without this list" into a crash. TestMain sets the global, which is
-// what otherwise hides this.
+// eudi.Logger is a package global client.New assigns, so it is nil in any process
+// that has not built a wallet, and NewChecker takes no logger. Every fail-soft
+// path here logs, which is where a nil one would turn "carry on without this
+// list" into a crash — and TestMain setting the global is what otherwise hides
+// it.
 
 func TestChecker_FailSoftPathsSurviveANilLogger(t *testing.T) {
 	t.Run("Refresh reporting an unreachable source", testRefreshWithoutALogger)
@@ -42,8 +41,7 @@ func testSnapshotWithoutALogger(t *testing.T) {
 	list.SchemeInformation.NextUpdate = time.Now().Add(time.Hour)
 	f.server.Serve(t, f.signer, list)
 
-	// A clock the test moves past the list's next_update: Snapshot then says so
-	// and drops the list, on the evaluation path.
+	// Moved past the list's next_update, so Snapshot logs and drops it.
 	now := time.Now()
 	f.config.Now = func() time.Time { return now }
 	checker := f.refreshed(t)

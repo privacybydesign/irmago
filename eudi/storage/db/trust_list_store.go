@@ -10,17 +10,12 @@ import (
 
 // TrustListStore persists signed trust list documents in the
 // trust_list_documents table. It satisfies lote.Store structurally, which is how
-// the wallet hands it to the LoTE checker.
-//
-// The concrete type is returned rather than that interface deliberately: naming
-// it here would make this persistence package depend on the trust packages and,
-// through them, on all of eudi — leaving eudi unable to ever import storage/db
-// without a cycle.
+// the wallet hands it to the LoTE checker; naming that interface here would make
+// this package depend on the trust packages and, through them, on all of eudi.
 type TrustListStore struct {
 	db *gorm.DB
 }
 
-// NewTrustListStore returns a store backed by the trust_list_documents table.
 func NewTrustListStore(db *gorm.DB) *TrustListStore {
 	return &TrustListStore{db: db}
 }
@@ -38,7 +33,6 @@ func (s *TrustListStore) Get(listId string) ([]byte, bool) {
 	return row.RawJws, true
 }
 
-// Put implements lote.Store.
 func (s *TrustListStore) Put(listId string, rawJws []byte) error {
 	if listId == "" {
 		return fmt.Errorf("trust_list_documents: empty list id")

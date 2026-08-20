@@ -25,9 +25,8 @@ func newTestLogServiceWithLocale(t *testing.T, locale string) *eudiLogService {
 	return svc
 }
 
-// newTestLogServiceOnDB also hands back the database, for tests that have to
-// write a row the service itself no longer writes — a pre-feature log entry,
-// for instance.
+// newTestLogServiceOnDB also hands back the database, for tests that write a row
+// the service itself no longer writes, such as a pre-feature log entry.
 func newTestLogServiceOnDB(t *testing.T, locale string) (*eudiLogService, *gorm.DB) {
 	t.Helper()
 
@@ -110,7 +109,6 @@ func TestDisclosureLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T)
 	require.NotNil(t, cred.Issuer.Image, "issuer image should survive log round-trip")
 	require.NotEmpty(t, cred.Issuer.Image.Base64)
 
-	// Issuer ID, name, and trust level survive round-trip.
 	require.Equal(t, "https://example.com/issuer", cred.Issuer.Id)
 	require.Equal(t, "Test Issuer", cred.Issuer.Name)
 	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "trust level should survive log round-trip")
@@ -184,7 +182,6 @@ func TestIssuanceLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T) {
 	require.NotNil(t, cred.Issuer.Image, "issuer image should survive log round-trip")
 	require.NotEmpty(t, cred.Issuer.Image.Base64)
 
-	// Issuer ID and trust level survive round-trip.
 	require.Equal(t, "https://example.com/issuer", cred.Issuer.Id)
 	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "trust level should survive log round-trip")
 }
@@ -479,9 +476,8 @@ func TestDecodeStoredAttributes_RoundTripsEveryAttributeField(t *testing.T) {
 	require.Equal(t, original, decoded[0])
 }
 
-// TestLogRoundTrip_RecordsTrustLevelsAtSessionTime pins that both level
-// columns survive a write and a read: the requestor's on the entry, each
-// credential's issuer's on the credential.
+// Both level columns survive a write and a read: the requestor's on the entry,
+// each credential's issuer's on the credential.
 func TestLogRoundTrip_RecordsTrustLevelsAtSessionTime(t *testing.T) {
 	svc := newTestLogService(t)
 
@@ -518,10 +514,7 @@ func TestLogRoundTrip_RecordsTrustLevelsAtSessionTime(t *testing.T) {
 	require.Equal(t, clientmodels.TrustLevel_High, disclosure.Credentials[0].Issuer.TrustLevel)
 }
 
-// TestLogReadDoesNotReResolveTrustLevels pins the snapshot rule against the
-// one path that does re-resolve: display text follows live metadata, the
-// recorded rung does not. A party ranked low at session time still reads low
-// with the credential still in the wallet.
+// Display text follows live metadata, the recorded rung does not.
 func TestLogReadDoesNotReResolveTrustLevels(t *testing.T) {
 	svc := newTestLogServiceWithLocale(t, "en")
 
@@ -551,15 +544,14 @@ func TestLogReadDoesNotReResolveTrustLevels(t *testing.T) {
 		"the logged verifier keeps its session-time rung")
 }
 
-// TestLogRead_PreFeatureRowsRenderLevelless pins how rows written before the
-// level columns existed read back: the requestor carries no rung at all, and
-// the issuer's comes off the legacy boolean, which only ever meant "Yivi
-// vouches". A false boolean is not a verdict of low.
+// Rows written before the level columns carry no requestor rung, and the issuer's
+// comes off the legacy boolean, which only ever meant "Yivi vouches" — a false
+// boolean is not a verdict of low.
 func TestLogRead_PreFeatureRowsRenderLevelless(t *testing.T) {
 	svc, database := newTestLogServiceOnDB(t, "en")
 
-	// RequestorTrustLevel and IssuerTrustLevel stay empty throughout: the
-	// columns did not exist when these rows were written.
+	// Both level columns stay empty: they did not exist when these rows were
+	// written.
 	legacy := func(vct string, verified bool) *models.EudiLogEntry {
 		return &models.EudiLogEntry{
 			ID:            datatypes.NewUUIDv4(),
@@ -601,9 +593,8 @@ func TestLogRead_PreFeatureRowsRenderLevelless(t *testing.T) {
 		"the legacy false boolean renders levelless, not as low")
 }
 
-// TestStoredTrustLevel_AbsentIsDistinctFromLow pins the storage encoding the
-// levelless rendering rests on: a verdict of low is stored as "low", an
-// unevaluated party stores nothing, and the two do not collapse into each other.
+// The encoding the levelless rendering rests on: low is stored as "low",
+// unevaluated stores nothing.
 func TestStoredTrustLevel_AbsentIsDistinctFromLow(t *testing.T) {
 	require.Empty(t, string(clientmodels.TrustLevel_Unevaluated))
 	for _, level := range []clientmodels.TrustLevel{

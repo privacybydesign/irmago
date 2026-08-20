@@ -59,8 +59,7 @@ func writeScheme(out *strings.Builder, scheme lote.SchemeInformation) {
 	fmt.Fprintf(out, "  sequence        %d\n", scheme.SequenceNumber)
 	fmt.Fprintf(out, "  issued          %s\n", scheme.ListIssueDateTime.Format(time.RFC3339))
 
-	// The one line an operator is most likely to be reading this for, so the
-	// remaining window is spelled out rather than left as arithmetic.
+	// Spelled out rather than left as arithmetic.
 	remaining := time.Until(scheme.NextUpdate).Truncate(time.Minute)
 	currency := fmt.Sprintf("in %s", remaining)
 	if remaining <= 0 {
@@ -89,9 +88,8 @@ func writeService(out *strings.Builder, service lote.ServiceInformation) {
 	if mapped, ok := service.Type.Role(); ok {
 		role = string(mapped)
 	}
-	// Through IsGranted, so the absent-means-granted rule is read the way the
-	// wallet reads it: Yivi's own list omits ServiceStatus entirely, and
-	// comparing against the granted URI directly would label every entry of a
+	// Through IsGranted, so absent-means-granted is read the way the wallet reads
+	// it: comparing against the granted URI directly would label every entry of a
 	// conformant list NOT GRANTED.
 	status := "NOT GRANTED"
 	if service.IsGranted() {
@@ -107,7 +105,6 @@ func writeService(out *strings.Builder, service lote.ServiceInformation) {
 	}
 }
 
-// identityLines renders what a service is recognized by, one line per identity.
 func identityLines(identity lote.DigitalIdentity) []string {
 	var lines []string
 	for _, did := range identity.OtherIds {

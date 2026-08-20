@@ -20,14 +20,12 @@ import (
 // requests signed by verifiers that use X.509 certificates (the x509_san_dns:
 // and x509_hash: client_id schemes).
 //
-// The gate is internal validity: the request's signature must verify against
-// the certificate its client_id binds it to, presented within its own validity
-// window, and not revoked. Whether any anchor stands behind that certificate is
-// deliberately not the gate's question — a chain the wallet cannot trace to an
-// anchor proves nothing, so its holder passes as a legitimate-looking stranger
-// and the trust ladder ranks it low, exactly like a bare self-asserted key.
-// Revocation is the exception, because it is the CA withdrawing a certificate
-// rather than the wallet failing to place one.
+// The gate is internal validity: the request's signature must verify against the
+// certificate its client_id binds it to, presented within its validity window,
+// and not revoked. Anchoring is not the gate's question — an untraceable chain
+// proves nothing, so its holder passes as a legitimate-looking stranger and ranks
+// low. Revocation is the exception, being the CA withdrawing a certificate rather
+// than the wallet failing to place one.
 type RequestorCertificateStoreVerifierValidator struct {
 	verificationContext eudi_jwt.X509VerificationContext
 	validatorFactory    QueryValidatorFactory
@@ -56,12 +54,10 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 		return nil, nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 	}
 
-	// Revocation is the one certificate failure that stays in the gate: the CA
-	// went out of its way to withdraw this certificate, which is an act of
-	// distrust rather than the absence of trust an untraceable chain shows, and
-	// it is how a compromised relying party is cut off. Asked on its own rather
-	// than read off the chain verification below because the answer needs no
-	// chain: the lists are signed by anchors the wallet already holds.
+	// Revocation is the one certificate failure that stays in the gate: an act of
+	// distrust rather than the absence of trust an untraceable chain shows. Asked
+	// on its own rather than off the chain verification below, which it does not
+	// need.
 	if err := eudi_jwt.CheckCertificateNotRevoked(v.verificationContext, leafCert); err != nil {
 		return nil, nil, fmt.Errorf("relying party certificate is refused: %w", err)
 	}
@@ -73,10 +69,8 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 		return nil, nil, err
 	}
 
-	// The verifier's own account of itself, whatever the anchoring:
-	// client_metadata first, the certificate's contents when no anchor stands
-	// behind them. A self-asserted logo is never taken, so only the name
-	// travels.
+	// The verifier's own account of itself: client_metadata first, the
+	// certificate's contents when no anchor stands behind them.
 	if authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil {
 		requestor.SelfAssertedName = *authRequest.ClientMetadata.ClientName
 	} else if !anchored {
@@ -87,15 +81,11 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 }
 
 // applyAttestedCertificate is the anchored-attestation step both verifier
-// transports share: given a leaf whose validity window and revocation the caller
-// has already gated, decide whether an anchor stands behind it and, when one
-// does, fill requestor.Attested from the certificate and enforce any attribute
-// authorization it carries. It reports whether the leaf is anchored, which the
-// caller needs to compose the self-asserted account.
-//
-// Only the classification is shared; how each transport obtains and validity-
-// gates the leaf (x5c header vs DID resolution) stays with the caller, because
-// that is the part that genuinely differs.
+// transports share: given a leaf the caller has already gated, decide whether an
+// anchor stands behind it and, when one does, fill requestor.Attested from the
+// certificate and enforce any attribute authorization it carries. It reports
+// whether the leaf is anchored, which the caller needs to compose the
+// self-asserted account. How the leaf was obtained stays with the caller.
 func applyAttestedCertificate(
 	verificationContext eudi_jwt.X509VerificationContext,
 	validatorFactory QueryValidatorFactory,
@@ -103,13 +93,8 @@ func applyAttestedCertificate(
 	leaf *x509.Certificate,
 	authRequest *AuthorizationRequest,
 ) (anchored bool, err error) {
-	// Does any anchor the wallet holds stand behind this certificate? This is
-	// classification, not the gate: chain building and the digitalSignature key
-	// usage, against the same trust model the ladder's certificate channel
-	// consults. Anchored decides whether the certificate's contents count as
-	// attested — and whether the authorization it carries is worth enforcing,
-	// since an unanchored certificate's contents are the party's own word about
-	// itself.
+	// Classification, not the gate. It decides whether the certificate's contents
+	// count as attested, and so whether its authorization is worth enforcing.
 	if eudi_jwt.VerifyCertificate(verificationContext, leaf, nil) != nil {
 		return false, nil
 	}
@@ -117,18 +102,15 @@ func applyAttestedCertificate(
 	if info, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leaf); err == nil {
 		requestor.Attested = info
 
-		// The one hard rule: when the party's vouching artifact carries an
-		// attribute authorization, a request exceeding it fails at any rung.
-		// Enforced whenever the artifact is trustworthy — never skipped because
-		// the request also carries client_metadata.
+		// The one hard rule: a request exceeding its certificate's authorization
+		// fails at any rung.
 		queryValidator := validatorFactory.CreateQueryValidator(&info.RelyingParty)
 		if err := queryValidator.ValidateCredentialQueries(dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)); err != nil {
 			return true, fmt.Errorf("failed to verify queried credentials: %v", err)
 		}
 	} else {
-		// An anchored certificate without the Yivi scheme extension: a
-		// third-party CA attested the subject, so its name is attested — but it
-		// carries no attribute authorization to enforce.
+		// An anchored certificate without the Yivi scheme extension: the subject is
+		// attested, but there is no attribute authorization to enforce.
 		eudi.Logger.Debugf("openid4vp: verifier certificate carries no scheme data (%v), using its subject", err)
 		requestor.Attested = scheme.NamedRelyingParty(leaf.Subject.CommonName)
 	}
@@ -152,17 +134,15 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 			return nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 		}
 
-		// A live party has no business presenting an expired certificate, so the
-		// gate rejects it. (Stored evidence is different — classification of a
-		// stored issuer leaf is expiry-tolerant, see TrustModel.Classify.)
+		// A live party presenting an expired certificate is refused. Stored evidence
+		// is different — see TrustModel.Classify.
 		if err := eudi_jwt.CheckCertificateValidAt(v.verificationContext, parsedCert, ClockSkew, "relying party certificate"); err != nil {
 			return nil, err
 		}
 
-		// The client_id binding: the request must prove it is for the party
-		// the client_id names. This stays in the gate even though an
-		// unanchored SAN attests nothing — a request whose certificate does
-		// not match its own client_id is internally incoherent.
+		// The request must prove it is for the party its client_id names. In the
+		// gate even though an unanchored SAN attests nothing: a certificate that
+		// does not match its own client_id is internally incoherent.
 		switch {
 		case strings.HasPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns)):
 			hostname := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns))

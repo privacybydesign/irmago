@@ -50,13 +50,10 @@ func TestConfig(t *testing.T) {
 }
 
 func testUpdateCertificateRevocationListsFetchesForEveryTrustModel(t *testing.T) {
-	// UpdateCertificateRevocationLists is the only thing that downloads CRLs, so
-	// a trust model it does not spawn a worker for holds no revocation lists at
-	// all. That matters for the trust lists in particular: lote's Store states
-	// that a stored list is re-verified against the anchors in force when it is
-	// read, so a list-signing certificate that has since been revoked
-	// invalidates the lists already on disk — which it can only do if its CRL
-	// was ever fetched.
+	// UpdateCertificateRevocationLists is the only thing that downloads CRLs, so a
+	// trust model it skips holds none at all. That matters for the trust lists:
+	// a revoked list-signing certificate only invalidates the lists already on
+	// disk if its CRL was ever fetched (see lote.Store).
 	storageFolder := test.CreateTestStorage(t)
 	eudiAppDataPath := filepath.Join(storageFolder, "eudi")
 	require.NoError(t, common.EnsureDirectoryExists(eudiAppDataPath))
@@ -70,8 +67,7 @@ func testUpdateCertificateRevocationListsFetchesForEveryTrustModel(t *testing.T)
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 
-	// One CRL, served under a path per trust model, so the assertion says which
-	// model went unfetched rather than only how many did.
+	// One CRL per trust model, so the assertion names which one went unfetched.
 	_, rootCert, _, _, caCrls := testdata.CreateTestPkiHierarchy(
 		t, testdata.CreateDistinguishedName("CRL ROOT"), 1, testdata.PkiOption_None, nil,
 	)
@@ -163,12 +159,10 @@ func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
-	// The two trust models are asserted through their pools below: a TrustModel
-	// carries a mutex now, so passing one by value to require would copy a lock.
-	//
-	// Emptiness is asserted against a fresh pool rather than with NotEmpty: a
-	// *x509.CertPool is a struct of non-nil maps, so testify sees a pool holding
-	// zero certificates as non-empty and the assertion could never fail.
+	// Asserted through their pools: a TrustModel carries a mutex, so passing one
+	// by value to require would copy a lock. Emptiness is asserted against a fresh
+	// pool rather than with NotEmpty, since testify sees an empty *x509.CertPool
+	// as non-empty.
 	require.False(t, conf.Verifiers.trustedRootCertificates.Equal(x509.NewCertPool()),
 		"the pinned verifier root anchors are loaded")
 	require.False(t, conf.Issuers.trustedRootCertificates.Equal(x509.NewCertPool()),

@@ -8,15 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The tests below drive whole OpenID4VP sessions to the permission screen and
-// assert what the user is shown about the verifier: the rung an entry on
-// Yivi's own list lifts it to, and which of the competing accounts of who the
-// verifier is wins. They use the bare did:web verifier, whose certificate
-// channel says nothing, so the rung reported is the list channel's alone.
+// Whole OpenID4VP sessions to the permission screen, asserting what the user is
+// shown about the verifier: the rung an entry on Yivi's own list lifts it to, and
+// which competing account of who it is wins. The bare did:web verifier says
+// nothing through the certificate channel.
 
 func TestNewSession_ListedOnYivisList_RanksHigh(t *testing.T) {
-	// Being on Yivi's list is being onboarded: every entry is Yivi vouching
-	// for the party, the same word its scheme certificate would give.
+	// Being on Yivi's list is being onboarded, the same word a scheme certificate
+	// gives.
 	authRequestJwt, validator, did := setupDidWebTest(t)
 	list := newYiviListFixture(t)
 	list.grant(t, 1, did)
@@ -65,11 +64,9 @@ func TestNewSession_LowVerifier_RendersItsOwnNameItsIdentifierAndNoLogo(t *testi
 }
 
 func TestNewSession_CertifiedVerifierWithoutAListing_RendersItsAttestedName(t *testing.T) {
-	// With no list vouching for it, a certificate-authenticated verifier is
-	// shown under the name its anchored certificate attests — and the name the
-	// request asserts about itself through client_metadata does not displace
-	// it: what the party says about itself never outranks what somebody
-	// vouching for it says.
+	// With no list vouching for it, a certificate-authenticated verifier is shown
+	// under the name its anchored certificate attests: client_metadata does not
+	// displace it.
 	authRequestJwt, validator := setupTest(t, withClientName("Test Verifier"), testdata.PkiOption_None)
 
 	client := newTrustTestClient(validator)

@@ -22,12 +22,9 @@ import (
 )
 
 // didWebLoopbackTransport routes a did:web fetch to a plain-HTTP test server on
-// loopback, whatever host and scheme the DID resolves to.
-//
-// The resolver's own HTTPS→HTTP fallback cannot be used for this: it fires only
-// when the real host answers 404 over authenticated TLS, which is what keeps a
-// hostile host from downgrading key resolution, and a plain-HTTP test server
-// cannot produce that. So the test routes the request itself instead.
+// loopback, whatever host and scheme the DID resolves to. The resolver's own
+// HTTPS→HTTP fallback cannot be used: it fires only when the real host answers
+// 404 over authenticated TLS, which a plain-HTTP test server cannot produce.
 type didWebLoopbackTransport struct{ addr string }
 
 func (t *didWebLoopbackTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -69,15 +66,14 @@ func serveDidWebWithAttestingCert(
 	t.Cleanup(server.Close)
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	// Assign the captured variable the handler serves as the document id, not
-	// only the returned value — the handler reads did at request time.
+	// Assign the captured variable, not only the returned value: the handler reads
+	// did at request time.
 	did = "did:web:" + strings.ReplaceAll(serverURL.Host, ":", "%3A")
 	return did, &http.Client{Transport: &didWebLoopbackTransport{addr: serverURL.Host}}
 }
 
-// didIssuedSdJwtVc builds a credential signed with issuerKey and identified by
-// did via kid (no x5c header — that is the x5c-header path, not this one), valid
-// around the given clock.
+// A credential signed with issuerKey and identified by did via kid, with no x5c
+// header — that is the other path.
 func didIssuedSdJwtVc(t *testing.T, issuerKey *ecdsa.PrivateKey, did string, now int64) SdJwtVc {
 	t.Helper()
 	disclosures, err := sdjwt.MultipleNewDisclosureContents(map[string]string{"email": "test@gmail.com"})
@@ -96,13 +92,10 @@ func didIssuedSdJwtVc(t *testing.T, issuerKey *ecdsa.PrivateKey, did string, now
 		withTypHeader(SdJwtVcTyp))
 }
 
-// Test_HolderVerification_DidWebIssuer_WithAttestingCertificate_SurfacesTheCertificate
-// is § 5 end to end on the issuer path: a did:web issuer whose verification
-// method carries an x5c over its signing key verifies, and the certificate it
-// carries is surfaced for the trust ladder to classify — the DID authenticated
-// the issuer, the certificate vouches for its key.
+// Test_HolderVerification_DidWebIssuer_WithAttestingCertificate_SurfacesTheCertificate:
+// a did:web issuer whose verification method carries an x5c over its signing key
+// verifies, and that certificate is surfaced for the trust ladder to classify.
 func Test_HolderVerification_DidWebIssuer_WithAttestingCertificate_SurfacesTheCertificate(t *testing.T) {
-	// A leaf over the issuer's own key, chaining to an anchored CA.
 	crlDistPoint := "https://yivi.app/crl.crl"
 	_, rootCert, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(
 		t, testdata.CreateDistinguishedName("DID ISSUER ROOT"), 1, testdata.PkiOption_None, &crlDistPoint)
@@ -114,9 +107,8 @@ func Test_HolderVerification_DidWebIssuer_WithAttestingCertificate_SurfacesTheCe
 	now := time.Now().Unix()
 	sdJwtVc := didIssuedSdJwtVc(t, issuerKey, did, now)
 
-	// A trust model anchoring the leaf, so the certificate is well-formed and
-	// in date. The OpenID4VCI context leaves the VCT-authorization flag off, so
-	// ranking is left to the ladder — this path only has to surface the cert.
+	// A trust model anchoring the leaf, so the certificate is well-formed and in
+	// date. This path only has to surface it; ranking is the ladder's.
 	rootPool := x509.NewCertPool()
 	rootPool.AddCert(rootCert)
 	intermediatePool := x509.NewCertPool()
@@ -138,9 +130,9 @@ func Test_HolderVerification_DidWebIssuer_WithAttestingCertificate_SurfacesTheCe
 	require.Equal(t, leaf.SerialNumber, verified.IssuerCertificate.SerialNumber)
 }
 
-// Test_HolderVerification_DidWebIssuer_KeyMismatchedCertificate_Fails is the §2
-// refusal on the issuer path: a certificate that does not certify the signing
-// key is a malformed document and refuses, before the credential is trusted.
+// Test_HolderVerification_DidWebIssuer_KeyMismatchedCertificate_Fails: a
+// certificate that does not certify the signing key is a malformed document, and
+// refuses before the credential is trusted.
 func Test_HolderVerification_DidWebIssuer_KeyMismatchedCertificate_Fails(t *testing.T) {
 	_, _, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(
 		t, testdata.CreateDistinguishedName("DID ISSUER ROOT"), 1, testdata.PkiOption_None, nil)

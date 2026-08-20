@@ -21,21 +21,13 @@ import (
 //
 // Every other test here signs with lestrrat-go/jwx and verifies with the same
 // library, so a jwx bug that both produced and accepted a malformed JWS would go
-// unseen — and that is precisely the layer `testdata/lote-publisher/publish.py`
-// was built to guard: "how a foreign toolchain emits the `x5c` chain, orders the
-// protected header, or encodes an ECDSA signature". The production publisher
-// shares the wallet's library, so that guard had to be replaced rather than
-// inherited.
+// unseen. Nothing here asks jwx what it signed: the compact serialization is
+// split on the wire, the protected header parsed as plain JSON, the certificate
+// decoded out of `x5c` as standard base64, and the signature checked by openssl.
 //
-// This is the replacement. Nothing here asks jwx what it signed: the compact
-// serialization is split on the wire, the protected header is parsed as plain
-// JSON, the certificate is decoded out of `x5c` as standard base64, and the
-// signature is checked by **openssl** — a toolchain with no shared code with the
-// signer. It is the exact inverse of publish.py's der_sig_to_raw.
-//
-// The ETSI schema covers the document layer (see eudi/trust/lote/validate_test.go);
-// between them the two layers a published LoTE consists of are each checked
-// against something that did not produce them.
+// The ETSI schema covers the document layer (eudi/trust/lote/validate_test.go),
+// so both layers of a published LoTE are checked against something that did not
+// produce them.
 func TestSignature_VerifiesUnderAForeignToolchain(t *testing.T) {
 	openssl, err := exec.LookPath("openssl")
 	if err != nil {
@@ -69,8 +61,8 @@ func TestSignature_VerifiesUnderAForeignToolchain(t *testing.T) {
 	require.Equal(t, "ES256", header.Alg)
 	require.Len(t, header.X5c, 1)
 
-	// RFC 7515 requires x5c entries to be *standard* base64, unlike everything
-	// else in a JWS. Decoding it strictly is the assertion.
+	// RFC 7515 requires x5c entries to be standard base64, unlike everything else
+	// in a JWS. Decoding it strictly is the assertion.
 	leafDer, err := base64.StdEncoding.DecodeString(header.X5c[0])
 	require.NoError(t, err, "x5c must be standard base64, not base64url")
 	require.Equal(t, signer.leaf.Raw, leafDer)
@@ -123,8 +115,8 @@ func TestSignature_AForeignToolchainRejectsATamperedPayload(t *testing.T) {
 	parts := strings.Split(string(signed), ".")
 	require.Len(t, parts, 3)
 
-	// Re-issue the payload with a bumped sequence number, leaving the signature
-	// as it was — the substitution the signature exists to prevent.
+	// A bumped sequence number with the signature left as it was: the substitution
+	// the signature exists to prevent.
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	require.NoError(t, err)
 	var document lote.Document

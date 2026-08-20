@@ -61,9 +61,9 @@ func TestTrustedParty_SelfAssertedIsTheLastResort(t *testing.T) {
 }
 
 func TestTrustedParty_AVouchedForPartyWithNoVouchedForLogoRendersNone(t *testing.T) {
-	// Being vouched for does not make the party's own logo somebody else's word,
-	// and there is nowhere in a PartyDisplay to put one: an entry that names no
-	// logo, on a party with no certificate to carry one, renders none.
+	// An entry that names no logo, on a party with no certificate to carry one,
+	// renders none: there is nowhere in a PartyDisplay to put a self-asserted
+	// logo.
 	d := display()
 	d.Attested = PartyMetadata{}
 	d.CuratedLogo = nil
@@ -75,8 +75,8 @@ func TestTrustedParty_AVouchedForPartyWithNoVouchedForLogoRendersNone(t *testing
 }
 
 func TestTrustedParty_AListingWithNoNameFallsThrough(t *testing.T) {
-	// An entry that carries no name for any language grants the rung but says
-	// nothing about what to call the party.
+	// An entry with no name in any language grants the rung but says nothing about
+	// what to call the party.
 	verdict := Verdict{Level: clientmodels.TrustLevel_Medium, Listing: &Listing{ListId: "yivi"}}
 
 	require.Equal(t, "Certified BV", display().TrustedParty(verdict, "en").Name)
@@ -84,22 +84,21 @@ func TestTrustedParty_AListingWithNoNameFallsThrough(t *testing.T) {
 
 func TestTrustedParty_ALocaleTheListingLacksFallsThrough(t *testing.T) {
 	// Resolve falls back across languages, so a listing that names the party at
-	// all keeps naming it; it is an entry with no names whatsoever that falls
-	// through, and the fallback must not depend on the requested locale.
+	// all keeps naming it whatever locale is asked for.
 	require.Equal(t, "Listed BV", display().TrustedParty(listed(clientmodels.TrustLevel_Medium), "de").Name)
 }
 
 func TestTrustedParty_CuratedLogoNeedsTheListingThatNamedIt(t *testing.T) {
-	// The curated logo belongs to the entry that named it. Without a verdict
-	// carrying that entry there is nothing vouching for the picture.
+	// The curated logo belongs to the entry that named it: without a verdict
+	// carrying that entry, nothing vouches for the picture.
 	party := display().TrustedParty(Verdict{Level: clientmodels.TrustLevel_High}, "en")
 
 	require.Equal(t, logo("attested"), party.Image)
 }
 
 func TestTrustedParty_NoSourceLeavesAnEmptyName(t *testing.T) {
-	// A party nothing at all is known about still yields a party rather than an
-	// error: composing display may no more fail a session than evaluating it.
+	// A party nothing is known about still composes: display may no more fail a
+	// session than evaluation may.
 	party := PartyDisplay{Id: "did:web:verifier.example.com"}.
 		TrustedParty(Verdict{Level: clientmodels.TrustLevel_Low}, "en")
 

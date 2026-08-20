@@ -15,14 +15,11 @@ import (
 // them through the LogoManager and base64-encodes them for the wallet.
 var fakeLogoBytes = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01, 0x02, 0x03}
 
-// listedIssuerView is the recognized-list channel granting every issuer it is
-// asked about, on an entry that names logoURI as the party's curated logo.
-//
-// It is what the logo tests below evaluate against, because a curated entry is
-// the only source that can put a logo on the issuance screen: an issuer's own
-// metadata logo is the issuer's own word and never reaches the user. The entry
-// deliberately carries no name, so the name each test asserts is still the one
-// resolved from the issuer's display metadata.
+// listedIssuerView grants every issuer it is asked about, on an entry naming
+// logoURI as the curated logo — the only source that can put a logo on the
+// issuance screen, since an issuer's own metadata logo never reaches the user.
+// The entry carries no name, so each test's asserted name still comes from the
+// issuer's display metadata.
 type listedIssuerView struct {
 	logoURI string
 }
@@ -174,9 +171,8 @@ func TestConvertToTrustedParty_NoLogo_LeavesImageNil(t *testing.T) {
 }
 
 func TestConvertToTrustedParty_TheIssuersOwnLogoDoesNotReachTheWallet(t *testing.T) {
-	// An issuer's metadata logo is the issuer's own word about who it is, which
-	// is the whole of an impersonation. With nobody vouching for the party, the
-	// screen shows its name and its identifier and no picture.
+	// An issuer's metadata logo is its own word, and a logo is the whole of an
+	// impersonation. With nobody vouching, the screen shows no picture.
 	s, client := createOpenID4VCiClientForTesting(t)
 	defer s.Close()
 

@@ -37,9 +37,9 @@ func (at *AttributeType) ResolveTexts(locale string) (displayName *string, descr
 // the scheme manager as parent. Each party resolves its own text bundle.
 func (issuer *Issuer) ToTrustedParty(conf *Configuration, locale string) clientmodels.TrustedParty {
 	scheme := conf.SchemeManagers[issuer.SchemeManagerIdentifier()]
-	// An issuer registered in a valid Yivi scheme is vouched for by Yivi
-	// itself, which is the top rung; anything else has nobody vouching for it.
-	// This is the display mapping only — the IRMA trust mechanism is unchanged.
+	// An issuer registered in a valid Yivi scheme is vouched for by Yivi itself,
+	// the top rung; anything else by nobody. Display mapping only — the IRMA trust
+	// mechanism is unchanged.
 	level := clientmodels.TrustLevel_Low
 	if scheme.Status == SchemeManagerStatusValid {
 		level = clientmodels.TrustLevel_High

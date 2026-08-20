@@ -16,12 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// An issuer certificate no anchor stands behind is a legitimate-looking
-// stranger and passes, ranked low by the trust ladder. A *revoked* one does not:
-// its CA went out of its way to withdraw it, which is how a compromised issuer
-// is cut off, so it is refused on every issuance path — including the OpenID4VCI
-// one, which deliberately skips chain building because nothing there reads the
-// answer.
+// An issuer certificate no anchor stands behind is a legitimate-looking stranger
+// and passes, ranked low. A revoked one does not: it is refused on every issuance
+// path, including the OpenID4VCI one, which otherwise skips chain building.
 
 func TestHolderVerification_RevokedIssuerCertificate_IsRefused(t *testing.T) {
 	// Both verification contexts the wallet builds: OpenID4VCI leaves the
@@ -43,9 +40,8 @@ func TestHolderVerification_RevokedIssuerCertificate_IsRefused(t *testing.T) {
 }
 
 func TestHolderVerification_UnrevokedIssuerCertificate_OnOpenID4VciPath_Verifies(t *testing.T) {
-	// The control for the case above: the same credential, the same anchors, no
-	// CRL naming its issuer. It has to verify, or the test above would pass on
-	// any fixture breakage rather than on the revocation.
+	// The control: same credential, same anchors, no CRL naming its issuer. It has
+	// to verify, or the test above would pass on any fixture breakage.
 	sdJwtVc, context := revokedIssuerFixture(t, false, false)
 
 	_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdJwtVc))
@@ -108,7 +104,6 @@ func revokedIssuerFixture(t *testing.T, revoked, verifyRequestorInfo bool) (SdJw
 	}
 }
 
-// revocationListRevoking builds the CA's CRL naming cert as revoked.
 func revocationListRevoking(t *testing.T, cert, caCert *x509.Certificate, caKey *ecdsa.PrivateKey) *x509.RevocationList {
 	t.Helper()
 

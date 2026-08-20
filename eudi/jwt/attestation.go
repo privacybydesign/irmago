@@ -9,36 +9,29 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
-// ErrAttestationKeyMismatch marks the one way an x5c present on a key is
-// actively wrong rather than merely absent: the leaf certificate does not
-// certify the key it is attached to. RFC 7517 §4.7 forbids that combination
-// normatively, so a caller treats it as a broken document rather than as
-// missing evidence.
+// ErrAttestationKeyMismatch marks the one way an x5c present on a key is actively
+// wrong rather than merely absent: the leaf does not certify the key it is
+// attached to, which RFC 7517 §4.7 forbids. A broken document, not missing
+// evidence.
 var ErrAttestationKeyMismatch = errors.New("attesting certificate does not match the key it is attached to")
 
 // AttestingCertificate returns the X.509 certificate a JWK carries in its x5c
-// (RFC 7517 §4.7) — the certificate that vouches for the key, distinct from
-// how the party authenticated. A DID document's verification method holds its
+// (RFC 7517 §4.7): the certificate that vouches for the key, distinct from how
+// the party authenticated. A DID document's verification method holds its
 // attestation this way.
 //
-// Three outcomes, deliberately distinct:
+// Three distinct outcomes:
 //
-//   - no x5c at all → (nil, nil): the key carries no attestation, which is not
-//     an error. The party ranks by whatever other channels say about it.
+//   - no x5c → (nil, nil): no attestation, which is not an error.
 //   - an x5c that does not hold up → (nil, err): unparseable, or a leaf whose
 //     public key is not the key it is attached to (ErrAttestationKeyMismatch).
-//     A document asserting a chain for a key it does not hold is malformed, and
-//     the caller refuses it.
-//   - a well-formed x5c → (leaf, nil): the end-entity certificate, its key
-//     equal to the JWK's. Whether any anchor stands behind it is the trust
-//     ladder's question, not this function's — key equality is the only
-//     property checked here, because it is the only one that does not need the
-//     wallet's anchors or clock.
+//   - a well-formed x5c → (leaf, nil): the end-entity certificate, its key equal
+//     to the JWK's.
 //
-// Validity window and revocation are deliberately left to the caller, which
-// holds the verification context: they are the same CheckCertificateValidAt /
-// CheckCertificateNotRevoked checks the x5c-header path applies, so the DID
-// path and the certificate path share one policy.
+// Key equality is the only property checked here, being the only one that needs
+// neither the wallet's anchors nor its clock. Validity window and revocation are
+// the caller's CheckCertificateValidAt / CheckCertificateNotRevoked, so the DID
+// path and the x5c-header path share one policy.
 func AttestingCertificate(key jwk.Key) (*x509.Certificate, error) {
 	chain, ok := key.X509CertChain()
 	if !ok || chain == nil || chain.Len() == 0 {
@@ -56,10 +49,8 @@ func AttestingCertificate(key jwk.Key) (*x509.Certificate, error) {
 	return leaf, nil
 }
 
-// assertKeyMatches enforces RFC 7517 §4.7: the leaf's public key must be the
-// key the x5c is attached to. The public keys are compared as their PKIX DER
-// encodings, which is exact across key types and needs no per-algorithm
-// Equal assertion.
+// assertKeyMatches enforces RFC 7517 §4.7: the leaf's public key must be the key
+// the x5c is attached to. Compared as PKIX DER, which is exact across key types.
 func assertKeyMatches(key jwk.Key, leaf *x509.Certificate) error {
 	var raw any
 	if err := jwk.Export(key, &raw); err != nil {

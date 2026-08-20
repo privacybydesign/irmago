@@ -47,9 +47,8 @@ func TestAttributeType_ResolveTexts_BundlesNameAndDescription(t *testing.T) {
 }
 
 // TestIssuer_ToTrustedParty_MapsSchemeStatusToARung pins the IRMA half of the
-// trust ladder's display mapping: an issuer in a valid scheme is vouched for by
-// Yivi itself, an issuer in a scheme that is not valid by nobody. The trust
-// mechanism is untouched; only what the app is told about it.
+// display mapping: an issuer in a valid scheme is vouched for by Yivi itself, one
+// in an invalid scheme by nobody. The trust mechanism is untouched.
 func TestIssuer_ToTrustedParty_MapsSchemeStatusToARung(t *testing.T) {
 	for _, tc := range []struct {
 		status   SchemeManagerStatus

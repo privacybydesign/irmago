@@ -69,10 +69,9 @@ type SdJwtVcDcqlHandler struct {
 	// (candidates are then never flagged revoked).
 	revocation RevocationChecker
 
-	// trustEvaluator ranks a stored credential's issuer while the disclosure
-	// plan is built, off the evidence issuance recorded. The rung a credential
-	// shows here therefore tracks the recognized lists, exactly as it does in
-	// the credential list.
+	// trustEvaluator ranks a stored credential's issuer while the disclosure plan
+	// is built, off the evidence issuance recorded, so the rung tracks the
+	// recognized lists as it does in the credential list.
 	trustEvaluator trust.Evaluator
 }
 
@@ -145,9 +144,8 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	locale := h.currentLocale.Get()
 	now := time.Now()
 
-	// One view for every candidate this query yields: the issuers of two
-	// credentials the user is choosing between must be ranked against the same
-	// list state.
+	// One view for every candidate this query yields: two credentials the user is
+	// choosing between must be ranked against the same list state.
 	view := h.trustView()
 
 	hasExhaustedBatch := false
@@ -415,9 +413,7 @@ func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.
 func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
-	// One view for every credential this disclosure logs, for the same reason
-	// FindCandidates pins one: the rungs recorded for a single session must come
-	// from a single list state.
+	// The rungs recorded for a single session must come from a single list state.
 	view := h.trustView()
 
 	// Load all batches with full metadata so buildLogCredential can resolve display names.
@@ -1235,13 +1231,11 @@ func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch, loca
 
 // issuerTrustedParty builds a TrustedParty from the stored issuer display
 // metadata, including the issuer logo if available on disk, and ranks the issuer
-// off the evidence issuance recorded — so a credential whose issuer was delisted
-// since shows the demoted rung here too, not just in the credential list.
+// off the evidence issuance recorded.
 //
-// The trust view is passed in rather than taken here: one pass over the wallet's
-// credentials must rank all of them against the same state of the recognized
-// lists, or a refresh landing mid-pass could put two credentials from one issuer
-// on different rungs in a single screen. See trustView.
+// The trust view is passed in rather than taken here, so one pass over the
+// wallet's credentials ranks all of them against the same list state. See
+// trustView.
 func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, view trust.View, locale string) clientmodels.TrustedParty {
 	return clientmodels.TrustedParty{
 		Id:         batch.CredentialIssuerIdentifier,

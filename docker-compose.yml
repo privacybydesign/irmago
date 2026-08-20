@@ -349,14 +349,13 @@ services:
   # LoTE publisher: serves the ETSI TS 119 602 trusted list the wallet's
   # recognized-list channel consumes, signed as a compact JAdES-B-B.
   #
-  # It signs with the openssl CLI rather than a JWS library, deliberately: the
-  # wallet verifies with jwx, so a Go publisher would test that library against
-  # itself instead of proving the wallet accepts a document a foreign toolchain
-  # produced. See docs/plans/lote-e2e-tests.md.
+  # It signs with the openssl CLI rather than a JWS library on purpose: the wallet
+  # verifies with jwx, so a Go publisher would test that library against itself.
+  # See docs/plans/lote-e2e-tests.md.
   #
-  # Stock python:3-slim (which ships openssl) with the script and its signing
-  # material mounted — no image build, since the publisher is stdlib-only.
-  # Reached by the wallet at https://localhost:8446 through the tls_proxy.
+  # Stock python:3-slim (which ships openssl), script and signing material
+  # mounted. Reached by the wallet at https://localhost:8446 through the
+  # tls_proxy.
   # ---------------------------------------------------------------------------
   lote_publisher:
     image: python:3-slim

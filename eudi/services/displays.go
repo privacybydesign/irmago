@@ -160,26 +160,19 @@ func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedB
 	return d
 }
 
-// CuratedLogoFetchTimeout bounds a curated logo download. It is enforced here
-// rather than left to the caller because this is the one logo fetch that happens
-// on a session's path, with the user waiting on the screen behind it: the shared
-// HTTP client carries no timeout of its own, so an unresponsive logo host would
-// otherwise stall a disclosure or an issuance offer indefinitely.
+// CuratedLogoFetchTimeout bounds a curated logo download. Enforced here because
+// this is the one logo fetch on a session's path, with the user waiting behind
+// it, and the shared HTTP client carries no timeout of its own.
 const CuratedLogoFetchTimeout = 10 * time.Second
 
 // LoadCuratedLogo returns the logo a recognized trust list names for a party,
-// downloading it on a cache miss.
+// downloading it on a cache miss. Unlike credential and issuer logos there is no
+// backfill sweep behind it, so the first session that meets the party fills the
+// cache; the URI comes out of a signed list rather than from the party, which is
+// what makes fetching it here safe.
 //
-// Credential and issuer logos are fetched ahead of use by the backfill sweep,
-// which walks stored credentials; a curated logo has no such sweep behind it,
-// so the first session that meets the party is what puts it in the cache. The
-// URI comes out of a signed list rather than from the party, which is what
-// makes fetching it safe to do here at all.
-//
-// A download that fails is not an error: the party renders without a logo — the
-// same as an entry that names none — and the next session tries again. That is
-// what makes bounding the wait safe: a logo the wallet gives up on costs the
-// logo, never the session.
+// A download that fails is not an error: the party renders without a logo and the
+// next session tries again.
 func LoadCuratedLogo(ctx context.Context, manager filesystem.LogoManager, httpClient *http.Client, uri string) *clientmodels.Image {
 	if uri == "" || manager == nil {
 		return nil
@@ -197,8 +190,7 @@ func LoadCuratedLogo(ctx context.Context, manager filesystem.LogoManager, httpCl
 		return nil
 	}
 	if err := manager.Save(uri, data, mimeType); err != nil {
-		// The logo is in hand; only caching it failed. Show it for this session
-		// and let the next one try the download again.
+		// The logo is in hand; only caching it failed.
 		eudi.Logger.Warnf("failed to cache curated logo %q: %v", uri, err)
 	}
 

@@ -71,13 +71,11 @@ type Client struct {
 	//Preferences      clientsettings.Preferences
 }
 
-// Config is everything a wallet needs to exist. Fields are named rather than
-// positional deliberately: three of the paths are plain strings, and a caller that
-// transposed two of them would build a wallet that looks fine and stores its data
-// in the wrong place.
+// Config is everything a wallet needs to exist. Named rather than positional
+// because three of the paths are plain strings, and a caller that transposed two
+// would build a wallet that looks fine and stores its data in the wrong place.
 //
-// The zero value of a field takes the documented default, so a caller supplies
-// only what it has an opinion about.
+// The zero value of a field takes the documented default.
 type Config struct {
 	// StoragePath is where the IRMA client keeps its data. Must exist.
 	StoragePath string
@@ -87,9 +85,8 @@ type Config struct {
 	// EudiAppDataPath is where the EUDI storage lives. Created if absent.
 	EudiAppDataPath string
 
-	// Handler is how the wallet wakes the app when what it has already rendered
-	// went stale. Required: the wallet calls it from background jobs without a
-	// nil guard.
+	// Handler is how the wallet wakes the app when what it rendered went stale.
+	// Required: background jobs call it without a nil guard.
 	Handler ClientHandler
 	// SessionHandler receives session state updates. May be nil for a wallet
 	// that runs no sessions.
@@ -105,40 +102,30 @@ type Config struct {
 
 	// RecognizedTrustLists are the recognized trust lists this wallet consults.
 	// Empty consults none, which is what a released wallet does today: Yivi does
-	// not publish its LoTE yet, so every party is ranked by the certificate
-	// channel alone. Integration tests and staging builds name their own.
-	//
-	// When the list is published, the released set belongs here — passed by the
-	// call that builds the wallet — rather than in a package variable, so that
-	// what a wallet consults is fixed by that call.
+	// not publish its LoTE yet, so the certificate channel ranks every party. The
+	// released set belongs here once it is published, so that what a wallet
+	// consults is fixed by the call that builds it.
 	RecognizedTrustLists []lote.Source
 
-	// ExtraIssuerTrustAnchors and ExtraVerifierTrustAnchors are trust anchors
-	// this wallet pins on top of the compiled-in Yivi roots, each with the
-	// trust level its certificates confer. Empty pins nothing extra, which is
-	// what a released wallet does today: no third-party CA is anchored yet.
-	// This is where one would be — at medium, or at high once promoted under
-	// contract — and it is the seam tests pin a non-Yivi CA through.
+	// ExtraIssuerTrustAnchors and ExtraVerifierTrustAnchors are anchors this wallet
+	// pins on top of the compiled-in Yivi roots, each with the trust level its
+	// certificates confer. Empty today: no third-party CA is anchored yet, and this
+	// is the seam a test pins one through.
 	ExtraIssuerTrustAnchors   []eudi.ExtraTrustAnchor
 	ExtraVerifierTrustAnchors []eudi.ExtraTrustAnchor
 
-	// ExtraTrustListTrustAnchors are PEM anchors a recognized list's *signature*
-	// may chain to, on top of the pinned Yivi trust-list root. Deliberately
-	// separate from the issuer anchors: a certificate that may issue credentials
-	// must not thereby be able to define who is trusted.
-	//
-	// No trust level accompanies them, unlike the two above: a list's signing
-	// chain only decides whether the list is genuine, never what a grant on it is
-	// worth — that is the source's word (lote.Source.Confers).
+	// ExtraTrustListTrustAnchors are PEM anchors a recognized list's signature may
+	// chain to, on top of the pinned Yivi trust-list root. Separate from the
+	// issuer anchors: a certificate that may issue credentials must not thereby be
+	// able to define who is trusted. No trust level accompanies them — a signing
+	// chain says whether the list is genuine, never what a grant on it is worth
+	// (lote.Source.Confers).
 	ExtraTrustListTrustAnchors [][]byte
 }
 
-// New builds a wallet from cfg. It is the only constructor: everything optional
-// is a documented zero value on Config.
+// New builds a wallet from cfg. Everything optional is a documented zero value
+// on Config.
 func New(cfg Config) (*Client, error) {
-	// Required: the wallet calls it from background jobs and from IrmaClient
-	// without a nil guard, so a nil one would panic on a goroutine no caller
-	// can recover from. Fail here instead, where the app can see it.
 	if cfg.Handler == nil {
 		return nil, fmt.Errorf("handler is required")
 	}
@@ -212,22 +199,15 @@ func New(cfg Config) (*Client, error) {
 	revocationService := services.NewRevocationService(statusChecker, credStore)
 
 	// The single home for trust-level evaluation, shared by both EUDI protocols
-	// so an issuer and a verifier are ranked by the same rules, and by the
-	// credential listing paths, which rank a stored credential's issuer on every
-	// read. It reads the recognized lists through the LoTE checker, which holds
-	// them in memory and persists them, and never fetches on a session's path —
-	// see Client.RefreshTrustLists.
+	// and by the credential listing paths, which rank a stored credential's issuer
+	// on every read. It never fetches on a session's path — see
+	// Client.RefreshTrustLists.
 	//
-	// A list's signature is validated against the **trust-list** anchors, not the
-	// issuer ones. Sharing the issuer pool would make onboarding a credential
-	// issuer silently grant it the power to define who is trusted: any
-	// certificate under those anchors with digitalSignature could sign a document
-	// the wallet accepts as Yivi's list, since the only other things checked are
-	// the SchemeName and LoTEType, both public. See the commentary on
+	// A list's signature is validated against the trust-list anchors, not the
+	// issuer ones: sharing the issuer pool would let any certificate that may
+	// issue credentials sign a document the wallet accepts as Yivi's list, since
+	// the only other things checked (SchemeName, LoTEType) are public. See
 	// eudi.Production_Yivi_TrustListTrustAnchor.
-	//
-	// An empty source set — what a released wallet passes today, since Yivi does
-	// not publish its LoTE yet — leaves the certificate channel alone in force.
 	trustChecker := lote.NewChecker(lote.Config{
 		Sources:     cfg.RecognizedTrustLists,
 		X509Context: &eudiConf.TrustLists,
@@ -418,24 +398,17 @@ func (client *Client) RefreshStatuses(ctx context.Context) error {
 }
 
 // RefreshTrustLists re-downloads the recognized trust lists and adopts the ones
-// that hold up. Use this on app resume, or when the UI exposes an explicit
-// refresh action.
-//
-// It is the only path that fetches a list: sessions read whatever the wallet
-// already holds, so a session is never delayed by a list download. A source
-// that fails leaves the list the wallet already held in force, and the returned
-// error names the sources that failed, for the caller's log. Nothing about a
-// failed refresh reaches a session beyond parties capping at a lower rung.
+// that hold up. It is the only path that fetches a list, so a session is never
+// delayed by a download. A source that fails leaves what the wallet already held
+// in force; the returned error names the failures, for the caller's log.
 //
 // A list that comes back saying something different about the parties on it
-// signals ClientHandler.CredentialsChanged, on the calling goroutine — the
-// rung a stored credential's issuer holds is read fresh on every listing, so
-// what the app is showing is out of date. A re-issue carrying the same entries
-// is silent, the same way a re-confirmed credential status is: re-confirmation
-// never wakes the app.
+// signals ClientHandler.CredentialsChanged on the calling goroutine, since the
+// app is showing rungs that are now out of date. A re-issue carrying the same
+// entries is silent.
 //
-// InitJobs runs this on a schedule; the app may also call it on resume or from
-// an explicit refresh action.
+// InitJobs runs this on a schedule; the app may also call it on resume or from an
+// explicit refresh action.
 func (client *Client) RefreshTrustLists(ctx context.Context) error {
 	changed, err := client.trustService.RefreshLists(ctx)
 	if changed {
@@ -877,22 +850,13 @@ func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInte
 		common.Logger.Warnf("failed to create new cron job for updating CRLs: %v", err)
 	}
 
-	// The fail-soft background sweeps. Both are skipped when their interval is
-	// non-positive, both log their failures and carry on, and both wake the app
-	// themselves when they find something changed — so they are wired from one
-	// table rather than written out once each, which is how a guard or a
-	// WithStartImmediately drifts between them unnoticed.
+	// The fail-soft background sweeps. Both skip a non-positive interval, log
+	// their failures and carry on, and wake the app themselves when something
+	// changed — so they are wired from one table rather than written out twice.
 	//
-	// The status sweep re-fetches referenced Token Status Lists and updates one
-	// representative instance's LastKnownStatus per credential batch (a batch is
-	// revoked all at once, so one entry stands in for the whole batch); per-URI
-	// errors are logged inside RefreshStatuses and the previous status is kept.
-	//
-	// The trust list sweep re-downloads the recognized lists: this is where the
-	// wallet learns that a party it vouched for was delisted. A stored
-	// credential's issuer rung is read fresh on every listing, so the refresh
-	// only has to wake the app, which RefreshTrustLists does when entry content
-	// changed. The lists already held stay in force when it fails.
+	// The status sweep updates one representative instance's LastKnownStatus per
+	// credential batch, since a batch is revoked all at once. The trust list sweep
+	// is where the wallet learns that a party it vouched for was delisted.
 	sweeps := []struct {
 		every time.Duration
 		what  string

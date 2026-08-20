@@ -17,18 +17,16 @@ func TestSchema_Compiles(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// The committed golden document is the one document in this package nothing here
-// marshalled, so validating it checks the *published* shape rather than the
-// serialiser's opinion of it.
+// The committed golden document is the one nothing here marshalled, so validating
+// it checks the published shape rather than the serialiser's opinion of it.
 func TestValidate_TheGoldenDocumentConforms(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(goldenDir(t), "list.json"))
 	require.NoError(t, err)
 	require.NoError(t, ValidateDocument(raw))
 }
 
-// Every fixture in the suite comes out of these builders, so if they emit a
-// non-conformant document then every test in the repo is asserting against a
-// shape no real publisher could produce.
+// Every fixture in the suite comes out of these builders, so a non-conformant one
+// would mean the whole repo asserts against a shape no publisher could produce.
 func TestValidate_TheTestBuildersProduceConformantDocuments(t *testing.T) {
 	signer := NewTestLoteSigner(t)
 	party := signer.NewTestPartyCertificate(t, "party.example.com", "VATNL-000000001")
@@ -61,7 +59,6 @@ func TestValidate_WhatIsSignedIsWhatIsValidated(t *testing.T) {
 	verified, err := VerifySigned(signer.SignList(t, list), signer.X509VerificationContext())
 	require.NoError(t, err)
 
-	// The payload the signature covers, recovered from the signed document.
 	raw, err := json.Marshal(Document{LoTE: *verified})
 	require.NoError(t, err)
 	require.NoError(t, ValidateDocument(raw))
@@ -71,9 +68,8 @@ func TestValidate_WhatIsSignedIsWhatIsValidated(t *testing.T) {
 // The schema must actually reject things
 // ----------------------------------------------------------------------------
 
-// A validator that accepts everything is worse than none, so these pin that the
-// schema is really being applied — and each one is a mistake a hand-written
-// publisher in another language could plausibly make.
+// A validator that accepts everything is worse than none. Each of these is a
+// mistake a hand-written publisher in another language could plausibly make.
 
 func TestValidate_RejectsAnUnwrappedList(t *testing.T) {
 	list := NewTestList("NL:Yivi Test", 1)
@@ -84,8 +80,7 @@ func TestValidate_RejectsAnUnwrappedList(t *testing.T) {
 
 func TestValidate_RejectsALanguageMapInsteadOfASequence(t *testing.T) {
 	raw := mutateGolden(t, func(scheme map[string]any, _ []any) {
-		// The mistake the previous Yivi format made: a map where the binding
-		// requires [{lang,value}].
+		// A map where the binding requires [{lang,value}].
 		scheme["SchemeName"] = map[string]any{"en": "NL:Yivi Test"}
 	})
 	require.ErrorContains(t, ValidateDocument(raw), "Annex A")
@@ -110,8 +105,7 @@ func TestValidate_RejectsASingularIdentityWhereTheBindingWantsASequence(t *testi
 	raw := mutateGolden(t, func(_ map[string]any, entities []any) {
 		services := entities[0].(map[string]any)["TrustedEntityServices"].([]any)
 		information := services[0].(map[string]any)["ServiceInformation"].(map[string]any)
-		// The other mistake the previous format made: a scalar where the binding
-		// requires an array.
+		// A scalar where the binding requires an array.
 		information["ServiceDigitalIdentity"] = map[string]any{"X509SKIs": "AAAA"}
 	})
 	require.ErrorContains(t, ValidateDocument(raw), "Annex A")
@@ -130,9 +124,8 @@ func TestValidate_RejectsAnUnknownMemberBesideLoTE(t *testing.T) {
 }
 
 // mutateGolden reads the committed document, hands the scheme information and the
-// entity list to edit, and returns the result. Starting from the golden rather
-// than from a builder means each negative test breaks exactly one thing about a
-// document that was otherwise conformant.
+// entity list to edit, and returns the result — so each negative test breaks
+// exactly one thing about an otherwise conformant document.
 func mutateGolden(t *testing.T, edit func(scheme map[string]any, entities []any)) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(goldenDir(t), "list.json"))

@@ -23,22 +23,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These exercise § 4 of the attested-DID plan: a did:web verifier whose
-// verification method carries an X.509 certificate over its key is ranked and
-// authorization-checked by that certificate, exactly as an x5c-header verifier
-// is, while it stays known by its DID.
+// A did:web verifier whose verification method carries an X.509 certificate over
+// its key is ranked and authorization-checked by that certificate, exactly as an
+// x5c-header verifier is, while staying known by its DID.
 //
-// The certificate channel here is honest, not a stub: the same trust model the
-// validator classifies against also backs the client's rung, so `anchored` and
-// the displayed level cannot disagree (contextClassifier below). That is what
-// lets the unanchored case rank low rather than borrowing the staticClassifier's
-// fixed high.
+// The certificate channel here is honest rather than a stub: the same trust model
+// the validator classifies against backs the client's rung (contextClassifier
+// below), so the unanchored case ranks low instead of borrowing a fixed high.
 
 // contextClassifier ranks a certificate by whether it chains to an anchor the
-// given context holds — the level conferred when it does, unevaluated when it
-// does not. It mirrors the production TrustModel.Classify semantics against a
-// test context, so a test's rung follows the same chain build its `anchored`
-// decision does.
+// given context holds, mirroring TrustModel.Classify against a test context so a
+// rung follows the same chain build the `anchored` decision does.
 type contextClassifier struct {
 	ctx     eudi_jwt.X509VerificationContext
 	confers clientmodels.TrustLevel
@@ -51,9 +46,9 @@ func (c contextClassifier) Classify(leaf *x509.Certificate) clientmodels.TrustLe
 	return c.confers
 }
 
-// didAttestFixture is one attested did:web verifier: the request it signs, the
-// DID it is known by, the leaf its key carries in the document, and the trust
-// model that verifier is classified against.
+// One attested did:web verifier: the request it signs, the DID it is known by, the
+// leaf its key carries in the document, and the trust model it is classified
+// against.
 type didAttestFixture struct {
 	authRequestJwt string
 	did            string
@@ -64,10 +59,9 @@ type didAttestFixture struct {
 	didClient *http.Client
 }
 
-// newDidAttestFixture builds an attested did:web verifier. opts shapes the leaf
-// (expiry, revocation); anchorRoot decides whether the trust model holds the
-// root the leaf chains to; x5cOverride, when set, is embedded in the document
-// instead of the signing key's own leaf — the way a key-mismatch is staged.
+// newDidAttestFixture builds an attested did:web verifier. opts shapes the leaf,
+// anchorRoot decides whether the trust model holds the root it chains to, and
+// x5cOverride stages a key-mismatch by embedding a different leaf.
 func newDidAttestFixture(
 	t *testing.T,
 	opts testdata.PkiGenerationOptions,
@@ -88,7 +82,6 @@ func newDidAttestFixture(
 		x5cLeaf = x5cOverride
 	}
 
-	// The verification method's key is the signing key; its x5c is x5cLeaf.
 	pub, err := jwk.Import(verifierKey.Public())
 	require.NoError(t, err)
 	chain := &cert.Chain{}
@@ -138,9 +131,8 @@ func newDidAttestFixture(
 	}
 }
 
-// clientForFixture wires a client whose verifier certificate channel is the same
-// trust model the validator classifies against, conferring confers on an
-// anchored chain.
+// A client whose verifier certificate channel is the same trust model the
+// validator classifies against.
 func clientForFixture(f didAttestFixture, factory QueryValidatorFactory, confers clientmodels.TrustLevel, checker *lote.Checker) *Client {
 	validator := NewDidVerifierValidator(true, f.ctx, factory)
 	validator.didWebResolver.HTTPClient = f.didClient
@@ -182,9 +174,9 @@ func TestNewSession_AttestedDidWebVerifier_RanksMediumUnderAThirdPartyAnchor(t *
 }
 
 func TestNewSession_UnanchoredDidWebCertificate_RanksLowAndProceeds(t *testing.T) {
-	// The document carries a well-formed, in-date certificate, but the wallet
-	// holds no anchor for it. That is absent evidence, not a defect: the session
-	// proceeds at low with the party's own self-asserted name and no logo.
+	// A well-formed, in-date certificate the wallet holds no anchor for is absent
+	// evidence, not a defect: the session proceeds at low, self-asserted and
+	// logoless.
 	f := newDidAttestFixture(t, testdata.PkiOption_None, false, nil)
 	client := clientForFixture(f, &MockQueryValidatorFactory{}, clientmodels.TrustLevel_High, nil)
 	handler := newSpyHandler()
@@ -200,9 +192,8 @@ func TestNewSession_UnanchoredDidWebCertificate_RanksLowAndProceeds(t *testing.T
 }
 
 func TestNewSession_KeyMismatchedDidWebCertificate_ReportsPartyValidationFailed(t *testing.T) {
-	// A leaf over a *different* key pasted into the document — the RFC 7517 §4.7
-	// forgery. It refuses, and the app must be able to say the verifier was
-	// rejected.
+	// A leaf over a different key pasted into the document: the RFC 7517 §4.7
+	// forgery. It refuses, and the app must be able to say so.
 	foreign := newDidAttestFixture(t, testdata.PkiOption_None, true, nil)
 	f := newDidAttestFixture(t, testdata.PkiOption_None, true, foreign.leaf)
 	client := clientForFixture(f, &MockQueryValidatorFactory{}, clientmodels.TrustLevel_High, nil)
@@ -253,9 +244,8 @@ func TestNewSession_AttestedDidWebVerifier_OverAsking_FailsAtAnyRung(t *testing.
 }
 
 func TestNewSession_AttestedDidWebVerifier_ListedOnYivisList_RanksHigh(t *testing.T) {
-	// The § 3 regression, end to end: a DID-keyed entry keeps granting a party
-	// that has since attested its key, so a party medium by certificate reaches
-	// high through the list.
+	// A DID-keyed entry keeps granting a party that has since attested its key, so
+	// one medium by certificate reaches high through the list.
 	f := newDidAttestFixture(t, testdata.PkiOption_None, true, nil)
 	list := newYiviListFixture(t)
 	list.grant(t, 1, f.did)

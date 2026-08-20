@@ -45,10 +45,8 @@ func GetX509VerificationOptionsFromTemplate(context X509VerificationContext, hos
 	}
 }
 
-// verificationTime is the moment certificate validity is checked at: the
-// context's pinned CurrentTime when it has one, the wall clock otherwise —
-// the same reading x509.Verify gives VerifyOptions, so an explicit validity
-// check and a chain verification against the same context cannot disagree.
+// verificationTime is the context's pinned CurrentTime when it has one, the wall
+// clock otherwise — the same reading x509.Verify gives VerifyOptions.
 func verificationTime(context X509VerificationContext) time.Time {
 	if t := context.GetVerificationOptionsTemplate().CurrentTime; !t.IsZero() {
 		return t
@@ -57,19 +55,14 @@ func verificationTime(context X509VerificationContext) time.Time {
 }
 
 // ErrCertificateRevoked marks the one acceptance failure that is an act of
-// distrust rather than an absence of trust, so a caller that treats an
-// unanchored certificate as ordinary can still single a revoked one out.
+// distrust rather than an absence of trust, so a caller tolerating an unanchored
+// certificate can still single a revoked one out.
 var ErrCertificateRevoked = errors.New("certificate is revoked")
 
 // CheckCertificateNotRevoked reports whether any revocation list the context
-// holds names cert. Wraps ErrCertificateRevoked when one does.
-//
-// This is the one acceptance rule a caller can ask for on its own, and the one
-// it must: the lists are signed by the anchors the wallet already holds, so the
-// answer does not depend on building cert's own chain — which is what lets a
-// gate that deliberately skips chain building still refuse a certificate its CA
-// withdrew. Unanchored is an absence of trust and demotes; revoked is an act of
-// distrust and refuses.
+// holds names cert, wrapping ErrCertificateRevoked when one does. Askable on its
+// own because the lists are signed by anchors the wallet already holds, so a gate
+// that skips chain building can still refuse a certificate its CA withdrew.
 func CheckCertificateNotRevoked(context X509VerificationContext, cert *x509.Certificate) error {
 	if err := utils.VerifyCertificateAgainstIssuerRevocationLists(cert, context.GetRevocationLists()); err != nil {
 		return fmt.Errorf("%w: %v", ErrCertificateRevoked, err)
@@ -81,11 +74,10 @@ func CheckCertificateNotRevoked(context X509VerificationContext, cert *x509.Cert
 // window at the context's verification time, allowing skew on either bound.
 // what names the certificate in the error message.
 //
-// A certificate presented outside its window is a broken artifact, like an
-// expired JWT, so the gates that meet a live party reject it. Classification of
-// *stored* evidence is deliberately expiry-tolerant instead — see
-// TrustModel.Classify — which is why this is a check a caller asks for rather
-// than part of VerifyCertificate.
+// A certificate presented outside its window is a broken artifact, so the gates
+// that meet a live party reject it. Classification of stored evidence is
+// expiry-tolerant instead (see TrustModel.Classify), which is why this is a check
+// a caller asks for rather than part of VerifyCertificate.
 func CheckCertificateValidAt(context X509VerificationContext, cert *x509.Certificate, skew time.Duration, what string) error {
 	now := verificationTime(context)
 	if now.Add(skew).Before(cert.NotBefore) || now.Add(-skew).After(cert.NotAfter) {
@@ -96,14 +88,13 @@ func CheckCertificateValidAt(context X509VerificationContext, cert *x509.Certifi
 }
 
 // VerifyCertificateChains is the wallet's certificate acceptance policy in one
-// place: the chain must build to a pinned anchor, the end-entity certificate
-// must carry the digitalSignature key usage, and it must not be revoked by any
-// of its issuer's revocation lists. It returns the chains the certificate
-// validated to, for callers that need to know *which* anchor stood behind it.
+// place: the chain must build to a pinned anchor, the end-entity certificate must
+// carry the digitalSignature key usage, and it must not be revoked. It returns
+// the chains it validated to, for callers that need to know which anchor stood
+// behind it.
 //
 // If a hostname is provided, it is used for the SAN check. A non-zero at
-// overrides the moment the chain is verified at; the zero value leaves the
-// context's own reading in place.
+// overrides the moment the chain is verified at.
 func VerifyCertificateChains(context X509VerificationContext, cert *x509.Certificate, hostname *string, at time.Time) ([][]*x509.Certificate, error) {
 	var verifyOpts x509.VerifyOptions
 	if hostname != nil {

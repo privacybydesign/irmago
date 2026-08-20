@@ -30,10 +30,9 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("logs record trust levels at session time", testEudiLogsRecordTrustLevelsAtSessionTime)
 }
 
-// testEudiLogsRecordTrustLevelsAtSessionTime drives an issuance and a
-// disclosure and reads both logs back, pinning that the rung the permission
-// screen showed is the rung the activity log keeps: the requestor's on the
-// entry, the issuer's on each credential.
+// testEudiLogsRecordTrustLevelsAtSessionTime pins that the rung the permission
+// screen showed is the rung the activity log keeps: the requestor's on the entry,
+// the issuer's on each credential.
 func testEudiLogsRecordTrustLevelsAtSessionTime(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
@@ -50,8 +49,8 @@ func testEudiLogsRecordTrustLevelsAtSessionTime(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	// The rung the user was shown. The log has to keep this one, whatever it
-	// is, rather than whatever the verifier ranks as at read time.
+	// The rung the user was shown, which the log keeps whatever the verifier ranks
+	// as at read time.
 	shownVerifierLevel := session.Requestor.TrustLevel
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -83,7 +82,7 @@ func testEudiLogsRecordTrustLevelsAtSessionTime(t *testing.T) {
 		"the disclosure log keeps the rung the permission screen showed")
 
 	// An issued credential carries its session's issuer rung, so the entry and
-	// every credential on it agree, and none of them read back levelless.
+	// every credential on it agree.
 	issuerLevel := issuanceLog.IssuanceLog.Issuer.TrustLevel
 	require.NotEqual(t, clientmodels.TrustLevel_Unevaluated, issuerLevel,
 		"the issuance log records the issuer's rung, not an absent one")

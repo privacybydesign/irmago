@@ -1,17 +1,15 @@
 #!/bin/sh
-# Regenerates the LoTE publisher's signing material.
+# Regenerates the LoTE publisher's signing material: a self-signed root plus a
+# signing leaf under it. The wallet anchors the root and requires the leaf to
+# carry digitalSignature, so both are pinned here rather than left to defaults.
 #
-# A self-signed root plus a signing leaf under it. The wallet anchors the root
-# and requires the leaf to carry digitalSignature (eudi_jwt.VerifyCertificate
-# asserts it explicitly), so both are pinned here rather than left to defaults.
+# Both get 3650 days rather than the 825 a TLS end-entity certificate would: this
+# is committed test material, and a two-year fuse fails the suite for reasons
+# nobody remembers.
 #
-# Both certificates get 3650 days. The leaf deliberately does NOT get the 825
-# days a TLS end-entity certificate would: this is committed test material, and a
-# two-year fuse means the suite fails on a Tuesday for reasons nobody remembers.
-#
-# The chain is two deep on purpose. eudi_jwt.VerifyCertificate builds paths from
-# the anchors the wallet has installed and does not use intermediates from the
-# `x5c` header, so a deeper chain would need its intermediates installed too.
+# Two deep on purpose: eudi_jwt.VerifyCertificate builds paths from the installed
+# anchors and ignores intermediates in the `x5c` header, so a deeper chain would
+# need its intermediates installed too.
 set -e
 cd "$(dirname "$0")"
 mkdir -p certs && cd certs

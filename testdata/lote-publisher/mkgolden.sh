@@ -2,21 +2,17 @@
 # Regenerates the golden LoTE: a committed, signed document that
 # eudi/trust/lote/golden_test.go verifies and reads.
 #
-# Why a committed document exists at all: every other test builds its list out of
-# the Go structs in model.go, so a change to those structs' JSON tags — renaming
-# `next_update`, dropping `other_ids` — passes the whole suite while breaking
-# every real list. Only a document the tests did not marshal can catch that. It
-# doubles as documentation: golden/list.json is the same list in readable form,
-# and the test proves the two agree, so the readable copy cannot drift into a lie.
+# Every other test builds its list out of the Go structs in model.go, so a change
+# to their JSON tags passes the whole suite while breaking every real list. Only a
+# document the tests did not marshal can catch that.
 #
-# The golden material is deliberately its OWN pki, not ../certs: re-running
-# mkpki.sh must not invalidate a committed signature.
+# The golden material is its OWN pki, not ../certs: re-running mkpki.sh must not
+# invalidate a committed signature.
 #
-# The list's window is dated from generation time (issue = now, next_update =
-# +30 days) so that it contains a moment after the signing certificate's
-# notBefore. The golden test pins its clock to that certificate's notBefore plus a
-# day — inside both windows by construction — so the document never expires out
-# from under the suite; only the certificate's own notAfter (10 years) bounds it.
+# The list's window is dated from generation time (issue = now, next_update = +30
+# days), so it contains a moment after the signing certificate's notBefore — which
+# is where the golden test pins its clock. Only the certificate's own notAfter
+# (10 years) bounds the document.
 set -e
 cd "$(dirname "$0")"
 mkdir -p golden/certs
@@ -69,23 +65,17 @@ party_ski = base64.b64encode(
 ).decode()
 
 # Every shape the wallet understands, in one Annex A document: both certificate
-# key forms, a DID, a marking, service-level overrides, an unknown marking that
-# must be carried and ignored, and multilingual names.
+# key forms, a DID, service-level overrides, carried-but-ignored markings, and
+# multilingual names. Three services carry no status — what Yivi publishes, and
+# meaning granted (clause 6.6.0 NOTE 1) — and the fourth carries an explicit
+# withdrawal, so both branches of that rule are exercised.
 #
-# Statuses are the interesting part. Three services carry none — which is what
-# Yivi publishes, and means granted (clause 6.6.0 NOTE 1) — and the fourth carries
-# an explicit withdrawn status, which a list from another scheme may well do. So
-# the committed document exercises both branches of that rule rather than only the
-# one Yivi emits.
-#
-# Built through publish.py's own entity()/service() helpers rather than spelled
-# out, so the golden document and the E2E publisher cannot disagree about what
-# Annex A looks like.
+# Built through publish.py's own entity()/service() helpers, so the golden
+# document and the E2E publisher cannot disagree about Annex A.
 list_document = {
     "LoTE": {
-        # Relative to generation time: the window has to contain a moment after
-        # the signing certificate's notBefore for the test's pinned clock to
-        # satisfy both.
+        # Relative to generation time, so the window contains a moment after the
+        # signing certificate's notBefore.
         "ListAndSchemeInformation": publish.scheme_information(
             sequence_number=42,
             next_update_seconds=30 * 86400,
@@ -150,7 +140,7 @@ payload = json.dumps(list_document, separators=(",", ":")).encode()
 with open("list.jws", "wb") as f:
     f.write(publish.sign(payload))
 # The readable copy. golden_test.go proves it parses to the same List as the
-# signed payload, so it can never quietly disagree with what is signed.
+# signed payload.
 with open("list.json", "w") as f:
     json.dump(list_document, f, indent=2, sort_keys=True)
     f.write("\n")

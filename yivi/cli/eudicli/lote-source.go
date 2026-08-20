@@ -21,17 +21,12 @@ import (
 
 // The curation format read by `lote build`.
 //
-// It is deliberately **not** Annex A. Annex A is the wire format — verbose by
-// design, with `[{lang,value}]` sequences, plural identity arrays, URI
-// vocabularies and extension objects — and hand-editing it to onboard a party
-// would be error-prone in exactly the places that fail silently. Everything a
-// curator has to know here is the party: its name, address, and how it
-// authenticates. `build` turns that into a conformant document and refuses to
-// emit one it cannot make conformant.
-//
-// Because this is an input format rather than a published one, its field names
-// are ours and carry no conformance weight. Certificates are referenced by
-// filename rather than inlined so that a diff of an onboarding stays readable.
+// It is deliberately not Annex A: hand-editing the wire format to onboard a party
+// would be error-prone in exactly the places that fail silently. A curator states
+// the party — name, address, how it authenticates — and `build` turns that into a
+// conformant document or refuses. The field names here are ours and carry no
+// conformance weight; certificates are referenced by filename so a diff of an
+// onboarding stays readable.
 
 const (
 	schemeFileName  = "scheme.json"
@@ -42,15 +37,13 @@ const (
 // schemeSource is scheme.json: the scheme's own information, which changes far
 // less often than the entities do.
 type schemeSource struct {
-	// SequenceNumber is bumped on every re-issue. Reviewable in the diff on
-	// purpose: the wallet accepts an unchanged number, so a missed bump does not
-	// fail the publish — it silently flattens replay protection, and
-	// `verify --against` is what catches that.
+	// SequenceNumber is bumped on every re-issue. In the diff on purpose: the
+	// wallet accepts an unchanged number, so a missed bump silently flattens
+	// replay protection, and `verify --against` is what catches it.
 	SequenceNumber uint64 `json:"sequence_number"`
 
-	// NextUpdateDays is how long this issue may be relied on. No EU profile
-	// applies to a Yivi list, so their six-month cap does not bind and this is
-	// the scheme operator's choice.
+	// NextUpdateDays is how long this issue may be relied on. No EU profile applies
+	// to a Yivi list, so their six-month cap does not bind.
 	NextUpdateDays int `json:"next_update_days"`
 
 	// SchemeName is the list's identity, and must equal the ListId the wallet is
@@ -73,9 +66,8 @@ type schemeSource struct {
 
 	DistributionPoints []string `json:"distribution_points,omitempty"`
 
-	// The scheme URIs. Empty takes the Yivi defaults compiled into the lote
-	// package, which is what a Yivi list wants; they are overridable so this tool
-	// can also build a list for another scheme operator.
+	// The scheme URIs. Empty takes the Yivi defaults from the lote package;
+	// overridable so this tool can also build another operator's list.
 	LoTEType                    string            `json:"lote_type,omitempty"`
 	StatusDeterminationApproach string            `json:"status_determination_approach,omitempty"`
 	SchemeTypeCommunityRules    map[string]string `json:"scheme_type_community_rules,omitempty"`
@@ -97,13 +89,12 @@ type postalSource struct {
 	Country         string `json:"country"`
 }
 
-// entitySource is one file under entities/: one listed organization.
 type entitySource struct {
 	Name      map[string]string `json:"name"`
 	TradeName map[string]string `json:"trade_name,omitempty"`
 
 	// OrganizationIdentifier is the registered identifier as the party's
-	// certificates carry it. When set it is *part of the key* for certificate
+	// certificates carry it. When set it is part of the key for certificate
 	// entries: the certificate says which key, this says whose.
 	OrganizationIdentifier string `json:"organization_identifier,omitempty"`
 
@@ -113,8 +104,6 @@ type entitySource struct {
 	Services       []serviceSource   `json:"services"`
 }
 
-// serviceSource is one grant: this entity, in this role, recognized by these
-// identities, in this state.
 type serviceSource struct {
 	// Role is "issuer" or "verifier". `build` maps it to the service type URI, so
 	// a curator never types one.
@@ -122,19 +111,14 @@ type serviceSource struct {
 
 	// Status is "granted" or "withdrawn"; empty means granted.
 	//
-	// A withdrawn service is **left out of the published document** rather than
-	// marked in it: the published list says who is trusted now, and on a list
-	// carrying no statuses — which is what Yivi and five of the six EU profiles
-	// publish — the only way to express a withdrawal is absence.
-	//
-	// It stays in the curation file so the off-boarding is legible in git, which
-	// is where Yivi's audit trail actually lives, and so it can be reversed by
-	// editing one word. `build` reports what it excluded.
+	// A withdrawn service is left out of the published document rather than marked
+	// in it: on a list carrying no statuses, the only way to express a withdrawal
+	// is absence. It stays in the curation file so the off-boarding is legible in
+	// git and reversible by editing one word; `build` reports what it excluded.
 	Status string `json:"status,omitempty"`
 
-	// Name overrides the entity's name for this service. Annex A makes
-	// ServiceName mandatory, so an empty one is filled from the entity rather
-	// than left out.
+	// Name overrides the entity's name for this service. ServiceName is mandatory,
+	// so an empty one is filled from the entity.
 	Name     map[string]string `json:"name,omitempty"`
 	LogoURI  string            `json:"logo_uri,omitempty"`
 	Markings []string          `json:"markings,omitempty"`
@@ -142,41 +126,32 @@ type serviceSource struct {
 	Identity identitySource `json:"identity"`
 }
 
-// identitySource is how a party proves it is this service.
 type identitySource struct {
-	// Certificates pin whole certificates, by filename under certs/.
+	// By filename under certs/.
 	Certificates []string `json:"certificates,omitempty"`
 
-	// CertificateSKIs pin the *key* rather than the certificate, also by
-	// filename under certs/: `build` reads the subject key identifier out of the
-	// named certificate. Naming the file rather than pasting base64 is what stops
-	// an entry being keyed on a value the wallet's lookup would never match —
-	// the same reason the entity identifier is read from the certificate too.
-	//
-	// Prefer these: an entry keyed on the key keeps granting across a renewal
-	// that reuses it, so a certificate rollover needs no re-issue of the list.
+	// CertificateSKIs pin the key rather than the certificate, also by filename
+	// under certs/: `build` reads the subject key identifier out of the named
+	// certificate, so an entry cannot be keyed on a value the wallet's lookup
+	// would never match. Prefer these — an entry keyed on the key keeps granting
+	// across a renewal that reuses it.
 	CertificateSKIs []string `json:"certificate_skis,omitempty"`
 
 	// DIDs are compared verbatim; DIDs are case-sensitive past the scheme.
 	DIDs []string `json:"dids,omitempty"`
 }
 
-// buildStats is what `build` reports about a document beyond the document
-// itself. Withdrawals are absences in the output, so they have to be counted
-// here or they happen silently.
+// buildStats is what `build` reports beyond the document itself. Withdrawals are
+// absences in the output, so they have to be counted here.
 type buildStats struct {
-	// WithdrawnServices is how many services were left out as withdrawn.
 	WithdrawnServices int
-	// DroppedEntities names entities left out entirely because every one of
-	// their services was withdrawn.
+	// DroppedEntities are the entities left out entirely, every service withdrawn.
 	DroppedEntities []string
 }
 
 // loadSource reads a curation directory and turns it into a conformant list.
-//
-// issuedAt is the moment stamped into ListIssueDateTime, from which NextUpdate is
-// derived. It is a parameter rather than time.Now() so a test can build a
-// byte-identical document twice.
+// issuedAt is stamped into ListIssueDateTime and NextUpdate derived from it; a
+// parameter rather than time.Now() so a test can build the same document twice.
 func loadSource(dir string, issuedAt time.Time) (lote.List, buildStats, error) {
 	var stats buildStats
 
@@ -206,8 +181,7 @@ func loadSource(dir string, issuedAt time.Time) (lote.List, buildStats, error) {
 		}
 		stats.WithdrawnServices += withdrawn
 
-		// Annex A requires at least one service per entity, and an entity with
-		// nothing granted says nothing anyway.
+		// Annex A requires at least one service per entity.
 		if len(entity.Services) == 0 {
 			stats.DroppedEntities = append(stats.DroppedEntities, named.file)
 			continue
@@ -244,11 +218,11 @@ func readEntitySources(dir string) ([]namedEntitySource, error) {
 		return nil, err
 	}
 	if len(paths) == 0 {
-		// Not an error: a scheme with nothing listed yet publishes a valid
-		// document granting nobody, and that is a reasonable first list.
+		// Not an error: a scheme with nothing listed yet publishes a valid document
+		// granting nobody.
 		return nil, nil
 	}
-	// Sorted so a rebuild of unchanged input is byte-identical; entity order is
+	// Sorted so a rebuild of unchanged input is byte-identical: entity order is
 	// what the wallet's change detection compares over.
 	slices.Sort(paths)
 
@@ -268,9 +242,8 @@ func readEntitySources(dir string) ([]namedEntitySource, error) {
 	return entities, nil
 }
 
-// strictUnmarshal refuses unknown fields. A curation file is hand-written, so a
-// misspelled key is far more likely to be a mistake that silently drops a grant
-// than a deliberate extension.
+// strictUnmarshal refuses unknown fields: in a hand-written curation file, a
+// misspelled key is a grant silently dropped.
 func strictUnmarshal(raw []byte, into any) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -295,8 +268,7 @@ func (s schemeSource) toSchemeInformation(issuedAt time.Time) (lote.SchemeInform
 		return info, fmt.Errorf("scheme_name must have an \"en\" entry: it is the list's identity")
 	}
 	// Clause 6.3.6 prescribes `CC:name`, where CC is the scheme territory. The
-	// wallet does not police this, so if it is not checked here it is not checked
-	// at all.
+	// wallet does not police it, so this is the only check.
 	if !strings.HasPrefix(name, s.Territory+":") {
 		return info, fmt.Errorf(
 			"scheme_name %q must start with %q: clause 6.3.6 prescribes CC:name, where CC is the scheme territory",
@@ -368,7 +340,6 @@ func (s schemeSource) policyOrLegalNotice() ([]lote.PolicyOrLegalNotice, error) 
 	}
 }
 
-// validatedAddress is an address that has been checked and converted.
 type validatedAddress struct {
 	postal     []lote.PostalAddress
 	electronic []lote.MultiLangURIEntry
@@ -402,8 +373,8 @@ func (a addressSource) validate(field string) (validatedAddress, error) {
 }
 
 // toEntity converts one curation file, reporting how many of its services were
-// left out as withdrawn. An entity whose every service is withdrawn comes back
-// with no services, which the caller drops.
+// left out as withdrawn. One with none left comes back empty for the caller to
+// drop.
 func (e entitySource) toEntity(dir string, claimed map[string]string, file string) (lote.Entity, int, error) {
 	var entity lote.Entity
 
@@ -445,10 +416,8 @@ func (e entitySource) toEntity(dir string, claimed map[string]string, file strin
 			return entity, 0, fmt.Errorf("services[%d]: %w", i, err)
 		}
 		if excluded {
-			// Not converted at all, so its identities are not claimed either: a
-			// key an off-boarded party no longer holds is free for whoever does.
-			// The flip side is that a typo inside a withdrawn entry goes
-			// unnoticed until someone un-withdraws it.
+			// Not converted, so its identities are not claimed either: a key an
+			// off-boarded party no longer holds is free for whoever does.
 			withdrawn++
 			continue
 		}
@@ -480,16 +449,15 @@ func (s serviceSource) toService(
 		return service, err
 	}
 
-	// ServiceName is mandatory, and a service not presented under its own brand
-	// repeats the entity's — which is also what keeps the entity name showing,
-	// since the service name overrides it for display.
+	// ServiceName is mandatory, and it overrides the entity name for display, so a
+	// service without its own brand repeats the entity's.
 	name := s.Name
 	if len(name) == 0 {
 		name = entityName
 	}
 
 	// No ServiceStatus is emitted: on a list carrying none, being listed is the
-	// grant. A withdrawal is an absence, handled before this is reached.
+	// grant, and a withdrawal is an absence handled before this.
 	information := lote.ServiceInformation{
 		Name:            lote.MultiLang(name),
 		DigitalIdentity: identity,
@@ -518,10 +486,9 @@ func (i identitySource) toDigitalIdentity(
 		return identity, fmt.Errorf("identity names nothing: a service with no digital identity can never match a party")
 	}
 
-	// claim registers an identity and reports a clash. Two entries recognizing
-	// the same party in the same role is not a merge — the wallet takes the first
-	// granting entry it finds, so the second is dead weight at best and a
-	// contradiction at worst.
+	// claim registers an identity and reports a clash: the wallet takes the first
+	// granting entry it finds, so a second one for the same party in the same role
+	// is dead weight at best.
 	claim := func(kind, value string) error {
 		key := string(role) + "\x00" + kind + "\x00" + value
 		if previous, ok := claimed[key]; ok {
@@ -573,8 +540,7 @@ func (i identitySource) toDigitalIdentity(
 
 // readCertificate reads a certificate from certs/, accepting PEM or raw DER.
 func readCertificate(dir, name string) (*x509.Certificate, error) {
-	// Rejected rather than cleaned: a path escaping certs/ is a mistake worth
-	// reporting, not something to silently reinterpret.
+	// Rejected rather than cleaned: a path escaping certs/ is worth reporting.
 	if name != filepath.Base(name) {
 		return nil, fmt.Errorf("certificate %q must be a bare filename under %s/", name, certsDirName)
 	}
@@ -608,9 +574,8 @@ func parseRole(role string) (trust.Role, error) {
 	return "", fmt.Errorf("unknown role %q (expected %q or %q)", role, trust.RoleIssuer, trust.RoleVerifier)
 }
 
-// isWithdrawn reports whether this service is left out of the published document.
-// Empty means granted: an entry nobody has withdrawn is the common case, and a
-// required field there would only invite copy-paste.
+// isWithdrawn reports whether this service is left out of the published document;
+// an empty status means granted.
 func (s serviceSource) isWithdrawn() (bool, error) {
 	switch s.Status {
 	case "", "granted":
@@ -621,8 +586,7 @@ func (s serviceSource) isWithdrawn() (bool, error) {
 	return false, fmt.Errorf("unknown status %q (expected \"granted\" or \"withdrawn\")", s.Status)
 }
 
-// translated is a small helper for the human-facing commands, which want one
-// language rather than a map.
+// translated is for the human-facing commands, which want one language.
 func translated(m lote.MultiLang) string {
 	return clientmodels.TranslatedString(m)["en"]
 }

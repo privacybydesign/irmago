@@ -30,10 +30,9 @@ func exampleSource(t *testing.T) string {
 
 var issuedAt = time.Date(2026, 8, 12, 9, 0, 0, 0, time.UTC)
 
-// entityNamed finds a built entity by its English name. Tests look entities up
-// rather than indexing them, so renaming a curation file — which changes the
-// order, since files are read in filename order — does not silently point an
-// assertion at the wrong party.
+// entityNamed finds a built entity by its English name, so renaming a curation
+// file — which changes the order — does not point an assertion at the wrong
+// party.
 func entityNamed(t *testing.T, list lote.List, name string) lote.Entity {
 	t.Helper()
 	for _, entity := range list.Entities {
@@ -58,21 +57,19 @@ func TestBuild_TheCommittedExampleIsConformant(t *testing.T) {
 	require.Equal(t, issuedAt, scheme.ListIssueDateTime)
 	require.Equal(t, issuedAt.AddDate(0, 0, 30), scheme.NextUpdate)
 
-	// The scheme URIs default to Yivi's without the curation file naming them:
-	// there is one place they are decided, and it is not a per-scheme JSON file.
+	// The scheme URIs default to Yivi's without the curation file naming them.
 	require.Equal(t, lote.StatusDeterminationApproachYivi, scheme.StatusDeterminationApproach)
 	require.Equal(t, lote.SchemeTypeCommunityRulesYivi, string(scheme.SchemeTypeCommunityRules["en"]))
 
 	// Entity order follows filename order, so a rebuild of unchanged input is
-	// byte-identical — which is what the wallet's change detection relies on.
+	// byte-identical, which the wallet's change detection relies on.
 	require.Len(t, list.Entities, 2)
 	require.Equal(t, "Example Issuing Ltd", list.Entities[0].Information.Name.Translated()["en"])
 	require.Equal(t, "Example Municipality", list.Entities[1].Information.Name.Translated()["en"])
 }
 
 // A service keyed on a certificate's key gets that key read out of the named
-// certificate, rather than the curator transcribing base64 — so an entry cannot
-// be keyed on a value the wallet's lookup would never match.
+// certificate, so an entry cannot be keyed on a value the lookup would miss.
 func TestBuild_ReadsTheSubjectKeyIdentifierOutOfTheCertificate(t *testing.T) {
 	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
@@ -118,9 +115,8 @@ func TestBuild_ReportsWithdrawnServicesAsExclusions(t *testing.T) {
 	require.Empty(t, stats.DroppedEntities)
 }
 
-// An entity whose every service is withdrawn leaves the document entirely: Annex A
-// requires at least one service per entity, and an entity granting nothing says
-// nothing.
+// An entity whose every service is withdrawn leaves the document entirely: Annex
+// A requires at least one service per entity.
 func TestBuild_DropsAnEntityWhoseEveryServiceIsWithdrawn(t *testing.T) {
 	dir := withSource(t, func(_, entity map[string]any) {
 		services := entity["services"].([]any)
@@ -134,9 +130,8 @@ func TestBuild_DropsAnEntityWhoseEveryServiceIsWithdrawn(t *testing.T) {
 	require.Len(t, stats.DroppedEntities, 1)
 }
 
-// ServiceName is mandatory in Annex A, and a service that does not name itself
-// inherits the entity's — which is also what keeps the entity name on screen,
-// since a service name overrides it for display.
+// ServiceName is mandatory in Annex A, and it overrides the entity name for
+// display, so a service that does not name itself inherits it.
 func TestBuild_UnnamedServiceInheritsTheEntityName(t *testing.T) {
 	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
@@ -165,8 +160,8 @@ func TestBuild_IsDeterministic(t *testing.T) {
 // Validation
 // ----------------------------------------------------------------------------
 
-// withSource copies the example and applies edits to it, so a negative test can
-// break one thing without a fixture per failure.
+// withSource copies the example and edits it, so a negative test can break one
+// thing without a fixture per failure.
 func withSource(t *testing.T, edit func(scheme map[string]any, entity map[string]any)) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -209,8 +204,7 @@ func requireBuildFails(t *testing.T, dir, contains string) {
 	require.ErrorContains(t, err, contains)
 }
 
-// Clause 6.3.6 prescribes `CC:name`. The wallet does not police it, so if build
-// does not, nothing does.
+// Clause 6.3.6 prescribes `CC:name`, which the wallet does not police.
 func TestBuild_RejectsASchemeNameNotPrefixedWithTheTerritory(t *testing.T) {
 	dir := withSource(t, func(scheme, _ map[string]any) {
 		scheme["scheme_name"] = map[string]any{"en": "Yivi Recognized Parties"}
@@ -247,7 +241,7 @@ func TestBuild_RejectsAMissingSequenceNumber(t *testing.T) {
 	requireBuildFails(t, dir, "sequence_number")
 }
 
-// TEAddress is mandatory in both halves, and unread by the wallet — so a missing
+// TEAddress is mandatory in both halves and unread by the wallet, so a missing
 // one would otherwise only surface as a schema failure much later.
 func TestBuild_RejectsAnEntityWithoutAnElectronicAddress(t *testing.T) {
 	dir := withSource(t, func(_, entity map[string]any) {
@@ -280,8 +274,7 @@ func TestBuild_RejectsAnUnknownStatus(t *testing.T) {
 	requireBuildFails(t, dir, "unknown status")
 }
 
-// A service naming no identity can never match a party, so it is a silent
-// non-grant — exactly the failure mode this tool exists to prevent.
+// A service naming no identity can never match a party: a silent non-grant.
 func TestBuild_RejectsAServiceWithNoIdentity(t *testing.T) {
 	dir := withSource(t, func(_, entity map[string]any) {
 		services := entity["services"].([]any)
@@ -325,8 +318,8 @@ func TestBuild_RejectsACertificatePathEscapingTheCertsDirectory(t *testing.T) {
 // Signing
 // ----------------------------------------------------------------------------
 
-// testSigner is a root plus a signing certificate under it, with a subject the
-// caller chooses so the clause 6.8.0 checks can be exercised both ways.
+// testSigner is a root plus a signing certificate under it, with a caller-chosen
+// subject so the clause 6.8.0 checks can be exercised both ways.
 type testSigner struct {
 	key    *ecdsa.PrivateKey
 	leaf   *x509.Certificate
@@ -384,9 +377,8 @@ func newTestSigner(t *testing.T, country, organization string) *testSigner {
 	}
 }
 
-// The whole loop: a curated directory becomes a signed document that the wallet's
-// own verifier accepts and its own snapshot grants from. Everything else in this
-// file is a detail of one of these two steps.
+// The whole loop: a curated directory becomes a signed document the wallet's own
+// verifier accepts and its own snapshot grants from.
 func TestSign_ACuratedDirectoryGrantsThroughTheWalletsOwnChecker(t *testing.T) {
 	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)

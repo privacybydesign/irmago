@@ -18,18 +18,12 @@ const (
 )
 
 // Fetch downloads the signed list at url. A nil httpClient falls back to
-// http.DefaultClient; the checker passes its own, already defaulted by
-// NewChecker.
+// http.DefaultClient. Exported so `lote verify --against` downloads a published
+// list under the same cap, timeout and status rules the wallet applies.
 //
-// Exported so that a tool checking a published list — `lote verify --against` —
-// downloads it under the same cap, timeout and status rules the wallet applies,
-// rather than agreeing only with itself.
-//
-// The response Content-Type is deliberately not gated on. ETSI has not settled
-// a media type for a JAdES-signed TS 119 602 list in JSON, and a scheme
-// operator serving one as application/jwt, application/jose or even
-// text/plain is not the wallet's problem to police — the signature is the gate,
-// and the `typ` header inside it is what says this JWS is a trusted list.
+// The response Content-Type is not gated on: ETSI has settled no media type for a
+// JAdES-signed TS 119 602 list in JSON. The signature is the gate, and the `typ`
+// header inside it is what says this JWS is a trusted list.
 func Fetch(ctx context.Context, httpClient *http.Client, url string) ([]byte, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient

@@ -31,18 +31,11 @@ type VerifiedSdJwtVc struct {
 
 	KeyBindingJwt *sdjwt.KeyBindingJwtPayload
 
-	// IssuerCertificate is the certificate attesting the issuer's signing key:
-	// the `x5c` leaf for an x5c-header issuer, or the certificate a DID issuer's
-	// verification method carries over its key. Nil for a bare DID issuer that
-	// carries no such certificate.
-	//
-	// A certificate here is a claim, not a verdict: the signature verified
-	// against it and it was presented within its own validity window, but
-	// whether any anchor stands behind it is the trust ladder's question —
-	// its certificate channel classifies this leaf against the wallet's
-	// anchors, and an unanchored issuer ranks low rather than failing.
-	// Surfaced because that channel needs it; the verification itself does
-	// not keep it.
+	// IssuerCertificate attests the issuer's signing key: the `x5c` leaf for an
+	// x5c-header issuer, or the certificate a DID issuer's verification method
+	// carries over its key. Nil for a bare DID issuer that carries none. A claim,
+	// not a verdict — whether any anchor stands behind it is the trust ladder's
+	// question, and an unanchored issuer ranks low rather than failing.
 	IssuerCertificate *x509.Certificate
 
 	rawSdJwtVc SdJwtVc
@@ -120,8 +113,7 @@ type sdJwtVcProcessor struct {
 	allowInsecureDidWeb bool
 
 	// didWebHTTPClient overrides the client did:web documents are resolved with.
-	// Nil takes the default timeout-bounded one, which is what production uses;
-	// a test serving its DID document on loopback sets its own.
+	// Nil takes the default timeout-bounded one.
 	didWebHTTPClient *http.Client
 }
 
@@ -228,8 +220,6 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 }
 
 // verifiedIssuerSignedJwt is everything one verified issuer-signed JWT yields.
-// It travels as a struct rather than as a row of positional results because the
-// caller needs most of it and the error paths need none of it.
 type verifiedIssuerSignedJwt struct {
 	payload *IssuerSignedJwtPayload
 	// issuerIdentifier is who the credential says issued it, as resolved during
@@ -237,17 +227,12 @@ type verifiedIssuerSignedJwt struct {
 	// certificate when `iss` is absent (SD-JWT VC §2.2.2.3).
 	issuerIdentifier string
 	// certificate is what the issuer signed with when it identified itself by
-	// `x5c` — nil otherwise. The caller passes it on to the trust ladder, which
-	// is the only place that cares who the signer is beyond the signature
-	// holding up.
+	// `x5c`, nil otherwise. The caller passes it on to the trust ladder.
 	certificate *x509.Certificate
 	disclosures []sdjwt.DisclosureContent
 	processed   *sdjwt.ProcessedPayload
 }
 
-// parseAndVerifyIssuerSignedJwt parses and verifies the issuer signed JWT of an SD-JWT VC,
-// including signature verification, issuer identity resolution, time field validation, and
-// disclosure processing.
 func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(
 	signedJwt sdjwt.IssuerSignedJwt, disclosures []sdjwt.EncodedDisclosure,
 ) (*verifiedIssuerSignedJwt, error) {
@@ -329,10 +314,8 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(
 	issuerIdentifier := ""
 	switch {
 	case !signature.identifiesIssuer:
-		// The issuer's identity is the `iss` claim and nothing may stand in for
-		// it: a DID issuer is named by its DID, which DID resolution binds to
-		// the signing key. Any attesting certificate it carries says nothing
-		// about that name, so it is not consulted here.
+		// A DID issuer is named by its DID, which resolution binds to the signing
+		// key; an attesting certificate it carries says nothing about that name.
 		if !issPresent {
 			return nil, errors.New("missing iss: issuer cannot be determined without an x5c header")
 		}
@@ -484,29 +467,22 @@ func parseStatusClaim(token jwt.Token) (*statuslist.StatusClaim, error) {
 // issuerSignature is what verifying the issuer-signed JWT's signature
 // established about the signer, beyond the signature holding up.
 type issuerSignature struct {
-	// certificate attests the issuer's signing key: the `x5c` leaf for an
-	// x5c-header issuer, or the certificate a DID issuer's verification method
-	// carries over its key (RFC 7517 §4.7). Nil for a bare DID issuer that
-	// carries none. A claim, not a verdict: the trust ladder's certificate
-	// channel classifies it against the wallet's anchors.
+	// certificate attests the issuer's signing key: the `x5c` leaf, or the
+	// certificate a DID issuer's verification method carries (RFC 7517 §4.7). Nil
+	// for a bare DID issuer. A claim, not a verdict.
 	certificate *x509.Certificate
 
 	// identifiesIssuer is true when the certificate is also where the issuer's
-	// *identity* comes from — the issuer authenticated by an `x5c` header rather
-	// than by a DID. Only then may `iss` be absent, and only then must a present
-	// `iss` be a SAN of the certificate. A DID issuer is named by its DID, which
-	// resolution binds to the signing key; an attesting certificate it happens to
-	// carry vouches for the key, not for that name, so it must not be read as an
-	// identity claim.
+	// identity comes from, i.e. it authenticated by `x5c` rather than by a DID.
+	// Only then may `iss` be absent, and only then must a present `iss` be a SAN
+	// of the certificate.
 	identifiesIssuer bool
 }
 
-// Decode the JWT into a token and verify the signature with the key the issuer
-// identified itself by: the `x5c` leaf in the header, or the key its DID
-// resolves to. The gate is internal validity: the signature must verify against
-// that key. Whether any anchor stands behind a certificate is classification
-// rather than the gate — an issuer under a root the wallet does not anchor
-// passes as a legitimate-looking stranger, and the trust ladder ranks it low.
+// Decode the JWT and verify the signature with the key the issuer identified
+// itself by: the `x5c` leaf, or the key its DID resolves to. The gate is internal
+// validity only — whether any anchor stands behind a certificate is
+// classification, and the trust ladder ranks an unanchored issuer low.
 func (v *sdJwtVcProcessor) decodeJwtAndVerifyIssuerSignature(
 	signedJwt []byte,
 ) (jwt.Token, issuerSignature, error) {
@@ -524,12 +500,11 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyIssuerSignature(
 		return nil, issuerSignature{}, fmt.Errorf("failed to parse JWT: %v", err)
 	}
 
-	// An x5c-header issuer always presents a certificate; a DID issuer presents
-	// one only when its verification method carries an attesting x5c. Either way
-	// the certificate is gated the same, so the two arms differ only in how they
-	// surface it — and in whether it also names the issuer. A key-mismatched
-	// attesting x5c has already refused inside the DID key provider — that check
-	// needs the verification method's own key.
+	// An x5c-header issuer always presents a certificate; a DID issuer only when
+	// its verification method carries an attesting x5c. Both are gated the same,
+	// so the arms differ only in whether the certificate also names the issuer. A
+	// key-mismatched attesting x5c has already refused inside the DID key
+	// provider, which needs the verification method's own key.
 	switch inner := keyProvider.InnerKeyProvider.(type) {
 	case *eudi_jwt.X509KeyProvider:
 		cert := inner.GetCert()
@@ -553,24 +528,22 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyIssuerSignature(
 
 // gateIssuerCertificate applies the wallet's certificate policy to an issuer's
 // certificate, whichever transport carried it. Expiry and revocation refuse the
-// credential; anchoring is deliberately not the gate, except on the strict
-// context that reads an authorization off the certificate.
+// credential; anchoring is not the gate, except on the strict context that reads
+// an authorization off the certificate.
 func (v *sdJwtVcProcessor) gateIssuerCertificate(cert *x509.Certificate) error {
-	// A fresh credential has no business being signed with an expired
-	// certificate, so the gate rejects it. (Classification of *stored* issuer
-	// evidence is expiry-tolerant — see TrustModel.Classify.)
+	// A fresh credential signed with an expired certificate is refused.
+	// Classification of stored issuer evidence is expiry-tolerant — see
+	// TrustModel.Classify.
 	if err := eudi_jwt.CheckCertificateValidAt(
 		v.verificationContext.X509VerificationContext, cert, ClockSkewInSeconds*time.Second, "issuer certificate",
 	); err != nil {
 		return err
 	}
 
-	// Revocation is the one certificate failure that stays a gate on every
-	// path: the CA went out of its way to withdraw this certificate, which is
-	// an act of distrust rather than the absence of trust an unanchored issuer
-	// shows, and it is how a compromised issuer is cut off. Asked on its own
-	// rather than through VerifyCertificate below because the answer needs no
-	// chain: the lists are signed by anchors the wallet already holds.
+	// Revocation is the one certificate failure that stays a gate on every path:
+	// the CA withdrawing a certificate is an act of distrust, not the absence of
+	// trust an unanchored issuer shows. Asked on its own rather than through
+	// VerifyCertificate because the answer needs no chain.
 	if err := eudi_jwt.CheckCertificateNotRevoked(v.verificationContext.X509VerificationContext, cert); err != nil {
 		return fmt.Errorf("issuer certificate is refused: %w", err)
 	}
@@ -579,23 +552,17 @@ func (v *sdJwtVcProcessor) gateIssuerCertificate(cert *x509.Certificate) error {
 	// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
 	// until we can issue SD-JWT VCs that fit our scheme
 	if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
-		// This path demands the issuer's authorization artifact (the Yivi
-		// scheme extension), and an authorization is only worth reading off a
-		// certificate an anchor stands behind: grant enforcement stays a hard
-		// gate here. Chain building and the key usage check against the pinned
-		// anchors are asked only here, because only this path reads the answer
-		// — the OpenID4VCI context leaves the flag off and ranks the issuer
-		// through TrustModel.Classify instead, so asking unconditionally would
-		// build a chain per credential for nobody. Revocation is the
-		// exception, checked above on every path. This holds identically for a
-		// DID-attested issuer: the transport differs, the authorization does not.
+		// This path reads the issuer's authorization artifact (the Yivi scheme
+		// extension), which is only worth reading off a certificate an anchor
+		// stands behind — so chain building and the key usage check are asked
+		// here and only here. The OpenID4VCI context leaves the flag off and ranks
+		// the issuer through TrustModel.Classify instead, so asking
+		// unconditionally would build a chain per credential for nobody.
 		if err := eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil); err != nil {
 			return fmt.Errorf("failed to verify certificate: no trust anchor stands behind the issuer certificate")
 		}
-		// The artifact itself is not carried out of here — nothing downstream
-		// reads it yet (see the disabled VCT check above). Parsing it is still
-		// the gate: an issuer whose authorization does not decode has not
-		// stated one.
+		// The artifact is not carried out of here; nothing downstream reads it yet
+		// (see the disabled VCT check above). Parsing it is still the gate.
 		if _, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert); err != nil {
 			return fmt.Errorf("failed to get requestor info from certificate: %v", err)
 		}

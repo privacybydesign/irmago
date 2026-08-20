@@ -27,8 +27,8 @@ served without a restart.`,
 		address, _ := cmd.Flags().GetString("address")
 		path := args[0]
 
-		// Read once up front so a wrong path fails now rather than on the first
-		// request from a wallet that will treat the failure as absent evidence.
+		// Read once up front so a wrong path fails now rather than on a wallet's
+		// first request, where it would read as absent evidence.
 		if _, err := os.ReadFile(path); err != nil {
 			return err
 		}
@@ -44,9 +44,9 @@ served without a restart.`,
 				http.Error(w, "list unavailable", http.StatusServiceUnavailable)
 				return
 			}
-			// application/jose is a reasonable choice; ETSI has settled no media
-			// type for a JAdES-signed LoTE in JSON, and the wallet does not police
-			// it — the signature and the typ header are the gate.
+			// ETSI has settled no media type for a JAdES-signed LoTE in JSON, and
+			// the wallet does not police it: the signature and typ header are the
+			// gate.
 			w.Header().Set("Content-Type", "application/jose")
 			w.Header().Set("Content-Length", fmt.Sprint(len(raw)))
 			if _, err := w.Write(raw); err != nil {

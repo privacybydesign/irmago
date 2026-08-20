@@ -68,18 +68,13 @@ type CredentialBatch struct {
 	RemainingCount uint
 
 	// IssuerCertificate is the DER of the certificate attesting the key this
-	// batch's credentials were signed with: the `x5c` leaf for an x5c-header
-	// issuer, or the certificate a DID issuer's verification method carries over
-	// its key. Nil for a bare DID issuer that carries none, and for batches
-	// stored before the column existed — those rank through the recognized-list
-	// channel alone.
+	// batch's credentials were signed with: the `x5c` leaf, or the certificate a
+	// DID issuer's verification method carries. Nil for a bare DID issuer and for
+	// batches stored before the column existed, which rank through the
+	// recognized-list channel alone.
 	//
-	// It is evidence rather than a verdict: the issuer's trust level is not
-	// stored, it is ranked again on every read, so a delisted issuer demotes and
-	// a newly listed one promotes without a migration. Non-nil means the chain
-	// validated against the wallet's anchors at issuance; a certificate revoked
-	// since is a certificate the wallet cannot know about without re-verifying,
-	// which is the same trade the rest of the wallet makes for stored credentials.
+	// Evidence rather than a verdict: the trust level is not stored but ranked
+	// again on every read, so a delisted issuer demotes without a migration.
 	IssuerCertificate []byte `gorm:"type:bytea"`
 
 	CredentialMetadata *CredentialMetadata        `gorm:"constraint:OnDelete:CASCADE"`

@@ -24,34 +24,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The recognized-list channel against a **real published list**: the compose
-// LoTE publisher (testdata/lote-publisher), which signs with the openssl CLI
-// rather than the JWS library the wallet verifies with, served over TLS through
-// the same nginx proxy as the other EUDI services.
+// The recognized-list channel against a real published list: the compose LoTE
+// publisher (testdata/lote-publisher), which signs with the openssl CLI rather
+// than the JWS library the wallet verifies with, served over TLS through the same
+// nginx proxy as the other EUDI services.
 //
-// # Which mechanism does a new trust-level test belong to?
-//
-//	Needs a real fetch, TLS, a restart, the passage of time, or a downloaded
-//	asset → write it here, against the published list. Otherwise → in-process,
-//	in trust_levels_test.go. Needs to know how many times the list was fetched →
-//	in-process only, because lote.TestLoteServer.Hits() is the only mechanism
-//	that can see a fetch happen.
-//
-// The two mechanisms are therefore not two ways of doing one thing: the
-// publisher deliberately has no fetch-count route, and the in-process server
-// cannot be on the other side of a restart. Tamper and sequence-regress
-// coverage stays in-process permanently — an invalid document is invalid
-// whoever signed it, so a foreign signer adds no signal there.
+// A test belongs here when it needs a real fetch, TLS, a restart, the passage of
+// time, or a downloaded asset; otherwise it goes in-process in
+// trust_levels_test.go. Counting fetches is in-process only, since
+// lote.TestLoteServer.Hits() is the only thing that can see one happen — as is
+// tamper and sequence-regress coverage, where a foreign signer adds no signal.
 //
 // Specified in docs/plans/lote-e2e-tests.md.
 
 const (
-	// publishedListURL is the publisher's public origin, through the tls_proxy.
+	// The publisher's public origin, through the tls_proxy.
 	publishedListURL = "https://localhost:8446"
 
-	// publishedListId must equal the LOTE_LIST_ID the compose service declares:
-	// the publisher puts it in the document's English SchemeName, and the wallet
-	// refuses a document whose SchemeName is not the one its source expects.
+	// publishedListId must equal the LOTE_LIST_ID the compose service declares: it
+	// becomes the document's English SchemeName, which the wallet pins.
 	publishedListId = "urn:yivi:trustlist:sessiontest"
 
 	publishedLogoURI = publishedListURL + "/logo.png"
@@ -66,14 +57,9 @@ func testSessionHandlerForPublishedTrustList(t *testing.T) {
 	t.Run("curated name and logo beat the certificate's own", testCuratedDisplayBeatsAttested)
 }
 
-// testPublishedListGrants is this suite's tracer. Everything else here
-// depends on it: a list signed by the openssl CLI, assembled by hand, fetched
-// over TLS from a service the test does not share a process with, is verified by
-// the wallet and lifts the issuer it grants to the level the source confers —
-// high, because the publisher stands in for Yivi's own LoTE — in a real session.
-//
-// If this fails, the finding is about the wallet or about
-// docs/plans/yivi-lote-publishing.md — not about the test.
+// This suite's tracer: a list signed by the openssl CLI, assembled by hand and
+// fetched over TLS from another process, verifies and lifts the issuer it grants
+// to high in a real session. Everything else here depends on it.
 func testPublishedListGrants(t *testing.T) {
 	c, _, sessionHandler := newPublishedListClient(t)
 	defer c.Close()
@@ -105,14 +91,9 @@ func testPublishedListGrants(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 }
 
-// testPublishedListExpiresWhileHeld is the passage of time, which no in-process
-// server can stand on the other side of: a list the wallet has already adopted
-// stops being evidence when it crosses its next_update, and the parties it
-// granted fall back to what the other channels say.
-//
-// The list is published dated just inside the skew window, so the fetch accepts
-// it and it goes stale seconds later — see skewBoundaryOffset. Waiting out the
-// full three-minute window would prove exactly the same thing.
+// A list the wallet has already adopted stops being evidence when it crosses its
+// next_update. Published dated just inside the skew window so the fetch accepts it
+// and it goes stale seconds later — see skewBoundaryOffset.
 func testPublishedListExpiresWhileHeld(t *testing.T) {
 	c, _, sessionHandler := newPublishedListClient(t)
 	defer c.Close()
@@ -131,21 +112,20 @@ func testPublishedListExpiresWhileHeld(t *testing.T) {
 		"past next_update the held list is no evidence, and the issuer caps at low")
 }
 
-// testScheduledRefreshWakesTheAppOnce covers the background job: the wallet
-// notices a list whose entries changed without anyone asking it to, and tells the
-// app exactly once — while a re-confirmation of the same content stays silent.
+// The background job: the wallet notices changed entries without being asked, and
+// tells the app exactly once, while a re-confirmation stays silent.
 func testScheduledRefreshWakesTheAppOnce(t *testing.T) {
 	publishList(t, 1, publishedNextUpdateDefault, listedIssuerEntity("Scheduled BV"))
 
 	c, clientHandler, _ := newPublishedListClient(t)
 	defer c.Close()
 
-	// A short trust-list interval; the CRL job is parked an hour out and the
-	// status sweep off, so this is the only thing on the schedule.
+	// The CRL job is parked an hour out and the status sweep off, so the trust-list
+	// refresh is the only thing on the schedule.
 	c.InitJobs(time.Hour, 0, 2*time.Second)
 
-	// The first, immediate run adopts the list. Adopting is not a change: the app
-	// was showing no verdict from this list before.
+	// The first, immediate run adopts the list, which is not a change: the app was
+	// showing no verdict from it before.
 	require.Never(t, func() bool { return clientHandler.CredentialsChangedCount() > 0 },
 		5*time.Second, 500*time.Millisecond,
 		"adopting a list for the first time must not wake the app")
@@ -161,9 +141,8 @@ func testScheduledRefreshWakesTheAppOnce(t *testing.T) {
 		"re-confirming the same entries stays silent")
 }
 
-// testSessionCompletesWhilePublisherIsDark is fail-soft where it matters most: a
-// wallet holding a valid copy is fully functional with the publisher gone. The
-// refresh reports the outage to its caller and nothing else changes.
+// A wallet holding a valid copy is fully functional with the publisher gone; the
+// refresh reports the outage to its caller only.
 func testSessionCompletesWhilePublisherIsDark(t *testing.T) {
 	c, _, sessionHandler := newPublishedListClient(t)
 	defer c.Close()
@@ -179,10 +158,9 @@ func testSessionCompletesWhilePublisherIsDark(t *testing.T) {
 		"and the wallet keeps ranking on the copy it holds")
 }
 
-// testRestartedWalletRanksFromDisk is the other side of the same guarantee: the
-// signed document itself survives a restart, and is re-verified against the
-// anchors in force when it is read. The publisher is dark for the second wallet's
-// whole life, so nothing it ranks can have come off the wire.
+// The signed document survives a restart and is re-verified against the anchors
+// in force when read. The publisher is dark for the second wallet's whole life, so
+// nothing it ranks came off the wire.
 func testRestartedWalletRanksFromDisk(t *testing.T) {
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
 
@@ -200,18 +178,12 @@ func testRestartedWalletRanksFromDisk(t *testing.T) {
 		"the persisted list still grants after a restart, with the publisher unreachable")
 }
 
-// testCuratedDisplayBeatsAttested is the display precedence and certificate keying
-// in one session, because they are the same session: a certificate-bearing party
-// is high whether or not a list grants it, so the *only* way to see that a
+// Display precedence and certificate keying in one session: a certificate-bearing
+// party is high whether or not a list grants it, so the only way to see that a
 // certificate-keyed entry matched is the curated display it attaches.
 //
-// The EUDI Kotlin verifier is the party for it. It authenticates with a Yivi
-// certificate whose extension carries an attested name ("Yivi B.V.") *and* an
-// attested logo — the only party in the compose stack that has both — so it is
-// the only place the rule "curated beats attested" can be exercised for a logo at
-// all. The entry keys on its subject key identifier plus the
-// organizationIdentifier its subject carries: the certificate says which key, the
-// organization identifier says whose, and a match needs both.
+// The EUDI Kotlin verifier is the only party in the compose stack whose
+// certificate carries both an attested name and an attested logo.
 func testCuratedDisplayBeatsAttested(t *testing.T) {
 	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
 	defer irmaServer.Stop()
@@ -241,10 +213,10 @@ func testCuratedDisplayBeatsAttested(t *testing.T) {
 // Wiring
 // ----------------------------------------------------------------------------
 
-// listedVerifierEntity grants the EUDI Kotlin verifier, keyed on the subject key
-// identifier of its committed signing leaf plus the organizationIdentifier that
-// leaf's subject carries. Both halves are read from the certificate rather than
-// hardcoded, so regenerating the material cannot leave the entry silently stale.
+// listedVerifierEntity grants the EUDI Kotlin verifier, keyed on its signing
+// leaf's subject key identifier plus its organizationIdentifier. Both are read
+// from the certificate, so regenerating the material cannot leave the entry
+// stale.
 func listedVerifierEntity(t *testing.T, name string) map[string]any {
 	t.Helper()
 	leaf := eudiVerifierLeaf(t)
@@ -261,9 +233,8 @@ func listedVerifierEntity(t *testing.T, name string) map[string]any {
 	}
 }
 
-// certFromPemFile parses the first certificate out of a committed PEM file under
-// testdata. It reads a whole chain, so a fixture that later grows intermediates
-// still parses and the leaf is still what comes back.
+// certFromPemFile parses the first certificate out of a committed PEM file,
+// tolerating a fixture that later grows intermediates.
 func certFromPemFile(t *testing.T, parts ...string) *x509.Certificate {
 	t.Helper()
 	pemBytes, err := os.ReadFile(filepath.Join(append([]string{testdataFolder}, parts...)...))
@@ -274,16 +245,13 @@ func certFromPemFile(t *testing.T, parts ...string) *x509.Certificate {
 	return chain[0]
 }
 
-// eudiVerifierLeaf parses the committed certificate the EUDI Kotlin verifier
-// signs its authorization requests with.
 func eudiVerifierLeaf(t *testing.T) *x509.Certificate {
 	t.Helper()
 	return certFromPemFile(t, "eudi", "verifier", "verifier.crt")
 }
 
 // subjectOrganizationIdentifier reads the entity identifier a list entry is keyed
-// on out of a certificate, through the very matcher the wallet reads it with — so
-// a fixture cannot key an entry in a way the production lookup would miss.
+// on out of a certificate, through the matcher the wallet reads it with.
 func subjectOrganizationIdentifier(t *testing.T, cert *x509.Certificate) string {
 	t.Helper()
 	value := lote.CertificateOrganizationIdentifier(cert)
@@ -293,8 +261,7 @@ func subjectOrganizationIdentifier(t *testing.T, cert *x509.Certificate) string 
 }
 
 // issuerLevelOfOffer drives a pre-authorized issuance to the permission screen,
-// reads the issuer's rung off it, and dismisses the session — the cheapest real
-// session that shows what the wallet currently thinks of the test issuer.
+// reads the issuer's rung off it, and dismisses the session.
 func issuerLevelOfOffer(
 	t *testing.T,
 	c *client.Client,
@@ -335,17 +302,15 @@ func issuerLevelOfOffer(
 // does not care about currency never has to think about it.
 const publishedNextUpdateDefault = 3600
 
-// newPublishedListClient builds a wallet whose one recognized list is the
-// compose publisher's, with the publisher's root installed as an issuer trust
-// anchor — where the wallet looks for the key a list signature must chain to.
+// A wallet whose one recognized list is the compose publisher's, with the
+// publisher's root installed as an issuer trust anchor.
 func newPublishedListClient(t *testing.T) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	t.Helper()
 	return newPublishedListClientAt(t, filepath.Join(test.CreateTestStorage(t), "client"))
 }
 
-// newPublishedListClientAt is newPublishedListClient at a storage path the
-// caller supplies, so a second wallet can be built over the first one's data —
-// which is how the restart scenario reads a list back off disk.
+// newPublishedListClientAt is newPublishedListClient at a caller-supplied storage
+// path, so a second wallet can be built over the first one's data.
 func newPublishedListClientAt(t *testing.T, storagePath string) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	t.Helper()
 	return instantiateClientAtPath(t, storagePath, nil, "en", publisherRoot(t),
@@ -357,16 +322,14 @@ func newPublishedListClientAt(t *testing.T, storagePath string) (*client.Client,
 		}})
 }
 
-// publisherRoot reads the committed root the publisher's signing leaf chains to.
 func publisherRoot(t *testing.T) *x509.Certificate {
 	t.Helper()
 	return certFromPemFile(t, "lote-publisher", "certs", "root.crt")
 }
 
 // publishList replaces what the publisher serves. nextUpdateSeconds may be
-// negative: the wallet treats a list as current while
-// now - lote.ClockSkew < next_update, so backdating to just inside that window
-// is how a held list is made to expire in seconds rather than in three minutes.
+// negative: the wallet is current while now - lote.ClockSkew < next_update, so
+// backdating to just inside that window expires a held list in seconds.
 func publishList(t *testing.T, sequenceNumber int, nextUpdateSeconds int, entities ...map[string]any) {
 	t.Helper()
 
@@ -383,9 +346,8 @@ func publishList(t *testing.T, sequenceNumber int, nextUpdateSeconds int, entiti
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-// darkenPublisher makes the publisher answer 503 until the next publish, which
-// is how the offline scenarios take the list away without stopping a container
-// the rest of the suite shares.
+// darkenPublisher makes the publisher answer 503 until the next publish, taking
+// the list away without stopping a container the rest of the suite shares.
 func darkenPublisher(t *testing.T) {
 	t.Helper()
 	resp, err := http.Post(publishedListURL+"/admin/dark", "application/json", bytes.NewReader([]byte("{}")))
@@ -394,8 +356,6 @@ func darkenPublisher(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-// listedIssuerEntity grants the veramo OpenID4VCI test issuer, keyed on the DID
-// it signs its credentials with.
 func listedIssuerEntity(name string, markings ...string) map[string]any {
 	return map[string]any{
 		"name":     name,
@@ -408,18 +368,14 @@ func listedIssuerEntity(name string, markings ...string) map[string]any {
 	}
 }
 
-// skewBoundaryOffset is a next_update offset that a fetch still accepts and that
-// expires `within` afterwards. Derived from lote.ClockSkew rather than hardcoded:
-// the wallet is current while now - ClockSkew < next_update, so a list dated
-// ClockSkew-minus-a-few-seconds ago is accepted now and stale in a few seconds.
-// If ClockSkew ever shrinks below `within`, the fetch rejects the list and the
-// test fails loudly instead of quietly waiting forever.
+// skewBoundaryOffset is a next_update offset a fetch still accepts and that
+// expires `within` afterwards. Derived from lote.ClockSkew, so if that ever
+// shrinks below `within` the fetch rejects the list and the test fails loudly
+// instead of waiting forever.
 func skewBoundaryOffset(within time.Duration) int {
 	return -int((lote.ClockSkew - within) / time.Second)
 }
 
-// requirePublishedLogo asserts the party carries the logo the publisher served,
-// byte for byte.
 func requirePublishedLogo(t *testing.T, party clientmodels.TrustedParty) {
 	t.Helper()
 	require.NotNil(t, party.Image, "a curated logo must reach the app")

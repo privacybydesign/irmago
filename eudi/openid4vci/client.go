@@ -46,8 +46,8 @@ type Client struct {
 	// start, so a mid-flow locale change does not affect a running session.
 	currentLocale *clientmodels.CurrentLocale
 
-	// trustEvaluator ranks the issuer a session talks to. Each session pins one
-	// view from it, for the same reason it pins the locale.
+	// trustEvaluator ranks the issuer a session talks to; each session pins one
+	// view from it.
 	trustEvaluator trust.Evaluator
 
 	// Allow non-HTTPS for testing purposes
@@ -143,9 +143,7 @@ func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointU
 			return
 		}
 
-		// One pinned trust view for the whole flow, for the same reason the
-		// locale is pinned above: what this session decided about the issuer
-		// must not shift halfway through.
+		// One pinned trust view for the whole flow, like the locale above.
 		trustView := client.trustEvaluator.Snapshot()
 
 		// SD-JWT VC type metadata is the spec-preferred source for credential
@@ -449,11 +447,9 @@ func convertClaimsToAttributes(claims []metadata.ClaimsDescription, locale strin
 func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.CredentialIssuerMetadata, locale string, trustView trust.View) *clientmodels.TrustedParty {
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
 
-	// The offer-time verdict, which is provisional: the only evidence the wallet
-	// holds before it fetches a credential is the issuer's own identifier, so the
-	// certificate channel has nothing to say and a recognized list can only match
-	// on that identifier. The session re-composes the party once the credentials
-	// are in hand — see composeIssuerParty's callers.
+	// Provisional: before a credential is fetched the only evidence is the
+	// issuer's own identifier, so the certificate channel has nothing to say. The
+	// session re-composes the party once the credentials are in hand.
 	verdict := trustView.Issuer(trust.Evidence{
 		Identifiers: []string{credentialIssuerMetadata.CredentialIssuer},
 	})
@@ -468,16 +464,13 @@ func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.C
 }
 
 // composeIssuerParty reduces what the wallet knows about the credential issuer to
-// the party the app renders, through the display precedence every party is
-// composed by: the curated name and logo the recognized list carries first, what
-// the issuer says about itself last.
+// the party the app renders, in display precedence: the curated list entry first,
+// what the issuer says about itself last.
 //
-// It takes the verdict rather than computing one, because the same party is
-// composed twice in a session — provisionally at offer time, then again once the
-// fetched credentials reveal what signed them — and the second composition must
-// use the second verdict for the *name and logo* too, not only for the rung. A
-// listed issuer shown at medium under the name it gave itself would be the
-// curation silently dropped.
+// It takes the verdict rather than computing one, because the party is composed
+// twice in a session — provisionally at offer time, then again once the fetched
+// credentials reveal what signed them — and the second composition must use the
+// second verdict for the name and logo too, not only for the rung.
 func composeIssuerParty(
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
 	locale string,
@@ -489,11 +482,9 @@ func composeIssuerParty(
 
 	display := trust.PartyDisplay{
 		Id: credentialIssuerMetadata.CredentialIssuer,
-		// Credential-issuer metadata is served from the issuer's own well-known
-		// endpoint over TLS, which says the issuer really published it — not
-		// that anybody besides the issuer stands behind what it says. So it is
-		// the issuer's own word, logo included, and only the name of it reaches
-		// the user; a logo is never taken from a party's own account of itself.
+		// Credential-issuer metadata over TLS says the issuer really published it,
+		// not that anybody else stands behind it. So it is the issuer's own word,
+		// and only the name reaches the user — never the logo.
 		SelfAssertedName: clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
 	}
 	display.CuratedLogo = services.LoadCuratedLogo(

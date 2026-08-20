@@ -93,9 +93,8 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 
 	locale := s.currentLocale.Get()
 
-	// One trust view for the whole listing: a refresh landing halfway through
-	// must not rank the first half of the list against one state of the
-	// recognized lists and the second half against another.
+	// One trust view for the whole listing, so a refresh landing halfway through
+	// cannot rank the two halves against different list states.
 	trustView := trust.SnapshotOf(s.trustEvaluator)
 
 	// Convert storage models to client models
@@ -145,9 +144,8 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				Name:  issuerName,
 				Image: issuerImage,
 				Url:   nil,
-				// Ranked now, not at issuance: the evidence is stored, the
-				// verdict is not, so an issuer delisted since demotes here and a
-				// newly listed one promotes.
+				// Ranked now, not at issuance: the evidence is stored, the verdict
+				// is not.
 				TrustLevel: trustView.Issuer(BatchIssuerEvidence(batch)).Level,
 				Parent:     nil,
 			},
@@ -244,9 +242,9 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		Hash:                       hash,
 		ProcessedSdJwtPayload:      datatypes.JSON(processedPayload),
 		CredentialIssuerIdentifier: issuerMetadata.CredentialIssuer,
-		// The evidence the trust ladder ranks this batch's issuer by on every
-		// later read. Nil for a DID-identified issuer, which is not a gap: the
-		// recognized-list channel names those parties by their DID.
+		// The evidence the trust ladder ranks this batch's issuer by on every later
+		// read. Nil for a DID-identified issuer, which the list channel names by
+		// its DID instead.
 		IssuerCertificate:  issuerCertificateDer(first),
 		IssuerDisplay:      slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
 		CredentialMetadata: convertCredentialMetadata(credentialConfiguration),

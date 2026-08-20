@@ -18,13 +18,10 @@ import (
 
 const EndEntityCN = "END ENTITY CERT"
 
-// The gate is internal validity: signature against the certificate the
-// client_id binds the request to, presented within its own validity window, and
-// not revoked. Anchoring is not the gate's question — a chain to a root the
-// wallet does not anchor passes, with the certificate's contents demoted to the
-// verifier's own word — so the failure tests split in two: broken requests and
-// revoked certificates still fail, while legitimate-looking strangers now pass
-// unattested.
+// The gate is internal validity: signature against the certificate the client_id
+// binds the request to, within its validity window, not revoked. Anchoring is not
+// the gate's question, so the failure tests split in two: broken requests and
+// revoked certificates fail, while legitimate-looking strangers pass unattested.
 func TestVerifierValidator(t *testing.T) {
 	// Happy flow tests
 	t.Run("ParseAndVerifyAuthorizationRequest validates a JWT successfully", testParseAndVerifyAuthorizationRequestSuccess)
@@ -41,10 +38,9 @@ func TestVerifierValidator(t *testing.T) {
 	t.Run("ParseAndVerifyAuthorizationRequest fails with empty x5c array", testParseAndVerifyAuthorizationRequestFailureEmptyX5cArray)
 	t.Run("ParseAndVerifyAuthorizationRequest fails with expired x5c certificate", testParseAndVerifyAuthorizationRequestFailureExpiredX5C)
 
-	// The certificate channel demotes rather than blocks: a certificate no
-	// anchor stands behind — unknown root, broken chain — passes the gate with
-	// its contents counted as self-asserted. Revocation is the exception, and
-	// stays a refusal.
+	// The certificate channel demotes rather than blocks: an unanchored
+	// certificate passes with its contents counted as self-asserted. Revocation is
+	// the exception.
 	t.Run("ParseAndVerifyAuthorizationRequest refuses a revoked x5c certificate", testParseAndVerifyAuthorizationRequestRevokedX5C_IsRefused)
 	t.Run("ParseAndVerifyAuthorizationRequest demotes an unknown root to self-asserted", testParseAndVerifyAuthorizationRequestMissingRoot_DemotesToSelfAsserted)
 	t.Run("ParseAndVerifyAuthorizationRequest demotes an expired root to self-asserted", testParseAndVerifyAuthorizationRequestExpiredRoot_DemotesToSelfAsserted)
@@ -63,8 +59,7 @@ func TestVerifierValidator(t *testing.T) {
 	t.Run("ParseAndVerifyAuthorizationRequest never takes a client_metadata logo", testParseAndVerifyAuthorizationRequestClientMetadataLogo_IsIgnored)
 
 	// The one hard rule: an anchored certificate's authorization is enforced
-	// whatever else the request carries; an unanchored certificate carries no
-	// authorization worth enforcing.
+	// whatever else the request carries, an unanchored one's is not.
 	t.Run("ParseAndVerifyAuthorizationRequest enforces the certificate's authorization even with client_metadata present", testParseAndVerifyAuthorizationRequestQueryValidation_EnforcedWithClientMetadata)
 	t.Run("ParseAndVerifyAuthorizationRequest does not enforce authorization from an unanchored certificate", testParseAndVerifyAuthorizationRequestQueryValidation_SkippedWhenUnanchored)
 }
@@ -119,10 +114,8 @@ func testParseAndVerifyAuthorizationRequestSuccess(t *testing.T) {
 }
 
 func testParseAndVerifyAuthorizationRequestMissingSchemeData_AssumesThirdPartyCertificate_AttestsCertificateCommonName(t *testing.T) {
-	// An anchored certificate without the Yivi scheme extension is the
-	// third-party-CA shape: the CA attested the subject, so its common name is
-	// attested — the blog's medium display, "the organisation name attested by
-	// its CA".
+	// The third-party-CA shape: the CA attested the subject, so its common name is
+	// what the wallet shows as attested.
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_MissingSchemeData)
 
 	_, requestor, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -167,9 +160,8 @@ func testParseAndVerifyAuthorizationRequestFailureForInvalidClientID(t *testing.
 }
 
 func testParseAndVerifyAuthorizationRequestFailureHostnameMismatch(t *testing.T) {
-	// A request whose certificate does not cover its own client_id hostname is
-	// internally incoherent, however the chain ends: the binding stays in the
-	// gate.
+	// A certificate that does not cover its own client_id hostname is internally
+	// incoherent however the chain ends, so the binding stays in the gate.
 	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
 		token.Claims.(jwt.MapClaims)["client_id"] = "x509_san_dns:somebody-else.example.com"
 	}, testdata.PkiOption_None)
@@ -194,10 +186,9 @@ func testParseAndVerifyAuthorizationRequestFailureMissingX5C(t *testing.T) {
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredX5C(t *testing.T) {
-	// A certificate presented outside its own validity window is a broken
-	// artifact, like an expired JWT: the gate rejects it. This is deliberately
-	// different from an expired *chain* (see the demotion tests): the party
-	// itself presented stale material.
+	// A certificate outside its own validity window is a broken artifact, unlike an
+	// unanchored chain (see the demotion tests): the party presented stale
+	// material.
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_ExpiredEndEntity)
 
 	_, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -207,11 +198,9 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredX5C(t *testing.T) {
 }
 
 func testParseAndVerifyAuthorizationRequestRevokedX5C_IsRefused(t *testing.T) {
-	// Revocation is the CA withdrawing a certificate it issued, not the wallet
-	// failing to place a stranger, and it is how a compromised relying party is
-	// cut off: the request is refused rather than shown at a lower rung. The
-	// demotion tests below cover the other direction — a chain that leads
-	// nowhere the wallet knows.
+	// Revocation is the CA withdrawing a certificate, not the wallet failing to
+	// place a stranger, so the request is refused rather than demoted. The tests
+	// below cover the other direction.
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_RevokedEndEntity)
 
 	_, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -224,8 +213,7 @@ func testParseAndVerifyAuthorizationRequestMissingRoot_DemotesToSelfAsserted(t *
 	// Setup test data
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_None)
 
-	// Remove the root certificate from the trusted roots: the chain now ends
-	// nowhere the wallet knows, which is evidentially a self-signed key.
+	// Without the root, the chain ends nowhere the wallet knows.
 	verifierValidator.(*RequestorCertificateStoreVerifierValidator).
 		verificationContext.(*eudi.TrustModel).
 		ClearTrustedRootCertificates()
@@ -254,8 +242,7 @@ func testParseAndVerifyAuthorizationRequestMissingIntermediate_DemotesToSelfAsse
 	// Setup test data
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_None)
 
-	// Remove the intermediate certificate from the trusted intermediates: the
-	// chain cannot be built, so no anchor stands behind the leaf.
+	// Without the intermediate, the chain cannot be built at all.
 	verifierValidator.(*RequestorCertificateStoreVerifierValidator).
 		verificationContext.(*eudi.TrustModel).
 		ClearTrustedIntermediateCertificates()
@@ -337,9 +324,8 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithoutClientName_Attes
 }
 
 func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_IsSelfAsserted(t *testing.T) {
-	// client_metadata is the verifier's own word about itself, whoever signed
-	// its certificate: it travels in the self-asserted account and never
-	// displaces what the certificate attests.
+	// client_metadata is the verifier's own word, whoever signed its certificate:
+	// it never displaces what the certificate attests.
 	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
 		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
 			"client_name": "Acme Verifier",
@@ -357,8 +343,8 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_IsSelfAs
 }
 
 func testParseAndVerifyAuthorizationRequestClientMetadataLogo_IsIgnored(t *testing.T) {
-	// A logo is believed rather than judged, so nothing self-asserted may
-	// supply one: the logo_uri is not even downloaded.
+	// A logo is believed rather than judged, so the logo_uri is not even
+	// downloaded.
 	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
 		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
 			"client_name": "Acme Verifier",
@@ -370,14 +356,14 @@ func testParseAndVerifyAuthorizationRequestClientMetadataLogo_IsIgnored(t *testi
 	_, requestor, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.NoError(t, err)
-	// Only the name survives: the self-asserted account is a bare string, so
-	// there is structurally nowhere for logo_uri to land.
+	// The self-asserted account is a bare string, so there is nowhere for logo_uri
+	// to land.
 	require.Equal(t, "Acme Verifier", requestor.SelfAssertedName)
 }
 
 func testParseAndVerifyAuthorizationRequestQueryValidation_EnforcedWithClientMetadata(t *testing.T) {
-	// Grant violation always blocks — and the check must not be skippable by
-	// dressing the request up with client_metadata, which is how it used to be
+	// Grant violation always blocks, and dressing the request up with
+	// client_metadata must not skip the check — which is how it used to be
 	// bypassed.
 	authRequestJwt, verifierValidator := setupTestWithFactory(t, func(token *jwt.Token) {
 		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
@@ -393,8 +379,7 @@ func testParseAndVerifyAuthorizationRequestQueryValidation_EnforcedWithClientMet
 
 func testParseAndVerifyAuthorizationRequestQueryValidation_SkippedWhenUnanchored(t *testing.T) {
 	// An unanchored certificate's contents are the party's own word, its
-	// authorization data included: there is nothing trustworthy to enforce,
-	// exactly as for a DID verifier that carries no authorization artifact.
+	// authorization data included, so there is nothing trustworthy to enforce.
 	authRequestJwt, verifierValidator := setupTestWithFactory(t, nil,
 		testdata.PkiOption_None, &MockQueryValidatorFactory{failsQueryValidation: true})
 
@@ -472,8 +457,6 @@ func setupHashTest(t *testing.T, tokenModifier func(token *jwt.Token), opts test
 	return
 }
 
-// revocationListsFor builds the CRL revoking the verifier certificate when the
-// options ask for a revoked end entity, and nothing otherwise.
 func revocationListsFor(t *testing.T, opts testdata.PkiGenerationOptions, verifierCert, caCert *x509.Certificate, caKey *ecdsa.PrivateKey) []*x509.RevocationList {
 	t.Helper()
 

@@ -232,16 +232,15 @@ func unsignedDcApiRequestor(origin string) *clientmodels.TrustedParty {
 	}
 	return &clientmodels.TrustedParty{
 		// The origin the platform authenticated is both what the party is called
-		// and what it is known by: at low the app renders the identifier next to
-		// the name, and here it is the one thing the caller did not choose itself.
+		// and what it is known by — at low the app renders the identifier next to
+		// the name.
 		Id: displayName,
 		// client_name is a single string and an origin is not localized, so there
 		// is nothing for the current locale to resolve here.
 		Name: displayName,
-		// Nothing vouches for the caller of an unsigned request: it presented no
-		// certificate and named no identifier a recognized list could key on, so
-		// the origin the platform authenticated is all the wallet has. That is
-		// the bottom rung, not the absence of a verdict.
+		// Nothing vouches for the caller of an unsigned request: no certificate, no
+		// identifier a list could key on. The bottom rung, not the absence of a
+		// verdict.
 		TrustLevel: clientmodels.TrustLevel_Low,
 	}
 }

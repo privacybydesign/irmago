@@ -47,11 +47,9 @@ type FileSystemStorage interface {
 	Issuers() FileSystemContainer
 	Verifiers() FileSystemContainer
 
-	// TrustLists holds the anchors a recognized list's *signature* chains to.
-	// Separate from Issuers on purpose: the two answer different questions —
-	// "may this party issue credentials" and "may this key define who is
-	// trusted" — and sharing one pool would make onboarding a credential
-	// issuer silently grant it the second.
+	// TrustLists holds the anchors a recognized list's signature chains to,
+	// separate from Issuers so that onboarding a credential issuer does not also
+	// grant it the power to define who is trusted.
 	TrustLists() FileSystemContainer
 
 	// RemoveAllFiles removes all files from all containers (logos, certificates, CRLs).

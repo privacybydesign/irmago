@@ -45,7 +45,7 @@ in the same release step.`,
 		}
 
 		// Now by default, overridable so a build of unchanged input can be made
-		// byte-identical — which is what lets a reviewer diff two issues.
+		// byte-identical for a reviewer to diff.
 		issuedAt := time.Now().UTC().Truncate(time.Second)
 		if issuedAtFlag != "" {
 			issuedAt, err = time.Parse(time.RFC3339, issuedAtFlag)
@@ -60,8 +60,7 @@ in the same release step.`,
 			return err
 		}
 
-		// Withdrawals are absences in the output, so they are reported rather
-		// than left to be inferred from a shorter document.
+		// Withdrawals are absences in the output, so they are reported.
 		if stats.WithdrawnServices > 0 {
 			Logger.Infof("excluded %d withdrawn service(s): on a list carrying no statuses, a withdrawal is an absence",
 				stats.WithdrawnServices)
@@ -76,9 +75,8 @@ in the same release step.`,
 		}
 
 		// Validated against the normative Annex A schema before anything is
-		// written. The curation checks above catch what a curator gets wrong;
-		// this catches what the *serialiser* gets wrong, which is the failure a
-		// publisher would otherwise discover from a third party.
+		// written: the checks above catch what a curator gets wrong, this catches
+		// what the serialiser does.
 		if err := lote.ValidateDocument(raw); err != nil {
 			return err
 		}

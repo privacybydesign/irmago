@@ -2,12 +2,10 @@ package eudicli
 
 import "github.com/spf13/cobra"
 
-// loteCmd groups the publishing tools for a List of Trusted Entities.
-//
-// Production hosting is deliberately not here: the wallet asks for a plain
-// unconditional GET of a signed blob, so publishing is `build`, `sign`, and then
-// copying the file onto whatever static hosting already exists. `serve` is for
-// development and staging only.
+// loteCmd groups the publishing tools for a List of Trusted Entities. Production
+// hosting is not among them: the wallet asks for a plain unconditional GET of a
+// signed blob, so publishing is `build`, `sign`, and copying the file onto static
+// hosting. `serve` is for development and staging.
 var loteCmd = &cobra.Command{
 	Use:   "lote",
 	Short: "Build, sign and inspect a List of Trusted Entities",

@@ -26,15 +26,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// This file is deliberately not a _test.go file: session tests in
-// internal/sessiontest and slices beyond this one need a LoTE they control, and
-// Go does not export test-only code across packages. It follows the same shape
-// as the statuslist package's test utilities.
+// Not a _test.go file: session tests in internal/sessiontest need a LoTE they
+// control, and Go does not export test-only code across packages. Same shape as
+// the statuslist package's test utilities.
 
-// TestLoteSigner is a fixture for publishing signed LoTEs in tests. It carries
-// a two-level PKI — a root CA and a list-signing certificate under it — because
-// the real list signer chains to the Yivi root rather than being self-signed,
-// and a self-signed fixture would not exercise chain building at all.
+// TestLoteSigner is a fixture for publishing signed LoTEs in tests. Two-level,
+// like the real list signer, so that chain building is exercised at all.
 type TestLoteSigner struct {
 	RootKey  *ecdsa.PrivateKey
 	RootCert *x509.Certificate
@@ -43,8 +40,6 @@ type TestLoteSigner struct {
 	DERBytes []byte
 }
 
-// NewTestLoteSigner creates a signer backed by a fresh root CA and a
-// list-signing certificate issued under it.
 func NewTestLoteSigner(t *testing.T) *TestLoteSigner {
 	t.Helper()
 
@@ -87,8 +82,8 @@ func NewTestLoteSigner(t *testing.T) *TestLoteSigner {
 	}
 }
 
-// X509VerificationContext returns a trust store that anchors this signer's
-// root, standing in for the pinned Yivi anchors.
+// A trust store anchoring this signer's root, standing in for the pinned Yivi
+// anchors.
 func (s *TestLoteSigner) X509VerificationContext() eudi_jwt.X509VerificationContext {
 	pool := x509.NewCertPool()
 	pool.AddCert(s.RootCert)
@@ -97,19 +92,15 @@ func (s *TestLoteSigner) X509VerificationContext() eudi_jwt.X509VerificationCont
 	}
 }
 
-// SignList serializes list and signs it as a compact JAdES-B-B document.
 func (s *TestLoteSigner) SignList(t *testing.T, list List) []byte {
 	t.Helper()
 	return s.SignListWithTyp(t, list, LoteTyp)
 }
 
-// SignListWithTyp is SignList with the `typ` header overridden, for
-// negative-path tests.
+// SignList with the `typ` header overridden, for negative-path tests.
 func (s *TestLoteSigner) SignListWithTyp(t *testing.T, list List, typ string) []byte {
 	t.Helper()
 
-	// Annex A wraps the list in a `LoTE` member; the signed payload is the whole
-	// document, not the list.
 	payload, err := json.Marshal(Document{LoTE: list})
 	require.NoError(t, err)
 
@@ -125,10 +116,9 @@ func (s *TestLoteSigner) SignListWithTyp(t *testing.T, list List, typ string) []
 	return signed
 }
 
-// NewTestPartyCertificate issues a certificate for a party a test wants to put
-// on a list: an end-entity certificate under this signer's root, carrying
-// organizationIdentifier in its subject when one is given, and a subject key
-// identifier so entries can be keyed on the key rather than the certificate.
+// An end-entity certificate under this signer's root for a party a test wants to
+// list, carrying organizationIdentifier when one is given and always a subject key
+// identifier, so an entry can key on either.
 func (s *TestLoteSigner) NewTestPartyCertificate(t *testing.T, commonName, organizationIdentifier string) *x509.Certificate {
 	t.Helper()
 
@@ -143,9 +133,8 @@ func (s *TestLoteSigner) NewTestPartyCertificate(t *testing.T, commonName, organ
 		}}
 	}
 
-	// A predictable SKI so a test can key an entry on it: the SHA-1 of the
-	// public key is what RFC 5280 §4.2.1.2 method (1) prescribes, but any
-	// stable value works here, and SHA-256 avoids a deprecated hash.
+	// A predictable SKI so a test can key an entry on it. RFC 5280 §4.2.1.2 method
+	// (1) prescribes SHA-1, but any stable value works.
 	pubDer, err := x509.MarshalPKIXPublicKey(key.Public())
 	require.NoError(t, err)
 	var pubInfo struct {
@@ -171,18 +160,13 @@ func (s *TestLoteSigner) NewTestPartyCertificate(t *testing.T, commonName, organ
 	return parsed
 }
 
-// NewTestList builds a list with a NextUpdate a day out, so a test that does
-// not care about expiry gets a current one.
+// NewTestList builds a list with a NextUpdate a day out and every field Annex A
+// makes mandatory filled with a workable default, so a test that cares about
+// entities need not invent a postal address to get a conformant document. listId
+// becomes the English SchemeName, the identity the wallet pins.
 //
-// Every field Annex A makes mandatory for scheme-explicit information is filled
-// with a workable default, so a test that cares about entities does not have to
-// invent a postal address and a policy URI to get a conformant document. listId
-// becomes the English SchemeName, which is the identity the wallet pins.
-//
-// The listIds the suite passes are not in clause 6.3.6's prescribed `CC:name`
-// form, deliberately: the wallet compares SchemeName against what its source is
-// configured with and does not police the format. Validating it is the
-// publisher's job, at build time.
+// The suite's listIds are not in clause 6.3.6's prescribed `CC:name` form: the
+// wallet does not police the format, and validating it is the publisher's job.
 func NewTestList(listId string, sequenceNumber uint64, entities ...Entity) List {
 	now := time.Now().UTC()
 	return List{
@@ -221,12 +205,9 @@ func NewTestList(listId string, sequenceNumber uint64, entities ...Entity) List 
 }
 
 // NewTestEntity builds a granted entity with the given services, filling the
-// mandatory TEAddress and TEInformationURI with defaults.
-//
-// A service that names itself keeps its own name; one that does not inherits the
-// entity's. ServiceName is mandatory in Annex A, so something has to fill it, and
-// inheriting is both what the publisher will do and what keeps the service-level
-// name an *override* rather than a required restatement.
+// mandatory TEAddress and TEInformationURI with defaults. A service that names
+// itself keeps its own name; one that does not inherits the entity's, as the
+// publisher does, which keeps the service-level name an override.
 func NewTestEntity(name, organizationIdentifier string, services ...Service) Entity {
 	info := EntityInformation{
 		Name: MultiLang{"en": name, "nl": name},
@@ -250,9 +231,7 @@ func NewTestEntity(name, organizationIdentifier string, services ...Service) Ent
 		})
 	}
 
-	// Copied rather than mutated in place: the variadic slice may be the
-	// caller's own, and a builder that renamed the caller's services would be a
-	// nasty thing to debug.
+	// Copied: the variadic slice may be the caller's own.
 	owned := make([]Service, len(services))
 	copy(owned, services)
 	for i := range owned {
@@ -264,32 +243,26 @@ func NewTestEntity(name, organizationIdentifier string, services ...Service) Ent
 	return Entity{Information: info, Services: owned}
 }
 
-// NewTestCertificateService builds a granted service keyed on a certificate.
 func NewTestCertificateService(serviceType trust.Role, partyCert *x509.Certificate, markings ...string) Service {
 	return newTestService(serviceType, DigitalIdentity{
 		X509Certificates: []PKIObject{{Val: partyCert.Raw}},
 	}, markings...)
 }
 
-// NewTestSkiService builds a granted service keyed on a certificate's subject
-// key identifier rather than on the certificate itself.
 func NewTestSkiService(serviceType trust.Role, partyCert *x509.Certificate, markings ...string) Service {
 	return newTestService(serviceType, DigitalIdentity{
 		X509SKIs: [][]byte{partyCert.SubjectKeyId},
 	}, markings...)
 }
 
-// NewTestDidService builds a granted service keyed on a DID.
 func NewTestDidService(serviceType trust.Role, did string, markings ...string) Service {
 	return newTestService(serviceType, DigitalIdentity{OtherIds: []string{did}}, markings...)
 }
 
 // newTestService builds a granted service, leaving ServiceName unset so
-// NewTestEntity can fill it from the entity.
-//
-// ServiceStatus is deliberately left unset: absent means granted, and that is the
-// shape Yivi publishes, so the fixtures the whole suite runs on exercise the same
-// path a real list does. A test that wants a withdrawal sets Status explicitly.
+// NewTestEntity can fill it from the entity. ServiceStatus is left unset too —
+// absent means granted, which is the shape Yivi publishes; a test that wants a
+// withdrawal sets Status explicitly.
 func newTestService(serviceType trust.Role, identity DigitalIdentity, markings ...string) Service {
 	info := ServiceInformation{
 		DigitalIdentity: identity,
@@ -301,10 +274,8 @@ func newTestService(serviceType trust.Role, identity DigitalIdentity, markings .
 	return Service{Information: info}
 }
 
-// TestLoteServer is a mutable httptest server publishing one LoTE. What it
-// serves can be replaced between requests, so a single test can walk a list
-// through a re-issue, a tampered copy, or an outage without standing up a
-// second server.
+// TestLoteServer is a mutable httptest server publishing one LoTE, so a single
+// test can walk a list through a re-issue, a tampered copy, or an outage.
 type TestLoteServer struct {
 	server     *httptest.Server
 	bodyBytes  atomic.Pointer[[]byte]
@@ -312,8 +283,6 @@ type TestLoteServer struct {
 	hits       atomic.Int64
 }
 
-// NewTestLoteServer starts a server that serves nothing yet; call Serve to give
-// it a list.
 func NewTestLoteServer(t *testing.T) *TestLoteServer {
 	t.Helper()
 	s := &TestLoteServer{}
@@ -333,17 +302,12 @@ func NewTestLoteServer(t *testing.T) *TestLoteServer {
 	return s
 }
 
-// URL returns the server's base URL, which is what a Source points at.
 func (s *TestLoteServer) URL() string { return s.server.URL }
 
-// Source returns a Source pointing at this server for the given list
-// identifier, conferring the given level — TrustLevel_High for a fixture
-// standing in for Yivi's own list, TrustLevel_Medium for any other
-// recognized list.
-//
-// LoTEType is pinned to what NewTestList emits, so the type check is exercised
-// by every test that goes through this server rather than only by the tests
-// written for it.
+// Source returns a Source pointing at this server for the given list identifier,
+// conferring the given level — high for a fixture standing in for Yivi's own list,
+// medium for any other. LoTEType is pinned to what NewTestList emits, so every
+// test going through this server exercises the type check.
 func (s *TestLoteServer) Source(listId string, confers clientmodels.TrustLevel) Source {
 	return Source{
 		ListId:   listId,
@@ -353,25 +317,21 @@ func (s *TestLoteServer) Source(listId string, confers clientmodels.TrustLevel) 
 	}
 }
 
-// Serve signs list with signer and serves it on subsequent requests.
 func (s *TestLoteServer) Serve(t *testing.T, signer *TestLoteSigner, list List) {
 	t.Helper()
 	s.SetBody(signer.SignList(t, list))
 }
 
-// SetBody replaces the body served on subsequent requests.
 func (s *TestLoteServer) SetBody(body []byte) {
 	s.statusCode.Store(0)
 	s.bodyBytes.Store(&body)
 }
 
-// SetStatus makes subsequent requests fail with the given HTTP status. 0
-// restores serving the body.
+// SetStatus makes subsequent requests fail with the given status; 0 restores the
+// body.
 func (s *TestLoteServer) SetStatus(code int) { s.statusCode.Store(int64(code)) }
 
-// Close shuts the server down, so subsequent fetches fail to connect — the
-// unreachable-endpoint case.
+// Close is the unreachable-endpoint case.
 func (s *TestLoteServer) Close() { s.server.Close() }
 
-// Hits returns the number of requests served so far.
 func (s *TestLoteServer) Hits() int64 { return s.hits.Load() }

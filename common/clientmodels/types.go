@@ -14,36 +14,33 @@ const DefaultFallbackLanguage = "en"
 // TranslatedString is a map from language code to translated text.
 type TranslatedString map[string]string
 
-// TrustLevel is how strongly a party is vouched for: the three rungs of the
-// trust ladder, plus the absence of any evaluation.
+// TrustLevel is how strongly a party is vouched for: the three rungs of the trust
+// ladder, plus the absence of any evaluation.
 //
-// The rung is the strongest party-level vouching found, never a judgement about
-// the party's identity: identity validation is a separate gate that fails the
-// session outright (see ErrorType_PartyValidationFailed). A trust level never
-// blocks a session — the wallet warns and lets the user decide.
+// It is never a judgement about the party's identity — that is a separate gate
+// which fails the session outright (see ErrorType_PartyValidationFailed) — and it
+// never blocks a session: the wallet warns and lets the user decide.
 type TrustLevel string
 
 const (
-	// TrustLevel_Unevaluated is the zero value: nothing was evaluated for this
-	// party. It is distinct from TrustLevel_Low, which is a verdict ("nobody
-	// vouches"). It is omitted from JSON, so the app sees an absent field.
+	// TrustLevel_Unevaluated is the zero value: nothing was evaluated. Distinct
+	// from TrustLevel_Low, which is the verdict "nobody vouches". Omitted from
+	// JSON, so the app sees an absent field.
 	TrustLevel_Unevaluated TrustLevel = ""
 	// TrustLevel_Low means nobody vouches for the party: a bare DID, or a
-	// certificate no anchor the wallet holds stands behind.
+	// certificate no anchor stands behind.
 	TrustLevel_Low TrustLevel = "low"
 	// TrustLevel_Medium means somebody besides Yivi vouches for the party: an
-	// anchored third-party CA attested it, or a recognized trust list that is
-	// not Yivi's own grants it.
+	// anchored third-party CA, or a recognized list that is not Yivi's own.
 	TrustLevel_Medium TrustLevel = "medium"
 	// TrustLevel_High means Yivi itself vouches for the party: an IRMA scheme
-	// registration, a certificate under the Yivi CA, or an entry on Yivi's
-	// own trust list.
+	// registration, a certificate under the Yivi CA, or an entry on Yivi's own
+	// trust list.
 	TrustLevel_High TrustLevel = "high"
 )
 
 // IsTrusted reports whether the level warrants the trusted marker in the UI:
-// medium or high, i.e. somebody beyond the party itself vouches for it. An
-// unevaluated level is not trusted.
+// medium or high, i.e. somebody beyond the party itself vouches for it.
 func (l TrustLevel) IsTrusted() bool {
 	return l == TrustLevel_Medium || l == TrustLevel_High
 }
@@ -72,8 +69,7 @@ type Image struct {
 }
 
 // NewImage wraps raw image bytes as the app-facing Image, carrying the MIME type
-// when one is known. Returns nil for empty data, so "no image" and "an image of
-// nothing" cannot be told apart by callers that have neither.
+// when one is known. Nil for empty data.
 func NewImage(data []byte, mimeType string) *Image {
 	if len(data) == 0 {
 		return nil

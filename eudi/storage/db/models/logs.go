@@ -22,12 +22,10 @@ type EudiLogEntry struct {
 	RequestorName datatypes.JSON `gorm:"type:json"`
 
 	// RequestorTrustLevel is the requestor's trust level at session time: the
-	// verifier's on a disclosure entry, the issuer's on an issuance entry.
-	// Written once and never re-resolved, so a party vouched for or dropped
-	// later does not rewrite this row. Empty on rows written before the levels
-	// existed, which renders levelless — absent is not the same verdict as
-	// clientmodels.TrustLevel_Low, and clientmodels.TrustLevel_Unevaluated is
-	// that absence.
+	// verifier's on a disclosure entry, the issuer's on an issuance entry. Written
+	// once and never re-resolved. Empty on rows written before the levels existed,
+	// which renders levelless — an absence, not the verdict
+	// clientmodels.TrustLevel_Low.
 	RequestorTrustLevel string
 
 	// Logged credentials.
@@ -53,14 +51,13 @@ type EudiLogCredential struct {
 	IssuerName datatypes.JSON `gorm:"type:json"`
 	IssuerId   string
 
-	// IssuerTrustLevel is this credential's issuer's trust level at session
-	// time, on the same terms as EudiLogEntry.RequestorTrustLevel: written
-	// once, never re-resolved, empty on pre-feature rows.
+	// IssuerTrustLevel is this credential's issuer's level at session time, on the
+	// same terms as EudiLogEntry.RequestorTrustLevel.
 	IssuerTrustLevel string
 
-	// IssuerVerified is the boolean IssuerTrustLevel replaced. Read-only: it is
-	// how rows written before the levels existed still render a vouched-for
-	// issuer, and nothing writes it any more.
+	// IssuerVerified is the boolean IssuerTrustLevel replaced. Read-only: nothing
+	// writes it any more, and it is how pre-feature rows still render a vouched-for
+	// issuer.
 	IssuerVerified bool
 
 	// JSON-encoded []clientmodels.Attribute — full attribute list with paths,

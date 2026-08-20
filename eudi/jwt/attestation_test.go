@@ -18,8 +18,8 @@ import (
 )
 
 // attestedKey returns a public JWK for key, carrying certForX5c in its x5c when
-// non-nil. The x5c leaf is certForX5c; the key material is key's public part —
-// the two match only when the caller passes the certificate that certifies key.
+// non-nil. The two match only when the caller passes the certificate that
+// certifies key.
 func attestedKey(t *testing.T, key *ecdsa.PublicKey, certForX5c *x509.Certificate) jwk.Key {
 	t.Helper()
 	pub, err := jwk.Import(key)
@@ -32,9 +32,8 @@ func attestedKey(t *testing.T, key *ecdsa.PublicKey, certForX5c *x509.Certificat
 	return pub
 }
 
-// selfSignedFor mints a self-signed certificate over key. The chain does not
-// matter for AttestingCertificate, which never builds one — only the leaf's
-// public key does.
+// selfSignedFor mints a self-signed certificate over key. AttestingCertificate
+// never builds a chain, so only the leaf's public key matters.
 func selfSignedFor(t *testing.T, key *ecdsa.PrivateKey) *x509.Certificate {
 	t.Helper()
 	tmpl := &x509.Certificate{
@@ -75,8 +74,8 @@ func TestAttestingCertificate_MatchingX5c_ReturnsLeaf(t *testing.T) {
 func TestAttestingCertificate_KeyMismatch_IsRefused(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	// A certificate over a *different* key, pasted onto our key's JWK — the
-	// forgery RFC 7517 §4.7 forbids.
+	// A certificate over a different key, pasted onto our key's JWK: the forgery
+	// RFC 7517 §4.7 forbids.
 	otherKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 	foreignCert := selfSignedFor(t, otherKey)
@@ -86,16 +85,14 @@ func TestAttestingCertificate_KeyMismatch_IsRefused(t *testing.T) {
 	require.Nil(t, leaf)
 }
 
-// TestAttestingCertificate_DidJwkAndDidWebShareThePath proves the method-agnostic
-// claim: a did:jwk identifier carrying an x5c resolves to the same jwk.Key shape
-// the did:web verification method produces, so one helper serves both.
+// TestAttestingCertificate_DidJwkAndDidWebShareThePath: a did:jwk identifier
+// carrying an x5c resolves to the same jwk.Key shape a did:web verification
+// method produces, so one helper serves both.
 func TestAttestingCertificate_DidJwkAndDidWebShareThePath(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 	crt := selfSignedFor(t, key)
 
-	// A did:jwk whose embedded JWK carries the x5c, resolved through the real
-	// did:jwk resolver.
 	attested := attestedKey(t, &key.PublicKey, crt)
 	jwkJSON, err := attested.(interface{ MarshalJSON() ([]byte, error) }).MarshalJSON()
 	require.NoError(t, err)

@@ -67,9 +67,8 @@ type session struct {
 	// changes language mid-flow.
 	locale string
 
-	// trustView is the trust ladder pinned at flow start, for the same reason
-	// the locale is: a list refresh landing mid-flow must not change what this
-	// session decided about the issuer.
+	// trustView is pinned at flow start, like the locale: a list refresh landing
+	// mid-flow must not change what this session decided about the issuer.
 	trustView trust.View
 
 	redirectUri string
@@ -185,11 +184,9 @@ func (s *session) perform() {
 
 	// The credentials are in hand, which is the first moment the wallet holds the
 	// certificate the issuer signed with and the identifier it signed under.
-	// Compose the party again, before the permission screen: what the user is
-	// asked to trust is what was actually verified, not what the issuer's
-	// metadata claimed at offer time — and that governs the curated name and
-	// logo as much as the rung, since a list that only matches the signing
-	// identifier is invisible at offer time.
+	// Compose the party again before the permission screen, so the user is asked
+	// to trust what was verified rather than what the metadata claimed at offer
+	// time. That governs the curated name and logo as much as the rung.
 	s.requestorInfo = composeIssuerParty(
 		s.credentialIssuerMetadata,
 		s.locale,
@@ -245,15 +242,10 @@ type fetchedCredential struct {
 // trust view. Called with the whole fetch it ranks the party behind the session;
 // called with one credential it ranks that credential's issuer.
 //
-// The evidence it evaluates is what the wallet knows about the party that signed
-// these credentials. The certificate is the certificate channel's evidence: the
-// `x5c` leaf the credentials verified against, nil for a DID-identified issuer.
-// It is a claim, not a verdict — the channel classifies it against the wallet's
-// anchors and confers that anchor's level, or nothing for a chain the wallet
-// cannot trace. The identifiers are the names a recognized list keys entries on:
-// what the credentials say signed them (the `iss` claim — a DID for a
-// DID-identified issuer) and the credential issuer's own identifier from its
-// metadata.
+// The certificate is the certificate channel's evidence: the `x5c` leaf the
+// credentials verified against, nil for a DID-identified issuer. The identifiers
+// are what a recognized list keys entries on: the `iss` the credentials were
+// signed under, and the credential issuer's own identifier.
 func (s *session) issuerVerdict(fetched ...*fetchedCredential) trust.Verdict {
 	identifiers := []string{}
 	for _, fc := range fetched {
@@ -270,13 +262,9 @@ func (s *session) issuerVerdict(fetched ...*fetchedCredential) trust.Verdict {
 }
 
 // issuerCertificate returns the certificate every given credential was signed
-// with, or nil when they do not agree on one.
-//
-// One issuer serves one offer, so in practice they all carry the same
-// certificate (or none, for a DID-identified issuer). Disagreement means the
-// wallet cannot name a single certificate for the party it is about to describe
-// to the user, and the honest answer is then to name none: the issuer falls back
-// to whatever the recognized-list channel says about it.
+// with, or nil when they do not agree on one. One issuer serves one offer, so
+// disagreement means the wallet cannot name a single certificate for the party
+// and the issuer falls back to the recognized-list channel.
 func issuerCertificate(fetched ...*fetchedCredential) *x509.Certificate {
 	var found *x509.Certificate
 	for _, fc := range fetched {
@@ -328,8 +316,7 @@ func (s *session) obtainCredentials(accessToken string) ([]*fetchedCredential, e
 				prev.cleanupKeys()
 			}
 			// Wrapped, not flattened: perform reads the identity gate marker off
-			// this error to decide the session error's type, and %v would strip
-			// it here, one frame below where it is read.
+			// this error, and %v would strip it.
 			return nil, fmt.Errorf("could not obtain credential %q: %w", credentialConfigurationId, err)
 		}
 		result = append(result, fc)
@@ -466,9 +453,8 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 	batch := s.credentialIssuerMetadata.BatchCredentialIssuance
 	result := make([]*clientmodels.Credential, 0, len(fetched))
 
-	// The issuer's own account of itself, and both logo managers, are the same for
-	// every credential in one offer — resolved once here rather than per credential,
-	// where resolving the issuer logo also meant a disk read per row.
+	// The issuer's own account of itself and both logo managers are the same for
+	// every credential in one offer, and resolving the logo is a disk read.
 	issuerDisplays := metadata.ToTranslateableList(s.credentialIssuerMetadata.Display)
 	issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
 	credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
@@ -526,10 +512,8 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 				Id:    s.credentialIssuerMetadata.CredentialIssuer,
 				Name:  issuerName,
 				Image: issuerImage,
-				// Ranked per credential, off the certificate this one was
-				// actually signed with, rather than copied from the session
-				// header: one offer's credentials need not all come signed by
-				// the same key, and each is presented on its own row.
+				// Ranked per credential rather than copied from the session header:
+				// one offer's credentials need not share a signing key.
 				TrustLevel: s.issuerVerdict(fc).Level,
 			},
 			Image:                 image,
@@ -901,10 +885,8 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	for i, cred := range credentialResponse.Credentials {
 		verifiedSdJwt, err := s.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
 		if err != nil {
-			// This is the issuer's identity gate: the credential's signature is
-			// checked against the issuer's certificate chain or resolved DID.
-			// Mark it so the session reports a rejected party rather than a
-			// generic failure.
+			// The issuer's identity gate. Marked so the session reports a rejected
+			// party rather than a generic failure.
 			return nil, eudi.PartyValidationFailed(fmt.Errorf("failed to verify credential: %v", err))
 		}
 		verifiedSdJwtVcs[i] = verifiedSdJwt

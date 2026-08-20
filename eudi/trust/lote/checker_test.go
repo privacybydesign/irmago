@@ -22,13 +22,9 @@ func TestMain(m *testing.M) {
 
 const testListId = "urn:yivi:trustlist:test"
 
-// memoryStore is a Store for the tests that need one to survive being handed to
-// a second Checker. It lives here rather than in the package proper: production
-// has one store, the database one, and a checker built without any keeps its
-// lists in memory for the run anyway.
-//
-// No lock: the checker touches its store only from Refresh and loadPersisted,
-// both of which hold c.mu.
+// memoryStore is a Store for the tests that need one to survive being handed to a
+// second Checker. No lock: the checker touches its store only from Refresh and
+// loadPersisted, both of which hold c.mu.
 type memoryStore map[string][]byte
 
 func (s memoryStore) Get(listId string) ([]byte, bool) {
@@ -66,8 +62,7 @@ func newFixture(t *testing.T, confers clientmodels.TrustLevel) *fixture {
 	}
 }
 
-// refreshed returns a checker that has pulled whatever the server currently
-// publishes, asserting the refresh succeeded.
+// refreshed returns a checker that has pulled whatever the server publishes.
 func (f *fixture) refreshed(t *testing.T) *Checker {
 	t.Helper()
 	checker := NewChecker(f.config)
@@ -130,14 +125,8 @@ func TestChecker_WithdrawnServiceIsNotGranted(t *testing.T) {
 	require.Nil(t, f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party}))
 }
 
-// An absent ServiceStatus means granted (clause 6.6.0 NOTE 1): with no historical
-// information period and no status, all listed services share one approval
-// status, so being listed is the approval.
-//
-// This is the shape Yivi publishes and the shape five of the six EU profiles
-// mandate — they say the component "shall not be used" — so it is the normal path,
-// not an edge case. Getting it wrong the other way is silent: a conformant list
-// would verify, be stored, and grant nobody without logging anything.
+// Clause 6.6.0 NOTE 1, and the shape Yivi publishes. Getting it wrong is silent:
+// a conformant list would verify, be stored, and grant nobody without logging.
 func TestChecker_AServiceWithNoStatusIsGranted(t *testing.T) {
 	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
@@ -151,10 +140,8 @@ func TestChecker_AServiceWithNoStatusIsGranted(t *testing.T) {
 	require.Equal(t, clientmodels.TrustLevel_Medium, listing.Level)
 }
 
-// A status we do not recognise is not a grant. Each scheme has its own status
-// vocabulary — Annex H's Pub-EAA list uses `…/SvcStatus/notified` for what Yivi
-// calls granted — so an unknown URI means "some other scheme's word we cannot
-// interpret", and failing closed is the safe reading.
+// Status vocabularies are per-scheme (Annex H's Pub-EAA list spells granted
+// differently), so an unknown URI is a word we cannot interpret.
 func TestChecker_AServiceWithAnUnrecognizedStatusIsNotGranted(t *testing.T) {
 	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
@@ -207,9 +194,8 @@ func TestChecker_DidMatchesThroughOtherId(t *testing.T) {
 }
 
 func TestChecker_ListingConfersTheSourcesLevel(t *testing.T) {
-	// The identical document, once from Yivi's own list and once from another
-	// recognized list: the rung is the source's word, not anything the entries
-	// carry. Markings on an entry are tolerated and change nothing.
+	// The identical document from two sources: the rung is the source's word, and
+	// markings on an entry change nothing.
 	for _, tc := range []struct {
 		name     string
 		confers  clientmodels.TrustLevel
@@ -235,8 +221,7 @@ func TestChecker_ListingConfersTheSourcesLevel(t *testing.T) {
 }
 
 func TestChecker_TheStrongestGrantingListWins(t *testing.T) {
-	// A party granted on two recognized lists gets the better of the two words,
-	// whatever order the sources were configured in.
+	// A party granted on two lists gets the better of the two words.
 	signer := NewTestLoteSigner(t)
 	party := signer.NewTestPartyCertificate(t, "party.example.com", "")
 	granting := func(listId string) List {
@@ -295,8 +280,7 @@ func TestChecker_DegradationsLeaveNothingGranted(t *testing.T) {
 		{
 			name: "tampered signature",
 			degrade: func(t *testing.T, f *fixture, _ *TestLoteSigner) {
-				// Signed by a key that chains to nothing the wallet trusts —
-				// the shape a substituted or re-signed list arrives in.
+				// Signed by a key that chains to nothing the wallet trusts.
 				impostor := NewTestLoteSigner(t)
 				f.server.Serve(t, impostor, NewTestList(testListId, 1))
 			},
@@ -330,8 +314,7 @@ func TestChecker_DegradationsLeaveNothingGranted(t *testing.T) {
 			tc.degrade(t, f, f.signer)
 
 			checker := NewChecker(f.config)
-			// The refresh reports what went wrong, for the log. Nothing about
-			// it reaches a session.
+			// Reported for the log; nothing reaches a session.
 			requireRefreshFailed(t, checker)
 
 			require.Nil(t, checker.Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party}))
@@ -349,9 +332,8 @@ func TestChecker_SequenceNumberMayNotRegress(t *testing.T) {
 	checker := f.refreshed(t)
 	require.NotNil(t, checker.Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party}))
 
-	// A correctly signed, still-current older issue of the same list, in which
-	// the party was not yet listed. Adopting it would silently un-list
-	// everybody added since.
+	// A correctly signed, still-current older issue in which the party was not yet
+	// listed. Adopting it would silently un-list everybody added since.
 	f.server.Serve(t, f.signer, NewTestList(testListId, 6))
 	requireRefreshFailed(t, checker)
 
@@ -382,8 +364,8 @@ func TestChecker_AListPastItsNextUpdateStopsGranting(t *testing.T) {
 	list.SchemeInformation.NextUpdate = time.Now().Add(time.Hour)
 	f.server.Serve(t, f.signer, list)
 
-	// A clock the test moves past the list's next_update, standing in for a
-	// wallet that has not managed to refresh in a while.
+	// A clock the test moves past the list's next_update, standing in for a wallet
+	// that has not managed to refresh in a while.
 	now := time.Now()
 	f.config.Now = func() time.Time { return now }
 	checker := f.refreshed(t)
@@ -421,8 +403,7 @@ func TestChecker_PersistedListSurvivesARestart(t *testing.T) {
 		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party))))
 	f.refreshed(t)
 
-	// A fresh checker over the same store, and the server gone: what the wallet
-	// knows now comes off disk alone.
+	// A fresh checker over the same store, server gone: everything comes off disk.
 	f.server.Close()
 	restarted := NewChecker(f.config)
 
@@ -436,9 +417,8 @@ func TestChecker_PersistedListIsReverifiedAgainstTheCurrentAnchors(t *testing.T)
 		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party))))
 	f.refreshed(t)
 
-	// The anchors have moved on and no longer cover the signer, as they would
-	// after the list-signing certificate was revoked. What is already on disk
-	// has to stop counting, not only the next download.
+	// The anchors no longer cover the signer, as after a revocation: what is
+	// already on disk has to stop counting, not only the next download.
 	f.config.X509Context = NewTestLoteSigner(t).X509VerificationContext()
 	restarted := NewChecker(f.config)
 
@@ -475,8 +455,8 @@ func TestChecker_SourcesAreIndependent(t *testing.T) {
 }
 
 func TestVerify_RejectsAJwsMintedForSomethingElse(t *testing.T) {
-	// The `typ` header is what stops a JWS the same key signed for another
-	// purpose from being replayed as a trusted list.
+	// The `typ` header stops a JWS the same key signed for another purpose from
+	// being replayed as a trusted list.
 	signer := NewTestLoteSigner(t)
 	raw := signer.SignListWithTyp(t, NewTestList(testListId, 1), "statuslist+jwt")
 
@@ -495,9 +475,8 @@ func TestVerify_RejectsAListWithoutANextUpdate(t *testing.T) {
 	require.ErrorContains(t, err, "NextUpdate")
 }
 
-// A document that does not name itself cannot be stored or pinned, so it is
-// refused rather than treated as an anonymous list. Only the English SchemeName
-// counts: it is the one language clause 6.3.6 prescribes a format for.
+// Only the English SchemeName counts, the one language clause 6.3.6 prescribes a
+// format for.
 func TestVerify_RejectsAListWithoutAnEnglishSchemeName(t *testing.T) {
 	signer := NewTestLoteSigner(t)
 	list := NewTestList(testListId, 1)
@@ -508,8 +487,8 @@ func TestVerify_RejectsAListWithoutAnEnglishSchemeName(t *testing.T) {
 	require.ErrorContains(t, err, "SchemeName")
 }
 
-// The type URI is pinned alongside the identity, so a correctly signed list of
-// the wrong kind is refused even when it names itself as expected.
+// The type URI is pinned alongside the identity, so a list of the wrong kind is
+// refused even when it names itself as expected.
 func TestChecker_RejectsAListDeclaringAnotherLoTEType(t *testing.T) {
 	f := newFixture(t, clientmodels.TrustLevel_Medium)
 	list := NewTestList(testListId, 1)
@@ -537,27 +516,21 @@ func TestVerify_RejectsGarbage(t *testing.T) {
 	require.Error(t, err)
 }
 
-// requireRefreshed refreshes and asserts every source held up.
 func requireRefreshed(t *testing.T, checker *Checker) {
 	t.Helper()
 	_, err := checker.Refresh(context.Background())
 	require.NoError(t, err)
 }
 
-// requireRefreshFailed refreshes and asserts a source did not hold up.
 func requireRefreshFailed(t *testing.T, checker *Checker) {
 	t.Helper()
 	_, err := checker.Refresh(context.Background())
 	require.Error(t, err)
 }
 
-// TestChecker_AttestedDidPartyKeepsItsDidKeyedListing is the regression the
-// per-handle union exists to prevent. A DID party listed by its DID keeps that
-// listing after it gains an attesting certificate: the certificate vouches for
-// the key it authenticated with, it is not a second way of authenticating, so
-// the DID handle still grants. Before the union, evidence carrying a
-// certificate short-circuited to the certificate branch, which a DID-keyed
-// entry never matched, and the party silently lost its rung.
+// The regression the per-handle union exists to prevent. Before it, evidence
+// carrying a certificate short-circuited to the certificate branch, which a
+// DID-keyed entry never matched, and the party silently lost its rung.
 func TestChecker_AttestedDidPartyKeepsItsDidKeyedListing(t *testing.T) {
 	f := newFixture(t, clientmodels.TrustLevel_High)
 	const did = "did:web:issuer.example.com"
@@ -576,9 +549,8 @@ func TestChecker_AttestedDidPartyKeepsItsDidKeyedListing(t *testing.T) {
 	require.Equal(t, "Listed DID BV", listing.Name["en"])
 }
 
-// TestChecker_CertificateKeyedEntryGrantsADidParty shows the other direction of
-// the union: a DID party can be listed by the certificate or key it attested
-// with, not only by its DID. The identifier need never appear in the entry.
+// The other direction of the union: a DID party can be listed by the certificate
+// it attested with, and its identifier need never appear in the entry.
 func TestChecker_CertificateKeyedEntryGrantsADidParty(t *testing.T) {
 	f := newFixture(t, clientmodels.TrustLevel_High)
 	attestation := f.signer.NewTestPartyCertificate(t, "issuer.example.com", "VATNL-000000011")
@@ -594,12 +566,8 @@ func TestChecker_CertificateKeyedEntryGrantsADidParty(t *testing.T) {
 	require.NotNil(t, listing, "a certificate/SKI entry grants a DID party by its attested key")
 }
 
-// TestChecker_ReassignedKeyIsNotRescuedByIdentifiers is the mutation guard for
-// the per-handle rule. The certificate handle fails because the entry names a
-// different legal entity than the certificate does (a reassigned key), and the
-// party's identifiers do not match any OtherId either. The handles are judged
-// independently, so the failed certificate handle is not rescued into a grant
-// by the mere presence of identifiers.
+// The mutation guard for the per-handle rule: a failed certificate handle must
+// not be rescued into a grant by the mere presence of identifiers.
 func TestChecker_ReassignedKeyIsNotRescuedByIdentifiers(t *testing.T) {
 	f := newFixture(t, clientmodels.TrustLevel_High)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "VATNL-000000012")

@@ -109,10 +109,8 @@ func NewClient(
 	currentLocale *clientmodels.CurrentLocale,
 	trustEvaluator trust.Evaluator,
 ) (*Client, error) {
-	// Checked rather than documented: the session path dereferences it without a
-	// guard, so a nil one would panic on a session goroutine no caller can
-	// recover from. Fail here, where the app can see it — matching
-	// openid4vci.NewClient, which requires it for the same reason.
+	// The session path dereferences it without a guard, so a nil one would panic
+	// on a goroutine no caller can recover from. Fail here instead.
 	if trustEvaluator == nil {
 		return nil, fmt.Errorf("trustEvaluator cannot be nil")
 	}
@@ -161,14 +159,10 @@ func handleFailure(handler Handler, message string, fmtArgs ...any) {
 }
 
 // verifierIdentifiers turns a client_id into the identifiers a recognized list
-// keys entries on, most specific first.
-//
-// A client_id is a prefixed identifier: the prefix says how the verifier
-// authenticates, the rest is who it is. A trust list names the party, so a DID
-// client_id contributes the bare DID — an entry that had to spell out
-// "decentralized_identifier:did:web:..." would be writing the wallet's protocol
-// into the scheme operator's data. The client_id is carried alongside it for
-// entries keyed on whatever else a prefix may introduce.
+// keys entries on, most specific first. A client_id is prefixed with how the
+// verifier authenticates, so a DID one contributes the bare DID: a list entry
+// names the party, not the wallet's protocol. The full client_id is carried
+// alongside for entries keyed on whatever else a prefix may introduce.
 func verifierIdentifiers(clientId string) []string {
 	if did, found := strings.CutPrefix(clientId, string(ClientIdentifierPrefix_DecentralizedDid)); found && did != "" {
 		return []string{did, clientId}
@@ -176,18 +170,17 @@ func verifierIdentifiers(clientId string) []string {
 	return []string{clientId}
 }
 
-// isDidClientId reports whether the client_id identifies the verifier by a DID
-// rather than by a certificate. A DID party keeps its DID as its displayed
-// identifier even when a certificate attests its key.
+// isDidClientId reports whether the client_id identifies the verifier by a DID. A
+// DID party keeps its DID as its displayed identifier even once a certificate
+// attests its key.
 func isDidClientId(clientId string) bool {
 	return strings.HasPrefix(clientId, string(ClientIdentifierPrefix_DecentralizedDid))
 }
 
 // handleVerificationFailure ends the session with the code that fits what went
-// wrong while the request was being verified: a rejection by the identity gate
-// tells the app the verifier itself was not trustworthy, anything else is a
-// generic failure. Both entry points report through it, so a request delivered
-// by the platform fails the same way one fetched from a request_uri does.
+// wrong: a rejection by the identity gate tells the app the verifier itself was
+// not trustworthy, anything else is a generic failure. Both entry points report
+// through it.
 func handleVerificationFailure(handler Handler, err error) {
 	message := fmt.Sprintf("openid4vp: %v", err)
 	eudi.Logger.Errorf("%s", message)
@@ -287,13 +280,10 @@ func (client *Client) handleDcApiSessionAsync(request *DcApiRequest, session *op
 }
 
 // verifySignedAuthorizationRequest runs a signed authorization request JWT past
-// the identity gate, ranks the verifier behind it, caches its logo, and builds
-// the party to show to the user. Both entry points compose through it, so a
-// request delivered by the platform is judged exactly like one fetched from a
-// request_uri.
-//
-// A rejection by the identity gate is returned marked, so the caller can report
-// it as a party validation failure rather than as a generic error.
+// the identity gate, ranks the verifier behind it, caches its logo, and builds the
+// party to show to the user. Both entry points compose through it. A gate
+// rejection is returned marked, so the caller can report it as a party validation
+// failure.
 func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
 	*AuthorizationRequest,
 	*clientmodels.TrustedParty,
@@ -303,18 +293,13 @@ func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
 		ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	if err != nil {
-		// The identity gate rejected the verifier: its signature, its
-		// certificate's own validity or its DID did not hold up, or it
-		// identified itself in a way the wallet cannot authenticate at all.
-		// Either way the wallet does not know who it is talking to and nothing
-		// was disclosed, and the app has to be able to say so rather than show
-		// a generic error.
+		// The wallet does not know who it is talking to, and the app has to be
+		// able to say so rather than show a generic error.
 		return nil, nil, eudi.PartyValidationFailed(fmt.Errorf("failed to verify authorization request: %v", err))
 	}
 
-	// Store the verifier logo in the cache. Only an attested logo is ever
-	// cached: a logo is believed rather than judged, so nothing the party
-	// asserts about itself may supply one.
+	// Only an attested logo is ever cached: a logo is believed rather than judged,
+	// so nothing the party asserts about itself may supply one.
 	if logoManager := client.verifierLogoManager(); logoManager != nil &&
 		verifiedRequestor.Attested != nil && verifiedRequestor.Attested.Organization.Logo != nil {
 		err = logoManager.Save(
@@ -327,9 +312,8 @@ func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
 		}
 	}
 
-	// One pinned view for the whole session, taken before the first party is
-	// ranked, so a list refresh landing mid-session cannot change what this
-	// session decided about the verifier.
+	// One pinned view for the whole session, so a list refresh landing mid-session
+	// cannot change what it decided about the verifier.
 	verdict := client.trustEvaluator.Snapshot().Verifier(trust.Evidence{
 		Certificate: verifiedRequestor.Certificate,
 		Identifiers: verifierIdentifiers(request.ClientId),
@@ -339,15 +323,11 @@ func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
 }
 
 // composeRequestor reduces what the wallet knows about the verifier to the party
-// the app renders, through the display precedence every party is composed by:
-// the curated list entry first, what an anchored certificate attests second,
-// and what the verifier says about itself last.
-//
-// The validator hands the attested and self-asserted accounts over separately,
-// so an unanchored certificate's contents — evidentially the verifier's own
-// word — render under the warn state like any self-asserted name, and a
-// client_metadata name never rides along as attested just because a
-// certificate was also present.
+// the app renders, in display precedence: the curated list entry first, what an
+// anchored certificate attests second, what the verifier says about itself last.
+// The validator hands the attested and self-asserted accounts over separately, so
+// an unanchored certificate's contents render under the warn state like any other
+// self-asserted name.
 func (client *Client) composeRequestor(
 	verdict trust.Verdict,
 	requestor *VerifiedRequestor,
@@ -363,13 +343,11 @@ func (client *Client) composeRequestor(
 		}
 	}
 
-	// The identifier a party is known by is the most stable one in its own
-	// protocol. A DID party is known by its DID — what its client_id carries
-	// and what a list entry keys on — even once a certificate attests its key,
-	// so its Id never becomes a certificate serial. A certificate-only party
-	// (X.509) attested has no such identifier, so its Id is the serial number,
-	// the one identity document it cannot have written itself. With nothing
-	// attested the party is identified by the party half of its client_id.
+	// A party is known by the most stable identifier in its own protocol: a DID
+	// party by its DID, even once a certificate attests its key; an attested
+	// certificate-only party by the serial number, the one identity document it
+	// cannot have written itself; and an unattested one by the party half of its
+	// client_id.
 	display.Id = verifierIdentifiers(clientId)[0]
 	if requestor.Attested != nil && !isDidClientId(clientId) {
 		display.Id = requestor.Certificate.SerialNumber.String()
@@ -386,9 +364,8 @@ func (client *Client) composeRequestor(
 	return display.TrustedParty(verdict, locale)
 }
 
-// verifierLogoManager is the wallet's verifier logo cache, or nil when the
-// client was built without storage — which a test doing without one may, and
-// which then simply leaves a party without its logo.
+// verifierLogoManager is the wallet's verifier logo cache, or nil when the client
+// was built without storage, which leaves a party without its logo.
 func (client *Client) verifierLogoManager() filesystem.LogoManager {
 	if client.Configuration == nil || client.Configuration.Storage == nil {
 		return nil
@@ -396,7 +373,6 @@ func (client *Client) verifierLogoManager() filesystem.LogoManager {
 	return client.Configuration.Storage.FileSystem().Verifiers().LogoManager()
 }
 
-// logoImage wraps a scheme logo for the app, or returns nil when there is none.
 func logoImage(logo *scheme.Logo) *clientmodels.Image {
 	if logo == nil {
 		return nil
