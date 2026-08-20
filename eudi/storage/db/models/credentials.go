@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"time"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -23,10 +24,17 @@ const (
 type CredentialBatch struct {
 	ID datatypes.UUID
 
-	// IssuerURL is the iss claim from the issuer-signed JWT, equal to the credential_issuer
-	// in the credential offer (OID4VCI §7.1.1 requires iss == credential_issuer).
+	// IssuerIdentifier is the credential's issuer identity as resolved during
+	// verification: the `iss` claim, or the subject of the x5c end-entity
+	// certificate when `iss` is absent (SD-JWT VC §2.2.2.3).
 	// This is the value used for DCQL TrustedAuthority resolution in OID4VP.
-	IssuerURL string
+	// The column has been renamed from a previously called `IssuerURL` column and is now more in line with the specification naming conventions.
+	IssuerIdentifier string `gorm:"column:issuer_url;not null"`
+
+	// CredentialIssuerIdentifier is the credential's issuer identity as resolved
+	// from the Credential Offer (OID4VCI §12.2.1).
+	// The column has been renamed from a previously called `CredentialIssuer` column and is now more in line with the specification naming conventions.
+	CredentialIssuerIdentifier string `gorm:"column:credential_issuer;not null"`
 
 	// VerifiableCredentialType is the vct claim from the issued SD-JWT VC.
 	VerifiableCredentialType string
@@ -59,13 +67,9 @@ type CredentialBatch struct {
 	// Decremented on each use; the batch is exhausted when it reaches 0.
 	RemainingCount uint
 
-	// CredentialIssuer is the canonical URL of the credential issuer (credential_issuer claim).
-	CredentialIssuer string
-	IssuerDisplay    []IssuerMetadataDisplay `gorm:"constraint:OnDelete:CASCADE"`
-
-	CredentialMetadata *CredentialMetadata `gorm:"constraint:OnDelete:CASCADE"`
-
-	Instances []IssuedCredentialInstance `gorm:"constraint:OnDelete:CASCADE"`
+	CredentialMetadata *CredentialMetadata        `gorm:"constraint:OnDelete:CASCADE"`
+	Instances          []IssuedCredentialInstance `gorm:"constraint:OnDelete:CASCADE"`
+	IssuerDisplay      []IssuerMetadataDisplay    `gorm:"constraint:OnDelete:CASCADE"`
 }
 
 func (b *CredentialBatch) BeforeCreate(tx *gorm.DB) error {
@@ -89,11 +93,14 @@ func (b *CredentialBatch) normalizeChildren() {
 }
 
 func (b *CredentialBatch) validate() error {
-	if b.IssuerURL == "" {
-		return fmt.Errorf("issuer_url is required")
-	}
 	if b.VerifiableCredentialType == "" {
 		return fmt.Errorf("verifiable_credential_type is required")
+	}
+	if b.IssuerIdentifier == "" {
+		return fmt.Errorf("issuer_identifier is required")
+	}
+	if b.CredentialIssuerIdentifier == "" {
+		return fmt.Errorf("credential_issuer_identifier is required")
 	}
 	if b.Format == "" {
 		return fmt.Errorf("format is required")
@@ -109,9 +116,6 @@ func (b *CredentialBatch) validate() error {
 	}
 	if b.RemainingCount > b.BatchSize {
 		return fmt.Errorf("remaining_count cannot exceed batch_size")
-	}
-	if b.CredentialIssuer == "" {
-		return fmt.Errorf("credential_issuer is required")
 	}
 	return nil
 }
@@ -135,6 +139,26 @@ type IssuedCredentialInstance struct {
 	// Used marks this instance as consumed after it has been presented.
 	// Single-use batch wallets must not reuse an instance once Used is true.
 	Used bool `gorm:"default:false"`
+
+	// StatusListURI is the canonical URI from the credential's
+	// `status.status_list.uri` claim, when present. Nil for credentials
+	// that don't carry a Token Status List reference.
+	StatusListURI *string
+
+	// StatusListIdx is the bit-position into the referenced status
+	// list. Nil iff StatusListURI is nil.
+	StatusListIdx *uint64
+
+	// LastKnownStatus is the most recently observed
+	// statuslist.Status for this instance. 0 (StatusUnknown) is the
+	// default for credentials that have not yet been checked, and
+	// for credentials without a status_list reference.
+	LastKnownStatus uint8 `gorm:"default:0"`
+
+	// LastStatusCheckAt records the wall-clock time of the most
+	// recent successful status check. Nil iff the instance has
+	// never been checked.
+	LastStatusCheckAt *time.Time
 }
 
 func (i *IssuedCredentialInstance) BeforeCreate(tx *gorm.DB) error {

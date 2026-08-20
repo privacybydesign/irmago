@@ -1,16 +1,13 @@
-package sdjwtvc
+package sdjwt
 
 import (
 	"crypto/ecdsa"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
-	"errors"
 	"maps"
-	"os"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/privacybydesign/irmago/testdata"
+	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v3/jws"
 )
 
 type JwtCreator interface {
@@ -25,13 +22,6 @@ func NewJwtCreator(privateKey *ecdsa.PrivateKey) JwtCreator {
 	return &DefaultEcdsaJwtCreator{
 		privateKey: privateKey,
 	}
-}
-
-func NewDefaultEcdsaJwtCreatorWithHolderPrivateKey() (JwtCreator, error) {
-	key, err := DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
-	return &DefaultEcdsaJwtCreator{
-		privateKey: key,
-	}, err
 }
 
 func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]any, payload string) (string, error) {
@@ -53,21 +43,16 @@ func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]a
 	return jwt, nil
 }
 
-func DecodeEcdsaPrivateKey(bytes []byte) (*ecdsa.PrivateKey, error) {
-	block, _ := pem.Decode(bytes)
-	if block == nil || block.Type != "EC PRIVATE KEY" {
-		return nil, errors.New("failed to decode ecsda private key")
-	}
-
-	return x509.ParseECPrivateKey(block.Bytes)
-
+type JwtVerifier interface {
+	Verify(jwt string, key any, sigAlg jwa.SignatureAlgorithm) (payload []byte, err error)
 }
 
-func ReadEcdsaPrivateKey(path string) (*ecdsa.PrivateKey, error) {
-	keyBytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
+type JwxJwtVerifier struct{}
 
-	return DecodeEcdsaPrivateKey(keyBytes)
+func NewJwxJwtVerifier() *JwxJwtVerifier {
+	return &JwxJwtVerifier{}
+}
+
+func (v *JwxJwtVerifier) Verify(jwtString string, keyAny any, sigAlg jwa.SignatureAlgorithm) (payload []byte, err error) {
+	return jws.Verify([]byte(jwtString), jws.WithKey(sigAlg, keyAny))
 }

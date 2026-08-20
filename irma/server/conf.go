@@ -20,9 +20,9 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/gabikeys"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/sirupsen/logrus"
 )
@@ -114,8 +114,7 @@ type Configuration struct {
 
 type RedisClient struct {
 	*redis.Client
-	FailoverMode bool
-	KeyPrefix    string
+	KeyPrefix string
 }
 
 type RedisSettings struct {
@@ -524,9 +523,8 @@ func (conf *Configuration) RedisClient() (*RedisClient, error) {
 		keyPrefix = conf.RedisSettings.Username + ":"
 	}
 	conf.redisClient = &RedisClient{
-		Client:       cl,
-		FailoverMode: failoverMode,
-		KeyPrefix:    keyPrefix,
+		Client:    cl,
+		KeyPrefix: keyPrefix,
 	}
 	return conf.redisClient, nil
 }
@@ -592,7 +590,7 @@ func readSdJwtIssuerPrivKeys(dir string) (map[irma.IssuerIdentifier]*ecdsa.Priva
 		if err != nil {
 			return nil, fmt.Errorf("failed to read ecdsa private key from '%v': %v", match, err)
 		}
-		privKey, err := sdjwtvc.DecodeEcdsaPrivateKey(bytes)
+		privKey, err := encryption.DecodeEcdsaPrivateKey(bytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode ecdsa private key from '%v': %v", match, err)
 		}

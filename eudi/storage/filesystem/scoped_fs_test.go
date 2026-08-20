@@ -1,14 +1,17 @@
 package filesystem
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -264,6 +267,76 @@ func TestScopedFS_DeleteThenExists(t *testing.T) {
 	exists, err = scope.Exists("k", "")
 	require.NoError(t, err)
 	require.False(t, exists)
+}
+
+// TestScopedFS_ConcurrentWritesNeverExposeAPartialFile verifies the property
+// the temp-file-and-rename write buys: a reader racing writers of the same key
+// always gets one whole version, never a truncated prefix. Writing in place
+// fails this — a partial ciphertext does not read as "missing", it reads as a
+// decryption error.
+func TestScopedFS_ConcurrentWritesNeverExposeAPartialFile(t *testing.T) {
+	scope := frozenLogoScope(t)
+
+	// Big enough that an in-place write could not land in one shot.
+	small := bytes.Repeat([]byte("a"), 64*1024)
+	large := bytes.Repeat([]byte("b"), 256*1024)
+	require.NoError(t, scope.Write("k", "", small))
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	for i := range 4 {
+		wg.Go(func() {
+			payload := small
+			if i%2 == 1 {
+				payload = large
+			}
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				// assert, not require: require ends in t.FailNow, which is only
+				// valid on the goroutine running the test. From a writer it would
+				// Goexit that writer, quietly reducing the concurrency this test
+				// exists to exercise.
+				if !assert.NoError(t, scope.Write("k", "", payload)) {
+					return
+				}
+			}
+		})
+	}
+
+	// Compare lengths rather than contents: each payload is a repeat of one
+	// distinct byte, so the length identifies which version was read, a torn
+	// read shows up as a third length, and a failure prints two integers
+	// instead of 320 KB of raw bytes.
+	for range 300 {
+		got, err := scope.Read("k", "")
+		require.NoError(t, err, "reader saw a half-written file")
+		require.Contains(t, []int{len(small), len(large)}, len(got), "reader saw a torn file")
+	}
+	close(stop)
+	wg.Wait()
+}
+
+// TestScopedFS_Walk_SkipsTempFiles verifies Walk ignores the temp files
+// writeFile renames into place, so a walk racing a write does not try to
+// decrypt a half-written one.
+func TestScopedFS_Walk_SkipsTempFiles(t *testing.T) {
+	scope := frozenLogoScope(t)
+
+	require.NoError(t, scope.Write("k", "", []byte("real")))
+	leftover := filepath.Join(scope.fullPath, tmpFilePrefix+"crashed-mid-write")
+	require.NoError(t, os.WriteFile(leftover, []byte("not ciphertext"), 0600))
+
+	var seen [][]byte
+	require.NoError(t, scope.Walk(func(data []byte) error {
+		seen = append(seen, data)
+		return nil
+	}, nil))
+	require.Equal(t, [][]byte{[]byte("real")}, seen)
 }
 
 // TestScopedFS_ExtensionAppendedAfterHash verifies that an extension passed to

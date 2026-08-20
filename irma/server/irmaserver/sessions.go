@@ -314,8 +314,8 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 	if ttl <= 0 {
 		return &RedisError{errors.New("session ttl is in the past")}
 	}
-	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
-		if err := tx.Set(
+	if _, err := s.client.TxPipelined(ctx, func(p redis.Pipeliner) error {
+		if err := p.Set(
 			ctx,
 			s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken),
 			string(session.ClientToken),
@@ -323,21 +323,12 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 		).Err(); err != nil {
 			return err
 		}
-		if err := tx.Set(
+		return p.Set(
 			ctx,
 			s.client.KeyPrefix+clientTokenLookupPrefix+string(session.ClientToken),
 			sessionJSON,
 			ttl,
-		).Err(); err != nil {
-			return err
-		}
-
-		if s.client.FailoverMode {
-			if err := s.client.Wait(ctx, 1, time.Second).Err(); err != nil {
-				return err
-			}
-		}
-		return nil
+		).Err()
 	}); err != nil {
 		return &RedisError{err}
 	}
@@ -364,8 +355,9 @@ func (s *redisSessionStore) transaction(ctx context.Context, t irma.RequestorTok
 }
 
 func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.ClientToken, handler func(session *sessionData) (bool, error)) error {
+	key := s.client.KeyPrefix + clientTokenLookupPrefix + string(t)
 	err := s.client.Watch(ctx, func(tx *redis.Tx) error {
-		getResult := tx.Get(ctx, s.client.KeyPrefix+clientTokenLookupPrefix+string(t))
+		getResult := tx.Get(ctx, key)
 		if getResult.Err() == redis.Nil {
 			return &UnknownSessionError{"", t}
 		} else if getResult.Err() != nil {
@@ -403,19 +395,14 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 			return errors.New("session ttl is in the past")
 		}
 
-		if err := tx.Set(ctx, s.client.KeyPrefix+clientTokenLookupPrefix+string(t), sessionJSON, ttl).Err(); err != nil {
-			return err
-		}
-		if err := tx.Expire(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken), ttl).Err(); err != nil {
-			return err
-		}
-		if s.client.FailoverMode {
-			if err := tx.Wait(ctx, 1, time.Second).Err(); err != nil {
+		_, err = tx.TxPipelined(ctx, func(p redis.Pipeliner) error {
+			if err := p.Set(ctx, key, sessionJSON, ttl).Err(); err != nil {
 				return err
 			}
-		}
-		return nil
-	})
+			return p.Expire(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken), ttl).Err()
+		})
+		return err
+	}, key)
 	if _, ok := err.(*UnknownSessionError); ok {
 		return err
 	} else if err != nil {

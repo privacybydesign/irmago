@@ -102,7 +102,7 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (any, error) {
 		// For JWK method, include the public key in the JWT header
 		headers.Set(jws.JWKKey, pubJwk)
 	case CryptographicBindingMethod_DID_KEY:
-		did, err := didkey.Create(privKey.PublicKey)
+		did, err := didkey.CreateWithVerificationMethodIdentifier(privKey.PublicKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create did:key from public key: %v", err)
 		}
@@ -180,9 +180,9 @@ func (b *JwtProofBuilder) BuildWithES256Signer(pub *ecdsa.PublicKey, sign ES256S
 
 	// Payload — aud flattened to a single string, matching Build's FlattenAudience.
 	payload := map[string]any{
-		"aud": b.audience,
-		"iss": b.issuer,
-		"iat": b.clock.Now().Unix(),
+		jwt.AudienceKey: b.audience,
+		jwt.IssuerKey:   b.issuer,
+		jwt.IssuedAtKey: b.clock.Now().Unix(),
 	}
 	if b.nonce != nil {
 		payload["nonce"] = *b.nonce
