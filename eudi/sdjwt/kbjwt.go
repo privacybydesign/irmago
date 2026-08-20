@@ -56,7 +56,7 @@ type KeyBindingJwtPayload struct {
 
 type CnfField struct {
 	Jwk *jwk.Key `json:"jwk,omitempty"`
-	// Note: kid can be any value, but for now we only support the did:jwk method, so it should be a string did:jwk reference to a key in the database with keybinding keys
+	// Note: kid can be any value, but for now we only support the did:jwk and did:key methods, so it should be a string DID URL referencing a key in the database with keybinding keys
 	Kid *string `json:"kid,omitempty"`
 }
 
