@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Changed
+- Raise the minimum Go version to 1.27; the `toolchain` directive pins `go1.27.0`
+- Apply the `go fix` modernizations the Go 1.27 toolchain adds: struct literals name promoted fields directly instead of naming the embedded struct, `errors.As` into a declared variable becomes `errors.AsType`, backwards index loops become `slices.Backward`, an `int64` guarded by `atomic.AddInt64`/`atomic.LoadInt64` becomes an `atomic.Int64`, and one `strings.SplitN(s, sep, 2)[0]` becomes `strings.Cut`. The `go fix -diff` status check runs the modernizers of the pinned toolchain, so it reports files a change did not touch unless these land together with the bump
+
 ### Internal
 - Storage regression snapshot for v1.3.0 (`testdata/storage_regression/v1.3.0/`), verified by `TestClientStorageRegressionV1_3_0`. This is the regeneration v1.3.0 called for: it is the first snapshot whose activity logs store text already resolved to a locale, rather than the translation maps the v1.0.0 and v1.1.1 snapshots hold, and the first whose OpenID4VCI issuance logs record the issued JWT's `vct` as the credential id instead of a placeholder. The older snapshots stay as they are, so the legacy translation-map decode path keeps its regression coverage.
 - The regression fixture generator now also issues a status-list credential and revokes it, so the snapshot carries Token Status List state at rest — instances with a `status.status_list` reference and the INVALID `LastKnownStatus` the revocation left behind — which no earlier snapshot has. `TestClientStorageRegressionV1_3_0` asserts that a reloaded client reports the credential as revoked and revocation-supporting while a credential without a status reference reports neither. Both flags come from stored status with no network access, so the assertions do not depend on the status-list agent still serving that list and index.
