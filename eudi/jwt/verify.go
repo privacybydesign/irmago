@@ -45,11 +45,11 @@ func GetX509VerificationOptionsFromTemplate(context X509VerificationContext, hos
 	}
 }
 
-// VerificationTime is the moment certificate validity is checked at: the
+// verificationTime is the moment certificate validity is checked at: the
 // context's pinned CurrentTime when it has one, the wall clock otherwise —
 // the same reading x509.Verify gives VerifyOptions, so an explicit validity
 // check and a chain verification against the same context cannot disagree.
-func VerificationTime(context X509VerificationContext) time.Time {
+func verificationTime(context X509VerificationContext) time.Time {
 	if t := context.GetVerificationOptionsTemplate().CurrentTime; !t.IsZero() {
 		return t
 	}
@@ -87,7 +87,7 @@ func CheckCertificateNotRevoked(context X509VerificationContext, cert *x509.Cert
 // TrustModel.Classify — which is why this is a check a caller asks for rather
 // than part of VerifyCertificate.
 func CheckCertificateValidAt(context X509VerificationContext, cert *x509.Certificate, skew time.Duration, what string) error {
-	now := VerificationTime(context)
+	now := verificationTime(context)
 	if now.Add(skew).Before(cert.NotBefore) || now.Add(-skew).After(cert.NotAfter) {
 		return fmt.Errorf("%s is not valid at the current time (notBefore %s, notAfter %s)",
 			what, cert.NotBefore.Format(time.RFC3339), cert.NotAfter.Format(time.RFC3339))

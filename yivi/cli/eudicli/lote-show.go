@@ -3,7 +3,7 @@ package eudicli
 import (
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -124,7 +124,7 @@ func identityLines(identity lote.DigitalIdentity) []string {
 		// entry relying on one grants nothing.
 		lines = append(lines, "subject "+subject+" (not matched on)")
 	}
-	sort.Strings(lines)
+	slices.Sort(lines)
 	return lines
 }
 

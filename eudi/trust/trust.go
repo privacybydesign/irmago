@@ -131,16 +131,11 @@ type Evaluator interface {
 // here, instead of every caller spelling out what a viewless wallet does.
 func SnapshotOf(evaluator Evaluator) View {
 	if evaluator == nil {
-		return DarkView()
+		// No channels at all: every party ranks low, because nothing is
+		// consulted that could vouch for one.
+		return NewView(nil, nil, nil)
 	}
 	return evaluator.Snapshot()
-}
-
-// DarkView is the view with no channels at all: every party ranks low, because
-// nothing is consulted that could vouch for one. It is what the wallet evaluates
-// against before it holds any trust model — in practice, a test.
-func DarkView() View {
-	return NewView(nil, nil, nil)
 }
 
 // ListSnapshot is the recognized-list channel, pinned to one state of the

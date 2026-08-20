@@ -395,10 +395,6 @@ type ServiceInformation struct {
 	// own list, and read when another scheme's list carries one.
 	Status ServiceStatus `json:"ServiceStatus,omitempty"`
 
-	// StatusStartingTime is `StatusStartingTime` (clause 6.6.5). Optional and
-	// unread; carried so a document naming it round-trips.
-	StatusStartingTime *time.Time `json:"StatusStartingTime,omitempty"`
-
 	// Extensions is `ServiceInformationExtensions` (clause 6.6.9), carrying
 	// the service-level logo override and the scheme-specific markings the
 	// binding has no field for. See [YiviExtension].
@@ -437,13 +433,12 @@ type DigitalIdentity struct {
 	X509SubjectNames []string `json:"X509SubjectNames,omitempty"`
 }
 
-// PKIObject is the binding's `pkiOb`: a base64 value with optional encoding and
-// specification hints. Go marshals a []byte as standard padded base64, which is
-// what `contentEncoding: base64` asks for.
+// PKIObject is the binding's `pkiOb`. Go marshals a []byte as standard padded
+// base64, which is what `contentEncoding: base64` asks for. The binding's
+// optional `encoding` and `specRef` hints are not modelled: nothing emits them
+// and nothing reads them.
 type PKIObject struct {
-	Encoding string `json:"encoding,omitempty"`
-	SpecRef  string `json:"specRef,omitempty"`
-	Val      []byte `json:"val"`
+	Val []byte `json:"val"`
 }
 
 // YiviExtension carries the members Yivi needs and Annex A has no field for.

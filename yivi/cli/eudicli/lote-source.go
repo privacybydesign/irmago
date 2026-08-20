@@ -1,6 +1,7 @@
 package eudicli
 
 import (
+	"bytes"
 	"cmp"
 	"crypto/x509"
 	"encoding/json"
@@ -10,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -250,7 +250,7 @@ func readEntitySources(dir string) ([]namedEntitySource, error) {
 	}
 	// Sorted so a rebuild of unchanged input is byte-identical; entity order is
 	// what the wallet's change detection compares over.
-	sort.Strings(paths)
+	slices.Sort(paths)
 
 	entities := make([]namedEntitySource, 0, len(paths))
 	for _, path := range paths {
@@ -272,12 +272,9 @@ func readEntitySources(dir string) ([]namedEntitySource, error) {
 // misspelled key is far more likely to be a mistake that silently drops a grant
 // than a deliberate extension.
 func strictUnmarshal(raw []byte, into any) error {
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(into); err != nil {
-		return err
-	}
-	return nil
+	return decoder.Decode(into)
 }
 
 func (s schemeSource) toSchemeInformation(issuedAt time.Time) (lote.SchemeInformation, error) {
