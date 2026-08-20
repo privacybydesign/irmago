@@ -1244,7 +1244,7 @@ func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch, loca
 // on different rungs in a single screen. See trustView.
 func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, view trust.View, locale string) clientmodels.TrustedParty {
 	return clientmodels.TrustedParty{
-		Id:         batch.CredentialIssuer,
+		Id:         batch.CredentialIssuerIdentifier,
 		Name:       clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
 		Image:      h.issuerImage(batch, locale),
 		TrustLevel: view.Issuer(services.BatchIssuerEvidence(batch)).Level,

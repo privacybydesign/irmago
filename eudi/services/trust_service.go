@@ -62,7 +62,18 @@ func (s *TrustService) Snapshot() trust.View {
 // A batch stored before the certificate was kept carries none, and ranks through
 // the list channel alone.
 func BatchIssuerEvidence(batch *models.CredentialBatch) trust.Evidence {
-	evidence := trust.Evidence{Identifiers: []string{batch.CredentialIssuer}}
+	// Both names the issuer went by, most specific first, mirroring what
+	// session.issuerVerdict matched on at issuance: the identity the credentials
+	// were signed under (the `iss` claim — a DID for a DID-identified issuer, or
+	// the certificate's subject when `iss` was absent), and the credential
+	// issuer's own identifier from its metadata. A recognized list may key its
+	// entry on either.
+	identifiers := []string{batch.IssuerIdentifier}
+	if batch.CredentialIssuerIdentifier != batch.IssuerIdentifier {
+		identifiers = append(identifiers, batch.CredentialIssuerIdentifier)
+	}
+
+	evidence := trust.Evidence{Identifiers: identifiers}
 	if len(batch.IssuerCertificate) == 0 {
 		return evidence
 	}

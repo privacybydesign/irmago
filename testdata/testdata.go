@@ -78,6 +78,8 @@ const (
 	PkiOption_MissingSchemeData     PkiGenerationOptions = 64
 	PkiOption_InvalidAsnSchemeData  PkiGenerationOptions = 128
 	PkiOption_InvalidJsonSchemeData PkiGenerationOptions = 256
+	PkiOption_MissingUriSan         PkiGenerationOptions = 512
+	PkiOption_MissingDnsSan         PkiGenerationOptions = 1024
 )
 
 func ParseHolderPubJwk() jwk.Key {
@@ -316,6 +318,14 @@ func CreateEndEntityCertificate(t *testing.T, subject pkix.Name, hostname string
 
 	if opts&PkiOption_MissingSchemeData != 0 {
 		certTemplate.ExtraExtensions = []pkix.Extension{}
+	}
+
+	if opts&PkiOption_MissingUriSan != 0 {
+		certTemplate.URIs = nil
+	}
+
+	if opts&PkiOption_MissingDnsSan != 0 {
+		certTemplate.DNSNames = nil
 	}
 
 	certDerBytes, err = x509.CreateCertificate(rand.Reader, certTemplate, caCert, key.Public(), caKey)

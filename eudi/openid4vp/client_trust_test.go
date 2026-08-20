@@ -190,6 +190,28 @@ func TestNewSession_GenericFailures_CarryNoPartyValidationCode(t *testing.T) {
 	})
 }
 
+// didWebLoopbackTransport routes a did:web fetch to a plain-HTTP test server on
+// loopback, whatever host and scheme the DID resolves to.
+//
+// The resolver's own HTTPS→HTTP fallback cannot be used for this: it fires only
+// when the real host answers 404 over authenticated TLS, which is what keeps a
+// hostile host from downgrading key resolution, and a plain-HTTP test server
+// cannot produce that. So the test routes the request itself instead.
+type didWebLoopbackTransport struct{ addr string }
+
+func (t *didWebLoopbackTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	clone := req.Clone(req.Context())
+	clone.URL.Scheme = "http"
+	clone.URL.Host = t.addr
+	return http.DefaultTransport.RoundTrip(clone)
+}
+
+// didWebLoopbackClient is the HTTP client that reaches a did:web document
+// served by a test server at addr.
+func didWebLoopbackClient(addr string) *http.Client {
+	return &http.Client{Transport: &didWebLoopbackTransport{addr: addr}}
+}
+
 // setupDidWebTest publishes a DID document for a loopback did:web verifier and
 // returns an authorization request signed with the key in that document, plus
 // the verifier's DID — what a trust list would name it by. The verifier has no
@@ -234,5 +256,7 @@ func setupDidWebTest(t *testing.T) (authRequestJwt string, validator VerifierVal
 	// A bare did:web carries no attesting certificate, so the verification
 	// context is never consulted; an empty one keeps these tests to the bare
 	// path. The attested-DID cases build a real trust model of their own.
-	return authRequestJwt, NewDidVerifierValidator(true, &eudi_jwt.StaticVerificationContext{}, &MockQueryValidatorFactory{}), didWeb
+	didValidator := NewDidVerifierValidator(true, &eudi_jwt.StaticVerificationContext{}, &MockQueryValidatorFactory{})
+	didValidator.didWebResolver.HTTPClient = didWebLoopbackClient(serverURL.Host)
+	return authRequestJwt, didValidator, didWeb
 }

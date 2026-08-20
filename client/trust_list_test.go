@@ -199,16 +199,16 @@ func seedBatchWithoutIssuerEvidence(t *testing.T, gdb *gorm.DB, issuer string) {
 
 	now := time.Now().UTC()
 	require.NoError(t, gdb.Create(&models.CredentialBatch{
-		IssuerURL:                issuer,
-		CredentialIssuer:         issuer,
-		VerifiableCredentialType: "https://vct.example/pre-feature",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     "pre-feature-batch",
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"u"}`),
-		IssuedAt:                 datatypes.NullTime{V: now.Truncate(time.Second), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
-		Instances:                []models.IssuedCredentialInstance{{RawCredential: []byte("raw")}},
+		IssuerIdentifier:           issuer,
+		CredentialIssuerIdentifier: issuer,
+		VerifiableCredentialType:   "https://vct.example/pre-feature",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       "pre-feature-batch",
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"u"}`),
+		IssuedAt:                   datatypes.NullTime{V: now.Truncate(time.Second), Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             1,
+		Instances:                  []models.IssuedCredentialInstance{{RawCredential: []byte("raw")}},
 	}).Error)
 }
 

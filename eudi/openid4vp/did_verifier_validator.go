@@ -265,14 +265,13 @@ func findVerificationKey(doc *did.Document, header map[string]any) (any, *x509.C
 			continue
 		}
 
-		jwkKey := *pk
-		attestingCert, err := eudi_jwt.AttestingCertificate(jwkKey)
+		attestingCert, err := eudi_jwt.AttestingCertificate(pk)
 		if err != nil {
 			return nil, nil, fmt.Errorf("verification method %s carries an invalid attesting certificate: %w", vm.ID, err)
 		}
 
 		var rawKey any
-		if err := jwk.Export(jwkKey, &rawKey); err != nil {
+		if err := jwk.Export(pk, &rawKey); err != nil {
 			return nil, nil, fmt.Errorf("failed to export raw key from verification method %s: %v", vm.ID, err)
 		}
 		return rawKey, attestingCert, nil

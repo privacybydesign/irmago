@@ -21,12 +21,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// didWebLoopbackTransport routes a did:web fetch to a plain-HTTP test server on
+// loopback, whatever host and scheme the DID resolves to.
+//
+// The resolver's own HTTPS→HTTP fallback cannot be used for this: it fires only
+// when the real host answers 404 over authenticated TLS, which is what keeps a
+// hostile host from downgrading key resolution, and a plain-HTTP test server
+// cannot produce that. So the test routes the request itself instead.
+type didWebLoopbackTransport struct{ addr string }
+
+func (t *didWebLoopbackTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	clone := req.Clone(req.Context())
+	clone.URL.Scheme = "http"
+	clone.URL.Host = t.addr
+	return http.DefaultTransport.RoundTrip(clone)
+}
+
 // serveDidWebWithAttestingCert publishes a did:web document whose single
 // verification method carries signingKey's public part with x5cLeaf embedded in
-// its x5c, and returns the DID. The document is served over plain HTTP, which
-// the insecure resolver falls back to; x5cLeaf need not certify signingKey (the
-// mismatch case pins a foreign leaf on purpose).
-func serveDidWebWithAttestingCert(t *testing.T, signingKey *ecdsa.PrivateKey, x5cLeaf *x509.Certificate) string {
+// its x5c, and returns the DID plus the HTTP client that reaches it. x5cLeaf
+// need not certify signingKey (the mismatch case pins a foreign leaf on
+// purpose).
+func serveDidWebWithAttestingCert(
+	t *testing.T, signingKey *ecdsa.PrivateKey, x5cLeaf *x509.Certificate,
+) (string, *http.Client) {
 	t.Helper()
 	pub, err := jwk.Import(signingKey.Public())
 	require.NoError(t, err)
@@ -54,7 +72,7 @@ func serveDidWebWithAttestingCert(t *testing.T, signingKey *ecdsa.PrivateKey, x5
 	// Assign the captured variable the handler serves as the document id, not
 	// only the returned value — the handler reads did at request time.
 	did = "did:web:" + strings.ReplaceAll(serverURL.Host, ":", "%3A")
-	return did
+	return did, &http.Client{Transport: &didWebLoopbackTransport{addr: serverURL.Host}}
 }
 
 // didIssuedSdJwtVc builds a credential signed with issuerKey and identified by
@@ -92,7 +110,7 @@ func Test_HolderVerification_DidWebIssuer_WithAttestingCertificate_SurfacesTheCe
 		t, testdata.CreateDistinguishedName("DID Issuer"), "issuer.example",
 		caCerts[0], caKeys[0], testdata.VerifierCertSchemeData, testdata.PkiOption_None)
 
-	did := serveDidWebWithAttestingCert(t, issuerKey, leaf)
+	did, didClient := serveDidWebWithAttestingCert(t, issuerKey, leaf)
 	now := time.Now().Unix()
 	sdJwtVc := didIssuedSdJwtVc(t, issuerKey, did, now)
 
@@ -111,6 +129,7 @@ func Test_HolderVerification_DidWebIssuer_WithAttestingCertificate_SurfacesTheCe
 
 	processor := NewHolderVerificationProcessor(ctx)
 	processor.SetAllowInsecureDidWeb(true)
+	processor.didWebHTTPClient = didClient
 
 	verified, err := processor.ParseAndVerifySdJwtVc(SdJwtVcKb(sdJwtVc))
 	require.NoError(t, err)
@@ -133,7 +152,7 @@ func Test_HolderVerification_DidWebIssuer_KeyMismatchedCertificate_Fails(t *test
 		t, testdata.CreateDistinguishedName("Someone Else"), "issuer.example",
 		caCerts[0], caKeys[0], testdata.VerifierCertSchemeData, testdata.PkiOption_None)
 
-	did := serveDidWebWithAttestingCert(t, issuerKey, foreignLeaf)
+	did, didClient := serveDidWebWithAttestingCert(t, issuerKey, foreignLeaf)
 	now := time.Now().Unix()
 	sdJwtVc := didIssuedSdJwtVc(t, issuerKey, did, now)
 
@@ -144,6 +163,7 @@ func Test_HolderVerification_DidWebIssuer_KeyMismatchedCertificate_Fails(t *test
 	}
 	processor := NewHolderVerificationProcessor(ctx)
 	processor.SetAllowInsecureDidWeb(true)
+	processor.didWebHTTPClient = didClient
 
 	_, err := processor.ParseAndVerifySdJwtVc(SdJwtVcKb(sdJwtVc))
 	require.Error(t, err, "an x5c that does not certify the signing key refuses the credential")

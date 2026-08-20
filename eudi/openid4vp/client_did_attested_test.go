@@ -59,6 +59,9 @@ type didAttestFixture struct {
 	did            string
 	leaf           *x509.Certificate
 	ctx            *eudi.TrustModel
+	// didClient reaches the DID document the fixture published; see
+	// didWebLoopbackTransport for why the test routes this itself.
+	didClient *http.Client
 }
 
 // newDidAttestFixture builds an attested did:web verifier. opts shapes the leaf
@@ -126,7 +129,13 @@ func newDidAttestFixture(
 	revocationLists := revocationListsFor(t, opts, leaf, caCerts[0], caKeys[0])
 	ctx := eudi.NewTestTrustModel(t.TempDir(), rootPool, intermediatePool, revocationLists)
 
-	return didAttestFixture{authRequestJwt: authRequestJwt, did: didWeb, leaf: leaf, ctx: ctx}
+	return didAttestFixture{
+		authRequestJwt: authRequestJwt,
+		did:            didWeb,
+		leaf:           leaf,
+		ctx:            ctx,
+		didClient:      didWebLoopbackClient(serverURL.Host),
+	}
 }
 
 // clientForFixture wires a client whose verifier certificate channel is the same
@@ -134,6 +143,7 @@ func newDidAttestFixture(
 // anchored chain.
 func clientForFixture(f didAttestFixture, factory QueryValidatorFactory, confers clientmodels.TrustLevel, checker *lote.Checker) *Client {
 	validator := NewDidVerifierValidator(true, f.ctx, factory)
+	validator.didWebResolver.HTTPClient = f.didClient
 	trustService := services.NewTrustService(checker,
 		staticClassifier(clientmodels.TrustLevel_High),
 		contextClassifier{ctx: f.ctx, confers: confers})

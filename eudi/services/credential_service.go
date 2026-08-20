@@ -141,7 +141,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			Image:        credentialImage,
 			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
-				Id:    batch.CredentialIssuer,
+				Id:    batch.CredentialIssuerIdentifier,
 				Name:  issuerName,
 				Image: issuerImage,
 				Url:   nil,
@@ -238,12 +238,12 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
 
 	batch := &models.CredentialBatch{
-		IssuerURL:                first.IssuerSignedJwtPayload.Issuer,
-		VerifiableCredentialType: first.IssuerSignedJwtPayload.VerifiableCredentialType,
-		Format:                   models.CredentialFormat(credentialConfiguration.Format),
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(processedPayload),
-		CredentialIssuer:         first.IssuerSignedJwtPayload.Issuer,
+		IssuerIdentifier:           first.IssuerIdentifier,
+		VerifiableCredentialType:   first.IssuerSignedJwtPayload.VerifiableCredentialType,
+		Format:                     models.CredentialFormat(credentialConfiguration.Format),
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(processedPayload),
+		CredentialIssuerIdentifier: issuerMetadata.CredentialIssuer,
 		// The evidence the trust ladder ranks this batch's issuer by on every
 		// later read. Nil for a DID-identified issuer, which is not a gap: the
 		// recognized-list channel names those parties by their DID.
