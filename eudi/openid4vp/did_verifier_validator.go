@@ -132,7 +132,7 @@ func (v *DidVerifierValidator) resolvePublicKey(clientId string, header map[stri
 	switch {
 	case strings.HasPrefix(clientId, clientIdPrefixDidJwk):
 		didJwk := strings.TrimPrefix(clientId, "decentralized_identifier:")
-		return v.resolveDidJwk(didJwk, header)
+		return v.resolveDidJwk(didJwk)
 
 	case strings.HasPrefix(clientId, clientIdPrefixDidWeb):
 		didWeb := strings.TrimPrefix(clientId, "decentralized_identifier:")
@@ -144,7 +144,7 @@ func (v *DidVerifierValidator) resolvePublicKey(clientId string, header map[stri
 }
 
 // resolveDidJwk extracts the public key from a did:jwk DID.
-func (v *DidVerifierValidator) resolveDidJwk(didJwk string, header map[string]any) (any, string, error) {
+func (v *DidVerifierValidator) resolveDidJwk(didJwk string) (any, string, error) {
 	key, err := didjwk.Resolve(didJwk)
 	if err != nil {
 		return nil, "", err
