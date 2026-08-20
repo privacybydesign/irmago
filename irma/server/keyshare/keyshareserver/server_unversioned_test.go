@@ -371,10 +371,9 @@ func TestUnversionedKeyshareSessions(t *testing.T) {
 	auth1 := jwtMsg.Message
 
 	test.HTTPPost(t, nil, "http://localhost:8080/users/verify/pin",
-		marshalJSON(t, irma.KeyshareAuthResponse{KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
+		marshalJSON(t, irma.KeyshareAuthResponse{
 			Username: "legacyuser",
-			Pin:      "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
-		}}), nil,
+			Pin:      "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n"}), nil,
 		200, &jwtMsg,
 	)
 	auth2 := jwtMsg.Message
@@ -449,11 +448,9 @@ func doUnversionedChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey, username
 	require.NotEmpty(t, auth.Challenge)
 
 	jwtt, err := jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareAuthResponseClaims{
-		KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
-			Username:  username,
-			Pin:       pin,
-			Challenge: auth.Challenge,
-		},
+		Username:  username,
+		Pin:       pin,
+		Challenge: auth.Challenge,
 	}).SignedString(sk)
 	require.NoError(t, err)
 

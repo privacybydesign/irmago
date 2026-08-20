@@ -81,9 +81,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 
 	// 3. Issue singleton credential
 	issue(t, irmaServer, c, sessionHandler, 3, &irma.IssuanceRequest{
-		DisclosureRequest: irma.DisclosureRequest{
-			BaseRequest: irma.BaseRequest{LDContext: irma.LDContextIssuanceRequest},
-		},
+		LDContext: irma.LDContextIssuanceRequest,
 		Credentials: []*irma.CredentialRequest{
 			{
 				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.singleton"),
