@@ -71,60 +71,44 @@ type Client struct {
 	//Preferences      clientsettings.Preferences
 }
 
-// Config is everything a wallet needs to exist. Named rather than positional
-// because three of the paths are plain strings, and a caller that transposed two
-// would build a wallet that looks fine and stores its data in the wrong place.
-//
-// The zero value of a field takes the documented default.
+// Everything a wallet needs to exist. Named rather than positional because three
+// of the paths are plain strings, and transposing two would build a wallet that
+// looks fine and stores its data in the wrong place. Every zero value takes the
+// documented default.
 type Config struct {
-	// StoragePath is where the IRMA client keeps its data. Must exist.
-	StoragePath string
-	// IrmaConfigurationPath is the irma_configuration assets directory the
-	// scheme is seeded from. Must exist.
+	// StoragePath and IrmaConfigurationPath must exist; EudiAppDataPath is created.
+	StoragePath           string
 	IrmaConfigurationPath string
-	// EudiAppDataPath is where the EUDI storage lives. Created if absent.
-	EudiAppDataPath string
+	EudiAppDataPath       string
 
-	// Handler is how the wallet wakes the app when what it rendered went stale.
-	// Required: background jobs call it without a nil guard.
-	Handler ClientHandler
-	// SessionHandler receives session state updates. May be nil for a wallet
-	// that runs no sessions.
+	// How the wallet wakes the app when what it rendered went stale. Required:
+	// background jobs call it without a nil guard.
+	Handler        ClientHandler
 	SessionHandler clientmodels.SessionHandler
-	// Signer signs the keyshare protocol's messages.
-	Signer irmaclient.Signer
-	// AesKey encrypts everything at rest, in both storage layers.
-	AesKey [32]byte
+	Signer         irmaclient.Signer
+	AesKey         [32]byte
 
-	// Locale is the initial UI language. Empty takes
-	// clientmodels.DefaultFallbackLanguage; the app changes it with SetLocale.
 	Locale string
 
-	// RecognizedTrustLists are the recognized trust lists this wallet consults.
 	// Empty consults none, which is what a released wallet does today: Yivi does
-	// not publish its LoTE yet, so the certificate channel ranks every party. The
-	// released set belongs here once it is published, so that what a wallet
-	// consults is fixed by the call that builds it.
+	// not publish its LoTE yet. The released set belongs here once it is
+	// published, so what a wallet consults is fixed by the call that builds it.
 	RecognizedTrustLists []lote.Source
 
-	// ExtraIssuerTrustAnchors and ExtraVerifierTrustAnchors are anchors this wallet
-	// pins on top of the compiled-in Yivi roots, each with the trust level its
-	// certificates confer. Empty today: no third-party CA is anchored yet, and this
-	// is the seam a test pins one through.
+	// Anchors pinned on top of the compiled-in Yivi roots, each with the trust
+	// level its certificates confer. Empty today — no third-party CA is anchored
+	// yet — and the seam a test pins one through.
 	ExtraIssuerTrustAnchors   []eudi.ExtraTrustAnchor
 	ExtraVerifierTrustAnchors []eudi.ExtraTrustAnchor
 
-	// ExtraTrustListTrustAnchors are PEM anchors a recognized list's signature may
-	// chain to, on top of the pinned Yivi trust-list root. Separate from the
-	// issuer anchors: a certificate that may issue credentials must not thereby be
-	// able to define who is trusted. No trust level accompanies them — a signing
-	// chain says whether the list is genuine, never what a grant on it is worth
-	// (lote.Source.Confers).
+	// PEM anchors a recognized list's signature may chain to, on top of the pinned
+	// Yivi trust-list root. Separate from the issuer anchors: a certificate that
+	// may issue credentials must not thereby define who is trusted. No level
+	// accompanies them — a signing chain says whether the list is genuine, never
+	// what a grant on it is worth (lote.Source.Confers).
 	ExtraTrustListTrustAnchors [][]byte
 }
 
-// New builds a wallet from cfg. Everything optional is a documented zero value
-// on Config.
 func New(cfg Config) (*Client, error) {
 	if cfg.Handler == nil {
 		return nil, fmt.Errorf("handler is required")
@@ -198,16 +182,13 @@ func New(cfg Config) (*Client, error) {
 	}, statusListCache)
 	revocationService := services.NewRevocationService(statusChecker, credStore)
 
-	// The single home for trust-level evaluation, shared by both EUDI protocols
-	// and by the credential listing paths, which rank a stored credential's issuer
-	// on every read. It never fetches on a session's path — see
-	// Client.RefreshTrustLists.
+	// The single home for trust-level evaluation, shared by both EUDI protocols and
+	// by the credential listing paths. It never fetches on a session's path.
 	//
-	// A list's signature is validated against the trust-list anchors, not the
-	// issuer ones: sharing the issuer pool would let any certificate that may
-	// issue credentials sign a document the wallet accepts as Yivi's list, since
-	// the only other things checked (SchemeName, LoTEType) are public. See
-	// eudi.Production_Yivi_TrustListTrustAnchor.
+	// A list's signature is validated against the trust-list anchors, not the issuer
+	// ones: sharing the issuer pool would let any certificate that may issue
+	// credentials sign a document the wallet accepts as Yivi's list, since the only
+	// other things checked (SchemeName, LoTEType) are public.
 	trustChecker := lote.NewChecker(lote.Config{
 		Sources:     cfg.RecognizedTrustLists,
 		X509Context: &eudiConf.TrustLists,
@@ -397,18 +378,16 @@ func (client *Client) RefreshStatuses(ctx context.Context) error {
 	return err
 }
 
-// RefreshTrustLists re-downloads the recognized trust lists and adopts the ones
-// that hold up. It is the only path that fetches a list, so a session is never
-// delayed by a download. A source that fails leaves what the wallet already held
-// in force; the returned error names the failures, for the caller's log.
+// The only path that fetches a list, so a session is never delayed by a download.
+// A failing source leaves what the wallet already held in force; the returned
+// error names the failures for the caller's log.
 //
 // A list that comes back saying something different about the parties on it
-// signals ClientHandler.CredentialsChanged on the calling goroutine, since the
-// app is showing rungs that are now out of date. A re-issue carrying the same
-// entries is silent.
+// signals ClientHandler.CredentialsChanged on the calling goroutine, since the app
+// is showing rungs that are now out of date. A re-issue carrying the same entries
+// is silent.
 //
-// InitJobs runs this on a schedule; the app may also call it on resume or from an
-// explicit refresh action.
+// InitJobs runs this on a schedule; the app may also call it on resume.
 func (client *Client) RefreshTrustLists(ctx context.Context) error {
 	changed, err := client.trustService.RefreshLists(ctx)
 	if changed {

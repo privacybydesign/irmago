@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
-"""A LoTE publisher for the integration tests.
+"""A LoTE publisher for the integration tests: serves an ETSI TS 119 602
+scheme-explicit list in the Annex A JSON binding, signed as a compact JAdES-B-B,
+and lets a test replace what it publishes between requests.
 
-Publishes an ETSI TS 119 602 scheme-explicit List of Trusted Entities in the
-Annex A JSON binding, signed as a compact JAdES-B-B document, and lets a test
-replace what it publishes between requests.
-
-It signs with the openssl CLI and stdlib base64 on purpose, never with a JWS
-library: the wallet verifies with lestrrat-go/jwx, and a publisher on the same
-library would test it against itself instead of against a foreign toolchain's
-`x5c` chain, header order and ECDSA encoding. The document is likewise built by
-hand rather than by the Go serialiser. This is the last such independent check —
-the production publisher shares the wallet's structs, so CI validates its output
-against the ETSI JSON Schema instead. See docs/plans/lote-e2e-tests.md.
+It signs with the openssl CLI and stdlib base64 on purpose, never a JWS library:
+the wallet verifies with lestrrat-go/jwx, and a publisher on the same library
+would test it against itself instead of against a foreign toolchain's `x5c` chain,
+header order and ECDSA encoding. The document is likewise built by hand rather
+than by the Go serialiser. See docs/plans/lote-e2e-tests.md.
 
 Routes:
 
@@ -23,8 +19,7 @@ Routes:
 The `entities` are the compact form `expand_entity` takes, not Annex A.
 
 There is deliberately no fetch-count route (the suite observes wallet-side only)
-and no tamper route (an invalid document is invalid whoever signed it, so that
-coverage stays with the in-process list server).
+and no tamper route (an invalid document is invalid whoever signed it).
 
 `next_update_seconds` may be negative: the wallet is current while
 `now - ClockSkew < next_update`, so backdating to just inside that window expires

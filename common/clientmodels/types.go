@@ -14,33 +14,23 @@ const DefaultFallbackLanguage = "en"
 // TranslatedString is a map from language code to translated text.
 type TranslatedString map[string]string
 
-// TrustLevel is how strongly a party is vouched for: the three rungs of the trust
-// ladder, plus the absence of any evaluation.
+// How strongly a party is vouched for: the three rungs of the trust ladder, plus
+// the absence of any evaluation.
 //
-// It is never a judgement about the party's identity — that is a separate gate
-// which fails the session outright (see ErrorType_PartyValidationFailed) — and it
-// never blocks a session: the wallet warns and lets the user decide.
+// Never a judgement about the party's identity — that is a separate gate which
+// fails the session outright (ErrorType_PartyValidationFailed) — and it never
+// blocks a session: the wallet warns and lets the user decide.
 type TrustLevel string
 
 const (
-	// TrustLevel_Unevaluated is the zero value: nothing was evaluated. Distinct
-	// from TrustLevel_Low, which is the verdict "nobody vouches". Omitted from
-	// JSON, so the app sees an absent field.
+	// The zero value: nothing was evaluated, which is distinct from the verdict
+	// "nobody vouches". Omitted from JSON, so the app sees an absent field.
 	TrustLevel_Unevaluated TrustLevel = ""
-	// TrustLevel_Low means nobody vouches for the party: a bare DID, or a
-	// certificate no anchor stands behind.
-	TrustLevel_Low TrustLevel = "low"
-	// TrustLevel_Medium means somebody besides Yivi vouches for the party: an
-	// anchored third-party CA, or a recognized list that is not Yivi's own.
-	TrustLevel_Medium TrustLevel = "medium"
-	// TrustLevel_High means Yivi itself vouches for the party: an IRMA scheme
-	// registration, a certificate under the Yivi CA, or an entry on Yivi's own
-	// trust list.
-	TrustLevel_High TrustLevel = "high"
+	TrustLevel_Low         TrustLevel = "low"
+	TrustLevel_Medium      TrustLevel = "medium"
+	TrustLevel_High        TrustLevel = "high"
 )
 
-// IsTrusted reports whether the level warrants the trusted marker in the UI:
-// medium or high, i.e. somebody beyond the party itself vouches for it.
 func (l TrustLevel) IsTrusted() bool {
 	return l == TrustLevel_Medium || l == TrustLevel_High
 }
@@ -56,8 +46,7 @@ type TrustedParty struct {
 	Image *Image `json:"image,omitempty"`
 	// The trust chain for this party (if any)
 	Parent *TrustedParty `json:"parent"`
-	// How strongly this party is vouched for. Absent when nothing was
-	// evaluated, which is not the same as "low".
+	// Absent when nothing was evaluated, which is not the same as "low".
 	TrustLevel TrustLevel `json:"trust_level,omitempty"`
 }
 
@@ -68,8 +57,6 @@ type Image struct {
 	MimeType *string `json:"mime_type,omitempty"`
 }
 
-// NewImage wraps raw image bytes as the app-facing Image, carrying the MIME type
-// when one is known. Nil for empty data.
 func NewImage(data []byte, mimeType string) *Image {
 	if len(data) == 0 {
 		return nil

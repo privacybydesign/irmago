@@ -1,18 +1,14 @@
 #!/bin/sh
-# Regenerates the golden LoTE: a committed, signed document that
-# eudi/trust/lote/golden_test.go verifies and reads.
-#
-# Every other test builds its list out of the Go structs in model.go, so a change
-# to their JSON tags passes the whole suite while breaking every real list. Only a
-# document the tests did not marshal can catch that.
+# Regenerates the golden LoTE that eudi/trust/lote/golden_test.go reads: the one
+# document the tests did not marshal themselves, and so the only thing that
+# catches a JSON tag rename.
 #
 # The golden material is its OWN pki, not ../certs: re-running mkpki.sh must not
 # invalidate a committed signature.
 #
-# The list's window is dated from generation time (issue = now, next_update = +30
-# days), so it contains a moment after the signing certificate's notBefore — which
-# is where the golden test pins its clock. Only the certificate's own notAfter
-# (10 years) bounds the document.
+# The list is dated from generation time (issue = now, next_update = +30 days), so
+# it contains a moment after the signing certificate's notBefore — where the test
+# pins its clock. Only that certificate's notAfter bounds the document.
 set -e
 cd "$(dirname "$0")"
 mkdir -p golden/certs
@@ -64,18 +60,16 @@ party_ski = base64.b64encode(
     )
 ).decode()
 
-# Every shape the wallet understands, in one Annex A document: both certificate
-# key forms, a DID, service-level overrides, carried-but-ignored markings, and
-# multilingual names. Three services carry no status — what Yivi publishes, and
-# meaning granted (clause 6.6.0 NOTE 1) — and the fourth carries an explicit
-# withdrawal, so both branches of that rule are exercised.
+# Every shape the wallet understands in one document: both certificate key forms,
+# a DID, service-level overrides, carried-but-ignored markings, multilingual names.
+# Three services carry no status — meaning granted, clause 6.6.0 NOTE 1 — and the
+# fourth an explicit withdrawal, so both branches are exercised.
 #
-# Built through publish.py's own entity()/service() helpers, so the golden
-# document and the E2E publisher cannot disagree about Annex A.
+# Built through publish.py's own helpers, so the golden document and the E2E
+# publisher cannot disagree about Annex A.
 list_document = {
     "LoTE": {
-        # Relative to generation time, so the window contains a moment after the
-        # signing certificate's notBefore.
+        # So the window contains a moment after the certificate's notBefore.
         "ListAndSchemeInformation": publish.scheme_information(
             sequence_number=42,
             next_update_seconds=30 * 86400,
@@ -139,8 +133,7 @@ list_document = {
 payload = json.dumps(list_document, separators=(",", ":")).encode()
 with open("list.jws", "wb") as f:
     f.write(publish.sign(payload))
-# The readable copy. golden_test.go proves it parses to the same List as the
-# signed payload.
+# The readable copy; golden_test.go proves it parses to the same List.
 with open("list.json", "w") as f:
     json.dump(list_document, f, indent=2, sort_keys=True)
     f.write("\n")
