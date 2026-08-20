@@ -73,7 +73,7 @@ func TestRequestorInfoToTrustedParty_MapsSchemeRegistrationToARung(t *testing.T)
 		Name: irma.TranslatedString{"en": "Local IRMA server"},
 	}, "en")
 	require.Equal(t, clientmodels.TrustLevel_High, registered.TrustLevel)
-	require.True(t, registered.TrustLevel.IsTrusted())
+	require.True(t, registered.TrustLevel.IsVouchedFor())
 
 	unregistered := requestorInfoToTrustedParty(&irma.RequestorInfo{
 		ID:         id,
@@ -81,5 +81,5 @@ func TestRequestorInfoToTrustedParty_MapsSchemeRegistrationToARung(t *testing.T)
 		Unverified: true,
 	}, "en")
 	require.Equal(t, clientmodels.TrustLevel_Low, unregistered.TrustLevel)
-	require.False(t, unregistered.TrustLevel.IsTrusted())
+	require.False(t, unregistered.TrustLevel.IsVouchedFor())
 }

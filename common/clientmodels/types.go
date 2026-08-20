@@ -31,7 +31,7 @@ const (
 	TrustLevel_High        TrustLevel = "high"
 )
 
-func (l TrustLevel) IsTrusted() bool {
+func (l TrustLevel) IsVouchedFor() bool {
 	return l == TrustLevel_Medium || l == TrustLevel_High
 }
 

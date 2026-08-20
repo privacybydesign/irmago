@@ -88,7 +88,7 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 	// it: the top rung, and the trusted marker in the UI.
 	require.Equal(t, clientmodels.TrustLevel_High, session.Requestor.TrustLevel,
 		"an X.509 verifier under the Yivi anchors reaches the top rung")
-	require.True(t, session.Requestor.TrustLevel.IsTrusted())
+	require.True(t, session.Requestor.TrustLevel.IsVouchedFor())
 
 	plan := session.DisclosurePlan
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{

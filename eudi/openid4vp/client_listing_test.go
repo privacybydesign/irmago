@@ -28,7 +28,7 @@ func TestNewSession_ListedOnYivisList_RanksHigh(t *testing.T) {
 	requestor := handler.awaitRequestor(t)
 	require.Equal(t, clientmodels.TrustLevel_High, requestor.TrustLevel,
 		"an entry on Yivi's own list is Yivi vouching for the verifier")
-	require.True(t, requestor.TrustLevel.IsTrusted())
+	require.True(t, requestor.TrustLevel.IsVouchedFor())
 }
 
 func TestNewSession_ListedVerifier_RendersTheCuratedName(t *testing.T) {

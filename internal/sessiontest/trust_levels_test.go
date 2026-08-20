@@ -130,7 +130,7 @@ func testVerifierRungsFollowTheLists(t *testing.T) {
 	onYivisList := discloseToVeramoVerifier(t, c, 4, sessionHandler)
 	require.Equal(t, clientmodels.TrustLevel_High, onYivisList.Requestor.TrustLevel,
 		"an entry on Yivi's own list reaches the top rung: being listed is being onboarded")
-	require.True(t, onYivisList.Requestor.TrustLevel.IsTrusted())
+	require.True(t, onYivisList.Requestor.TrustLevel.IsVouchedFor())
 }
 
 // The second place a stored credential's issuer is ranked at read: the disclosure

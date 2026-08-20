@@ -9,15 +9,15 @@ import (
 
 // One rule decides the trusted marker for every party the wallet shows: somebody
 // beyond the party itself vouches for it.
-func TestTrustLevel_IsTrusted(t *testing.T) {
-	trusted := map[TrustLevel]bool{
+func TestTrustLevel_IsVouchedFor(t *testing.T) {
+	vouchedFor := map[TrustLevel]bool{
 		TrustLevel_Unevaluated: false,
 		TrustLevel_Low:         false,
 		TrustLevel_Medium:      true,
 		TrustLevel_High:        true,
 	}
-	for level, expected := range trusted {
-		require.Equal(t, expected, level.IsTrusted(), "level %q", level)
+	for level, expected := range vouchedFor {
+		require.Equal(t, expected, level.IsVouchedFor(), "level %q", level)
 	}
 }
 

@@ -104,7 +104,7 @@ func testOpenID4VCIPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 		"a did:web issuer has nobody vouching for it")
 	require.Equal(t, clientmodels.TrustLevel_Low, offered.Issuer.TrustLevel,
 		"the offered credential reports the same rung as the session header")
-	require.False(t, offered.Issuer.TrustLevel.IsTrusted(),
+	require.False(t, offered.Issuer.TrustLevel.IsVouchedFor(),
 		"an unvouched-for issuer must not be shown as trusted")
 
 	grantPermission(t, c, session.Id)

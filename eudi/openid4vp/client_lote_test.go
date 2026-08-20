@@ -74,7 +74,7 @@ func TestNewSession_ListedVerifier_RanksMedium(t *testing.T) {
 	requestor := handler.awaitRequestor(t)
 	require.Equal(t, clientmodels.TrustLevel_Medium, requestor.TrustLevel,
 		"a verifier granted on a recognized list is vouched for by that list's operator")
-	require.True(t, requestor.TrustLevel.IsTrusted())
+	require.True(t, requestor.TrustLevel.IsVouchedFor())
 }
 
 func TestNewSession_UnlistedVerifier_RanksLow(t *testing.T) {

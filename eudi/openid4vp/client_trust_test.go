@@ -99,7 +99,7 @@ func TestNewSession_X509Verifier_RanksHigh(t *testing.T) {
 	requestor := handler.awaitRequestor(t)
 	require.Equal(t, clientmodels.TrustLevel_High, requestor.TrustLevel,
 		"a verifier whose chain validates against the Yivi anchors is vouched for by Yivi")
-	require.True(t, requestor.TrustLevel.IsTrusted())
+	require.True(t, requestor.TrustLevel.IsVouchedFor())
 }
 
 func TestNewSession_DidWebVerifier_RanksLowAndProceeds(t *testing.T) {
@@ -115,7 +115,7 @@ func TestNewSession_DidWebVerifier_RanksLowAndProceeds(t *testing.T) {
 	requestor := handler.awaitRequestor(t)
 	require.Equal(t, clientmodels.TrustLevel_Low, requestor.TrustLevel,
 		"nobody vouches for a bare did:web verifier")
-	require.False(t, requestor.TrustLevel.IsTrusted())
+	require.False(t, requestor.TrustLevel.IsVouchedFor())
 	require.Equal(t, int32(0), handler.cancels.Load())
 }
 

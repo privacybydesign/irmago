@@ -26,7 +26,7 @@ func TestConvertToTrustedParty_RanksTheIssuer(t *testing.T) {
 	tp := client.convertToTrustedParty(m, "en", trust.NewView(nil, nil, nil))
 
 	require.Equal(t, clientmodels.TrustLevel_Low, tp.TrustLevel)
-	require.False(t, tp.TrustLevel.IsTrusted(), "a low issuer gets no trusted marker")
+	require.False(t, tp.TrustLevel.IsVouchedFor(), "a low issuer gets no trusted marker")
 }
 
 func TestConvertToCredentialInfoList_OfferedCredentialsCarryTheIssuerLevel(t *testing.T) {
