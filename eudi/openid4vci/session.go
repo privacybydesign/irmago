@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -813,9 +812,6 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 
 	verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(credentialResponse.Credentials))
 	for i, cred := range credentialResponse.Credentials {
-		if i == 0 {
-			log.Printf("first credential: %s", cred.Credential)
-		}
 		verifiedSdJwt, err := s.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
 		if err != nil {
 			return nil, fmt.Errorf("failed to verify credential: %v", err)
