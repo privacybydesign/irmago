@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -57,6 +58,51 @@ func TestCreateAndResolve_Ed25519_RoundTrips(t *testing.T) {
 	resolved, err := Resolve(didKey)
 	require.NoError(t, err)
 	require.Equal(t, pub, resolved)
+}
+
+// The spec references the key inside the DID document as `did:key:z…#z…`, so the
+// verification method identifier repeats the DID's own multibase value as fragment.
+func TestCreateWithVerificationMethodIdentifier_AppendsMultibaseAsFragment(t *testing.T) {
+	key := mustCreateEcdsaKey(t, elliptic.P256())
+
+	didKey, err := Create(key.PublicKey)
+	require.NoError(t, err)
+
+	didKeyWithVM, err := CreateWithVerificationMethodIdentifier(key.PublicKey)
+	require.NoError(t, err)
+
+	require.Equal(t, fragmented(didKey), didKeyWithVM)
+
+	multibase := strings.TrimPrefix(didKey, Prefix)
+	require.Equal(t, Prefix+multibase+"#"+multibase, didKeyWithVM)
+
+	// The fragment names the very key the DID encodes, so it still resolves to it.
+	resolved, err := Resolve(didKeyWithVM)
+	require.NoError(t, err)
+	require.Equal(t, key.PublicKey, resolved)
+}
+
+func TestCreateWithVerificationMethodIdentifier_Ed25519_AppendsMultibaseAsFragment(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+
+	didKey, err := Create(pub)
+	require.NoError(t, err)
+
+	didKeyWithVM, err := CreateWithVerificationMethodIdentifier(pub)
+	require.NoError(t, err)
+	require.Equal(t, fragmented(didKey), didKeyWithVM)
+
+	resolved, err := Resolve(didKeyWithVM)
+	require.NoError(t, err)
+	require.Equal(t, pub, resolved)
+}
+
+func TestCreateWithVerificationMethodIdentifier_UnsupportedCurve_ReturnsError(t *testing.T) {
+	key := mustCreateEcdsaKey(t, elliptic.P521())
+
+	_, err := CreateWithVerificationMethodIdentifier(key.PublicKey)
+	require.ErrorContains(t, err, "unsupported elliptic curve")
 }
 
 // The spec references the key as `did:key:z…#z…`, so a DID URL in that form has to

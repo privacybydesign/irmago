@@ -14,6 +14,19 @@ import (
 
 const Prefix = "did:key:"
 
+// CreateWithVerificationMethod encodes a public key as a did:key DID. The method-specific identifier is
+// always base58-btc encoded, which is what the spec's creation algorithm prescribes
+// (https://w3c-ccg.github.io/did-key-spec/#format).
+//
+// The returned DID also carries a verification method identifier.
+func CreateWithVerificationMethodIdentifier[T ecdsa.PublicKey | ed25519.PublicKey](publicKey T) (string, error) {
+	multibase, err := did.CreateMultibaseFromPublicKey(publicKey, did.Base58Encoder{})
+	if err != nil {
+		return "", err
+	}
+	return Prefix + multibase + "#" + multibase, nil
+}
+
 // Create encodes a public key as a did:key DID. The method-specific identifier is
 // always base58-btc encoded, which is what the spec's creation algorithm prescribes
 // (https://w3c-ccg.github.io/did-key-spec/#format).

@@ -102,7 +102,7 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (any, error) {
 		// For JWK method, include the public key in the JWT header
 		headers.Set(jws.JWKKey, pubJwk)
 	case CryptographicBindingMethod_DID_KEY:
-		did, err := didkey.Create(privKey.PublicKey)
+		did, err := didkey.CreateWithVerificationMethodIdentifier(privKey.PublicKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create did:key from public key: %v", err)
 		}
