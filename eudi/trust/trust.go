@@ -24,9 +24,12 @@ import (
 // evaluation channels key on. Every field is optional: absent evidence is
 // simply a channel that has nothing to say about this party.
 type Evidence struct {
-	// Certificate is the end-entity certificate the party presented, or nil
-	// when it identified itself some other way (a DID, or issuer metadata
-	// alone).
+	// Certificate is the certificate that attests the party's key: the
+	// end-entity certificate an x5c party presented, or the certificate a DID
+	// party's verification method carries over its key (RFC 7517 §4.7). Nil
+	// when the party carries none — a bare DID, or issuer metadata alone. How
+	// the party authenticated (a certificate, or a DID) is not the question
+	// here; whether a certificate vouches for its key is.
 	//
 	// A certificate here is a claim, not a verdict: the certificate channel
 	// classifies it against the wallet's anchors at evaluation time, and only

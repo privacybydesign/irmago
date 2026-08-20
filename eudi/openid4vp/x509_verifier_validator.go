@@ -68,35 +68,9 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 
 	requestor := &VerifiedRequestor{Certificate: leafCert}
 
-	// Does any anchor the wallet holds stand behind this certificate? This is
-	// classification, not the gate: chain building and the digitalSignature key
-	// usage, against the same trust model the ladder's certificate channel
-	// consults. Anchored decides whether the certificate's contents count as
-	// attested — and whether the authorization it carries is worth enforcing,
-	// since an unanchored certificate's contents are the party's own word about
-	// itself.
-	anchored := eudi_jwt.VerifyCertificate(v.verificationContext, leafCert, nil) == nil
-
-	if anchored {
-		if info, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leafCert); err == nil {
-			requestor.Attested = info
-
-			// The one hard rule: when the party's vouching artifact carries an
-			// attribute authorization, a request exceeding it fails at any
-			// rung. Enforced whenever the artifact is trustworthy — never
-			// skipped because the request also carries client_metadata.
-			queryValidator := v.validatorFactory.CreateQueryValidator(&info.RelyingParty)
-			credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
-			if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
-				return nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
-			}
-		} else {
-			// An anchored certificate without the Yivi scheme extension: a
-			// third-party CA attested the subject, so its name is attested —
-			// but it carries no attribute authorization to enforce.
-			eudi.Logger.Debugf("openid4vp: verifier certificate carries no scheme data (%v), using its subject", err)
-			requestor.Attested = scheme.NamedRelyingParty(leafCert.Subject.CommonName)
-		}
+	anchored, err := applyAttestedCertificate(v.verificationContext, v.validatorFactory, requestor, leafCert, &authRequest)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// The verifier's own account of itself, whatever the anchoring:
@@ -110,6 +84,55 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	}
 
 	return &authRequest, requestor, nil
+}
+
+// applyAttestedCertificate is the anchored-attestation step both verifier
+// transports share: given a leaf whose validity window and revocation the caller
+// has already gated, decide whether an anchor stands behind it and, when one
+// does, fill requestor.Attested from the certificate and enforce any attribute
+// authorization it carries. It reports whether the leaf is anchored, which the
+// caller needs to compose the self-asserted account.
+//
+// Only the classification is shared; how each transport obtains and validity-
+// gates the leaf (x5c header vs DID resolution) stays with the caller, because
+// that is the part that genuinely differs.
+func applyAttestedCertificate(
+	verificationContext eudi_jwt.X509VerificationContext,
+	validatorFactory QueryValidatorFactory,
+	requestor *VerifiedRequestor,
+	leaf *x509.Certificate,
+	authRequest *AuthorizationRequest,
+) (anchored bool, err error) {
+	// Does any anchor the wallet holds stand behind this certificate? This is
+	// classification, not the gate: chain building and the digitalSignature key
+	// usage, against the same trust model the ladder's certificate channel
+	// consults. Anchored decides whether the certificate's contents count as
+	// attested — and whether the authorization it carries is worth enforcing,
+	// since an unanchored certificate's contents are the party's own word about
+	// itself.
+	if eudi_jwt.VerifyCertificate(verificationContext, leaf, nil) != nil {
+		return false, nil
+	}
+
+	if info, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leaf); err == nil {
+		requestor.Attested = info
+
+		// The one hard rule: when the party's vouching artifact carries an
+		// attribute authorization, a request exceeding it fails at any rung.
+		// Enforced whenever the artifact is trustworthy — never skipped because
+		// the request also carries client_metadata.
+		queryValidator := validatorFactory.CreateQueryValidator(&info.RelyingParty)
+		if err := queryValidator.ValidateCredentialQueries(dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)); err != nil {
+			return true, fmt.Errorf("failed to verify queried credentials: %v", err)
+		}
+	} else {
+		// An anchored certificate without the Yivi scheme extension: a
+		// third-party CA attested the subject, so its name is attested — but it
+		// carries no attribute authorization to enforce.
+		eudi.Logger.Debugf("openid4vp: verifier certificate carries no scheme data (%v), using its subject", err)
+		requestor.Attested = scheme.NamedRelyingParty(leaf.Subject.CommonName)
+	}
+	return true, nil
 }
 
 func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier() jwt.Keyfunc {

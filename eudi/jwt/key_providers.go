@@ -24,7 +24,10 @@ import (
 //
 // Callers that need post-fetch access to the resolved certificate (for chain
 // validation against an X509VerificationContext) can type-assert
-// InnerKeyProvider to *X509KeyProvider after FetchKeys returns.
+// InnerKeyProvider after FetchKeys returns: to the concrete *X509KeyProvider
+// when only the x5c-header path is acceptable (as the LoTE and status-list
+// paths require), or to interface{ GetCert() *x509.Certificate } to accept an
+// attesting certificate from either the x5c-header or the DID path.
 type JwtKeyProvider struct {
 	allowedTyps   []string
 	allowInsecure bool
@@ -96,21 +99,34 @@ func (p *X509KeyProvider) GetCert() *x509.Certificate {
 	return p.cert
 }
 
+// leafCertFromChain parses the end-entity (first) certificate out of a base64
+// DER x5c chain. Shared by the x5c-header key provider and the DID attesting-key
+// helper, which extract the leaf the same way.
+func leafCertFromChain(chain *cert.Chain) (*x509.Certificate, error) {
+	leafBase64, ok := chain.Get(0)
+	if !ok {
+		return nil, fmt.Errorf("x5c chain has no leaf certificate")
+	}
+	der, err := base64.StdEncoding.DecodeString(string(leafBase64))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode x5c leaf: %w", err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse x5c leaf: %w", err)
+	}
+	return leaf, nil
+}
+
 func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
 	// The first certificate in the chain should be the end-entity certificate
 	if p.x5cHeader == nil || p.x5cHeader.Len() == 0 {
 		return fmt.Errorf("expected x5c header, but is empty")
 	}
 
-	firstCert, _ := p.x5cHeader.Get(0)
-	der, err := base64.StdEncoding.DecodeString(string(firstCert))
+	cert, err := leafCertFromChain(p.x5cHeader)
 	if err != nil {
-		return fmt.Errorf("failed to decode end-entity base64 encoded der: %v", err)
-	}
-
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return fmt.Errorf("failed to parse end-entity certificate: %v", err)
+		return err
 	}
 
 	// Store the cert in the provider for future use and validation
@@ -135,6 +151,16 @@ type KidKeyProvider struct {
 	// timeout-bounded client (didweb.NewHTTPClient); tests inject their own.
 	httpClient    *http.Client
 	allowInsecure bool
+
+	// cert is the attesting certificate the resolved verification method's key
+	// carries in its x5c, or nil when it carries none. Populated by FetchKeys,
+	// read back through GetCert once the signature has verified — the same
+	// shape X509KeyProvider uses. A certificate here is a claim, not a verdict:
+	// FetchKeys asserts only that it certifies the key that signed (RFC 7517
+	// §4.7); whether an anchor stands behind it, whether it is in date and
+	// whether it is revoked are the caller's checks, exactly as on the x5c-header
+	// path.
+	cert *x509.Certificate
 }
 
 func NewKidKeyProvider(kidHeader string, allowInsecure bool) *KidKeyProvider {
@@ -143,6 +169,14 @@ func NewKidKeyProvider(kidHeader string, allowInsecure bool) *KidKeyProvider {
 		httpClient:    didweb.NewHTTPClient(),
 		allowInsecure: allowInsecure,
 	}
+}
+
+// GetCert returns the attesting certificate the signing verification method's
+// key carried, or nil when it carried none. Valid only after FetchKeys has run
+// and the JWT signature has verified — a certificate whose key signed nothing
+// vouches for nothing.
+func (p *KidKeyProvider) GetCert() *x509.Certificate {
+	return p.cert
 }
 
 func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
@@ -184,6 +218,17 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 			if isPrivateKey {
 				return fmt.Errorf("cannot use a JWK containing private key material")
 			}
+
+			// Capture the attesting certificate the signing key carries, if any.
+			// Key equality (RFC 7517 §4.7) is enforced here because this is the
+			// one site holding the verification method's JWK; an x5c that does
+			// not certify the key that signs is a malformed document and refuses.
+			// Absent is not an error — the party simply carries no attestation.
+			cert, err := AttestingCertificate(*pk)
+			if err != nil {
+				return fmt.Errorf("verification method %s carries an invalid attesting certificate: %w", vm.ID, err)
+			}
+			p.cert = cert
 
 			if sig == nil {
 				return fmt.Errorf("missing JWS signature")

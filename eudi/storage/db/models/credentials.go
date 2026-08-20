@@ -63,10 +63,12 @@ type CredentialBatch struct {
 	// CredentialIssuer is the canonical URL of the credential issuer (credential_issuer claim).
 	CredentialIssuer string
 
-	// IssuerCertificate is the DER of the end-entity certificate this batch's
-	// credentials were signed with, when the issuer identified itself by `x5c`.
-	// Nil for a DID-identified issuer, and for batches stored before the column
-	// existed — those rank through the recognized-list channel alone.
+	// IssuerCertificate is the DER of the certificate attesting the key this
+	// batch's credentials were signed with: the `x5c` leaf for an x5c-header
+	// issuer, or the certificate a DID issuer's verification method carries over
+	// its key. Nil for a bare DID issuer that carries none, and for batches
+	// stored before the column existed — those rank through the recognized-list
+	// channel alone.
 	//
 	// It is evidence rather than a verdict: the issuer's trust level is not
 	// stored, it is ranked again on every read, so a delisted issuer demotes and

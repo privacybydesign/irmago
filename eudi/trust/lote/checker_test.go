@@ -550,3 +550,68 @@ func requireRefreshFailed(t *testing.T, checker *Checker) {
 	_, err := checker.Refresh(context.Background())
 	require.Error(t, err)
 }
+
+// TestChecker_AttestedDidPartyKeepsItsDidKeyedListing is the regression the
+// per-handle union exists to prevent. A DID party listed by its DID keeps that
+// listing after it gains an attesting certificate: the certificate vouches for
+// the key it authenticated with, it is not a second way of authenticating, so
+// the DID handle still grants. Before the union, evidence carrying a
+// certificate short-circuited to the certificate branch, which a DID-keyed
+// entry never matched, and the party silently lost its rung.
+func TestChecker_AttestedDidPartyKeepsItsDidKeyedListing(t *testing.T) {
+	f := newFixture(t, clientmodels.TrustLevel_High)
+	const did = "did:web:issuer.example.com"
+	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
+		NewTestEntity("Listed DID BV", "", NewTestDidService(trust.RoleIssuer, did)),
+	))
+
+	// The party now also carries an attesting certificate.
+	attestation := f.signer.NewTestPartyCertificate(t, "issuer.example.com", "VATNL-000000010")
+
+	listing := f.refreshed(t).Snapshot().Lookup(trust.RoleIssuer, trust.Evidence{
+		Certificate: attestation,
+		Identifiers: []string{did},
+	})
+	require.NotNil(t, listing, "a DID-keyed entry still grants a party that has since attested its key")
+	require.Equal(t, "Listed DID BV", listing.Name["en"])
+}
+
+// TestChecker_CertificateKeyedEntryGrantsADidParty shows the other direction of
+// the union: a DID party can be listed by the certificate or key it attested
+// with, not only by its DID. The identifier need never appear in the entry.
+func TestChecker_CertificateKeyedEntryGrantsADidParty(t *testing.T) {
+	f := newFixture(t, clientmodels.TrustLevel_High)
+	attestation := f.signer.NewTestPartyCertificate(t, "issuer.example.com", "VATNL-000000011")
+	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
+		NewTestEntity("Keyed DID BV", "VATNL-000000011",
+			NewTestSkiService(trust.RoleIssuer, attestation)),
+	))
+
+	listing := f.refreshed(t).Snapshot().Lookup(trust.RoleIssuer, trust.Evidence{
+		Certificate: attestation,
+		Identifiers: []string{"did:web:issuer.example.com"},
+	})
+	require.NotNil(t, listing, "a certificate/SKI entry grants a DID party by its attested key")
+}
+
+// TestChecker_ReassignedKeyIsNotRescuedByIdentifiers is the mutation guard for
+// the per-handle rule. The certificate handle fails because the entry names a
+// different legal entity than the certificate does (a reassigned key), and the
+// party's identifiers do not match any OtherId either. The handles are judged
+// independently, so the failed certificate handle is not rescued into a grant
+// by the mere presence of identifiers.
+func TestChecker_ReassignedKeyIsNotRescuedByIdentifiers(t *testing.T) {
+	f := newFixture(t, clientmodels.TrustLevel_High)
+	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "VATNL-000000012")
+	// Right key, wrong legal entity, and a DID OtherId that does not match the
+	// party's identifier.
+	entry := NewTestEntity("Someone Else BV", "VATNL-999999999",
+		NewTestSkiService(trust.RoleVerifier, party))
+	entry.Services[0].Information.DigitalIdentity.OtherIds = []string{"did:web:someone-else.example.com"}
+	f.server.Serve(t, f.signer, NewTestList(testListId, 1, entry))
+
+	require.Nil(t, f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{
+		Certificate: party,
+		Identifiers: []string{"did:web:party.example.com"},
+	}), "a reassigned key stays refused; identifiers present in the evidence do not rescue it")
+}

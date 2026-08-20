@@ -176,6 +176,13 @@ func verifierIdentifiers(clientId string) []string {
 	return []string{clientId}
 }
 
+// isDidClientId reports whether the client_id identifies the verifier by a DID
+// rather than by a certificate. A DID party keeps its DID as its displayed
+// identifier even when a certificate attests its key.
+func isDidClientId(clientId string) bool {
+	return strings.HasPrefix(clientId, string(ClientIdentifierPrefix_DecentralizedDid))
+}
+
 // handleVerificationFailure ends the session with the code that fits what went
 // wrong while the request was being verified: a rejection by the identity gate
 // tells the app the verifier itself was not trustworthy, anything else is a
@@ -350,20 +357,22 @@ func (client *Client) composeRequestor(
 
 	var display trust.PartyDisplay
 	if requestor.Attested != nil {
-		// An anchored certificate is the one identity document the verifier
-		// cannot have written itself, so its serial number is the identifier
-		// the party is known by.
-		display.Id = requestor.Certificate.SerialNumber.String()
 		display.Attested = trust.PartyMetadata{
 			Name: clientmodels.Resolve(clientmodels.TranslatedString(requestor.Attested.Organization.LegalName), locale),
 			Logo: logoImage(requestor.Attested.Organization.Logo),
 		}
-	} else {
-		// With nothing attested — a bare DID, or a certificate no anchor
-		// stands behind — the verifier is identified by the party half of its
-		// client_id: the DID or hostname a user can recognize, and at low the
-		// only thing on the screen it did not choose itself.
-		display.Id = verifierIdentifiers(clientId)[0]
+	}
+
+	// The identifier a party is known by is the most stable one in its own
+	// protocol. A DID party is known by its DID — what its client_id carries
+	// and what a list entry keys on — even once a certificate attests its key,
+	// so its Id never becomes a certificate serial. A certificate-only party
+	// (X.509) attested has no such identifier, so its Id is the serial number,
+	// the one identity document it cannot have written itself. With nothing
+	// attested the party is identified by the party half of its client_id.
+	display.Id = verifierIdentifiers(clientId)[0]
+	if requestor.Attested != nil && !isDidClientId(clientId) {
+		display.Id = requestor.Certificate.SerialNumber.String()
 	}
 	display.SelfAssertedName = requestor.SelfAssertedName
 

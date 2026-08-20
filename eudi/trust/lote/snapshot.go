@@ -78,33 +78,49 @@ func grants(entity *Entity, service *Service, role trust.Role, ev trust.Evidence
 
 // matchesIdentity checks the party against the service's digital identities.
 //
-// A certificate-bearing party is matched on the certificate — the whole
-// certificate or the key it carries — AND on the legal entity, when the entry
-// names one. Both halves are required: the certificate says which key signed,
-// the organization identifier says whose key it is, and an entry that pinned
-// only the key would keep granting the entity that key was reassigned to.
+// A party may carry two handles onto its identity, and an entry granting
+// either one grants the party. The certificate handle is the whole certificate
+// or the key it carries, AND the legal entity when the entry names one. The
+// identifier handle is a DID or issuer URL against the OtherId entries.
 //
-// A party without a certificate is matched on its identifiers, against the
-// OtherId entries. Nothing is inferred across the two: a DID entry does not
-// grant a certificate-bearing party and vice versa.
+// The two are a union because a DID party that also carries an attesting
+// certificate has both handles genuinely — the certificate vouches for the key
+// it authenticated with, it is not how it authenticated. Keying only on
+// whether a certificate is present would drop such a party's DID-keyed listing
+// the moment it attested. The handles are judged independently rather than in
+// sequence, so the certificate handle's organization-identifier cross-check is
+// never rescued by the identifier handle: a reassigned key still fails.
 func matchesIdentity(entity *Entity, service *Service, ev trust.Evidence) bool {
-	identity := &service.Information.DigitalIdentity
+	return matchesCertificateHandle(entity, service, ev) ||
+		matchesIdentifierHandle(service, ev)
+}
 
-	if ev.Certificate != nil {
-		if !matchesCertificate(identity, ev.Certificate) {
-			return false
-		}
-		organizationIdentifier := entity.Information.OrganizationIdentifier()
-		if organizationIdentifier == "" {
-			return true
-		}
-		return organizationIdentifier == CertificateOrganizationIdentifier(ev.Certificate)
+// matchesCertificateHandle grants when the party's certificate matches an entry
+// certificate or key AND the entry's organization identifier matches (or the
+// entry names none). Both halves are required: the certificate says which key
+// signed, the organization identifier says whose key it is, and an entry that
+// pinned only the key would keep granting the entity that key was reassigned to.
+func matchesCertificateHandle(entity *Entity, service *Service, ev trust.Evidence) bool {
+	if ev.Certificate == nil {
+		return false
 	}
+	if !matchesCertificate(&service.Information.DigitalIdentity, ev.Certificate) {
+		return false
+	}
+	organizationIdentifier := entity.Information.OrganizationIdentifier()
+	if organizationIdentifier == "" {
+		return true
+	}
+	return organizationIdentifier == CertificateOrganizationIdentifier(ev.Certificate)
+}
 
-	// An OtherId is a bare string in Annex A, so there is no type to filter on:
-	// a DID is self-describing and compared verbatim. An empty entry would
-	// match an empty identifier, so it is skipped rather than trusted.
-	for _, other := range identity.OtherIds {
+// matchesIdentifierHandle grants when one of the party's identifiers matches an
+// OtherId entry. An OtherId is a bare string in Annex A, so there is no type to
+// filter on: a DID or issuer URL is self-describing and compared verbatim. An
+// empty entry would match an empty identifier, so it is skipped rather than
+// trusted.
+func matchesIdentifierHandle(service *Service, ev trust.Evidence) bool {
+	for _, other := range service.Information.DigitalIdentity.OtherIds {
 		if other == "" {
 			continue
 		}

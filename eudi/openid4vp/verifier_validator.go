@@ -19,10 +19,11 @@ const ClockSkew = 60 * time.Second
 // self-asserted account is shown under the warn state for the user to judge and
 // never supplies a logo.
 type VerifiedRequestor struct {
-	// Certificate is the end-entity certificate the verifier presented, or nil
-	// when it identified itself another way (a DID). Presence is a claim, not
-	// a verdict: the trust ladder classifies it against the wallet's anchors,
-	// and only an anchored chain confers a rung.
+	// Certificate is the certificate attesting the verifier's key: the leaf an
+	// x5c verifier presented, or the one a DID verifier's verification method
+	// carries over its key. Nil when the verifier carries none — a bare DID.
+	// Presence is a claim, not a verdict: the trust ladder classifies it
+	// against the wallet's anchors, and only an anchored chain confers a rung.
 	Certificate *x509.Certificate
 
 	// Attested is what the verifier's certificate says about it, present only

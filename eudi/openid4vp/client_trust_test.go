@@ -16,6 +16,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/trust/lote"
@@ -230,5 +231,8 @@ func setupDidWebTest(t *testing.T) (authRequestJwt string, validator VerifierVal
 		"decentralized_identifier:"+didWeb, key, &x509.Certificate{},
 		func(token *jwt.Token) { delete(token.Header, "x5c") },
 	)
-	return authRequestJwt, NewDidVerifierValidator(true), didWeb
+	// A bare did:web carries no attesting certificate, so the verification
+	// context is never consulted; an empty one keeps these tests to the bare
+	// path. The attested-DID cases build a real trust model of their own.
+	return authRequestJwt, NewDidVerifierValidator(true, &eudi_jwt.StaticVerificationContext{}, &MockQueryValidatorFactory{}), didWeb
 }

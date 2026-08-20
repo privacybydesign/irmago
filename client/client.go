@@ -240,7 +240,7 @@ func New(cfg Config) (*Client, error) {
 
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
-	didValidator := openid4vp.NewDidVerifierValidator(false)
+	didValidator := openid4vp.NewDidVerifierValidator(false, &eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
 	verifierValidator := openid4vp.NewCompositeVerifierValidator(x509Validator, didValidator)
 	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(s)
 
