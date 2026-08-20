@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Internal
+- Storage regression snapshot for v1.3.0 (`testdata/storage_regression/v1.3.0/`), verified by `TestClientStorageRegressionV1_3_0`. This is the regeneration v1.3.0 called for: it is the first snapshot whose activity logs store text already resolved to a locale, rather than the translation maps the v1.0.0 and v1.1.1 snapshots hold, and the first whose OpenID4VCI issuance logs record the issued JWT's `vct` as the credential id instead of a placeholder. The older snapshots stay as they are, so the legacy translation-map decode path keeps its regression coverage.
+- The regression fixture generator now also issues a status-list credential and revokes it, so the snapshot carries Token Status List state at rest — instances with a `status.status_list` reference and the INVALID `LastKnownStatus` the revocation left behind — which no earlier snapshot has. `TestClientStorageRegressionV1_3_0` asserts that a reloaded client reports the credential as revoked and revocation-supporting while a credential without a status reference reports neither. Both flags come from stored status with no network access, so the assertions do not depend on the status-list agent still serving that list and index.
+
 ### Fixed
 - `irma.HTTPTransport` now honours the `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` environment variables, so irmago can run where outgoing traffic must pass through a proxy; it was the only outbound transport in irmago that ignored them. Operators with a system-wide proxy can keep internal traffic (requestor callbacks, keyshare and revocation servers) off it with `NO_PROXY`; loopback addresses are never proxied ([#423](https://github.com/privacybydesign/irmago/issues/423))
 
