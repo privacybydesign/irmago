@@ -396,7 +396,8 @@ func TestKeyshareSessions(t *testing.T) {
 	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin",
 		marshalJSON(t, irma.KeyshareAuthResponse{
 			Username: "legacyuser",
-			Pin:      "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n"}), nil,
+			Pin:      "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
+		}), nil,
 		200, &jwtMsg,
 	)
 	auth2 := jwtMsg.Message

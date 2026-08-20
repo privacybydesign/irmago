@@ -212,7 +212,7 @@ func vctDisplayToCredentialDisplay(d typemetadata.DisplayEntry) metadata.Credent
 	}
 	if d.Locale != "" {
 		locale := d.Locale
-		out.Display.Locale = &locale
+		out.Locale = &locale
 	}
 	if d.Logo != nil {
 		out.Logo = &metadata.RemoteImage{Uri: d.Logo.URI, AltText: d.Logo.AltText}
