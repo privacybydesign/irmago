@@ -1159,9 +1159,9 @@ func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_JwksUriTakesPrecedenceOverInlin
 	// jwks member publishes under the same kid.
 	resolved, ok := sink.keys[0].key.(jwk.Key)
 	require.True(t, ok, "expected a jwk.Key on the sink, got %T", sink.keys[0].key)
-	var resolvedPub ecdsa.PublicKey
-	require.NoError(t, jwk.Export(resolved, &resolvedPub))
-	require.True(t, hostedKey.PublicKey.Equal(&resolvedPub), "the sink received the inline key instead of the hosted one")
+	resolvedPub, err := jwk.Export[*ecdsa.PublicKey](resolved)
+	require.NoError(t, err)
+	require.True(t, hostedKey.PublicKey.Equal(resolvedPub), "the sink received the inline key instead of the hosted one")
 }
 
 // Precedence is not a fallback chain in the other direction either: once
