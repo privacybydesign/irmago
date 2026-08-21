@@ -42,6 +42,7 @@ func processConfiguration(conf *Configuration) error {
 		conf.Logger = server.NewLogger(conf.Verbose, conf.Quiet, conf.LogJSON)
 	}
 	server.Logger = conf.Logger
+	server.LoggerEntry = logrus.NewEntry(conf.Logger)
 	irma.Logger = conf.Logger
 
 	// Setup email templates

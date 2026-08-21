@@ -69,7 +69,7 @@ func (conf EmailConfiguration) TranslateString(strings map[string]string, lang s
 	if ok {
 		return s
 	}
-	server.Logger.WithField("lang", common.SanitizeForLog(lang)).
+	server.LoggerEntry.WithField("lang", common.SanitizeForLog(lang)).
 		Warn("email string translation requested for unknown language, falling back to default")
 	return strings[conf.DefaultLanguage]
 }
@@ -79,7 +79,7 @@ func (conf EmailConfiguration) translateTemplate(templates map[string]*template.
 	if ok {
 		return t
 	}
-	server.Logger.WithField("lang", common.SanitizeForLog(lang)).
+	server.LoggerEntry.WithField("lang", common.SanitizeForLog(lang)).
 		Warn("email template translation requested for unknown language, falling back to default")
 	return templates[conf.DefaultLanguage]
 }
@@ -95,14 +95,14 @@ func (conf EmailConfiguration) SendEmail(
 ) error {
 	var content bytes.Buffer
 	if err := conf.translateTemplate(templates, lang).Execute(&content, templateData); err != nil {
-		server.Logger.WithField("error", err).Error("Could not generate email from template")
+		server.LoggerEntry.WithField("error", err).Error("Could not generate email from template")
 		return err
 	}
 
 	from, err := ParseEmailAddress(conf.EmailFrom)
 	if err != nil {
 		// Email address comes from configuration, so this is a server error.
-		server.Logger.WithField("error", err).Error("From address in configuration is invalid")
+		server.LoggerEntry.WithField("error", err).Error("From address in configuration is invalid")
 		return err
 	}
 
@@ -130,7 +130,7 @@ func (conf EmailConfiguration) SendEmail(
 	fmt.Fprint(&message, content.String())
 
 	if err := smtp.SendMail(conf.EmailServer, conf.EmailAuth, from.Address, to, message.Bytes()); err != nil {
-		server.Logger.WithField("error", err).Error("Could not send email")
+		server.LoggerEntry.WithField("error", err).Error("Could not send email")
 		return err
 	}
 
@@ -234,7 +234,7 @@ func VerifyMXRecord(email string) error {
 			return ErrInvalidEmailDomain
 		}
 		if ipErr != nil {
-			server.Logger.WithField("error", ipErr).Error("No active network connection")
+			server.LoggerEntry.WithField("error", ipErr).Error("No active network connection")
 			return ErrNoNetwork
 		}
 
