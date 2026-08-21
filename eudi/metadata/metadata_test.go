@@ -116,10 +116,8 @@ func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
 			metadata: CredentialIssuerMetadata{
 				Display: CredentialIssuerDisplays{
 					{
-						Display: Display{
-							Name:   "Issuer Name",
-							Locale: &locale_EN,
-						},
+						Name:   "Issuer Name",
+						Locale: &locale_EN,
 					},
 				},
 			},
@@ -130,22 +128,16 @@ func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
 			metadata: CredentialIssuerMetadata{
 				Display: CredentialIssuerDisplays{
 					{
-						Display: Display{
-							Name:   "Issuer Name",
-							Locale: &locale_EN_US,
-						},
+						Name:   "Issuer Name",
+						Locale: &locale_EN_US,
 					},
 					{
-						Display: Display{
-							Name:   "Nom de l'émetteur",
-							Locale: &locale_FR_FR,
-						},
+						Name:   "Nom de l'émetteur",
+						Locale: &locale_FR_FR,
 					},
 					{
-						Display: Display{
-							Name:   "Nombre del emisor",
-							Locale: &locale_ES,
-						},
+						Name:   "Nombre del emisor",
+						Locale: &locale_ES,
 					},
 				},
 			},
@@ -156,22 +148,16 @@ func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
 			metadata: CredentialIssuerMetadata{
 				Display: CredentialIssuerDisplays{
 					{
-						Display: Display{
-							Name:   "Issuer Name",
-							Locale: &locale_EN_US,
-						},
+						Name:   "Issuer Name",
+						Locale: &locale_EN_US,
 					},
 					{
-						Display: Display{
-							Name:   "Another Issuer Name",
-							Locale: &locale_EN_GB,
-						},
+						Name:   "Another Issuer Name",
+						Locale: &locale_EN_GB,
 					},
 					{
-						Display: Display{
-							Name:   "Nom de l'émetteur",
-							Locale: &locale_FR,
-						},
+						Name:   "Nom de l'émetteur",
+						Locale: &locale_FR,
 					},
 				},
 			},

@@ -1404,7 +1404,7 @@ func newMinimalIssuerMetadata(configID string, format metadata.CredentialFormatI
 	return metadata.CredentialIssuerMetadata{
 		CredentialIssuer: "https://issuer.example.com",
 		Display: metadata.CredentialIssuerDisplays{
-			{Display: metadata.Display{Name: "Test Issuer", Locale: new("en")}},
+			{Name: "Test Issuer", Locale: new("en")},
 		},
 		CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
 			configID: {Format: format},
@@ -1416,15 +1416,15 @@ func newFullIssuerMetadata(configID string) metadata.CredentialIssuerMetadata {
 	return metadata.CredentialIssuerMetadata{
 		CredentialIssuer: "https://issuer.example.com",
 		Display: metadata.CredentialIssuerDisplays{
-			{Display: metadata.Display{Name: "Test Issuer", Locale: new("en")}},
-			{Display: metadata.Display{Name: "Test Issuer NL", Locale: new("nl")}},
+			{Name: "Test Issuer", Locale: new("en")},
+			{Name: "Test Issuer NL", Locale: new("nl")},
 		},
 		CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
 			configID: {
 				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				CredentialMetadata: &metadata.CredentialMetadata{
 					Display: metadata.CredentialDisplays{
-						{Display: metadata.Display{Name: "My Credential", Locale: new("en")}},
+						{Name: "My Credential", Locale: new("en")},
 					},
 					Claims: []metadata.ClaimsDescription{
 						{

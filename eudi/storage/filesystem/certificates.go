@@ -33,10 +33,8 @@ func newCertificateManager(basePath string, internalStorage *fsStorage) Certific
 	}
 
 	return &certificateManager{
-		fileManager: fileManager{
-			basePath:        path,
-			internalStorage: internalStorage,
-		},
+		basePath:        path,
+		internalStorage: internalStorage,
 	}
 }
 

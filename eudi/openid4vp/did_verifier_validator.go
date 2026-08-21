@@ -120,7 +120,7 @@ func didWebDomain(didStr string) (string, bool) {
 	if !strings.HasPrefix(didStr, prefix) {
 		return "", false
 	}
-	host := strings.SplitN(strings.TrimPrefix(didStr, prefix), ":", 2)[0]
+	host, _, _ := strings.Cut(strings.TrimPrefix(didStr, prefix), ":")
 	if host == "" {
 		return "", false
 	}
