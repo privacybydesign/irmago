@@ -30,6 +30,9 @@ func Test_IsSupportedSignatureAlgorithm_Rejected(t *testing.T) {
 		{jwa.HS512(), "symmetric"},
 		{jwa.NoSignature(), "unsigned"},
 		{jwa.NewSignatureAlgorithm("Ed448"), "not registered by jwx and unimplemented in the standard library"},
+		{jwa.MLDSA44(), "post-quantum, not specified by any OpenID4VC or EUDI profile"},
+		{jwa.MLDSA65(), "post-quantum, not specified by any OpenID4VC or EUDI profile"},
+		{jwa.MLDSA87(), "post-quantum, not specified by any OpenID4VC or EUDI profile"},
 	}
 
 	for _, tt := range tests {
@@ -59,6 +62,9 @@ func Test_SupportedSignatureAlgorithms_CoversEveryKnownAlgorithm(t *testing.T) {
 		"EdDSA": true,
 		"none":  false,
 		"HS256": false, "HS384": false, "HS512": false,
+		// Registered by jwx from v4.4.0 on, and verifiable here: unlike the other rejects these
+		// are refused by choice, not because the build could not check the signature.
+		"ML-DSA-44": false, "ML-DSA-65": false, "ML-DSA-87": false,
 	}
 	// Unlike jwx v3, where ES256K was always registered regardless of the jwx_es256k tag, jwx v4
 	// only knows ES256K at all once the github.com/jwx-go/es256k/v4 companion package is

@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -1337,6 +1338,26 @@ func Test_X509KeyProvider_FetchKeys_RejectedAlg_ReturnsError(t *testing.T) {
 
 	require.ErrorContains(t, err, `unsupported signature algorithm "HS256"`)
 	require.Empty(t, sink.keys, "no key may reach the sink for a rejected algorithm")
+}
+
+// ML-DSA is the case HS256 cannot cover: jwx registers it from v4.4.0 on and verifies it against
+// crypto/mldsa, so the token below carries a signature this build is able to check. Only the
+// allow-list stands between it and the sink, which is what makes it worth signing for real rather
+// than asserting on the name.
+func Test_X509KeyProvider_FetchKeys_MLDSA_ReturnsError(t *testing.T) {
+	derBytes, _, _ := newTestECDSACert(t)
+
+	privKey, err := mldsa.GenerateKey(mldsa.MLDSA44())
+	require.NoError(t, err)
+
+	p := NewX509KeyProvider(newTestCertChain(t, derBytes))
+	sink := &testKeySink{}
+
+	msg := newTestJWSMessageSigned(t, "test", privKey, jwa.MLDSA44())
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, `unsupported signature algorithm "ML-DSA-44"`)
+	require.Empty(t, sink.keys)
 }
 
 // RFC 9864 deprecates the EdDSA algorithm name in favour of Ed25519, but issuers still sign with
