@@ -82,8 +82,7 @@ func Test_JwtProofBuilder_Build_JWKMethod_WithNonce_Succeeds(t *testing.T) {
 	issuedAt, _ := token.IssuedAt()
 	require.Equal(t, testFixedTime.Unix(), issuedAt.Unix())
 
-	var nonceClaim string
-	nonceClaim, err = jwt.Get[string](token, "nonce")
+	nonceClaim, err := jwt.Get[string](token, "nonce")
 	require.NoError(t, err, "nonce claim should be present")
 	require.Equal(t, nonce, nonceClaim)
 
