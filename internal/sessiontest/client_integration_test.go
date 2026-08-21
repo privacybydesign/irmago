@@ -1061,10 +1061,8 @@ func discloseOverOpenID4VP(t *testing.T, c *client.Client, sessionId int, sessio
 	verifierSession, err := StartTestSessionAtEudiVerifier(openid4vpHost, createEmailAuthRequestRequest())
 	require.NoError(t, err)
 	sessionReq := client.SessionRequestData{
-		Qr: irma.Qr{
-			Type: irma.ActionDisclosing,
-			URL:  verifierSession.SessionLink,
-		},
+		Type:     irma.ActionDisclosing,
+		URL:      verifierSession.SessionLink,
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	}
 	sessionJson, err := json.Marshal(sessionReq)

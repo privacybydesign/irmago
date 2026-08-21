@@ -110,7 +110,7 @@ func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
 
 	// Step 3: Start an OpenID4VP session in the client using the verifier's request URI.
 	sessionReq, err := json.Marshal(client.SessionRequestData{
-		Qr:       irma.Qr{URL: veramoSession.RequestUri},
+		URL:      veramoSession.RequestUri,
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	})
 	require.NoError(t, err)
@@ -2757,7 +2757,7 @@ func testEudiVerifierRequestingVeramoCredentialFails(t *testing.T) {
 	require.NoError(t, err)
 
 	sessionReq, err := json.Marshal(client.SessionRequestData{
-		Qr:       irma.Qr{URL: verifierSession.SessionLink},
+		URL:      verifierSession.SessionLink,
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	})
 	require.NoError(t, err)
@@ -4904,7 +4904,7 @@ func startOpenID4VPDisclosureSession(t *testing.T, c *client.Client, sessionId i
 	t.Helper()
 
 	sessionReq, err := json.Marshal(client.SessionRequestData{
-		Qr:       irma.Qr{URL: requestUri},
+		URL:      requestUri,
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	})
 	require.NoError(t, err)
