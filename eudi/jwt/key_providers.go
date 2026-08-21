@@ -5,20 +5,28 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/cert"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/cert"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
 )
+
+// maxJwksBytes caps the JWKS response body. jwks_uri is reached through the
+// unverified `iss` claim of the JWT being verified, so the endpoint is
+// attacker-chosen and an unbounded io.ReadAll would let it exhaust memory.
+// jwk.Fetch capped this at 10 MB before jwx v4 removed it; 1 MiB matches the
+// other remote-document fetches in eudi/ and is far above any real JWKS.
+const maxJwksBytes = 1 << 20 // 1 MiB
 
 // JwtKeyProvider validates the 'typ' header against a configured allow-list,
 // then dispatches signature key resolution to either X509KeyProvider (when the
@@ -332,10 +340,37 @@ func (p *OAuthDiscoveryJwkKeyProvider) FetchKeys(ctx context.Context, sink jws.K
 		return nil
 	}
 
-	// Fetch the JWKS from the jwks_uri
-	jwks, err := jwk.Fetch(ctx, *metadata.JwksUri, jwk.WithHTTPClient(p.httpClient))
+	// Fetch the JWKS from the jwks_uri. jwx v4 dropped jwk.Fetch, so fetch and parse it ourselves,
+	// keeping the body cap and the strict set parsing that jwk.Fetch applied for us.
+	// We fail explicitly on any error here, since the JWT might actually be signed with a key
+	// that is currently not resolvable because of network issues.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, *metadata.JwksUri, nil)
 	if err != nil {
-		// We fail explicitly here, since the JWT might actually be signed with a key that is not resolvable because of network issues.
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: %v", *metadata.JwksUri, err)
+	}
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: %v", *metadata.JwksUri, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: unexpected HTTP status %d", *metadata.JwksUri, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxJwksBytes+1))
+	if err != nil {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: %v", *metadata.JwksUri, err)
+	}
+	if len(body) > maxJwksBytes {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: response exceeds %d bytes", *metadata.JwksUri, maxJwksBytes)
+	}
+
+	// Strict parsing rejects the whole set when any entry is unparseable. jwx v4
+	// instead keeps such an entry as a placeholder key that retains its own kid,
+	// which LookupKeyID below would hand to the sink.
+	jwks, err := jwk.Parse(body, jwk.WithStrictKeySetParsing(true))
+	if err != nil {
 		return fmt.Errorf("failed to fetch or parse JWKS from %s: %v", *metadata.JwksUri, err)
 	}
 

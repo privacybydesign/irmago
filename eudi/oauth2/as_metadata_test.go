@@ -134,4 +134,18 @@ func TestAuthorizationServerMetadata_UnmarshalJSON(t *testing.T) {
 			t.Error("expected an error for a malformed jwks member")
 		}
 	})
+
+	// jwx v4 by default keeps an unparseable entry in "keys" as a placeholder key
+	// and returns the rest of the set, where v3 rejected the whole document. The
+	// set is the authorization server's, so the strict behaviour is kept; this pins it.
+	t.Run("an unparseable key in the set rejects the whole set", func(t *testing.T) {
+		const withUnparseable = `{"keys":[{"kty":"EC","crv":"P-256","kid":"k1",` +
+			`"x":"f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",` +
+			`"y":"x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"},{"kty":"EC","crv":"P-256"}]}`
+
+		var asMetadata AuthorizationServerMetadata
+		if err := json.Unmarshal([]byte(`{"issuer":"x","jwks":`+withUnparseable+`}`), &asMetadata); err == nil {
+			t.Error("expected an error for a jwks member holding an unparseable key")
+		}
+	})
 }

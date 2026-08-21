@@ -6,7 +6,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	clientstorage "github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
@@ -52,7 +52,7 @@ func testDeletingNoKeysFromEmptyStorageShouldBeFine(t *testing.T, storage sdjwt.
 }
 
 func getPubJwk(t *testing.T, priv *ecdsa.PrivateKey) jwk.Key {
-	privJwk, err := jwk.Import(priv)
+	privJwk, err := jwk.Import[jwk.Key](priv)
 	require.NoError(t, err)
 	pubJwk, err := privJwk.PublicKey()
 	require.NoError(t, err)

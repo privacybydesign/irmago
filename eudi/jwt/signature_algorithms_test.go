@@ -3,7 +3,7 @@ package eudi_jwt
 import (
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,7 +29,10 @@ func Test_IsSupportedSignatureAlgorithm_Rejected(t *testing.T) {
 		{jwa.HS384(), "symmetric"},
 		{jwa.HS512(), "symmetric"},
 		{jwa.NoSignature(), "unsigned"},
-		{jwa.EdDSAEd448(), "not registered by jwx and unimplemented in the standard library"},
+		{jwa.NewSignatureAlgorithm("Ed448"), "not registered by jwx and unimplemented in the standard library"},
+		{jwa.MLDSA44(), "post-quantum, not specified by any OpenID4VC or EUDI profile"},
+		{jwa.MLDSA65(), "post-quantum, not specified by any OpenID4VC or EUDI profile"},
+		{jwa.MLDSA87(), "post-quantum, not specified by any OpenID4VC or EUDI profile"},
 	}
 
 	for _, tt := range tests {
@@ -39,11 +42,11 @@ func Test_IsSupportedSignatureAlgorithm_Rejected(t *testing.T) {
 	}
 }
 
-// ES256K is accepted only in builds carrying the jwx_es256k build tag, which is what compiles
-// jwx's secp256k1 support. Without it a signature using ES256K could not be verified, so the
-// allow-list must follow the tag in both directions.
+// ES256K is accepted only in builds carrying the jwx_es256k build tag, which is what pulls in the
+// companion module holding jwx's secp256k1 support. Without it a signature using ES256K could not
+// be verified, so the allow-list must follow the tag in both directions.
 func Test_IsSupportedSignatureAlgorithm_ES256K_FollowsBuildTag(t *testing.T) {
-	require.Equal(t, es256kEnabled, IsSupportedSignatureAlgorithm(jwa.ES256K()))
+	require.Equal(t, es256kEnabled, IsSupportedSignatureAlgorithm(jwa.NewSignatureAlgorithm("ES256K")))
 
 	_, found := LookupSupportedSignatureAlgorithm("ES256K")
 	require.Equal(t, es256kEnabled, found)
@@ -56,10 +59,19 @@ func Test_SupportedSignatureAlgorithms_CoversEveryKnownAlgorithm(t *testing.T) {
 		"ES256": true, "ES384": true, "ES512": true, "Ed25519": true,
 		"PS256": true, "PS384": true, "PS512": true,
 		"RS256": true, "RS384": true, "RS512": true,
-		"ES256K": es256kEnabled,
-		"EdDSA":  true,
-		"none":   false,
-		"HS256":  false, "HS384": false, "HS512": false,
+		"EdDSA": true,
+		"none":  false,
+		"HS256": false, "HS384": false, "HS512": false,
+		// Registered by jwx from v4.4.0 on, and verifiable here: unlike the other rejects these
+		// are refused by choice, not because the build could not check the signature.
+		"ML-DSA-44": false, "ML-DSA-65": false, "ML-DSA-87": false,
+	}
+	// Unlike jwx v3, where ES256K was always registered regardless of the jwx_es256k tag, jwx v4
+	// only knows ES256K at all once the github.com/jwx-go/es256k/v4 companion package is
+	// imported — which happens only in a build carrying the tag. So the key itself, not just its
+	// accepted/rejected verdict, follows the tag.
+	if es256kEnabled {
+		expectedAccepted["ES256K"] = true
 	}
 
 	known := jwa.SignatureAlgorithms()

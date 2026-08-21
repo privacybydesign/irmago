@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 )
 
 // OAuth 2.0 grant type identifiers, as they appear in an authorization server's
@@ -74,7 +74,10 @@ func (as *AuthorizationServerMetadata) UnmarshalJSON(data []byte) error {
 	if len(aux.Jwks) == 0 || string(aux.Jwks) == "null" {
 		return nil
 	}
-	jwks, err := jwk.Parse(aux.Jwks)
+	// The set comes from the authorization server, so it is parsed strictly: jwx v4
+	// otherwise keeps an unparseable entry in "keys" as a placeholder key, which a
+	// later LookupKeyID would hand out as if it were a real key.
+	jwks, err := jwk.Parse(aux.Jwks, jwk.WithStrictKeySetParsing(true))
 	if err != nil {
 		return fmt.Errorf("invalid 'jwks': %w", err)
 	}

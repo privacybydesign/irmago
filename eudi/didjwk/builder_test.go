@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/stretchr/testify/require"
 )
@@ -144,7 +144,7 @@ func Test_FromJwk_Given_AsymmetricKeyWithoutKeyUsage_IncludesAllVerificationRela
 func Test_FromJwk_Given_PrivateKey_ReturnsError(t *testing.T) {
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	key, err := jwk.Import(privKey)
+	key, err := jwk.Import[jwk.Key](privKey)
 	require.NoError(t, err)
 
 	_, err = (&DocumentBuilder{}).FromJwk(key)
@@ -152,7 +152,7 @@ func Test_FromJwk_Given_PrivateKey_ReturnsError(t *testing.T) {
 }
 
 func Test_FromJwk_Given_SymmetricKey_ReturnsError(t *testing.T) {
-	key, err := jwk.Import([]byte("0123456789abcdef"))
+	key, err := jwk.Import[jwk.Key]([]byte("0123456789abcdef"))
 	require.NoError(t, err)
 
 	_, err = (&DocumentBuilder{}).FromJwk(key)
@@ -174,7 +174,7 @@ func Test_Resolve_Given_PrivateKey_ReturnsError(t *testing.T) {
 	// if it were a legitimately resolved public key.
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	key, err := jwk.Import(privKey)
+	key, err := jwk.Import[jwk.Key](privKey)
 	require.NoError(t, err)
 	privJson, err := json.Marshal(key)
 	require.NoError(t, err)
