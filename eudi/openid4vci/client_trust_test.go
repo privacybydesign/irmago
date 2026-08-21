@@ -20,7 +20,7 @@ func TestConvertToTrustedParty_RanksTheIssuer(t *testing.T) {
 
 	m := &metadata.CredentialIssuerMetadata{
 		CredentialIssuer: "https://issuer.example.com",
-		Display:          metadata.CredentialIssuerDisplays{{Display: metadata.Display{Name: "Test Issuer"}}},
+		Display:          metadata.CredentialIssuerDisplays{{Name: "Test Issuer"}},
 	}
 
 	tp := client.convertToTrustedParty(m, "en", trust.NewView(nil, nil, nil))
@@ -40,7 +40,7 @@ func TestConvertToCredentialInfoList_OfferedCredentialsCarryTheIssuerLevel(t *te
 				Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
 				VerifiableCredentialType: "https://issuer.example.com/vct/email",
 				CredentialMetadata: &metadata.CredentialMetadata{
-					Display: metadata.CredentialDisplays{{Display: metadata.Display{Name: "Email"}}},
+					Display: metadata.CredentialDisplays{{Name: "Email"}},
 				},
 			},
 		},

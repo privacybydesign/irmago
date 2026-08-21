@@ -486,13 +486,13 @@ func composeIssuerParty(
 		// not that anybody else stands behind it. So it is the issuer's own word,
 		// and only the name reaches the user — never the logo.
 		SelfAssertedName: clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
-	}
-	display.CuratedLogo = services.LoadCuratedLogo(
-		context.Background(),
-		issuerLogos,
-		httpClient,
-		verdict.CuratedLogoURI(),
-	)
+
+		CuratedLogo: services.LoadCuratedLogo(
+			context.Background(),
+			issuerLogos,
+			httpClient,
+			verdict.CuratedLogoURI(),
+		)}
 
 	return display.TrustedParty(verdict, locale)
 }

@@ -184,8 +184,8 @@ func TestConvertToTrustedParty_TheIssuersOwnLogoDoesNotReachTheWallet(t *testing
 		CredentialIssuer: "https://issuer.example.com/tenant",
 		Display: metadata.CredentialIssuerDisplays{
 			{
-				Display: metadata.Display{Name: "Test Issuer"},
-				Logo:    &metadata.RemoteImage{Uri: logoUri},
+				Name: "Test Issuer",
+				Logo: &metadata.RemoteImage{Uri: logoUri},
 			},
 		},
 	}
@@ -204,7 +204,7 @@ func TestConvertToTrustedParty_TheCuratedNameOutranksTheIssuersOwn(t *testing.T)
 
 	m := &metadata.CredentialIssuerMetadata{
 		CredentialIssuer: "https://issuer.example.com/tenant",
-		Display:          metadata.CredentialIssuerDisplays{{Display: metadata.Display{Name: "Whatever BV"}}},
+		Display:          metadata.CredentialIssuerDisplays{{Name: "Whatever BV"}},
 	}
 
 	tp := client.convertToTrustedParty(m, "en", listedIssuerNamedView{name: "Listed BV"})
