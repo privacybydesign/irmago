@@ -58,8 +58,7 @@ func (s *session) snapshotPreExistingCredentials(credentials []*clientmodels.Cre
 
 func (s *session) error(err error) {
 	s.State.Status = clientmodels.Status_Error
-	var irmaErr *irma.SessionError
-	if errors.As(err, &irmaErr) {
+	if irmaErr, ok := errors.AsType[*irma.SessionError](err); ok {
 		s.State.Error = newSessionError(irmaErr)
 	} else {
 		s.State.Error = newSessionError(&irma.SessionError{Err: err, ErrorType: irma.ErrorApi, Info: err.Error()})

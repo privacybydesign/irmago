@@ -48,8 +48,8 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_HttpUri(t *testing.T) {
 		CredentialIssuer: "https://issuer.example.com/tenant",
 		Display: metadata.CredentialIssuerDisplays{
 			{
-				Display: metadata.Display{Name: "Test Issuer"},
-				Logo:    &metadata.RemoteImage{Uri: logoUri},
+				Name: "Test Issuer",
+				Logo: &metadata.RemoteImage{Uri: logoUri},
 			},
 		},
 	}
@@ -84,8 +84,8 @@ func TestConvertToTrustedParty_PreservesSvgMimeType(t *testing.T) {
 		CredentialIssuer: "https://issuer.example.com/tenant",
 		Display: metadata.CredentialIssuerDisplays{
 			{
-				Display: metadata.Display{Name: "Test Issuer"},
-				Logo:    &metadata.RemoteImage{Uri: logoUri},
+				Name: "Test Issuer",
+				Logo: &metadata.RemoteImage{Uri: logoUri},
 			},
 		},
 	}
@@ -112,8 +112,8 @@ func TestConvertToTrustedParty_NoMimeType_LeavesMimeTypeNil(t *testing.T) {
 		CredentialIssuer: "https://issuer.example.com/tenant",
 		Display: metadata.CredentialIssuerDisplays{
 			{
-				Display: metadata.Display{Name: "Test Issuer"},
-				Logo:    &metadata.RemoteImage{Uri: logoUri},
+				Name: "Test Issuer",
+				Logo: &metadata.RemoteImage{Uri: logoUri},
 			},
 		},
 	}
@@ -139,8 +139,8 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_DataUri(t *testing.T) {
 	m := &metadata.CredentialIssuerMetadata{
 		Display: metadata.CredentialIssuerDisplays{
 			{
-				Display: metadata.Display{Name: "Test Issuer"},
-				Logo:    &metadata.RemoteImage{Uri: logoUri},
+				Name: "Test Issuer",
+				Logo: &metadata.RemoteImage{Uri: logoUri},
 			},
 		},
 	}
@@ -160,7 +160,7 @@ func TestConvertToTrustedParty_NoLogo_LeavesImageNil(t *testing.T) {
 
 	m := &metadata.CredentialIssuerMetadata{
 		Display: metadata.CredentialIssuerDisplays{
-			{Display: metadata.Display{Name: "Logoless Issuer"}},
+			{Name: "Logoless Issuer"},
 		},
 	}
 

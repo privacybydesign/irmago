@@ -1342,10 +1342,8 @@ func startOpenID4VPSessionWithAuthRequest(
 	verifierSession, err := StartTestSessionAtEudiVerifier(testdata.OpenID4VP_DirectPostJwt_Host, authRequestJson)
 	require.NoError(t, err)
 	sessionRequest := client.SessionRequestData{
-		Qr: irma.Qr{
-			Type: irma.ActionDisclosing,
-			URL:  verifierSession.SessionLink,
-		},
+		Type:     irma.ActionDisclosing,
+		URL:      verifierSession.SessionLink,
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	}
 	sessionJson, err := json.Marshal(sessionRequest)

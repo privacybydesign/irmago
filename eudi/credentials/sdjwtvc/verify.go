@@ -291,11 +291,9 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(
 
 	// Construct payload — use 0 for missing time claims instead of time.Time{}.Unix()
 	payload := &IssuerSignedJwtPayload{
-		RegisteredClaims: sdjwt.RegisteredClaims{
-			Sd:      sd,
-			SdAlg:   iana.HashingAlgorithm(sdAlg),
-			Confirm: cnf,
-		},
+		Sd:                       sd,
+		SdAlg:                    iana.HashingAlgorithm(sdAlg),
+		Confirm:                  cnf,
 		VerifiableCredentialType: vct,
 		Status:                   status,
 	}

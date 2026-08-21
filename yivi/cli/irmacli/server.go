@@ -197,13 +197,11 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 
 	// Read configuration from flags and/or environmental variables
 	conf := &requestorserver.Configuration{
-		Configuration: irmaServerConf,
-		Permissions: requestorserver.Permissions{
-			Disclosing: handlePermission("disclose_perms"),
-			Signing:    handlePermission("sign_perms"),
-			Issuing:    handlePermission("issue_perms"),
-			Revoking:   handlePermission("revoke_perms"),
-		},
+		Configuration:                  irmaServerConf,
+		Disclosing:                     handlePermission("disclose_perms"),
+		Signing:                        handlePermission("sign_perms"),
+		Issuing:                        handlePermission("issue_perms"),
+		Revoking:                       handlePermission("revoke_perms"),
 		SkipPrivateKeysCheck:           viper.GetBool("skip_private_keys_check"),
 		ListenAddress:                  viper.GetString("listen_addr"),
 		Port:                           viper.GetInt("port"),
