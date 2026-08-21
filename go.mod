@@ -22,7 +22,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/jwx-go/es256k/v4 v4.0.4
-	github.com/lestrrat-go/jwx/v4 v4.2.0
+	github.com/lestrrat-go/jwx/v4 v4.3.0
 	github.com/mdp/qrterminal v1.0.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/mr-tron/base58 v1.1.3
@@ -36,10 +36,10 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2
 	go.etcd.io/bbolt v1.4.3
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.55.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/term v0.45.0
-	golang.org/x/text v0.40.0
+	golang.org/x/text v0.41.0
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.0
