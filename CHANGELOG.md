@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `irma.HTTPTransport` now honours the `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` environment variables, so irmago can run where outgoing traffic must pass through a proxy; it was the only outbound transport in irmago that ignored them. Operators with a system-wide proxy can keep internal traffic (requestor callbacks, keyshare and revocation servers) off it with `NO_PROXY`; loopback addresses are never proxied ([#423](https://github.com/privacybydesign/irmago/issues/423))
+- Fix nil pointer dereference (panic) when looking up public keys for an issuer whose scheme is not present in the configuration, which could occur when a session runs concurrently with the periodic scheme update; such lookups now return a clear error instead of panicking
 
 ## [1.3.0] - 2026-08-12
 ### Added

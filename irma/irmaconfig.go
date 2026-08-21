@@ -341,6 +341,9 @@ func (conf *Configuration) PublicKeyLatest(id IssuerIdentifier) (*gabikeys.Publi
 
 func (conf *Configuration) PublicKeyIndices(issuerid IssuerIdentifier) (i []uint, err error) {
 	scheme := conf.SchemeManagers[issuerid.SchemeManagerIdentifier()]
+	if scheme == nil {
+		return nil, errors.Errorf("Public keys of issuer %s belong to unknown scheme", issuerid.String())
+	}
 	return matchKeyPattern(filepath.Join(scheme.path(), issuerid.Name(), "PublicKeys", "*"))
 }
 
@@ -419,6 +422,9 @@ func (conf *Configuration) KeyshareServerPublicKey(schemeid SchemeManagerIdentif
 	}
 	if _, contains := conf.kssPublicKeys[schemeid][i]; !contains {
 		scheme := conf.SchemeManagers[schemeid]
+		if scheme == nil {
+			return nil, errors.Errorf("Keyshare server public key belongs to unknown scheme %s", schemeid.String())
+		}
 		pkbts, err := os.ReadFile(filepath.Join(scheme.path(), fmt.Sprintf("kss-%d.pem", i)))
 		if err != nil {
 			return nil, err
@@ -469,6 +475,9 @@ func (conf *Configuration) hashToCredentialType(hash []byte) *CredentialType {
 // parse $schememanager/$issuer/PublicKeys/$i.xml for $i = 1, ...
 func (conf *Configuration) parseKeysFolder(issuerid IssuerIdentifier) error {
 	scheme := conf.SchemeManagers[issuerid.SchemeManagerIdentifier()]
+	if scheme == nil {
+		return errors.Errorf("Public keys of issuer %s belong to unknown scheme", issuerid.String())
+	}
 	pattern := filepath.Join(scheme.path(), issuerid.Name(), "PublicKeys", "*")
 	files, err := filepath.Glob(pattern)
 	if err != nil {
