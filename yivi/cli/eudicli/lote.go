@@ -12,8 +12,7 @@ var loteCmd = &cobra.Command{
 	Long: `Build, sign and inspect an ETSI TS 119 602 List of Trusted Entities (LoTE).
 
 The document produced is a scheme-explicit LoTE in the Annex A JSON binding,
-signed as a compact JAdES Baseline B signature. See
-docs/plans/yivi-lote-publishing.md for the contract the wallet enforces.
+signed as a compact JAdES Baseline B signature.
 
 A typical release:
 

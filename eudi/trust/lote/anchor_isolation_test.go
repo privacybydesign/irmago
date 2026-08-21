@@ -17,6 +17,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/jades"
 	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/stretchr/testify/require"
 )
@@ -55,6 +56,7 @@ func signAs(t *testing.T, list List, key *ecdsa.PrivateKey, certificate *x509.Ce
 	headers := jws.NewHeaders()
 	require.NoError(t, headers.Set(jws.TypeKey, LoteTyp))
 	require.NoError(t, headers.Set(jws.X509CertChainKey, chain))
+	require.NoError(t, headers.Set(jades.IatHeader, time.Now().Unix()))
 
 	signed, err := jws.Sign(payload, jws.WithKey(jwa.ES256(), key, jws.WithProtectedHeaders(headers)))
 	require.NoError(t, err)

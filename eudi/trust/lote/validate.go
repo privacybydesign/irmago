@@ -65,8 +65,7 @@ var compiledSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
 //
 // One thing it cannot catch: the schema's `ServiceDigitalIdentity` places
 // `additionalProperties: false` inside its `properties` object, so unknown members
-// of a service's digital identity pass. See
-// docs/plans/lote-annex-a-publisher.md § Errata.
+// of a service's digital identity pass.
 func ValidateDocument(raw []byte) error {
 	schema, err := compiledSchema()
 	if err != nil {

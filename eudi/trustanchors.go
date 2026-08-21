@@ -166,8 +166,7 @@ MEQCIDCSNbPoyhDZ5A3SWupsyPj/tDF4xNoHYnE0WFIs2pz8AiA9mhXswiJPFbVR
 //
 // The Yivi Trust List CA does not exist yet, so these are empty and no list
 // verifies — the safe direction to fail while nothing is published. Fill them in
-// once the CA is issued, together with its CRL distribution point. See
-// docs/plans/lote-annex-a-publisher.md § Phase 4.
+// once the CA is issued, together with its CRL distribution point.
 const (
 	Production_Yivi_TrustListCaCertificateRevocationListDistributionPoint = ""
 	Staging_Yivi_TrustListCaCertificateRevocationListDistributionPoint    = ""

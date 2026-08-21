@@ -384,11 +384,8 @@ func TestSign_ACuratedDirectoryGrantsThroughTheWalletsOwnChecker(t *testing.T) {
 	require.NoError(t, err)
 
 	signer := newTestSigner(t, "NL", "Yivi Example")
-	require.NoError(t, checkSigningCertificate(signer.leaf, list.SchemeInformation))
 
-	alg, err := signatureAlgorithm(signer.key)
-	require.NoError(t, err)
-	signed, err := signDocument(lote.Document{LoTE: list}, []*x509.Certificate{signer.leaf}, signer.key, alg)
+	signed, err := lote.Sign(lote.Document{LoTE: list}, []*x509.Certificate{signer.leaf}, signer.key, time.Now())
 	require.NoError(t, err)
 
 	verified, err := lote.VerifySigned(signed, signer.anchor)
@@ -427,53 +424,4 @@ func (s stubStore) Get(listId string) ([]byte, bool) {
 func (s stubStore) Put(listId string, rawJws []byte) error {
 	s[listId] = rawJws
 	return nil
-}
-
-// Clause 6.8.0 binds the certificate to the scheme it signs for. Nothing at
-// runtime checks it, so these two are the only enforcement that exists.
-func TestSign_RejectsACertificateWhoseOrganizationIsNotTheSchemeOperator(t *testing.T) {
-	list, _, err := loadSource(exampleSource(t), issuedAt)
-	require.NoError(t, err)
-
-	signer := newTestSigner(t, "NL", "Someone Else BV")
-	err = checkSigningCertificate(signer.leaf, list.SchemeInformation)
-	require.ErrorContains(t, err, "clause 6.8.0")
-	require.ErrorContains(t, err, "organization")
-}
-
-func TestSign_RejectsACertificateWhoseCountryIsNotTheSchemeTerritory(t *testing.T) {
-	list, _, err := loadSource(exampleSource(t), issuedAt)
-	require.NoError(t, err)
-
-	signer := newTestSigner(t, "BE", "Yivi Example")
-	err = checkSigningCertificate(signer.leaf, list.SchemeInformation)
-	require.ErrorContains(t, err, "clause 6.8.0")
-	require.ErrorContains(t, err, "country")
-}
-
-func TestSign_RejectsACertificateWithoutDigitalSignatureKeyUsage(t *testing.T) {
-	list, _, err := loadSource(exampleSource(t), issuedAt)
-	require.NoError(t, err)
-
-	signer := newTestSigner(t, "NL", "Yivi Example")
-	// Strip the key usage the wallet checks explicitly.
-	signer.leaf.KeyUsage = 0
-	require.ErrorContains(t, checkSigningCertificate(signer.leaf, list.SchemeInformation), "digitalSignature")
-}
-
-func TestSignatureAlgorithm_FollowsTheCurve(t *testing.T) {
-	for _, tc := range []struct {
-		curve elliptic.Curve
-		alg   string
-	}{
-		{elliptic.P256(), "ES256"},
-		{elliptic.P384(), "ES384"},
-		{elliptic.P521(), "ES512"},
-	} {
-		key, err := ecdsa.GenerateKey(tc.curve, rand.Reader)
-		require.NoError(t, err)
-		alg, err := signatureAlgorithm(key)
-		require.NoError(t, err)
-		require.Equal(t, tc.alg, alg.String())
-	}
 }

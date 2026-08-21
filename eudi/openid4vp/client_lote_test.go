@@ -112,7 +112,9 @@ func TestNewSession_ListDegradations_CapTheVerifierAtLow(t *testing.T) {
 				list := lote.NewTestList(trustListId, 1,
 					lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(trust.RoleVerifier, did)))
 				list.SchemeInformation.NextUpdate = time.Now().Add(-time.Hour)
-				f.server.Serve(t, f.signer, list)
+				// lote.Sign refuses to publish an expired document, so this one is
+				// assembled by hand: the wallet still has to cope with meeting it.
+				f.server.ServeRaw(t, f.signer, list)
 			},
 		},
 		{

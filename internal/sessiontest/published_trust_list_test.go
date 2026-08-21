@@ -34,8 +34,6 @@ import (
 // trust_levels_test.go. Counting fetches is in-process only, since
 // lote.TestLoteServer.Hits() is the only thing that can see one happen — as is
 // tamper and sequence-regress coverage, where a foreign signer adds no signal.
-//
-// Specified in docs/plans/lote-e2e-tests.md.
 
 const (
 	// The publisher's public origin, through the tls_proxy.

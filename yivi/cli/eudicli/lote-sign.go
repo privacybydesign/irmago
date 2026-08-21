@@ -2,21 +2,16 @@ package eudicli
 
 import (
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"maps"
 	"os"
-	"slices"
+	"time"
 
-	"github.com/lestrrat-go/jwx/v3/cert"
-	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jws"
+	"github.com/privacybydesign/irmago/eudi/jades"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/privacybydesign/irmago/eudi/utils"
@@ -67,20 +62,19 @@ guard and the document are checked but the chain is not.`,
 			return err
 		}
 		leaf := chain[0]
-		if err := checkSigningCertificate(leaf, document.LoTE.SchemeInformation); err != nil {
-			return err
-		}
 
 		key, err := readSigningKey(keyPath)
 		if err != nil {
 			return err
 		}
-		alg, err := signatureAlgorithm(key)
+		alg, err := jades.SignatureAlgorithmFor(key)
 		if err != nil {
 			return err
 		}
 
-		signed, err := signDocument(document, chain, key, alg)
+		// lote.Sign enforces clause 6.8.0 and clause 6.6.5 and produces the
+		// Baseline B signature; this command is the plumbing around it.
+		signed, err := lote.Sign(document, chain, key, time.Now())
 		if err != nil {
 			return err
 		}
@@ -118,69 +112,6 @@ func init() {
 	loteSignCmd.Flags().String("cert", "signer.crt", "PEM signing certificate, leaf first; intermediates are carried in x5c")
 	loteSignCmd.Flags().String("anchor", "", "PEM trust anchor to check the chain against, as the wallet will")
 	loteSignCmd.Flags().StringP("output", "o", "", "write the signed document here (default stdout)")
-}
-
-// signDocument produces the compact JAdES-B-B: everything needed to validate is
-// in the protected header, with no timestamps or archival material.
-func signDocument(
-	document lote.Document,
-	chain []*x509.Certificate,
-	key crypto.Signer,
-	alg jwa.SignatureAlgorithm,
-) ([]byte, error) {
-	payload, err := json.Marshal(document)
-	if err != nil {
-		return nil, err
-	}
-
-	// RFC 7515 x5c is standard base64, not base64url.
-	x5c := &cert.Chain{}
-	for _, certificate := range chain {
-		if err := x5c.Add([]byte(base64.StdEncoding.EncodeToString(certificate.Raw))); err != nil {
-			return nil, err
-		}
-	}
-
-	headers := jws.NewHeaders()
-	if err := headers.Set(jws.TypeKey, lote.LoteTyp); err != nil {
-		return nil, err
-	}
-	if err := headers.Set(jws.X509CertChainKey, x5c); err != nil {
-		return nil, err
-	}
-
-	return jws.Sign(payload, jws.WithKey(alg, key, jws.WithProtectedHeaders(headers)))
-}
-
-// checkSigningCertificate enforces clause 6.8.0 plus the key usage the wallet
-// checks. The DN rules bind the certificate to the scheme it signs for: without
-// them any certificate under the anchor could sign any scheme's list.
-func checkSigningCertificate(leaf *x509.Certificate, scheme lote.SchemeInformation) error {
-	if leaf.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
-		return fmt.Errorf("signing certificate does not carry the digitalSignature key usage")
-	}
-
-	if scheme.SchemeTerritory == "" {
-		return fmt.Errorf("the document declares no SchemeTerritory, so the certificate's country cannot be checked")
-	}
-	if !slices.Contains(leaf.Subject.Country, scheme.SchemeTerritory) {
-		return fmt.Errorf(
-			"clause 6.8.0: certificate subject country %v does not include the scheme territory %q",
-			leaf.Subject.Country, scheme.SchemeTerritory)
-	}
-
-	operatorNames := slices.Collect(maps.Values(scheme.SchemeOperatorName))
-	if len(operatorNames) == 0 {
-		return fmt.Errorf("the document declares no SchemeOperatorName, so the certificate's organization cannot be checked")
-	}
-	for _, organization := range leaf.Subject.Organization {
-		if slices.Contains(operatorNames, organization) {
-			return nil
-		}
-	}
-	return fmt.Errorf(
-		"clause 6.8.0: certificate subject organization %v is not one of the scheme operator names %v",
-		leaf.Subject.Organization, operatorNames)
 }
 
 // verificationAnchors builds the pool the freshly signed document is checked
@@ -286,26 +217,6 @@ func parsePrivateKey(der []byte, path string) (crypto.Signer, error) {
 		return key, nil
 	}
 	return nil, fmt.Errorf("%s holds no EC, PKCS#8 or PKCS#1 private key", path)
-}
-
-// signatureAlgorithm picks the JWS algorithm the key requires; for an EC key the
-// curve decides it, so there is nothing for an operator to choose.
-func signatureAlgorithm(key crypto.Signer) (jwa.SignatureAlgorithm, error) {
-	switch typed := key.(type) {
-	case *ecdsa.PrivateKey:
-		switch typed.Curve {
-		case elliptic.P256():
-			return jwa.ES256(), nil
-		case elliptic.P384():
-			return jwa.ES384(), nil
-		case elliptic.P521():
-			return jwa.ES512(), nil
-		}
-		return jwa.SignatureAlgorithm{}, fmt.Errorf("unsupported EC curve %s", typed.Curve.Params().Name)
-	case *rsa.PrivateKey:
-		return jwa.RS256(), nil
-	}
-	return jwa.SignatureAlgorithm{}, fmt.Errorf("unsupported key type %T", key)
 }
 
 // signingCertificateOf reads the end-entity certificate out of a signed document's

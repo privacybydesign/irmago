@@ -7,7 +7,7 @@ It signs with the openssl CLI and stdlib base64 on purpose, never a JWS library:
 the wallet verifies with lestrrat-go/jwx, and a publisher on the same library
 would test it against itself instead of against a foreign toolchain's `x5c` chain,
 header order and ECDSA encoding. The document is likewise built by hand rather
-than by the Go serialiser. See docs/plans/lote-e2e-tests.md.
+than by the Go serialiser.
 
 Routes:
 
@@ -82,6 +82,10 @@ def sign(payload):
         "typ": "tl+jwt",  # lote.LoteTyp: what says this JWS is a trusted list
         "alg": "ES256",
         "x5c": [base64.b64encode(leaf_der).decode()],  # RFC 7515: standard base64
+        # The claimed signing time, mandatory at every JAdES baseline level
+        # (TS 119 182-1 Table 1). Clause 5.1.11: an integer NumericDate with no
+        # fractions of a second, and since 2025-07-15 `iat` rather than `sigT`.
+        "iat": int(time.time()),
     }
     signing_input = (
         b64url(json.dumps(header, separators=(",", ":")).encode()) + "." + b64url(payload)

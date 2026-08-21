@@ -290,7 +290,9 @@ func TestChecker_DegradationsLeaveNothingGranted(t *testing.T) {
 			degrade: func(t *testing.T, f *fixture, _ *TestLoteSigner) {
 				list := NewTestList(testListId, 1)
 				list.SchemeInformation.NextUpdate = time.Now().Add(-time.Hour)
-				f.server.Serve(t, f.signer, list)
+				// Sign refuses to publish something already expired, so this one is
+				// assembled by hand: the wallet still has to cope with meeting it.
+				f.server.ServeRaw(t, f.signer, list)
 			},
 		},
 		{
@@ -465,12 +467,47 @@ func TestVerify_RejectsAJwsMintedForSomethingElse(t *testing.T) {
 	require.ErrorContains(t, err, "typ")
 }
 
+// RFC 7515 clause 4.1.11: a `crit` header names parameters the producer insists
+// the recipient understands. This verifier reads no JAdES signed parameter, so
+// every one of them is unrecognized and the signature is unacceptable.
+//
+// The test exists because jwx defaults crit validation off: drop
+// jws.WithCritValidation from verify() and a document that says "you must
+// understand sigT" is accepted by a wallet that does not, silently. Every LoTE the
+// European Commission's reference implementation publishes marks its signing time
+// critical, so this is the shape of a real third-party list, not a synthetic one.
+func TestVerify_RejectsASignatureWithAnUnderstoodExtensionItCannotHonour(t *testing.T) {
+	signer := NewTestLoteSigner(t)
+	raw := signer.SignListWithHeaders(t, NewTestList(testListId, 1), LoteTyp, map[string]any{
+		"sigT": "2026-08-21T09:00:00Z",
+		"crit": []string{"sigT"},
+	})
+
+	_, err := verify(raw, signer.X509VerificationContext())
+
+	require.ErrorContains(t, err, "crit")
+	require.ErrorContains(t, err, "sigT")
+}
+
+// The counterpart: the headers Yivi does emit carry no `crit`, so enabling the
+// check costs nothing on our own documents.
+func TestVerify_AcceptsOurOwnHeadersWithCritValidationOn(t *testing.T) {
+	signer := NewTestLoteSigner(t)
+
+	verified, err := verify(signer.SignList(t, NewTestList(testListId, 1)), signer.X509VerificationContext())
+
+	require.NoError(t, err)
+	require.NotNil(t, verified)
+}
+
 func TestVerify_RejectsAListWithoutANextUpdate(t *testing.T) {
 	signer := NewTestLoteSigner(t)
 	list := NewTestList(testListId, 1)
 	list.SchemeInformation.NextUpdate = time.Time{}
 
-	_, err := verify(signer.SignList(t, list), signer.X509VerificationContext())
+	// Sign refuses this document (clause 6.6.5 has nothing to check against), so
+	// the fixture takes the raw path: the point is what verification rejects.
+	_, err := verify(signer.SignListRaw(t, list), signer.X509VerificationContext())
 
 	require.ErrorContains(t, err, "NextUpdate")
 }

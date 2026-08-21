@@ -1,11 +1,11 @@
 {
   "LoTE": {
     "ListAndSchemeInformation": {
-      "ListIssueDateTime": "2026-08-12T11:04:23Z",
+      "ListIssueDateTime": "2026-08-21T09:53:11Z",
       "LoTESequenceNumber": 42,
       "LoTEType": "https://yivi.app/19602/LoTEType/YiviRecognizedPartiesList",
       "LoTEVersionIdentifier": 1,
-      "NextUpdate": "2026-09-11T11:04:23Z",
+      "NextUpdate": "2026-09-20T09:53:11Z",
       "PolicyOrLegalNotice": [
         {
           "LoTEPolicy": {
@@ -109,7 +109,7 @@
               "ServiceDigitalIdentity": {
                 "X509Certificates": [
                   {
-                    "val": "MIICBjCCAa2gAwIBAgIUUKUepRrVgGzREdWIluS2u6QTfF4wCgYIKoZIzj0EAwIwQzELMAkGA1UEBhMCTkwxFDASBgNVBAoMC1lpdmkgR29sZGVuMR4wHAYDVQQDDBVZaXZpIEdvbGRlbiBMb1RFIFJvb3QwHhcNMjYwODEyMTEwNDIzWhcNMzYwODA5MTEwNDIzWjBlMQswCQYDVQQGEwJOTDEdMBsGA1UECgwURXhhbXBsZSBNdW5pY2lwYWxpdHkxHTAbBgNVBAMMFHZlcmlmaWVyLmV4YW1wbGUuY29tMRgwFgYDVQRhDA9WQVROTC0wMDAwMDAwMDEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQSb43cr22/CXQB6NCZP+Lfp7d/XpbTA8/Gh8ztyG3Z4jiWNRbWT6F5WhLoIR0w5qRuUQs46SiEXOhkBnglNnH+o10wWzALBgNVHQ8EBAMCB4AwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUtPa5SA6MoQRFKX/Qd5qUU1HNlNQwHwYDVR0jBBgwFoAURhi989Bx8kwdntNdxi28zV1xUtQwCgYIKoZIzj0EAwIDRwAwRAIgYVyId46RYELBjuuoHx/aWwpDxvlwg8KKIcKp1IZEdNQCIFA7ZC3lVomoXuWQwxUaqGgFZaOdih/2A1tG+lVRNhHp"
+                    "val": "MIICCDCCAa2gAwIBAgIUc8vEgi+AffM1T1edNYgpg3tNFuUwCgYIKoZIzj0EAwIwQzELMAkGA1UEBhMCTkwxFDASBgNVBAoMC1lpdmkgR29sZGVuMR4wHAYDVQQDDBVZaXZpIEdvbGRlbiBMb1RFIFJvb3QwHhcNMjYwODIxMDk1MzExWhcNMzYwODE4MDk1MzExWjBlMQswCQYDVQQGEwJOTDEdMBsGA1UECgwURXhhbXBsZSBNdW5pY2lwYWxpdHkxHTAbBgNVBAMMFHZlcmlmaWVyLmV4YW1wbGUuY29tMRgwFgYDVQRhDA9WQVROTC0wMDAwMDAwMDEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARJiHWOKAdAfnswtIg8rCnOfk0HeV/npTDVJf7tpK9Q8G8r7ZyvjHsUCeX+LbhAA+jyOr41o1UW28KC6jPSDUbFo10wWzALBgNVHQ8EBAMCB4AwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUT3FcZH/XE3KEuNJAfbrNiAD8H1IwHwYDVR0jBBgwFoAUim6WNFqTV3dPi0EeS4EmNvY3lzMwCgYIKoZIzj0EAwIDSQAwRgIhAIGIN7zbrYljQivb0TCv/g8N529TcsS7aHv6gvbaAd2DAiEAvuq78P0AmgkRuGY4UFCBMpQ8KAuB9KwEaWLYGby32fA="
                   }
                 ]
               },
@@ -170,7 +170,7 @@
             "ServiceInformation": {
               "ServiceDigitalIdentity": {
                 "X509SKIs": [
-                  "tPa5SA6MoQRFKX/Qd5qUU1HNlNQ="
+                  "T3FcZH/XE3KEuNJAfbrNiAD8H1I="
                 ]
               },
               "ServiceInformationExtensions": [

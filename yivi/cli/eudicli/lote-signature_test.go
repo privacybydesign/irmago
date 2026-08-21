@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/stretchr/testify/require"
@@ -38,9 +39,7 @@ func TestSignature_VerifiesUnderAForeignToolchain(t *testing.T) {
 	require.NoError(t, err)
 
 	signer := newTestSigner(t, "NL", "Yivi Example")
-	alg, err := signatureAlgorithm(signer.key)
-	require.NoError(t, err)
-	signed, err := signDocument(lote.Document{LoTE: list}, []*x509.Certificate{signer.leaf}, signer.key, alg)
+	signed, err := lote.Sign(lote.Document{LoTE: list}, []*x509.Certificate{signer.leaf}, signer.key, time.Now())
 	require.NoError(t, err)
 
 	// --- take the document apart on the wire, not through the library ---------
@@ -107,9 +106,7 @@ func TestSignature_AForeignToolchainRejectsATamperedPayload(t *testing.T) {
 	list, _, err := loadSource(exampleSource(t), issuedAt)
 	require.NoError(t, err)
 	signer := newTestSigner(t, "NL", "Yivi Example")
-	alg, err := signatureAlgorithm(signer.key)
-	require.NoError(t, err)
-	signed, err := signDocument(lote.Document{LoTE: list}, []*x509.Certificate{signer.leaf}, signer.key, alg)
+	signed, err := lote.Sign(lote.Document{LoTE: list}, []*x509.Certificate{signer.leaf}, signer.key, time.Now())
 	require.NoError(t, err)
 
 	parts := strings.Split(string(signed), ".")

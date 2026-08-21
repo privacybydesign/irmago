@@ -21,6 +21,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/jades"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/stretchr/testify/require"
@@ -63,10 +64,16 @@ func NewTestLoteSigner(t *testing.T) *TestLoteSigner {
 	require.NoError(t, err)
 	leafTmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(2),
-		Subject:      pkix.Name{CommonName: "lote-test-signer"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
+		// Country and Organization match NewTestList's, since SignList goes through
+		// clause 6.8.0.
+		Subject: pkix.Name{
+			CommonName:   "lote-test-signer",
+			Country:      []string{"NL"},
+			Organization: []string{"Yivi Test"},
+		},
+		NotBefore: time.Now().Add(-time.Hour),
+		NotAfter:  time.Now().Add(24 * time.Hour),
+		KeyUsage:  x509.KeyUsageDigitalSignature,
 	}
 	leafDer, err := x509.CreateCertificate(rand.Reader, leafTmpl, rootCert, leafKey.Public(), rootKey)
 	require.NoError(t, err)
@@ -92,14 +99,42 @@ func (s *TestLoteSigner) X509VerificationContext() eudi_jwt.X509VerificationCont
 	}
 }
 
-func (s *TestLoteSigner) SignList(t *testing.T, list List) []byte {
+// SignList signs through Sign, the same path the publisher takes, so a positive
+// fixture cannot pass while the real signer is broken. The list therefore has to
+// satisfy clause 6.8.0 and clause 6.6.5; one that deliberately does not wants
+// SignListRaw.
+func (s *TestLoteSigner) SignList(t *testing.T, list List) Signed {
+	t.Helper()
+
+	signed, err := Sign(Document{LoTE: list}, []*x509.Certificate{s.Cert}, s.PrivKey, time.Now())
+	require.NoError(t, err, "the test signer must be able to sign the way the publisher does")
+	return signed
+}
+
+// SignListRaw signs a document Sign would refuse, with the headers Sign would have
+// produced. For fixtures whose point is a document no publisher could emit.
+func (s *TestLoteSigner) SignListRaw(t *testing.T, list List) Signed {
 	t.Helper()
 	return s.SignListWithTyp(t, list, LoteTyp)
 }
 
-// SignListWithTyp is SignList with the `typ` header overridden, for negative-path
+// SignListWithTyp is SignListRaw with the `typ` header overridden, for negative-path
 // tests.
-func (s *TestLoteSigner) SignListWithTyp(t *testing.T, list List, typ string) []byte {
+func (s *TestLoteSigner) SignListWithTyp(t *testing.T, list List, typ string) Signed {
+	t.Helper()
+	return s.SignListWithHeaders(t, list, typ, nil)
+}
+
+// SignListWithHeaders assembles a signature by hand, with the `typ` header
+// overridden and arbitrary extra protected headers. It deliberately bypasses Sign:
+// producing what Sign refuses is how the rejections get tested. Keep its header set
+// in step with jades.SignBaselineB.
+func (s *TestLoteSigner) SignListWithHeaders(
+	t *testing.T,
+	list List,
+	typ string,
+	extra map[string]any,
+) Signed {
 	t.Helper()
 
 	payload, err := json.Marshal(Document{LoTE: list})
@@ -111,6 +146,10 @@ func (s *TestLoteSigner) SignListWithTyp(t *testing.T, list List, typ string) []
 	headers := jws.NewHeaders()
 	require.NoError(t, headers.Set(jws.TypeKey, typ))
 	require.NoError(t, headers.Set(jws.X509CertChainKey, chain))
+	require.NoError(t, headers.Set(jades.IatHeader, time.Now().Unix()))
+	for name, value := range extra {
+		require.NoError(t, headers.Set(name, value))
+	}
 
 	signed, err := jws.Sign(payload, jws.WithKey(jwa.ES256(), s.PrivKey, jws.WithProtectedHeaders(headers)))
 	require.NoError(t, err)
@@ -321,6 +360,13 @@ func (s *TestLoteServer) Source(listId string, confers clientmodels.TrustLevel) 
 func (s *TestLoteServer) Serve(t *testing.T, signer *TestLoteSigner, list List) {
 	t.Helper()
 	s.SetBody(signer.SignList(t, list))
+}
+
+// ServeRaw publishes a document Sign would refuse, an expired one say: the
+// signature is well-formed, only the document is one no publisher should emit.
+func (s *TestLoteServer) ServeRaw(t *testing.T, signer *TestLoteSigner, list List) {
+	t.Helper()
+	s.SetBody(signer.SignListRaw(t, list))
 }
 
 func (s *TestLoteServer) SetBody(body []byte) {
