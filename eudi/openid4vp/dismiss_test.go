@@ -25,6 +25,7 @@ func parkSession(t *testing.T, client *Client, verifier string) (*openid4vpSessi
 			session,
 			&AuthorizationRequest{},
 			&clientmodels.TrustedParty{Name: verifier},
+			"", // audience: nothing is disclosed on the paths these tests drive
 		)
 	}()
 
@@ -108,6 +109,7 @@ func TestDismiss_DuringNetworkWindow_CancelsWithoutAsking(t *testing.T) {
 			session,
 			&AuthorizationRequest{},
 			&clientmodels.TrustedParty{Name: "Test verifier"},
+			"", // audience: nothing is disclosed on the paths these tests drive
 		)
 	}()
 

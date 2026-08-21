@@ -10,7 +10,7 @@ import (
 	"github.com/bwesterb/go-atum"
 	"github.com/go-co-op/gocron"
 	"github.com/go-errors/errors"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
@@ -324,8 +324,8 @@ func (client *IrmaClient) addCredential(cred *credential) (err error) {
 			}
 		}
 
-		for i := len(client.attrs(id)) - 1; i >= 0; i-- { // Go backwards through array because remove manipulates it
-			if client.attrs(id)[i].EqualsExceptMetadata(cred.attrs) {
+		for i, v := range slices.Backward(client.attrs(id)) { // Go backwards through array because remove manipulates it
+			if v.EqualsExceptMetadata(cred.attrs) {
 				if err = client.remove(id, i); err != nil {
 					return
 				}
@@ -1136,12 +1136,10 @@ func (client *IrmaClient) keyshareEnrollWorker(managerID irma.SchemeManagerIdent
 	}
 
 	jwtt, err := SignerCreateJWT(client.signer, keyname, irma.KeyshareEnrollmentClaims{
-		KeyshareEnrollmentData: irma.KeyshareEnrollmentData{
-			Email:     email,
-			Pin:       kss.HashedPin(pin),
-			Language:  lang,
-			PublicKey: pk,
-		},
+		Email:     email,
+		Pin:       kss.HashedPin(pin),
+		Language:  lang,
+		PublicKey: pk,
 	})
 	if err != nil {
 		return err
@@ -1292,11 +1290,9 @@ func (client *IrmaClient) keyshareChangePinWorker(managerID irma.SchemeManagerId
 	transport := irma.NewHTTPTransport(client.Configuration.SchemeManagers[managerID].KeyshareServer, !client.Preferences.DeveloperMode)
 
 	claims := irma.KeyshareChangePinClaims{
-		KeyshareChangePinData: irma.KeyshareChangePinData{
-			Username: kss.Username,
-			OldPin:   kss.HashedPin(oldPin),
-			NewPin:   kss.HashedPin(newPin),
-		},
+		Username: kss.Username,
+		OldPin:   kss.HashedPin(oldPin),
+		NewPin:   kss.HashedPin(newPin),
 	}
 	jwtt, err := SignerCreateJWT(client.signer, challengeResponseKeyName(managerID), claims)
 	if err != nil {

@@ -1,6 +1,7 @@
 package did
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
@@ -15,10 +16,17 @@ type MultibaseHeader byte
 const (
 	MultibaseHeader_Base58BTC      MultibaseHeader = 'z'
 	MultibaseHeader_Base64UrlNoPad MultibaseHeader = 'u'
+)
 
-	multicodecHeaderEd25519 = "\xed\x01"
-	multicodecHeaderP256    = "\x80\x24"
-	multicodecHeaderP384    = "\x81\x24"
+// Multicodec prefixes (unsigned varint encodings of the codes in the multicodec
+// registry): ed25519-pub (0xed), p256-pub (0x1200) and p384-pub (0x1201). Held as
+// []byte rather than string constants: the P-256 and P-384 prefixes are invalid
+// UTF-8, which CodeQL normalizes to identical replacement characters, making a
+// switch on the string forms look like it has duplicate cases.
+var (
+	multicodecHeaderEd25519 = []byte{0xed, 0x01}
+	multicodecHeaderP256    = []byte{0x80, 0x24}
+	multicodecHeaderP384    = []byte{0x81, 0x24}
 )
 
 type Encoder interface {
@@ -58,7 +66,7 @@ func CreateMultibaseFromPublicKey[T ecdsa.PublicKey | ed25519.PublicKey](publicK
 	case ecdsa.PublicKey:
 		publicKeyBytes, err = multibaseBytesFromEcsdaPublicKey(t)
 	case ed25519.PublicKey:
-		publicKeyBytes = multibaseFromEd25519PublicKey(t)
+		publicKeyBytes, err = multibaseFromEd25519PublicKey(t)
 	default:
 		return "", fmt.Errorf("unsupported public key type: %T", publicKey)
 	}
@@ -71,6 +79,11 @@ func CreateMultibaseFromPublicKey[T ecdsa.PublicKey | ed25519.PublicKey](publicK
 }
 
 func multibaseBytesFromEcsdaPublicKey(publicKey ecdsa.PublicKey) ([]byte, error) {
+	// An incomplete key would panic in Params() or MarshalCompressed below.
+	if publicKey.Curve == nil || publicKey.X == nil || publicKey.Y == nil {
+		return nil, fmt.Errorf("incomplete ECDSA public key")
+	}
+
 	c := publicKey.Params().Name
 
 	b := []byte{}
@@ -87,10 +100,16 @@ func multibaseBytesFromEcsdaPublicKey(publicKey ecdsa.PublicKey) ([]byte, error)
 	return append(b, elliptic.MarshalCompressed(publicKey.Curve, publicKey.X, publicKey.Y)...), nil
 }
 
-func multibaseFromEd25519PublicKey(publicKey ed25519.PublicKey) []byte {
+func multibaseFromEd25519PublicKey(publicKey ed25519.PublicKey) ([]byte, error) {
+	// The multicodec header promises a 32-byte Ed25519 key, so anything else would
+	// encode into a multibase value no resolver can decode.
+	if len(publicKey) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("invalid Ed25519 public key size: expected %d bytes, got %d bytes", ed25519.PublicKeySize, len(publicKey))
+	}
+
 	b := []byte{}
 	b = append(b, multicodecHeaderEd25519...)
-	return append(b, publicKey...)
+	return append(b, publicKey...), nil
 }
 
 func ResolvePublicKeyFromMultibase(multibase string) (any, error) {
@@ -128,19 +147,19 @@ func publicKeyFromMultibaseBytes(data []byte) (any, error) {
 	header := data[:2]
 	keyData := data[2:]
 
-	switch string(header) {
-	case multicodecHeaderEd25519: // Ed25519 multicodec header
+	switch {
+	case bytes.Equal(header, multicodecHeaderEd25519):
 		if len(keyData) != ed25519.PublicKeySize {
 			return nil, fmt.Errorf("invalid Ed25519 public key size: expected %d bytes, got %d bytes", ed25519.PublicKeySize, len(keyData))
 		}
 		return ed25519.PublicKey(keyData), nil
-	case multicodecHeaderP256: // P-256 multicodec header
+	case bytes.Equal(header, multicodecHeaderP256):
 		x, y := elliptic.UnmarshalCompressed(elliptic.P256(), keyData)
 		if x == nil || y == nil {
 			return nil, fmt.Errorf("invalid P-256 public key data")
 		}
 		return ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}, nil
-	case multicodecHeaderP384: // P-384 multicodec header
+	case bytes.Equal(header, multicodecHeaderP384):
 		x, y := elliptic.UnmarshalCompressed(elliptic.P384(), keyData)
 		if x == nil || y == nil {
 			return nil, fmt.Errorf("invalid P-384 public key data")

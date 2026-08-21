@@ -41,5 +41,5 @@ type DcqlCredentialQueryHandler interface {
 	FindCandidates(query CredentialQuery) (*CredentialQueryResult, error)
 
 	// PrepareDisclosure prepares the selected credentials for inclusion in the VP token.
-	PrepareDisclosure(selections []DisclosureSelection, nonce string, clientId string) (*PreparedDisclosure, error)
+	PrepareDisclosure(selections []DisclosureSelection, nonce string, audience string) (*PreparedDisclosure, error)
 }

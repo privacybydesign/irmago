@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
@@ -37,7 +37,7 @@ func (b *signerKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	}
 	keys := make([]jwk.Key, len(pubs))
 	for i, pub := range pubs {
-		k, err := jwk.Import(pub)
+		k, err := jwk.Import[jwk.Key](pub)
 		if err != nil {
 			return nil, fmt.Errorf("holderkeys: failed to import holder public key: %w", err)
 		}

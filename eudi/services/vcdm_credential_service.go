@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
@@ -97,17 +97,17 @@ func (s *credentialService) VerifyAndStoreIssuedVcdmCredentials(
 	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
 
 	batch := &models.CredentialBatch{
-		IssuerURL:                issuerID,
-		VerifiableCredentialType: typeIdentity,
-		Format:                   models.CredentialFormatSdJwtVcdm,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(processedPayload),
-		CredentialIssuer:         issuerID,
-		IssuerDisplay:            slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
-		CredentialMetadata:       convertCredentialMetadata(credentialConfiguration),
-		BatchSize:                uint(len(verified)),
-		RemainingCount:           uint(len(verified)),
-		Instances:                buildVcdmInstances(verified),
+		IssuerIdentifier:           issuerID,
+		VerifiableCredentialType:   typeIdentity,
+		Format:                     models.CredentialFormatSdJwtVcdm,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(processedPayload),
+		CredentialIssuerIdentifier: issuerID,
+		IssuerDisplay:              slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
+		CredentialMetadata:         convertCredentialMetadata(credentialConfiguration),
+		BatchSize:                  uint(len(verified)),
+		RemainingCount:             uint(len(verified)),
+		Instances:                  buildVcdmInstances(verified),
 	}
 
 	issuedAt, expiresAt, notBefore := VcdmIssuanceValidity(first)

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
@@ -202,14 +202,14 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 
 	// Step 7 (VC-JOSE-COSE §3.2.1): when the JWT `iss` claim is present it MUST
 	// equal the VCDM `issuer`.
-	if registered.Issuer != "" {
+	if registered.Issuer != nil {
 		issuerID, err := document.IssuerID()
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
-		if registered.Issuer != issuerID {
+		if *registered.Issuer != issuerID {
 			return nil, nil, nil, nil, fmt.Errorf(
-				"JWT iss %q does not match VCDM issuer %q", registered.Issuer, issuerID)
+				"JWT iss %q does not match VCDM issuer %q", *registered.Issuer, issuerID)
 		}
 	}
 
@@ -255,8 +255,8 @@ func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, e
 // verified token. `iss` is optional here (the VCDM `issuer` field is the
 // authoritative issuer; iss is cross-checked against it in step 7 when present).
 func extractRegisteredClaims(token jwt.Token) (*sdjwt.RegisteredClaims, error) {
-	sub, _ := token.Subject()
-	iss, _ := token.Issuer()
+	sub, subPresent := token.Subject()
+	iss, issPresent := token.Issuer()
 
 	sdAlg := iana.SHA256
 	if token.Has(sdjwt.SdAlgKey) {
@@ -268,8 +268,8 @@ func extractRegisteredClaims(token jwt.Token) (*sdjwt.RegisteredClaims, error) {
 	}
 
 	var sd []sdjwt.HashedDisclosure
-	var sdRaw any
-	if err := token.Get(sdjwt.SdKey, &sdRaw); err == nil {
+	sdRaw, err := jwt.Get[any](token, sdjwt.SdKey)
+	if err == nil {
 		sd, err = sdjwt.ParseSdField(sdRaw)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse _sd field: %v", err)
@@ -277,8 +277,8 @@ func extractRegisteredClaims(token jwt.Token) (*sdjwt.RegisteredClaims, error) {
 	}
 
 	var cnf *sdjwt.CnfField
-	var cnfRaw any
-	if err := token.Get(sdjwt.ConfirmationKey, &cnfRaw); err == nil {
+	cnfRaw, err := jwt.Get[any](token, sdjwt.ConfirmationKey)
+	if err == nil {
 		cnf, err = sdjwt.ParseConfirmField(cnfRaw)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse cnf field: %v", err)
@@ -286,11 +286,15 @@ func extractRegisteredClaims(token jwt.Token) (*sdjwt.RegisteredClaims, error) {
 	}
 
 	registered := &sdjwt.RegisteredClaims{
-		Subject: sub,
-		Issuer:  iss,
 		Sd:      sd,
 		SdAlg:   sdAlg,
 		Confirm: cnf,
+	}
+	if subPresent {
+		registered.Subject = &sub
+	}
+	if issPresent {
+		registered.Issuer = &iss
 	}
 
 	if exp, ok := token.Expiration(); ok {
@@ -371,8 +375,8 @@ func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVcdm(credential SdJwtVc
 // ====== Utils ======
 
 func getOptional[T any](token jwt.Token, key string) T {
-	var value T
-	if err := token.Get(key, &value); err != nil {
+	value, err := jwt.Get[T](token, key)
+	if err != nil {
 		return *new(T)
 	}
 	return value

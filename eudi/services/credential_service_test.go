@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -135,7 +135,7 @@ func TestGetCredentialMetadataList_MapsIssuerDisplay(t *testing.T) {
 	result, err := svc.GetCredentialMetadataList()
 
 	require.NoError(t, err)
-	assert.Equal(t, batch.CredentialIssuer, result[0].Issuer.Id)
+	assert.Equal(t, batch.CredentialIssuerIdentifier, result[0].Issuer.Id)
 	assert.Equal(t, "Test Issuer", result[0].Issuer.Name)
 }
 
@@ -624,8 +624,8 @@ func TestVerifyAndStoreIssuedCredentials_SetsIssuerMetadata(t *testing.T) {
 
 	require.NoError(t, err)
 	batch := mock.storedBatches[0]
-	assert.Equal(t, issuer, batch.IssuerURL)
-	assert.Equal(t, issuer, batch.CredentialIssuer)
+	assert.Equal(t, issuer, batch.IssuerIdentifier)
+	assert.Equal(t, issuer, batch.CredentialIssuerIdentifier)
 }
 
 func TestVerifyAndStoreIssuedCredentials_SetsVCT(t *testing.T) {
@@ -1016,7 +1016,7 @@ func generateTestJwk(t *testing.T) (jwk.Key, string) {
 	t.Helper()
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	jwkKey, err := jwk.Import(privKey)
+	jwkKey, err := jwk.Import[jwk.Key](privKey)
 	require.NoError(t, err)
 	pubKey, err := jwkKey.PublicKey()
 	require.NoError(t, err)
@@ -1051,6 +1051,60 @@ func TestMatchHolderBindingKey_ByDidUrl(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, expectedID, keyID)
+}
+
+// An issuer may echo the kid with the verification method fragment the DID method
+// uses to reference the key, where the proof sent the fragmentless DID (as the
+// did:key proofs do), and vice versa. Either way it is the same key.
+func TestMatchHolderBindingKey_ByDidUrl_FragmentAddedByIssuer(t *testing.T) {
+	expectedID := datatypes.NewUUIDv4()
+	storedDidUrl := "did:key:zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
+	cnfKid := storedDidUrl + "#zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
+
+	keyByDidUrl := map[string]datatypes.UUID{storedDidUrl: expectedID}
+
+	cnf := &sdjwt.CnfField{Kid: &cnfKid}
+	keyID, err := matchHolderBindingKey(cnf, map[string]datatypes.UUID{}, keyByDidUrl)
+
+	require.NoError(t, err)
+	assert.Equal(t, expectedID, keyID)
+}
+
+func TestMatchAllHolderBindingKeys_FragmentDroppedByIssuer(t *testing.T) {
+	expectedID := datatypes.NewUUIDv4()
+	baseDid := "did:key:zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
+	storedDidUrl := baseDid + "#zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
+
+	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwt.CnfField{Kid: &baseDid})
+
+	keyIDs, err := matchAllHolderBindingKeys(
+		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		[]models.PublicHolderBindingKey{{ID: expectedID, DidUrl: &storedDidUrl}},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, []datatypes.UUID{expectedID}, keyIDs)
+}
+
+// The fragmentless alias must not let one key answer for another.
+func TestMatchAllHolderBindingKeys_ExactDidUrlWinsOverAlias(t *testing.T) {
+	aliasID := datatypes.NewUUIDv4()
+	exactID := datatypes.NewUUIDv4()
+	baseDid := "did:key:zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
+	fragmented := baseDid + "#zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
+
+	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwt.CnfField{Kid: &baseDid})
+
+	keyIDs, err := matchAllHolderBindingKeys(
+		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		[]models.PublicHolderBindingKey{
+			{ID: aliasID, DidUrl: &fragmented},
+			{ID: exactID, DidUrl: &baseDid},
+		},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, []datatypes.UUID{exactID}, keyIDs)
 }
 
 func TestMatchHolderBindingKey_DidUrlTakesPrecedence(t *testing.T) {
@@ -1097,7 +1151,7 @@ func newVerifiedVcWithCnf(vct, issuer string, cnf *sdjwt.CnfField) *sdjwtvc.Veri
 	return &sdjwtvc.VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 			RegisteredClaims: sdjwt.RegisteredClaims{
-				Issuer:   issuer,
+				Issuer:   &issuer,
 				IssuedAt: &now,
 				Confirm:  cnf,
 			},
@@ -1330,9 +1384,10 @@ func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesys
 
 func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwtvc.VerifiedSdJwtVc {
 	return &sdjwtvc.VerifiedSdJwtVc{
+		IssuerIdentifier: issuer,
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 			RegisteredClaims: sdjwt.RegisteredClaims{
-				Issuer:    issuer,
+				Issuer:    &issuer,
 				IssuedAt:  &issuedAt,
 				Expiry:    &expiry,
 				NotBefore: &notBefore,
@@ -1349,7 +1404,7 @@ func newMinimalIssuerMetadata(configID string, format metadata.CredentialFormatI
 	return metadata.CredentialIssuerMetadata{
 		CredentialIssuer: "https://issuer.example.com",
 		Display: metadata.CredentialIssuerDisplays{
-			{Display: metadata.Display{Name: "Test Issuer", Locale: new("en")}},
+			{Name: "Test Issuer", Locale: new("en")},
 		},
 		CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
 			configID: {Format: format},
@@ -1361,15 +1416,15 @@ func newFullIssuerMetadata(configID string) metadata.CredentialIssuerMetadata {
 	return metadata.CredentialIssuerMetadata{
 		CredentialIssuer: "https://issuer.example.com",
 		Display: metadata.CredentialIssuerDisplays{
-			{Display: metadata.Display{Name: "Test Issuer", Locale: new("en")}},
-			{Display: metadata.Display{Name: "Test Issuer NL", Locale: new("nl")}},
+			{Name: "Test Issuer", Locale: new("en")},
+			{Name: "Test Issuer NL", Locale: new("nl")},
 		},
 		CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
 			configID: {
 				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				CredentialMetadata: &metadata.CredentialMetadata{
 					Display: metadata.CredentialDisplays{
-						{Display: metadata.Display{Name: "My Credential", Locale: new("en")}},
+						{Name: "My Credential", Locale: new("en")},
 					},
 					Claims: []metadata.ClaimsDescription{
 						{
@@ -1391,18 +1446,19 @@ func newFullIssuerMetadata(configID string) metadata.CredentialIssuerMetadata {
 func newStorageBatch() *models.CredentialBatch {
 	now := time.Now().UTC().Truncate(time.Second)
 	exp := now.Add(24 * time.Hour)
+	iss := "https://issuer.example.com"
 	remaining := uint(1)
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     "testhash",
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: now, Valid: true},
-		ExpiresAt:                datatypes.NullTime{V: exp, Valid: true},
-		BatchSize:                1,
-		RemainingCount:           remaining,
-		CredentialIssuer:         "https://issuer.example.com",
+		IssuerIdentifier:           iss,
+		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       "testhash",
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                   datatypes.NullTime{V: now, Valid: true},
+		ExpiresAt:                  datatypes.NullTime{V: exp, Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             remaining,
+		CredentialIssuerIdentifier: iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			{Name: "Test Issuer", Locale: datatypes.NullString{V: "en", Valid: true}},
 		},

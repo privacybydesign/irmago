@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -61,7 +61,7 @@ func (s *holderBindingKeyService) CreateKeyPairsWithProofs(num uint, proofBuilde
 		}
 
 		// Create JWK for the key, which we'll use both in storage and in the proof builder
-		jwkPrivKey, err := jwk.Import(privKey)
+		jwkPrivKey, err := jwk.Import[jwk.Key](privKey)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to convert ecdsa priv key to jwk: %v", err)
 		}

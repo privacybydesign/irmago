@@ -90,7 +90,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 }
 
 // PrepareDisclosure prepares the selected credentials for inclusion in the VP token.
-func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, clientId string) (*dcql.PreparedDisclosure, error) {
+func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
 	for _, sel := range selections {
@@ -111,7 +111,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 
 		presentation := string(sdjwtSelected)
 		if sel.RequireHolderBinding {
-			kbjwt, err := sdjwt.CreateKbJwt(sdjwtSelected, h.keyBinder, nonce, clientId)
+			kbjwt, err := sdjwt.CreateKbJwt(sdjwtSelected, h.keyBinder, nonce, audience)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create kbjwt: %w", err)
 			}

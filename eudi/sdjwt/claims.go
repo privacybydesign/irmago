@@ -21,11 +21,12 @@ type RegisteredClaims struct {
 	// OPTIONAL: The identifier of the Subject of the credential.
 	// The Issuer MAY use it to provide the Subject identifier known by the Issuer.
 	// There is no requirement for a binding to exist between sub and cnf claims
-	Subject string
+	Subject *string
 
 	// OPTIONAL. As defined in Section 4.1.1 of [RFC7519] this claim explicitly indicates the Issuer of the credential
 	// when it is not conveyed by other means (e.g., the subject of the end-entity certificate of an x5c header)
-	Issuer string
+	// Although the claim is optional, the issuer should always be known in one way or another, either through the iss claim or through the x5c header.
+	Issuer *string
 
 	// OPTIONAL: list of hashed -> base64url encoded disclosures
 	// hashing algorithm is defined by `_sd_alg` field

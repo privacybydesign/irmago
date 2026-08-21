@@ -205,14 +205,14 @@ func mergeClaimDisplays(vct []typemetadata.ClaimDisplayEntry, vci []metadata.Dis
 
 func vctDisplayToCredentialDisplay(d typemetadata.DisplayEntry) metadata.CredentialDisplay {
 	out := metadata.CredentialDisplay{
-		Display:         metadata.Display{Name: d.Name},
+		Name:            d.Name,
 		Description:     d.Description,
 		BackgroundColor: d.BackgroundColor,
 		TextColor:       d.TextColor,
 	}
 	if d.Locale != "" {
 		locale := d.Locale
-		out.Display.Locale = &locale
+		out.Locale = &locale
 	}
 	if d.Logo != nil {
 		out.Logo = &metadata.RemoteImage{Uri: d.Logo.URI, AltText: d.Logo.AltText}

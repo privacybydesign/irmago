@@ -538,7 +538,7 @@ func init() {
 func startOpenID4VCISession(t *testing.T, c *client.Client, sessionId int, credOfferURL string) {
 	t.Helper()
 	sessionReq, err := json.Marshal(client.SessionRequestData{
-		Qr:                    irma.Qr{URL: credOfferURL},
+		URL:                   credOfferURL,
 		Protocol:              clientmodels.Protocol_OpenID4VCI,
 		OpenID4VCIRedirectUri: openid4vciRedirectURI,
 	})

@@ -150,7 +150,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			Image:        credentialImage,
 			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
-				Id:       batch.CredentialIssuer,
+				Id:       batch.CredentialIssuerIdentifier,
 				Name:     issuerName,
 				Image:    issuerImage,
 				Url:      nil,
@@ -248,17 +248,17 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
 
 	batch := &models.CredentialBatch{
-		IssuerURL:                first.IssuerSignedJwtPayload.Issuer,
-		VerifiableCredentialType: first.IssuerSignedJwtPayload.VerifiableCredentialType,
-		Format:                   models.CredentialFormat(credentialConfiguration.Format),
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(processedPayload),
-		CredentialIssuer:         first.IssuerSignedJwtPayload.Issuer,
-		IssuerDisplay:            slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
-		CredentialMetadata:       convertCredentialMetadata(credentialConfiguration),
-		BatchSize:                uint(len(verifiedSdJwtVcs)),
-		RemainingCount:           uint(len(verifiedSdJwtVcs)),
-		Instances:                buildInstances(verifiedSdJwtVcs),
+		IssuerIdentifier:           first.IssuerIdentifier,
+		VerifiableCredentialType:   first.IssuerSignedJwtPayload.VerifiableCredentialType,
+		Format:                     models.CredentialFormat(credentialConfiguration.Format),
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(processedPayload),
+		CredentialIssuerIdentifier: issuerMetadata.CredentialIssuer,
+		IssuerDisplay:              slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
+		CredentialMetadata:         convertCredentialMetadata(credentialConfiguration),
+		BatchSize:                  uint(len(verifiedSdJwtVcs)),
+		RemainingCount:             uint(len(verifiedSdJwtVcs)),
+		Instances:                  buildInstances(verifiedSdJwtVcs),
 	}
 
 	if first.IssuerSignedJwtPayload.IssuedAt != nil {
@@ -447,6 +447,21 @@ func matchAllHolderBindingKeys(
 		}
 	}
 
+	// An issuer may echo the kid with the verification method fragment the DID method
+	// uses to reference the key (`did:key:z…#z…`) where the proof sent it without, so
+	// register the fragmentless form too. Second pass, so an exact DID URL always wins
+	// over a fragmentless alias.
+	for _, pk := range publicKeyIdentifiers {
+		if pk.DidUrl == nil {
+			continue
+		}
+		if base := stripFragment(*pk.DidUrl); base != *pk.DidUrl {
+			if _, taken := keyByDidUrl[base]; !taken {
+				keyByDidUrl[base] = pk.ID
+			}
+		}
+	}
+
 	result := make([]datatypes.UUID, len(cnfs))
 	for i, cnf := range cnfs {
 		if cnf == nil {
@@ -486,6 +501,13 @@ func matchHolderBindingKey(cnf *sdjwt.CnfField, keyByThumbprint map[string]datat
 	if cnf.Kid != nil {
 		if keyID, ok := keyByDidUrl[*cnf.Kid]; ok {
 			return keyID, nil
+		}
+		// Then the base DID, for a kid that carries a verification method fragment the
+		// stored DID URL does not (mirrors GetAndRemovePrivateKey).
+		if base := stripFragment(*cnf.Kid); base != *cnf.Kid {
+			if keyID, ok := keyByDidUrl[base]; ok {
+				return keyID, nil
+			}
 		}
 	}
 

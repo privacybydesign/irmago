@@ -37,6 +37,9 @@ func TestTrustModel(t *testing.T) {
 	t.Run("Reload reads chain (valid root + expired sub-CA), should only add root cert", testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert)
 	t.Run("Reload reads invalid certificate chain (root + CA in reversed order), not add any certificates to the pools", testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates)
 
+	// Certificate removal tests
+	t.Run("RemoveCertificate removes installed chain and Reload drops it from the pools", testRemoveCertificateRemovesInstalledChainAndReloadDropsItFromThePools)
+
 	// Certificate revocation lists tests
 	t.Run("syncCertificateRevocationLists does nothing, given no certificate chains", testSyncCertificateRevocationListsDoesNothingGivenNoCertificateChains)
 	t.Run("syncCertificateRevocationLists downloads file for non-cached CRL successfully", testSyncCertificateRevocationListsDownloadsFileForNonCachedCrlSuccessfully)
@@ -526,6 +529,37 @@ func testDownloadVerifyAndCacheCrlThrowsErrorOnInvalidCRLSignature(t *testing.T)
 
 	// Assert
 	require.ErrorContains(t, err, "CRL signature is invalid")
+}
+
+func testRemoveCertificateRemovesInstalledChainAndReloadDropsItFromThePools(t *testing.T) {
+	tm, _ := setupTrustModelWithStoragePath(t)
+
+	// Create two (root > CA) chains sharing the same root and write to storage
+	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
+	_, rootCert, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, rootDN, 2, testdata.PkiOption_None, nil)
+
+	installCertChain(t, tm, caCerts[0], rootCert)
+	installCertChain(t, tm, caCerts[1], rootCert)
+
+	require.NoError(t, tm.Reload())
+	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 2)
+
+	// Remove the first chain by its leaf's thumbprint
+	require.NoError(t, tm.RemoveCertificate(fmt.Sprintf("%x", caCerts[0].Signature)))
+
+	// The other chain is untouched on disk
+	chains, err := tm.GetSavedTrustChains()
+	require.NoError(t, err)
+	require.Len(t, chains, 1)
+
+	// After a reload the removed chain is gone from the in-memory pools too
+	tm.clear()
+	require.NoError(t, tm.Reload())
+	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
+	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 1)
+
+	// Removing it again fails, as it is no longer installed
+	require.ErrorContains(t, tm.RemoveCertificate(fmt.Sprintf("%x", caCerts[0].Signature)), "no certificate found")
 }
 
 // installCertChain encodes the given certs as a single PEM block (in the order

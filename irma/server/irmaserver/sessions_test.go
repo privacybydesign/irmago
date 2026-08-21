@@ -135,10 +135,8 @@ func TestSessionHandlerInvokedOnTimeout(t *testing.T) {
 	defer s.Stop()
 
 	request := &irma.ServiceProviderRequest{
-		RequestorBaseRequest: irma.RequestorBaseRequest{
-			ClientTimeout: 1,
-		},
-		Request: irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")),
+		ClientTimeout: 1,
+		Request:       irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")),
 	}
 
 	var handlerInvoked bool

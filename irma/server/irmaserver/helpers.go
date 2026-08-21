@@ -18,7 +18,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"

@@ -209,14 +209,14 @@ func Test_Checker_Refresh_BypassesCache(t *testing.T) {
 
 func Test_Checker_Check_Singleflight_CollapsesConcurrentFetches(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
-	var hits int64
+	var hits atomic.Int64
 	release := make(chan struct{})
 	// body is assigned after the server exists so its `sub` can be set
 	// to the server URL (the §5.1 sub == uri binding). The handler
 	// closure reads body only at request time, after assignment.
 	var body []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt64(&hits, 1)
+		hits.Add(1)
 		<-release // hold the request open while concurrent callers pile up
 		w.Header().Set("Content-Type", StatusListTokenContentType)
 		_, _ = w.Write(body)
@@ -248,7 +248,7 @@ func Test_Checker_Check_Singleflight_CollapsesConcurrentFetches(t *testing.T) {
 	close(release)
 	wg.Wait()
 
-	require.Equal(t, int64(1), atomic.LoadInt64(&hits), "singleflight should fold concurrent callers into one fetch")
+	require.Equal(t, int64(1), hits.Load(), "singleflight should fold concurrent callers into one fetch")
 }
 
 func Test_Checker_Check_FetchFailure_FailsClosed(t *testing.T) {

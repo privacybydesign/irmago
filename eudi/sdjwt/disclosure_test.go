@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/stretchr/testify/require"
 )
