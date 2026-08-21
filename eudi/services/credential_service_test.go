@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -1016,7 +1016,7 @@ func generateTestJwk(t *testing.T) (jwk.Key, string) {
 	t.Helper()
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	jwkKey, err := jwk.Import(privKey)
+	jwkKey, err := jwk.Import[jwk.Key](privKey)
 	require.NoError(t, err)
 	pubKey, err := jwkKey.PublicKey()
 	require.NoError(t, err)

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/cert"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/cert"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -43,7 +43,7 @@ func serveDidWebWithAttestingCert(
 	t *testing.T, signingKey *ecdsa.PrivateKey, x5cLeaf *x509.Certificate,
 ) (string, *http.Client) {
 	t.Helper()
-	pub, err := jwk.Import(signingKey.Public())
+	pub, err := jwk.Import[jwk.Key](signingKey.Public())
 	require.NoError(t, err)
 	chain := &cert.Chain{}
 	require.NoError(t, chain.AddString(base64.StdEncoding.EncodeToString(x5cLeaf.Raw)))

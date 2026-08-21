@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/didkey"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +35,7 @@ func mustGenerateECKey(t *testing.T) *ecdsa.PrivateKey {
 
 func mustGetPublicJWK(t *testing.T, privKey *ecdsa.PrivateKey) jwk.Key {
 	t.Helper()
-	pubJwk, err := jwk.Import(privKey.Public())
+	pubJwk, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 	return pubJwk
 }
@@ -82,8 +82,7 @@ func Test_JwtProofBuilder_Build_JWKMethod_WithNonce_Succeeds(t *testing.T) {
 	issuedAt, _ := token.IssuedAt()
 	require.Equal(t, testFixedTime.Unix(), issuedAt.Unix())
 
-	var nonceClaim string
-	err = token.Get("nonce", &nonceClaim)
+	nonceClaim, err := jwt.Get[string](token, "nonce")
 	require.NoError(t, err, "nonce claim should be present")
 	require.Equal(t, nonce, nonceClaim)
 
@@ -128,8 +127,7 @@ func Test_JwtProofBuilder_Build_JWKMethod_WithoutNonce_OmitsNonceClaim(t *testin
 	token, err := jwt.Parse([]byte(jwtStr), jwt.WithKey(jwa.ES256(), pubJwk))
 	require.NoError(t, err)
 
-	var nonceVal string
-	err = token.Get("nonce", &nonceVal)
+	_, err = jwt.Get[string](token, "nonce")
 	require.Error(t, err, "nonce claim should not be present when no nonce is provided")
 }
 

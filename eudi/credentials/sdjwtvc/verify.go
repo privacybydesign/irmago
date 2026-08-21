@@ -10,9 +10,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/scheme"
@@ -230,8 +230,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(
 		return nil, err
 	}
 
-	var vct string
-	err = token.Get(VerifiableCredentialTypeKey, &vct)
+	vct, err := jwt.Get[string](token, VerifiableCredentialTypeKey)
 	if err != nil {
 		return nil, errors.New("missing vct field")
 	}
@@ -253,10 +252,8 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(
 		}
 	}
 
-	var sdRaw, cnfRaw any
-
 	var sd []sdjwt.HashedDisclosure
-	err = token.Get(sdjwt.SdKey, &sdRaw)
+	sdRaw, err := jwt.Get[any](token, sdjwt.SdKey)
 	if err == nil {
 		sd, err = sdjwt.ParseSdField(sdRaw)
 		if err != nil {
@@ -265,7 +262,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(
 	}
 
 	var cnf *sdjwt.CnfField
-	err = token.Get(sdjwt.ConfirmationKey, &cnfRaw)
+	cnfRaw, err := jwt.Get[any](token, sdjwt.ConfirmationKey)
 	if err == nil {
 		cnf, err = sdjwt.ParseConfirmField(cnfRaw)
 		if err != nil {
@@ -397,8 +394,8 @@ func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *IssuerSigned
 // pipeline. Only the `status_list` member is parsed in v1; other
 // sibling members defined by future specs are silently ignored.
 func parseStatusClaim(token jwt.Token) (*statuslist.StatusClaim, error) {
-	var raw map[string]any
-	if err := token.Get(StatusKey, &raw); err != nil {
+	raw, err := jwt.Get[map[string]any](token, StatusKey)
+	if err != nil {
 		return nil, fmt.Errorf("status claim is not an object: %v", err)
 	}
 	slRaw, ok := raw["status_list"]
@@ -730,8 +727,7 @@ func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (
 // ====== Utils ======
 
 func getOptional[T any](token jwt.Token, key string) T {
-	var value T
-	err := token.Get(key, &value)
+	value, err := jwt.Get[T](token, key)
 	if err != nil {
 		return *new(T)
 	}

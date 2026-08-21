@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/utils"
@@ -96,7 +96,7 @@ func tamperedTestCredential(t *testing.T) string {
 
 	holderKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	holderJwkKey, err := jwk.Import(holderKey)
+	holderJwkKey, err := jwk.Import[jwk.Key](holderKey)
 	require.NoError(t, err)
 
 	credential, err := createTestSdJwtVcWithHolderKey(

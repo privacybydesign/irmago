@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -170,5 +171,21 @@ func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
 				t.Errorf("GetAllBaseLanguages() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// jwx v4 by default keeps unparseable JWK Set entries as placeholder keys,
+// where v3 rejected the whole set. Issuer metadata comes from an external
+// party, so we keep the strict v3 behavior; this pins it.
+func TestCredentialRequestEncryption_UnmarshalJSON_UnparseableKeyInJwks_ReturnsError(t *testing.T) {
+	valid := `{"jwks":{"keys":[{"kty":"EC","crv":"P-256","x":"MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4","y":"4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM"}]},"enc_values_supported":["A256GCM"],"encryption_required":false}`
+	var cre CredentialRequestEncryption
+	if err := json.Unmarshal([]byte(valid), &cre); err != nil {
+		t.Fatalf("valid jwks should unmarshal, got error: %v", err)
+	}
+
+	withUnparseable := `{"jwks":{"keys":[{"kty":"EC","crv":"P-256","x":"MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4","y":"4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM"},{"kty":"EC","crv":"P-256"}]},"enc_values_supported":["A256GCM"],"encryption_required":false}`
+	if err := json.Unmarshal([]byte(withUnparseable), &cre); err == nil {
+		t.Fatal("jwks with an unparseable key should be rejected")
 	}
 }

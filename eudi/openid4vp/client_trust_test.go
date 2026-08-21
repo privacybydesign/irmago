@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
@@ -205,7 +205,7 @@ func setupDidWebTest(t *testing.T) (authRequestJwt string, validator VerifierVal
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	publicKey, err := jwk.Import(key.Public())
+	publicKey, err := jwk.Import[jwk.Key](key.Public())
 	require.NoError(t, err)
 
 	// The DID document is served over plain HTTP, which only the developer-mode

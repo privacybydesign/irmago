@@ -8,6 +8,8 @@ import (
 	"path"
 	"slices"
 	"strings"
+
+	"github.com/lestrrat-go/jwx/v4/jwk"
 )
 
 // OAuth 2.0 grant type identifiers, as they appear in an authorization server's
@@ -47,6 +49,41 @@ type AuthorizationServerMetadata struct {
 
 	// RFC 9396 extension for OAuth 2.0 Rich Authorization Requests
 	AuthorizationDetailsTypesSupported []string `json:"authorization_details_types_supported,omitempty"`
+
+	// Non-standard fields that might be used in practice
+	Jwks jwk.Set `json:"jwks,omitempty"`
+}
+
+// UnmarshalJSON decodes authorization server metadata. jwk.Set is an interface,
+// so encoding/json cannot allocate a value to decode the jwks member into; the
+// member is therefore captured raw and handed to jwk.Parse, while every other
+// field is decoded by the default rules.
+func (as *AuthorizationServerMetadata) UnmarshalJSON(data []byte) error {
+	// The alias sheds this method, so unmarshalling the embedded value does not recurse.
+	type alias AuthorizationServerMetadata
+	var aux struct {
+		alias
+		// Shallower than alias.Jwks, so this field is the one json fills.
+		Jwks json.RawMessage `json:"jwks,omitempty"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*as = AuthorizationServerMetadata(aux.alias)
+
+	if len(aux.Jwks) == 0 || string(aux.Jwks) == "null" {
+		return nil
+	}
+	// The set comes from the authorization server, so it is parsed strictly: jwx v4
+	// otherwise keeps an unparseable entry in "keys" as a placeholder key, which a
+	// later LookupKeyID would hand out as if it were a real key.
+	jwks, err := jwk.Parse(aux.Jwks, jwk.WithStrictKeySetParsing(true))
+	if err != nil {
+		return fmt.Errorf("invalid 'jwks': %w", err)
+	}
+	as.Jwks = jwks
+
+	return nil
 }
 
 type TokenResponse struct {

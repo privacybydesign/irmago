@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
@@ -205,8 +205,8 @@ func (v *DidVerifierValidator) resolveDidJwk(didJwk string) (any, *x509.Certific
 		return nil, nil, fmt.Errorf("did:jwk carries an invalid attesting certificate: %w", err)
 	}
 
-	var rawKey any
-	if err := jwk.Export(key, &rawKey); err != nil {
+	rawKey, err := jwk.Export[any](key)
+	if err != nil {
 		return nil, nil, fmt.Errorf("failed to export raw key from did:jwk: %v", err)
 	}
 
@@ -255,8 +255,8 @@ func findVerificationKey(doc *did.Document, header map[string]any) (any, *x509.C
 			return nil, nil, fmt.Errorf("verification method %s carries an invalid attesting certificate: %w", vm.ID, err)
 		}
 
-		var rawKey any
-		if err := jwk.Export(pk, &rawKey); err != nil {
+		rawKey, err := jwk.Export[any](pk)
+		if err != nil {
 			return nil, nil, fmt.Errorf("failed to export raw key from verification method %s: %v", vm.ID, err)
 		}
 		return rawKey, attestingCert, nil

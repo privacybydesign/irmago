@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/cert"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/cert"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +22,7 @@ import (
 // certifies key.
 func attestedKey(t *testing.T, key *ecdsa.PublicKey, certForX5c *x509.Certificate) jwk.Key {
 	t.Helper()
-	pub, err := jwk.Import(key)
+	pub, err := jwk.Import[jwk.Key](key)
 	require.NoError(t, err)
 	if certForX5c != nil {
 		chain := &cert.Chain{}

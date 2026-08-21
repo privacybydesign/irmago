@@ -6,7 +6,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jws"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 )
 
@@ -94,8 +94,8 @@ func claimedSigningTime(protected jws.Headers) (time.Time, error) {
 	if protected.Has(IatHeader) {
 		// Numbers decode to float64, so the integer requirement is checked rather
 		// than obtained from the type.
-		var seconds float64
-		if err := protected.Get(IatHeader, &seconds); err != nil {
+		seconds, err := jws.Get[float64](protected, IatHeader)
+		if err != nil {
 			return time.Time{}, fmt.Errorf("`iat` is not a number: %v", err)
 		}
 		if seconds != math.Trunc(seconds) {
@@ -106,8 +106,8 @@ func claimedSigningTime(protected jws.Headers) (time.Time, error) {
 	}
 
 	if protected.Has(SigTHeader) {
-		var stamp string
-		if err := protected.Get(SigTHeader, &stamp); err != nil {
+		stamp, err := jws.Get[string](protected, SigTHeader)
+		if err != nil {
 			return time.Time{}, fmt.Errorf("`sigT` is not a string: %v", err)
 		}
 		parsed, err := time.Parse(time.RFC3339, stamp)

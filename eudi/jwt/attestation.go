@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 )
 
 // ErrAttestationKeyMismatch marks the one way an x5c present on a key is actively
@@ -52,8 +52,8 @@ func AttestingCertificate(key jwk.Key) (*x509.Certificate, error) {
 // assertKeyMatches enforces RFC 7517 §4.7: the leaf's public key must be the key
 // the x5c is attached to. Compared as PKIX DER, which is exact across key types.
 func assertKeyMatches(key jwk.Key, leaf *x509.Certificate) error {
-	var raw any
-	if err := jwk.Export(key, &raw); err != nil {
+	raw, err := jwk.Export[any](key)
+	if err != nil {
 		return fmt.Errorf("failed to export key for attestation binding check: %w", err)
 	}
 	keyDer, err := x509.MarshalPKIXPublicKey(raw)

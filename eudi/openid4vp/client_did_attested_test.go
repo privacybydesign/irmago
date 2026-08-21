@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/lestrrat-go/jwx/v3/cert"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/cert"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
@@ -82,7 +82,7 @@ func newDidAttestFixture(
 		x5cLeaf = x5cOverride
 	}
 
-	pub, err := jwk.Import(verifierKey.Public())
+	pub, err := jwk.Import[jwk.Key](verifierKey.Public())
 	require.NoError(t, err)
 	chain := &cert.Chain{}
 	require.NoError(t, chain.AddString(base64.StdEncoding.EncodeToString(x5cLeaf.Raw)))
