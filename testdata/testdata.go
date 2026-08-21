@@ -80,6 +80,10 @@ const (
 	PkiOption_InvalidJsonSchemeData PkiGenerationOptions = 256
 	PkiOption_MissingUriSan         PkiGenerationOptions = 512
 	PkiOption_MissingDnsSan         PkiGenerationOptions = 1024
+
+	// PkiOption_NoEndEntityDigitalSignatureKeyUsage omits the keyUsage extension from the
+	// end-entity certificate, which VerifyCertificate rejects.
+	PkiOption_NoEndEntityDigitalSignatureKeyUsage PkiGenerationOptions = 2048
 )
 
 func ParseHolderPubJwk() jwk.Key {
@@ -300,6 +304,15 @@ func CreateEndEntityCertificate(t *testing.T, subject pkix.Name, hostname string
 				Value: asn1SchemeData,
 			},
 		},
+	}
+
+	if opts&PkiOption_ExpiredEndEntity != 0 {
+		certTemplate.NotBefore = time.Now().Add(time.Duration(-2 * time.Hour))
+		certTemplate.NotAfter = time.Now().Add(time.Duration(-1 * time.Hour))
+	}
+
+	if opts&PkiOption_NoEndEntityDigitalSignatureKeyUsage != 0 {
+		certTemplate.KeyUsage = 0
 	}
 
 	if opts&PkiOption_InvalidAsnSchemeData != 0 {
