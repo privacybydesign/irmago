@@ -47,7 +47,11 @@ import publish  # noqa: E402  — the real signer, not a reimplementation
 
 # Point it at the golden material rather than the live publisher's.
 publish.CERTS = os.path.abspath("certs")
-publish.LIST_ID = "urn:yivi:trustlist:golden"
+# Clause 6.3.6 prescribes `CC:name` for the English SchemeName, where CC is the
+# SchemeTerritory ("NL" here). Nothing in the wallet enforces the format — it
+# compares the identity verbatim against what its source configures — so the golden
+# document is where a conformant one is written down.
+publish.LIST_ID = "NL:Yivi Golden Trust List"
 
 with open("certs/party.der", "rb") as f:
     party_der = f.read()

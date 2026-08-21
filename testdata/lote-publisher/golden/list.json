@@ -1,11 +1,11 @@
 {
   "LoTE": {
     "ListAndSchemeInformation": {
-      "ListIssueDateTime": "2026-08-21T09:53:11Z",
+      "ListIssueDateTime": "2026-08-21T12:36:27Z",
       "LoTESequenceNumber": 42,
       "LoTEType": "https://yivi.app/19602/LoTEType/YiviRecognizedPartiesList",
       "LoTEVersionIdentifier": 1,
-      "NextUpdate": "2026-09-20T09:53:11Z",
+      "NextUpdate": "2026-09-20T12:36:27Z",
       "PolicyOrLegalNotice": [
         {
           "LoTEPolicy": {
@@ -23,7 +23,7 @@
       "SchemeName": [
         {
           "lang": "en",
-          "value": "urn:yivi:trustlist:golden"
+          "value": "NL:Yivi Golden Trust List"
         }
       ],
       "SchemeOperatorAddress": {
