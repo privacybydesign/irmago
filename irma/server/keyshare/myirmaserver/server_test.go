@@ -208,9 +208,12 @@ func TestServerUserData(t *testing.T) {
 	}, logs)
 }
 
-func StartMyIrmaServer(t *testing.T, db db, emailserver string) (*Server, *http.Server) {
+// newTestConfiguration builds a Configuration suitable for the in-memory test
+// server. Tests that need to tweak a single field (e.g. CORSAllowedOrigins) can
+// call this and adjust the returned value before passing it to New.
+func newTestConfiguration(t *testing.T, db db, emailserver string) *Configuration {
 	testdataPath := test.FindTestdataFolder(t)
-	s, err := New(&Configuration{
+	return &Configuration{
 		Configuration: &server.Configuration{
 			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
 			Logger:      irma.Logger,
@@ -243,7 +246,11 @@ func StartMyIrmaServer(t *testing.T, db db, emailserver string) (*Server, *http.
 		DeleteAccountSubjects: map[string]string{
 			"en": "testsubject",
 		},
-	})
+	}
+}
+
+func StartMyIrmaServer(t *testing.T, db db, emailserver string) (*Server, *http.Server) {
+	s, err := New(newTestConfiguration(t, db, emailserver))
 	require.NoError(t, err)
 
 	r := chi.NewRouter()
