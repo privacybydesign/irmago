@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- A Status List Token signed with a key published inline in the issuer's OAuth 2.0 / OpenID Connect discovery metadata, in a non-standard `jwks` member instead of behind `jwks_uri`, can now be verified. `jwks_uri` stays authoritative when present; the inline set is consulted only when it is absent, and a `kid` neither source publishes is still an error rather than a silent decline.
+
 ### Changed
 - Raise the minimum Go version to 1.27; the `toolchain` directive pins `go1.27.0`
 - Apply the `go fix` modernizations the Go 1.27 toolchain adds: struct literals name promoted fields directly instead of naming the embedded struct, `errors.As` into a declared variable becomes `errors.AsType`, backwards index loops become `slices.Backward`, an `int64` guarded by `atomic.AddInt64`/`atomic.LoadInt64` becomes an `atomic.Int64`, and one `strings.SplitN(s, sep, 2)[0]` becomes `strings.Cut`. The `go fix -diff` status check runs the modernizers of the pinned toolchain, so it reports files a change did not touch unless these land together with the bump

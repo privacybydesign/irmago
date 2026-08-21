@@ -840,6 +840,7 @@ type testOAuthDiscoveryServer struct {
 	discoveryStatus int    // response status for the well-known document (0 → 200)
 	jwksStatus      int    // response status for the JWKS (0 → 200)
 	omitJwksUri     bool   // serve metadata without a jwks_uri member
+	inlineJwks      []byte // JWKS document to embed in the metadata's jwks member
 	jwksBody        []byte // JWKS document to serve
 }
 
@@ -862,6 +863,9 @@ func (s *testOAuthDiscoveryServer) handle(w http.ResponseWriter, r *http.Request
 		metadata := map[string]any{"issuer": s.URL()}
 		if !s.omitJwksUri {
 			metadata["jwks_uri"] = s.URL() + "/jwks.json"
+		}
+		if s.inlineJwks != nil {
+			metadata["jwks"] = json.RawMessage(s.inlineJwks)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(metadata)
@@ -1104,6 +1108,99 @@ func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_DiscoveryWithoutJwksUri_Returns
 	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
 
 	require.NoError(t, err)
+	require.Empty(t, sink.keys)
+	require.Zero(t, srv.jwksHits.Load())
+}
+
+// The jwks member is non-standard in RFC 8414 but appears in practice, so it is
+// honoured as a fallback: with no jwks_uri to dereference, the key is resolved
+// from the metadata document itself.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_InlineJwksWithoutJwksUri_FeedsKeyAndAlgorithmToSink(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	srv := newTestOAuthDiscoveryServer(t, nil)
+	srv.omitJwksUri = true
+	srv.inlineJwks = newTestJWKS(t, privKey.Public(), "key-1", "")
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), privKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "key-1"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.NoError(t, err)
+	require.Len(t, sink.keys, 1)
+	require.Equal(t, jwa.ES256(), sink.keys[0].alg)
+	require.NotNil(t, sink.keys[0].key)
+	require.Zero(t, srv.jwksHits.Load(), "an inline jwks member must not cost a JWKS round trip")
+}
+
+// The standard member wins: the inline jwks is only consulted when jwks_uri is
+// absent, so a JWT whose kid both sets publish is verified against the hosted key.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_JwksUriTakesPrecedenceOverInlineJwks(t *testing.T) {
+	hostedKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	inlineKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	srv := newTestOAuthDiscoveryServer(t, newTestJWKS(t, hostedKey.Public(), "key-1", ""))
+	srv.inlineJwks = newTestJWKS(t, inlineKey.Public(), "key-1", "")
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), hostedKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "key-1"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.NoError(t, err)
+	require.Len(t, sink.keys, 1)
+	require.Equal(t, int64(1), srv.jwksHits.Load(), "jwks_uri must still be dereferenced when an inline jwks is also present")
+
+	// The key that reached the sink is the hosted one, not the key the inline
+	// jwks member publishes under the same kid.
+	resolved, ok := sink.keys[0].key.(jwk.Key)
+	require.True(t, ok, "expected a jwk.Key on the sink, got %T", sink.keys[0].key)
+	var resolvedPub ecdsa.PublicKey
+	require.NoError(t, jwk.Export(resolved, &resolvedPub))
+	require.True(t, hostedKey.PublicKey.Equal(&resolvedPub), "the sink received the inline key instead of the hosted one")
+}
+
+// Precedence is not a fallback chain in the other direction either: once
+// jwks_uri is present it is the only source consulted, so a kid it does not
+// publish fails even when the inline jwks member does publish it.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_KidOnlyInInlineJwks_ReturnsError(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	srv := newTestOAuthDiscoveryServer(t, newTestJWKS(t, privKey.Public(), "hosted-key", ""))
+	srv.inlineJwks = newTestJWKS(t, privKey.Public(), "inline-key", "")
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), privKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "inline-key"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, "no key found in JWKS with kid inline-key")
+	require.Empty(t, sink.keys)
+}
+
+// A kid the inline set does not publish is a hard failure rather than a silent
+// decline: the metadata already stated which keys the issuer signs with, and
+// there is no jwks_uri left to try.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_KidNotInInlineJwks_ReturnsError(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	srv := newTestOAuthDiscoveryServer(t, nil)
+	srv.omitJwksUri = true
+	srv.inlineJwks = newTestJWKS(t, privKey.Public(), "published-key", "")
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), privKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "unpublished-key"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, "no key found in jwks member of discovery metadata")
+	require.ErrorContains(t, err, "unpublished-key")
 	require.Empty(t, sink.keys)
 	require.Zero(t, srv.jwksHits.Load())
 }
