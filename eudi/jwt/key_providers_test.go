@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1233,6 +1234,91 @@ func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_KidNotInJwks_ReturnsError(t *te
 	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
 
 	require.ErrorContains(t, err, "no key found in JWKS with kid unpublished-key")
+	require.Empty(t, sink.keys)
+}
+
+// malformedJwkEntry is an EC key object missing the mandatory x and y
+// coordinates, so jwk cannot decode it into a key.
+const malformedJwkEntry = `{"kty":"EC","crv":"P-256","kid":"%s"}`
+
+// newTestRawJWKS builds a JWKS body from raw JSON key objects, so a test can
+// include an entry jwk.Parse cannot decode.
+func newTestRawJWKS(keys ...string) []byte {
+	return []byte(`{"keys":[` + strings.Join(keys, ",") + `]}`)
+}
+
+// newTestJWKJSON marshals a public key into a single JWK object under the given kid.
+func newTestJWKJSON(t *testing.T, pub any, kid string) string {
+	t.Helper()
+	key, err := jwk.Import[jwk.Key](pub)
+	require.NoError(t, err)
+	require.NoError(t, key.Set(jwk.KeyIDKey, kid))
+	body, err := json.Marshal(key)
+	require.NoError(t, err)
+	return string(body)
+}
+
+// An unparseable entry must reject the whole JWKS. jwk.Fetch, which this
+// provider used before jwx v4 removed it, parsed sets strictly; jwx v4's
+// default keeps an undecodable entry as a placeholder key that keeps its own
+// kid, so a lookup on the attacker-chosen kid would hand that placeholder to
+// the sink instead of failing the fetch.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_MalformedJwksEntry_RejectsWholeSet(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	srv := newTestOAuthDiscoveryServer(t, newTestRawJWKS(fmt.Sprintf(malformedJwkEntry, "key-1")))
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), privKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "key-1"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, "failed to fetch or parse JWKS")
+	require.Empty(t, sink.keys, "a placeholder for an unparseable entry may not reach the sink")
+}
+
+// Rejecting the set in full also means a usable sibling key in a partly broken
+// JWKS is not accepted, which is what jwk.Fetch did.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_MalformedJwksEntry_RejectsUsableSiblingKey(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	srv := newTestOAuthDiscoveryServer(t, newTestRawJWKS(
+		fmt.Sprintf(malformedJwkEntry, "broken-key"),
+		newTestJWKJSON(t, privKey.Public(), "key-1"),
+	))
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), privKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "key-1"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, "failed to fetch or parse JWKS")
+	require.Empty(t, sink.keys)
+}
+
+// jwks_uri comes from discovery metadata at the unverified iss claim, so the
+// endpoint is attacker-chosen and the body must stay capped as it was under
+// jwk.Fetch. The padding member below is the only thing oversizing this
+// document: the provider parses sets strictly, and strict parsing still
+// tolerates unknown members, so it would be accepted under the cap.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_OversizedJwks_ReturnsError(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	oversized := []byte(`{"keys":[` + newTestJWKJSON(t, privKey.Public(), "key-1") +
+		`],"padding":"` + strings.Repeat("a", maxJwksBytes) + `"}`)
+	require.Greater(t, len(oversized), maxJwksBytes)
+
+	srv := newTestOAuthDiscoveryServer(t, oversized)
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), privKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "key-1"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, fmt.Sprintf("response exceeds %d bytes", maxJwksBytes))
 	require.Empty(t, sink.keys)
 }
 
