@@ -1791,17 +1791,24 @@ func TestInstallSchemeMalformedSignatureMaterial(t *testing.T) {
 	})
 }
 
-// TestParseKeysFolderMalformedBases parses an issuer public key whose <Bases num> disagrees
-// with the number of <Base_i> elements it holds. gabi used to size the base slice from num
-// and then index the elements, so a num above the element count panicked out of
-// parseKeysFolder and a num below it dropped the surplus bases without a word. There is no
-// recover() on this path, so the panic escaped ParseFolder into the caller.
+// TestParseKeysFolderMalformedBases parses an issuer public key whose <Bases> block does not
+// hold six usable base 10 integers. gabi used to size the base slice from the num attribute
+// and then index the elements without checking either, so a num above the element count
+// panicked out of parseKeysFolder, a num below it dropped the surplus bases without a word,
+// and a base that is not a base 10 integer became a nil entry that only surfaced downstream.
+// There is no recover() on this path, so the panic escaped ParseFolder into the caller.
 func TestParseKeysFolderMalformedBases(t *testing.T) {
 	issuerID := NewIssuerIdentifier("irma-demo.RU")
 	keyPath := "irma-demo/RU/PublicKeys/0.xml"
 
-	for _, num := range []string{"7", "5"} {
-		t.Run("Bases num of "+num+" against six Base elements", func(t *testing.T) {
+	for _, mutation := range []struct {
+		name, from, to string
+	}{
+		{"Bases num of 7 against six Base elements", `<Bases num="6">`, `<Bases num="7">`},
+		{"Bases num of 5 against six Base elements", `<Bases num="6">`, `<Bases num="5">`},
+		{"a Base element that is not a base 10 integer", `<Base_1>1`, `<Base_1>z`},
+	} {
+		t.Run(mutation.name, func(t *testing.T) {
 			storage := t.TempDir()
 			require.NoError(t, common.CopyDirectory(filepath.Join(test.FindTestdataFolder(t), "irma_configuration"), storage))
 			conf, err := NewConfiguration(storage, ConfigurationOptions{})
@@ -1811,8 +1818,8 @@ func TestParseKeysFolderMalformedBases(t *testing.T) {
 			keyFile := filepath.Join(storage, filepath.FromSlash(keyPath))
 			key, err := os.ReadFile(keyFile)
 			require.NoError(t, err)
-			rewritten := strings.Replace(string(key), `<Bases num="6">`, `<Bases num="`+num+`">`, 1)
-			require.NotEqual(t, string(key), rewritten, "Bases num attribute not found, testdata changed?")
+			rewritten := strings.Replace(string(key), mutation.from, mutation.to, 1)
+			require.NotEqual(t, string(key), rewritten, "%s not found, testdata changed?", mutation.from)
 			require.NoError(t, os.WriteFile(keyFile, []byte(rewritten), 0600))
 
 			// parseKeysFolder reads the key through readSignedFile, so the rewritten key
