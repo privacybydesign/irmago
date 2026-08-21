@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didkey"
 )
@@ -77,7 +77,7 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (any, error) {
 	// Flatten the "aud" claim to a single string if it contains only one value, to be compliant with the OID4VCI JWT proof spec
 	proofPayload.Options().Enable(jwt.FlattenAudience)
 
-	privJwk, err := jwk.Import(privKey)
+	privJwk, err := jwk.Import[jwk.Key](privKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert ecdsa priv key to jwk: %v", err)
 	}
@@ -142,7 +142,7 @@ func (b *JwtProofBuilder) BuildWithES256Signer(pub *ecdsa.PublicKey, sign ES256S
 	}
 
 	// Public JWK, marked for signature use (mirrors Build).
-	pubJwk, err := jwk.Import(pub)
+	pubJwk, err := jwk.Import[jwk.Key](pub)
 	if err != nil {
 		return "", fmt.Errorf("failed to import holder public key: %v", err)
 	}

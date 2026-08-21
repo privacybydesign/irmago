@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
@@ -1097,9 +1097,9 @@ func TestGetSupportedCredentialSigningAlgorithm_Failure(t *testing.T) {
 func TestGetSupportedCredentialSigningAlgorithm_ES256K_FollowsBuildTag(t *testing.T) {
 	got, err := getSupportedCredentialSigningAlgorithm([]string{"ES256K"})
 
-	if eudi_jwt.IsSupportedSignatureAlgorithm(jwa.ES256K()) {
+	if eudi_jwt.IsSupportedSignatureAlgorithm(jwa.NewSignatureAlgorithm("ES256K")) {
 		require.NoError(t, err)
-		require.Equal(t, jwa.ES256K(), *got)
+		require.Equal(t, jwa.NewSignatureAlgorithm("ES256K"), *got)
 		return
 	}
 

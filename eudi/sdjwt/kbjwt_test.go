@@ -7,7 +7,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/didkey"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +29,7 @@ func TestResolveKeyFromDid_DidKey(t *testing.T) {
 	didKey, err := didkey.Create(priv.PublicKey)
 	require.NoError(t, err)
 
-	expected, err := jwk.Import(priv.PublicKey)
+	expected, err := jwk.Import[jwk.Key](priv.PublicKey)
 	require.NoError(t, err)
 
 	for _, kid := range []string{didKey, didKey + "#" + didKey[len(didkey.Prefix):]} {
