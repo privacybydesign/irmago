@@ -74,6 +74,11 @@ func testEudiPidPythonIssuerIssuesPidWithNonUrlVct(t *testing.T) {
 	require.Equal(t, eudiPidIssuerPyVct, cred.CredentialId,
 		"stored credential id must be the non-URL vct")
 
+	// The certificate was kept as evidence, so the credential list ranks the issuer
+	// through the certificate channel on every read.
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel,
+		"a stored credential from an x5c issuer under the wallet's anchors ranks high")
+
 	// The Python issuer fills date_of_issuance with its own clock and
 	// date_of_expiry with date_of_issuance + countries.FC.validity (90 days
 	// per config_issuer_backend.yaml). Computing `today` from the test's
@@ -212,6 +217,14 @@ func issuePidViaPythonIssuer(
 	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 	require.Len(t, session.OfferedCredentials, 1)
 	require.Equal(t, eudiPidIssuerPyDisplayNameEN, session.OfferedCredentials[0].Name)
+
+	// This issuer signs with an `x5c` chain under a CA the wallet anchors, so the
+	// certificate channel puts it on the top rung with no trust list involved. The
+	// session header and the offered credential are ranked separately.
+	require.Equal(t, clientmodels.TrustLevel_High, session.Requestor.TrustLevel,
+		"an x5c issuer under the wallet's anchors reaches the top rung")
+	require.Equal(t, clientmodels.TrustLevel_High, session.OfferedCredentials[0].Issuer.TrustLevel,
+		"the offered credential carries its issuer's rung")
 
 	grantPermission(t, c, session.Id)
 

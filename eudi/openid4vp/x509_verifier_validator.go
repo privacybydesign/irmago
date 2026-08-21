@@ -1,7 +1,6 @@
 package openid4vp
 
 import (
-	"context"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -11,16 +10,22 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/privacybydesign/irmago/eudi"
-	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/eudi/utils"
-	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // RequestorCertificateStoreVerifierValidator validates OpenID4VP authorization
-// requests signed by verifiers that use X.509 certificates (x509_san_dns: client_id scheme).
+// requests signed by verifiers that use X.509 certificates (the x509_san_dns:
+// and x509_hash: client_id schemes).
+//
+// The gate is internal validity: the request's signature must verify against the
+// certificate its client_id binds it to, presented within its validity window,
+// and not revoked. Anchoring is not the gate's question — an untraceable chain
+// proves nothing, so its holder passes as a legitimate-looking stranger and ranks
+// low. Revocation is the exception, being the CA withdrawing a certificate rather
+// than the wallet failing to place one.
 type RequestorCertificateStoreVerifierValidator struct {
 	verificationContext eudi_jwt.X509VerificationContext
 	validatorFactory    QueryValidatorFactory
@@ -35,60 +40,81 @@ func NewRequestorCertificateStoreVerifierValidator(verificationContext eudi_jwt.
 
 func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (
 	*AuthorizationRequest,
-	*x509.Certificate,
-	*scheme.RelyingPartyRequestor,
+	*VerifiedRequestor,
 	error,
 ) {
 	var authRequest AuthorizationRequest
 	token, err := jwt.ParseWithClaims(requestJwt, &authRequest, v.createAuthRequestVerifier())
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
+		return nil, nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
 	}
 
 	leafCert, err := getEndEntityCertFromX5cHeader(token)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
+		return nil, nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 	}
 
-	// Try to get verifier metadata in order:
-	// 1. From the verifier metadata in the authorization request (if present)
-	// 2. From the certificate OID (if it's a Yivi issued certificate)
-	// 3. Use the CN from the certificate, without a logo, as a fallback (if all else fails)
+	// Revocation is the one certificate failure that stays in the gate: an act of
+	// distrust rather than the absence of trust an untraceable chain shows. Asked
+	// on its own rather than off the chain verification below, which it does not
+	// need.
+	if err := eudi_jwt.CheckCertificateNotRevoked(v.verificationContext, leafCert); err != nil {
+		return nil, nil, fmt.Errorf("relying party certificate is refused: %w", err)
+	}
 
-	requestorInfo := &scheme.RelyingPartyRequestor{}
+	requestor := &VerifiedRequestor{Certificate: leafCert}
 
-	// TODO: we'll need to figure out if/how we want to authorize on attribute level when we're dealing with a non-Yivi issued certificate. For now, we only support that functionality for Yivi issued certificates, and we authorize all attribute for certificates issued by third parties.
+	anchored, err := applyAttestedCertificate(v.verificationContext, v.validatorFactory, requestor, leafCert, &authRequest)
+	if err != nil {
+		return nil, nil, err
+	}
 
+	// The verifier's own account of itself: client_metadata first, the
+	// certificate's contents when no anchor stands behind them.
 	if authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil {
-		requestorInfo.Organization.LegalName = map[string]string{"en": *authRequest.ClientMetadata.ClientName}
+		requestor.SelfAssertedName = *authRequest.ClientMetadata.ClientName
+	} else if !anchored {
+		requestor.SelfAssertedName = leafCert.Subject.CommonName
+	}
 
-		if authRequest.ClientMetadata.LogoUri != nil {
-			logoData, mimeType, err := helpers.DownloadRemoteImage(context.Background(), common.HTTPClient, *authRequest.ClientMetadata.LogoUri)
-			if err != nil {
-				// If the logo download fails, we log a warning but continue without the logo
-				eudi.Logger.Warnf("failed to download verifier logo from %q: %v", *authRequest.ClientMetadata.LogoUri, err)
-			} else {
-				requestorInfo.Organization.Logo = &scheme.Logo{
-					Data:     logoData,
-					MimeType: mimeType,
-				}
-			}
-		}
-	} else if info, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leafCert); err == nil {
-		// Try to get the requestor info from the certificate. If this fails, most likely the certificate is not a Yivi issued certificate, and we'll fall back to the CN in the certificate
-		requestorInfo = info
+	return &authRequest, requestor, nil
+}
 
-		// If the certificate is a Yivi issued certificate, we also validate the credential queries in the authorization request against the requestor's allowed queries in the certificate. This ensures that the verifier is only requesting credentials that it is authorized to request.
-		queryValidator := v.validatorFactory.CreateQueryValidator(&requestorInfo.RelyingParty)
-		credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
-		if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
+// applyAttestedCertificate is the anchored-attestation step both verifier
+// transports share: given a leaf the caller has already gated, decide whether an
+// anchor stands behind it and, when one does, fill requestor.Attested from the
+// certificate and enforce any attribute authorization it carries. It reports
+// whether the leaf is anchored, which the caller needs to compose the
+// self-asserted account. How the leaf was obtained stays with the caller.
+func applyAttestedCertificate(
+	verificationContext eudi_jwt.X509VerificationContext,
+	validatorFactory QueryValidatorFactory,
+	requestor *VerifiedRequestor,
+	leaf *x509.Certificate,
+	authRequest *AuthorizationRequest,
+) (anchored bool, err error) {
+	// Classification, not the gate. It decides whether the certificate's contents
+	// count as attested, and so whether its authorization is worth enforcing.
+	if eudi_jwt.VerifyCertificate(verificationContext, leaf, nil) != nil {
+		return false, nil
+	}
+
+	if info, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leaf); err == nil {
+		requestor.Attested = info
+
+		// The one hard rule: a request exceeding its certificate's authorization
+		// fails at any rung.
+		queryValidator := validatorFactory.CreateQueryValidator(&info.RelyingParty)
+		if err := queryValidator.ValidateCredentialQueries(dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)); err != nil {
+			return true, fmt.Errorf("failed to verify queried credentials: %v", err)
 		}
 	} else {
-		requestorInfo.Organization.LegalName = map[string]string{"en": leafCert.Subject.CommonName}
+		// An anchored certificate without the Yivi scheme extension: the subject is
+		// attested, but there is no attribute authorization to enforce.
+		eudi.Logger.Debugf("openid4vp: verifier certificate carries no scheme data (%v), using its subject", err)
+		requestor.Attested = scheme.NamedRelyingParty(leaf.Subject.CommonName)
 	}
-
-	return &authRequest, leafCert, requestorInfo, nil
+	return true, nil
 }
 
 func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier() jwt.Keyfunc {
@@ -108,16 +134,23 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 			return nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 		}
 
-		var hostname *string = nil
+		// A live party presenting an expired certificate is refused. Stored evidence
+		// is different — see TrustModel.Classify.
+		if err := eudi_jwt.CheckCertificateValidAt(v.verificationContext, parsedCert, ClockSkew, "relying party certificate"); err != nil {
+			return nil, err
+		}
 
+		// The request must prove it is for the party its client_id names. In the
+		// gate even though an unanchored SAN attests nothing: a certificate that
+		// does not match its own client_id is internally incoherent.
 		switch {
 		case strings.HasPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns)):
-			h := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns))
-			hostname = &h
+			hostname := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns))
+			if err := parsedCert.VerifyHostname(hostname); err != nil {
+				return nil, fmt.Errorf("client_id hostname %q does not match the leaf certificate: %v", hostname, err)
+			}
 
 		case strings.HasPrefix(request.ClientId, string(ClientIdentifierPrefix_X509Hash)):
-			// x509_hash authenticates via the certificate hash rather than a DNS name,
-			// so the chain/revocation check is done without a hostname/SAN check and we leave `hostname` as nil.
 			expectedHash := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509Hash))
 			hash := sha256.Sum256(parsedCert.Raw)
 			actualHash := base64.RawURLEncoding.EncodeToString(hash[:])
@@ -127,11 +160,6 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 
 		default:
 			return nil, fmt.Errorf("client_id expected to start with '%s' or '%s' but doesn't (%s)", ClientIdentifierPrefix_X509SanDns, ClientIdentifierPrefix_X509Hash, request.ClientId)
-		}
-
-		// Verify the certificate against the trusted chains and revocation lists, using the hostname if applicable.
-		if err := eudi_jwt.VerifyCertificate(v.verificationContext, parsedCert, hostname); err != nil {
-			return nil, fmt.Errorf("failed to verify relying party certificate: %v", err)
 		}
 
 		return parsedCert.PublicKey, nil

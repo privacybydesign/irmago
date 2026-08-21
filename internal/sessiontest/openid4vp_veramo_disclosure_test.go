@@ -2537,8 +2537,8 @@ func testVerifierDisplayName(t *testing.T) {
 	// when present, falling back to response_uri hostname otherwise.
 	require.Equal(t, "test-verifier", session.Requestor.Name,
 		"verifier display name should come from client_name, not the raw DID")
-	require.False(t, session.Requestor.Verified,
-		"DID-based verifier should not be marked as verified (not verified by Yivi)")
+	require.Equal(t, clientmodels.TrustLevel_Low, session.Requestor.TrustLevel,
+		"a DID-based verifier has nobody vouching for it, so it ranks low")
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))

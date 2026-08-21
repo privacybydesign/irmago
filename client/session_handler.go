@@ -165,12 +165,20 @@ func requestorInfoToTrustedParty(info *irma.RequestorInfo, locale string) client
 	if info.LogoPath != nil {
 		image = clientmodels.ImageFromFile(*info.LogoPath)
 	}
+	// A requestor registered in the Yivi requestor scheme is vouched for by
+	// Yivi itself, which is the top rung; an unregistered one has nobody
+	// vouching for it. Display mapping only — the IRMA trust mechanism is
+	// unchanged.
+	level := clientmodels.TrustLevel_Low
+	if !info.Unverified {
+		level = clientmodels.TrustLevel_High
+	}
 	return clientmodels.TrustedParty{
-		Id:       info.ID.String(),
-		Name:     clientmodels.Resolve(clientmodels.TranslatedString(info.Name), locale),
-		Image:    image,
-		Parent:   nil,
-		Verified: !info.Unverified,
+		Id:         info.ID.String(),
+		Name:       clientmodels.Resolve(clientmodels.TranslatedString(info.Name), locale),
+		Image:      image,
+		Parent:     nil,
+		TrustLevel: level,
 	}
 }
 

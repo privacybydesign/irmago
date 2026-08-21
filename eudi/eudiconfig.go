@@ -24,6 +24,15 @@ func init() {
 	Logger = common.Logger
 }
 
+// ExtraTrustAnchor is one trust anchor a wallet is built with beyond the pinned
+// Yivi roots: the PEM chain (leaf-to-root order, root last) and the trust level
+// certificates under it confer. Promoting a CA is a change to this data rather
+// than to code.
+type ExtraTrustAnchor struct {
+	PEM     []byte
+	Confers clientmodels.TrustLevel
+}
+
 // Configuration keeps track of issuer and requestor trusted chains and certificate revocation lists,
 // retrieving them from the eudi folder, and downloads and saves new ones on demand.
 // The trust chains are stored in the issuers and verifiers subfolders (.pem files), and the crls in the crls subfolder (.crl files).
@@ -34,6 +43,23 @@ type Configuration struct {
 	Storage   storage.Storage
 	Issuers   TrustModel
 	Verifiers TrustModel
+
+	// TrustLists holds the anchors a recognized list's signature chains to, apart
+	// from Issuers so that onboarding a credential issuer does not also grant it
+	// the power to define who is trusted. See
+	// Production_Yivi_TrustListTrustAnchor.
+	TrustLists TrustModel
+
+	// ExtraIssuerTrustAnchors and ExtraVerifierTrustAnchors are anchors added
+	// on top of the pinned Yivi roots, each with the level it confers. Set
+	// them before the first Reload; they survive every Reload after that.
+	ExtraIssuerTrustAnchors   []ExtraTrustAnchor
+	ExtraVerifierTrustAnchors []ExtraTrustAnchor
+
+	// ExtraTrustListTrustAnchors are anchors for list signatures. Bare PEM rather
+	// than [ExtraTrustAnchor]: a signing chain confers no level, since what a
+	// listing is worth is its source's word (lote.Source.Confers).
+	ExtraTrustListTrustAnchors [][]byte
 }
 
 // NewConfiguration returns a new configuration. After this ParseFolder() should be called to parse the specified path.
@@ -50,6 +76,12 @@ func NewConfiguration(s storage.Storage) (conf *Configuration, err error) {
 		},
 		Verifiers: TrustModel{
 			storageContainer:                  s.FileSystem().Verifiers(),
+			logger:                            Logger,
+			httpClient:                        httpClient,
+			revocationListsDistributionPoints: []string{},
+		},
+		TrustLists: TrustModel{
+			storageContainer:                  s.FileSystem().TrustLists(),
 			logger:                            Logger,
 			httpClient:                        httpClient,
 			revocationListsDistributionPoints: []string{},
@@ -75,6 +107,7 @@ func (c *Configuration) UsesStagingTrustAnchors() bool {
 func (c *Configuration) SetCertificateVerificationMode(mode CertificateVerificationMode) {
 	c.Issuers.SetCertificateVerificationMode(mode)
 	c.Verifiers.SetCertificateVerificationMode(mode)
+	c.TrustLists.SetCertificateVerificationMode(mode)
 }
 
 // Reload assumes the latest files (trust anchors and certificate revocation lists) are downloaded.
@@ -83,6 +116,7 @@ func (c *Configuration) SetCertificateVerificationMode(mode CertificateVerificat
 func (c *Configuration) Reload() error {
 	c.Issuers.clear()
 	c.Verifiers.clear()
+	c.TrustLists.clear()
 
 	if err := c.addProductionTrustAnchors(); err != nil {
 		return err
@@ -94,6 +128,24 @@ func (c *Configuration) Reload() error {
 		}
 	}
 
+	for _, anchor := range c.ExtraIssuerTrustAnchors {
+		if err := c.Issuers.addTrustAnchors(anchor.Confers, anchor.PEM); err != nil {
+			return fmt.Errorf("failed to add extra issuer trust anchor: %v", err)
+		}
+	}
+	for _, anchor := range c.ExtraVerifierTrustAnchors {
+		if err := c.Verifiers.addTrustAnchors(anchor.Confers, anchor.PEM); err != nil {
+			return fmt.Errorf("failed to add extra verifier trust anchor: %v", err)
+		}
+	}
+	for _, pem := range c.ExtraTrustListTrustAnchors {
+		// Unevaluated: nothing classifies against this model, so the level is not
+		// a statement anyone reads.
+		if err := c.TrustLists.addTrustAnchors(clientmodels.TrustLevel_Unevaluated, pem); err != nil {
+			return fmt.Errorf("failed to add extra trust list trust anchor: %v", err)
+		}
+	}
+
 	// Read the trust anchors from storage
 	if err := c.Issuers.Reload(); err != nil {
 		return fmt.Errorf("failed to load issuer trust model: %v", err)
@@ -101,6 +153,10 @@ func (c *Configuration) Reload() error {
 
 	if err := c.Verifiers.Reload(); err != nil {
 		return fmt.Errorf("failed to load verifier trust model: %v", err)
+	}
+
+	if err := c.TrustLists.Reload(); err != nil {
+		return fmt.Errorf("failed to load trust list trust model: %v", err)
 	}
 
 	return nil
@@ -117,12 +173,26 @@ func (c *Configuration) addProductionTrustAnchors() error {
 		Production_Yivi_VerifierCaCertificateRevocationListDistributionPoint,
 	)
 
-	// Read the hardcoded trust anchors
-	if err := c.Issuers.addTrustAnchors([]byte(Production_Yivi_IssuerTrustAnchor)); err != nil {
+	// Read the hardcoded trust anchors. The Yivi roots confer high: a
+	// certificate under them is Yivi vouching for its holder.
+	if err := c.Issuers.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Production_Yivi_IssuerTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add yivi production issuer trust anchors: %v", err)
 	}
-	if err := c.Verifiers.addTrustAnchors([]byte(Production_Yivi_VerifierTrustAnchor)); err != nil {
+	if err := c.Verifiers.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Production_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add yivi production verifier trust anchors: %v", err)
+	}
+
+	// The trust-list anchor is loaded only once it exists. An empty pool means no
+	// list verifies, which is the safe direction to fail while Yivi publishes
+	// none.
+	if Production_Yivi_TrustListTrustAnchor != "" {
+		c.TrustLists.addRevocationListDistributionPoints(
+			Production_Yivi_RootCertificateRevocationListDistributionPoint,
+			Production_Yivi_TrustListCaCertificateRevocationListDistributionPoint,
+		)
+		if err := c.TrustLists.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Production_Yivi_TrustListTrustAnchor)); err != nil {
+			return fmt.Errorf("failed to add yivi production trust list trust anchors: %v", err)
+		}
 	}
 	return nil
 }
@@ -138,11 +208,21 @@ func (c *Configuration) addStagingTrustAnchors() error {
 		Staging_Yivi_VerifierCaCertificateRevocationListDistributionPoint,
 	)
 
-	// Read the hardcoded trust anchors
-	if err := c.Issuers.addTrustAnchors([]byte(Staging_Yivi_IssuerTrustAnchor)); err != nil {
+	// Read the hardcoded trust anchors. The staging roots are Yivi's own too,
+	// so they confer high like the production ones.
+	if err := c.Issuers.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Staging_Yivi_IssuerTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add Yivi staging issuer trust anchors: %v", err)
 	}
-	if err := c.Verifiers.addTrustAnchors([]byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
+	if Staging_Yivi_TrustListTrustAnchor != "" {
+		c.TrustLists.addRevocationListDistributionPoints(
+			Staging_Yivi_RootCertificateRevocationListDistributionPoint,
+			Staging_Yivi_TrustListCaCertificateRevocationListDistributionPoint,
+		)
+		if err := c.TrustLists.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Staging_Yivi_TrustListTrustAnchor)); err != nil {
+			return fmt.Errorf("failed to add Yivi staging trust list trust anchors: %v", err)
+		}
+	}
+	if err := c.Verifiers.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add Yivi staging verifier trust anchors: %v", err)
 	}
 
@@ -158,10 +238,15 @@ func (c *Configuration) ResolveVerifierLogo(key string) *clientmodels.Image {
 
 func (c *Configuration) UpdateCertificateRevocationLists() error {
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 
 	go updateWorker(c.Issuers.syncCertificateRevocationLists, &wg)
 	go updateWorker(c.Verifiers.syncCertificateRevocationLists, &wg)
+	// The trust lists too: a stored list is re-verified against the anchors in
+	// force when it is read (see lote.Store), which only invalidates a revoked
+	// list-signing certificate if its CRL is actually fetched. No-op while
+	// Production_Yivi_TrustListTrustAnchor is empty.
+	go updateWorker(c.TrustLists.syncCertificateRevocationLists, &wg)
 
 	wg.Wait()
 

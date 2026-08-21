@@ -87,6 +87,14 @@ func (a *openid4vciSessionAdapter) RequestPermission(
 	callback openid4vci.PermissionHandler,
 ) {
 	a.session.State.OfferedCredentials = offeredCredentials
+	// The issuer as it stands now, which is not the issuer the earlier screens
+	// showed: its credentials have been fetched and verified since, so this is
+	// the first time the wallet knows what signed them and can rank the party
+	// on more than its own metadata. The permission screen — and the issuance
+	// log written from this state — must show that rung, not the offer-time one.
+	if requestorInfo != nil {
+		a.session.State.Requestor = *requestorInfo
+	}
 	a.session.State.Status = clientmodels.Status_RequestPermission
 	a.session.openid4vciPermissionHandler = callback
 	a.session.dispatchState()

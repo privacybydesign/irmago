@@ -14,6 +14,27 @@ const DefaultFallbackLanguage = "en"
 // TranslatedString is a map from language code to translated text.
 type TranslatedString map[string]string
 
+// TrustLevel is how strongly a party is vouched for: the three rungs of the trust
+// ladder, plus the absence of any evaluation.
+//
+// Never a judgement about the party's identity — that is a separate gate which
+// fails the session outright (ErrorType_PartyValidationFailed) — and it never
+// blocks a session: the wallet warns and lets the user decide.
+type TrustLevel string
+
+const (
+	// The zero value: nothing was evaluated, which is distinct from the verdict
+	// "nobody vouches". Omitted from JSON, so the app sees an absent field.
+	TrustLevel_Unevaluated TrustLevel = ""
+	TrustLevel_Low         TrustLevel = "low"
+	TrustLevel_Medium      TrustLevel = "medium"
+	TrustLevel_High        TrustLevel = "high"
+)
+
+func (l TrustLevel) IsVouchedFor() bool {
+	return l == TrustLevel_Medium || l == TrustLevel_High
+}
+
 // TrustedParty represents an issuer, verifier, or scheme manager.
 type TrustedParty struct {
 	Id string `json:"id"`
@@ -25,8 +46,8 @@ type TrustedParty struct {
 	Image *Image `json:"image,omitempty"`
 	// The trust chain for this party (if any)
 	Parent *TrustedParty `json:"parent"`
-	// Whether this party is verified by the scheme manager
-	Verified bool `json:"verified"`
+	// Absent when nothing was evaluated, which is not the same as "low".
+	TrustLevel TrustLevel `json:"trust_level,omitempty"`
 }
 
 type Image struct {
@@ -36,8 +57,19 @@ type Image struct {
 	MimeType *string `json:"mime_type,omitempty"`
 }
 
+func NewImage(data []byte, mimeType string) *Image {
+	if len(data) == 0 {
+		return nil
+	}
+	image := &Image{Base64: base64.StdEncoding.EncodeToString(data)}
+	if mimeType != "" {
+		image.MimeType = &mimeType
+	}
+	return image
+}
+
 // ImageFromFile reads an image file from disk and returns it as a base64-encoded Image.
-// Returns nil if the path is empty or the file cannot be read.
+// Returns nil if the path is empty, the file cannot be read, or it is empty.
 func ImageFromFile(path string) *Image {
 	if path == "" {
 		return nil
@@ -46,7 +78,8 @@ func ImageFromFile(path string) *Image {
 	if err != nil {
 		return nil
 	}
-	return &Image{Base64: base64.StdEncoding.EncodeToString(data)}
+	// The MIME type is not read off the file: callers render these by data alone.
+	return NewImage(data, "")
 }
 
 // AttributeType indicates the type of an attribute value.

@@ -98,6 +98,15 @@ func testOpenID4VCIPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	require.InDelta(t, now, *offered.IssuanceDate, 60,
 		"issuance date should be approximately now")
 
+	// This issuer identifies itself by did:web, so no channel vouches for it — and
+	// it still gets to offer its credential: the level is rendered, not enforced.
+	require.Equal(t, clientmodels.TrustLevel_Low, session.Requestor.TrustLevel,
+		"a did:web issuer has nobody vouching for it")
+	require.Equal(t, clientmodels.TrustLevel_Low, offered.Issuer.TrustLevel,
+		"the offered credential reports the same rung as the session header")
+	require.False(t, offered.Issuer.TrustLevel.IsVouchedFor(),
+		"an unvouched-for issuer must not be shown as trusted")
+
 	grantPermission(t, c, session.Id)
 
 	// The test issuer uses did:web, so full credential verification should work.

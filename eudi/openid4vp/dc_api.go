@@ -231,9 +231,16 @@ func unsignedDcApiRequestor(origin string) *clientmodels.TrustedParty {
 		displayName = u.Scheme + "://" + originHostPort(u)
 	}
 	return &clientmodels.TrustedParty{
+		// The origin the platform authenticated is both what the party is called
+		// and what it is known by — at low the app renders the identifier next to
+		// the name.
+		Id: displayName,
 		// client_name is a single string and an origin is not localized, so there
 		// is nothing for the current locale to resolve here.
-		Name:     displayName,
-		Verified: false,
+		Name: displayName,
+		// Nothing vouches for the caller of an unsigned request: no certificate, no
+		// identifier a list could key on. The bottom rung, not the absence of a
+		// verdict.
+		TrustLevel: clientmodels.TrustLevel_Low,
 	}
 }

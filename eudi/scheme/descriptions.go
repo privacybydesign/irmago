@@ -16,6 +16,17 @@ type RelyingPartyRequestor struct {
 	RelyingParty RelyingParty `json:"rp"`
 }
 
+// NamedRelyingParty is a relying party account carrying nothing but a display
+// name — what a wallet has when a party names itself in client_metadata, or when
+// a certificate carries no scheme extension and only its subject is left to go
+// on. The name lands under the base language, which is all an unqualified name
+// can claim to be.
+func NamedRelyingParty(name string) *RelyingPartyRequestor {
+	requestor := &RelyingPartyRequestor{}
+	requestor.Organization.LegalName = map[string]string{"en": name}
+	return requestor
+}
+
 type AttestationProviderRequestor struct {
 	Requestor
 	AttestationProvider AttestationProvider `json:"ap"`

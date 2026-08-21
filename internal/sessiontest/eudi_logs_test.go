@@ -27,6 +27,70 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("irma and eudi logs merged chronologically", testIrmaAndEudiLogsMergedChronologically)
 	t.Run("load logs before includes both irma and eudi logs", testLoadLogsBeforeIncludesBothSources)
 	t.Run("logs written under dutch locale snapshot dutch text", testDutchEudiLogs)
+	t.Run("logs record trust levels at session time", testEudiLogsRecordTrustLevelsAtSessionTime)
+}
+
+// testEudiLogsRecordTrustLevelsAtSessionTime pins that the rung the permission
+// screen showed is the rung the activity log keeps: the requestor's on the entry,
+// the issuer's on each credential.
+func testEudiLogsRecordTrustLevelsAtSessionTime(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
+		"given_name": "TrustLevel",
+		"family_name": "LogTest",
+		"email": "trustlevel@example.com"
+	}`)
+
+	veramoSession := createVeramoVerifierDcqlSession(t)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	// The rung the user was shown, which the log keeps whatever the verifier ranks
+	// as at read time.
+	shownVerifierLevel := session.Requestor.TrustLevel
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+
+	var disclosureLog, issuanceLog *clientmodels.LogInfo
+	for i := range logs {
+		switch logs[i].Type {
+		case clientmodels.LogType_Disclosure:
+			if disclosureLog == nil {
+				disclosureLog = &logs[i]
+			}
+		case clientmodels.LogType_Issuance:
+			if issuanceLog == nil {
+				issuanceLog = &logs[i]
+			}
+		}
+	}
+	require.NotNil(t, disclosureLog, "should have a disclosure log")
+	require.NotNil(t, issuanceLog, "should have an issuance log")
+
+	require.Equal(t, shownVerifierLevel, disclosureLog.DisclosureLog.Verifier.TrustLevel,
+		"the disclosure log keeps the rung the permission screen showed")
+
+	// An issued credential carries its session's issuer rung, so the entry and
+	// every credential on it agree.
+	issuerLevel := issuanceLog.IssuanceLog.Issuer.TrustLevel
+	require.NotEqual(t, clientmodels.TrustLevel_Unevaluated, issuerLevel,
+		"the issuance log records the issuer's rung, not an absent one")
+	require.NotEmpty(t, issuanceLog.IssuanceLog.Credentials)
+	for _, logged := range issuanceLog.IssuanceLog.Credentials {
+		require.Equal(t, issuerLevel, logged.Issuer.TrustLevel,
+			"credential %q keeps its issuer's session-time rung", logged.CredentialId)
+	}
 }
 
 func testOpenID4VCIPreAuthFlowCreatesIssuanceLog(t *testing.T) {

@@ -152,3 +152,25 @@ MEQCIDCSNbPoyhDZ5A3SWupsyPj/tDF4xNoHYnE0WFIs2pz8AiA9mhXswiJPFbVR
 -----END CERTIFICATE-----
 `
 )
+
+// ------------------------------------------------------------------------------
+
+// Trust-list signing anchors: what a recognized list's signature chains to,
+// deliberately not the issuer anchors. Sharing one pool would let any certificate
+// that may issue credentials sign a document the wallet accepts as Yivi's list,
+// since the only other things checked (SchemeName, LoTEType) are public.
+//
+// Clause 6.8.0 would not substitute for this: it binds the signing certificate's
+// subject to the document's own SchemeTerritory and SchemeOperatorName, which a
+// forger controls.
+//
+// The Yivi Trust List CA does not exist yet, so these are empty and no list
+// verifies — the safe direction to fail while nothing is published. Fill them in
+// once the CA is issued, together with its CRL distribution point.
+const (
+	Production_Yivi_TrustListCaCertificateRevocationListDistributionPoint = ""
+	Staging_Yivi_TrustListCaCertificateRevocationListDistributionPoint    = ""
+
+	Production_Yivi_TrustListTrustAnchor = ""
+	Staging_Yivi_TrustListTrustAnchor    = ""
+)

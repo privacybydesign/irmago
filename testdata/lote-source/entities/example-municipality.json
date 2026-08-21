@@ -1,0 +1,32 @@
+{
+  "name": {
+    "en": "Example Municipality",
+    "nl": "Example Municipality"
+  },
+  "organization_identifier": "VATNL-000000001",
+  "logo_uri": "https://trustlist.yivi.example/logos/municipality.png",
+  "information_uri": { "en": "https://municipality.example.com/about" },
+
+  "address": {
+    "postal": [
+      {
+        "lang": "en",
+        "street": "Example Street 1",
+        "locality": "Utrecht",
+        "postal_code": "3512 AA",
+        "country": "NL"
+      }
+    ],
+    "electronic": { "en": "mailto:info@municipality.example.com" }
+  },
+
+  "services": [
+    {
+      "role": "verifier",
+      "identity": {
+        "certificate_skis": ["example-verifier.crt"]
+      },
+      "markings": ["onboarded-by-yivi"]
+    }
+  ]
+}

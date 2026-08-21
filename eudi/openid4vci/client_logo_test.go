@@ -4,7 +4,9 @@ import (
 	"encoding/base64"
 	"testing"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/stretchr/testify/require"
 )
 
@@ -12,6 +14,27 @@ import (
 // The bytes don't need to form a valid PNG; convertToTrustedParty only round-trips
 // them through the LogoManager and base64-encodes them for the wallet.
 var fakeLogoBytes = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01, 0x02, 0x03}
+
+// listedIssuerView grants every issuer it is asked about, on an entry naming
+// logoURI as the curated logo — the only source that can put a logo on the
+// issuance screen, since an issuer's own metadata logo never reaches the user.
+// The entry carries no name, so each test's asserted name still comes from the
+// issuer's display metadata.
+type listedIssuerView struct {
+	logoURI string
+}
+
+func (v listedIssuerView) Issuer(trust.Evidence) trust.Verdict {
+	return trust.Verdict{
+		Level: clientmodels.TrustLevel_Medium,
+		Listing: &trust.Listing{
+			ListId:  "urn:yivi:trustlist:openid4vci-test",
+			LogoURI: v.logoURI,
+		},
+	}
+}
+
+func (v listedIssuerView) Verifier(ev trust.Evidence) trust.Verdict { return v.Issuer(ev) }
 
 func TestConvertToTrustedParty_PopulatesImageFromCache_HttpUri(t *testing.T) {
 	s, client := createOpenID4VCiClientForTesting(t)
@@ -31,13 +54,13 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_HttpUri(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m, "en")
+	tp := client.convertToTrustedParty(m, "en", listedIssuerView{logoURI: logoUri})
 
 	require.NotNil(t, tp)
 	require.Equal(t, "Test Issuer", tp.Name, "name carried through from display")
 	require.Equal(t, "https://issuer.example.com/tenant", tp.Id,
 		"Id must mirror CredentialIssuer — the log service uses it as the LogoManager key when persisting the issuer logo")
-	require.NotNil(t, tp.Image, "issuer logo should be populated when cached for display.logo.uri")
+	require.NotNil(t, tp.Image, "the logo the listing names should be populated once cached")
 	decoded, err := base64.StdEncoding.DecodeString(tp.Image.Base64)
 	require.NoError(t, err)
 	require.Equal(t, fakeLogoBytes, decoded)
@@ -67,7 +90,7 @@ func TestConvertToTrustedParty_PreservesSvgMimeType(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m, "en")
+	tp := client.convertToTrustedParty(m, "en", listedIssuerView{logoURI: logoUri})
 
 	require.NotNil(t, tp)
 	require.NotNil(t, tp.Image)
@@ -95,7 +118,7 @@ func TestConvertToTrustedParty_NoMimeType_LeavesMimeTypeNil(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m, "en")
+	tp := client.convertToTrustedParty(m, "en", listedIssuerView{logoURI: logoUri})
 
 	require.NotNil(t, tp)
 	require.NotNil(t, tp.Image)
@@ -122,10 +145,10 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_DataUri(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m, "en")
+	tp := client.convertToTrustedParty(m, "en", listedIssuerView{logoURI: logoUri})
 
 	require.NotNil(t, tp)
-	require.NotNil(t, tp.Image, "data URI logos must reach requestorInfo just like HTTP URIs do")
+	require.NotNil(t, tp.Image, "data URI logos must reach the wallet just like HTTP URIs do")
 	decoded, err := base64.StdEncoding.DecodeString(tp.Image.Base64)
 	require.NoError(t, err)
 	require.Equal(t, fakeLogoBytes, decoded)
@@ -141,8 +164,69 @@ func TestConvertToTrustedParty_NoLogo_LeavesImageNil(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m, "en")
+	tp := client.convertToTrustedParty(m, "en", listedIssuerView{})
 
 	require.NotNil(t, tp)
-	require.Nil(t, tp.Image, "no logo advertised → Image must stay nil")
+	require.Nil(t, tp.Image, "no logo vouched for → Image must stay nil")
 }
+
+func TestConvertToTrustedParty_TheIssuersOwnLogoDoesNotReachTheWallet(t *testing.T) {
+	// An issuer's metadata logo is its own word, and a logo is the whole of an
+	// impersonation. With nobody vouching, the screen shows no picture.
+	s, client := createOpenID4VCiClientForTesting(t)
+	defer s.Close()
+
+	const logoUri = "https://issuer.example.com/logo.png"
+	logoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
+	require.NoError(t, logoManager.Save(logoUri, fakeLogoBytes, "image/png"))
+
+	m := &metadata.CredentialIssuerMetadata{
+		CredentialIssuer: "https://issuer.example.com/tenant",
+		Display: metadata.CredentialIssuerDisplays{
+			{
+				Name: "Test Issuer",
+				Logo: &metadata.RemoteImage{Uri: logoUri},
+			},
+		},
+	}
+
+	tp := client.convertToTrustedParty(m, "en", trust.NewView(nil, nil, nil))
+
+	require.Equal(t, clientmodels.TrustLevel_Low, tp.TrustLevel)
+	require.Equal(t, "Test Issuer", tp.Name, "the name it chose is the user's to judge, under the warning")
+	require.Equal(t, "https://issuer.example.com/tenant", tp.Id)
+	require.Nil(t, tp.Image)
+}
+
+func TestConvertToTrustedParty_TheCuratedNameOutranksTheIssuersOwn(t *testing.T) {
+	s, client := createOpenID4VCiClientForTesting(t)
+	defer s.Close()
+
+	m := &metadata.CredentialIssuerMetadata{
+		CredentialIssuer: "https://issuer.example.com/tenant",
+		Display:          metadata.CredentialIssuerDisplays{{Name: "Whatever BV"}},
+	}
+
+	tp := client.convertToTrustedParty(m, "en", listedIssuerNamedView{name: "Listed BV"})
+
+	require.Equal(t, "Listed BV", tp.Name)
+	require.Equal(t, clientmodels.TrustLevel_Medium, tp.TrustLevel)
+}
+
+// listedIssuerNamedView grants every issuer on an entry that names the party, so
+// a test can assert the curated name wins.
+type listedIssuerNamedView struct {
+	name string
+}
+
+func (v listedIssuerNamedView) Issuer(trust.Evidence) trust.Verdict {
+	return trust.Verdict{
+		Level: clientmodels.TrustLevel_Medium,
+		Listing: &trust.Listing{
+			ListId: "urn:yivi:trustlist:openid4vci-test",
+			Name:   clientmodels.TranslatedString{"en": v.name},
+		},
+	}
+}
+
+func (v listedIssuerNamedView) Verifier(ev trust.Evidence) trust.Verdict { return v.Issuer(ev) }

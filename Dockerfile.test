@@ -1,3 +1,7 @@
 FROM golang:1
 
-RUN apt-get update && apt-get install -y libsqlcipher-dev ca-certificates && rm -rf /var/lib/apt/lists/*
+# openssl is a test dependency, not an incidental one: the LoTE signature tests in
+# yivi/cli/eudicli verify a jwx-produced JWS with a foreign toolchain, and they
+# *skip* when openssl is absent — so leaving it to come in as a transitive of
+# ca-certificates would let that check quietly stop running.
+RUN apt-get update && apt-get install -y libsqlcipher-dev ca-certificates openssl && rm -rf /var/lib/apt/lists/*
