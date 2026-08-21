@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1717,5 +1718,74 @@ func TestEmptyConSatisfyDoesNotSwallowDisclosure(t *testing.T) {
 		require.True(t, satisfied)
 		require.Len(t, attrs, 1, "disjunction satisfied by empty con instead of the [optional] con — disclosed attribute dropped (issue #360)")
 		require.Equal(t, "456", *attrs[0].RawValue)
+	})
+}
+
+// TestInstallSchemeMalformedSignatureMaterial installs from a remote whose signature
+// material does not parse at all, rather than parsing and failing to verify. Both cases
+// used to panic inside gabi's signed package instead of returning an error, and neither
+// is caught by the recover() in verifySignature: checkRemoteTimestamp runs first and
+// calls signed.Verify and signed.UnmarshalPemPublicKey itself, so the panic escaped
+// InstallScheme into the caller.
+func TestInstallSchemeMalformedSignatureMaterial(t *testing.T) {
+	testSchemeID := NewSchemeManagerIdentifier("test")
+
+	// serveScheme hosts a copy of the testdata scheme after corrupt has had its way with
+	// the scheme directory, and returns the URL of the test scheme on it. Everything after
+	// the scheme description is fetched from the Url inside that description rather than
+	// from the install URL, so the copy's description.xml is rewritten to point at the
+	// server we just started.
+	serveScheme := func(t *testing.T, corrupt func(schemeDir string)) string {
+		root := t.TempDir()
+		require.NoError(t, common.CopyDirectory(test.FindTestdataFolder(t), root))
+		schemeDir := filepath.Join(root, "irma_configuration", "test")
+		corrupt(schemeDir)
+
+		server := httptest.NewServer(http.FileServer(http.Dir(root)))
+		t.Cleanup(server.Close)
+		url := server.URL + "/irma_configuration/test"
+
+		descriptionPath := filepath.Join(schemeDir, "description.xml")
+		description, err := os.ReadFile(descriptionPath)
+		require.NoError(t, err)
+		rewritten := strings.Replace(string(description),
+			"<Url>http://localhost:48681/irma_configuration/test</Url>", "<Url>"+url+"</Url>", 1)
+		require.NotEqual(t, string(description), rewritten, "scheme description Url not found, testdata changed?")
+		require.NoError(t, os.WriteFile(descriptionPath, []byte(rewritten), 0600))
+
+		return url
+	}
+
+	t.Run("index.sig holding an empty ASN.1 sequence", func(t *testing.T) {
+		pkBytes, err := os.ReadFile(filepath.Join(test.FindTestdataFolder(t), "irma_configuration", "test", "pk.pem"))
+		require.NoError(t, err)
+
+		url := serveScheme(t, func(schemeDir string) {
+			// A SEQUENCE with no members: it parses as ASN.1, so the signature is only
+			// rejected once something checks that r and s are actually there.
+			require.NoError(t, os.WriteFile(filepath.Join(schemeDir, "index.sig"), []byte{0x30, 0x00}, 0600))
+		})
+
+		conf, err := NewConfiguration(t.TempDir(), ConfigurationOptions{})
+		require.NoError(t, err)
+		err = conf.InstallScheme(url, pkBytes)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "asn1")
+		require.NotContains(t, conf.SchemeManagers, testSchemeID)
+	})
+
+	t.Run("pk.pem holding no PEM block", func(t *testing.T) {
+		url := serveScheme(t, func(schemeDir string) {
+			require.NoError(t, os.WriteFile(filepath.Join(schemeDir, "pk.pem"), []byte("this is not PEM"), 0600))
+		})
+
+		conf, err := NewConfiguration(t.TempDir(), ConfigurationOptions{})
+		require.NoError(t, err)
+		// TOFU install, so the unusable key comes off the remote: that is how the scheme
+		// public key gets parsed without anything having vouched for it first.
+		err = conf.DangerousTOFUInstallScheme(url)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no PEM block found")
+		require.NotContains(t, conf.SchemeManagers, testSchemeID)
 	})
 }
