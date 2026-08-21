@@ -319,7 +319,17 @@ func (p *OAuthDiscoveryJwkKeyProvider) FetchKeys(ctx context.Context, sink jws.K
 	}
 
 	if metadata.JwksUri == nil {
-		// If the discovery metadata does not contain a jwks_uri, we cannot resolve the key identifier using OAuth2 discovery. We return without setting a key on the sink, so that the signature verification will fail later.
+		// If the discovery metadata does not contain a jwks_uri, try checking the "jwks" claim in the metadata. This is a non-standard extension, but some issuers may provide it.
+		if metadata.Jwks != nil {
+			// If the discovery metadata contains a jwks member (and there is no jwks_uri present), we should resolve the key identifier directly using that.
+			key, ok := metadata.Jwks.LookupKeyID(kid)
+			if !ok {
+				return fmt.Errorf("no key found in jwks member of discovery metadata for issuer %s with kid %s", iss, kid)
+			}
+			sink.Key(alg, key)
+		}
+
+		// Either the key was found in the jwks member, or it was not. In either case, we return here, since there is no jwks_uri to fetch from.
 		return nil
 	}
 

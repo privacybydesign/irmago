@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- A Status List Token signed with a key published inline in the issuer's OAuth 2.0 / OpenID Connect discovery metadata, in a non-standard `jwks` member instead of behind `jwks_uri`, can now be verified. `jwks_uri` stays authoritative when present; the inline set is consulted only when it is absent, and a `kid` neither source publishes is still an error rather than a silent decline.
+
 ### Changed
 - Upgraded `github.com/lestrrat-go/jwx` from v3 to v4 ([#705](https://github.com/privacybydesign/irmago/issues/705)). jwx v4 uses the `encoding/json/v2` standard library package, which is one of the reasons irmago now needs Go 1.27; on Go 1.26 that package only exists behind `GOEXPERIMENT=jsonv2`. JWK Sets received in verifier and issuer metadata are still rejected in full when any entry is unparseable, matching the v3 behavior, via `jwk.WithStrictKeySetParsing` (jwx v4 by default keeps such entries as placeholder keys). secp256k1 moved out of jwx into the `github.com/jwx-go/es256k/v4` companion module, so the `jwx_es256k` build tag now pulls that module in; a build without the tag no longer resolves the `ES256K` name at all, where jwx v3 resolved it either way.
 - Raise the minimum Go version to 1.27; the `toolchain` directive pins `go1.27.0`
