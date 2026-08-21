@@ -39,9 +39,9 @@ func Test_IsSupportedSignatureAlgorithm_Rejected(t *testing.T) {
 	}
 }
 
-// ES256K is accepted only in builds carrying the jwx_es256k build tag, which is what compiles
-// jwx's secp256k1 support. Without it a signature using ES256K could not be verified, so the
-// allow-list must follow the tag in both directions.
+// ES256K is accepted only in builds carrying the jwx_es256k build tag, which is what pulls in the
+// companion module holding jwx's secp256k1 support. Without it a signature using ES256K could not
+// be verified, so the allow-list must follow the tag in both directions.
 func Test_IsSupportedSignatureAlgorithm_ES256K_FollowsBuildTag(t *testing.T) {
 	require.Equal(t, es256kEnabled, IsSupportedSignatureAlgorithm(jwa.NewSignatureAlgorithm("ES256K")))
 
