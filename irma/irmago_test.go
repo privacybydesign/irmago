@@ -2,6 +2,7 @@ package irma
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -1788,4 +1789,38 @@ func TestInstallSchemeMalformedSignatureMaterial(t *testing.T) {
 		require.Contains(t, err.Error(), "no PEM block found")
 		require.NotContains(t, conf.SchemeManagers, testSchemeID)
 	})
+}
+
+// TestParseKeysFolderMalformedBases parses an issuer public key whose <Bases num> disagrees
+// with the number of <Base_i> elements it holds. gabi used to size the base slice from num
+// and then index the elements, so a num above the element count panicked out of
+// parseKeysFolder and a num below it dropped the surplus bases without a word. There is no
+// recover() on this path, so the panic escaped ParseFolder into the caller.
+func TestParseKeysFolderMalformedBases(t *testing.T) {
+	issuerID := NewIssuerIdentifier("irma-demo.RU")
+	keyPath := "irma-demo/RU/PublicKeys/0.xml"
+
+	for _, num := range []string{"7", "5"} {
+		t.Run("Bases num of "+num+" against six Base elements", func(t *testing.T) {
+			storage := t.TempDir()
+			require.NoError(t, common.CopyDirectory(filepath.Join(test.FindTestdataFolder(t), "irma_configuration"), storage))
+			conf, err := NewConfiguration(storage, ConfigurationOptions{})
+			require.NoError(t, err)
+			require.NoError(t, conf.ParseFolder())
+
+			keyFile := filepath.Join(storage, filepath.FromSlash(keyPath))
+			key, err := os.ReadFile(keyFile)
+			require.NoError(t, err)
+			rewritten := strings.Replace(string(key), `<Bases num="6">`, `<Bases num="`+num+`">`, 1)
+			require.NotEqual(t, string(key), rewritten, "Bases num attribute not found, testdata changed?")
+			require.NoError(t, os.WriteFile(keyFile, []byte(rewritten), 0600))
+
+			// parseKeysFolder reads the key through readSignedFile, so the rewritten key
+			// needs its new hash in the index to reach gabi's unmarshaler at all.
+			hash := sha256.Sum256([]byte(rewritten))
+			conf.SchemeManagers[issuerID.SchemeManagerIdentifier()].index[keyPath] = hash[:]
+
+			require.Error(t, conf.parseKeysFolder(issuerID))
+		})
+	}
 }
