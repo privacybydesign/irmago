@@ -151,14 +151,6 @@ In case you want to use `v0.12.6` or lower, then you should build it yourself.
 You can find pre-compiled binaries of the `yivi` command line tool on the [GitHub release page](https://github.com/privacybydesign/irmago/releases).
 We recommend you to use the [latest release](https://github.com/privacybydesign/irmago/releases/latest).
 
-## Building from source
-
-The `github.com/lestrrat-go/jwx/v4` dependency uses the `encoding/json/v2` standard library package, which current Go releases only provide behind an experiment flag. Building or testing irmago therefore requires the `GOEXPERIMENT=jsonv2` environment variable to be set:
-
-    export GOEXPERIMENT=jsonv2
-
-The Dockerfiles in this repository already set it, so this only applies when running the Go toolchain directly. The same goes for anything that compiles irmago as a dependency, such as the gomobile bind in irmamobile.
-
 ## Running the unit tests
 
 Some of the unit tests connect to locally running external services, namely PostgreSQL, MySQL, Microsoft SQL Server and an SMTP server running at port 1025. These need to be up and running before these tests can be executed. This can be done using `docker-compose`.
