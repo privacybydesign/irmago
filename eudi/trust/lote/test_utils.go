@@ -82,8 +82,8 @@ func NewTestLoteSigner(t *testing.T) *TestLoteSigner {
 	}
 }
 
-// A trust store anchoring this signer's root, standing in for the pinned Yivi
-// anchors.
+// X509VerificationContext is a trust store anchoring this signer's root, standing
+// in for the pinned Yivi anchors.
 func (s *TestLoteSigner) X509VerificationContext() eudi_jwt.X509VerificationContext {
 	pool := x509.NewCertPool()
 	pool.AddCert(s.RootCert)
@@ -97,7 +97,8 @@ func (s *TestLoteSigner) SignList(t *testing.T, list List) []byte {
 	return s.SignListWithTyp(t, list, LoteTyp)
 }
 
-// SignList with the `typ` header overridden, for negative-path tests.
+// SignListWithTyp is SignList with the `typ` header overridden, for negative-path
+// tests.
 func (s *TestLoteSigner) SignListWithTyp(t *testing.T, list List, typ string) []byte {
 	t.Helper()
 
@@ -116,9 +117,9 @@ func (s *TestLoteSigner) SignListWithTyp(t *testing.T, list List, typ string) []
 	return signed
 }
 
-// An end-entity certificate under this signer's root for a party a test wants to
-// list, carrying organizationIdentifier when one is given and always a subject key
-// identifier, so an entry can key on either.
+// NewTestPartyCertificate returns an end-entity certificate under this signer's
+// root for a party a test wants to list, carrying organizationIdentifier when one
+// is given and always a subject key identifier, so an entry can key on either.
 func (s *TestLoteSigner) NewTestPartyCertificate(t *testing.T, commonName, organizationIdentifier string) *x509.Certificate {
 	t.Helper()
 

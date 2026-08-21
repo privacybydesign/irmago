@@ -14,8 +14,8 @@ const DefaultFallbackLanguage = "en"
 // TranslatedString is a map from language code to translated text.
 type TranslatedString map[string]string
 
-// How strongly a party is vouched for: the three rungs of the trust ladder, plus
-// the absence of any evaluation.
+// TrustLevel is how strongly a party is vouched for: the three rungs of the trust
+// ladder, plus the absence of any evaluation.
 //
 // Never a judgement about the party's identity — that is a separate gate which
 // fails the session outright (ErrorType_PartyValidationFailed) — and it never

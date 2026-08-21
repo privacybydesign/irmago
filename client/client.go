@@ -71,10 +71,10 @@ type Client struct {
 	//Preferences      clientsettings.Preferences
 }
 
-// Everything a wallet needs to exist. Named rather than positional because three
-// of the paths are plain strings, and transposing two would build a wallet that
-// looks fine and stores its data in the wrong place. Every zero value takes the
-// documented default.
+// Config is everything a wallet needs to exist. Named rather than positional
+// because three of the paths are plain strings, and transposing two would build a
+// wallet that looks fine and stores its data in the wrong place. Every zero value
+// takes the documented default.
 type Config struct {
 	// StoragePath and IrmaConfigurationPath must exist; EudiAppDataPath is created.
 	StoragePath           string
@@ -378,9 +378,9 @@ func (client *Client) RefreshStatuses(ctx context.Context) error {
 	return err
 }
 
-// The only path that fetches a list, so a session is never delayed by a download.
-// A failing source leaves what the wallet already held in force; the returned
-// error names the failures for the caller's log.
+// RefreshTrustLists is the only path that fetches a list, so a session is never
+// delayed by a download. A failing source leaves what the wallet already held in
+// force; the returned error names the failures for the caller's log.
 //
 // A list that comes back saying something different about the parties on it
 // signals ClientHandler.CredentialsChanged on the calling goroutine, since the app

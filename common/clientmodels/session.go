@@ -114,9 +114,9 @@ type AuthorizationCodeFlowRequest struct {
 	AuthorizationParameters map[string][]string // url.Values
 }
 
-// The ErrorType a session ends with when the identity gate rejected the party it
-// was talking to: a broken or revoked chain, an invalid request signature, an
-// unresolvable DID.
+// ErrorType_PartyValidationFailed is the ErrorType a session ends with when the
+// identity gate rejected the party it was talking to: a broken or revoked chain,
+// an invalid request signature, an unresolvable DID.
 //
 // It exists so the app can show the blocking copy ("not trustworthy, no data has
 // been shared") rather than a generic error screen. A party that merely fails to

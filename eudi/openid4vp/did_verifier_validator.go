@@ -34,7 +34,8 @@ type DidVerifierValidator struct {
 	validatorFactory    QueryValidatorFactory
 }
 
-// The verification context and factory are the X.509 validator's own.
+// NewDidVerifierValidator takes the verification context and factory of the X.509
+// validator as its own.
 func NewDidVerifierValidator(
 	allowInsecureDidWeb bool,
 	verificationContext eudi_jwt.X509VerificationContext,
