@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Added
+- `clientmodels.CredentialDescriptor` now carries the credential type's FAQ texts (`faq`, optional), populated by every scheme-backed descriptor builder (credential store, issuance-during-disclosure bundles, wrong-credential templates, OpenID4VP DCQL obtainable descriptors). Frontends can show the credential-specific explanation content in flows that only receive a descriptor, instead of falling back to a generic text (privacybydesign/irmamobile#668). `CredentialStoreItem.Faq` is unchanged and now redundant.
 - A Status List Token signed with a key published inline in the issuer's OAuth 2.0 / OpenID Connect discovery metadata, in a non-standard `jwks` member instead of behind `jwks_uri`, can now be verified. `jwks_uri` stays authoritative when present; the inline set is consulted only when it is absent, and a `kid` neither source publishes is still an error rather than a silent decline.
 
 ### Changed

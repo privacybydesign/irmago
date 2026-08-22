@@ -64,7 +64,11 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 				Category:     category,
 				Image:        clientmodels.ImageFromFile(cred.Logo(irmaConfig)),
 				Attributes:   attributes,
+				Faq:          cred.ClientFaq(locale),
 			},
+			// Kept for backwards compatibility with frontends that read the
+			// FAQ from the store item; the descriptor-level Faq above is the
+			// canonical location.
 			Faq: clientmodels.Faq{
 				Intro:   clientmodels.PtrIfNonEmpty(introTS[faqLang]),
 				Purpose: clientmodels.PtrIfNonEmpty(purposeTS[faqLang]),
@@ -183,6 +187,7 @@ func createCredentialDescriptor(
 		Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
 		Attributes:   attributes,
 		IssueURL:     issueURL,
+		Faq:          info.ClientFaq(locale),
 	}, nil
 }
 
@@ -220,6 +225,7 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 		Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
 		Attributes:   attributes,
 		IssueURL:     issueURL,
+		Faq:          info.ClientFaq(locale),
 	}, nil
 }
 
