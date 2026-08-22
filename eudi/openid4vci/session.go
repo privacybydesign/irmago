@@ -9,10 +9,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwe"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwe"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
@@ -85,6 +85,7 @@ type openid4vciSessionIssuerSettings struct {
 // We define this struct, so that we apply logic to the credential metadata, and choose the preferences from the available options, in case multiple options are offered by the issuer metadata (e.g. multiple supported encryption algorithms, or multiple supported key binding methods)
 type sessionCredentialRequestPreferences struct {
 	cryptographicBindingMethod *proofs.CryptographicBindingMethod
+	proofSigningAlg            jwa.SignatureAlgorithm
 }
 
 func (s *session) perform() {
@@ -566,28 +567,6 @@ func (s *session) configureIssuerSettings() error {
 	return nil
 }
 
-func getCredentialRequestPreferences(c metadata.CredentialConfiguration) *sessionCredentialRequestPreferences {
-	s := &sessionCredentialRequestPreferences{}
-
-	if len(c.CryptographicBindingMethodsSupported) > 0 {
-		var cryptoBindingMethod proofs.CryptographicBindingMethod
-
-		// Order of preferred cryptographic binding methods: JWK > DID > COSE, based on ease of implementation and expected level of support among issuers
-		if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_JWK) {
-			cryptoBindingMethod = proofs.CryptographicBindingMethod_JWK
-		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_KEY) {
-			cryptoBindingMethod = proofs.CryptographicBindingMethod_DID_KEY
-		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_JWK) {
-			cryptoBindingMethod = proofs.CryptographicBindingMethod_DID_JWK
-		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_COSE) {
-			cryptoBindingMethod = proofs.CryptographicBindingMethod_COSE
-		}
-		s.cryptographicBindingMethod = &cryptoBindingMethod
-	}
-
-	return s
-}
-
 // selectOfferedGrant picks the grant to use from the offer's grants member,
 // preferring the Pre-Authorized Code grant over the Authorization Code grant.
 // It returns a nil grant when the offer names no grant type at all, in which
@@ -657,9 +636,8 @@ func (s *session) getAuthorizationServer() (string, error) {
 	return "", fmt.Errorf("no valid authorization server found in credential issuer metadata")
 }
 
-// fetchCredential requests and verifies a credential for a given configuration
-// ID without storing it. The caller stores via storeCredentials or cleans up
-// via cleanupKeys.
+// obtainCredential requests and verifies a credential for a given configuration
+// ID without storing it. The caller stores via storeCredentials or cleans up via cleanupKeys.
 func (s *session) obtainCredential(credentialConfigurationId string, cNonce *string, accessToken string) (*fetchedCredential, error) {
 	if s.credentialIssuerMetadata.NonceEndpoint != "" && cNonce == nil {
 		return nil, fmt.Errorf("credential request requires nonce but none was provided")
@@ -671,11 +649,11 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	}
 
 	credentialConfigurationValidator := CredentialConfigurationValidator{}
-	if err := credentialConfigurationValidator.ValidateSupportedFeatures(&credentialConfig); err != nil {
+	credentialRequestPreferences, err := credentialConfigurationValidator.ValidateAndGetSupportedFeatures(&credentialConfig)
+	if err != nil {
 		return nil, fmt.Errorf("credential configuration %q is not supported: %v", credentialConfigurationId, err)
 	}
 
-	credentialRequestPreferences := getCredentialRequestPreferences(credentialConfig)
 	requireCryptographicKeyBinding := credentialRequestPreferences.cryptographicBindingMethod != nil
 
 	request := &CredentialRequest{
@@ -691,26 +669,10 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 			num = s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize
 		}
 
-		proofType := credentialConfig.ProofTypesSupported[metadata.ProofTypeIdentifier_JWT]
-
-		// Determine the signing algorithm to use for the proofs, based on the supported algorithms in the credential metadata. We'll just pick the first supported algorithm that we also support, since we expect most issuers to only support one algorithm per proof type, and if they support multiple, it doesn't give us any indication of which one to prefer.
-		var alg jwa.SignatureAlgorithm
-		for _, algName := range proofType.ProofSigningAlgValuesSupported {
-			// Skip ES256K for now, since it's not widely supported among JWT libraries and we tests have shown to fail
-			if algName == "ES256K" {
-				continue
-			}
-			foundAlg, ok := jwa.LookupSignatureAlgorithm(algName)
-			if ok {
-				alg = foundAlg
-				break
-			}
-		}
-
 		// The issuer should be equal to the client ID registered with the authorization server
 		// TODO: omit the issuer, in case the access token being used, was obtained via Pre-Authorized Code flow
 		issuer := YiviClientId
-		proofBuilder := proofs.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, alg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
+		proofBuilder := proofs.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, credentialRequestPreferences.proofSigningAlg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
 
 		var proofs []string
 		var err error

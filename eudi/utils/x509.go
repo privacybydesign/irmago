@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"net/url"
+	"slices"
 
 	"github.com/privacybydesign/irmago/eudi/scheme"
 )
@@ -27,6 +29,27 @@ func ObtainIssuerUrlFromCertChain(certChain []*x509.Certificate) (string, error)
 		}
 	}
 	return "", fmt.Errorf("all URIs are nil")
+}
+
+// ObtainIssuerFromCert returns the issuer URL from the given x509 certificate.
+// It checks the URIs in the Subject Alternative Name (SAN) extension of the certificate and returns the first non-nil URI as a string.
+// If there are no URIs or all URIs are nil, it will try to fall back to SAN DNS.
+func ObtainIssuerFromCert(cert *x509.Certificate) (string, error) {
+	if cert == nil {
+		return "", fmt.Errorf("no certificate to get host name from")
+	}
+	if len(cert.URIs) == 0 && len(cert.DNSNames) == 0 {
+		return "", fmt.Errorf("no URIs or DNS names in certificate")
+	}
+	for _, uri := range cert.URIs {
+		if uri != nil {
+			return uri.String(), nil
+		}
+	}
+	if len(cert.DNSNames) > 0 {
+		return cert.DNSNames[0], nil
+	}
+	return "", fmt.Errorf("all URIs are nil and no DNS names available")
 }
 
 // ParsePemCertificateChain takes in the raw contents of a PEM formatted certificate
@@ -146,7 +169,18 @@ func VerifyCertificateUri(cert *x509.Certificate, uri string) error {
 		}
 	}
 
-	return fmt.Errorf("URI %q is not in the SANs of the certificate", uri)
+	// If the URI is not found in the SANs, parse the URI and check if the host matches any of the DNS names in the SANs
+	parsedUri, err := url.Parse(uri)
+	if err != nil {
+		return fmt.Errorf("failed to parse URI: %v", err)
+	}
+
+	host := parsedUri.Hostname()
+	if slices.Contains(cert.DNSNames, host) {
+		return nil
+	}
+
+	return fmt.Errorf("URI %q is not in the URI or DNS SANs of the certificate", uri)
 }
 
 // VerifyRevocationListsSignatures verifies the signatures of the revocation lists for a given parent certificate.

@@ -3,13 +3,14 @@ package openid4vp
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwe"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwe"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
@@ -39,9 +40,9 @@ func createAuthorizationResponseHttpRequest(config authorizationResponseConfig) 
 		if config.EncryptionKeys == nil {
 			return nil, fmt.Errorf("using response mode %v, but the encryption key is nil", ResponseMode_DirectPostJwt)
 		}
-		jwe, err := createDirectPostJwtEncryptedResponse(
+		jwe, err := createEncryptedResponse(
 			config.QueryResponses,
-			config.State,
+			map[string]any{"state": config.State},
 			*config.EncryptionKeys,
 			config.EncryptedResponseEncValuesSupported,
 		)
@@ -61,19 +62,59 @@ func createAuthorizationResponseHttpRequest(config authorizationResponseConfig) 
 	return req, nil
 }
 
-func createDirectPostJwtEncryptedResponse(queryResponses []dcql.QueryResponse, state string, encryptionKeys jwk.Set, encSupported []string) (string, error) {
-	vpToken := createVpToken(queryResponses)
-	payload := map[string]any{
-		"vp_token": vpToken,
-		"state":    state,
+// createDcApiResponse builds the JSON object the wallet hands back to the
+// platform's Digital Credentials API (Appendix A.4): the Authorization Response
+// parameters for the response type. The state parameter is not defined for the
+// DC API, so it is never included.
+func createDcApiResponse(config authorizationResponseConfig) (string, error) {
+	var payload map[string]any
+
+	switch config.ResponseMode {
+	case ResponseMode_DcApi:
+		payload = map[string]any{"vp_token": createVpToken(config.QueryResponses)}
+
+	case ResponseMode_DcApiJwt:
+		if config.EncryptionKeys == nil {
+			return "", fmt.Errorf("using response mode %v, but the encryption key is nil", ResponseMode_DcApiJwt)
+		}
+		jwe, err := createEncryptedResponse(
+			config.QueryResponses,
+			nil,
+			*config.EncryptionKeys,
+			config.EncryptedResponseEncValuesSupported,
+		)
+		if err != nil {
+			return "", err
+		}
+		payload = map[string]any{"response": jwe}
+
+	default:
+		return "", fmt.Errorf("response mode %v is not a digital credentials api response mode", config.ResponseMode)
 	}
+
+	result, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(result), nil
+}
+
+// createEncryptedResponse encrypts the Authorization Response as an unsigned,
+// encrypted JWT whose payload holds the response parameters as top-level members
+// (Section 8.3). extraMembers carries the response-mode-specific members beyond
+// vp_token, such as state for direct_post.jwt.
+func createEncryptedResponse(queryResponses []dcql.QueryResponse, extraMembers map[string]any, encryptionKeys jwk.Set, encSupported []string) (string, error) {
+	payload := map[string]any{
+		"vp_token": createVpToken(queryResponses),
+	}
+	maps.Copy(payload, extraMembers)
 	return encryptJwe(payload, encryptionKeys, encSupported)
 }
 
 func encryptJwe(payload map[string]any, keys jwk.Set, encSupported []string) (string, error) {
 	payloadJson, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("failed to serialize payload for direct_post.jwt: %v", err)
+		return "", fmt.Errorf("failed to serialize payload for the encrypted response: %v", err)
 	}
 
 	encAlg, err := pickEncryptionAlgorithm(encSupported)

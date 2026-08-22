@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
+	"github.com/privacybydesign/irmago/eudi/didkey"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +35,7 @@ func mustGenerateECKey(t *testing.T) *ecdsa.PrivateKey {
 
 func mustGetPublicJWK(t *testing.T, privKey *ecdsa.PrivateKey) jwk.Key {
 	t.Helper()
-	pubJwk, err := jwk.Import(privKey.Public())
+	pubJwk, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 	return pubJwk
 }
@@ -81,8 +82,7 @@ func Test_JwtProofBuilder_Build_JWKMethod_WithNonce_Succeeds(t *testing.T) {
 	issuedAt, _ := token.IssuedAt()
 	require.Equal(t, testFixedTime.Unix(), issuedAt.Unix())
 
-	var nonceClaim string
-	err = token.Get("nonce", &nonceClaim)
+	nonceClaim, err := jwt.Get[string](token, "nonce")
 	require.NoError(t, err, "nonce claim should be present")
 	require.Equal(t, nonce, nonceClaim)
 
@@ -127,8 +127,7 @@ func Test_JwtProofBuilder_Build_JWKMethod_WithoutNonce_OmitsNonceClaim(t *testin
 	token, err := jwt.Parse([]byte(jwtStr), jwt.WithKey(jwa.ES256(), pubJwk))
 	require.NoError(t, err)
 
-	var nonceVal string
-	err = token.Get("nonce", &nonceVal)
+	_, err = jwt.Get[string](token, "nonce")
 	require.Error(t, err, "nonce claim should not be present when no nonce is provided")
 }
 
@@ -166,6 +165,48 @@ func Test_JwtProofBuilder_Build_DIDJwkMethod_SetsKidToDIDAssertionMethod(t *test
 	require.True(t, hasKid, "kid header should be present for DID_JWK binding method")
 	require.True(t, strings.HasPrefix(kid, "did:jwk:"), "kid should be a did:jwk DID, got: %s", kid)
 	require.True(t, strings.HasSuffix(kid, "#0"), "kid should reference the DID assertion method (#0), got: %s", kid)
+}
+
+func Test_JwtProofBuilder_Build_DIDKeyMethod_SetsKidToResolvableDIDKey(t *testing.T) {
+	key := mustGenerateECKey(t)
+
+	builder := NewJwtProofBuilder(
+		"https://issuer.example.com",
+		"https://server.example.com",
+		jwa.ES256(),
+		nil,
+		fixedClock{t: testFixedTime},
+		CryptographicBindingMethod_DID_KEY,
+	)
+
+	result, err := builder.Build(key)
+	require.NoError(t, err)
+
+	jwtStr, ok := result.(string)
+	require.True(t, ok)
+	require.NotEmpty(t, jwtStr)
+
+	// Verify signature using the known public key
+	pubJwk := mustGetPublicJWK(t, key)
+	_, err = jws.Verify([]byte(jwtStr), jws.WithKey(jwa.ES256(), pubJwk))
+	require.NoError(t, err)
+
+	headers := parseProtectedHeaders(t, jwtStr)
+
+	typ, hasTyp := headers.Type()
+	require.True(t, hasTyp)
+	require.Equal(t, "openid4vci-proof+jwt", typ)
+
+	kid, hasKid := headers.KeyID()
+	require.True(t, hasKid, "kid header should be present for DID_KEY binding method")
+	require.True(t, strings.HasPrefix(kid, didkey.Prefix), "kid should be a did:key DID, got: %s", kid)
+	require.Contains(t, kid, "#", "kid is emitted without a verification method fragment, but it should be resolvable to the key that signed the proof")
+
+	// The kid must resolve back to the key that signed the proof, otherwise the issuer
+	// cannot bind the credential to it.
+	resolved, err := didkey.Resolve(kid)
+	require.NoError(t, err)
+	require.Equal(t, key.PublicKey, resolved)
 }
 
 func Test_JwtProofBuilder_Build_COSEMethod_ReturnsUnsupportedError(t *testing.T) {
