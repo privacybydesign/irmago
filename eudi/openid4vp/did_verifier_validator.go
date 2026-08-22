@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
@@ -120,7 +120,7 @@ func didWebDomain(didStr string) (string, bool) {
 	if !strings.HasPrefix(didStr, prefix) {
 		return "", false
 	}
-	host := strings.SplitN(strings.TrimPrefix(didStr, prefix), ":", 2)[0]
+	host, _, _ := strings.Cut(strings.TrimPrefix(didStr, prefix), ":")
 	if host == "" {
 		return "", false
 	}
@@ -132,7 +132,7 @@ func (v *DidVerifierValidator) resolvePublicKey(clientId string, header map[stri
 	switch {
 	case strings.HasPrefix(clientId, clientIdPrefixDidJwk):
 		didJwk := strings.TrimPrefix(clientId, "decentralized_identifier:")
-		return v.resolveDidJwk(didJwk, header)
+		return v.resolveDidJwk(didJwk)
 
 	case strings.HasPrefix(clientId, clientIdPrefixDidWeb):
 		didWeb := strings.TrimPrefix(clientId, "decentralized_identifier:")
@@ -144,14 +144,14 @@ func (v *DidVerifierValidator) resolvePublicKey(clientId string, header map[stri
 }
 
 // resolveDidJwk extracts the public key from a did:jwk DID.
-func (v *DidVerifierValidator) resolveDidJwk(didJwk string, header map[string]any) (any, string, error) {
+func (v *DidVerifierValidator) resolveDidJwk(didJwk string) (any, string, error) {
 	key, err := didjwk.Resolve(didJwk)
 	if err != nil {
 		return nil, "", err
 	}
 
-	var rawKey any
-	if err := jwk.Export(key, &rawKey); err != nil {
+	rawKey, err := jwk.Export[any](key)
+	if err != nil {
 		return nil, "", fmt.Errorf("failed to export raw key from did:jwk: %v", err)
 	}
 
@@ -192,8 +192,8 @@ func findVerificationKey(doc *did.Document, header map[string]any) (any, error) 
 			continue
 		}
 
-		var rawKey any
-		if err := jwk.Export(pk, &rawKey); err != nil {
+		rawKey, err := jwk.Export[any](pk)
+		if err != nil {
 			return nil, fmt.Errorf("failed to export raw key from verification method %s: %v", vm.ID, err)
 		}
 		return rawKey, nil

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didkey"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -56,7 +56,7 @@ type KeyBindingJwtPayload struct {
 
 type CnfField struct {
 	Jwk *jwk.Key `json:"jwk,omitempty"`
-	// Note: kid can be any value, but for now we only support the did:jwk method, so it should be a string did:jwk reference to a key in the database with keybinding keys
+	// Note: kid can be any value, but for now we only support the did:jwk and did:key methods, so it should be a string DID URL referencing a key in the database with keybinding keys
 	Kid *string `json:"kid,omitempty"`
 }
 
@@ -81,7 +81,7 @@ type InMemoryKeyBindingStorage struct {
 
 func (s *InMemoryKeyBindingStorage) StorePrivateKeys(keys []*ecdsa.PrivateKey) error {
 	for _, privKey := range keys {
-		privJwk, err := jwk.Import(privKey)
+		privJwk, err := jwk.Import[jwk.Key](privKey)
 		if err != nil {
 			return fmt.Errorf("failed to convert ecdsa priv key to jwk: %v", err)
 		}
@@ -174,7 +174,7 @@ func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 		}
 		privKeys[i] = privKey
 
-		privJwk, err := jwk.Import(privKey)
+		privJwk, err := jwk.Import[jwk.Key](privKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert ecdsa priv key to jwk: %v", err)
 		}
@@ -313,7 +313,7 @@ func resolveKeyFromDid(kid string) (jwk.Key, error) {
 		}
 
 		// Create a JWK from the resolved public key
-		key, err := jwk.Import(pubkey)
+		key, err := jwk.Import[jwk.Key](pubkey)
 		if err != nil {
 			return nil, err
 		}

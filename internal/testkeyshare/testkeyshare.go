@@ -93,12 +93,10 @@ func StartKeyshareServerWithDB(t *testing.T, l *logrus.Logger, schemeID irma.Sch
 
 func startKeyshareServerOnHost(t *testing.T, handler http.Handler, host string, db *keyshareserver.MemoryDB) *KeyshareServer {
 	keyshareServ := &KeyshareServer{
-		Server: http.Server{
-			Addr:    host,
-			Handler: handler,
-		},
-		DB: db,
-		t:  t,
+		Addr:    host,
+		Handler: handler,
+		DB:      db,
+		t:       t,
 	}
 
 	go func() {

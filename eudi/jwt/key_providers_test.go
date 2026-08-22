@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -14,15 +15,16 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/cert"
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/cert"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/stretchr/testify/require"
@@ -296,7 +298,7 @@ func Test_DidKeyProvider_FetchKeys_NoMatchingVerificationMethod_ReturnsNoKeysNoE
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 
 	// DID document has a key with a different ID
@@ -329,7 +331,7 @@ func Test_DidKeyProvider_FetchKeys_PrivateKeyInVerificationMethod_NotReturned_No
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	privJWK, err := jwk.Import(privKey) // private key – not allowed in DID document
+	privJWK, err := jwk.Import[jwk.Key](privKey) // private key – not allowed in DID document
 	require.NoError(t, err)
 
 	docBytes := newTestDIDDocument(t, issuerDID, fullKID, privJWK)
@@ -361,7 +363,7 @@ func Test_DidKeyProvider_FetchKeys_ValidPublicKey_EncryptionUsage_ReturnsNoKeysN
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 
 	pubJWK.Set("use", "enc") // key usage is "enc" (encryption) – not allowed for signature verification
@@ -396,7 +398,7 @@ func Test_DidKeyProvider_FetchKeys_ValidPublicKey_FeedsKeyAndAlgorithmToSink(t *
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 
 	docBytes := newTestDIDDocument(t, issuerDID, fullKID, pubJWK)
@@ -432,7 +434,7 @@ func Test_DidKeyProvider_FetchKeys_FullKidHeader_UsedAsIs(t *testing.T) {
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 
 	// DID document uses the full KID, not issuerDID + "#key-1"
@@ -468,7 +470,7 @@ func Test_DidKeyProvider_FetchKeys_FullKidHeader_DoesNotConcatenateWithIss_Retur
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 
 	// DID document only has the concatenated form — should NOT match when kidHeader is already absolute.
@@ -522,7 +524,7 @@ func Test_DidKeyProvider_FetchKeys_AlgFromJWSHeaderNotJWK(t *testing.T) {
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 	// Deliberately set a different alg on the JWK than what the JWT is actually signed with.
 	require.NoError(t, pubJWK.Set("alg", jwa.ES384()))
@@ -558,7 +560,7 @@ func Test_DidKeyProvider_FetchKeys_AlgFromJWSHeaderNotJWK(t *testing.T) {
 // newTestDidJwk derives a did:jwk DID from the public part of the given key.
 func newTestDidJwk(t *testing.T, privKey *ecdsa.PrivateKey) string {
 	t.Helper()
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 	doc, err := (&didjwk.DocumentBuilder{}).FromJwk(pubJWK)
 	require.NoError(t, err)
@@ -604,7 +606,7 @@ func Test_DidKeyProvider_FetchKeys_DidJwk_FullKidHeader_UsedAsIs(t *testing.T) {
 func Test_DidKeyProvider_FetchKeys_DidJwk_ForeignMemberOrdering_FeedsKeyAndAlgorithmToSink(t *testing.T) {
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(privKey.Public())
+	pubJWK, err := jwk.Import[jwk.Key](privKey.Public())
 	require.NoError(t, err)
 
 	// A did:jwk minted by an implementation that serializes the JWK members in a different
@@ -840,6 +842,7 @@ type testOAuthDiscoveryServer struct {
 	discoveryStatus int    // response status for the well-known document (0 → 200)
 	jwksStatus      int    // response status for the JWKS (0 → 200)
 	omitJwksUri     bool   // serve metadata without a jwks_uri member
+	inlineJwks      []byte // JWKS document to embed in the metadata's jwks member
 	jwksBody        []byte // JWKS document to serve
 }
 
@@ -862,6 +865,9 @@ func (s *testOAuthDiscoveryServer) handle(w http.ResponseWriter, r *http.Request
 		metadata := map[string]any{"issuer": s.URL()}
 		if !s.omitJwksUri {
 			metadata["jwks_uri"] = s.URL() + "/jwks.json"
+		}
+		if s.inlineJwks != nil {
+			metadata["jwks"] = json.RawMessage(s.inlineJwks)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(metadata)
@@ -886,7 +892,7 @@ func (s *testOAuthDiscoveryServer) URL() string { return s.server.URL }
 // must ignore in favour of the JWS protected header.
 func newTestJWKS(t *testing.T, pub any, kid string, algField string) []byte {
 	t.Helper()
-	key, err := jwk.Import(pub)
+	key, err := jwk.Import[jwk.Key](pub)
 	require.NoError(t, err)
 	require.NoError(t, key.Set(jwk.KeyIDKey, kid))
 	if algField != "" {
@@ -1108,6 +1114,99 @@ func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_DiscoveryWithoutJwksUri_Returns
 	require.Zero(t, srv.jwksHits.Load())
 }
 
+// The jwks member is non-standard in RFC 8414 but appears in practice, so it is
+// honoured as a fallback: with no jwks_uri to dereference, the key is resolved
+// from the metadata document itself.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_InlineJwksWithoutJwksUri_FeedsKeyAndAlgorithmToSink(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	srv := newTestOAuthDiscoveryServer(t, nil)
+	srv.omitJwksUri = true
+	srv.inlineJwks = newTestJWKS(t, privKey.Public(), "key-1", "")
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), privKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "key-1"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.NoError(t, err)
+	require.Len(t, sink.keys, 1)
+	require.Equal(t, jwa.ES256(), sink.keys[0].alg)
+	require.NotNil(t, sink.keys[0].key)
+	require.Zero(t, srv.jwksHits.Load(), "an inline jwks member must not cost a JWKS round trip")
+}
+
+// The standard member wins: the inline jwks is only consulted when jwks_uri is
+// absent, so a JWT whose kid both sets publish is verified against the hosted key.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_JwksUriTakesPrecedenceOverInlineJwks(t *testing.T) {
+	hostedKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	inlineKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	srv := newTestOAuthDiscoveryServer(t, newTestJWKS(t, hostedKey.Public(), "key-1", ""))
+	srv.inlineJwks = newTestJWKS(t, inlineKey.Public(), "key-1", "")
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), hostedKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "key-1"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.NoError(t, err)
+	require.Len(t, sink.keys, 1)
+	require.Equal(t, int64(1), srv.jwksHits.Load(), "jwks_uri must still be dereferenced when an inline jwks is also present")
+
+	// The key that reached the sink is the hosted one, not the key the inline
+	// jwks member publishes under the same kid.
+	resolved, ok := sink.keys[0].key.(jwk.Key)
+	require.True(t, ok, "expected a jwk.Key on the sink, got %T", sink.keys[0].key)
+	resolvedPub, err := jwk.Export[*ecdsa.PublicKey](resolved)
+	require.NoError(t, err)
+	require.True(t, hostedKey.PublicKey.Equal(resolvedPub), "the sink received the inline key instead of the hosted one")
+}
+
+// Precedence is not a fallback chain in the other direction either: once
+// jwks_uri is present it is the only source consulted, so a kid it does not
+// publish fails even when the inline jwks member does publish it.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_KidOnlyInInlineJwks_ReturnsError(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	srv := newTestOAuthDiscoveryServer(t, newTestJWKS(t, privKey.Public(), "hosted-key", ""))
+	srv.inlineJwks = newTestJWKS(t, privKey.Public(), "inline-key", "")
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), privKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "inline-key"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, "no key found in JWKS with kid inline-key")
+	require.Empty(t, sink.keys)
+}
+
+// A kid the inline set does not publish is a hard failure rather than a silent
+// decline: the metadata already stated which keys the issuer signs with, and
+// there is no jwks_uri left to try.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_KidNotInInlineJwks_ReturnsError(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	srv := newTestOAuthDiscoveryServer(t, nil)
+	srv.omitJwksUri = true
+	srv.inlineJwks = newTestJWKS(t, privKey.Public(), "published-key", "")
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), privKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "unpublished-key"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, "no key found in jwks member of discovery metadata")
+	require.ErrorContains(t, err, "unpublished-key")
+	require.Empty(t, sink.keys)
+	require.Zero(t, srv.jwksHits.Load())
+}
+
 func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_JwksFetchFails_ReturnsError(t *testing.T) {
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -1139,6 +1238,91 @@ func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_KidNotInJwks_ReturnsError(t *te
 	require.Empty(t, sink.keys)
 }
 
+// malformedJwkEntry is an EC key object missing the mandatory x and y
+// coordinates, so jwk cannot decode it into a key.
+const malformedJwkEntry = `{"kty":"EC","crv":"P-256","kid":"%s"}`
+
+// newTestRawJWKS builds a JWKS body from raw JSON key objects, so a test can
+// include an entry jwk.Parse cannot decode.
+func newTestRawJWKS(keys ...string) []byte {
+	return []byte(`{"keys":[` + strings.Join(keys, ",") + `]}`)
+}
+
+// newTestJWKJSON marshals a public key into a single JWK object under the given kid.
+func newTestJWKJSON(t *testing.T, pub any, kid string) string {
+	t.Helper()
+	key, err := jwk.Import[jwk.Key](pub)
+	require.NoError(t, err)
+	require.NoError(t, key.Set(jwk.KeyIDKey, kid))
+	body, err := json.Marshal(key)
+	require.NoError(t, err)
+	return string(body)
+}
+
+// An unparseable entry must reject the whole JWKS. jwk.Fetch, which this
+// provider used before jwx v4 removed it, parsed sets strictly; jwx v4's
+// default keeps an undecodable entry as a placeholder key that keeps its own
+// kid, so a lookup on the attacker-chosen kid would hand that placeholder to
+// the sink instead of failing the fetch.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_MalformedJwksEntry_RejectsWholeSet(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	srv := newTestOAuthDiscoveryServer(t, newTestRawJWKS(fmt.Sprintf(malformedJwkEntry, "key-1")))
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), privKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "key-1"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, "failed to fetch or parse JWKS")
+	require.Empty(t, sink.keys, "a placeholder for an unparseable entry may not reach the sink")
+}
+
+// Rejecting the set in full also means a usable sibling key in a partly broken
+// JWKS is not accepted, which is what jwk.Fetch did.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_MalformedJwksEntry_RejectsUsableSiblingKey(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	srv := newTestOAuthDiscoveryServer(t, newTestRawJWKS(
+		fmt.Sprintf(malformedJwkEntry, "broken-key"),
+		newTestJWKJSON(t, privKey.Public(), "key-1"),
+	))
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), privKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "key-1"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, "failed to fetch or parse JWKS")
+	require.Empty(t, sink.keys)
+}
+
+// jwks_uri comes from discovery metadata at the unverified iss claim, so the
+// endpoint is attacker-chosen and the body must stay capped as it was under
+// jwk.Fetch. The padding member below is the only thing oversizing this
+// document: the provider parses sets strictly, and strict parsing still
+// tolerates unknown members, so it would be accepted under the cap.
+func Test_OAuthDiscoveryJwkKeyProvider_FetchKeys_OversizedJwks_ReturnsError(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	oversized := []byte(`{"keys":[` + newTestJWKJSON(t, privKey.Public(), "key-1") +
+		`],"padding":"` + strings.Repeat("a", maxJwksBytes) + `"}`)
+	require.Greater(t, len(oversized), maxJwksBytes)
+
+	srv := newTestOAuthDiscoveryServer(t, oversized)
+	msg := newTestJWSMessageWithHeaders(t, srv.URL(), privKey, jwa.ES256(), map[string]any{jws.KeyIDKey: "key-1"})
+
+	sink := &testKeySink{}
+	p := NewOAuthDiscoveryJwkKeyProvider([]string{"JWT"}, http.DefaultClient)
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, fmt.Sprintf("response exceeds %d bytes", maxJwksBytes))
+	require.Empty(t, sink.keys)
+}
+
 // The credential and status list token verification paths must refuse an algorithm the metadata
 // validators refuse up front, otherwise a strict validator only advertises strictness while
 // verification honours the algorithm anyway. HS256 is the case with teeth: it is symmetric, so
@@ -1154,6 +1338,26 @@ func Test_X509KeyProvider_FetchKeys_RejectedAlg_ReturnsError(t *testing.T) {
 
 	require.ErrorContains(t, err, `unsupported signature algorithm "HS256"`)
 	require.Empty(t, sink.keys, "no key may reach the sink for a rejected algorithm")
+}
+
+// ML-DSA is the case HS256 cannot cover: jwx registers it from v4.4.0 on and verifies it against
+// crypto/mldsa, so the token below carries a signature this build is able to check. Only the
+// allow-list stands between it and the sink, which is what makes it worth signing for real rather
+// than asserting on the name.
+func Test_X509KeyProvider_FetchKeys_MLDSA_ReturnsError(t *testing.T) {
+	derBytes, _, _ := newTestECDSACert(t)
+
+	privKey, err := mldsa.GenerateKey(mldsa.MLDSA44())
+	require.NoError(t, err)
+
+	p := NewX509KeyProvider(newTestCertChain(t, derBytes))
+	sink := &testKeySink{}
+
+	msg := newTestJWSMessageSigned(t, "test", privKey, jwa.MLDSA44())
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.ErrorContains(t, err, `unsupported signature algorithm "ML-DSA-44"`)
+	require.Empty(t, sink.keys)
 }
 
 // RFC 9864 deprecates the EdDSA algorithm name in favour of Ed25519, but issuers still sign with
@@ -1200,7 +1404,7 @@ func Test_DidKeyProvider_FetchKeys_EdDSANames_FeedKeyToSink(t *testing.T) {
 
 	pub, privKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	pubJWK, err := jwk.Import(pub)
+	pubJWK, err := jwk.Import[jwk.Key](pub)
 	require.NoError(t, err)
 
 	docBytes := newTestDIDDocument(t, issuerDID, issuerDID+kidHeader, pubJWK)

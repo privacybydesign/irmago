@@ -6,6 +6,7 @@ import (
 	"maps"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -249,16 +250,15 @@ func buildDependencyTree(contents []IssueWizardItem, conf *Configuration, credsm
 	reversed := make([]IssueWizardItem, 0, len(contents))
 	byID := map[CredentialTypeIdentifier]IssueWizardItem{}
 	skipped := 0
-	for i := len(contents) - 1; i >= 0; i-- {
-		item := contents[i]
+	for _, item := range slices.Backward(contents) {
 		if item.Credential == nil {
 			// If an item does not denote what credential it issues, we cannot take it into account -
 			// just ignore it here and append it back to the end of the wizard just before returning.
 			skipped++
 			continue
 		}
-		reversed = append(reversed, contents[i])
-		byID[*contents[i].Credential] = contents[i]
+		reversed = append(reversed, item)
+		byID[*item.Credential] = item
 	}
 
 	// Build a map containing per level of the dependency tree the (deduplicated) nodes at that level
