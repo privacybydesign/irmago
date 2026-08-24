@@ -1,7 +1,6 @@
 package eudicli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -32,7 +31,13 @@ the wallet's lookup would never match.
 
 The output is a conformant Annex A document with the signature still to come. The
 issue time is stamped now and NextUpdate derived from it, so build and sign belong
-in the same release step.`,
+in the same release step.
+
+The sequence number normally comes from --sequence-number rather than from
+scheme.json. Clause 6.3.2 requires it to be 1 at the first release, to be
+incremented at every subsequent release, and never to be re-cycled or lowered —
+which is bookkeeping against the list already in force, so it belongs to whatever
+publishes rather than to whoever curates.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		out, err := cmd.Flags().GetString("output")
@@ -40,6 +45,10 @@ in the same release step.`,
 			return err
 		}
 		issuedAtFlag, err := cmd.Flags().GetString("issued-at")
+		if err != nil {
+			return err
+		}
+		sequenceNumber, err := cmd.Flags().GetUint64("sequence-number")
 		if err != nil {
 			return err
 		}
@@ -55,7 +64,7 @@ in the same release step.`,
 			issuedAt = issuedAt.UTC()
 		}
 
-		list, stats, err := loadSource(args[0], issuedAt)
+		list, stats, err := loadSource(args[0], issuedAt, sequenceNumber)
 		if err != nil {
 			return err
 		}
@@ -69,7 +78,7 @@ in the same release step.`,
 			Logger.Infof("excluded %s entirely: all of its services are withdrawn", file)
 		}
 
-		raw, err := json.MarshalIndent(lote.Document{LoTE: list}, "", "  ")
+		raw, err := documentJSON(list)
 		if err != nil {
 			return err
 		}
@@ -80,7 +89,6 @@ in the same release step.`,
 		if err := lote.ValidateDocument(raw); err != nil {
 			return err
 		}
-		raw = append(raw, '\n')
 
 		if out == "" || out == "-" {
 			_, err = os.Stdout.Write(raw)
@@ -101,6 +109,8 @@ func init() {
 	loteCmd.AddCommand(loteBuildCmd)
 
 	loteBuildCmd.Flags().StringP("output", "o", "", "write the document here (default stdout)")
+	loteBuildCmd.Flags().Uint64("sequence-number", 0,
+		"LoTESequenceNumber to stamp; overrides scheme.json. Clause 6.3.2: 1 at the first release, incremented at every release, never lowered")
 	loteBuildCmd.Flags().String("issued-at", "",
 		"RFC 3339 issue time (default now); set it to make a rebuild byte-identical")
 }

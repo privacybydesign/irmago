@@ -37,10 +37,12 @@ const (
 // schemeSource is scheme.json: the scheme's own information, which changes far
 // less often than the entities do.
 type schemeSource struct {
-	// SequenceNumber is bumped on every re-issue. In the diff on purpose: the
-	// wallet accepts an unchanged number, so a missed bump silently flattens
-	// replay protection, and `verify --against` is what catches it.
-	SequenceNumber uint64 `json:"sequence_number"`
+	// SequenceNumber is optional here, and normally supplied by the publisher
+	// instead: clause 6.3.2 requires it to start at 1, be incremented at every
+	// release and never be re-cycled or lowered, which is bookkeeping against what
+	// is already published and so cannot be done from this file. It is kept for
+	// manual and development builds; `build --sequence-number` overrides it.
+	SequenceNumber uint64 `json:"sequence_number,omitempty"`
 
 	// NextUpdateDays is how long this issue may be relied on. No EU profile applies
 	// to a Yivi list, so their six-month cap does not bind.
@@ -152,7 +154,25 @@ type buildStats struct {
 // loadSource reads a curation directory and turns it into a conformant list.
 // issuedAt is stamped into ListIssueDateTime and NextUpdate derived from it; a
 // parameter rather than time.Now() so a test can build the same document twice.
-func loadSource(dir string, issuedAt time.Time) (lote.List, buildStats, error) {
+// documentJSON renders a list as the published document. `build` writes it and
+// `show --json` prints it, and a release gate diffs one against the other — so
+// they share a renderer rather than each formatting to the same convention by
+// coincidence.
+func documentJSON(list lote.List) ([]byte, error) {
+	raw, err := json.MarshalIndent(lote.Document{LoTE: list}, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(raw, '\n'), nil
+}
+
+// sequenceFromScheme tells loadSource to take the sequence number out of
+// scheme.json rather than from the publisher.
+const sequenceFromScheme uint64 = 0
+
+// loadSource reads a curation directory into a list. A non-zero sequenceNumber is
+// the publisher's, and overrides whatever scheme.json says.
+func loadSource(dir string, issuedAt time.Time, sequenceNumber uint64) (lote.List, buildStats, error) {
 	var stats buildStats
 
 	scheme, err := readSchemeSource(dir)
@@ -165,7 +185,7 @@ func loadSource(dir string, issuedAt time.Time) (lote.List, buildStats, error) {
 		return lote.List{}, stats, err
 	}
 
-	schemeInfo, err := scheme.toSchemeInformation(issuedAt)
+	schemeInfo, err := scheme.toSchemeInformation(issuedAt, sequenceNumber)
 	if err != nil {
 		return lote.List{}, stats, fmt.Errorf("%s: %w", schemeFileName, err)
 	}
@@ -250,11 +270,15 @@ func strictUnmarshal(raw []byte, into any) error {
 	return decoder.Decode(into)
 }
 
-func (s schemeSource) toSchemeInformation(issuedAt time.Time) (lote.SchemeInformation, error) {
+func (s schemeSource) toSchemeInformation(issuedAt time.Time, sequenceNumber uint64) (lote.SchemeInformation, error) {
 	var info lote.SchemeInformation
 
-	if s.SequenceNumber == 0 {
-		return info, fmt.Errorf("sequence_number must be set and greater than zero")
+	// The publisher's number wins where it has one: only it can see what is already
+	// published, and clause 6.3.2 defines the number relative to that.
+	sequence := cmp.Or(sequenceNumber, s.SequenceNumber)
+	if sequence == 0 {
+		return info, fmt.Errorf(
+			"no sequence number: pass --sequence-number, or set sequence_number in %s", schemeFileName)
 	}
 	if s.NextUpdateDays <= 0 {
 		return info, fmt.Errorf("next_update_days must be greater than zero")
@@ -297,7 +321,7 @@ func (s schemeSource) toSchemeInformation(issuedAt time.Time) (lote.SchemeInform
 
 	return lote.SchemeInformation{
 		LoTEVersionIdentifier: lote.LoTEVersion,
-		SequenceNumber:        s.SequenceNumber,
+		SequenceNumber:        sequence,
 		LoTEType:              cmp.Or(s.LoTEType, lote.LoTETypeRecognizedParties),
 		SchemeOperatorName:    lote.MultiLang(s.OperatorName),
 		SchemeOperatorAddress: lote.SchemeOperatorAddress{

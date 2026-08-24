@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"io"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/privacybydesign/irmago/eudi/trust/lote"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,7 +47,7 @@ func entityNamed(t *testing.T, list lote.List, name string) lote.Entity {
 }
 
 func TestBuild_TheCommittedExampleIsConformant(t *testing.T) {
-	list, _, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt, sequenceFromScheme)
 	require.NoError(t, err)
 
 	scheme := list.SchemeInformation
@@ -71,7 +73,7 @@ func TestBuild_TheCommittedExampleIsConformant(t *testing.T) {
 // A service keyed on a certificate's key gets that key read out of the named
 // certificate, so an entry cannot be keyed on a value the lookup would miss.
 func TestBuild_ReadsTheSubjectKeyIdentifierOutOfTheCertificate(t *testing.T) {
-	list, _, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt, sequenceFromScheme)
 	require.NoError(t, err)
 
 	expected, err := readCertificate(exampleSource(t), "example-verifier.crt")
@@ -86,7 +88,7 @@ func TestBuild_ReadsTheSubjectKeyIdentifierOutOfTheCertificate(t *testing.T) {
 // The curation role becomes the service type URI, and no status is emitted at
 // all: on a list carrying none, being listed is the grant.
 func TestBuild_MapsRolesOntoURIsAndEmitsNoStatus(t *testing.T) {
-	list, _, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt, sequenceFromScheme)
 	require.NoError(t, err)
 
 	for _, entity := range list.Entities {
@@ -109,7 +111,7 @@ func TestBuild_MapsRolesOntoURIsAndEmitsNoStatus(t *testing.T) {
 // A withdrawal is an absence in the output, so it has to be reported — otherwise
 // off-boarding a party looks identical to never having listed them.
 func TestBuild_ReportsWithdrawnServicesAsExclusions(t *testing.T) {
-	_, stats, err := loadSource(exampleSource(t), issuedAt)
+	_, stats, err := loadSource(exampleSource(t), issuedAt, sequenceFromScheme)
 	require.NoError(t, err)
 	require.Equal(t, 1, stats.WithdrawnServices)
 	require.Empty(t, stats.DroppedEntities)
@@ -123,7 +125,7 @@ func TestBuild_DropsAnEntityWhoseEveryServiceIsWithdrawn(t *testing.T) {
 		services[0].(map[string]any)["status"] = "withdrawn"
 	})
 
-	list, stats, err := loadSource(dir, issuedAt)
+	list, stats, err := loadSource(dir, issuedAt, sequenceFromScheme)
 	require.NoError(t, err)
 	require.Empty(t, list.Entities)
 	require.Equal(t, 1, stats.WithdrawnServices)
@@ -133,7 +135,7 @@ func TestBuild_DropsAnEntityWhoseEveryServiceIsWithdrawn(t *testing.T) {
 // ServiceName is mandatory in Annex A, and it overrides the entity name for
 // display, so a service that does not name itself inherits it.
 func TestBuild_UnnamedServiceInheritsTheEntityName(t *testing.T) {
-	list, _, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt, sequenceFromScheme)
 	require.NoError(t, err)
 
 	require.Equal(t, "Example Municipality",
@@ -144,9 +146,9 @@ func TestBuild_UnnamedServiceInheritsTheEntityName(t *testing.T) {
 }
 
 func TestBuild_IsDeterministic(t *testing.T) {
-	first, _, err := loadSource(exampleSource(t), issuedAt)
+	first, _, err := loadSource(exampleSource(t), issuedAt, sequenceFromScheme)
 	require.NoError(t, err)
-	second, _, err := loadSource(exampleSource(t), issuedAt)
+	second, _, err := loadSource(exampleSource(t), issuedAt, sequenceFromScheme)
 	require.NoError(t, err)
 
 	firstRaw, err := json.Marshal(lote.Document{LoTE: first})
@@ -199,7 +201,7 @@ func writeJSON(t *testing.T, path string, value map[string]any) {
 
 func requireBuildFails(t *testing.T, dir, contains string) {
 	t.Helper()
-	_, _, err := loadSource(dir, issuedAt)
+	_, _, err := loadSource(dir, issuedAt, sequenceFromScheme)
 	require.Error(t, err)
 	require.ErrorContains(t, err, contains)
 }
@@ -234,7 +236,25 @@ func TestBuild_RejectsNeitherAPolicyNorALegalNotice(t *testing.T) {
 	requireBuildFails(t, dir, "policy_uri or legal_notice")
 }
 
-func TestBuild_RejectsAMissingSequenceNumber(t *testing.T) {
+// Clause 6.3.2 defines the sequence number relative to the list already in force,
+// which scheme.json cannot see — so the publisher's number wins wherever it has one.
+func TestBuild_ThePublishersSequenceNumberOverridesTheCuratedOne(t *testing.T) {
+	list, _, err := loadSource(exampleSource(t), issuedAt, 47)
+	require.NoError(t, err)
+	require.EqualValues(t, 47, list.SchemeInformation.SequenceNumber,
+		"--sequence-number must win over scheme.json")
+}
+
+// Curated is still honoured, so a manual or development build needs no flag.
+func TestBuild_FallsBackToTheCuratedSequenceNumber(t *testing.T) {
+	list, _, err := loadSource(exampleSource(t), issuedAt, sequenceFromScheme)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, list.SchemeInformation.SequenceNumber)
+}
+
+// Neither source supplying one is an error rather than a default: a list that
+// silently numbered itself 1 would be refused by every wallet already holding one.
+func TestBuild_RejectsASequenceNumberFromNeitherSource(t *testing.T) {
 	dir := withSource(t, func(scheme, _ map[string]any) {
 		delete(scheme, "sequence_number")
 	})
@@ -377,10 +397,35 @@ func newTestSigner(t *testing.T, country, organization string) *testSigner {
 	}
 }
 
+// A release gate diffs what `build` just produced against what `show --json` reads
+// back from the published list, so any difference between the two renderers would
+// show up as a spurious change on every publish. They share documentJSON to make
+// that structural; this pins it.
+func TestShowJson_RendersWhatBuildWrote(t *testing.T) {
+	list, _, err := loadSource(exampleSource(t), issuedAt, 12)
+	require.NoError(t, err)
+
+	built, err := documentJSON(list)
+	require.NoError(t, err)
+
+	signer := newTestSigner(t, "NL", "Yivi Example")
+	signed, err := lote.Sign(lote.Document{LoTE: list}, []*x509.Certificate{signer.leaf}, signer.key, time.Now())
+	require.NoError(t, err)
+
+	// The path `show --json` takes: verify first, then render what came back.
+	recovered, err := lote.VerifySigned(signed, signer.anchor)
+	require.NoError(t, err)
+	shown, err := documentJSON(*recovered)
+	require.NoError(t, err)
+
+	require.Equal(t, string(built), string(shown),
+		"a signed list read back must render byte-identically to the document that was built")
+}
+
 // The whole loop: a curated directory becomes a signed document the wallet's own
 // verifier accepts and its own snapshot grants from.
 func TestSign_ACuratedDirectoryGrantsThroughTheWalletsOwnChecker(t *testing.T) {
-	list, _, err := loadSource(exampleSource(t), issuedAt)
+	list, _, err := loadSource(exampleSource(t), issuedAt, sequenceFromScheme)
 	require.NoError(t, err)
 
 	signer := newTestSigner(t, "NL", "Yivi Example")
@@ -424,4 +469,76 @@ func (s stubStore) Get(listId string) ([]byte, bool) {
 func (s stubStore) Put(listId string, rawJws []byte) error {
 	s[listId] = rawJws
 	return nil
+}
+
+// ----------------------------------------------------------------------------
+// keygen
+// ----------------------------------------------------------------------------
+
+// runKeygen drives the command the way the CLI does, and returns the directory it
+// wrote to. Flags are package-level state, so every one this command reads is set
+// on each call.
+func runKeygen(t *testing.T, organization string) string {
+	t.Helper()
+	dir := t.TempDir()
+	// The root command assigns this in the real CLI; RunE logs through it.
+	Logger = logrus.New()
+	Logger.SetOutput(io.Discard)
+	require.NoError(t, loteKeygenCmd.Flags().Set("out-dir", dir))
+	require.NoError(t, loteKeygenCmd.Flags().Set("country", "NL"))
+	require.NoError(t, loteKeygenCmd.Flags().Set("organization", organization))
+	require.NoError(t, loteKeygenCmd.Flags().Set("days", "1"))
+	loteKeygenCmd.SetOut(io.Discard)
+	require.NoError(t, loteKeygenCmd.RunE(loteKeygenCmd, nil))
+	return dir
+}
+
+// keygen exists so a pull-request check can answer "would this document sign?"
+// without the real key. That is only true if the chain it writes clears every gate
+// `sign` applies: clause 6.8.0's subject binding, the digitalSignature key usage,
+// and the wallet's own verification against the CA generated alongside it.
+func TestKeygen_WritesAChainThatSignsTheExampleList(t *testing.T) {
+	dir := runKeygen(t, "Yivi Example")
+
+	chain, err := readCertificateChain(filepath.Join(dir, "signer.crt"))
+	require.NoError(t, err)
+	key, err := readSigningKey(filepath.Join(dir, "signer.key"))
+	require.NoError(t, err)
+
+	list, _, err := loadSource(exampleSource(t), issuedAt, 3)
+	require.NoError(t, err)
+
+	// lote.Sign is where clause 6.8.0 is enforced, so a subject that did not match
+	// the example scheme would fail here rather than at release.
+	signed, err := lote.Sign(lote.Document{LoTE: list}, chain, key, time.Now())
+	require.NoError(t, err)
+
+	ca, err := readCertificateChain(filepath.Join(dir, "ca.crt"))
+	require.NoError(t, err)
+	pool := x509.NewCertPool()
+	pool.AddCert(ca[0])
+	anchor := &eudi_jwt.StaticVerificationContext{VerifyOpts: x509.VerifyOptions{
+		Roots:     pool,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+	}}
+
+	_, err = lote.VerifySigned(signed, anchor)
+	require.NoError(t, err, "the generated chain must verify the way the wallet verifies")
+}
+
+// The subject is the whole reason keygen takes flags: a chain whose Organization
+// does not match the scheme must fail clause 6.8.0, or the check proves nothing.
+func TestKeygen_AMismatchedSubjectStillFailsClause680(t *testing.T) {
+	dir := runKeygen(t, "Someone Else")
+
+	chain, err := readCertificateChain(filepath.Join(dir, "signer.crt"))
+	require.NoError(t, err)
+	key, err := readSigningKey(filepath.Join(dir, "signer.key"))
+	require.NoError(t, err)
+
+	list, _, err := loadSource(exampleSource(t), issuedAt, 3)
+	require.NoError(t, err)
+
+	_, err = lote.Sign(lote.Document{LoTE: list}, chain, key, time.Now())
+	require.Error(t, err, "an Organization outside SchemeOperatorName must not sign")
 }

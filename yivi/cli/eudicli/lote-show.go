@@ -18,10 +18,16 @@ var loteShowCmd = &cobra.Command{
 
 The document is verified first — there is no way to read a LoTE in this codebase
 without its signature having held — so this also answers "is this file a valid
-list". Without --anchor the chain is not checked; see verify.`,
+list". Without --anchor the chain is not checked; see verify.
+
+With --json the document itself is printed rather than a rendering of it, which is
+what makes a published list diffable against a freshly built one. It goes through
+the same verification, so a caller never has to reach past the signature to read a
+payload.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		anchorPath, _ := cmd.Flags().GetString("anchor")
+		asJson, _ := cmd.Flags().GetBool("json")
 
 		signed, err := os.ReadFile(args[0])
 		if err != nil {
@@ -33,6 +39,17 @@ list". Without --anchor the chain is not checked; see verify.`,
 		}
 		list, err := lote.VerifySigned(signed, anchors)
 		if err != nil {
+			return err
+		}
+
+		// The same shape `build` writes and `sign` consumes, so the two are
+		// diffable against each other.
+		if asJson {
+			raw, err := documentJSON(*list)
+			if err != nil {
+				return err
+			}
+			_, err = os.Stdout.Write(raw)
 			return err
 		}
 
@@ -50,6 +67,7 @@ func init() {
 	loteCmd.AddCommand(loteShowCmd)
 
 	loteShowCmd.Flags().String("anchor", "", "PEM trust anchor to check the chain against")
+	loteShowCmd.Flags().Bool("json", false, "print the document itself rather than a rendering of it")
 }
 
 func writeScheme(out *strings.Builder, scheme lote.SchemeInformation) {
