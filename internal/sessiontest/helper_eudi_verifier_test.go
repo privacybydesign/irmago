@@ -110,11 +110,9 @@ func StartDcApiTestSessionAtEudiVerifier(openid4vpHost string, startSessionReque
 	}
 
 	return EudiDcApiVerifierSession{
-		EudiVerifierSession: EudiVerifierSession{
-			TransactionId: parsed.TransactionId,
-			Host:          openid4vpHost,
-		},
-		Request: parsed.Request,
+		TransactionId: parsed.TransactionId,
+		Host:          openid4vpHost,
+		Request:       parsed.Request,
 	}, nil
 }
 

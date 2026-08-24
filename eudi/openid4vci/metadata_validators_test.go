@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
@@ -68,9 +68,7 @@ func TestValidateCredentialConfiguration_SdJwtVc_InvalidCredentialMetadata(t *te
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: []metadata.CredentialDisplay{
 				{
-					Display: metadata.Display{
-						Name: "",
-					},
+					Name: "",
 				},
 			},
 		},
@@ -92,10 +90,8 @@ func TestValidateCredentialConfiguration_SdJwtVc_ValidCredentialMetadata(t *test
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: []metadata.CredentialDisplay{
 				{
-					Display: metadata.Display{
-						Name:   "Test Credential",
-						Locale: &locale_EN,
-					},
+					Name:   "Test Credential",
+					Locale: &locale_EN,
 				},
 			},
 		},
@@ -115,10 +111,8 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: []metadata.CredentialDisplay{
 				{
-					Display: metadata.Display{
-						Name:   "Test Credential",
-						Locale: &locale_EN,
-					},
+					Name:   "Test Credential",
+					Locale: &locale_EN,
 				},
 			},
 		},
@@ -310,10 +304,8 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: []metadata.CredentialDisplay{
 				{
-					Display: metadata.Display{
-						Name:   "Test Credential",
-						Locale: &locale_EN,
-					},
+					Name:   "Test Credential",
+					Locale: &locale_EN,
 				},
 			},
 		},
@@ -636,10 +628,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "valid single display",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Credential Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Credential Name",
+					Locale: &locale_EN,
 				},
 			},
 			wantErr: false,
@@ -648,10 +638,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "valid single display, extended locale",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Credential Name",
-						Locale: &locale_EN_US,
-					},
+					Name:   "Credential Name",
+					Locale: &locale_EN_US,
 				},
 			},
 			wantErr: false,
@@ -660,10 +648,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "missing name in display",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "",
-						Locale: &locale_EN,
-					},
+					Name:   "",
+					Locale: &locale_EN,
 				},
 			},
 			wantErr:     true,
@@ -673,10 +659,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "display without locale, should be ignored",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Issuer Name",
-						Locale: nil,
-					},
+					Name:   "Issuer Name",
+					Locale: nil,
 				},
 			},
 			wantErr: false,
@@ -685,10 +669,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "invalid logo uri",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Credential Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Credential Name",
+					Locale: &locale_EN,
 					Logo: &metadata.RemoteImage{
 						Uri: "://invalid-url",
 					},
@@ -701,10 +683,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "invalid background image uri",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Credential Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Credential Name",
+					Locale: &locale_EN,
 					BackgroundImage: &metadata.RemoteImage{
 						Uri: "://invalid-url",
 					},
@@ -717,16 +697,12 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "duplicate locale",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Credential Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Credential Name",
+					Locale: &locale_EN,
 				},
 				{
-					Display: metadata.Display{
-						Name:   "Another Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Another Name",
+					Locale: &locale_EN,
 				},
 			},
 			wantErr:     true,
@@ -736,10 +712,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "invalid locale tag",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Credential Name",
-						Locale: &invalid_Locale,
-					},
+					Name:   "Credential Name",
+					Locale: &invalid_Locale,
 				},
 			},
 			wantErr:     true,
@@ -796,10 +770,8 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 			name: "valid single display",
 			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Issuer Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Issuer Name",
+					Locale: &locale_EN,
 				},
 			},
 			wantErr: false,
@@ -808,10 +780,8 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 			name: "valid display with logo",
 			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Issuer Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Issuer Name",
+					Locale: &locale_EN,
 					Logo: &metadata.RemoteImage{
 						Uri: "https://example.com/logo.png",
 					},
@@ -823,10 +793,8 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 			name: "invalid logo uri",
 			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Issuer Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Issuer Name",
+					Locale: &locale_EN,
 					Logo: &metadata.RemoteImage{
 						Uri: "://invalid-url",
 					},
@@ -839,16 +807,12 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 			name: "duplicate locale",
 			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Issuer Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Issuer Name",
+					Locale: &locale_EN,
 				},
 				{
-					Display: metadata.Display{
-						Name:   "Another Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Another Name",
+					Locale: &locale_EN,
 				},
 			},
 			wantErr:     true,
@@ -858,10 +822,8 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 			name: "invalid locale tag",
 			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Issuer Name",
-						Locale: &invalid_Locale,
-					},
+					Name:   "Issuer Name",
+					Locale: &invalid_Locale,
 				},
 			},
 			wantErr:     true,
@@ -1135,9 +1097,9 @@ func TestGetSupportedCredentialSigningAlgorithm_Failure(t *testing.T) {
 func TestGetSupportedCredentialSigningAlgorithm_ES256K_FollowsBuildTag(t *testing.T) {
 	got, err := getSupportedCredentialSigningAlgorithm([]string{"ES256K"})
 
-	if eudi_jwt.IsSupportedSignatureAlgorithm(jwa.ES256K()) {
+	if eudi_jwt.IsSupportedSignatureAlgorithm(jwa.NewSignatureAlgorithm("ES256K")) {
 		require.NoError(t, err)
-		require.Equal(t, jwa.ES256K(), *got)
+		require.Equal(t, jwa.NewSignatureAlgorithm("ES256K"), *got)
 		return
 	}
 

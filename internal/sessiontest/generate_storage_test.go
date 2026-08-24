@@ -1,6 +1,7 @@
 package sessiontest
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -40,14 +41,18 @@ import (
 //   - OpenID4VP disclosures: test.test.email (x2, served from bbolt) plus
 //     https://localhost:8443/vct/test and https://localhost:8443/vct/organization
 //     (served from the EUDI DB, via the veramo verifier).
+//   - Status list: 1x StatusListCredentialSdJwt (vct https://localhost:8443/vct/statuslist),
+//     revoked at the issuer and then refreshed, so it is stored as revoked.
 //   - Removals, as the final actions: irma-demo.RU.studentCard + 2 spare https://localhost:8443/vct/test.
 //
 // Resulting database state:
 //   - bbolt (bbolt_client_db): irma-demo.MijnOverheid.fullName, irma-demo.MijnOverheid.singleton
 //     and test.test.email; the test.test.email SD-JWT retains 8 of 10 instances (2 consumed by
 //     OpenID4VP disclosure); irma-demo.RU.studentCard removed.
-//   - EUDI sqlcipher (eudi_client_db): one https://localhost:8443/vct/test and one
-//     https://localhost:8443/vct/organization batch remaining.
+//   - EUDI sqlcipher (eudi_client_db): one https://localhost:8443/vct/test, one
+//     https://localhost:8443/vct/organization and one https://localhost:8443/vct/statuslist
+//     batch remaining; the status-list batch carries a status.status_list reference with a
+//     LastKnownStatus of INVALID, alongside a cached Status List Token.
 //   - Activity logs (merged from both stores): all four types — issuance, disclosure, signature,
 //     removal — returned newest-first, ending with the three removals.
 func TestGenerateClientStorageForRegressionTests(t *testing.T) {
@@ -76,9 +81,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 
 	// 3. Issue singleton credential
 	issue(t, irmaServer, c, sessionHandler, 3, &irma.IssuanceRequest{
-		DisclosureRequest: irma.DisclosureRequest{
-			BaseRequest: irma.BaseRequest{LDContext: irma.LDContextIssuanceRequest},
-		},
+		LDContext: irma.LDContextIssuanceRequest,
 		Credentials: []*irma.CredentialRequest{
 			{
 				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.singleton"),
@@ -110,6 +113,19 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	// 3e. Issue an OpenID4VCI credential with deeply nested attributes
 	// (organizational credential: university -> faculties -> departments -> courses).
 	issueCredentialViaOpenID4VCI(t, c, 16, sessionHandler, "OrganizationCredentialSdJwt", organizationClaimsJSON)
+
+	// 3f. Issue a status-list credential and then revoke it, so the snapshot
+	// carries Token Status List state at rest: instances with a
+	// status.status_list{uri,idx} reference, a LastKnownStatus of INVALID, and a
+	// cached Status List Token. Revoking is what makes this worth storing — a
+	// non-revoked instance's LastKnownStatus is the zero value, so a snapshot of
+	// one would still read correctly if status storage broke entirely.
+	//
+	// RefreshStatuses is what writes the new status to storage; without it the
+	// wallet would still hold the VALID reading taken at issuance.
+	issueStatusListCredential(t, c, sessionHandler, 18)
+	revokeStatusListCredentialViaVeramo(t, statusListCredentialEmail)
+	require.NoError(t, c.RefreshStatuses(context.Background()))
 
 	// Verify credentials are present
 	creds, err := c.GetCredentials()
@@ -210,6 +226,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 		"irma-demo.MijnOverheid.singleton":        true,
 		"test.test.email":                         true,
 		"https://localhost:8443/vct/organization": true, // keep the deeply nested credential
+		"https://localhost:8443/vct/statuslist":   true, // keep the revoked status-list credential
 	}
 	creds, err = c.GetCredentials()
 	require.NoError(t, err)
