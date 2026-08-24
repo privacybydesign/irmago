@@ -76,7 +76,8 @@ func TestBuild_ReadsTheSubjectKeyIdentifierOutOfTheCertificate(t *testing.T) {
 	list, _, err := loadSource(exampleSource(t), issuedAt, sequenceFromScheme)
 	require.NoError(t, err)
 
-	expected, err := readCertificate(exampleSource(t), "example-verifier.crt")
+	expected, err := readCertificate(
+		filepath.Join(exampleSource(t), entitiesDirName, "example-municipality"), "example-verifier.crt")
 	require.NoError(t, err)
 	require.NotEmpty(t, expected.SubjectKeyId)
 
@@ -166,20 +167,24 @@ func TestBuild_IsDeterministic(t *testing.T) {
 // thing without a fixture per failure.
 func withSource(t *testing.T, edit func(scheme map[string]any, entity map[string]any)) string {
 	t.Helper()
-	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, entitiesDirName), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, certsDirName), 0o755))
+	const slug = "example-municipality"
 
+	dir := t.TempDir()
+	entityDir := filepath.Join(dir, entitiesDirName, slug)
+	require.NoError(t, os.MkdirAll(entityDir, 0o755))
+
+	sourceEntityDir := filepath.Join(exampleSource(t), entitiesDirName, slug)
 	scheme := readJSON(t, filepath.Join(exampleSource(t), schemeFileName))
-	entity := readJSON(t, filepath.Join(exampleSource(t), entitiesDirName, "example-municipality.json"))
+	entity := readJSON(t, filepath.Join(sourceEntityDir, entityFileName))
 	edit(scheme, entity)
 
 	writeJSON(t, filepath.Join(dir, schemeFileName), scheme)
-	writeJSON(t, filepath.Join(dir, entitiesDirName, "example-municipality.json"), entity)
+	writeJSON(t, filepath.Join(entityDir, entityFileName), entity)
 
-	certificate, err := os.ReadFile(filepath.Join(exampleSource(t), certsDirName, "example-verifier.crt"))
+	// The certificate lives beside the entity that names it.
+	certificate, err := os.ReadFile(filepath.Join(sourceEntityDir, "example-verifier.crt"))
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, certsDirName, "example-verifier.crt"), certificate, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(entityDir, "example-verifier.crt"), certificate, 0o644))
 	return dir
 }
 
@@ -324,7 +329,7 @@ func TestBuild_RejectsUnknownFields(t *testing.T) {
 	requireBuildFails(t, dir, "organisation_identifier")
 }
 
-func TestBuild_RejectsACertificatePathEscapingTheCertsDirectory(t *testing.T) {
+func TestBuild_RejectsACertificatePathEscapingTheEntityDirectory(t *testing.T) {
 	dir := withSource(t, func(_, entity map[string]any) {
 		services := entity["services"].([]any)
 		services[0].(map[string]any)["identity"] = map[string]any{

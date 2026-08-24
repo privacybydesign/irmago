@@ -14,20 +14,21 @@ var loteBuildCmd = &cobra.Command{
 	Short: "Build an unsigned LoTE from a curation directory",
 	Long: `Build an unsigned List of Trusted Entities from a curation directory.
 
-The directory holds the scheme's own information, one file per listed entity, and
-the certificates those entities are recognized by:
+The directory holds the scheme's own information and one directory per listed
+entity, each holding that entity and the certificates it is recognized by:
 
     trustlist/
-      scheme.json                  the scheme information and sequence number
+      scheme.json                    the scheme information
       entities/
-        example-municipality.json  one trusted entity per file
-      certs/
-        example-verifier.crt       referenced by filename from an entity
+        example-municipality/
+          entity.json                the trusted entity
+          example-verifier.crt       referenced by bare filename from entity.json
 
-Entity files are read in filename order, and certificates are read rather than
+Entities are read in directory-name order, and certificates are read rather than
 transcribed — a service keyed on "certificate_skis" gets the subject key
 identifier out of the named certificate, so an entry cannot be keyed on a value
-the wallet's lookup would never match.
+the wallet's lookup would never match. A certificate is named by bare filename and
+resolved inside its own entity's directory, so an entity can name only its own.
 
 The output is a conformant Annex A document with the signature still to come. The
 issue time is stamped now and NextUpdate derived from it, so build and sign belong

@@ -27,11 +27,16 @@ import (
 // conformant document or refuses. The field names here are ours and carry no
 // conformance weight; certificates are referenced by filename so a diff of an
 // onboarding stays readable.
+//
+// One directory per entity, holding its own certificates: onboarding a party adds
+// a directory and removing one takes its certificates with it. A shared
+// certificate directory cannot notice a file left behind by an entity that is
+// gone, and needs collision-free names that nothing enforces.
 
 const (
 	schemeFileName  = "scheme.json"
 	entitiesDirName = "entities"
-	certsDirName    = "certs"
+	entityFileName  = "entity.json"
 )
 
 // schemeSource is scheme.json: the scheme's own information, which changes far
@@ -129,11 +134,11 @@ type serviceSource struct {
 }
 
 type identitySource struct {
-	// By filename under certs/.
+	// By filename, beside the entity that names them.
 	Certificates []string `json:"certificates,omitempty"`
 
 	// CertificateSKIs pin the key rather than the certificate, also by filename
-	// under certs/: `build` reads the subject key identifier out of the named
+	// beside the entity: `build` reads the subject key identifier out of the named
 	// certificate, so an entry cannot be keyed on a value the wallet's lookup
 	// would never match. Prefer these — an entry keyed on the key keeps granting
 	// across a renewal that reuses it.
@@ -195,7 +200,7 @@ func loadSource(dir string, issuedAt time.Time, sequenceNumber uint64) (lote.Lis
 	// entries recognizing the same party can be reported with both filenames.
 	claimed := map[string]string{}
 	for _, named := range entities {
-		entity, withdrawn, err := named.source.toEntity(dir, claimed, named.file)
+		entity, withdrawn, err := named.source.toEntity(named.dir, claimed, named.file)
 		if err != nil {
 			return lote.List{}, stats, fmt.Errorf("%s: %w", named.file, err)
 		}
@@ -224,15 +229,17 @@ func readSchemeSource(dir string) (schemeSource, error) {
 	return scheme, nil
 }
 
-// namedEntitySource keeps the filename alongside the parsed entity, so every
-// error names the file a curator has to open.
+// namedEntitySource keeps the entity's paths alongside the parsed entity: `file`
+// so every error names what a curator has to open, `dir` because certificates
+// resolve against the entity's own directory.
 type namedEntitySource struct {
 	file   string
+	dir    string
 	source entitySource
 }
 
 func readEntitySources(dir string) ([]namedEntitySource, error) {
-	pattern := filepath.Join(dir, entitiesDirName, "*.json")
+	pattern := filepath.Join(dir, entitiesDirName, "*", entityFileName)
 	paths, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, err
@@ -253,11 +260,12 @@ func readEntitySources(dir string) ([]namedEntitySource, error) {
 			return nil, err
 		}
 		var entity entitySource
-		relative := filepath.Join(entitiesDirName, filepath.Base(path))
+		entityDir := filepath.Dir(path)
+		relative := filepath.Join(entitiesDirName, filepath.Base(entityDir), entityFileName)
 		if err := strictUnmarshal(raw, &entity); err != nil {
 			return nil, fmt.Errorf("%s: %w", relative, err)
 		}
-		entities = append(entities, namedEntitySource{file: relative, source: entity})
+		entities = append(entities, namedEntitySource{file: relative, dir: entityDir, source: entity})
 	}
 	return entities, nil
 }
@@ -399,7 +407,7 @@ func (a addressSource) validate(field string) (validatedAddress, error) {
 // toEntity converts one curation file, reporting how many of its services were
 // left out as withdrawn. One with none left comes back empty for the caller to
 // drop.
-func (e entitySource) toEntity(dir string, claimed map[string]string, file string) (lote.Entity, int, error) {
+func (e entitySource) toEntity(entityDir string, claimed map[string]string, file string) (lote.Entity, int, error) {
 	var entity lote.Entity
 
 	if e.Name["en"] == "" {
@@ -446,7 +454,7 @@ func (e entitySource) toEntity(dir string, claimed map[string]string, file strin
 			continue
 		}
 
-		service, err := source.toService(dir, e.Name, claimed, file)
+		service, err := source.toService(entityDir, e.Name, claimed, file)
 		if err != nil {
 			return entity, 0, fmt.Errorf("services[%d]: %w", i, err)
 		}
@@ -456,7 +464,7 @@ func (e entitySource) toEntity(dir string, claimed map[string]string, file strin
 }
 
 func (s serviceSource) toService(
-	dir string,
+	entityDir string,
 	entityName map[string]string,
 	claimed map[string]string,
 	file string,
@@ -468,7 +476,7 @@ func (s serviceSource) toService(
 		return service, err
 	}
 
-	identity, err := s.Identity.toDigitalIdentity(dir, role, claimed, file)
+	identity, err := s.Identity.toDigitalIdentity(entityDir, role, claimed, file)
 	if err != nil {
 		return service, err
 	}
@@ -499,7 +507,7 @@ func (s serviceSource) toService(
 }
 
 func (i identitySource) toDigitalIdentity(
-	dir string,
+	entityDir string,
 	role trust.Role,
 	claimed map[string]string,
 	file string,
@@ -523,7 +531,7 @@ func (i identitySource) toDigitalIdentity(
 	}
 
 	for _, name := range i.Certificates {
-		cert, err := readCertificate(dir, name)
+		cert, err := readCertificate(entityDir, name)
 		if err != nil {
 			return identity, err
 		}
@@ -534,7 +542,7 @@ func (i identitySource) toDigitalIdentity(
 	}
 
 	for _, name := range i.CertificateSKIs {
-		cert, err := readCertificate(dir, name)
+		cert, err := readCertificate(entityDir, name)
 		if err != nil {
 			return identity, err
 		}
@@ -562,13 +570,15 @@ func (i identitySource) toDigitalIdentity(
 	return identity, nil
 }
 
-// readCertificate reads a certificate from certs/, accepting PEM or raw DER.
-func readCertificate(dir, name string) (*x509.Certificate, error) {
-	// Rejected rather than cleaned: a path escaping certs/ is worth reporting.
+// readCertificate reads a certificate from the entity's own directory, accepting
+// PEM or raw DER.
+func readCertificate(entityDir, name string) (*x509.Certificate, error) {
+	// Rejected rather than cleaned: a path leaving the entity's directory is worth
+	// reporting. An entity can name only its own certificates.
 	if name != filepath.Base(name) {
-		return nil, fmt.Errorf("certificate %q must be a bare filename under %s/", name, certsDirName)
+		return nil, fmt.Errorf("certificate %q must be a bare filename beside %s", name, entityFileName)
 	}
-	path := filepath.Join(dir, certsDirName, name)
+	path := filepath.Join(entityDir, name)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read certificate %s: %w", name, err)
