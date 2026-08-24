@@ -441,7 +441,7 @@ func credentialConfigurationTypeIdentity(config metadata.CredentialConfiguration
 }
 
 func convertClaimsToAttributes(claims []metadata.ClaimsDescription, locale string) []clientmodels.Attribute {
-	var attrs []clientmodels.Attribute
+	attrs := []clientmodels.Attribute{}
 	for _, claim := range claims {
 		displays := metadata.ToTranslateableList(claim.Display)
 		displayName := clientmodels.ResolvePtr(metadata.ConvertDisplayToTranslatedString(displays), locale)
