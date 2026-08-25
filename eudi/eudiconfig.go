@@ -25,12 +25,32 @@ func init() {
 }
 
 // ExtraTrustAnchor is one trust anchor a wallet is built with beyond the pinned
-// Yivi roots: the PEM chain (leaf-to-root order, root last) and the trust level
-// certificates under it confer. Promoting a CA is a change to this data rather
-// than to code.
+// Yivi roots. Promoting a CA is a change to this data rather than to code.
+//
+// The same type serves all three trust models; what differs is only whether
+// Confers means anything.
 type ExtraTrustAnchor struct {
-	PEM     []byte
+	// PEM is the anchor chain, leaf-to-root with the root last.
+	PEM []byte
+
+	// Confers is the trust level certificates under this anchor earn their party.
+	//
+	// Ignored for trust-list anchors: a signing chain says whether a list is
+	// genuine, never what a grant on it is worth. That is its source's word
+	// (lote.Source.Confers).
 	Confers clientmodels.TrustLevel
+
+	// CRLDistributionPoints is where this anchor's revocation lists are fetched
+	// from. Usually unnecessary: addTrustAnchors registers the distribution points
+	// of every intermediate as it walks the chain, so an anchor carrying a CA
+	// certificate that advertises its CRL is already covered.
+	//
+	// It matters for a root-only chain. Nothing is walked, a root's own extension
+	// is never read, and revocation checking treats an absent CRL as "not revoked"
+	// (utils.VerifyCertificateAgainstIssuerRevocationLists). An anchor that
+	// contributes no distribution point is one whose certificates can never be
+	// revoked, and addTrustAnchors says so in the log.
+	CRLDistributionPoints []string
 }
 
 // Configuration keeps track of issuer and requestor trusted chains and certificate revocation lists,
@@ -56,10 +76,9 @@ type Configuration struct {
 	ExtraIssuerTrustAnchors   []ExtraTrustAnchor
 	ExtraVerifierTrustAnchors []ExtraTrustAnchor
 
-	// ExtraTrustListTrustAnchors are anchors for list signatures. Bare PEM rather
-	// than [ExtraTrustAnchor]: a signing chain confers no level, since what a
-	// listing is worth is its source's word (lote.Source.Confers).
-	ExtraTrustListTrustAnchors [][]byte
+	// ExtraTrustListTrustAnchors are anchors a recognized list's signature may
+	// chain to. Their Confers is ignored.
+	ExtraTrustListTrustAnchors []ExtraTrustAnchor
 }
 
 // NewConfiguration returns a new configuration. After this ParseFolder() should be called to parse the specified path.
@@ -129,23 +148,25 @@ func (c *Configuration) Reload() error {
 	}
 
 	for _, anchor := range c.ExtraIssuerTrustAnchors {
+		c.Issuers.addRevocationListDistributionPoints(anchor.CRLDistributionPoints...)
 		if err := c.Issuers.addTrustAnchors(anchor.Confers, anchor.PEM); err != nil {
 			return fmt.Errorf("failed to add extra issuer trust anchor: %v", err)
 		}
 	}
 	for _, anchor := range c.ExtraVerifierTrustAnchors {
+		c.Verifiers.addRevocationListDistributionPoints(anchor.CRLDistributionPoints...)
 		if err := c.Verifiers.addTrustAnchors(anchor.Confers, anchor.PEM); err != nil {
 			return fmt.Errorf("failed to add extra verifier trust anchor: %v", err)
 		}
 	}
-	for _, pem := range c.ExtraTrustListTrustAnchors {
-		// Unevaluated: nothing classifies against this model, so the level is not
-		// a statement anyone reads.
-		if err := c.TrustLists.addTrustAnchors(clientmodels.TrustLevel_Unevaluated, pem); err != nil {
+	for _, anchor := range c.ExtraTrustListTrustAnchors {
+		c.TrustLists.addRevocationListDistributionPoints(anchor.CRLDistributionPoints...)
+		// Unevaluated rather than anchor.Confers: nothing classifies against this
+		// model, so a level here would be a statement no one reads.
+		if err := c.TrustLists.addTrustAnchors(clientmodels.TrustLevel_Unevaluated, anchor.PEM); err != nil {
 			return fmt.Errorf("failed to add extra trust list trust anchor: %v", err)
 		}
 	}
-
 	// Read the trust anchors from storage
 	if err := c.Issuers.Reload(); err != nil {
 		return fmt.Errorf("failed to load issuer trust model: %v", err)

@@ -101,12 +101,11 @@ type Config struct {
 	ExtraIssuerTrustAnchors   []eudi.ExtraTrustAnchor
 	ExtraVerifierTrustAnchors []eudi.ExtraTrustAnchor
 
-	// PEM anchors a recognized list's signature may chain to, on top of the pinned
+	// Anchors a recognized list's signature may chain to, on top of the pinned
 	// Yivi trust-list root. Separate from the issuer anchors: a certificate that
-	// may issue credentials must not thereby define who is trusted. No level
-	// accompanies them — a signing chain says whether the list is genuine, never
-	// what a grant on it is worth (lote.Source.Confers).
-	ExtraTrustListTrustAnchors [][]byte
+	// may issue credentials must not thereby define who is trusted. Their Confers
+	// is ignored — what a listing is worth is lote.Source.Confers.
+	ExtraTrustListTrustAnchors []eudi.ExtraTrustAnchor
 }
 
 func New(cfg Config) (*Client, error) {
@@ -187,8 +186,12 @@ func New(cfg Config) (*Client, error) {
 	//
 	// A list's signature is validated against the trust-list anchors, not the issuer
 	// ones: sharing the issuer pool would let any certificate that may issue
-	// credentials sign a document the wallet accepts as Yivi's list, since the only
-	// other things checked (SchemeName, LoTEType) are public.
+	// credentials sign a document the wallet accepts as a recognized list.
+	//
+	// One pool for every source, deliberately. Both the source set and the anchor
+	// set are compiled in, so a list that verifies here is one Yivi added against a
+	// CA Yivi anchored for this purpose. What separates two such lists is the
+	// LoTEType check and, between environments, their separate signing CAs.
 	trustChecker := lote.NewChecker(lote.Config{
 		Sources:     cfg.RecognizedTrustLists,
 		X509Context: &eudiConf.TrustLists,

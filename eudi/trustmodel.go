@@ -225,6 +225,17 @@ func (tm *TrustModel) getIntermediateCertificateVerificationOptions() x509.Verif
 // addTrustAnchors installs trust anchor chains, recording confers as the trust
 // level every root in them passes on to the certificates that validate to it.
 func (tm *TrustModel) addTrustAnchors(confers clientmodels.TrustLevel, trustAnchors ...[]byte) error {
+	// An anchor that yields no revocation endpoint is one whose certificates can
+	// never be revoked: an absent CRL reads as "not revoked", and only
+	// intermediates are scanned below — a root's own extension is never read. That
+	// is silent everywhere else, so it is said here.
+	before := len(tm.revocationListsDistributionPoints)
+	defer func() {
+		if len(tm.revocationListsDistributionPoints) == before {
+			tm.logger.Warnf("Trust anchor added with no CRL distribution point: certificates under it cannot be revoked")
+		}
+	}()
+
 	for _, bts := range trustAnchors {
 		chain, err := utils.ParsePemCertificateChain(bts)
 		if err != nil {

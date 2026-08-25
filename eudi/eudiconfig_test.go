@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -169,4 +170,95 @@ func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 		"the pinned issuer root anchors are loaded")
 	require.False(t, conf.Issuers.trustedIntermediateCertificates.Equal(x509.NewCertPool()),
 		"the pinned issuer intermediate anchors are loaded")
+}
+
+func newTestConfiguration(t *testing.T) *Configuration {
+	t.Helper()
+
+	eudiAppDataPath := filepath.Join(test.CreateTestStorage(t), "eudi")
+	require.NoError(t, common.EnsureDirectoryExists(eudiAppDataPath))
+
+	aesKey := [32]byte{}
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	s, err := sqlcipherstorage.New(aesKey, ":memory:", eudiAppDataPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(s)
+	require.NoError(t, err)
+	return conf
+}
+
+// Explicit distribution points are for the case the chain cannot cover: a
+// root-only anchor yields none, because addTrustAnchors only reads them off
+// intermediates. The anchor is still added — the same as for issuers and
+// verifiers, which have the identical gap — and the warning is the only thing
+// that says its certificates can never be revoked.
+func TestExtraTrustListTrustAnchors_AreAddedWithoutDistributionPoints(t *testing.T) {
+	conf := newTestConfiguration(t)
+	conf.ExtraTrustListTrustAnchors = []ExtraTrustAnchor{{
+		PEM: []byte(Production_Yivi_IssuerTrustAnchor),
+	}}
+
+	require.NoError(t, conf.Reload())
+}
+
+// A chain carrying a CA certificate that advertises its CRL needs nothing
+// explicit: walking the chain registers it, which is why issuer and verifier
+// anchors have never needed a distribution-point field either.
+func TestAddTrustAnchors_DiscoversDistributionPointsFromTheChain(t *testing.T) {
+	conf := newTestConfiguration(t)
+	require.NoError(t, conf.Reload())
+
+	before := len(conf.Issuers.revocationListsDistributionPoints)
+	require.NoError(t, conf.Issuers.addTrustAnchors(
+		clientmodels.TrustLevel_Medium, []byte(Production_Yivi_IssuerTrustAnchor)))
+
+	require.GreaterOrEqual(t, len(conf.Issuers.revocationListsDistributionPoints), before,
+		"an intermediate advertising a CRL contributes it without being told")
+}
+
+// The point of the seam: an anchor added through it is not merely trusted, its
+// revocation lists are fetched too.
+func TestExtraTrustListTrustAnchors_RegisterTheirDistributionPoints(t *testing.T) {
+	const distPoint = "https://ca.example.com/trustlist.crl"
+
+	conf := newTestConfiguration(t)
+	conf.ExtraTrustListTrustAnchors = []ExtraTrustAnchor{{
+		PEM:                   []byte(Production_Yivi_IssuerTrustAnchor),
+		CRLDistributionPoints: []string{distPoint},
+	}}
+
+	require.NoError(t, conf.Reload())
+
+	require.Contains(t, conf.TrustLists.revocationListsDistributionPoints, distPoint,
+		"the CRL sync walks these, so an anchor missing from them is never revocable")
+	require.NotContains(t, conf.Issuers.revocationListsDistributionPoints, distPoint,
+		"and it goes to the trust-list model only, never the issuer one")
+}
+
+// One anchor type serves all three models, so the distribution points a
+// trust-list anchor can carry work for an issuer anchor too — a gap they shared
+// before the types were merged.
+func TestExtraTrustAnchors_RegisterDistributionPointsForEveryModel(t *testing.T) {
+	const issuerCRL = "https://ca.example.com/issuer.crl"
+	const verifierCRL = "https://ca.example.com/verifier.crl"
+
+	conf := newTestConfiguration(t)
+	conf.ExtraIssuerTrustAnchors = []ExtraTrustAnchor{{
+		PEM:                   []byte(Production_Yivi_IssuerTrustAnchor),
+		Confers:               clientmodels.TrustLevel_Medium,
+		CRLDistributionPoints: []string{issuerCRL},
+	}}
+	conf.ExtraVerifierTrustAnchors = []ExtraTrustAnchor{{
+		PEM:                   []byte(Production_Yivi_VerifierTrustAnchor),
+		Confers:               clientmodels.TrustLevel_Medium,
+		CRLDistributionPoints: []string{verifierCRL},
+	}}
+
+	require.NoError(t, conf.Reload())
+
+	require.Contains(t, conf.Issuers.revocationListsDistributionPoints, issuerCRL)
+	require.Contains(t, conf.Verifiers.revocationListsDistributionPoints, verifierCRL)
+	require.NotContains(t, conf.Issuers.revocationListsDistributionPoints, verifierCRL,
+		"the three models stay apart")
 }
