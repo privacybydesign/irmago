@@ -110,7 +110,9 @@ monolithic test file:
 | `crypto_test.go` | `TestTag24WrapUnwrapRoundTrip` | `tag24Unwrap` is the exact inverse of `tag24Wrap` — wrapped bytes carry a real CBOR tag 24, and the round-tripped value matches the original |
 | `crypto_test.go` | `TestTag24WrapWithModeUsesGivenEncMode` | `tag24WrapWithMode`'s inner payload is encoded with the `EncMode` actually passed in (using `avTimeEncMode`'s RFC3339 tagging as the observable difference), not `cbor.Marshal`'s default mode |
 | `crypto_test.go` | `TestValidityInfoUsesRFC3339Tag` | Confirms `signed`/`validFrom`/`validUntil` are CBOR tag-0 RFC3339 strings, matching the AV Blueprint's own worked example, not a bare Unix epoch integer |
-| `holder_test.go` | `TestDeviceAuthPayloadIsDetached` | Transmitted `deviceAuth` has `payload = null` (detached), matching the spec's `deviceSignature` example |
+| `wireformat_test.go` | `TestDeviceAuthPayloadIsDetached` | Transmitted `deviceAuth` has `payload = null` (detached), matching the spec's `deviceSignature` example |
+| `holder_signer_test.go` | `TestOpaqueSignerProducesVerifiableDeviceAuth` | A device key reached only through `crypto.Signer` — no method returns the private half, as with a StrongBox / Secure Enclave key handle — produces a `deviceAuth` the verifier accepts, and is called exactly once with a 32-byte digest and nil `SignerOpts`, pinning the contract a hardware wrapper must honour |
+| `holder_signer_test.go` | `TestNewHolderFromSignerRejectsNonP256` | A P-384 device key is refused at construction, where the error can name the curve, rather than at signing time where it yields a wrong-width signature the verifier rejects for no stated reason |
 | `issuer_test.go` | `TestClaimOrderingIsRandomized` | Issues the same claims 30 times, confirms `digestID` assignment varies across issuances (not a fixed/predictable order) while every claim stays reachable via its digestID |
 | `issuer_test.go` | `TestIssueAcceptsArbitraryDocTypeAndClaims` | `Issue()` signs any docType/namespace/claims combination as given (age verification, PID, mDL, email) — pins the doc-type-agnostic contract described under "Data model" |
 | `verifier_test.go` | `TestUntrustedRootIsRejected` | Attacker's own valid IACA→DS chain, signed correctly, still rejected — root isn't in the verifier's trust pool |
@@ -269,10 +271,47 @@ authentication (every presentation): deviceAuth proves "I am that key, right now
 ```
 
 The real client generates and stores this device key the same way it does for SD-JWT
-holder-binding keys — via `eudi/services.HolderBindingKeyService.CreateKeyPairsWithProofs`
-— then reconstructs a signing-capable `Holder` from the stored PKCS#8 private key at
-presentation time via `mdoc.NewHolderFromPrivateKey` (see
-`eudi/openid4vp/mdoc_dcql.PrepareDisclosure`).
+holder-binding keys — via `eudi/services.HolderBindingKeyService.CreateKeyPairsWithProofs`.
+At presentation time `mdoc_dcql.PrepareDisclosure` does not load that key. It reads the
+device public key out of the credential's own MSO (`mdoc.DeviceKeyFromIssuerAuth`) and asks
+a `mdoc_dcql.DeviceKeyBinder` for a `Holder` that can sign with the matching private half.
+The default binder, `services.NewMdocDeviceKeyBinder`, looks the key up by the JWK
+thumbprint of that public key — the identity the format parser recorded at issuance — and
+returns a software `Holder` over the stored PKCS#8 key.
+
+Asking the *credential* which key must sign, rather than the key record joined to it, is
+what makes the signature verifiable at all: `deviceKeyInfo` in the MSO is what the verifier
+checks the device signature against, so a signer resolved from anywhere else can produce a
+presentation that transmits fine and fails only at the verifier.
+
+`Holder` is an interface — `PublicKey` and `SignDeviceAuth`, the only two operations that
+need the device key — precisely so the private half does not have to exist in this
+process. `DefaultHolder` is the software implementation, and it reaches its key only
+through `crypto.Signer`, so a key living in StrongBox / TrustZone / the Secure Enclave
+needs no new signing code here: wrap the platform's key handle with
+`mdoc.NewHolderFromSigner` and the rest of the flow is unchanged (`holder_signer_test.go`
+proves it against a signer that has no method returning its private key). Two things such
+a wrapper must honour, because go-cose drives it as an opaque signer: it is handed an
+already-computed 32-byte SHA-256 digest with nil `SignerOpts`, so it must assume SHA-256
+rather than read the hash function out of opts, and it must return an ASN.1 DER `(r, s)`
+sequence — which is what Android Keystore's `SHA256withECDSA` produces. The curve is
+checked at construction rather than left to signing time, since a non-P-256 key otherwise
+yields a signature of the wrong width that fails at the verifier with nothing naming the
+cause.
+
+The presentation path is therefore already free of key material: no part of `mdoc_dcql`
+sees a private key, and swapping `services.NewMdocDeviceKeyBinder` for a binder that
+returns `NewHolderFromSigner(platformKeyHandle)` is the whole change needed to sign mdoc
+presentations in hardware. `devicekeybinder_test.go` presents with a signer that has no
+method returning its private key and the verifier accepts the result.
+
+What is *not* done is the issuance half. `HolderBindingKeyService` still generates an
+extractable software key, and `models.HolderBindingKey.PrivateKey` is `not null`, so a
+hardware wallet needs a key-generation path that stores a platform key handle in place of
+PKCS#8 bytes (`openid4vci.HolderKeyBinder` is the seam for that — its doc comment already
+describes the WSCA/HSM implementation) plus a migration making the private-key column
+optional. Until then the device key is generated in software; the presentation seam simply
+no longer stands in the way.
 
 ---
 
@@ -304,9 +343,24 @@ reference issuer's own credential configuration
 (`age_verification_mdoc.json` in
 `ghcr.io/eu-digital-identity-wallet/eudi-srv-web-issuing-eudiw-py`), which declares
 `doctype: eu.europa.ec.av.1` and claims at
-`["eu.europa.ec.av.1", "age_over_NN"]` — `age_over_18` with `mandatory: true`, and
-`age_over_13/15/16/21/23/25` with `mandatory: false`. That is the strongest evidence
-for the attribute set, being a running implementation rather than prose.
+`["eu.europa.ec.av.1", "age_over_NN"]`. As of image `0.9.4`, read from the running
+container's live metadata on 2026-08-25, that is thirteen claims: `age_over_18`
+with `mandatory: true`, and `age_over_13/15/16/21/23/25/27/28/40/60/65/67` with
+`mandatory: false`, each carrying an `en` display name of the form "Age Over NN".
+That is the strongest evidence for the attribute set, being a running
+implementation rather than prose.
+
+It is evidence of that implementation's choice, though, and not of a limit. An
+earlier revision of this paragraph recorded six optional thresholds against the
+same pinned image, which already advertised twelve — read the metadata rather than
+trusting this list, since a claim about a running container is only as good as the
+day it was checked.
+
+Nothing in the Blueprint enumerates the thresholds, and the issuer does not
+enforce its own list either: it mints an `age_over_NN` absent from the advertised
+set without complaint. What actually constrains a deployment is the relying party
+certificate's authorized attributes, a policy decision per verifier rather than a
+property of the profile.
 
 An earlier revision of this section cited "Annex A §4.1.1 and §4.1.2" and added "no
 other attributes permitted". Neither survived checking: the Blueprint's own data-model

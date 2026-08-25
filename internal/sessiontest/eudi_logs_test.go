@@ -458,10 +458,14 @@ func testEudiCredentialRemovalLogHasAttributes(t *testing.T) {
 // that shape survives into the log. Deletion is reachable from a button in the
 // wallet, so a wrong claim path or a missing format here is user-visible.
 func testMdocCredentialRemovalCreatesLog(t *testing.T) {
-	c, _ := createClientWithoutKeyshareEnrollment(t, nil)
+	c, sessionHandler := createPidIssuerTestClient(t)
 	defer c.Close()
 
-	seedAvMdoc(t, c)
+	// Issued for real rather than written into storage: the shape this test is
+	// about -- an mdoc whose stored claims are namespace -> elementIdentifier --
+	// is the issuance path's output, so a fixture built by the test would be
+	// asserting that the test agrees with itself.
+	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
@@ -491,25 +495,48 @@ func testMdocCredentialRemovalCreatesLog(t *testing.T) {
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc}, removed.Formats,
 		"the removal log must file the entry under mso_mdoc, which is what every format-keyed read depends on")
 
-	// The claim keeps the two-component [namespace, elementIdentifier] path.
-	// Flattening it to a bare element name would put the log at odds with the
+	// Every claim keeps its two-component [namespace, elementIdentifier] path.
+	// Flattening one to a bare element name would put the log at odds with the
 	// disclosure plan, which addresses mdoc claims by the qualified path.
-	requireAttrsInOrder(t, removed.Attributes, expectedAttr{
-		Path:  []any{avDocType, "age_over_18"},
-		Value: boolVal(true),
-	})
-	require.Nil(t, removed.Attributes[0].DisplayName,
-		"the AV profile publishes no claim display metadata, so the log carries no label")
+	//
+	// The elements are checked by shape rather than by name: which age_over_NN
+	// booleans this configuration carries is the issuer's to decide, and pinning
+	// them here would make the test fail on an issuer config change that breaks
+	// nothing about removal logging. The same reasoning as the issuance subtest,
+	// which asserts the namespace and the boolean type and not the identifiers.
+	require.NotEmpty(t, removed.Attributes, "the removal log must carry the credential attributes")
+	for i, attr := range removed.Attributes {
+		require.Len(t, attr.ClaimPath, 2,
+			"attribute %d lost its qualified [namespace, elementIdentifier] path", i)
+		require.Equal(t, avDocType, attr.ClaimPath[0],
+			"attribute %d is not in the namespace named after the docType", i)
+		require.NotNil(t, attr.Value, "attribute %d has no value", i)
+		require.NotNil(t, attr.Value.Bool, "attribute %d should be an age_over_NN boolean", i)
+	}
+	// Every claim carries its label. The AV configuration's credential_metadata
+	// publishes a display entry per claim ("Age Over 18" for
+	// ["eu.europa.ec.av.1", "age_over_18"]), and the removal log snapshots the
+	// resolved text at removal time.
+	//
+	// This asserted the opposite until the seeded fixture was removed -- that an
+	// mdoc removal log carries no label, "because the AV profile publishes no claim
+	// display metadata". The profile does publish it; the seed did not, and the
+	// assertion had frozen the seed's poverty into a claim about the AV profile.
+	for i, attr := range removed.Attributes {
+		require.NotNil(t, attr.DisplayName, "attribute %d lost its label", i)
+		require.NotEmpty(t, *attr.DisplayName, "attribute %d has an empty label", i)
+	}
 
 	// The batch timestamps come along; they are what dates the entry in the UI.
 	require.NotNil(t, removed.IssuanceDate, "removal log should carry the issuance date")
 	require.NotNil(t, removed.ExpiryDate, "removal log should carry the expiry date")
 
 	// A locale switch makes the log layer re-resolve its text, and the batch it
-	// would resolve against is now deleted. Removal logs snapshot their text, and
-	// an mdoc batch is the case with no credential display metadata to fall back
-	// on, so this is where a re-resolution that assumes the credential still
-	// exists would surface.
+	// would resolve against is now deleted. Removal logs snapshot their text at
+	// removal time, so the labels must come back unchanged -- still the "en" text
+	// the issuer published, because that is the only locale its metadata carries.
+	// A re-resolution that assumed the credential still existed would surface here
+	// as an empty label rather than the snapshot.
 	c.SetLocale("nl")
 	logs, err = c.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -518,10 +545,35 @@ func testMdocCredentialRemovalCreatesLog(t *testing.T) {
 	require.NotNil(t, removalLog, "the removal log must survive the credential it describes")
 	require.Len(t, removalLog.RemovalLog.Credentials, 1)
 	require.Equal(t, avDocType, removalLog.RemovalLog.Credentials[0].CredentialId)
-	requireAttrsInOrder(t, removalLog.RemovalLog.Credentials[0].Attributes, expectedAttr{
-		Path:  []any{avDocType, "age_over_18"},
-		Value: boolVal(true),
-	})
+
+	// Both issued booleans are logged. They are found by path rather than by
+	// position: which order the namespaced claim map yields them in is not
+	// something the removal log promises, and pinning it would fail on a change
+	// that breaks nothing.
+	nlAttrs := removalLog.RemovalLog.Credentials[0].Attributes
+	require.Len(t, nlAttrs, 2, "both issued age_over_NN booleans should be logged")
+	for _, expected := range []struct {
+		element string
+		label   string
+	}{
+		{"age_over_18", "Age Over 18"},
+		{"age_over_21", "Age Over 21"},
+	} {
+		var found *clientmodels.Attribute
+		for i, attr := range nlAttrs {
+			if clientmodels.ClaimPathKey(attr.ClaimPath) ==
+				clientmodels.ClaimPathKey([]any{avDocType, expected.element}) {
+				found = &nlAttrs[i]
+				break
+			}
+		}
+		require.NotNil(t, found, "the removal log lost %s", expected.element)
+		require.Equal(t, boolVal(true), found.Value, "%s should be true", expected.element)
+		require.NotNil(t, found.DisplayName, "%s lost its snapshotted label", expected.element)
+		require.Equal(t, expected.label, *found.DisplayName,
+			"%s should keep the label snapshotted at removal time, not re-resolve under nl",
+			expected.element)
+	}
 }
 
 // organizationClaimsJSON is the deeply nested structure used by OrganizationCredentialSdJwt.

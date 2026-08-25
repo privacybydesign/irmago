@@ -5,7 +5,6 @@ package mdoc_dcql
 
 import (
 	"crypto/ecdsa"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -23,19 +22,46 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
+// DeviceKeyBinder resolves the device key an mdoc presentation must be signed
+// with, given the device public key the credential's own MSO is bound to -- the
+// same key the verifier will check the resulting signature against.
+//
+// It exists so the device private key does not have to reach this package, and
+// need not exist in this process at all. The wallet's default implementation
+// (services.NewMdocDeviceKeyBinder) reads the stored PKCS#8 key, which is
+// software all the way down; an implementation backed by a WSCA/HSM or by
+// StrongBox / TrustZone / the Secure Enclave returns a mdoc.Holder built on a
+// platform key handle instead (mdoc.NewHolderFromSigner), and nothing here
+// changes. This mirrors sdjwt.KeyBinder, which eudi_sdjwt_dcql is handed for the
+// same reason -- and which is why that handler never touches key material either.
+type DeviceKeyBinder interface {
+	HolderForDeviceKey(deviceKey *ecdsa.PublicKey) (stdmdoc.Holder, error)
+}
+
 // MdocDcqlHandler implements dcql.DcqlCredentialQueryHandler for mso_mdoc
 // credentials stored in the eudi storage (SQLite).
 type MdocDcqlHandler struct {
 	storage         storage.Storage
 	credentialStore db.CredentialStore
+	deviceKeys      DeviceKeyBinder
 	currentLocale   *clientmodels.CurrentLocale
 }
 
 // NewMdocDcqlHandler creates a new handler.
-func NewMdocDcqlHandler(eudiStorage storage.Storage, currentLocale *clientmodels.CurrentLocale) *MdocDcqlHandler {
+//
+// deviceKeys signs the DeviceAuthentication of every presentation this handler
+// prepares. Pass services.NewMdocDeviceKeyBinder(db.NewHolderBindingKeyStore(
+// eudiStorage.Db())) for the default software, storage-backed signer, or a
+// hardware-backed implementation to keep the device private key out of process.
+func NewMdocDcqlHandler(
+	eudiStorage storage.Storage,
+	currentLocale *clientmodels.CurrentLocale,
+	deviceKeys DeviceKeyBinder,
+) *MdocDcqlHandler {
 	return &MdocDcqlHandler{
 		storage:         eudiStorage,
 		credentialStore: db.NewCredentialStore(eudiStorage.Db()),
+		deviceKeys:      deviceKeys,
 		currentLocale:   currentLocale,
 	}
 }
@@ -82,6 +108,17 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 		return nil, fmt.Errorf(
 			"mso_mdoc credential query %q requests no claims; an mdoc presentation has no always-disclosed payload, so it must name the elements to disclose",
 			query.Id)
+	}
+
+	// Every claim path is checked before any matching, so a malformed query is
+	// reported as malformed. Left to matching, it comes back as "no candidates",
+	// which the verifier cannot tell apart from a wallet that simply does not
+	// hold the credential -- the one answer that makes a query bug look like a
+	// user's empty wallet.
+	for _, claim := range query.Claims {
+		if _, _, err := mdocPathParts(claim.Path); err != nil {
+			return nil, fmt.Errorf("mso_mdoc credential query %q: %w", query.Id, err)
+		}
 	}
 
 	batches, err := h.credentialStore.GetBatchesByDocType(docType)
@@ -161,9 +198,6 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 		if err != nil {
 			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
 		}
-		if instance.HolderBindingKey == nil {
-			return nil, fmt.Errorf("mdoc credential instance %s has no holder binding key", instance.ID)
-		}
 
 		var doc stdmdoc.MDoc
 		if err := cbor.Unmarshal(instance.RawCredential, &doc); err != nil {
@@ -175,11 +209,21 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 			return nil, fmt.Errorf("selective disclosure: %w", err)
 		}
 
-		privKey, err := decodeECDSAPrivateKey(instance.HolderBindingKey.PrivateKey)
+		// Which key must sign is asked of the credential, not of the key record
+		// joined to it: the MSO's deviceKeyInfo is what the issuer bound this
+		// credential to and what the verifier checks the device signature
+		// against, so a signer resolved from it is the only one that can produce
+		// a presentation that verifies. The private half stays behind the binder,
+		// which is what allows it to live in hardware -- see DeviceKeyBinder.
+		deviceKey, err := stdmdoc.DeviceKeyFromIssuerAuth(doc.IssuerSigned.IssuerAuth)
 		if err != nil {
-			return nil, fmt.Errorf("decode holder binding key: %w", err)
+			return nil, fmt.Errorf("read device key of stored mdoc instance %s: %w", instance.ID, err)
 		}
-		holder := stdmdoc.NewHolderFromPrivateKey(privKey)
+
+		holder, err := h.deviceKeys.HolderForDeviceKey(deviceKey)
+		if err != nil {
+			return nil, fmt.Errorf("no device key available to sign for credential instance %s: %w", instance.ID, err)
+		}
 
 		// Which handover deviceAuth signs is decided by the transport the request
 		// arrived on, never by inspecting the values: the DC API's origin-prefixed
@@ -275,16 +319,21 @@ func unmarshalResolvedClaims(batch *models.CredentialBatch) (map[string]map[stri
 // mdocPathParts splits a DCQL claim path into its mandatory [namespace,
 // elementIdentifier] components. mso_mdoc claim paths are always exactly two
 // string components deep -- ISO 18013-5 has no nested claims, unlike SD-JWT.
-func mdocPathParts(path []any) (namespace, elementIdentifier string, ok bool) {
+func mdocPathParts(path []any) (namespace, elementIdentifier string, err error) {
 	if len(path) != 2 {
-		return "", "", false
+		return "", "", fmt.Errorf(
+			"mso_mdoc claim path must be exactly [namespace, elementIdentifier], got %d component(s): %v",
+			len(path), path)
 	}
-	ns, ok1 := path[0].(string)
-	el, ok2 := path[1].(string)
-	if !ok1 || !ok2 {
-		return "", "", false
+	ns, ok := path[0].(string)
+	if !ok {
+		return "", "", fmt.Errorf("mso_mdoc claim path namespace must be a string, got %T: %v", path[0], path)
 	}
-	return ns, el, true
+	el, ok := path[1].(string)
+	if !ok {
+		return "", "", fmt.Errorf("mso_mdoc claim path element identifier must be a string, got %T: %v", path[1], path)
+	}
+	return ns, el, nil
 }
 
 // selectClaims determines which claims to use for matching, mirroring
@@ -337,8 +386,8 @@ func selectClaims(query dcql.CredentialQuery, resolved map[string]map[string]any
 }
 
 func claimMatches(claim dcql.Claim, resolved map[string]map[string]any) bool {
-	namespace, elementIdentifier, ok := mdocPathParts(claim.Path)
-	if !ok {
+	namespace, elementIdentifier, err := mdocPathParts(claim.Path)
+	if err != nil {
 		return false
 	}
 	nsMap, ok := resolved[namespace]
@@ -373,9 +422,15 @@ func selectiveDiscloseByPaths(doc *stdmdoc.MDoc, claimPaths [][]any) (*stdmdoc.M
 	revealByNamespace := make(map[string][]string)
 	var namespaceOrder []string
 	for _, path := range claimPaths {
-		namespace, elementIdentifier, ok := mdocPathParts(path)
-		if !ok {
-			continue
+		// Refused rather than skipped: skipping would build a DeviceResponse
+		// disclosing one element fewer than the plan the user consented to, and
+		// nothing downstream can tell that apart from a verifier asking for less.
+		// Unreachable via FindCandidates, which refuses such a query up front;
+		// this is the second half of that check, for callers that build paths
+		// themselves.
+		namespace, elementIdentifier, err := mdocPathParts(path)
+		if err != nil {
+			return nil, err
 		}
 		if _, seen := revealByNamespace[namespace]; !seen {
 			namespaceOrder = append(namespaceOrder, namespace)
@@ -395,18 +450,6 @@ func selectiveDiscloseByPaths(doc *stdmdoc.MDoc, claimPaths [][]any) (*stdmdoc.M
 	return &merged, nil
 }
 
-func decodeECDSAPrivateKey(pkcs8Bytes []byte) (*ecdsa.PrivateKey, error) {
-	privKeyAny, err := x509.ParsePKCS8PrivateKey(pkcs8Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse PKCS#8 private key: %w", err)
-	}
-	ecdsaKey, ok := privKeyAny.(*ecdsa.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("stored mdoc holder binding key is not an ECDSA private key")
-	}
-	return ecdsaKey, nil
-}
-
 // ---------------------------------------------------------------------------
 // Display / attribute helpers
 // ---------------------------------------------------------------------------
@@ -419,8 +462,8 @@ func buildAttributes(batch *models.CredentialBatch, claims []dcql.Claim, resolve
 	attrs := make([]clientmodels.Attribute, 0, len(claims))
 	seen := make(map[string]struct{}, len(claims))
 	for _, claim := range claims {
-		namespace, elementIdentifier, ok := mdocPathParts(claim.Path)
-		if !ok {
+		namespace, elementIdentifier, err := mdocPathParts(claim.Path)
+		if err != nil {
 			continue
 		}
 		key := clientmodels.ClaimPathKey(claim.Path)
@@ -461,8 +504,8 @@ func buildAttributes(batch *models.CredentialBatch, claims []dcql.Claim, resolve
 func unobtainableDescriptor(docType string, query dcql.CredentialQuery) *clientmodels.CredentialDescriptor {
 	attrs := make([]clientmodels.Attribute, 0, len(query.Claims))
 	for _, claim := range query.Claims {
-		namespace, elementIdentifier, ok := mdocPathParts(claim.Path)
-		if !ok {
+		namespace, elementIdentifier, err := mdocPathParts(claim.Path)
+		if err != nil {
 			continue
 		}
 		attrs = append(attrs, clientmodels.Attribute{
@@ -554,7 +597,7 @@ func claimDisplayName(batch *models.CredentialBatch, namespace, elementIdentifie
 			continue
 		}
 
-		if ns, el, ok := mdocPathParts(path); ok {
+		if ns, el, err := mdocPathParts(path); err == nil {
 			if ns == namespace && el == elementIdentifier {
 				return resolveClaimName(claim.Display, locale)
 			}
@@ -608,8 +651,8 @@ func (h *MdocDcqlHandler) buildLogCredential(batch *models.CredentialBatch, clai
 	attrs := make([]clientmodels.Attribute, 0, len(claimPaths))
 	seen := make(map[string]struct{}, len(claimPaths))
 	for _, path := range claimPaths {
-		namespace, elementIdentifier, ok := mdocPathParts(path)
-		if !ok {
+		namespace, elementIdentifier, err := mdocPathParts(path)
+		if err != nil {
 			continue
 		}
 		key := clientmodels.ClaimPathKey(path)

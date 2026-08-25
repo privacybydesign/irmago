@@ -1,6 +1,7 @@
 package mdoc
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -13,21 +14,45 @@ import (
 // HOLDER
 // ============================================================
 
-// Holder represents the wallet app on the user's device
-// deviceKey is generated locally — private key never leaves the device (TEE/Secure Enclave in production)
-// Only the PUBLIC key is sent to the issuer at issuance time
-type Holder struct {
-	devicekey *ecdsa.PrivateKey
+// Holder is the wallet app on the user's device, reduced to the only two
+// operations that need the device key: handing out the public half at issuance,
+// and signing a DeviceAuthentication at presentation.
+//
+// It is an interface so the private half never has to exist in this process.
+// DefaultHolder is the software implementation used by tests and by the current
+// wallet; an implementation backed by StrongBox, TrustZone or the Secure Enclave
+// satisfies the same two methods without the key ever being extractable. See
+// NewHolderFromSigner for the cheapest route to one.
+type Holder interface {
+	// PublicKey returns the device public key — the only part of the device key
+	// pair an issuer (or anyone else) ever needs.
+	PublicKey() *ecdsa.PublicKey
+
+	// SignDeviceAuth builds and signs a fresh DeviceAuthentication for this
+	// session. Called at every presentation — never reused.
+	SignDeviceAuth(docType string, transcript SessionTranscript) ([]byte, error)
 }
 
-func NewHolder() (*Holder, error) {
-	// In production: generated inside Secure Enclave / TrustZone / StrongBox
-	// Private key never extractable — all signing operations happen inside the hardware
+// DefaultHolder is the software implementation of Holder: the device key is an
+// ordinary in-process key, reached only through crypto.Signer so the same code
+// path serves a hardware-backed key.
+type DefaultHolder struct {
+	signer crypto.Signer
+	pub    *ecdsa.PublicKey
+}
+
+var _ Holder = (*DefaultHolder)(nil)
+
+// NewHolder generates a fresh software device key. In production the equivalent
+// key is generated inside Secure Enclave / TrustZone / StrongBox, where it is
+// not extractable and every signing operation happens inside the hardware — for
+// that, wrap the platform's key handle with NewHolderFromSigner instead.
+func NewHolder() (*DefaultHolder, error) {
 	deviceKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("generate device key: %w", err)
 	}
-	return &Holder{devicekey: deviceKey}, nil
+	return NewHolderFromSigner(deviceKey)
 }
 
 // NewHolderFromPrivateKey wraps an already-generated device key pair in a
@@ -35,21 +60,56 @@ func NewHolder() (*Holder, error) {
 // generated at issuance time (e.g. as part of a HolderBindingKey record)
 // and need to reconstruct a Holder capable of signing at presentation
 // time, in a later process than the one that called NewHolder.
-func NewHolderFromPrivateKey(deviceKey *ecdsa.PrivateKey) *Holder {
-	return &Holder{devicekey: deviceKey}
+func NewHolderFromPrivateKey(deviceKey *ecdsa.PrivateKey) (*DefaultHolder, error) {
+	if deviceKey == nil {
+		return nil, fmt.Errorf("device key is nil")
+	}
+	return NewHolderFromSigner(deviceKey)
+}
+
+// NewHolderFromSigner wraps any crypto.Signer as a Holder, which is how a
+// non-extractable device key reaches this package: an Android Keystore /
+// StrongBox or Secure Enclave key handle only has to implement Public and Sign.
+//
+// The signer must satisfy the contract go-cose imposes on an opaque signer
+// (ecdsa.go, ecdsaCryptoSigner.SignDigest), because that is what will call it:
+//
+//   - Sign receives the already-computed SHA-256 digest, not the message, and
+//     opts is nil — so the implementation must assume SHA-256 rather than read
+//     the hash from opts.
+//   - Sign must return an ASN.1 DER SEQUENCE of (r, s). go-cose converts that to
+//     the raw r||s COSE form itself. Android Keystore's "SHA256withECDSA"
+//     already returns DER, so it fits without conversion.
+//
+// The curve is checked here rather than left to signing time: ES256 is the only
+// algorithm ISO 18013-5 device authentication uses in this package, and a signer
+// on any other curve would otherwise produce a signature of the wrong width that
+// fails at the verifier with nothing naming the cause.
+func NewHolderFromSigner(signer crypto.Signer) (*DefaultHolder, error) {
+	if signer == nil {
+		return nil, fmt.Errorf("device key signer is nil")
+	}
+	pub, ok := signer.Public().(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("device key must be ECDSA, got %T", signer.Public())
+	}
+	if pub.Curve != elliptic.P256() {
+		return nil, fmt.Errorf("device key must be on P-256 for ES256 device authentication, got %s", pub.Curve.Params().Name)
+	}
+	return &DefaultHolder{signer: signer, pub: pub}, nil
 }
 
 // PublicKey returns the holder's device public key — the only part of the
 // device key pair an issuer (or anyone else) ever needs; the private key
-// stays inside Holder and is never returned.
-func (h *Holder) PublicKey() *ecdsa.PublicKey {
-	return &h.devicekey.PublicKey
+// stays behind the signer and is never returned.
+func (h *DefaultHolder) PublicKey() *ecdsa.PublicKey {
+	return h.pub
 }
 
 // SignDeviceAuth builds and signs a fresh DeviceAuthentication for this session
 // Called at every presentation — never reused
 // SessionTranscript ties this signature to a specific verifier + session — defeats replay
-func (h *Holder) SignDeviceAuth(docType string, transcript SessionTranscript) ([]byte, error) {
+func (h *DefaultHolder) SignDeviceAuth(docType string, transcript SessionTranscript) ([]byte, error) {
 	// deviceNameSpaces = Tag24(empty map) for AV Blueprint
 	// The AV profile has no holder-asserted claims — only issuer-signed attributes
 	emptyNS, err := tag24Wrap(map[string]any{})
@@ -77,9 +137,11 @@ func (h *Holder) SignDeviceAuth(docType string, transcript SessionTranscript) ([
 		return nil, fmt.Errorf("wrap deviceAuthentication: %w", err)
 	}
 
-	// Sign with device private key — uses same ES256 (ECDSA P-256 + SHA-256) as issuerAuth
-	// but with a completely separate key pair (holder's device key, not issuer's DS key)
-	signer, err := cose.NewSigner(cose.AlgorithmES256, h.devicekey)
+	// Sign with the device key — uses the same ES256 (ECDSA P-256 + SHA-256) as
+	// issuerAuth but with a completely separate key pair (holder's device key,
+	// not issuer's DS key). go-cose takes a crypto.Signer, so a hardware-backed
+	// signer needs nothing extra here.
+	signer, err := cose.NewSigner(cose.AlgorithmES256, h.signer)
 	if err != nil {
 		return nil, fmt.Errorf("create device signer: %w", err)
 	}

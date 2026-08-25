@@ -1,6 +1,7 @@
 package sessiontest
 
 import (
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -14,8 +15,6 @@ import (
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
-	"github.com/privacybydesign/irmago/eudi/storage/db"
-	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -23,11 +22,12 @@ import (
 // ============================================================================
 // mso_mdoc issuance and disclosure against the EUDI Python issuer
 //
-// The mdoc-av tests in openid4vp_mdoc_av_disclosure_test.go seed a credential
-// straight into storage, which leaves the whole OID4VCI half of the mdoc path
-// — format parser, COSE algorithm validation, holder binding, batch storage —
-// covered only by unit tests. These two subtests close that gap by issuing the
-// credential from the reference issuer and then presenting what it issued.
+// Every mdoc integration test now gets its credential the way a user would, by
+// issuing one from the reference issuer over OpenID4VCI, so the whole issuance
+// half of the path — format parser, COSE algorithm validation, holder binding,
+// batch storage — is exercised by whatever presents afterwards. The subtests here
+// are the ones asserting on issuance itself; openid4vp_mdoc_av_disclosure_test.go
+// and openid4vp_dc_api_mdoc_test.go issue as a fixture and assert on presentation.
 //
 // The issuer is the same eudi_pid_issuer_py container the SD-JWT tests use,
 // with eu.europa.ec.eudi.age_verification_mdoc added to countries.FC's
@@ -42,16 +42,23 @@ const (
 )
 
 // testSessionHandlerForEudiPidPythonIssuerMdoc is registered alongside the
-// SD-JWT subtests in session_handler_test.go.
+// SD-JWT subtests in session_handler_test.go, under "openid4vci/mdoc".
+//
+// Grouped by which half of the flow each subtest is actually asserting on, since
+// only the first group is about issuance. The rest need a real issuance too, but
+// as a fixture: what they check is what the wallet does with the credential at
+// presentation, and reading them as issuance tests overstates what the OpenID4VCI
+// path is covered for.
 func testSessionHandlerForEudiPidPythonIssuerMdoc(t *testing.T) {
-	t.Run("issues age verification mdoc", testEudiPidPythonIssuerIssuesAvMdoc)
-	t.Run("discloses issued mdoc to EUDI Kotlin verifier", testEudiPidPythonIssuerDisclosesAvMdoc)
-	t.Run("batch instances are spent one per presentation", testEudiPidPythonIssuerBatchIsSingleUse)
-	t.Run("discloses two claims at once", testEudiPidPythonIssuerDisclosesTwoClaims)
-	t.Run("discloses only the requested claim", testEudiPidPythonIssuerDisclosesOnlyRequestedClaim)
-	t.Run("matches a values constraint", testEudiPidPythonIssuerMatchesValuesConstraint)
-	t.Run("refuses an unsatisfied values constraint", testEudiPidPythonIssuerRejectsUnsatisfiedValuesConstraint)
-	t.Run("refuses a credential from an untrusted issuer", testEudiPidPythonIssuerUntrustedIssuerIsRejected)
+	t.Run("issuance/stores the credential its signed MSO describes", testEudiPidPythonIssuerIssuesAvMdoc)
+	t.Run("issuance/refuses a credential from an untrusted issuer", testEudiPidPythonIssuerUntrustedIssuerIsRejected)
+
+	t.Run("disclosure/discloses issued mdoc to EUDI Kotlin verifier", testEudiPidPythonIssuerDisclosesAvMdoc)
+	t.Run("disclosure/batch instances are spent one per presentation", testEudiPidPythonIssuerBatchIsSingleUse)
+	t.Run("disclosure/discloses two claims at once", testEudiPidPythonIssuerDisclosesTwoClaims)
+	t.Run("disclosure/discloses only the requested claim", testEudiPidPythonIssuerDisclosesOnlyRequestedClaim)
+	t.Run("disclosure/matches a values constraint", testEudiPidPythonIssuerMatchesValuesConstraint)
+	t.Run("disclosure/refuses an unsatisfied values constraint", testEudiPidPythonIssuerRejectsUnsatisfiedValuesConstraint)
 }
 
 // ----------------------------------------------------------------------------
@@ -335,55 +342,80 @@ func testEudiPidPythonIssuerBatchIsSingleUse(t *testing.T) {
 
 	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 
-	credStore := db.NewCredentialStore(c.EudiStorageForTesting().Db())
-	batches, err := credStore.GetBatchesByDocType(eudiPidIssuerPyAvDocType)
-	require.NoError(t, err)
-	require.Len(t, batches, 1)
-	batch := batches[0]
-
-	require.Greater(t, batch.BatchSize, uint(1),
+	// Observed through the wallet API the app uses rather than the database
+	// underneath it. A remaining count above one straight after issuance carries
+	// both halves of what the storage read used to assert: the wallet asked for a
+	// batch rather than a single attestation, and it has spent none of it yet.
+	remainingAfterIssuance := avMdocInstancesRemaining(t, c)
+	require.Greater(t, remainingAfterIssuance, uint(1),
 		"the issuer advertises batch_credential_issuance, so a batch of one means the wallet never asked for more than a single attestation")
-	require.Equal(t, batch.BatchSize, batch.RemainingCount,
-		"a freshly issued batch has spent nothing yet")
 
-	// Every instance must carry its own device key: one reused key across the
-	// batch would correlate the presentations that the batch exists to separate.
-	// Read straight from the database rather than off the batch: the display
-	// preloads GetBatchesByDocType uses do not include instances.
-	var instances []models.IssuedCredentialInstance
-	require.NoError(t, c.EudiStorageForTesting().Db().
-		Preload("HolderBindingKey").
-		Where("credential_batch_id = ?", batch.ID).
-		Find(&instances).Error)
-	require.Len(t, instances, int(batch.BatchSize))
-	thumbprints := map[string]struct{}{}
-	for _, instance := range instances {
-		require.NotNil(t, instance.HolderBindingKey, "instance %s has no holder binding key", instance.ID)
-		require.True(t, instance.HolderBindingKey.PublicKeyThumbprint.Valid)
-		thumbprints[instance.HolderBindingKey.PublicKeyThumbprint.V] = struct{}{}
-	}
-	require.Len(t, thumbprints, len(instances), "the batch reuses a device key across instances")
-
-	// Two presentations, one after the other. Each must spend one instance and
-	// send a different attestation.
+	// Two presentations, one after the other, as two relying parties would see
+	// them.
 	first := discloseAvMdocOnce(t, c, sessionHandler, 2)
 	second := discloseAvMdocOnce(t, c, sessionHandler, 3)
 
-	require.NotEqual(t, first, second,
+	require.NotEqual(t, issuerAuthOf(t, first), issuerAuthOf(t, second),
 		"both presentations sent the same issuerAuth, so the same attestation was presented twice and the two relying parties can link them")
 
-	batches, err = credStore.GetBatchesByDocType(eudiPidIssuerPyAvDocType)
-	require.NoError(t, err)
-	require.Len(t, batches, 1)
-	require.Equal(t, batch.BatchSize-2, batches[0].RemainingCount,
+	// Distinct attestations are not enough on their own: a batch signed over one
+	// reused device key is just as linkable, and deviceKeyInfo is part of what the
+	// relying parties receive. Checking the two instances actually spent, rather
+	// than every key in storage, is deliberate -- what a colluding pair of relying
+	// parties can compare is what they were sent, and proving it for all thirty
+	// would mean thirty verifier round trips.
+	require.NotEqual(t, deviceKeyOf(t, first), deviceKeyOf(t, second),
+		"both presentations were bound to the same device key, so the two relying parties can link them even though the attestations differ")
+
+	require.Equal(t, remainingAfterIssuance-2, avMdocInstancesRemaining(t, c),
 		"two presentations must spend exactly two instances")
 }
 
+// avMdocInstancesRemaining reports how many instances of the age credential the
+// wallet has left, as the app sees it: the per-format count the credential list
+// carries.
+func avMdocInstancesRemaining(t *testing.T, c *client.Client) uint {
+	t.Helper()
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+
+	cred := findMdocCredentialByDocType(t, creds, eudiPidIssuerPyAvDocType)
+	remaining, ok := cred.BatchInstanceCountsRemaining[clientmodels.Format_MsoMdoc]
+	require.True(t, ok,
+		"the credential list must report a remaining count under the mso_mdoc format")
+	require.NotNil(t, remaining, "a batched mdoc credential must carry a remaining count")
+
+	return *remaining
+}
+
+// issuerAuthOf identifies which attestation was presented: issuerAuth is signed
+// per instance, so two presentations of one instance carry the same value and two
+// instances never do.
+func issuerAuthOf(t *testing.T, presented stdmdoc.MDoc) string {
+	t.Helper()
+	return base64.RawURLEncoding.EncodeToString(presented.IssuerSigned.IssuerAuth)
+}
+
+// deviceKeyOf reads the device public key a presented attestation is bound to out
+// of its own MSO -- the copy the verifier authenticates the DeviceSigned against,
+// and therefore the copy that would correlate two presentations if it repeated.
+func deviceKeyOf(t *testing.T, presented stdmdoc.MDoc) string {
+	t.Helper()
+
+	deviceKey, err := stdmdoc.DeviceKeyFromIssuerAuth(presented.IssuerSigned.IssuerAuth)
+	require.NoError(t, err)
+
+	encoded, err := x509.MarshalPKIXPublicKey(deviceKey)
+	require.NoError(t, err)
+
+	return base64.RawURLEncoding.EncodeToString(encoded)
+}
+
 // discloseAvMdocOnce runs one disclosure of the age credential and returns the
-// issuerAuth bytes of what was presented — the per-instance part of the
-// credential, so two presentations of the same instance return the same value
-// and two different instances do not.
-func discloseAvMdocOnce(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, sessionId int) string {
+// document the verifier received, so a caller can compare any part of what was
+// presented against what another presentation sent.
+func discloseAvMdocOnce(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, sessionId int) stdmdoc.MDoc {
 	t.Helper()
 
 	verifierSession, err := StartTestSessionAtEudiVerifier(testdata.OpenID4VP_DirectPostJwt_Host, createAvMdocAuthRequest(t))
@@ -405,14 +437,7 @@ func discloseAvMdocOnce(t *testing.T, c *client.Client, sessionHandler *MockSess
 
 	walletResponse, err := GetWalletResponseFromEudiVerifier(verifierSession)
 	require.NoError(t, err)
-	return issuerAuthFromWalletResponse(t, walletResponse, "age")
-}
-
-// issuerAuthFromWalletResponse digs the presented document's issuerAuth out of
-// the verifier's wallet response.
-func issuerAuthFromWalletResponse(t *testing.T, walletResponse map[string]any, queryId string) string {
-	t.Helper()
-	return base64.RawURLEncoding.EncodeToString(presentedDocument(t, walletResponse, queryId).IssuerSigned.IssuerAuth)
+	return presentedDocument(t, walletResponse, "age")
 }
 
 // presentedDocument decodes the single document the verifier received for the
@@ -633,18 +658,23 @@ func testEudiPidPythonIssuerUntrustedIssuerIsRejected(t *testing.T) {
 		},
 	})
 
-	// The wallet may refuse at the permission step or after fetching the
-	// credential, depending on how far it gets before verifying; either way it
-	// must end in an error and store nothing.
+	// Exactly one end state, asserted as such. Issuance verifies before it asks:
+	// openid4vci's session runs obtainCredentials -- which is where the format
+	// parser's ParseAndVerify checks the chain -- and reports Failure from there,
+	// several steps before RequestPermission would be called. So the trust
+	// failure always lands before any permission step, and tolerating a
+	// RequestPermission here would hide it if that order ever changed.
 	session = awaitSessionState(t, sessionHandler)
-	if session.Status == clientmodels.Status_RequestPermission {
-		grantPermission(t, c, session.Id)
-		session = awaitSessionState(t, sessionHandler)
-	}
 
 	require.Equal(t, clientmodels.Status_Error, session.Status,
 		"a credential signed by an untrusted issuer must not be accepted")
 	require.NotNil(t, session.Error)
+
+	// The stronger property the ordering buys: the user is never shown, and
+	// never asked to accept, a credential the wallet has already decided to
+	// refuse. OfferedCredentials is populated only by RequestPermission.
+	require.Empty(t, session.OfferedCredentials,
+		"the wallet offered a credential it was about to reject")
 
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)

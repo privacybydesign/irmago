@@ -223,7 +223,7 @@ func showBatchIssuance(issuer *mdoc.Issuer) error {
 	fmt.Printf("  Issuing %d attestations of the same claim (the AV profile recommends 30):\n\n", batchSize)
 
 	type instance struct {
-		holder     *mdoc.Holder
+		holder     mdoc.Holder
 		credential *mdoc.MDoc
 	}
 	batch := make([]instance, 0, batchSize)
@@ -320,7 +320,7 @@ func fingerprint(b []byte) string {
 // digest check catching it. The signature still verifies — only the digest of
 // the changed item stops matching — which is the point: the issuer signs
 // digests, so tampering is caught per claim rather than per document.
-func showTamperedValueRejected(verifier *mdoc.Verifier, issuer *mdoc.Issuer, holder *mdoc.Holder) error {
+func showTamperedValueRejected(verifier *mdoc.Verifier, issuer *mdoc.Issuer, holder mdoc.Holder) error {
 	credential, err := issuer.Issue(docType, namespace, map[string]any{"age_over_18": false}, holder.PublicKey())
 	if err != nil {
 		return fmt.Errorf("issue for tamper case: %w", err)

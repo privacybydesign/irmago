@@ -13,11 +13,47 @@
 //	go run ./yivi/cli/eudicli/mint-session -value false       ask for false
 //	go run ./yivi/cli/eudicli/mint-session -value any         no constraint
 //
-// -value constrains the DCQL query only. What -issue mints is always exactly
-// localstack.DefaultAVElements, so the offer and the query can be made to
-// disagree on purpose -- which is what testing a refusal requires.
+// -value constrains the DCQL query only. What -issue mints is
+// localstack.DefaultAVElements unless -mint says otherwise, so the offer and the
+// query can be made to disagree on purpose -- which is what testing a refusal
+// requires.
 //
 //	go run ./yivi/cli/eudicli/mint-session -element age_over_21
+//	go run ./yivi/cli/eudicli/mint-session -issue -mint age_over_42=true
+//	go run ./yivi/cli/eudicli/mint-session -issue -mint "age_over_18=false,age_over_21=false"
+//
+// -show-query prints the DCQL query as sent. There is no other way to read it: the
+// request object is single use, so fetching it to decode the query leaves nothing
+// for the phone, and the verifier answers 400 until the wallet responds.
+//
+//	go run ./yivi/cli/eudicli/mint-session -show-query
+//
+// Re-issuing claims the wallet already holds is refused while the stored
+// credential is still presentable and accepted once it is spent or expired, so
+// -issue is the renewal path rather than a way to obtain a second identical
+// credential.
+//
+// The issuer mints whatever -mint asks for, including element names absent from
+// its advertised claim set. Presenting one is a separate matter: the relying
+// party certificate's authorized set decides what may be requested, so an
+// unadvertised element can be issued and then never asked for. See
+// testdata/eudi/verifier/README.md for widening that set.
+//
+// The one-time code is never in the offer link -- see
+// localstack.stripTransactionCodeValue. By default it is printed here; -email
+// sends it instead, so the demo can show the code arriving on a channel the link
+// did not travel on:
+//
+//	go run ./yivi/cli/eudicli/mint-session -issue -email
+//
+// That goes to the compose stack's mailhog, which captures mail and delivers
+// none -- read it at http://localhost:8025. No address is needed because mailhog
+// treats every recipient alike. To deliver for real, point -smtp at a relay and
+// name a recipient, with credentials from the environment so they stay out of
+// shell history:
+//
+//	SMTP_USERNAME=... SMTP_PASSWORD=... go run ./yivi/cli/eudicli/mint-session \
+//	    -issue -email -mail-to you@example.com -smtp smtp.example.com:587
 //
 // Prerequisites: the compose stack up, and adb reverse for 8090 (verifier) plus
 // 8443 (issuer, only needed with -issue). The app needs developer mode on, and
@@ -26,8 +62,11 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
+	"net/smtp"
 	"net/url"
 	"os"
 	"os/exec"
@@ -47,16 +86,46 @@ var (
 	value   = flag.String("value", "true", `query value constraint: "true", "false", or "any" to omit it. Does not affect what -issue mints`)
 
 	issue = flag.Bool("issue", false, "also mint a credential offer, so the credential can be installed first")
+	mint  = flag.String("mint", "", `what -issue puts in the credential, as "age_over_18=true,age_over_21=false". Empty mints localstack.DefaultAVElements. Independent of -element/-value, which constrain the query`)
 
 	reverse = flag.Bool("reverse", true, "run adb reverse for the verifier and issuer ports first, so localhost on the phone reaches this machine")
+
+	// The code is never in the offer link. Printing it to the terminal is the
+	// default because it keeps a solo run to one window; -email exists to show
+	// the code arriving somewhere the link did not, which is the property a
+	// transaction code depends on and the thing a terminal print cannot show.
+	//
+	// A bool rather than taking the address directly: against the default
+	// mailhog every address behaves identically, because it captures mail and
+	// delivers none, so requiring one would be asking for a value that changes
+	// nothing. The address only starts to matter once -smtp points at a relay
+	// that really delivers, which is what -mail-to is for.
+	email    = flag.Bool("email", false, "send the one-time code by mail instead of printing it (needs -issue)")
+	mailTo   = flag.String("mail-to", "demo@localhost", "recipient for -email; only meaningful when -smtp is a relay that actually delivers")
+	smtpAddr = flag.String("smtp", "localhost:1025", "SMTP server for -email; the default is the compose stack's mailhog, read at http://localhost:8025")
+	mailFrom = flag.String("mail-from", "yivi-demo@localhost", "envelope sender for -email")
 
 	// The decoder is named in the printed command rather than invoked, because the
 	// point is to hand over something runnable after the phone has answered.
 	decoder = flag.String("decoder", "", "path to a prebuilt vptoken-decode binary to name in the verify command")
+
+	// Printed from localstack.DcqlQuery rather than read back from the session,
+	// because reading it back is not possible without destroying it: request_uri
+	// is single use, so fetching the request object to decode the query leaves
+	// nothing for the phone to fetch. The verifier cannot answer either -- it
+	// returns 400 until the wallet responds, and keeps no record across a restart.
+	showQuery = flag.Bool("show-query", false, "also print the DCQL query being sent, which is otherwise only readable by consuming the single-use request object")
 )
 
 func main() {
 	flag.Parse()
+
+	// Caught here rather than ignored: -email without -issue mints no offer, so
+	// there is no code to send, and silently doing nothing would read as a broken
+	// mail setup.
+	if *email && !*issue {
+		fail(fmt.Errorf("-email needs -issue: without an issuance there is no one-time code to send"))
+	}
 
 	cfg := localstack.Config{
 		IssuerURL:    *issuerURL,
@@ -96,19 +165,56 @@ func main() {
 
 	step := 1
 	if *issue {
-		// The same five-element set mdoc-e2e mints, verbatim. Change what is
-		// issued by editing localstack.DefaultAVElements, not by passing a flag --
-		// -value constrains the query, and letting it also rewrite the offer would
-		// mean the two could never be made to disagree, which is exactly what a
-		// refusal test needs.
+		// localstack.DefaultAVElements unless -mint overrides it: the same
+		// five-element set mdoc-e2e mints, verbatim.
+		//
+		// -mint is a flag of its own rather than something -value feeds into.
+		// That separation is the point: -value constrains the query and -mint
+		// decides the credential, so the two can be made to disagree on purpose,
+		// which is what testing a refusal needs. A single flag driving both
+		// would make every run agree with itself and quietly remove the ability
+		// to test that value constraints are enforced at all.
 		data := localstack.DefaultAVElements()
+		if *mint != "" {
+			parsed, err := parseMintElements(*mint)
+			if err != nil {
+				fail(err)
+			}
+			data = parsed
+		}
 		offer, err := localstack.CreateOffer(cfg, localstack.AVCredentialConfigID, data)
 		if err != nil {
 			fail(fmt.Errorf("create offer: %w", err))
 		}
-		fmt.Printf("%d. ISSUANCE            one-time code: %s\n\n", step, offer.TxCode)
+		delivered := "one-time code: " + offer.TxCode
+		if *email {
+			if err := mailTransactionCode(offer.TxCode); err != nil {
+				// Failing here rather than falling back to printing: a run that
+				// quietly printed the code after being asked to mail it would
+				// demonstrate exactly the thing -email exists to avoid, and the
+				// operator would have no reason to look at the difference.
+				fail(fmt.Errorf("mail the one-time code to %s via %s: %w", *mailTo, *smtpAddr, err))
+			}
+			delivered = "one-time code sent to " + *mailTo
+		}
+
+		fmt.Printf("%d. ISSUANCE            %s\n\n", step, delivered)
 		fmt.Println(adbCommand(offer.URI))
-		fmt.Printf("\n   Unlock the app, enter %s at the one-time code prompt, accept.\n", offer.TxCode)
+		switch {
+		case *email && isMailhog(*smtpAddr):
+			// Said plainly because it has surprised someone: mailhog captures
+			// mail and delivers none, so a real-looking address in -mail-to
+			// never receives anything and waiting on that inbox is a dead end.
+			fmt.Printf("\n   Read the code at http://localhost:8025 -- mailhog captured it and\n")
+			fmt.Printf("   delivers nothing, so it did not reach %s or any other inbox.\n", *mailTo)
+			fmt.Printf("   Then unlock the app, enter it at the prompt and accept.\n")
+			fmt.Printf("   It is not in the link above.\n")
+		case *email:
+			fmt.Printf("\n   Read the code from %s, then unlock the app, enter it at the\n", *mailTo)
+			fmt.Printf("   one-time code prompt and accept. It is not in the link above.\n")
+		default:
+			fmt.Printf("\n   Unlock the app, enter %s at the one-time code prompt, accept.\n", offer.TxCode)
+		}
 		fmt.Printf("   credential will hold: %s\n\n", describe(data))
 		step++
 	}
@@ -128,6 +234,9 @@ func main() {
 		constraint = fmt.Sprintf("must equal %t", *req.Value)
 	}
 	fmt.Printf("%d. PRESENTATION         %s / %s, %s\n\n", step, *docType, *element, constraint)
+	if *showQuery {
+		printDcqlQuery(req)
+	}
 	fmt.Println(adbCommand(session.Link))
 	fmt.Print("\n   Approve on the phone.\n")
 	fmt.Print("   The app then disappears. That is deliberate, not a crash: on a\n")
@@ -158,6 +267,125 @@ func main() {
 // re-parses them, so an unquoted & would background the command there.
 func adbCommand(link string) string {
 	return fmt.Sprintf(`adb shell "am start -a android.intent.action.VIEW -d '%s'"`, link)
+}
+
+// printDcqlQuery prints the dcql_query this session carries, indented, from the
+// same builder CreateSession uses -- so it shows what was sent rather than a
+// reconstruction of it.
+//
+// This is the query as the verifier receives it. What the wallet sees is this
+// object embedded in the signed request object it fetches from request_uri,
+// alongside nonce, response_uri, response_mode and client_metadata.
+func printDcqlQuery(req localstack.SessionRequest) {
+	encoded, err := json.MarshalIndent(localstack.DcqlQuery(req), "   ", "  ")
+	if err != nil {
+		// Not fatal: the links below are the point of the run, and losing the
+		// query dump is no reason to withhold them.
+		fmt.Printf("   (could not render the DCQL query: %v)\n\n", err)
+		return
+	}
+	fmt.Printf("   dcql_query: %s\n\n", encoded)
+}
+
+// parseMintElements turns -mint's "name=bool,name=bool" into the element map the
+// issuer is handed.
+//
+// Values are booleans only, because every element of the AV profile is one. A
+// non-boolean is refused rather than passed through as a string: the issuer does
+// not validate what it is asked to mint -- it accepts any element name and any
+// value, including ones absent from its own advertised claim set -- so a typo
+// here would be minted silently and only surface much later as a credential that
+// does not match any query.
+//
+// Element *names* are deliberately not checked against the issuer's advertised
+// set. Minting something unadvertised is a legitimate thing to want to test, and
+// the interesting boundary is not at issuance anyway: the relying party
+// certificate's authorized set decides what can be asked for, so an element
+// minted here that no certificate authorizes simply can never be presented.
+func parseMintElements(spec string) (map[string]any, error) {
+	elements := map[string]any{}
+	for _, pair := range strings.Split(spec, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		name, rawValue, found := strings.Cut(pair, "=")
+		if !found {
+			return nil, fmt.Errorf(`-mint entry %q must be name=value, e.g. "age_over_18=true"`, pair)
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil, fmt.Errorf("-mint entry %q has an empty element name", pair)
+		}
+		switch strings.ToLower(strings.TrimSpace(rawValue)) {
+		case "true":
+			elements[name] = true
+		case "false":
+			elements[name] = false
+		default:
+			return nil, fmt.Errorf("-mint value for %q must be true or false, got %q", name, rawValue)
+		}
+	}
+	if len(elements) == 0 {
+		return nil, fmt.Errorf("-mint parsed to no elements; pass at least one name=value pair")
+	}
+	return elements, nil
+}
+
+// mailTransactionCode sends the one-time code to -email over -smtp.
+//
+// Unauthenticated by default, because the default target is the compose stack's
+// mailhog, which accepts anything and delivers nothing -- it captures mail for
+// reading at http://localhost:8025. That is the whole point for a demo: it needs
+// no account, no API key and no outbound network, and the code still leaves the
+// link's channel, which is the property being demonstrated.
+//
+// Credentials are read from the environment when present, so the same flag can
+// point at a real relay without either putting a password in a shell history or
+// teaching this tool about any particular provider.
+func mailTransactionCode(code string) error {
+	host, _, err := net.SplitHostPort(*smtpAddr)
+	if err != nil {
+		return fmt.Errorf("-smtp must be host:port, got %q: %w", *smtpAddr, err)
+	}
+
+	var auth smtp.Auth
+	if user := os.Getenv("SMTP_USERNAME"); user != "" {
+		auth = smtp.PlainAuth("", user, os.Getenv("SMTP_PASSWORD"), host)
+	}
+
+	// Assembled by hand rather than through a mail library: this is a fixed
+	// three-header message with an ASCII body, and the dependency would buy
+	// nothing. CRLF line endings are required by RFC 5322, and a bare LF is
+	// rejected by stricter servers than mailhog.
+	message := strings.Join([]string{
+		"From: " + *mailFrom,
+		"To: " + *mailTo,
+		"Subject: Yivi demo: your one-time code is " + code,
+		"",
+		"One-time code: " + code,
+		"",
+		"Enter this at the prompt after opening the credential offer.",
+		"It is deliberately not part of the offer link -- a code carried",
+		"inside the link it protects would protect nothing.",
+		"",
+	}, "\r\n")
+
+	if err := smtp.SendMail(*smtpAddr, auth, *mailFrom, []string{*mailTo}, []byte(message)); err != nil {
+		return err
+	}
+	return nil
+}
+
+// isMailhog reports whether -smtp still points at the compose stack's catcher,
+// so the run can say where to read the mail. A real relay gets no such line,
+// because there the mail actually goes to the recipient.
+func isMailhog(addr string) bool {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	return port == "1025" && (host == "localhost" || host == "127.0.0.1" || host == "mailhog" || host == "mailhog.localhost")
 }
 
 func fail(err error) {

@@ -46,6 +46,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -129,7 +130,7 @@ func run() error {
 	}
 	fmt.Printf("  configuration: %s\n", credentialConfigID)
 	fmt.Printf("  docType      : %s\n", docType)
-	fmt.Printf("  claims       : age_over_18=true, age_over_21=true\n")
+	fmt.Printf("  claims       : %s\n", mintedSummary())
 	fmt.Printf("  grant        : pre-authorized code, tx_code %s\n", offer.TxCode)
 
 	// ── 3. The wallet accepts it ────────────────────────────────────────
@@ -164,8 +165,8 @@ func run() error {
 		return err
 	}
 	fmt.Printf("  verifier  : %s\n", *verifierHost)
-	fmt.Printf("  requested : [%s, age_over_18]\n", docType)
-	fmt.Printf("  withheld  : age_over_21 — held by the wallet, not asked for\n")
+	fmt.Printf("  requested : [%s, %s]\n", docType, requestedElement)
+	fmt.Printf("  withheld  : %s — held by the wallet, not asked for\n", withheldSummary())
 	fmt.Printf("  client_id : %s\n", session.ClientID)
 
 	// ── 5. The wallet answers ───────────────────────────────────────────
@@ -219,7 +220,8 @@ func run() error {
 	mdocdecode.Dump(document.IssuerSigned.NameSpaces[namespace][0].EncodedItem)
 
 	section("Done")
-	fmt.Printf("  Issued over OpenID4VCI with two claims, presented over OpenID4VP with one,\n")
+	fmt.Printf("  Issued over OpenID4VCI with %d claims, presented over OpenID4VP with one,\n",
+		len(localstack.DefaultAVElements()))
 	fmt.Printf("  and accepted by the EUDI reference verifier.\n")
 	return nil
 }
@@ -465,10 +467,9 @@ func disclosureChoice(bundle *clientmodels.DisclosureBundle) clientmodels.Disclo
 
 type offerResponse = localstack.Offer
 
-// createOffer asks the reference issuer for a credential offer. The element set
-// is this demo's own choice: age_over_18 deliberately false, so the run proves
-// the verifier's value constraint below is actually enforced rather than
-// coincidentally satisfied.
+// createOffer asks the reference issuer for a credential offer, minting exactly
+// localstack.DefaultAVElements -- the single source of truth for what the local
+// demos issue.
 func createOffer() (*offerResponse, error) {
 	return localstack.CreateOffer(stackConfig(), localstack.AVCredentialConfigID,
 		localstack.DefaultAVElements())
@@ -476,19 +477,77 @@ func createOffer() (*offerResponse, error) {
 
 type verifierSession = localstack.Session
 
+// requestedElement is the one element this demo asks for, out of the five that
+// DefaultAVElements mints. Asking for one of five is what makes the selective
+// disclosure visible in the bytes.
+const requestedElement = "age_over_18"
+
+// mintedSummary and withheldSummary render what was minted and what was not
+// asked for, both read from localstack.DefaultAVElements rather than written out
+// here. Every line this demo prints about the credential comes from that one map,
+// so the narration cannot claim something the offer did not mint.
+//
+// Reading the attribute set is deliberately as far as this goes for now. The
+// authoritative answer to "what does this credential hold" is the signed MSO the
+// issuer produced, so eventually these should be derived at issuance rather than
+// from the map the demo hands the issuer; until then the map is the single source
+// and nothing else is allowed to restate it.
+func mintedSummary() string {
+	elements := localstack.DefaultAVElements()
+	parts := make([]string, 0, len(elements))
+	for _, name := range sortedKeys(elements) {
+		parts = append(parts, fmt.Sprintf("%s=%v", name, elements[name]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func withheldSummary() string {
+	elements := localstack.DefaultAVElements()
+	withheld := make([]string, 0, len(elements))
+	for _, name := range sortedKeys(elements) {
+		if name != requestedElement {
+			withheld = append(withheld, name)
+		}
+	}
+	if len(withheld) == 0 {
+		return "nothing"
+	}
+	return strings.Join(withheld, ", ")
+}
+
+func sortedKeys(elements map[string]any) []string {
+	names := make([]string, 0, len(elements))
+	for name := range elements {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // createVerifierSession starts a presentation at the reference verifier, asking
 // for one element, and returns the link a wallet would receive by QR.
 //
-// The value constraint is false to match what createOffer minted: a demo that
-// asked for true against a false credential would show the refusal path, which
-// is a different demo.
+// The value constraint is read out of localstack.DefaultAVElements rather than
+// written here, so it cannot disagree with what createOffer just minted. A
+// hardcoded constraint did drift once: the map changed to mint age_over_18 true
+// while this still asked for false, which turned the happy path into the refusal
+// path and reported it as "the wallet has nothing to disclose".
+//
+// The constraint is sent rather than omitted on purpose. With it omitted any
+// value satisfies the query, so the run would pass whether or not the wallet
+// enforces value constraints at all; with it, the match had to be made.
 func createVerifierSession() (*verifierSession, error) {
-	req := localstack.NewSessionRequest(docType, "age_over_18")
+	minted, ok := localstack.DefaultAVElements()[requestedElement].(bool)
+	if !ok {
+		return nil, fmt.Errorf(
+			"localstack.DefaultAVElements has no boolean %q to constrain the query to", requestedElement)
+	}
+
+	req := localstack.NewSessionRequest(docType, requestedElement)
 	req.QueryID = queryID
 	req.Namespace = namespace
 	req.IntendedUseID = intendedUseID
-	wantFalse := false
-	req.Value = &wantFalse
+	req.Value = &minted
 	return localstack.CreateSession(stackConfig(), req)
 }
 

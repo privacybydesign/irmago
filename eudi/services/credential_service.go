@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didkey"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -304,15 +305,77 @@ func (s *credentialService) computeHashAndDeleteExisting(p *ParsedCredential) (s
 		return "", fmt.Errorf("failed to compute credential hash: %w", err)
 	}
 
-	// If a batch with this hash already exists, delete it so the new issuance
-	// replaces it (e.g. with updated timestamps or a fresh holder binding key).
+	// A matching hash means the wallet already holds this credential: the hash
+	// covers the credential type and its sorted claims, so re-issuing identical
+	// attributes lands here.
+	//
+	// Note what the hash does *not* cover: the issuer. hashGeneric and
+	// hashForSdJwtVc take the credential type and the resolved claims and nothing
+	// else, so two different issuers minting the same type with the same claims
+	// collide here and the second is refused as a duplicate of the first. That is
+	// a property of the hash rather than of this check, and it predates it --
+	// Hash is a unique index, so the storage layer could not hold both regardless.
+	// Changing it means putting IssuerURL in the hash, which rewrites every
+	// existing hash and breaks the deliberate compatibility with
+	// irmaclient.CreateHashForSdJwtVc. The message below therefore names the
+	// stored copy's issuer as information, and does not claim the issuers were
+	// compared.
+	//
+	// Whether that is a duplicate worth refusing or a renewal worth accepting
+	// depends on the batch already stored, which is why this is not a flat
+	// rejection. Replacing a batch is destructive -- DeleteBatch cascades to the
+	// instances and through them to the holder binding keys -- so replacing one
+	// the wallet can still present throws away usable single-use attestations to
+	// gain nothing but fresher timestamps.
+	//
+	// Refusing unconditionally would be worse, because attributes are exactly
+	// what does not change on renewal. An age-verification credential asserts
+	// age_over_18=true for as long as it exists, so every legitimate renewal --
+	// batch spent, expiry approaching, new device keys wanted -- carries the same
+	// claims and arrives with this same hash. A wallet that refused them all
+	// could never top up a spent batch and would go permanently unpresentable.
+	//
+	// So: refuse while the stored batch is still usable, replace once it is not.
 	if existing, err := s.credentialStore.GetBatchByHash(hash); err == nil {
+		if reason := batchStillUsable(existing, time.Now()); reason != "" {
+			return "", fmt.Errorf(
+				"credential %q is already held (stored copy issued by %q) and %s; re-issuing identical claims would replace it and discard its unused instances",
+				existing.VerifiableCredentialType, existing.IssuerURL, reason)
+		}
 		if err := s.credentialStore.DeleteBatch(existing.ID); err != nil {
 			return "", fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
 		}
 	}
 
 	return hash, nil
+}
+
+// batchStillUsable reports why a stored batch can still be presented, or ""
+// when it cannot and may therefore be replaced.
+//
+// The two conditions mirror what dcql.FindCandidates applies when it decides
+// whether a batch may answer a query, and they are taken from there on purpose:
+// if this drifted, the wallet would either refuse a re-issuance it needs (having
+// judged usable a batch no query will accept) or discard one it could still
+// present. dcql.IsBatchValid is called rather than re-derived for the same
+// reason.
+//
+// A batch of one is never exhausted, matching dcql: BatchSize <= 1 means a
+// reusable credential rather than a spent single-use attestation, so
+// RemainingCount is not consulted for it -- the same rule
+// BatchInstanceCountRemaining encodes by returning nil there.
+func batchStillUsable(batch *models.CredentialBatch, now time.Time) string {
+	if !dcql.IsBatchValid(batch, now) {
+		return ""
+	}
+	if batch.BatchSize > 1 && batch.RemainingCount == 0 {
+		return ""
+	}
+
+	if batch.BatchSize > 1 {
+		return fmt.Sprintf("still has %d of %d instances unused", batch.RemainingCount, batch.BatchSize)
+	}
+	return "is still valid"
 }
 
 // statusReferenceOf returns the credential's Token Status List reference, or

@@ -40,67 +40,71 @@ import (
 const dcApiMdocQueryId = "av_credential"
 
 func testSessionHandlerForOpenID4VPOverDcApiWithMdoc(t *testing.T) {
-	runEudiSessionTest(t,
-		"an mdoc disclosed over the dc api signs the dc api handover",
-		testDcApiMdocDisclosure,
-	)
-
-	runEudiSessionTest(t,
-		"the url-flow handover does not verify an mdoc disclosed over the dc api",
-		testDcApiMdocRejectsUrlFlowHandover,
-	)
-
-	runEudiSessionTest(t,
-		"an encrypted dc api response signs the key it is encrypted to",
-		testDcApiMdocEncryptedDisclosure,
-	)
+	t.Run("an mdoc disclosed over the dc api signs the dc api handover",
+		testDcApiMdocDisclosure)
+	t.Run("the url-flow handover does not verify an mdoc disclosed over the dc api",
+		testDcApiMdocRejectsUrlFlowHandover)
+	t.Run("an encrypted dc api response signs the key it is encrypted to",
+		testDcApiMdocEncryptedDisclosure)
 }
 
-func testDcApiMdocDisclosure(
-	t *testing.T,
-	_ *IrmaServer,
-	c *client.Client,
-	sessionHandler *MockSessionHandler,
-) {
-	issuer := seedAvMdoc(t, c)
+// seedDcApiMdocWallet returns a wallet holding a genuinely issued age credential.
+//
+// The credential is fetched from the reference issuer over OpenID4VCI rather than
+// written into storage: what these subtests are about is the handover deviceAuth
+// signs over, but they can only reach it through a stored credential, and a
+// hand-built one asserts that the test agrees with itself about how issuance
+// stores things -- the device key, the cached namespaced claims, the batch. The
+// credential that comes back is signed by the issuer CA the containers are
+// configured with, which is what requireDeviceAuthVerifies anchors on.
+//
+// Issuance runs as session 1, so every subtest below starts its disclosure at 2.
+func seedDcApiMdocWallet(t *testing.T) (*client.Client, *MockSessionHandler) {
+	t.Helper()
 
-	session := startDcApiSession(t, c, 1, sessionHandler, &openid4vp.DcApiRequest{
+	c, sessionHandler := createPidIssuerTestClient(t)
+	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
+
+	return c, sessionHandler
+}
+
+func testDcApiMdocDisclosure(t *testing.T) {
+	c, sessionHandler := seedDcApiMdocWallet(t)
+	defer c.Close()
+
+	session := startDcApiSession(t, c, 2, sessionHandler, &openid4vp.DcApiRequest{
 		Protocol: openid4vp.DcApiProtocolUnsigned,
 		Origin:   dcApiOrigin,
 		Data:     unsignedDcApiMdocData(t, string(openid4vp.ResponseMode_DcApi), nil),
 	})
-	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	grantDcApiDisclosure(t, c, 1, session)
+	grantDcApiDisclosure(t, c, 2, session)
 
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 	require.NotEmpty(t, session.DcApiResponse, "the wallet must return a DC API response")
 
 	response := requireDcApiDeviceResponse(t, session.DcApiResponse)
-	requireDeviceAuthVerifies(t, issuer, response, dcApiSessionTranscript(t, dcApiOrigin, dcApiNonce, nil))
+	requireDeviceAuthVerifies(t, response, dcApiSessionTranscript(t, dcApiOrigin, dcApiNonce, nil))
 }
 
 // testDcApiMdocRejectsUrlFlowHandover is the negative half. Without it the test
 // above would still pass if the wallet signed the URL-flow handover and the two
 // variants happened to agree on a digest.
-func testDcApiMdocRejectsUrlFlowHandover(
-	t *testing.T,
-	_ *IrmaServer,
-	c *client.Client,
-	sessionHandler *MockSessionHandler,
-) {
-	issuer := seedAvMdoc(t, c)
+func testDcApiMdocRejectsUrlFlowHandover(t *testing.T) {
+	c, sessionHandler := seedDcApiMdocWallet(t)
+	defer c.Close()
 
-	session := startDcApiSession(t, c, 1, sessionHandler, &openid4vp.DcApiRequest{
+	session := startDcApiSession(t, c, 2, sessionHandler, &openid4vp.DcApiRequest{
 		Protocol: openid4vp.DcApiProtocolUnsigned,
 		Origin:   dcApiOrigin,
 		Data:     unsignedDcApiMdocData(t, string(openid4vp.ResponseMode_DcApi), nil),
 	})
-	grantDcApiDisclosure(t, c, 1, session)
+	grantDcApiDisclosure(t, c, 2, session)
 
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
 	response := requireDcApiDeviceResponse(t, session.DcApiResponse)
 
@@ -116,7 +120,7 @@ func testDcApiMdocRejectsUrlFlowHandover(
 		Handover: []any{"OpenID4VPHandover", urlFlowDigest[:]},
 	}
 
-	verifier := stdmdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})
+	verifier := stdmdoc.NewVerifier([]*x509.Certificate{eudiPidIssuerPyCACert(t)})
 	results, err := verifier.VerifyDeviceResponse(response, avDocType, avDocType, urlFlow)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
@@ -129,27 +133,23 @@ func testDcApiMdocRejectsUrlFlowHandover(
 // not null: deviceAuth commits to the thumbprint of the key the response is
 // encrypted to, so the wallet has to pick that key before signing and then
 // encrypt to that very key. A mismatch decrypts fine and fails the signature.
-func testDcApiMdocEncryptedDisclosure(
-	t *testing.T,
-	_ *IrmaServer,
-	c *client.Client,
-	sessionHandler *MockSessionHandler,
-) {
-	issuer := seedAvMdoc(t, c)
+func testDcApiMdocEncryptedDisclosure(t *testing.T) {
+	c, sessionHandler := seedDcApiMdocWallet(t)
+	defer c.Close()
 
 	privateKey, clientMetadata := dcApiEncryptionClientMetadata(t)
 
-	session := startDcApiSession(t, c, 1, sessionHandler, &openid4vp.DcApiRequest{
+	session := startDcApiSession(t, c, 2, sessionHandler, &openid4vp.DcApiRequest{
 		Protocol: openid4vp.DcApiProtocolUnsigned,
 		Origin:   dcApiOrigin,
 		Data:     unsignedDcApiMdocData(t, string(openid4vp.ResponseMode_DcApiJwt), clientMetadata),
 	})
-	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	grantDcApiDisclosure(t, c, 1, session)
+	grantDcApiDisclosure(t, c, 2, session)
 
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
 	var envelope struct {
 		Response string          `json:"response"`
@@ -172,7 +172,7 @@ func testDcApiMdocEncryptedDisclosure(
 	thumbprint, err := publicKey.Thumbprint(crypto.SHA256)
 	require.NoError(t, err)
 
-	requireDeviceAuthVerifies(t, issuer, response,
+	requireDeviceAuthVerifies(t, response,
 		dcApiSessionTranscript(t, dcApiOrigin, dcApiNonce, thumbprint))
 }
 

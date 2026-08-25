@@ -111,6 +111,44 @@ type Session struct {
 	Link string
 }
 
+// DcqlQuery builds the dcql_query object CreateSession sends, applying the same
+// defaults it does: an empty Namespace means the docType, and an empty QueryID
+// means "age".
+//
+// Exported so a caller can show the query it is about to send. The alternative --
+// fetching the request object and decoding the JAR -- consumes it, because
+// request_uri is single use: read it to inspect the query and the phone can no
+// longer fetch it, so inspecting the session would destroy it. The verifier is no
+// help either, answering 400 until the wallet responds and keeping nothing across
+// a restart.
+//
+// CreateSession calls this rather than building the query inline, so what gets
+// printed and what gets sent cannot drift.
+func DcqlQuery(req SessionRequest) map[string]any {
+	namespace := req.Namespace
+	if namespace == "" {
+		namespace = req.DocType
+	}
+	queryID := req.QueryID
+	if queryID == "" {
+		queryID = "age"
+	}
+
+	claim := map[string]any{"path": []string{namespace, req.Element}}
+	if req.Value != nil {
+		claim["values"] = []any{*req.Value}
+	}
+
+	return map[string]any{
+		"credentials": []map[string]any{{
+			"id":     queryID,
+			"format": "mso_mdoc",
+			"meta":   map[string]any{"doctype_value": req.DocType},
+			"claims": []map[string]any{claim},
+		}},
+	}
+}
+
 // CreateSession starts a presentation at the verifier and returns the wallet
 // link for it.
 //
@@ -122,15 +160,6 @@ func CreateSession(cfg Config, req SessionRequest) (*Session, error) {
 	if req.DocType == "" || req.Element == "" {
 		return nil, fmt.Errorf("localstack: SessionRequest needs both DocType and Element")
 	}
-	namespace := req.Namespace
-	if namespace == "" {
-		namespace = req.DocType
-	}
-	queryID := req.QueryID
-	if queryID == "" {
-		queryID = "age"
-	}
-
 	issuerCA, err := os.ReadFile(cfg.IssuerCAPath())
 	if err != nil {
 		return nil, fmt.Errorf("read issuer CA: %w", err)
@@ -145,21 +174,9 @@ func CreateSession(cfg Config, req SessionRequest) (*Session, error) {
 		nonce = hex.EncodeToString(nonceBytes)
 	}
 
-	claim := map[string]any{"path": []string{namespace, req.Element}}
-	if req.Value != nil {
-		claim["values"] = []any{*req.Value}
-	}
-
 	body, err := json.Marshal(map[string]any{
-		"type": "vp_token",
-		"dcql_query": map[string]any{
-			"credentials": []map[string]any{{
-				"id":     queryID,
-				"format": "mso_mdoc",
-				"meta":   map[string]any{"doctype_value": req.DocType},
-				"claims": []map[string]any{claim},
-			}},
-		},
+		"type":               "vp_token",
+		"dcql_query":         DcqlQuery(req),
 		"nonce":              nonce,
 		"jar_mode":           "by_reference",
 		"request_uri_method": "get",
@@ -202,11 +219,15 @@ func CreateSession(cfg Config, req SessionRequest) (*Session, error) {
 
 // Offer is a credential offer the issuer minted.
 type Offer struct {
-	// URI is the openid-credential-offer:// link for a wallet.
+	// URI is the openid-credential-offer:// link for a wallet. Its tx_code carries
+	// input_mode, length and description but no value: see
+	// stripTransactionCodeValue.
 	URI string
-	// TxCode is the one-time code the wallet must present. A real deployment
-	// delivers this out of band; the reference issuer returns it inline, which is
-	// a convenience of the fixture rather than the protocol.
+	// TxCode is the one-time code the wallet must present, returned here so the
+	// caller can deliver it by some channel URI does not travel on. The reference
+	// issuer hands it back inside the offer, which is a convenience of the fixture
+	// rather than the protocol -- OpenID4VCI's tx_code object has no value member
+	// -- so it is taken out of URI and surfaced here instead.
 	TxCode string
 }
 
@@ -259,6 +280,8 @@ func CreateOffer(cfg Config, credentialConfigID string, data map[string]any) (*O
 	if err != nil {
 		return nil, err
 	}
+	stripTransactionCodeValue(offer)
+
 	encoded, err := json.Marshal(offer)
 	if err != nil {
 		return nil, err
@@ -267,6 +290,43 @@ func CreateOffer(cfg Config, credentialConfigID string, data map[string]any) (*O
 		URI:    "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(encoded)),
 		TxCode: txCode,
 	}, nil
+}
+
+// stripTransactionCodeValue removes tx_code.value from an offer, leaving the
+// members that tell a wallet how to prompt for it: input_mode, length and
+// description.
+//
+// The reference issuer returns the code inside the offer it hands back. That is
+// a convenience of the fixture, not the protocol -- OpenID4VCI's tx_code object
+// has no "value" member at all -- and a one-time code shipped inside the very
+// link it is supposed to protect protects nothing: anyone who can read the link
+// can read the code. Carrying it in the deep link would demonstrate the opposite
+// of what a transaction code is for.
+//
+// Removing it costs nothing here, because irmago never reads it. The wallet's
+// openid4vci.TransactionCode carries only InputMode, Length and Description, so
+// it always prompts the user; a wallet that auto-filled from the offer would
+// change behaviour, this one cannot tell the difference. The code itself still
+// reaches the caller as Offer.TxCode, to be delivered by some channel the link
+// does not travel on.
+//
+// Missing or malformed members are left alone rather than treated as an error:
+// the caller has already extracted the code through TransactionCode by this
+// point, so anything unexpected here has been reported already.
+func stripTransactionCodeValue(offer map[string]any) {
+	grants, ok := offer["grants"].(map[string]any)
+	if !ok {
+		return
+	}
+	preAuth, ok := grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"].(map[string]any)
+	if !ok {
+		return
+	}
+	tx, ok := preAuth["tx_code"].(map[string]any)
+	if !ok {
+		return
+	}
+	delete(tx, "value")
 }
 
 // TransactionCode digs the one-time code out of an offer.
@@ -356,15 +416,22 @@ func TrustProxyCertificate(cfg Config) error {
 // than the credential holds -- with one element there is no selective disclosure
 // to see.
 //
-// This is the single source of truth for what the demos issue. Nothing rewrites
-// it from a flag: mint-session's -value constrains the query alone, so an offer
-// and a query can be made to disagree deliberately, which is what a refusal test
-// needs. Change what is minted by editing the map below.
+// This is the default for what the demos issue, and the only thing mdoc-e2e ever
+// issues. mint-session's -mint can supply a different set, but -value cannot:
+// -value constrains the query alone, so an offer and a query can be made to
+// disagree deliberately, which is what a refusal test needs. A single flag
+// driving both would make every run agree with itself.
 //
-// Note that a credential whose value matches the query it will face passes
-// whether or not the value constraint is enforced at all, so a run that agrees
-// with itself proves less than one that had to be matched on purpose. Use
-// WithElement if a caller genuinely needs to force one key.
+// That distinction is the point rather than an accident: a credential whose value
+// matches the query it will face passes whether or not the value constraint is
+// enforced at all, so a run that agrees with itself proves less than one that had
+// to be matched on purpose.
+//
+// Nothing else may restate these values. mdoc-e2e once hardcoded a false value
+// constraint and three narration lines describing an earlier version of this map;
+// when the map changed, its happy path silently became the refusal path and
+// reported it as "the wallet has nothing to disclose". Derive from this function
+// instead.
 func DefaultAVElements() map[string]any {
 	return map[string]any{
 		"age_over_18": true,

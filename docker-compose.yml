@@ -512,7 +512,7 @@ services:
       # when it does not match. Recompute it after regenerating the keystore with:
       # openssl x509 -in testdata/eudi/verifier/verifier.crt -outform der |
       #   openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '='
-      - VERIFIER_ORIGINALCLIENTID=h7SCYu3pDQs0Nm6sw7uwb5DsxcXY5VpaJRQ0FlB9Zrw
+      - VERIFIER_ORIGINALCLIENTID=jiPOinGG-_OKb0phKev7RlY9kzn4FbxPNHFTbrYNzd8
       - VERIFIER_CLIENTIDPREFIX=x509_hash
       # See the note on the other verifier services: the buildpack caps direct
       # memory at 10M and Netty exhausts it after a few dozen sessions.

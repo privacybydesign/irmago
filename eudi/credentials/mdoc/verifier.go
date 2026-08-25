@@ -432,6 +432,34 @@ func DocTypeFromIssuerAuth(issuerAuth cbor.RawMessage) (string, error) {
 	return mso.DocType, nil
 }
 
+// DeviceKeyFromIssuerAuth reads the device public key the MSO binds a credential
+// to, without verifying anything.
+//
+// It exists so a wallet can find out which device key has to sign a presentation
+// before it builds one. That key is the credential's own binding, so the question
+// has exactly one right answer and a presentation signed with any other key is
+// refused -- which is why resolving the signer from here is preferable to
+// resolving it from whatever key record happens to be joined to the stored
+// credential. Nothing is trusted on the strength of being read here: the copy the
+// device signature is actually checked against is re-read from the MSO by
+// VerifyWithDeviceAuth, after the Document Signer's signature over it has been
+// checked.
+func DeviceKeyFromIssuerAuth(issuerAuth cbor.RawMessage) (*ecdsa.PublicKey, error) {
+	msg, err := decodeCoseSign1(issuerAuth)
+	if err != nil {
+		return nil, fmt.Errorf("decode cose: %w", err)
+	}
+	mso, err := tag24Unwrap[MSO](msg.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("decode mso: %w", err)
+	}
+	deviceKey, err := ecdsaPublicKeyFromCOSE(mso.DeviceKeyInfo.DeviceKey)
+	if err != nil {
+		return nil, fmt.Errorf("decode deviceKey: %w", err)
+	}
+	return deviceKey, nil
+}
+
 // verifyNamespaceDigests recomputes SHA-256(Tag24(item)) for each disclosed
 // item in items and compares it against nsDigests[item.DigestID]
 // (constant-time), returning the decoded elementIdentifier -> elementValue

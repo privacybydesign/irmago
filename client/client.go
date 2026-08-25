@@ -179,7 +179,11 @@ func New(
 	// Blueprint's proof_of_age credential). No fetchers here (unlike the SD-JWT
 	// handler above): there's no standardized online discovery document for an mdoc
 	// doctype to describe credentials the wallet has never seen.
-	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, currentLocale)
+	// The device key binder is the software one: it reads the PKCS#8 key issuance
+	// stored. Replacing it with a StrongBox / Secure Enclave implementation is the
+	// one change needed to keep mdoc device keys out of this process.
+	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, currentLocale,
+		services.NewMdocDeviceKeyBinder(hbkStore))
 
 	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler, mdocDcqlHandler}, verifierValidator, currentLocale)
 	if err != nil {

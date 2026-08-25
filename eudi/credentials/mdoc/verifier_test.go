@@ -151,7 +151,7 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 // under the test's control instead of hardcoded to tag24(empty map). Everything
 // else — the tag-24 wrapping, ES256, the untagged COSE_Sign1, the detached
 // payload — is kept identical, since the point is to vary one input.
-func signDeviceAuthOver(t *testing.T, h *Holder, docType string, transcript SessionTranscript, deviceNameSpaces []byte) []byte {
+func signDeviceAuthOver(t *testing.T, h *DefaultHolder, docType string, transcript SessionTranscript, deviceNameSpaces []byte) []byte {
 	t.Helper()
 
 	payload, err := tag24Wrap(DeviceAuthentication{
@@ -164,7 +164,7 @@ func signDeviceAuthOver(t *testing.T, h *Holder, docType string, transcript Sess
 		t.Fatalf("wrap deviceAuthentication: %v", err)
 	}
 
-	signer, err := cose.NewSigner(cose.AlgorithmES256, h.devicekey)
+	signer, err := cose.NewSigner(cose.AlgorithmES256, h.signer)
 	if err != nil {
 		t.Fatalf("create signer: %v", err)
 	}

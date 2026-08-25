@@ -32,11 +32,11 @@ const (
 	// A doctype with more than one namespace, which the AV profile never has --
 	// the shape mDL uses, and the only way to reach the per-namespace merge.
 	secondNamespace = "org.iso.18013.5.1.aamva"
-	testIssuerURL = "https://issuer.example.com"
-	testClientId  = "x509_san_dns:verifier.example.com"
-	testNonce     = "n-0S6_WzA2Mj"
-	testResponseU = "https://verifier.example.com/response"
-	testOrigin    = "https://verifier.example.com"
+	testIssuerURL   = "https://issuer.example.com"
+	testClientId    = "x509_san_dns:verifier.example.com"
+	testNonce       = "n-0S6_WzA2Mj"
+	testResponseU   = "https://verifier.example.com/response"
+	testOrigin      = "https://verifier.example.com"
 )
 
 // TestFindCandidatesAndPrepareDisclosureRoundTrip walks one mdoc through every
@@ -386,11 +386,13 @@ func TestFindCandidatesCarriesIntentToRetain(t *testing.T) {
 }
 
 // TestFindCandidatesRefusesMalformedClaimPath pins that a path which is not
-// exactly [namespace, elementIdentifier] never matches a stored mdoc. The shape
-// check is also what keeps such a path out of authorization
-// (dcql.AuthorizationAttributeNames contributes no name for one), so the two
-// have to agree: if a malformed path matched here it would disclose an element
-// no relying party was authorized for.
+// exactly [namespace, elementIdentifier] never matches a stored mdoc, and that
+// the query is refused by name rather than answered with an empty candidate
+// list -- which a verifier cannot tell apart from a wallet that does not hold
+// the credential. The shape check is also what keeps such a path out of
+// authorization (dcql.AuthorizationAttributeNames contributes no name for one),
+// so the two have to agree: if a malformed path matched here it would disclose
+// an element no relying party was authorized for.
 func TestFindCandidatesRefusesMalformedClaimPath(t *testing.T) {
 	for name, path := range map[string][]any{
 		"one component":        {"age_over_18"},
@@ -408,9 +410,12 @@ func TestFindCandidatesRefusesMalformedClaimPath(t *testing.T) {
 				Meta:   &dcql.Meta{DocTypeValue: testDocType},
 				Claims: []dcql.Claim{{Path: path}},
 			})
-			require.NoError(t, err)
-			assert.Empty(t, result.OwnedCandidates,
-				"a claim path that is not [namespace, elementIdentifier] must not match a stored mdoc")
+			require.Error(t, err,
+				"a claim path that is not [namespace, elementIdentifier] must be refused as a query defect")
+			assert.Contains(t, err.Error(), "mso_mdoc claim path",
+				"the error must say what is wrong with the path, not just that nothing matched")
+			assert.Nil(t, result,
+				"a refused query must not also come back with candidates")
 		})
 	}
 }
@@ -451,21 +456,41 @@ func TestSelectiveDiscloseByPathsOmitsUnrequestedNamespace(t *testing.T) {
 	assert.False(t, present, "a namespace nothing was requested from must not appear at all")
 }
 
-// TestSelectiveDiscloseByPathsMalformedPathNeverWidensDisclosure pins the
-// invariant that survives whichever way the malformed-path handling is settled:
-// a path of the wrong shape may cause an element to be withheld, but it must
-// never cause one to be revealed. Note age_over_21 stays undisclosed even though
-// a three-component path names it.
-func TestSelectiveDiscloseByPathsMalformedPathNeverWidensDisclosure(t *testing.T) {
+// TestSelectiveDiscloseByPathsRefusesMalformedPath settles the malformed-path
+// handling the invariant was written around: rather than silently disclosing one
+// element fewer than the user consented to, the disclosure fails and says which
+// path is wrong. The privacy half of the old invariant holds a fortiori --
+// nothing is revealed, because no document is returned at all. Note the
+// three-component path naming age_over_21 does not reveal it either way.
+func TestSelectiveDiscloseByPathsRefusesMalformedPath(t *testing.T) {
+	for name, path := range map[string][]any{
+		"one component":      {testNamespace},
+		"three components":   {testNamespace, "age_over_21", "extra"},
+		"non-string element": {secondNamespace, 0},
+		"empty":              {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := newTwoNamespaceMdoc(t, secondNamespace)
+
+			disclosed, err := selectiveDiscloseByPaths(doc, [][]any{
+				{testNamespace, "age_over_18"},
+				path,
+			})
+			require.Error(t, err, "a malformed claim path must not be skipped")
+			assert.Contains(t, err.Error(), "mso_mdoc claim path")
+			assert.Nil(t, disclosed,
+				"a refused disclosure must not return a document, least of all a partial one")
+		})
+	}
+}
+
+// TestSelectiveDiscloseByPathsRevealsOnlyNamedElements is the other half: with
+// every path well formed, exactly the named elements are revealed and the ones
+// the credential also carries stay behind.
+func TestSelectiveDiscloseByPathsRevealsOnlyNamedElements(t *testing.T) {
 	doc := newTwoNamespaceMdoc(t, secondNamespace)
 
-	disclosed, err := selectiveDiscloseByPaths(doc, [][]any{
-		{testNamespace, "age_over_18"},
-		{testNamespace},
-		{testNamespace, "age_over_21", "extra"},
-		{secondNamespace, 0},
-		{},
-	})
+	disclosed, err := selectiveDiscloseByPaths(doc, [][]any{{testNamespace, "age_over_18"}})
 	require.NoError(t, err)
 
 	require.Len(t, disclosed.IssuerSigned.NameSpaces, 1)
@@ -482,6 +507,23 @@ type testEnv struct {
 	verifier *stdmdoc.Verifier
 	store    db.CredentialStore
 	hash     string
+
+	// eudiStorage and deviceKeys are what withDeviceKeyBinder needs: the storage
+	// to rebuild a handler over, and the device private keys the stored
+	// credentials were issued against, which a substitute binder has to be able
+	// to resolve for the presentation to verify.
+	eudiStorage storage.Storage
+	deviceKeys  []*ecdsa.PrivateKey
+}
+
+// withDeviceKeyBinder rebuilds the handler over the same stored credentials with
+// a different device key binder. Substituting the binder is the only way to
+// observe what the handler asks of it, and the only way to exercise a device key
+// this process cannot extract.
+func (e *testEnv) withDeviceKeyBinder(binder DeviceKeyBinder) *testEnv {
+	withBinder := *e
+	withBinder.handler = NewMdocDcqlHandler(e.eudiStorage, clientmodels.NewCurrentLocale("en"), binder)
+	return &withBinder
 }
 
 // newTestEnv stores a batch of one, the reusable case.
@@ -496,6 +538,16 @@ func newTestEnv(t *testing.T) *testEnv {
 // writes rather than a hand-built fixture.
 func newTestEnvWithBatchSize(t *testing.T, batchSize uint) *testEnv {
 	t.Helper()
+	return newTestEnvWithExpiry(t, batchSize, nil)
+}
+
+// newTestEnvWithExpiry is newTestEnvWithBatchSize with the stored batch expiry
+// under the test caller control, which is the one state a real issuer will not
+// hand out on request: a credential whose validity window has already closed.
+// Only the batch metadata moves -- the credential itself is the same genuinely
+// issued one, and the batch is what the wallet filters on before matching.
+func newTestEnvWithExpiry(t *testing.T, batchSize uint, expiresAt *time.Time) *testEnv {
+	t.Helper()
 
 	issuer, err := stdmdoc.NewIssuer()
 	require.NoError(t, err)
@@ -504,11 +556,14 @@ func newTestEnvWithBatchSize(t *testing.T, batchSize uint) *testEnv {
 
 	var instances []models.IssuedCredentialInstance
 	var first *services.ParsedCredential
+	var deviceKeys []*ecdsa.PrivateKey
 	for range batchSize {
 		holderKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		require.NoError(t, err)
 		holderKeyPKCS8, err := x509.MarshalPKCS8PrivateKey(holderKey)
 		require.NoError(t, err)
+
+		deviceKeys = append(deviceKeys, holderKey)
 
 		issued, err := issuer.Issue(testDocType, testNamespace, map[string]any{
 			"age_over_18": true,
@@ -553,7 +608,7 @@ func newTestEnvWithBatchSize(t *testing.T, batchSize uint) *testEnv {
 		Hash:                     hash,
 		ProcessedSdJwtPayload:    datatypes.JSON(first.ResolvedClaims),
 		IssuedAt:                 nullTimeFromUnix(first.IssuedAt),
-		ExpiresAt:                nullTimeFromUnix(first.ExpiresAt),
+		ExpiresAt:                storedExpiry(first, expiresAt),
 		NotBefore:                nullTimeFromUnix(first.NotBefore),
 		BatchSize:                batchSize,
 		RemainingCount:           batchSize,
@@ -562,10 +617,15 @@ func newTestEnvWithBatchSize(t *testing.T, batchSize uint) *testEnv {
 	}))
 
 	return &testEnv{
-		handler:  NewMdocDcqlHandler(eudiStorage, clientmodels.NewCurrentLocale("en")),
-		verifier: verifier,
-		store:    store,
-		hash:     hash,
+		// The production binder, wired as client.New wires it, so every test that
+		// does not substitute one is covering the real path.
+		handler: NewMdocDcqlHandler(eudiStorage, clientmodels.NewCurrentLocale("en"),
+			services.NewMdocDeviceKeyBinder(db.NewHolderBindingKeyStore(eudiStorage.Db()))),
+		verifier:    verifier,
+		store:       store,
+		hash:        hash,
+		eudiStorage: eudiStorage,
+		deviceKeys:  deviceKeys,
 	}
 }
 
@@ -741,6 +801,15 @@ func disclosedElements(t *testing.T, items []stdmdoc.Tag24Item) []string {
 	return names
 }
 
+// storedExpiry is the batch expiry to store: the one the credential carries, or
+// the override a test asked for.
+func storedExpiry(parsed *services.ParsedCredential, override *time.Time) datatypes.NullTime {
+	if override != nil {
+		return datatypes.NullTime{V: *override, Valid: true}
+	}
+	return nullTimeFromUnix(parsed.ExpiresAt)
+}
+
 func newTestStorage(t *testing.T) storage.Storage {
 	t.Helper()
 
@@ -761,4 +830,51 @@ func nullTimeFromUnix(unix *int64) datatypes.NullTime {
 		return datatypes.NullTime{}
 	}
 	return datatypes.NullTime{V: time.Unix(*unix, 0).UTC(), Valid: true}
+}
+
+// TestFindCandidatesSkipsExpiredBatch pins that a credential whose validity
+// window has closed is not offered for disclosure.
+//
+// The wallet filters on the batch validity window before any claim matching, so
+// an expired credential is invisible to the verifier rather than refused at one:
+// nothing in the DeviceResponse would say why, and a verifier that checks
+// ValidityInfo itself would reject a presentation the user was told they could
+// make. What the user does see is the request -- the query is still described as
+// obtainable, so the permission screen can say what was asked for and that they
+// have nothing valid to answer it with.
+func TestFindCandidatesSkipsExpiredBatch(t *testing.T) {
+	expired := time.Now().Add(-time.Hour)
+	env := newTestEnvWithExpiry(t, 1, &expired)
+
+	result, err := env.handler.FindCandidates(dcql.CredentialQuery{
+		Id:     "av",
+		Format: string(clientmodels.Format_MsoMdoc),
+		Meta:   &dcql.Meta{DocTypeValue: testDocType},
+		Claims: []dcql.Claim{{Path: []any{testNamespace, "age_over_18"}}},
+	})
+	require.NoError(t, err)
+
+	assert.Empty(t, result.OwnedCandidates,
+		"a credential whose validity window has passed must not be offered")
+	assert.Len(t, result.ObtainableDescriptors, 1,
+		"with nothing valid to offer, the request itself must still be described")
+}
+
+// TestFindCandidatesOffersABatchInsideItsValidityWindow is the control for the
+// test above: the same credential, stored with the expiry its issuer signed, is
+// offered. Without it an expiry filter that rejected everything would pass.
+func TestFindCandidatesOffersABatchInsideItsValidityWindow(t *testing.T) {
+	env := newTestEnv(t)
+
+	result, err := env.handler.FindCandidates(dcql.CredentialQuery{
+		Id:     "av",
+		Format: string(clientmodels.Format_MsoMdoc),
+		Meta:   &dcql.Meta{DocTypeValue: testDocType},
+		Claims: []dcql.Claim{{Path: []any{testNamespace, "age_over_18"}}},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, result.OwnedCandidates, 1)
+	assert.Empty(t, result.ObtainableDescriptors,
+		"a credential the wallet owns must not also be advertised as obtainable")
 }

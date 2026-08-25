@@ -2,13 +2,9 @@ package sessiontest
 
 import (
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"io"
@@ -17,18 +13,14 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/stretchr/testify/require"
-	"gorm.io/datatypes"
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
-	"github.com/privacybydesign/irmago/eudi/storage/db"
-	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/testdata"
 )
@@ -39,15 +31,41 @@ import (
 // certificate rather than only in unit tests.
 const avDocType = "eu.europa.ec.av.1"
 
+// The display metadata the AV mdoc credential configuration publishes, resolved
+// to the client's locale. These are asserted literally rather than read back out
+// of the wallet, because reading them back would pass just as happily against the
+// empty strings a credential with no display metadata produces -- which is exactly
+// what the seeded fixture these subtests used to run on did produce, and what made
+// the wallet look as though it could not name an mdoc credential at all.
+//
+// They come from the pinned issuer image's metadata document
+// (/.well-known/openid-credential-issuer, configuration
+// eu.europa.ec.eudi.age_verification_mdoc): credential_metadata.display[0].name,
+// the top-level display[0].name, and the claim display for
+// ["eu.europa.ec.av.1", "age_over_18"]. Only an "en" locale is published, so a
+// translation-fallback assertion is not available from this issuer.
+const (
+	avCredentialDisplayName = "Proof of Age"
+	avIssuerDisplayName     = "Digital Credentials Issuer"
+	avAgeOver18DisplayName  = "Age Over 18"
+)
+
 // testSessionHandlerForOpenID4VPWithMdocAv covers an mso_mdoc age-verification
 // presentation end to end against the EU reference verifier container.
 //
-// This is the only place the mdoc disclosure path runs against a real verifier:
-// the wallet matches the DCQL query, signs a DeviceResponse with the credential's
-// device key, and the verifier accepts it. The relying party certificate the
-// container presents is testdata/eudi/verifier/verifier.crt, whose scheme
-// extension authorizes eu.europa.ec.av.1 — so the authorization stage runs for
-// real and passes because the certificate genuinely permits the query.
+// The wallet matches the DCQL query, signs a DeviceResponse with the device key
+// of a credential it was genuinely issued, and the verifier accepts it. The
+// relying party certificate the container presents is
+// testdata/eudi/verifier/verifier.crt, whose scheme extension authorizes
+// eu.europa.ec.av.1 — so the authorization stage runs for real and passes because
+// the certificate genuinely permits the query.
+//
+// What these subtests add over the disclosure subtest in
+// eudi_pid_python_issuer_mdoc_test.go, which also issues for real and presents to
+// this container, is what happens to the bytes: the authorization request is
+// captured so the session transcript can be rebuilt independently, and the
+// DeviceResponse the verifier received is verified here rather than being taken
+// on the container's word that it arrived.
 //
 // The disclosure runs against both verifier containers, because the response
 // mode changes the bytes deviceAuth signs over: direct_post.jwt puts the
@@ -55,30 +73,12 @@ const avDocType = "eu.europa.ec.av.1"
 // null there. Only one of the two can be wrong at a time, and only the AV
 // Blueprint's own choice — direct_post — matters for conformance.
 func testSessionHandlerForOpenID4VPWithMdocAv(t *testing.T) {
-	runEudiSessionTest(t,
-		"age verification mdoc is disclosed to the verifier",
-		testOpenID4VP_MdocAv_Disclosure,
-	)
-
-	runEudiSessionTest(t,
-		"age verification mdoc is disclosed with response mode direct_post",
-		testOpenID4VP_MdocAv_DisclosureDirectPost,
-	)
-
-	runEudiSessionTest(t,
-		"an unauthorized mdoc doctype is refused",
-		testOpenID4VP_MdocAv_UnauthorizedDocType,
-	)
-
-	runEudiSessionTest(t,
-		"an expired credential is not offered",
-		testOpenID4VP_MdocAv_ExpiredCredentialIsNotOffered,
-	)
-
-	runEudiSessionTest(t,
-		"an exhausted batch is not offered",
-		testOpenID4VP_MdocAv_ExhaustedBatchIsNotOffered,
-	)
+	t.Run("age verification mdoc is disclosed to the verifier",
+		testOpenID4VP_MdocAv_Disclosure)
+	t.Run("age verification mdoc is disclosed with response mode direct_post",
+		testOpenID4VP_MdocAv_DisclosureDirectPost)
+	t.Run("an unauthorized mdoc doctype is refused",
+		testOpenID4VP_MdocAv_UnauthorizedDocType)
 }
 
 // testOpenID4VP_MdocAv_UnauthorizedDocType asks for a docType the verifier's
@@ -87,14 +87,12 @@ func testSessionHandlerForOpenID4VPWithMdocAv(t *testing.T) {
 // scheme extension, so the passing case passes because eu.europa.ec.av.1 was
 // added to that authorized set and not because the check was skipped.
 //
-// The refusal happens before any credential matching, so no credential needs to
-// be seeded for this one.
-func testOpenID4VP_MdocAv_UnauthorizedDocType(
-	t *testing.T,
-	_ *IrmaServer,
-	c *client.Client,
-	sessionHandler *MockSessionHandler,
-) {
+// The refusal happens before any credential matching, so this one needs no
+// credential in the wallet at all — and therefore no issuance.
+func testOpenID4VP_MdocAv_UnauthorizedDocType(t *testing.T) {
+	c, sessionHandler := createPidIssuerTestClient(t)
+	defer c.Close()
+
 	dcql := `{
 		"credentials": [
 		  {
@@ -118,13 +116,8 @@ func testOpenID4VP_MdocAv_UnauthorizedDocType(
 		"credential eu.europa.ec.av.2 is not in the authorized set")
 }
 
-func testOpenID4VP_MdocAv_Disclosure(
-	t *testing.T,
-	irmaServer *IrmaServer,
-	c *client.Client,
-	sessionHandler *MockSessionHandler,
-) {
-	runMdocAvDisclosure(t, c, sessionHandler, testdata.OpenID4VP_DirectPostJwt_Host)
+func testOpenID4VP_MdocAv_Disclosure(t *testing.T) {
+	runMdocAvDisclosure(t, testdata.OpenID4VP_DirectPostJwt_Host)
 }
 
 // testOpenID4VP_MdocAv_DisclosureDirectPost runs the same disclosure against the
@@ -134,47 +127,56 @@ func testOpenID4VP_MdocAv_Disclosure(
 // not the same code path: the handover carries a CBOR null where direct_post.jwt
 // carries the response encryption key's thumbprint, so a bug in either branch of
 // that choice shows up in exactly one of these two subtests.
-func testOpenID4VP_MdocAv_DisclosureDirectPost(
-	t *testing.T,
-	irmaServer *IrmaServer,
-	c *client.Client,
-	sessionHandler *MockSessionHandler,
-) {
-	runMdocAvDisclosure(t, c, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
+func testOpenID4VP_MdocAv_DisclosureDirectPost(t *testing.T) {
+	runMdocAvDisclosure(t, testdata.OpenID4VP_DirectPost_Host)
 }
 
-func runMdocAvDisclosure(
-	t *testing.T,
-	c *client.Client,
-	sessionHandler *MockSessionHandler,
-	verifierHost string,
-) {
+func runMdocAvDisclosure(t *testing.T, verifierHost string) {
 	t.Helper()
 
-	issuer := seedAvMdoc(t, c)
+	c, sessionHandler := createPidIssuerTestClient(t)
+	defer c.Close()
 
-	testSession, requestJwt := startMdocAvSessionCapturingRequest(t, c, 1, sessionHandler,
-		verifierHost, createMdocAvAuthRequestRequest(t, issuer))
+	// The credential is issued for real, over OpenID4VCI from the reference
+	// issuer, rather than written into storage by the test. What is presented
+	// below is then whatever issuance actually produced and stored -- device key,
+	// batch, cached claims and all -- so a fault anywhere in that half shows up
+	// here instead of being papered over by a fixture that agrees with the reader.
+	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
+
+	// Session 1 was the issuance, so the presentation is session 2.
+	testSession, requestJwt := startMdocAvSessionCapturingRequest(t, c, 2, sessionHandler,
+		verifierHost, createAvMdocAuthRequest(t))
 
 	session := testSession.ClientSession
-	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
 
-	// No display metadata was stored with the credential (the AV profile does not
-	// specify any), so the credential name falls back to the raw docType and the
-	// claim has no label. The claim path is the two-component
-	// [namespace, elementIdentifier] form mdoc matching requires.
+	// The permission screen names the credential, its issuer and the claim, all
+	// three resolved from the issuer metadata that OpenID4VCI fetched at issuance.
+	// Nothing here is mdoc-specific in the wallet: the same
+	// services.IssuerNamesByLanguage / credential_metadata plumbing serves SD-JWT.
+	//
+	// This is asserted literally on purpose. These subtests used to run on a seeded
+	// batch that carried neither IssuerDisplay nor CredentialMetadata, so the plan
+	// really did come back with the raw docType as the name, no claim label and an
+	// empty issuer name -- and the assertions here encoded that as correct. It read
+	// as a gap in mdoc display support; it was the fixture.
+	//
+	// The claim path stays the two-component [namespace, elementIdentifier] form
+	// mdoc matching requires; a label never replaces it.
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
 				Owned: []expectedPlanCredential{{
 					CredentialId: avDocType,
-					Name:         avDocType,
-					IssuerName:   "",
+					Name:         avCredentialDisplayName,
+					IssuerName:   avIssuerDisplayName,
 					Attributes: []expectedAttr{
 						{
-							Path:  []any{avDocType, "age_over_18"},
-							Value: boolVal(true),
+							Path:        []any{avDocType, "age_over_18"},
+							DisplayName: new(avAgeOver18DisplayName),
+							Value:       boolVal(true),
 						},
 					},
 				}},
@@ -182,14 +184,22 @@ func runMdocAvDisclosure(
 		},
 	})
 
+	// The permission screen and the credential list are built by different code
+	// (mdoc_dcql.FindCandidates and services.CredentialService), and a user who
+	// approves a disclosure is trusting that the screen names the same issuer the
+	// list does. Pinning both to the literal above would let them drift apart
+	// without either assertion noticing, so cross-check them against each other.
+	require.Equal(t, avIssuerDisplayName, avMdocIssuerName(t, c),
+		"the credential list and the permission screen must name the issuer identically")
+
 	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	// Kept for the log assertion below, which checks the entry is filed under the
 	// verifier the permission screen actually named.
 	approvedRequestor := session.Requestor
-	grantPermission(t, c, 1, makeDisclosureChoice(choice))
+	grantPermission(t, c, 2, makeDisclosureChoice(choice))
 
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
 	response := requireMdocVerifierResult(t, testSession.VerifierSession, "age", avDocType, "age_over_18", true)
 
@@ -199,7 +209,7 @@ func runMdocAvDisclosure(
 	// in the wallet and fatal only at a verifier that does check. So verify the
 	// signature here, against a transcript rebuilt from the request the wallet was
 	// actually given.
-	requireDeviceAuthVerifies(t, issuer, response, avSessionTranscript(t, requestJwt))
+	requireDeviceAuthVerifies(t, response, avSessionTranscript(t, requestJwt))
 
 	requireMdocAvDisclosureLog(t, c, approvedRequestor)
 }
@@ -224,10 +234,10 @@ func requireMdocAvDisclosureLog(t *testing.T, c *client.Client, approvedRequesto
 
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
-	// Exactly one disclosure entry, not one entry: the log also carries the IRMA
-	// issuance of the keyshare credential that enrolling this client produced.
-	// Counting disclosures is what rules out the session being logged twice, which
-	// the merged read path across the two stores makes possible.
+	// Exactly one disclosure entry, not one entry: the log also carries the
+	// OpenID4VCI issuance that put the credential in this wallet. Counting
+	// disclosures is what rules out the session being logged twice, which the
+	// merged read path across the two stores makes possible.
 	disclosureCount := 0
 	for _, entry := range logs {
 		if entry.Type == clientmodels.LogType_Disclosure {
@@ -278,147 +288,6 @@ func requireMdocAvDisclosureLog(t *testing.T, c *client.Client, approvedRequesto
 	// The batch timestamps come along; they are what dates the entry in the UI.
 	require.NotNil(t, logged.IssuanceDate, "disclosure log should carry the issuance date")
 	require.NotNil(t, logged.ExpiryDate, "disclosure log should carry the expiry date")
-}
-
-// seedAvMdoc issues a real mso_mdoc age credential and stores it the way
-// issuance does, returning the issuer so its IACA can be handed to the verifier
-// as a trust anchor.
-//
-// The credential is genuinely signed rather than faked: stdmdoc.NewIssuer builds
-// the two-tier IACA/document-signer PKI the AV Blueprint expects, so the stored
-// bytes are a credential a verifier can actually check. The device key is stored
-// as a holder binding key on the instance, which is what lets the wallet produce
-// a DeviceSigned at presentation time — PrepareDisclosure refuses an instance
-// without one.
-func seedAvMdoc(t *testing.T, c *client.Client) *stdmdoc.Issuer {
-	t.Helper()
-	return seedAvMdocBatch(t, c, avSeedOptions{BatchSize: 1, RemainingCount: 1, ExpiresIn: 24 * time.Hour})
-}
-
-// avSeedOptions describes the batch seedAvMdocBatch writes, so a test can put
-// the wallet in a state a real issuer will not hand out on demand — an expired
-// credential, or a batch whose instances are all spent.
-type avSeedOptions struct {
-	BatchSize      uint
-	RemainingCount uint
-	// ExpiresIn is relative to now, and may be negative for an expired batch.
-	ExpiresIn time.Duration
-}
-
-func seedAvMdocBatch(t *testing.T, c *client.Client, opts avSeedOptions) *stdmdoc.Issuer {
-	t.Helper()
-
-	issuer, err := stdmdoc.NewIssuer()
-	require.NoError(t, err)
-
-	deviceKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	require.NoError(t, err)
-
-	issued, err := issuer.Issue(avDocType, avDocType, map[string]any{"age_over_18": true}, &deviceKey.PublicKey)
-	require.NoError(t, err)
-
-	rawCredential, err := cbor.Marshal(issued)
-	require.NoError(t, err)
-
-	devicePrivKey, err := x509.MarshalPKCS8PrivateKey(deviceKey)
-	require.NoError(t, err)
-
-	// The credential store rejects a holder binding key that carries neither a
-	// thumbprint nor a DID, so derive the thumbprint exactly as
-	// HolderBindingKeyService does at issuance: hex of the JWK's SHA-256
-	// thumbprint over the public key.
-	jwkPrivKey, err := jwk.Import(deviceKey)
-	require.NoError(t, err)
-	jwkPubKey, err := jwkPrivKey.PublicKey()
-	require.NoError(t, err)
-	require.NoError(t, jwkPubKey.Set(jwk.KeyUsageKey, jwk.ForSignature))
-	thumbprintBytes, err := jwkPubKey.Thumbprint(crypto.SHA256)
-	require.NoError(t, err)
-	thumbprint := hex.EncodeToString(thumbprintBytes)
-
-	// The namespace -> elementIdentifier -> value shape mdoc_dcql reads, which is
-	// what the mso_mdoc format parser caches at issuance.
-	resolvedClaims, err := json.Marshal(map[string]map[string]any{
-		avDocType: {"age_over_18": true},
-	})
-	require.NoError(t, err)
-
-	now := time.Now()
-	batch := &models.CredentialBatch{
-		IssuerURL:                "https://av-issuer.example.com",
-		CredentialIssuer:         "https://av-issuer.example.com",
-		VerifiableCredentialType: avDocType,
-		Format:                   models.CredentialFormatMsoMdoc,
-		Hash:                     "av-integration-batch-hash",
-		ProcessedSdJwtPayload:    datatypes.JSON(resolvedClaims),
-		IssuedAt:                 datatypes.NullTime{V: now.Add(-time.Hour), Valid: true},
-		ExpiresAt:                datatypes.NullTime{V: now.Add(opts.ExpiresIn), Valid: true},
-		BatchSize:                opts.BatchSize,
-		RemainingCount:           opts.RemainingCount,
-		Instances: []models.IssuedCredentialInstance{
-			{
-				RawCredential: rawCredential,
-				HolderBindingKey: &models.HolderBindingKey{
-					Algorithm:           models.KeyAlgorithmECDSA,
-					PrivateKey:          devicePrivKey,
-					PublicKeyThumbprint: datatypes.NullString{V: thumbprint, Valid: true},
-					ECDSA: &models.ECDSAKeyMetadata{
-						CurveName: deviceKey.Curve.Params().Name,
-					},
-				},
-			},
-		},
-	}
-
-	credStore := db.NewCredentialStore(c.EudiStorageForTesting().Db())
-	require.NoError(t, credStore.StoreBatch(batch))
-
-	return issuer
-}
-
-// createMdocAvAuthRequestRequest builds the verifier's session-creation request
-// for the age query.
-//
-// Unlike createAuthRequestRequestWithDcql this passes the freshly generated IACA
-// as issuer_chain rather than a fixture certificate: the credential is signed by
-// a per-run PKI, so the verifier can only validate its issuer signature if it is
-// told about that run's trust anchor. The body is marshalled rather than
-// formatted into a template because a PEM block carries newlines, which have to
-// be escaped to survive as a JSON string value.
-func createMdocAvAuthRequestRequest(t *testing.T, issuer *stdmdoc.Issuer) string {
-	t.Helper()
-
-	chain := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuer.IACACert().Raw})
-
-	request := map[string]any{
-		"type": "vp_token",
-		"dcql_query": map[string]any{
-			"credentials": []map[string]any{
-				{
-					"id":     "age",
-					"format": string(clientmodels.Format_MsoMdoc),
-					"meta":   map[string]any{"doctype_value": avDocType},
-					"claims": []map[string]any{
-						{"path": []string{avDocType, "age_over_18"}},
-					},
-				},
-			},
-		},
-		"nonce":    "nonce",
-		"jar_mode": "by_reference",
-		// The client fetches the request object with a GET and sends no
-		// wallet_nonce, and the verifier enforces the method the transaction was
-		// started with. Every transaction must also name an intended use or carry
-		// a relying-party registration certificate, which the wallet does not
-		// produce; id "1" is the one the image configures out of the box.
-		"request_uri_method": "get",
-		"intended_use_id":    eudiVerifierIntendedUseId,
-		"issuer_chain":       string(chain),
-	}
-
-	body, err := json.Marshal(request)
-	require.NoError(t, err)
-	return string(body)
 }
 
 // startMdocAvSessionCapturingRequest starts a verifier session and hands the
@@ -599,13 +468,12 @@ func responseEncryptionKeyThumbprint(t *testing.T, jwks json.RawMessage) []byte 
 // the test notices.
 func requireDeviceAuthVerifies(
 	t *testing.T,
-	issuer *stdmdoc.Issuer,
 	response stdmdoc.DeviceResponse,
 	transcript stdmdoc.SessionTranscript,
 ) {
 	t.Helper()
 
-	verifier := stdmdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})
+	verifier := stdmdoc.NewVerifier([]*x509.Certificate{eudiPidIssuerPyCACert(t)})
 	results, err := verifier.VerifyDeviceResponse(response, avDocType, avDocType, transcript)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
@@ -712,72 +580,29 @@ func namespaceKeys(namespaces map[string][]stdmdoc.Tag24Item) []string {
 	return keys
 }
 
-// testOpenID4VP_MdocAv_ExpiredCredentialIsNotOffered seeds a credential whose
-// validity has already run out and checks the wallet does not put it forward.
-//
-// The AV profile leans on expiry as its only revocation lever — attestations are
-// short-lived and there is no status list — so an expired one being offered is
-// the closest thing to presenting a revoked credential. `dcql.IsBatchValid`
-// implements the check, and until now nothing exercised it through a real
-// session: a unit test cannot show that the disclosure planner consults it
-// before building the permission screen.
-func testOpenID4VP_MdocAv_ExpiredCredentialIsNotOffered(
-	t *testing.T,
-	_ *IrmaServer,
-	c *client.Client,
-	sessionHandler *MockSessionHandler,
-) {
-	issuer := seedAvMdocBatch(t, c, avSeedOptions{
-		BatchSize:      1,
-		RemainingCount: 1,
-		ExpiresIn:      -time.Hour,
-	})
+// eudiPidIssuerPyCACert parses the issuer CA the containers are configured with,
+// so a test can verify a presented mdoc the way the verifier does. It is the
+// trust anchor for the document signer inside the MSO, which is the only reason
+// this test can check the issuer signature at all.
+func eudiPidIssuerPyCACert(t *testing.T) *x509.Certificate {
+	t.Helper()
 
-	testSession := startOpenID4VPSessionWithAuthRequest(t, c, 1, sessionHandler,
-		createMdocAvAuthRequestRequest(t, issuer))
-	session := testSession.ClientSession
+	block, _ := pem.Decode(readEudiPidIssuerPyCA(t))
+	require.NotNil(t, block, "the issuer CA file should hold a PEM block")
 
-	// The session still reaches the permission screen — the user is told what was
-	// asked for — but with nothing of theirs to answer it. Were the expiry check
-	// skipped, this same plan would carry the seeded credential as an owned
-	// option, which is what the assertion is really about.
-	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	require.NotNil(t, session.DisclosurePlan)
-	for _, choice := range session.DisclosurePlan.DisclosureChoicesOverview {
-		require.Empty(t, choice.OwnedOptions,
-			"the wallet offered a credential whose validity window has passed")
-	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, err)
+
+	return cert
 }
 
-// testOpenID4VP_MdocAv_ExhaustedBatchIsNotOffered seeds a batch whose instances
-// are all spent.
-//
-// Single-use is the property batch issuance exists to provide, and the wallet
-// enforces it by refusing to reuse an instance rather than by re-presenting the
-// last one. Reaching this state against a real issuer would take a hundred
-// presentations, since that is the batch size it hands out, so it is seeded.
-func testOpenID4VP_MdocAv_ExhaustedBatchIsNotOffered(
-	t *testing.T,
-	_ *IrmaServer,
-	c *client.Client,
-	sessionHandler *MockSessionHandler,
-) {
-	issuer := seedAvMdocBatch(t, c, avSeedOptions{
-		BatchSize:      2,
-		RemainingCount: 0,
-		ExpiresIn:      24 * time.Hour,
-	})
+// avMdocIssuerName reports the issuer name the credential list carries for the
+// age credential, which is what the permission screen is compared against.
+func avMdocIssuerName(t *testing.T, c *client.Client) string {
+	t.Helper()
 
-	testSession := startOpenID4VPSessionWithAuthRequest(t, c, 1, sessionHandler,
-		createMdocAvAuthRequestRequest(t, issuer))
-	session := testSession.ClientSession
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
 
-	// Unlike an expired credential, an exhausted batch fails the session outright:
-	// the wallet holds a credential of the right type and cannot spend it, which
-	// is worth telling the user about rather than silently showing nothing.
-	require.Equal(t, clientmodels.Status_Error, session.Status,
-		"a batch with no unused instances left must not produce a presentable option")
-	require.NotNil(t, session.Error)
-	require.Contains(t, session.Error.WrappedError, "exhausted",
-		"the failure should name the exhausted batch rather than surface as a generic matching failure")
+	return findMdocCredentialByDocType(t, creds, avDocType).Issuer.Name
 }

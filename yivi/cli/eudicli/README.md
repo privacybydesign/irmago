@@ -86,6 +86,9 @@ go run ./yivi/cli/eudicli/mint-session                 presentation only
 go run ./yivi/cli/eudicli/mint-session -issue          issuance too
 go run ./yivi/cli/eudicli/mint-session -value false    ask for false
 go run ./yivi/cli/eudicli/mint-session -element age_over_21
+go run ./yivi/cli/eudicli/mint-session -show-query     print the DCQL being sent
+go run ./yivi/cli/eudicli/mint-session -issue -email   mail the one-time code
+go run ./yivi/cli/eudicli/mint-session -issue -mint age_over_42=true
 ```
 
 Where `mdoc-e2e` drives a wallet it builds itself, this prints the three commands
@@ -93,6 +96,26 @@ needed to drive a real phone: the `adb` deep link for an offer, the one for a
 presentation, and the `curl` that reads the answer back. It shares its
 request-building with `mdoc-e2e` through `internal/localstack`, so the links a
 device is handed cannot drift from the ones the automated demo uses.
+
+Three flag pairs are easy to confuse, and the separation is deliberate:
+
+| Flag | Decides | Note |
+|---|---|---|
+| `-mint` | what the credential *holds* | empty mints `localstack.DefaultAVElements` |
+| `-element` / `-value` | what the query *asks* | so the two can be made to disagree, which is what testing a refusal needs |
+| `-email` / `-mail-to` | where the one-time code goes | the code is never in the offer link |
+
+`-email` is a bool: the default `-smtp localhost:1025` is the compose stack's
+mailhog, which captures mail and delivers none, so every recipient behaves alike
+and no address is needed. **Read it at http://localhost:8025** — it reaches no
+inbox. `-mail-to` matters only once `-smtp` points at a relay that really
+delivers, with credentials from `SMTP_USERNAME` / `SMTP_PASSWORD`.
+
+`-show-query` prints the `dcql_query` as sent, from the same
+`localstack.DcqlQuery` that builds it. There is otherwise no way to read it: the
+request object is single use, so fetching it to decode the query leaves nothing
+for the phone, and the verifier answers 400 until the wallet responds and keeps
+no record across a restart.
 
 Prerequisites beyond the stack: `adb reverse` for 8090, plus 8443 when issuing.
 The app needs developer mode on and must be *unlocked* when a link arrives — a

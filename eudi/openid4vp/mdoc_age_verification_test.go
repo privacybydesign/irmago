@@ -19,6 +19,7 @@ import (
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/mdoc_dcql"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -116,7 +117,7 @@ func testMdocAv_IssuedCredential_IsOwnedCandidate(t *testing.T) {
 	eudiStorage := newTestEudiStorage(t)
 	storeIssuedAvMdoc(t, eudiStorage)
 
-	handler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, clientmodels.NewCurrentLocale("en"))
+	handler := newAvMdocHandler(t, eudiStorage)
 	query := avCredentialQuery(t)
 
 	require.True(t, handler.CanHandleCredentialQuery(query))
@@ -145,7 +146,7 @@ func testMdocAv_DisplayMetadata_NamesCredentialAndClaim(t *testing.T) {
 	eudiStorage := newTestEudiStorage(t)
 	storeIssuedAvMdoc(t, eudiStorage, withAvDisplayMetadata)
 
-	handler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, clientmodels.NewCurrentLocale("en"))
+	handler := newAvMdocHandler(t, eudiStorage)
 
 	result, err := handler.FindCandidates(avCredentialQuery(t))
 
@@ -180,7 +181,7 @@ func testMdocAv_BareClaimPath_StillResolvesLabel(t *testing.T) {
 	eudiStorage := newTestEudiStorage(t)
 	storeIssuedAvMdoc(t, eudiStorage, withAvBareClaimPathMetadata)
 
-	handler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, clientmodels.NewCurrentLocale("en"))
+	handler := newAvMdocHandler(t, eudiStorage)
 
 	result, err := handler.FindCandidates(avCredentialQuery(t))
 
@@ -222,7 +223,7 @@ func testMdocAv_ExactClaimPath_WinsOverBarePath(t *testing.T) {
 		}
 	})
 
-	handler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, clientmodels.NewCurrentLocale("en"))
+	handler := newAvMdocHandler(t, eudiStorage)
 
 	result, err := handler.FindCandidates(avCredentialQuery(t))
 
@@ -240,7 +241,7 @@ func testMdocAv_WithoutCredential_IsUnobtainable(t *testing.T) {
 	// Same query, empty wallet. This is the shape of the failure that reads as a
 	// display problem in the app -- the descriptor carries the raw docType and no
 	// issuer, because there is no stored credential to take either from.
-	handler := mdoc_dcql.NewMdocDcqlHandler(newTestEudiStorage(t), clientmodels.NewCurrentLocale("en"))
+	handler := newAvMdocHandler(t, newTestEudiStorage(t))
 
 	result, err := handler.FindCandidates(avCredentialQuery(t))
 
@@ -425,6 +426,19 @@ func withAvDisplayMetadata(batch *models.CredentialBatch) {
 // newTestEudiStorage opens an in-memory eudi storage with the holder schema
 // migrated, so the credential store and the DCQL handler run against the real
 // storage layer rather than a stub.
+// newAvMdocHandler builds the handler the way client.New does, device key binder
+// included: these tests are the closest thing the package has to the real wiring,
+// so a handler assembled differently here would stop being evidence about it.
+func newAvMdocHandler(t *testing.T, eudiStorage storage.Storage) *mdoc_dcql.MdocDcqlHandler {
+	t.Helper()
+
+	return mdoc_dcql.NewMdocDcqlHandler(
+		eudiStorage,
+		clientmodels.NewCurrentLocale("en"),
+		services.NewMdocDeviceKeyBinder(db.NewHolderBindingKeyStore(eudiStorage.Db())),
+	)
+}
+
 func newTestEudiStorage(t *testing.T) storage.Storage {
 	t.Helper()
 

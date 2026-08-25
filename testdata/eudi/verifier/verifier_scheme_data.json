@@ -43,8 +43,19 @@
 			{
 				"credential": "eu.europa.ec.av.1",
 				"attributes": [
+					"age_over_13",
+					"age_over_15",
+					"age_over_16",
 					"age_over_18",
-					"age_over_21"
+					"age_over_21",
+					"age_over_23",
+					"age_over_25",
+					"age_over_27",
+					"age_over_28",
+					"age_over_40",
+					"age_over_60",
+					"age_over_65",
+					"age_over_67"
 				]
 			}
 		],
