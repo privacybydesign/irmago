@@ -67,7 +67,11 @@ func (v Verdict) CuratedLogoURI() string {
 // package. A Verdict carries nil when no list vouched for the party, which
 // includes every verdict drawn while the wallet holds no usable list.
 type Listing struct {
-	ListId  string
+	// SourceKey is the local key of the source that granted this listing — the
+	// wallet's own identifier for the list, not anything the document declares.
+	// Carried for diagnostics; nothing app-facing reads it.
+	SourceKey string
+
 	Name    clientmodels.TranslatedString
 	LogoURI string
 

@@ -28,8 +28,8 @@ func (v listedIssuerView) Issuer(trust.Evidence) trust.Verdict {
 	return trust.Verdict{
 		Level: clientmodels.TrustLevel_Medium,
 		Listing: &trust.Listing{
-			ListId:  "urn:yivi:trustlist:openid4vci-test",
-			LogoURI: v.logoURI,
+			SourceKey: "urn:yivi:trustlist:openid4vci-test",
+			LogoURI:   v.logoURI,
 		},
 	}
 }
@@ -223,8 +223,8 @@ func (v listedIssuerNamedView) Issuer(trust.Evidence) trust.Verdict {
 	return trust.Verdict{
 		Level: clientmodels.TrustLevel_Medium,
 		Listing: &trust.Listing{
-			ListId: "urn:yivi:trustlist:openid4vci-test",
-			Name:   clientmodels.TranslatedString{"en": v.name},
+			SourceKey: "urn:yivi:trustlist:openid4vci-test",
+			Name:      clientmodels.TranslatedString{"en": v.name},
 		},
 	}
 }

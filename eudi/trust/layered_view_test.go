@@ -22,7 +22,7 @@ func (s stubSnapshot) Lookup(role Role, _ Evidence) *Listing {
 
 func grantingVerifiers(level clientmodels.TrustLevel) stubSnapshot {
 	return stubSnapshot{
-		listing:   &Listing{ListId: "yivi", Name: clientmodels.TranslatedString{"en": "Listed BV"}, Level: level},
+		listing:   &Listing{SourceKey: "yivi", Name: clientmodels.TranslatedString{"en": "Listed BV"}, Level: level},
 		grantRole: RoleVerifier,
 	}
 }
@@ -40,7 +40,7 @@ func TestNewView_ListingConfersItsSourcesLevel(t *testing.T) {
 
 		require.Equal(t, level, verdict.Level)
 		require.NotNil(t, verdict.Listing)
-		require.Equal(t, "yivi", verdict.Listing.ListId)
+		require.Equal(t, "yivi", verdict.Listing.SourceKey)
 	}
 }
 

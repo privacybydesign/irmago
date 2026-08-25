@@ -81,7 +81,7 @@ func TestChecker_ListedVerifierIsGranted(t *testing.T) {
 	listing := f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: verifier})
 
 	require.NotNil(t, listing)
-	require.Equal(t, testListId, listing.ListId)
+	require.Equal(t, testListId, listing.SourceKey)
 	require.Equal(t, "Listed BV", listing.Name["en"])
 	require.Equal(t, clientmodels.TrustLevel_Medium, listing.Level,
 		"a listing confers what its source is configured with")
@@ -247,7 +247,7 @@ func TestChecker_TheStrongestGrantingListWins(t *testing.T) {
 	listing := checker.Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party})
 	require.NotNil(t, listing)
 	require.Equal(t, clientmodels.TrustLevel_High, listing.Level)
-	require.Equal(t, "urn:yivis", listing.ListId)
+	require.Equal(t, "urn:yivis", listing.SourceKey)
 }
 
 func TestChecker_ServiceNameOverridesTheEntityName(t *testing.T) {
@@ -337,7 +337,7 @@ func TestChecker_DoesNotCareWhatTheListCallsItself(t *testing.T) {
 	listing := f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: verifier})
 
 	require.NotNil(t, listing, "the document's own name is not compared against anything")
-	require.Equal(t, testListId, listing.ListId, "the listing carries the source's key, not the document's name")
+	require.Equal(t, testListId, listing.SourceKey, "the listing carries the source's key, not the document's name")
 }
 
 func TestChecker_SequenceNumberMayNotRegress(t *testing.T) {

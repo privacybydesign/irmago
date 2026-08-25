@@ -145,9 +145,9 @@ func listingOf(pinned pinnedList, entity *Entity, service *Service) *trust.Listi
 		logoURI = entity.Information.LogoURI()
 	}
 	return &trust.Listing{
-		ListId:  pinned.source.Key,
-		Name:    name.Translated(),
-		LogoURI: logoURI,
-		Level:   pinned.source.Confers,
+		SourceKey: pinned.source.Key,
+		Name:      name.Translated(),
+		LogoURI:   logoURI,
+		Level:     pinned.source.Confers,
 	}
 }

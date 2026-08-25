@@ -33,9 +33,9 @@ import (
 // Regenerate with testdata/lote-publisher/mkgolden.sh.
 
 const (
-	// Clause 6.3.6 form: `CC:name`, CC being the SchemeTerritory. The wallet
-	// compares the identity verbatim against its source's ListId and never checks
-	// the format, so the golden document is what says a conformant one looks like.
+	// Clause 6.3.6 form: `CC:name`, CC being the SchemeTerritory. The wallet reads
+	// neither the name nor its format — `lote build` is what enforces the form — so
+	// the golden document is what says a conformant one looks like.
 	goldenListId = "NL:Yivi Golden Trust List"
 
 	goldenDid          = "did:web:verifier.example.com"

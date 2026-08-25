@@ -22,26 +22,26 @@ func NewTrustListStore(db *gorm.DB) *TrustListStore {
 
 // Get implements lote.Store. Any read failure reads as a miss: the caller
 // re-fetches, and the interface has nowhere to report an error to.
-func (s *TrustListStore) Get(listId string) ([]byte, bool) {
-	if listId == "" {
+func (s *TrustListStore) Get(sourceKey string) ([]byte, bool) {
+	if sourceKey == "" {
 		return nil, false
 	}
 	var row models.TrustListDocument
-	if err := s.db.First(&row, "list_id = ?", listId).Error; err != nil {
+	if err := s.db.First(&row, "source_key = ?", sourceKey).Error; err != nil {
 		return nil, false
 	}
 	return row.RawJws, true
 }
 
-func (s *TrustListStore) Put(listId string, rawJws []byte) error {
-	if listId == "" {
-		return fmt.Errorf("trust_list_documents: empty list id")
+func (s *TrustListStore) Put(sourceKey string, rawJws []byte) error {
+	if sourceKey == "" {
+		return fmt.Errorf("trust_list_documents: empty source key")
 	}
 	if len(rawJws) == 0 {
 		return fmt.Errorf("trust_list_documents: empty document")
 	}
 	return s.db.Save(&models.TrustListDocument{
-		ListId:    listId,
+		SourceKey: sourceKey,
 		RawJws:    rawJws,
 		FetchedAt: time.Now(),
 	}).Error

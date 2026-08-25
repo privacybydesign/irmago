@@ -13,9 +13,11 @@ import "time"
 // There is no expiry column — a list carries its own `next_update`, and a second
 // copy here could disagree with the signed one.
 type TrustListDocument struct {
-	// ListId is the identifier the wallet's source set configures and the document
-	// itself declares.
-	ListId string `gorm:"primaryKey"`
+	// SourceKey is lote.Source.Key: the wallet's own identifier for the list.
+	// Deliberately not anything the document declares — a list's published name is
+	// its operator's to reword, and filing by it would make a rename break every
+	// cached copy.
+	SourceKey string `gorm:"primaryKey"`
 
 	// RawJws is the unmodified compact JAdES-B-B document, encrypted at rest by the
 	// SQLCipher layer.

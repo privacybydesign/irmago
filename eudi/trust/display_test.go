@@ -25,7 +25,7 @@ func display() PartyDisplay {
 func listed(level clientmodels.TrustLevel) Verdict {
 	return Verdict{
 		Level:   level,
-		Listing: &Listing{ListId: "yivi", Name: clientmodels.TranslatedString{"en": "Listed BV", "nl": "Vermeld BV"}},
+		Listing: &Listing{SourceKey: "yivi", Name: clientmodels.TranslatedString{"en": "Listed BV", "nl": "Vermeld BV"}},
 	}
 }
 
@@ -77,7 +77,7 @@ func TestTrustedParty_AVouchedForPartyWithNoVouchedForLogoRendersNone(t *testing
 func TestTrustedParty_AListingWithNoNameFallsThrough(t *testing.T) {
 	// An entry with no name in any language grants the rung but says nothing about
 	// what to call the party.
-	verdict := Verdict{Level: clientmodels.TrustLevel_Medium, Listing: &Listing{ListId: "yivi"}}
+	verdict := Verdict{Level: clientmodels.TrustLevel_Medium, Listing: &Listing{SourceKey: "yivi"}}
 
 	require.Equal(t, "Certified BV", display().TrustedParty(verdict, "en").Name)
 }
