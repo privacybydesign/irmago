@@ -49,7 +49,7 @@ bump loud, so it fails on equal too.`,
 
 		scheme := list.SchemeInformation
 		Logger.Infof("%s verifies: %q, sequence number %d, %d entities",
-			args[0], scheme.Identity(), scheme.SequenceNumber, len(list.Entities))
+			args[0], scheme.SchemeName["en"], scheme.SequenceNumber, len(list.Entities))
 
 		// Reported, not enforced: an expired document is still a genuine one.
 		if scheme.NextUpdate.Before(time.Now()) {

@@ -145,6 +145,9 @@ type SchemeInformation struct {
 	// under it and refuses a document declaring another, so it must be stable across
 	// re-issues and equal the source's `ListId`. Format is `CC:name`, CC being
 	// [SchemeTerritory].
+	//
+	// Only the `en` entry carries that identity — the one language clause 6.3.6
+	// prescribes a format for — so every comparison reads `SchemeName["en"]`.
 	SchemeName MultiLang `json:"SchemeName"`
 
 	SchemeInformationURI        MultiLangURI `json:"SchemeInformationURI"`
@@ -179,12 +182,6 @@ type SchemeInformation struct {
 // two ways.
 func (si SchemeInformation) current(now time.Time) bool {
 	return now.Add(-ClockSkew).Before(si.NextUpdate)
-}
-
-// Identity is the list's identity as the wallet pins it: SchemeName's English
-// entry, the one language clause 6.3.6 prescribes a format for.
-func (si SchemeInformation) Identity() string {
-	return clientmodels.TranslatedString(si.SchemeName)["en"]
 }
 
 // PolicyOrLegalNotice is one element of clause 6.3.11: either a URI pointing at

@@ -109,7 +109,7 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	require.NoError(t, err, "the committed document must keep verifying")
 
 	scheme := verified.list.SchemeInformation
-	require.Equal(t, goldenListId, scheme.Identity(), "SchemeName's English entry is the list's identity")
+	require.Equal(t, goldenListId, scheme.SchemeName["en"], "SchemeName's English entry is the list's identity")
 	require.Equal(t, uint64(42), scheme.SequenceNumber)
 
 	// The scheme-explicit mandatory fields (Table 1), asserted rather than merely
@@ -205,7 +205,7 @@ func TestGoldenDocumentGrantsThroughTheChecker(t *testing.T) {
 
 	checker := NewChecker(Config{
 		Sources: []Source{{
-			ListId:   goldenListId,
+			Key:      goldenListId,
 			LoTEType: LoTETypeRecognizedParties,
 			URL:      "http://unused.example",
 			Confers:  clientmodels.TrustLevel_High,

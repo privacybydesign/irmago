@@ -313,7 +313,7 @@ func newPublishedListClientAt(t *testing.T, storagePath string) (*client.Client,
 	t.Helper()
 	return instantiateClientAtPath(t, storagePath, nil, "en", publisherRoot(t),
 		[]lote.Source{{
-			ListId:   publishedListId,
+			Key:      publishedListId,
 			LoTEType: lote.LoTETypeRecognizedParties,
 			URL:      publishedListURL,
 			Confers:  clientmodels.TrustLevel_High,

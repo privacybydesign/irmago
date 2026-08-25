@@ -64,12 +64,6 @@ func verify(rawJws Signed, x509Context eudi_jwt.X509VerificationContext) (*verif
 	}
 	list := document.LoTE
 
-	// SchemeName is this list's identity (clause 6.3.6), which the wallet stores
-	// and pins, so a document that does not name itself is unusable. Only the
-	// English entry is required — the one language 6.3.6 prescribes a format for.
-	if list.SchemeInformation.Identity() == "" {
-		return nil, fmt.Errorf("list is missing an English SchemeName entry")
-	}
 	if list.SchemeInformation.NextUpdate.IsZero() {
 		// Without it a list signed years ago and captured is indistinguishable from
 		// a current one, so it is refused rather than treated as eternal.

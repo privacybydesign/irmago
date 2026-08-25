@@ -349,7 +349,7 @@ services:
   # Serves the ETSI TS 119 602 trusted list the wallet's recognized-list channel
   # consumes, signed as a compact JAdES-B-B with the openssl CLI rather than a JWS
   # library — the wallet verifies with jwx, so a Go publisher would test that
-  # library against itself. See docs/plans/lote-e2e-tests.md.
+  # library against itself.
   #
   # Reached by the wallet at https://localhost:8446 through the tls_proxy.
   # ---------------------------------------------------------------------------

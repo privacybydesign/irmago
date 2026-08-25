@@ -51,7 +51,7 @@ func TestBuild_TheCommittedExampleIsConformant(t *testing.T) {
 	require.NoError(t, err)
 
 	scheme := list.SchemeInformation
-	require.Equal(t, "NL:Yivi Recognized Parties", scheme.Identity())
+	require.Equal(t, "NL:Yivi Recognized Parties", scheme.SchemeName["en"])
 	require.Equal(t, uint64(1), scheme.SequenceNumber)
 	require.Equal(t, lote.LoTEVersion, scheme.LoTEVersionIdentifier)
 	require.Equal(t, lote.LoTETypeRecognizedParties, scheme.LoTEType)
@@ -440,12 +440,12 @@ func TestSign_ACuratedDirectoryGrantsThroughTheWalletsOwnChecker(t *testing.T) {
 
 	verified, err := lote.VerifySigned(signed, signer.anchor)
 	require.NoError(t, err, "a document this tool signs must verify the way the wallet verifies")
-	require.Equal(t, "NL:Yivi Recognized Parties", verified.SchemeInformation.Identity())
+	require.Equal(t, "NL:Yivi Recognized Parties", verified.SchemeInformation.SchemeName["en"])
 
 	// And it grants: the DID-keyed issuer is found through the real lookup.
 	checker := lote.NewChecker(lote.Config{
 		Sources: []lote.Source{{
-			ListId:   "NL:Yivi Recognized Parties",
+			Key:      "NL:Yivi Recognized Parties",
 			LoTEType: lote.LoTETypeRecognizedParties,
 			URL:      "http://unused.example",
 			Confers:  clientmodels.TrustLevel_High,

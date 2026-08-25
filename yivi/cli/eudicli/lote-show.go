@@ -71,7 +71,7 @@ func init() {
 }
 
 func writeScheme(out *strings.Builder, scheme lote.SchemeInformation) {
-	fmt.Fprintf(out, "%s\n", scheme.Identity())
+	fmt.Fprintf(out, "%s\n", scheme.SchemeName["en"])
 	fmt.Fprintf(out, "  type            %s\n", scheme.LoTEType)
 	fmt.Fprintf(out, "  operator        %s (%s)\n", translated(scheme.SchemeOperatorName), scheme.SchemeTerritory)
 	fmt.Fprintf(out, "  sequence        %d\n", scheme.SequenceNumber)

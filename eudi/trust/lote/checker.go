@@ -21,15 +21,19 @@ import (
 // Source is one recognized list the wallet consults: where to get it, what it
 // must call itself, and what a grant on it is worth.
 type Source struct {
-	// ListId is the identity the fetched document must declare as its English
-	// `SchemeName` (clause 6.3.6, unique per operator). Binding the two stops one
-	// recognized list's document — correctly signed, just not this list — from
-	// being served in another's place.
-	ListId string
+	// Key is how the wallet files this source's document: a local identifier,
+	// never published and never compared against anything in the document. Any
+	// stable, unique, non-empty string does. It is deliberately not the list's
+	// `SchemeName`: that is a public, format-prescribed field its operator may
+	// reword, and tying storage to it would make a rename cost an app release.
+	Key string
 
-	// LoTEType is the `LoTEType` URI (clause 6.3.3) the document must declare,
-	// pinned in addition to ListId: it names the kind of list, so staging and
-	// production share it. Unset skips the check.
+	// LoTEType is the `LoTEType` URI (clause 6.3.3) the document must declare.
+	// It is what stops one recognized list's document — correctly signed, just
+	// not this list — being served in another's place, which the shared anchor
+	// pool cannot catch on its own. It names the *kind* of list, so staging and
+	// production share it and it cannot tell those two apart; their separate
+	// signing CAs do. Unset skips the check.
 	LoTEType string
 
 	URL string
@@ -122,20 +126,20 @@ func (c *Checker) loadPersisted() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		for _, source := range c.cfg.Sources {
-			raw, ok := c.cfg.Store.Get(source.ListId)
+			raw, ok := c.cfg.Store.Get(source.Key)
 			if !ok {
 				continue
 			}
 			verified, err := verify(raw, c.cfg.X509Context)
 			if err != nil {
-				c.logger().Warnf("lote: stored list %q no longer verifies, dropping it: %v", source.ListId, err)
+				c.logger().Warnf("lote: stored list %q no longer verifies, dropping it: %v", source.Key, err)
 				continue
 			}
-			if err := declares(source, verified.list); err != nil {
-				c.logger().Warnf("lote: stored list under %q %v, dropping it", source.ListId, err)
+			if err := declaresType(source, verified.list); err != nil {
+				c.logger().Warnf("lote: stored list under %q %v, dropping it", source.Key, err)
 				continue
 			}
-			c.held[source.ListId] = verified
+			c.held[source.Key] = verified
 		}
 	})
 }
@@ -171,8 +175,8 @@ func (c *Checker) Refresh(ctx context.Context) (bool, error) {
 	var failures []error
 	for i, source := range c.cfg.Sources {
 		if err := outcomes[i].err; err != nil {
-			c.logger().Warnf("lote: refreshing %q: %v", source.ListId, err)
-			failures = append(failures, fmt.Errorf("%s: %w", source.ListId, err))
+			c.logger().Warnf("lote: refreshing %q: %v", source.Key, err)
+			failures = append(failures, fmt.Errorf("%s: %w", source.Key, err))
 			continue
 		}
 		changed = changed || outcomes[i].changed
@@ -180,12 +184,11 @@ func (c *Checker) Refresh(ctx context.Context) (bool, error) {
 	return changed, errors.Join(failures...)
 }
 
-// declares reports whether this document is the list this source publishes: the
-// identity it names, and the kind of list it claims to be.
-func declares(source Source, list *List) error {
-	if got := list.SchemeInformation.Identity(); got != source.ListId {
-		return fmt.Errorf("declares SchemeName %q, expected %q", got, source.ListId)
-	}
+// declaresType reports whether this document is the kind of list this source
+// publishes. The document's own `SchemeName` is deliberately not checked: it is
+// the operator's to reword, and a document claiming to be a list it is not can
+// only reach here by being signed under an anchor the wallet already trusts.
+func declaresType(source Source, list *List) error {
 	if source.LoTEType != "" && list.SchemeInformation.LoTEType != source.LoTEType {
 		return fmt.Errorf("declares LoTEType %q, expected %q",
 			list.SchemeInformation.LoTEType, source.LoTEType)
@@ -206,7 +209,7 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 		return false, err
 	}
 
-	if err := declares(source, verified.list); err != nil {
+	if err := declaresType(source, verified.list); err != nil {
 		return false, err
 	}
 
@@ -217,7 +220,7 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	previous, held := c.held[source.ListId]
+	previous, held := c.held[source.Key]
 
 	// A re-issue may repeat a sequence number but never go backwards: that is a
 	// replay, which would silently un-list everyone added since.
@@ -233,12 +236,12 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 	}
 
 	if c.cfg.Store != nil {
-		if err := c.cfg.Store.Put(source.ListId, verified.rawJws); err != nil {
+		if err := c.cfg.Store.Put(source.Key, verified.rawJws); err != nil {
 			// The list is good; only persisting it failed. Use it for this run.
-			c.logger().Warnf("lote: persisting list %q: %v", source.ListId, err)
+			c.logger().Warnf("lote: persisting list %q: %v", source.Key, err)
 		}
 	}
-	c.held[source.ListId] = verified
+	c.held[source.Key] = verified
 
 	// A first fetch is not a change: no verdict from this list was showing.
 	if !held {
@@ -278,12 +281,12 @@ func (c *Checker) Snapshot() trust.ListSnapshot {
 
 	pinned := make([]pinnedList, 0, len(c.cfg.Sources))
 	for _, source := range c.cfg.Sources {
-		held, ok := c.held[source.ListId]
+		held, ok := c.held[source.Key]
 		if !ok {
 			continue
 		}
 		if !held.current(now) {
-			c.logger().Infof("lote: list %q is past its next_update, ignoring it", source.ListId)
+			c.logger().Infof("lote: list %q is past its next_update, ignoring it", source.Key)
 			continue
 		}
 		pinned = append(pinned, pinnedList{source: source, list: held.list})

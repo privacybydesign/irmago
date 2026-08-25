@@ -303,12 +303,6 @@ func TestChecker_DegradationsLeaveNothingGranted(t *testing.T) {
 			name:    "server error",
 			degrade: func(t *testing.T, f *fixture, _ *TestLoteSigner) { f.server.SetStatus(503) },
 		},
-		{
-			name: "another list's document",
-			degrade: func(t *testing.T, f *fixture, _ *TestLoteSigner) {
-				f.server.Serve(t, f.signer, NewTestList("urn:yivi:trustlist:other", 1))
-			},
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t, clientmodels.TrustLevel_Medium)
@@ -322,6 +316,28 @@ func TestChecker_DegradationsLeaveNothingGranted(t *testing.T) {
 			require.Nil(t, checker.Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party}))
 		})
 	}
+}
+
+// What a list calls itself is not checked. SchemeName is the operator's to
+// reword — the EU's own list puts a whole sentence there — and the wallet files
+// documents under Source.Key, which is local and never published. So a document
+// naming another list is adopted, and the entities on it grant.
+//
+// What stops one list standing in for another is the LoTEType check
+// (TestChecker_RejectsAListDeclaringAnotherLoTEType) and, between environments,
+// their separate signing CAs. Losing this case is the price of a name the
+// operator can change without an app release.
+func TestChecker_DoesNotCareWhatTheListCallsItself(t *testing.T) {
+	f := newFixture(t, clientmodels.TrustLevel_Medium)
+	verifier := f.signer.NewTestPartyCertificate(t, "verifier.example.com", "")
+	f.server.Serve(t, f.signer, NewTestList("urn:yivi:trustlist:some-other-name", 1,
+		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, verifier)),
+	))
+
+	listing := f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: verifier})
+
+	require.NotNil(t, listing, "the document's own name is not compared against anything")
+	require.Equal(t, testListId, listing.ListId, "the listing carries the source's key, not the document's name")
 }
 
 func TestChecker_SequenceNumberMayNotRegress(t *testing.T) {
@@ -510,18 +526,6 @@ func TestVerify_RejectsAListWithoutANextUpdate(t *testing.T) {
 	_, err := verify(signer.SignListRaw(t, list), signer.X509VerificationContext())
 
 	require.ErrorContains(t, err, "NextUpdate")
-}
-
-// Only the English SchemeName counts, the one language clause 6.3.6 prescribes a
-// format for.
-func TestVerify_RejectsAListWithoutAnEnglishSchemeName(t *testing.T) {
-	signer := NewTestLoteSigner(t)
-	list := NewTestList(testListId, 1)
-	list.SchemeInformation.SchemeName = MultiLang{"nl": "NL:Yivi Erkende Partijen"}
-
-	_, err := verify(signer.SignList(t, list), signer.X509VerificationContext())
-
-	require.ErrorContains(t, err, "SchemeName")
 }
 
 // The type URI is pinned alongside the identity, so a list of the wrong kind is

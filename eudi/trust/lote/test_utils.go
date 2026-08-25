@@ -350,7 +350,7 @@ func (s *TestLoteServer) URL() string { return s.server.URL }
 // test going through this server exercises the type check.
 func (s *TestLoteServer) Source(listId string, confers clientmodels.TrustLevel) Source {
 	return Source{
-		ListId:   listId,
+		Key:      listId,
 		LoTEType: LoTETypeRecognizedParties,
 		URL:      s.URL(),
 		Confers:  confers,

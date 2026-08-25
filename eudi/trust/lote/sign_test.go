@@ -20,7 +20,7 @@ func TestSign_ProducesADocumentTheWalletsOwnVerifierAccepts(t *testing.T) {
 
 	verified, err := VerifySigned(signed, signer.X509VerificationContext())
 	require.NoError(t, err)
-	require.Equal(t, testListId, verified.SchemeInformation.Identity())
+	require.Equal(t, testListId, verified.SchemeInformation.SchemeName["en"])
 }
 
 // Clause 6.8.0 binds the certificate to the scheme it signs for, and signing time
