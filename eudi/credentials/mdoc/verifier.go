@@ -119,9 +119,60 @@ func checkDocumentSignerEKU(cert *x509.Certificate) error {
 		}
 	}
 	return fmt.Errorf(
-		"document signer certificate is not authorized to sign mdocs: extended key usage includes neither %s (ISO 18013-5 Annex B.1.2) nor %s (ISO 23220-4)",
-		isoMdocDocumentSignerEKU, isoGenericMdocDocumentSignerEKU,
+		"document signer certificate is not authorized to sign mdocs: its extended key usage is [%s], which includes neither %s (ISO 18013-5 Annex B.1.2) nor %s (ISO 23220-4)",
+		extKeyUsagesOf(cert), isoMdocDocumentSignerEKU, isoGenericMdocDocumentSignerEKU,
 	)
+}
+
+// extKeyUsagesOf renders a certificate's extended key usages for a diagnostic:
+// the ones crypto/x509 recognises under their RFC 5280 names, every OID it did
+// not recognise verbatim.
+//
+// What a rejected document signer does claim is the whole diagnosis, because
+// the mdoc usages are absent by definition. A certificate carrying clientAuth
+// was issued from a TLS profile beneath the right root and needs that profile
+// amended — Yivi's own test issuer carries `clientAuth, 1.0.18013.5.1.2` for
+// exactly that reason — where one carrying an unregistered OID is a reference
+// implementation inventing a usage. Naming only the two OIDs that are missing
+// cannot tell those apart, and it is the issuer, not the wallet, that has to
+// act on either.
+func extKeyUsagesOf(cert *x509.Certificate) string {
+	names := make([]string, 0, len(cert.ExtKeyUsage)+len(cert.UnknownExtKeyUsage))
+	for _, eku := range cert.ExtKeyUsage {
+		if name, ok := extKeyUsageNames[eku]; ok {
+			names = append(names, name)
+			continue
+		}
+		// Unnamed rather than dropped: that the certificate enumerates
+		// something is the point, even when this table has not caught up.
+		names = append(names, fmt.Sprintf("ExtKeyUsage(%d)", int(eku)))
+	}
+	for _, oid := range cert.UnknownExtKeyUsage {
+		names = append(names, oid.String())
+	}
+	if len(names) == 0 {
+		return "empty"
+	}
+	return strings.Join(names, ", ")
+}
+
+// extKeyUsageNames covers crypto/x509's enum, which has no exported way to
+// render itself.
+var extKeyUsageNames = map[x509.ExtKeyUsage]string{
+	x509.ExtKeyUsageAny:                            "any",
+	x509.ExtKeyUsageServerAuth:                     "serverAuth",
+	x509.ExtKeyUsageClientAuth:                     "clientAuth",
+	x509.ExtKeyUsageCodeSigning:                    "codeSigning",
+	x509.ExtKeyUsageEmailProtection:                "emailProtection",
+	x509.ExtKeyUsageIPSECEndSystem:                 "ipsecEndSystem",
+	x509.ExtKeyUsageIPSECTunnel:                    "ipsecTunnel",
+	x509.ExtKeyUsageIPSECUser:                      "ipsecUser",
+	x509.ExtKeyUsageTimeStamping:                   "timeStamping",
+	x509.ExtKeyUsageOCSPSigning:                    "OCSPSigning",
+	x509.ExtKeyUsageMicrosoftServerGatedCrypto:     "microsoftServerGatedCrypto",
+	x509.ExtKeyUsageNetscapeServerGatedCrypto:      "netscapeServerGatedCrypto",
+	x509.ExtKeyUsageMicrosoftCommercialCodeSigning: "microsoftCommercialCodeSigning",
+	x509.ExtKeyUsageMicrosoftKernelCodeSigning:     "microsoftKernelCodeSigning",
 }
 
 // Verifier holds the pre-installed trust anchor (IACA root cert)
@@ -129,7 +180,15 @@ func checkDocumentSignerEKU(cert *x509.Certificate) error {
 // Phase 2: Yivi's own IACA root, manually distributed to verifiers
 // Phase 3: EU AV Blueprint root CA (from official AP trust list)
 type Verifier struct {
-	trustedRoots *x509.CertPool
+	// verificationOptions supplies the trust anchors a document signer is
+	// checked against. It is a function consulted per verification rather
+	// than a pool captured at construction, because the wallet rebuilds its
+	// trust models on every Configuration.Reload — switching developer mode
+	// on and off adds and drops the staging anchors — and rebuilding replaces
+	// the pools instead of mutating them. A captured pool therefore goes
+	// stale in both directions: it misses anchors that were added, and keeps
+	// honouring anchors that were dropped.
+	verificationOptions func() x509.VerifyOptions
 
 	// clock, if set, is used instead of time.Now() for certificate
 	// validity checks. Defaults to real time when left as the zero
@@ -146,15 +205,33 @@ func NewVerifier(rootCerts []*x509.Certificate) *Verifier {
 	for _, c := range rootCerts {
 		pool.AddCert(c)
 	}
-	return &Verifier{trustedRoots: pool}
+	return NewVerifierFromPool(pool)
 }
 
 // NewVerifierFromPool is like NewVerifier but takes an already-built trust-
 // root pool directly, so callers that already maintain a *x509.CertPool
 // (e.g. the wallet's own trust model) don't need to keep a parallel
 // []*x509.Certificate list just to construct a Verifier.
+//
+// The pool is fixed for the lifetime of the Verifier. Callers whose trust
+// anchors can change while the process runs want NewVerifierFromOptions.
 func NewVerifierFromPool(rootCerts *x509.CertPool) *Verifier {
-	return &Verifier{trustedRoots: rootCerts}
+	return NewVerifierFromOptions(func() x509.VerifyOptions {
+		return x509.VerifyOptions{Roots: rootCerts}
+	})
+}
+
+// NewVerifierFromOptions builds a Verifier that asks options for its trust
+// anchors on every verification, so anchors added or dropped afterwards take
+// effect without reconstructing anything.
+//
+// Both the Roots and the Intermediates of the returned VerifyOptions are
+// honoured. That matters for a pinned chain: a trust model keeps the
+// self-signed root in Roots and the CA that actually signs document signers
+// as an intermediate, so an issuer shipping only its DS certificate in
+// x5chain is unverifiable if the intermediates are dropped.
+func NewVerifierFromOptions(options func() x509.VerifyOptions) *Verifier {
+	return &Verifier{verificationOptions: options}
 }
 
 // NewVerifierWithClock is like NewVerifier but pins certificate validity
@@ -307,22 +384,40 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	dsCert := certs[0]
 
 	// build intermediate pool from certs[1..n] (the IACA cert)
+	// Intermediates come from two places: the credential's own x5chain
+	// (certs[1:], typically the IACA) and the trust model, which may carry
+	// the CA that signs document signers as an intermediate beneath a
+	// self-signed root. Both are needed — an issuer that ships only its DS
+	// certificate cannot be verified without the pinned intermediate. Clone
+	// rather than add to the trust model's pool, which is shared with every
+	// other verification.
+	opts := v.verificationOptions()
 	intermediates := x509.NewCertPool()
+	if opts.Intermediates != nil {
+		intermediates = opts.Intermediates.Clone()
+	}
 	for _, c := range certs[1:] {
 		intermediates.AddCert(c)
 	}
 
 	// Step 3: verify the full chain
 	// x509.Verify walks: DS cert → intermediates → trusted root
-	// This is what prevents a chain attack — attacker's root won't be in trustedRoots
+	// This is what prevents a chain attack — attacker's root won't be in Roots
 	_, err = dsCert.Verify(x509.VerifyOptions{
-		Roots:         v.trustedRoots,
+		Roots:         opts.Roots,
 		Intermediates: intermediates,
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
 		CurrentTime:   v.currentTime(),
 	})
 	if err != nil {
-		result.Error = fmt.Sprintf("chain verification failed: %v", err)
+		// Name the document signer. The two usual causes — an issuer whose CA
+		// is not pinned at all, and one whose chain needs an intermediate that
+		// neither x5chain nor the trust model carries — are indistinguishable
+		// from the bare x509 error.
+		result.Error = fmt.Sprintf(
+			"chain verification failed: %v (document signer subject %q issued by %q, x5chain length %d)",
+			err, dsCert.Subject.String(), dsCert.Issuer.String(), len(certs),
+		)
 		return nil, result
 	}
 

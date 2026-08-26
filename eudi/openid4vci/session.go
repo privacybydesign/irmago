@@ -500,12 +500,21 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		// phone on 2026-08-26.
 		//
 		// Counting the fetched credentials is the same expression storage uses, so
-		// the two cannot drift apart again. It is also always set, where the old code
-		// left it nil for an issuer advertising no batch issuance at all — for which
-		// exactly one instance is obtained, and the list said 1 as soon as it was
-		// stored.
+		// the two cannot drift apart again.
+		//
+		// Left nil for a single instance, matching services.batchInstanceCountsRemaining,
+		// which returns nil when BatchSize <= 1 because one instance is a reusable
+		// credential with no count to spend down. Setting it unconditionally traded
+		// one offer-versus-list disagreement for another: the screen would say 1
+		// where the list says nil, and it broke the assertion that pins that rule
+		// (openid4vci/sdjwtvc/pre-authorized/batch size 1 has nil remaining count).
+		// The two conditions line up exactly, since storage records BatchSize as this
+		// same len(parsedCredentials).
 		instances := uint(len(fc.parsedCredentials))
-		batchSize := &instances
+		var batchSize *uint
+		if instances > 1 {
+			batchSize = &instances
+		}
 
 		issuanceDate, expiryDate := first.IssuedAt, first.ExpiresAt
 

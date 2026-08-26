@@ -89,9 +89,15 @@ func NewClient(httpClient *http.Client,
 // not hypothetical: the parameter was silently dropped twice while merging,
 // each time disabling format dispatch with no compile error at the call site.
 //
-// mso_mdoc's IACA trust anchors are taken from the same issuer pool that backs
-// SD-JWT x5c validation. That assumes one shared PKI, which holds for the
+// mso_mdoc's IACA trust anchors are taken from the same issuer trust model that
+// backs SD-JWT x5c validation. That assumes one shared PKI, which holds for the
 // current setup but is a deliberate simplification, not a general truth.
+//
+// The model is passed as a live lookup, not as the pool it currently holds: the
+// trust models are rebuilt whenever developer mode is toggled, and this client
+// outlives that. Capturing the pool made the wallet reject staging-issued mdocs
+// until a restart, and — the direction that actually matters — keep accepting
+// them after developer mode was switched back off.
 func newCredentialFormatParsers(
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
@@ -99,7 +105,7 @@ func newCredentialFormatParsers(
 	return services.CredentialFormatParsers{
 		models.CredentialFormatSdJwtVc: services.NewSdJwtVcCredentialFormatParser(holderVerifier),
 		models.CredentialFormatMsoMdoc: services.NewMdocCredentialFormatParser(
-			mdoc.NewVerifierFromPool(config.Issuers.GetVerificationOptionsTemplate().Roots),
+			mdoc.NewVerifierFromOptions(config.Issuers.GetVerificationOptionsTemplate),
 		),
 	}
 }

@@ -660,6 +660,27 @@ func TestDocumentSignerEKUIsEnforced(t *testing.T) {
 		}
 	})
 
+	t.Run("the rejection names the usages the certificate does carry", func(t *testing.T) {
+		// The rejection is a defect report addressed to whoever runs the
+		// issuing CA, and they cannot act on "neither of these two OIDs is
+		// present" alone: a document signer issued from a TLS profile needs
+		// that profile amended, which is what Yivi's own test issuer did
+		// (clientAuth alongside 1.0.18013.5.1.2), while an unregistered OID
+		// means something invented a usage. Both were met in the field.
+		doc, v := issueWithDSEKU(t,
+			[]x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+			[]asn1.ObjectIdentifier{{1, 3, 6, 1, 5, 5, 7, 3, 99}})
+		result := v.Verify(doc, namespace)
+		if result.Valid {
+			t.Fatal("a TLS certificate must not be accepted as an mdoc document signer")
+		}
+		for _, want := range []string{"clientAuth", "serverAuth", "1.3.6.1.5.5.7.3.99"} {
+			if !strings.Contains(result.Error, want) {
+				t.Errorf("error = %q, want it to name %s", result.Error, want)
+			}
+		}
+	})
+
 	t.Run("the reader-auth EKU is rejected", func(t *testing.T) {
 		// 1.0.18013.5.1.6 is the sibling OID for reader authentication — an
 		// 18013-5 role, but the verifier's role, not the issuer's.

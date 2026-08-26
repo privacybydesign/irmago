@@ -702,19 +702,24 @@ func Test_buildOfferedCredentials_ReportsInstancesObtainedNotAdvertisedCeiling(t
 		name       string
 		advertised *uint
 		obtained   int
-		expected   uint
+		// expected is what the offer must promise. One instance is nil rather
+		// than 1: services.batchInstanceCountsRemaining reports nil for a
+		// stored batch size of 1, since a lone instance is a reusable
+		// credential with no count to spend down, and the offer has to say
+		// what the list will.
+		expected *uint
 	}{
 		{
 			name:       "capped below the issuer's ceiling",
 			advertised: new(uint(100)),
 			obtained:   int(maxBatchInstances),
-			expected:   maxBatchInstances,
+			expected:   new(uint(maxBatchInstances)),
 		},
 		{
-			name:       "an issuer advertising no batch issuance yields one",
+			name:       "an issuer advertising no batch issuance promises no count",
 			advertised: nil,
 			obtained:   1,
-			expected:   1,
+			expected:   nil,
 		},
 	}
 
@@ -752,8 +757,12 @@ func Test_buildOfferedCredentials_ReportsInstancesObtainedNotAdvertisedCeiling(t
 			require.Len(t, offered, 1)
 			remaining, ok := offered[0].BatchInstanceCountsRemaining[clientmodels.Format_MsoMdoc]
 			require.True(t, ok, "the offer should report a count for the format it carries")
+			if tt.expected == nil {
+				require.Nil(t, remaining, "a single reusable instance has no count to promise")
+				return
+			}
 			require.NotNil(t, remaining)
-			require.Equal(t, tt.expected, *remaining,
+			require.Equal(t, *tt.expected, *remaining,
 				"the offer must promise what was obtained, since that is what the wallet will hold")
 		})
 	}
