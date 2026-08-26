@@ -444,7 +444,6 @@ func (s *session) storeCredentials(fetched []*fetchedCredential) error {
 // by combining issuer metadata (display names, claim paths) with actual attribute
 // values from the fetched and verified SD-JWT VCs.
 func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clientmodels.Credential {
-	batch := s.credentialIssuerMetadata.BatchCredentialIssuance
 	result := make([]*clientmodels.Credential, 0, len(fetched))
 
 	for _, fc := range fetched {
@@ -489,11 +488,24 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		issuerImage := services.LoadResolvedLogo(issuerLogoManager,
 			metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale)
 
-		var batchSize *uint
-		if batch != nil {
-			n := batch.BatchSize
-			batchSize = &n
-		}
+		// How many instances were actually obtained, not how many the issuer said it
+		// would allow.
+		//
+		// This read the advertised batch_credential_issuance.batch_size, which is the
+		// issuer's *ceiling* — the largest `proofs` array it will accept — and not
+		// what this wallet asked for. batchInstancesToRequest caps a request at
+		// maxBatchInstances, so against the EUDI reference issuer the permission
+		// screen promised 100 instances and the credential list showed 30 the moment
+		// it was stored, since storage records len(parsedCredentials). Reported on a
+		// phone on 2026-08-26.
+		//
+		// Counting the fetched credentials is the same expression storage uses, so
+		// the two cannot drift apart again. It is also always set, where the old code
+		// left it nil for an issuer advertising no batch issuance at all — for which
+		// exactly one instance is obtained, and the list said 1 as soon as it was
+		// stored.
+		instances := uint(len(fc.parsedCredentials))
+		batchSize := &instances
 
 		issuanceDate, expiryDate := first.IssuedAt, first.ExpiresAt
 

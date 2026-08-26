@@ -70,6 +70,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -246,7 +247,7 @@ func main() {
 	fmt.Print("   ArrowBack screen there instead, lacking a way to do it itself.\n\n")
 	step++
 
-	verify := fmt.Sprintf("curl -s %s/ui/presentations/%s | ", *verifierHost, session.TransactionID)
+	verify := fmt.Sprintf("%s -s %s/ui/presentations/%s | ", curlCommand(), *verifierHost, session.TransactionID)
 	if *decoder != "" {
 		verify += *decoder
 	} else {
@@ -257,6 +258,21 @@ func main() {
 	fmt.Println()
 	fmt.Println("   Before you approve, that returns HTTP 400 with a state error:")
 	fmt.Println("   the verifier saying \"no answer yet\", not a failure.")
+}
+
+// curlCommand names the curl a printed command can actually be pasted into a
+// shell with.
+//
+// On Windows PowerShell, `curl` is an alias for Invoke-WebRequest, which has no
+// -s and takes -Uri: pasting `curl -s <url>` there discards the URL and prompts
+// interactively for one, which reads as the tool having printed a broken command.
+// `curl.exe` is the binary Windows 10+ ships and resolves from PowerShell, cmd and
+// Git Bash alike. Everywhere else plain curl is right.
+func curlCommand() string {
+	if runtime.GOOS == "windows" {
+		return "curl.exe"
+	}
+	return "curl"
 }
 
 // printAdbCommand prints the adb command for a link, or fails the run. A link

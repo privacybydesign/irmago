@@ -15,6 +15,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwe"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jwt"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
@@ -667,6 +668,93 @@ func Test_buildOfferedCredentials_CredentialIdComesFromTheIssuedCredential(t *te
 
 			require.Len(t, offered, 1)
 			require.Equal(t, tt.expectedId, offered[0].CredentialId)
+		})
+	}
+}
+
+// The permission screen must report the instances actually obtained, not the
+// issuer's advertised ceiling.
+//
+// It read `batch_credential_issuance.batch_size` — the largest `proofs` array the
+// issuer will accept — while `batchInstancesToRequest` caps what the wallet asks
+// for at `maxBatchInstances`. Against the EUDI reference issuer, which advertises
+// 100, the offer promised 100 and the credential list showed 30 the instant it was
+// stored, because storage records `len(parsedCredentials)`. Seen on a phone on
+// 2026-08-26.
+func Test_buildOfferedCredentials_ReportsInstancesObtainedNotAdvertisedCeiling(t *testing.T) {
+	const configId = "credential-config-1"
+
+	resolvedClaims, err := json.Marshal(map[string]map[string]any{
+		"eu.europa.ec.av.1": {"age_over_18": true},
+	})
+	require.NoError(t, err)
+
+	newInstance := func() *services.ParsedCredential {
+		return &services.ParsedCredential{
+			Format:                   models.CredentialFormatMsoMdoc,
+			VerifiableCredentialType: "eu.europa.ec.av.1",
+			IssuerIdentifier:         "https://issuer.example.com",
+			ResolvedClaims:           resolvedClaims,
+		}
+	}
+
+	tests := []struct {
+		name       string
+		advertised *uint
+		obtained   int
+		expected   uint
+	}{
+		{
+			name:       "capped below the issuer's ceiling",
+			advertised: new(uint(100)),
+			obtained:   int(maxBatchInstances),
+			expected:   maxBatchInstances,
+		},
+		{
+			name:       "an issuer advertising no batch issuance yields one",
+			advertised: nil,
+			obtained:   1,
+			expected:   1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var aesKey [32]byte
+			copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+			eudiStorage, err := sqlcipherstorage.New(aesKey, ":memory:", t.TempDir())
+			require.NoError(t, err)
+
+			issuerMetadata := &metadata.CredentialIssuerMetadata{
+				CredentialIssuer: "https://issuer.example.com",
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+					configId: {CredentialMetadata: &metadata.CredentialMetadata{}},
+				},
+			}
+			if tt.advertised != nil {
+				issuerMetadata.BatchCredentialIssuance = &metadata.BatchCredentialIssuance{
+					BatchSize: *tt.advertised,
+				}
+			}
+
+			s := &session{storage: eudiStorage, locale: "en", credentialIssuerMetadata: issuerMetadata}
+
+			instances := make([]*services.ParsedCredential, 0, tt.obtained)
+			for range tt.obtained {
+				instances = append(instances, newInstance())
+			}
+
+			offered := s.buildOfferedCredentials([]*fetchedCredential{{
+				credentialConfigurationId: configId,
+				parsedCredentials:         instances,
+			}})
+
+			require.Len(t, offered, 1)
+			remaining, ok := offered[0].BatchInstanceCountsRemaining[clientmodels.Format_MsoMdoc]
+			require.True(t, ok, "the offer should report a count for the format it carries")
+			require.NotNil(t, remaining)
+			require.Equal(t, tt.expected, *remaining,
+				"the offer must promise what was obtained, since that is what the wallet will hold")
 		})
 	}
 }

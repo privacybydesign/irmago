@@ -327,20 +327,19 @@ func (s *credentialService) computeHashAndDeleteExisting(p *ParsedCredential) (s
 	}
 
 	// A matching hash means the wallet already holds this credential: the hash
-	// covers the credential type and its sorted claims, so re-issuing identical
-	// attributes lands here.
+	// covers the credential type, the issuer identity and the resolved claims, so
+	// re-issuing identical attributes from the same issuer lands here.
 	//
-	// Note what the hash does *not* cover: the issuer. hashGeneric and
-	// hashForSdJwtVc take the credential type and the resolved claims and nothing
-	// else, so two different issuers minting the same type with the same claims
-	// collide here and the second is refused as a duplicate of the first. That is
-	// a property of the hash rather than of this check, and it predates it --
-	// Hash is a unique index, so the storage layer could not hold both regardless.
-	// Changing it means putting the issuer in the hash, which rewrites every
-	// existing hash and breaks the deliberate compatibility with
-	// irmaclient.CreateHashForSdJwtVc. The message below therefore names the
-	// stored copy's issuer as information, and does not claim the issuers were
-	// compared.
+	// The issuer *is* part of it, and did not used to be. Two issuers minting the
+	// same type with the same claims used to collide here, the second refused as a
+	// duplicate of the first — which Hash being a unique index made unavoidable
+	// rather than chosen. `credentialHash` now length-prefixes the credential type,
+	// the issuer identifier and the claims, so those two are two credentials;
+	// `MigrateCredentialHashes` rewrites stored hashes on startup from columns the
+	// batch already holds. What it deliberately does not cover is anything that
+	// changes on every issuance of the same content: salts, digest ids, device
+	// keys, and the validity timestamps `Issue` coarsens to midnight UTC. That is
+	// the point — see below.
 	//
 	// Whether that is a duplicate worth refusing or a renewal worth accepting
 	// depends on the batch already stored, which is why this is not a flat
@@ -963,7 +962,9 @@ func lookupDisplayName(lookup map[string]string, path []any) (string, bool) {
 // hashForSdJwtVc computes the deterministic hash used for batch deduplication.
 // Standard claims (iat, exp, nbf, iss, sub, vct, cnf, status, etc.) are stripped
 // before hashing so that two issuances of the same credential with identical claims
-// produce the same hash. Note: this hash is intentionally different from
+// produce the same hash. The credential type and the issuer identifier are mixed in
+// by credentialHash, so the same claims from a different issuer are a different
+// credential. Note: this hash is intentionally different from
 // irmaclient.CreateHashForSdJwtVc, which is used for IRMA-issued SD-JWTs.
 //
 // Stability: json.Marshal sorts map keys at every nesting level, so object key
