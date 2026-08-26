@@ -80,7 +80,7 @@ func buildPinnedChainMDoc(t *testing.T) (doc *MDoc, root, intermediate *x509.Cer
 		t.Fatalf("generate DS key: %v", err)
 	}
 	dsTemplate := &x509.Certificate{
-		SerialNumber:          big.NewInt(3),
+		SerialNumber:          big.NewInt(0xC0FFEE),
 		Subject:               pkix.Name{CommonName: "Test DS under intermediate", Organization: []string{"Yivi Test"}},
 		NotBefore:             time.Now().Add(-5 * time.Minute),
 		NotAfter:              time.Now().Add(24 * time.Hour),
@@ -205,6 +205,11 @@ func TestVerifierRejectsUnbridgeableChain(t *testing.T) {
 	}
 	if !strings.Contains(result.Error, "Test Attestation Providers CA") {
 		t.Errorf("error = %q, want it to name the CA that signed the document signer", result.Error)
+	}
+	// The serial is what turns the rejection into a certificate search at the
+	// CA that issued it.
+	if !strings.Contains(result.Error, "serial C0FFEE") {
+		t.Errorf("error = %q, want it to carry the document signer's serial", result.Error)
 	}
 }
 

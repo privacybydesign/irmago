@@ -69,7 +69,9 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 		t.Fatalf("generate DS key: %v", err)
 	}
 	dsTemplate := &x509.Certificate{
-		SerialNumber:          big.NewInt(2),
+		// 0xD5C0DE renders as D5C0DE, which no incidental digit in the
+		// message can be mistaken for.
+		SerialNumber:          big.NewInt(0xD5C0DE),
 		Subject:               pkix.Name{CommonName: "Test DS"},
 		NotBefore:             time.Now().Add(-5 * time.Minute),
 		NotAfter:              time.Now().Add(24 * time.Hour),
@@ -674,7 +676,7 @@ func TestDocumentSignerEKUIsEnforced(t *testing.T) {
 		if result.Valid {
 			t.Fatal("a TLS certificate must not be accepted as an mdoc document signer")
 		}
-		for _, want := range []string{"clientAuth", "serverAuth", "1.3.6.1.5.5.7.3.99"} {
+		for _, want := range []string{"clientAuth", "serverAuth", "1.3.6.1.5.5.7.3.99", "Test DS", "serial D5C0DE"} {
 			if !strings.Contains(result.Error, want) {
 				t.Errorf("error = %q, want it to name %s", result.Error, want)
 			}

@@ -118,9 +118,14 @@ func checkDocumentSignerEKU(cert *x509.Certificate) error {
 			return nil
 		}
 	}
+	// Subject and serial identify the certificate to whoever runs the issuing
+	// CA, which is who has to act on this. The serial is hex, as `openssl x509
+	// -serial` and the EJBCA UIs render it, so it can be pasted into a
+	// certificate search rather than converted first.
 	return fmt.Errorf(
-		"document signer certificate is not authorized to sign mdocs: its extended key usage is [%s], which includes neither %s (ISO 18013-5 Annex B.1.2) nor %s (ISO 23220-4)",
+		"document signer certificate is not authorized to sign mdocs: its extended key usage is [%s], which includes neither %s (ISO 18013-5 Annex B.1.2) nor %s (ISO 23220-4) (document signer subject %q, serial %X, issued by %q)",
 		extKeyUsagesOf(cert), isoMdocDocumentSignerEKU, isoGenericMdocDocumentSignerEKU,
+		cert.Subject.String(), cert.SerialNumber, cert.Issuer.String(),
 	)
 }
 
@@ -415,8 +420,8 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 		// neither x5chain nor the trust model carries — are indistinguishable
 		// from the bare x509 error.
 		result.Error = fmt.Sprintf(
-			"chain verification failed: %v (document signer subject %q issued by %q, x5chain length %d)",
-			err, dsCert.Subject.String(), dsCert.Issuer.String(), len(certs),
+			"chain verification failed: %v (document signer subject %q, serial %X, issued by %q, x5chain length %d)",
+			err, dsCert.Subject.String(), dsCert.SerialNumber, dsCert.Issuer.String(), len(certs),
 		)
 		return nil, result
 	}

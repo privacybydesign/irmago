@@ -48,7 +48,7 @@ keeps the tools that answer a question a test cannot — `mdoc-decode` and
 | MSO construction | ✓ | version, digestAlgorithm, valueDigests, docType, validityInfo, deviceKeyInfo |
 | `deviceKeyInfo` in MSO | ✓ | holder's public key embedded at issuance, COSEKey uses `keyasint` (real CBOR int keys per RFC 9053) |
 | `MobileSecurityObjectBytes`/`DeviceAuthenticationBytes` framing | ✓ | issuerAuth's and deviceAuth's payloads are each Tag24-wrapped as a whole (`24(<<{...}>>)`), not just the individual items inside them — confirmed against the AV Blueprint's own §A.11 worked example (MSO) and Multipaz's `MdocDocument.kt` signing code (DeviceAuthentication) |
-| COSE_Sign1 issuerAuth | ✓ | ES256, x5chain (header 33) carries DS + IACA cert. Written as the bare four-element array ISO 18013-5 specifies, not go-cose's tag-18 `COSE_Sign1_Tagged`; `decodeCoseSign1` reads either, since the tag is outside `Sig_structure` |
+| COSE_Sign1 issuerAuth | ✓ | ES256, x5chain (header 33) carries DS + IACA cert when this package mints it, and is read as whatever an issuer sends — the DS alone is legal, and the missing CA then comes from the trust model. Written as the bare four-element array ISO 18013-5 specifies, not go-cose's tag-18 `COSE_Sign1_Tagged`; `decodeCoseSign1` reads either, since the tag is outside `Sig_structure` |
 | ISO wire shape at every CBOR position | ✓ | `issuerAuth`/`deviceSignature` inline COSE arrays, `IssuerSignedItemBytes` and `deviceSigned.nameSpaces` bare `#6.24(bstr)`. A Go `[]byte` field encodes as a byte string *wrapping* the value, and a one-field struct as a map keyed by the Go field name — both round-trip against this package and no other implementation, so `wireformat_test.go` decodes a real `DeviceResponse` generically (into `any`) and asserts each position |
 | Two-level certificate chain | ✓ | IACA root CA → DS cert, real x509 chain walk |
 | Chain attack rejection | ✓ | untrusted root rejected before signature check |
@@ -140,6 +140,10 @@ monolithic test file:
 | `verifier_test.go` | `TestVerifyAllDisclosedNamespaces_TamperedDigestIsRejected` | Same tamper-detection guarantee as `Verify`, for the multi-namespace entry point |
 | `verifier_test.go` | `TestVerify_PopulatesDeviceKeyAndValidityInfo` | `VerificationResult.DeviceKey` matches the holder's real public key, `ValidityInfo` is populated |
 | `verifier_test.go` | `TestNewVerifierFromPool` | `NewVerifierFromPool` behaves identically to `NewVerifier` given an equivalent trust pool |
+| `verifier_test.go` | `TestDocumentSignerEKUIsEnforced` | The role check end to end: both ISO document-signer usages accepted, a missing EKU extension and `anyExtKeyUsage` accepted as unrestricted, and TLS server auth, TLS client auth, reader auth and an undocumented OID all refused — plus that the refusal names the usages the certificate *does* carry, with its subject and serial, since the party who has to act on it runs the issuing CA |
+| `verifier_trustmodel_test.go` | `TestVerifierUsesPinnedIntermediates` | A three-level PKI (root → intermediate CA → DS) whose `x5chain` carries the document signer alone verifies when the intermediate comes from the trust model. This is the shape of every real deployment and of Yivi's staging PKI, and nothing else in this package covers it — every other test signs under a self-signed IACA one level shallower |
+| `verifier_trustmodel_test.go` | `TestVerifierRejectsUnbridgeableChain` | The same credential against `Roots` alone is refused, and the refusal carries the document signer's subject, issuer and serial — the bare x509 error cannot tell an unpinned CA from one a level deeper, and those are different defects with different owners |
+| `verifier_trustmodel_test.go` | `TestVerifierReadsAnchorsPerVerification` | Anchors appearing after construction take effect, and anchors dropped stop being honoured. The second direction is the one that matters: a wallet must not keep accepting staging-issued credentials after developer mode is switched back off |
 | `wireformat_test.go` | `TestAttachDeviceSignedRoundTrips` | `AttachDeviceSigned` populates `MDoc.DeviceSigned` with the exact deviceAuth bytes passed in, and returns a copy — the original mdoc is left untouched |
 | `verifier_test.go` | `TestVerifyDeviceResponseSucceeds` | Full flow through the real `DeviceResponse` container (`AttachDeviceSigned` → `NewDeviceResponse` → `VerifyDeviceResponse`) produces the same result as calling `VerifyWithDeviceAuth` directly |
 | `verifier_test.go` | `TestVerifyDeviceResponseRejectsMissingDeviceSigned` | A document without `DeviceSigned` attached is rejected with a descriptive error, not a nil-dereference panic |
@@ -203,8 +207,15 @@ DS cert       (IsCA=false, signs every MSO)
 MSO           (inside COSE_Sign1 issuerAuth, includes deviceKeyInfo)
 ```
 
-x5chain header 33 carries `[DS cert, IACA cert]`.
-The verifier pre-installs only the IACA root cert — DS cert arrives with each mDoc.
+x5chain header 33 carries `[DS cert, IACA cert]` as written by this package's `Issue`,
+but an issuer is free to ship the DS certificate alone, and Yivi's staging issuer does.
+The verifier therefore takes its anchors from the wallet's trust model rather than from
+the credential, and uses both halves of what that model holds: `Roots` for the
+self-signed root, `Intermediates` for the CAs beneath it — which is where a pinned
+chain keeps the CA that actually signs document signers. The two sources are merged per
+verification: the credential's x5chain supplies whatever intermediates travel with it,
+the trust model supplies the rest. The anchors are read on every call rather than
+captured once, because toggling developer mode rebuilds the trust models.
 Trust in the chain comes from the verifier independently walking and validating the
 X.509 chain (`x509.Verify`) — not from the COSE signature, since x5chain lives in the
 *unprotected* header.
@@ -227,12 +238,16 @@ issuer following the Blueprint literally is never told to add the usage, so mand
 would reject conformant issuers. Only a certificate that enumerates its usages and omits
 this one is refused.
 
-> **Interop note.** The EUDI reference issuer's development certificate
-> (`testdata/eudi-pid-issuer-py/certs/issuer.pem`) carries `clientAuth`, not the mdoc
-> DS usage, so it is rejected by this check. When the mdoc integration test is wired
-> up, either regenerate that certificate with the correct EKU (its `certs/generate.sh`
-> is in-tree) or introduce an explicit developer-mode relaxation. Do not widen the
-> production check to accommodate it.
+> **Interop note.** Two issuers have met this check with a certificate carrying
+> `clientAuth` and no mdoc DS usage. The EUDI reference issuer's development
+> certificate was regenerated with both — `testdata/eudi-pid-issuer-py/certs/generate.sh`
+> is in-tree and now emits `extendedKeyUsage=clientAuth,1.0.18013.5.1.2` — which is what
+> lets the mdoc integration groups run. Yivi's staging issuer carries the same defect,
+> in a certificate that is simultaneously its attestation-provider identity (scheme
+> extension `2.1.123.1`) and its document signer; that one needs a profile change and a
+> re-issue at the CA. Neither was answered by widening the production check, and neither
+> should be: this check is what stops a certificate issued for a neighbouring role under
+> the same root from signing an MSO.
 
 Two separate validity windows are checked, per ISO 18013-5: the X.509 certificates'
 own `NotBefore`/`NotAfter` (via the chain walk above), and the MSO's own
