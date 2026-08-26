@@ -123,6 +123,15 @@ func testOpenID4VP_MdocAv_DisclosureUnderUnpublishedLocale(t *testing.T) {
 	})
 
 	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+
+	// The text above is English on a Dutch wallet, and this is the only thing that
+	// says so — a frontend shipping its own Dutch labels for docTypes it knows
+	// substitutes one exactly here, and must not when the issuer did publish the
+	// user's language. Asserted end to end because it is resolved from stored
+	// metadata by mdoc_dcql, not by the unit-tested resolver alone.
+	require.True(t, choice.Credentials[0].DisplayIsFallback,
+		"an en-only issuer against a Dutch wallet must be reported as a fallback")
+
 	approvedRequestor := session.Requestor
 	require.True(t, approvedRequestor.Verified,
 		"the relying party certificate authenticated the request, and the screen must say so in any locale")
@@ -250,6 +259,13 @@ func runMdocAvDisclosure(t *testing.T, verifierHost string) {
 		"the credential list and the permission screen must name the issuer identically")
 
 	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+
+	// The other half of the pair asserted in the Dutch subtest: this wallet asked
+	// for the language the issuer publishes, so the frontend must leave the text
+	// alone. A flag stuck at true would have it override every issuer's labels.
+	require.False(t, choice.Credentials[0].DisplayIsFallback,
+		"an English wallet against an en-publishing issuer is not a fallback")
+
 	// Kept for the log assertion below, which checks the entry is filed under the
 	// verifier the permission screen actually named.
 	approvedRequestor := session.Requestor

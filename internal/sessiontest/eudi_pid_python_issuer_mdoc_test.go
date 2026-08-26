@@ -186,6 +186,8 @@ func testEudiPidPythonIssuerOfferNamesEverything(t *testing.T) {
 		"the offer must name the issuer from the issuer metadata's own display entry")
 	require.True(t, offered.Issuer.Verified,
 		"the credentials were fetched and their chain verified before this screen is built")
+	require.False(t, offered.DisplayIsFallback,
+		"this wallet asked for the language the issuer publishes, so nothing should be substituted")
 
 	requireAvOfferAttributes(t, offered.Attributes)
 
@@ -215,6 +217,8 @@ func testEudiPidPythonIssuerOfferFallsBackToPublishedLocale(t *testing.T) {
 		"a locale the issuer does not publish must fall back to one it does, not to an empty name")
 	require.Equal(t, avIssuerDisplayName, offered.Issuer.Name,
 		"the issuer name must survive the same fallback")
+	require.True(t, offered.DisplayIsFallback,
+		"the offer screen is showing English text to a Dutch wallet, and the frontend has only this to tell it by")
 	requireAvOfferAttributes(t, offered.Attributes)
 }
 

@@ -211,6 +211,16 @@ type Credential struct {
 	Image *Image `json:"image,omitempty"`
 	// The display name for this credential, resolved to the current locale.
 	Name string `json:"name"`
+
+	// Whether Name and the attribute display names fell back to a language other
+	// than the one asked for, because the issuer published none for it. The
+	// resolved text alone cannot say: the fallback chain lands on English rather
+	// than on an empty string, so a Dutch wallet is handed real English text with
+	// nothing marking it. A client that ships its own labels for credential types
+	// it knows uses this to substitute one only where the issuer left a gap,
+	// rather than overriding what the issuer did publish. Always true when the
+	// issuer published no display metadata at all.
+	DisplayIsFallback bool `json:"display_is_fallback"`
 	// All information about the credential issuer.
 	Issuer TrustedParty `json:"issuer"`
 	// The IDs for all instances of this credential in all different formats.
@@ -298,6 +308,16 @@ type SelectableCredentialInstance struct {
 	Image *Image `json:"image,omitempty"`
 	// The display name for this credential, resolved to the current locale.
 	Name string `json:"name"`
+
+	// Whether Name and the attribute display names fell back to a language other
+	// than the one asked for, because the issuer published none for it. The
+	// resolved text alone cannot say: the fallback chain lands on English rather
+	// than on an empty string, so a Dutch wallet is handed real English text with
+	// nothing marking it. A client that ships its own labels for credential types
+	// it knows uses this to substitute one only where the issuer left a gap,
+	// rather than overriding what the issuer did publish. Always true when the
+	// issuer published no display metadata at all.
+	DisplayIsFallback bool `json:"display_is_fallback"`
 	// All information about the credential issuer.
 	Issuer TrustedParty `json:"issuer"`
 	// The credential format for this instance.

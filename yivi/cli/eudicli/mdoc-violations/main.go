@@ -37,6 +37,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -74,7 +75,7 @@ func enabled(n int) bool {
 	if *only == "" {
 		return true
 	}
-	for _, part := range strings.Split(*only, ",") {
+	for part := range strings.SplitSeq(*only, ",") {
 		if strings.TrimSpace(part) == fmt.Sprintf("%d", n) {
 			return true
 		}
@@ -2212,12 +2213,7 @@ func (w *wallet) await(want clientmodels.SessionStatus) (clientmodels.SessionSta
 // watching only for the next step would sit there until the timeout.
 func (w *wallet) awaitOneOf(want ...clientmodels.SessionStatus) (clientmodels.SessionState, error) {
 	matches := func(s clientmodels.SessionStatus) bool {
-		for _, candidate := range want {
-			if s == candidate {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(want, s)
 	}
 	for {
 		select {
@@ -2255,7 +2251,7 @@ func (w *wallet) issueGood() error {
 func (w *wallet) issue(offerURI, txCode string) error {
 	id := w.nextSession()
 	request, err := json.Marshal(client.SessionRequestData{
-		Qr:                    irma.Qr{URL: offerURI},
+		URL:                   offerURI,
 		Protocol:              clientmodels.Protocol_OpenID4VCI,
 		OpenID4VCIRedirectUri: "https://open.yivi.app/-/auth-callback",
 	})
@@ -2304,7 +2300,7 @@ func (w *wallet) issue(offerURI, txCode string) error {
 func (w *wallet) disclose(link string) error {
 	id := w.nextSession()
 	request, err := json.Marshal(client.SessionRequestData{
-		Qr:       irma.Qr{Type: irma.ActionDisclosing, URL: link},
+		Type: irma.ActionDisclosing, URL: link,
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	})
 	if err != nil {

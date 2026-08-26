@@ -78,13 +78,33 @@ func TestBatchStillUsable(t *testing.T) {
 			reason: "still has 100 of 100 instances unused",
 		},
 		{
-			// A batch of one is reusable rather than single-use, so
-			// RemainingCount is not consulted -- the same rule
-			// dcql.BatchInstanceCountRemaining encodes by returning nil.
-			name:   "a batch of one is usable even with no remaining count",
+			// A batch of one is a reusable credential, not a set of single-use
+			// attestations, so replacing it discards nothing and re-issuance is
+			// how it gets refreshed. Refusing here would block refresh for the
+			// credential's whole validity period -- "still usable" is true of a
+			// reusable credential from issuance until expiry -- and the holder
+			// would have to delete it to obtain a new one. It is also what keeps
+			// ordinary SD-JWT re-issuance working: an issuer that advertises no
+			// batch_credential_issuance produces exactly this shape.
+			name:   "a batch of one is always replaceable, however fresh",
+			batch:  models.CredentialBatch{BatchSize: 1, RemainingCount: 1},
+			refuse: false,
+		},
+		{
+			name:   "a batch of one with no remaining count is replaceable too",
 			batch:  models.CredentialBatch{BatchSize: 1, RemainingCount: 0},
-			refuse: true,
-			reason: "is still valid",
+			refuse: false,
+		},
+		{
+			// A batch of one whose validity is still ahead of it is replaceable
+			// for the same reason: BatchSize decides this before expiry is
+			// consulted at all.
+			name: "a batch of one expiring in the future is still replaceable",
+			batch: models.CredentialBatch{
+				BatchSize: 1, RemainingCount: 1,
+				ExpiresAt: nullTime(now.Add(time.Hour)),
+			},
+			refuse: false,
 		},
 		{
 			name: "an expired batch of one may be replaced",
@@ -93,6 +113,15 @@ func TestBatchStillUsable(t *testing.T) {
 				ExpiresAt: nullTime(now.Add(-time.Hour)),
 			},
 			refuse: false,
+		},
+		{
+			// The smallest real batch: two instances, both unspent. This is the
+			// boundary the BatchSize <= 1 guard sits on, so it is worth pinning
+			// that protection starts here rather than one higher.
+			name:   "a batch of two is protected",
+			batch:  models.CredentialBatch{BatchSize: 2, RemainingCount: 2},
+			refuse: true,
+			reason: "still has 2 of 2 instances unused",
 		},
 		{
 			// dcql.IsBatchValid treats a zero timestamp as unset rather than as

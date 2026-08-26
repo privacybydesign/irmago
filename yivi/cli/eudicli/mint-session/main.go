@@ -353,7 +353,7 @@ func printDcqlQuery(req localstack.SessionRequest) {
 // minted here that no certificate authorizes simply can never be presented.
 func parseMintElements(spec string) (map[string]any, error) {
 	elements := map[string]any{}
-	for _, pair := range strings.Split(spec, ",") {
+	for pair := range strings.SplitSeq(spec, ",") {
 		pair = strings.TrimSpace(pair)
 		if pair == "" {
 			continue

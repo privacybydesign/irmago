@@ -27,8 +27,8 @@ func TestConvertCredentialMetadata_KeepsEveryLocale(t *testing.T) {
 	config := metadata.CredentialConfiguration{
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: metadata.CredentialDisplays{
-				{Display: metadata.Display{Name: "Proof of Age", Locale: locale("en")}},
-				{Display: metadata.Display{Name: "Leeftijdsbewijs", Locale: locale("nl")}},
+				{Name: "Proof of Age", Locale: locale("en")},
+				{Name: "Leeftijdsbewijs", Locale: locale("nl")},
 			},
 			Claims: []metadata.ClaimsDescription{
 				{
@@ -79,7 +79,7 @@ func TestConvertCredentialMetadata_KeepsAnUnlabelledDisplay(t *testing.T) {
 	config := metadata.CredentialConfiguration{
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: metadata.CredentialDisplays{
-				{Display: metadata.Display{Name: "Proof of Age"}},
+				{Name: "Proof of Age"},
 			},
 		},
 	}

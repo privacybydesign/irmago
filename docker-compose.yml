@@ -113,7 +113,15 @@ services:
     # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking.
     network_mode: host
     working_dir: /irmago
-    entrypoint: ["sh", "-c", "cp /irmago/testdata/configurations/certs/localhost.crt /usr/local/share/ca-certificates/ && update-ca-certificates && exec go test -p 1 \"$@\"", "--"]
+    # -timeout 18m, because go test defaults to 10 and internal/sessiontest now
+    # needs more than that: it drives every container in this file serially. The
+    # CI job allows timeout-minutes: 20, so the 10-minute default was silently the
+    # real budget and the job died at 10 without ever using the 20 it was written
+    # for. 18 leaves room for container start-up inside the job's 20.
+    #
+    # A later -timeout wins, so `docker compose run test -timeout 60m ./...` still
+    # works for a slower machine or a longer run.
+    entrypoint: ["sh", "-c", "cp /irmago/testdata/configurations/certs/localhost.crt /usr/local/share/ca-certificates/ && update-ca-certificates && exec go test -p 1 -timeout 18m \"$@\"", "--"]
     command: ./...
 
   # Service to run the 'irma' command line tool

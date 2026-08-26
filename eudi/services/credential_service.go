@@ -144,10 +144,11 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		}
 
 		clientModels = append(clientModels, &clientmodels.Credential{
-			CredentialId: batch.VerifiableCredentialType,
-			Hash:         batch.Hash,
-			Image:        credentialImage,
-			Name:         credentialName,
+			CredentialId:      batch.VerifiableCredentialType,
+			Hash:              batch.Hash,
+			Image:             credentialImage,
+			Name:              credentialName,
+			DisplayIsFallback: display.DisplayIsFallback,
 			Issuer: clientmodels.TrustedParty{
 				Id:     batch.CredentialIssuerIdentifier,
 				Name:   issuerName,
@@ -370,32 +371,42 @@ func (s *credentialService) computeHashAndDeleteExisting(p *ParsedCredential) (s
 	return hash, nil
 }
 
-// batchStillUsable reports why a stored batch can still be presented, or ""
-// when it cannot and may therefore be replaced.
+// batchStillUsable reports why a stored batch has unspent instances worth
+// keeping, or "" when the batch may be replaced by a new issuance.
 //
-// The two conditions mirror what dcql.FindCandidates applies when it decides
+// Only batched credentials are protected. What re-issuance destroys, and the
+// whole reason to refuse it, is unspent single-use attestations: a batch of
+// thirty that the holder has used twice still has twenty-eight presentations in
+// it, and replacing it to gain fresher timestamps throws those away.
+//
+// A batch of one has nothing to throw away. It is a reusable credential, so
+// re-issuing it is simply how it gets refreshed -- a new expiry, a new holder
+// binding key -- and replacing it costs the holder nothing. Refusing there would
+// block refresh for the credential's entire validity period, since "still
+// usable" is true of a reusable credential from issuance until expiry; the holder
+// would have to delete it first to obtain a new one. That is why BatchSize <= 1
+// is replaceable rather than protected, and it is what keeps ordinary SD-JWT
+// re-issuance working as it did.
+//
+// The remaining conditions mirror what dcql.FindCandidates applies when deciding
 // whether a batch may answer a query, and they are taken from there on purpose:
 // if this drifted, the wallet would either refuse a re-issuance it needs (having
 // judged usable a batch no query will accept) or discard one it could still
 // present. dcql.IsBatchValid is called rather than re-derived for the same
-// reason.
-//
-// A batch of one is never exhausted, matching dcql: BatchSize <= 1 means a
-// reusable credential rather than a spent single-use attestation, so
-// RemainingCount is not consulted for it -- the same rule
-// BatchInstanceCountRemaining encodes by returning nil there.
+// reason. Note dcql treats a batch of one as never exhausted, the same rule
+// BatchInstanceCountRemaining encodes by returning nil there -- so consulting
+// RemainingCount for it would be meaningless as well as harmful.
 func batchStillUsable(batch *models.CredentialBatch, now time.Time) string {
+	if batch.BatchSize <= 1 {
+		return ""
+	}
 	if !dcql.IsBatchValid(batch, now) {
 		return ""
 	}
-	if batch.BatchSize > 1 && batch.RemainingCount == 0 {
+	if batch.RemainingCount == 0 {
 		return ""
 	}
-
-	if batch.BatchSize > 1 {
-		return fmt.Sprintf("still has %d of %d instances unused", batch.RemainingCount, batch.BatchSize)
-	}
-	return "is still valid"
+	return fmt.Sprintf("still has %d of %d instances unused", batch.RemainingCount, batch.BatchSize)
 }
 
 // statusReferenceOf returns the credential's Token Status List reference, or

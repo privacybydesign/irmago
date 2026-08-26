@@ -126,7 +126,20 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 30, above the 18m `go test -timeout` in docker-compose.yml's test service, so
+    # the two caps cannot fight: a suite that genuinely overruns should be killed by
+    # go test — which names the tests still running — rather than by the job, which
+    # only reports that the runner was cut off.
+    #
+    # Those two numbers were previously 20 and (implicitly) 10: go test has no
+    # -timeout in that entrypoint and defaults to 10 minutes, so the real budget was
+    # half what this line advertised, and the job died at 10 while claiming 20.
+    # internal/sessiontest is a large integration suite -- ~194 subtests under
+    # TestSessionHandler alone, plus revocation against Postgres, MySQL and SQL
+    # Server -- so it sits close to whatever ceiling it is given. If this starts
+    # biting again, the fix is to split the package rather than to keep raising
+    # these.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       # The sessiontest package hard-codes listeners on 127.0.0.1:48680-48699.
