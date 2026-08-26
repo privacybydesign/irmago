@@ -1,11 +1,16 @@
-// Package localstack drives the EUDI reference containers that docker-compose.yml
-// brings up: asking the Python issuer for a credential offer, starting a
-// presentation at the Kotlin verifier, and reading the wallet's answer back.
+// This file drives the EUDI reference containers that docker-compose.yml brings
+// up: asking the Python issuer for a credential offer, starting a presentation at
+// the Kotlin verifier, and reading the wallet's answer back. It is kept apart from
+// main.go so that the flags and the printed walkthrough stay readable next to the
+// requests they build.
 //
-// It exists so those calls live in one place. mdoc-e2e had them inline, and the
-// moment a second caller wanted a session the request shape started drifting
-// between copies -- a different nonce here, a different value constraint there,
-// which is exactly the kind of difference that makes two runs disagree for
+// It was an internal package while three demo programs shared it. They are gone —
+// what they showed is asserted by the mdoc groups of TestSessionHandler — and this
+// command is the only caller left, so the package boundary bought nothing but a
+// directory. The reason it exists at all still holds: these calls began inline,
+// and the moment a second caller wanted a session the request shape started
+// drifting between copies — a different nonce here, a different value constraint
+// there, which is exactly the kind of difference that makes two runs disagree for
 // reasons unrelated to the wallet.
 //
 // Three things every session request must get right, each of which cost real
@@ -20,7 +25,7 @@
 //   - issuer_chain must name the CA that issued the credential in the wallet.
 //     Passing the wrong one lets the wallet disclose happily and then has the
 //     verifier refuse the response with X5CNotTrusted.
-package localstack
+package main
 
 import (
 	"crypto/rand"
@@ -47,16 +52,6 @@ type Config struct {
 	VerifierHost string
 	// TestdataDir is the repository's testdata folder, read for the issuer CA.
 	TestdataDir string
-}
-
-// DefaultConfig matches docker-compose.yml with the repository as the working
-// directory.
-func DefaultConfig() Config {
-	return Config{
-		IssuerURL:    "https://localhost:8443/eudi-pid-issuer-py",
-		VerifierHost: "http://127.0.0.1:8090",
-		TestdataDir:  "testdata",
-	}
 }
 
 // IssuerCAPath is the anchor a verifier must be given to accept credentials the
@@ -158,7 +153,7 @@ func DcqlQuery(req SessionRequest) map[string]any {
 // instance of the credential.
 func CreateSession(cfg Config, req SessionRequest) (*Session, error) {
 	if req.DocType == "" || req.Element == "" {
-		return nil, fmt.Errorf("localstack: SessionRequest needs both DocType and Element")
+		return nil, fmt.Errorf("SessionRequest needs both DocType and Element")
 	}
 	issuerCA, err := os.ReadFile(cfg.IssuerCAPath())
 	if err != nil {
@@ -276,7 +271,7 @@ func CreateOffer(cfg Config, credentialConfigID string, data map[string]any) (*O
 	if err := json.NewDecoder(resp.Body).Decode(&offer); err != nil {
 		return nil, fmt.Errorf("decode offer: %w", err)
 	}
-	txCode, err := TransactionCode(offer)
+	txCode, err := transactionCode(offer)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +306,7 @@ func CreateOffer(cfg Config, credentialConfigID string, data map[string]any) (*O
 // does not travel on.
 //
 // Missing or malformed members are left alone rather than treated as an error:
-// the caller has already extracted the code through TransactionCode by this
+// the caller has already extracted the code through transactionCode by this
 // point, so anything unexpected here has been reported already.
 func stripTransactionCodeValue(offer map[string]any) {
 	grants, ok := offer["grants"].(map[string]any)
@@ -329,8 +324,8 @@ func stripTransactionCodeValue(offer map[string]any) {
 	delete(tx, "value")
 }
 
-// TransactionCode digs the one-time code out of an offer.
-func TransactionCode(offer map[string]any) (string, error) {
+// transactionCode digs the one-time code out of an offer.
+func transactionCode(offer map[string]any) (string, error) {
 	grants, ok := offer["grants"].(map[string]any)
 	if !ok {
 		return "", fmt.Errorf("offer carries no grants")
@@ -351,27 +346,6 @@ func TransactionCode(offer map[string]any) (string, error) {
 	default:
 		return "", fmt.Errorf("offer's tx_code has no usable value")
 	}
-}
-
-// WalletResponse fetches the verifier's record of a presentation. Before the
-// wallet answers this is an error rather than an empty result: the verifier
-// reports the presentation is not in Submitted state, which is a normal
-// intermediate condition and not a failure.
-func WalletResponse(cfg Config, transactionID string) ([]byte, error) {
-	resp, err := http.Get(cfg.VerifierHost + "/ui/presentations/" + transactionID)
-	if err != nil {
-		return nil, fmt.Errorf("fetch wallet response: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read wallet response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("verifier returned HTTP %d: %s",
-			resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	return raw, nil
 }
 
 // ProxyCertPath is the self-signed certificate the tls_proxy container serves.
@@ -416,8 +390,8 @@ func TrustProxyCertificate(cfg Config) error {
 // than the credential holds -- with one element there is no selective disclosure
 // to see.
 //
-// This is the default for what the demos issue, and the only thing mdoc-e2e ever
-// issues. mint-session's -mint can supply a different set, but -value cannot:
+// This is the default for what mint-session issues. Its -mint can supply a
+// different set, but -value cannot:
 // -value constrains the query alone, so an offer and a query can be made to
 // disagree deliberately, which is what a refusal test needs. A single flag
 // driving both would make every run agree with itself.
@@ -427,16 +401,64 @@ func TrustProxyCertificate(cfg Config) error {
 // enforced at all, so a run that agrees with itself proves less than one that had
 // to be matched on purpose.
 //
-// Nothing else may restate these values. mdoc-e2e once hardcoded a false value
-// constraint and three narration lines describing an earlier version of this map;
-// when the map changed, its happy path silently became the refusal path and
-// reported it as "the wallet has nothing to disclose". Derive from this function
-// instead.
+// Nothing else may restate these values. A since-removed demo once hardcoded a
+// false value constraint and three narration lines describing an earlier version
+// of this map; when the map changed, its happy path silently became the refusal
+// path and reported it as "the wallet has nothing to disclose". Derive from this
+// function instead.
 func DefaultAVElements() map[string]any {
 	return map[string]any{
 		"age_over_18": true,
+		"age_over_21": true,
 		"age_over_40": false,
 		"age_over_60": false,
 		"age_over_67": false,
 	}
+}
+
+// ----------------------------------------------------------------------------
+// Handing a link to a device
+// ----------------------------------------------------------------------------
+
+// adbQuotingBreakers are the characters a link must not contain, because each of
+// them can escape one of AdbCommand's two quoting layers: a single quote closes the
+// inner quoting the device's shell sees, a double quote closes the outer quoting
+// the local shell sees, and `$`, a backtick or a backslash are still live inside
+// double quotes.
+const adbQuotingBreakers = "'\"`$\\"
+
+// AdbCommand wraps a wallet link for `adb shell`. The inner single quotes are
+// load-bearing: adb concatenates its arguments and the device's own shell
+// re-parses them, so an unquoted & would background the command there.
+//
+// The link is validated rather than escaped, and rather than trusted. It arrives
+// from an HTTP response — the verifier's session or the issuer's offer — so it is
+// another party's data, and what this builds is a command a human is expected to
+// paste into a shell. A quote surviving into it would not break the process that
+// printed it, which only prints the string, but it would break out of the quoting
+// in the shell the user pastes into.
+//
+// In practice it cannot happen: both links are percent-encoded before they get
+// here (url.Values.Encode and url.QueryEscape turn ' into %27, " into %22, $ into
+// %24 and a backtick into %60), so a raw quote never survives. That invariant
+// lives in another package though, and nothing depended on it visibly. Checking
+// makes it explicit and turns a silently mangled command into a refusal.
+//
+// Validated, not escaped, on purpose: correctly escaping for two nested shells
+// would produce something unreadable, and the point of the output is that a human
+// can read it and paste it. A link needing escaping is a link something is wrong
+// with.
+func AdbCommand(link string) (string, error) {
+	if i := strings.IndexAny(link, adbQuotingBreakers); i >= 0 {
+		return "", fmt.Errorf(
+			"refusing to print an adb command for a link containing %q at offset %d: it would break out of the shell quoting when pasted. Links reaching here are percent-encoded, so this means one arrived that was not",
+			link[i], i)
+	}
+	for _, r := range link {
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf(
+				"refusing to print an adb command for a link containing the control character %U: it would break the command when pasted", r)
+		}
+	}
+	return fmt.Sprintf(`adb shell "am start -a android.intent.action.VIEW -d '%s'"`, link), nil
 }

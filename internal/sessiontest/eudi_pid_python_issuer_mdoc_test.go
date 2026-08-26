@@ -4,6 +4,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -88,6 +89,11 @@ func testSessionHandlerForEudiPidPythonIssuerMdoc(t *testing.T) {
 	t.Run("issuance/the offer names the credential, its issuer and every claim", testEudiPidPythonIssuerOfferNamesEverything)
 	t.Run("issuance/offer text falls back to a locale the issuer does publish", testEudiPidPythonIssuerOfferFallsBackToPublishedLocale)
 	t.Run("issuance/refuses a credential from an untrusted issuer", testEudiPidPythonIssuerUntrustedIssuerIsRejected)
+	t.Run("issuance/a wrong transaction code is refused", testEudiPidPythonIssuerWrongTransactionCode)
+	t.Run("issuance/an offer naming an unpublished configuration is refused", testEudiPidPythonIssuerUnknownConfiguration)
+	t.Run("issuance/a pre-authorized code cannot be redeemed twice", testEudiPidPythonIssuerPreAuthCodeReplay)
+	t.Run("issuance/an offer whose grant omits the pre-authorized code is refused", testEudiPidPythonIssuerOfferWithoutPreAuthCode)
+	t.Run("issuance/the issuer refuses an offer naming no credential configurations", testEudiPidPythonIssuerEmptyConfigurationIds)
 
 	t.Run("disclosure/discloses issued mdoc to EUDI Kotlin verifier", testEudiPidPythonIssuerDisclosesAvMdoc)
 	t.Run("disclosure/batch instances are spent one per presentation", testEudiPidPythonIssuerBatchIsSingleUse)
@@ -147,6 +153,186 @@ func testEudiPidPythonIssuerIssuesAvMdoc(t *testing.T) {
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc}, logged.Formats,
 		"the issuance log must file the entry under mso_mdoc, which is what every format-keyed read depends on")
 	require.Len(t, logged.Attributes, 1, "the issued claim is logged; the selective part happens at presentation")
+}
+
+// testEudiPidPythonIssuerWrongTransactionCode redeems a genuine offer with a
+// transaction code that is not the one the issuer minted.
+//
+// OID4VCI 1.0 §6.1. The code is what makes a pre-authorized offer safe to send
+// over a channel the issuer does not control: the link alone must not be enough.
+//
+// The wallet re-prompts rather than failing the session, which is the correct
+// behaviour and worth pinning as such — a mistyped code is a user error, and
+// ending the session on it would mean re-issuing the offer. What matters is that
+// the credential is not stored, so the assertion is on the wallet's contents and
+// not only on the state it returns to.
+func testEudiPidPythonIssuerWrongTransactionCode(t *testing.T) {
+	c, sessionHandler := createPidIssuerTestClient(t)
+	defer c.Close()
+
+	offer := createAvMdocOfferViaPythonIssuer(t)
+	require.NotEqual(t, "00000", offer.TxCode, "the wrong code has to be a wrong one")
+
+	startOpenID4VCISession(t, c, 1, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+
+	wrong := "00000"
+	userInteractionAllowingFailure(c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload: clientmodels.SessionPreAuthorizedCodeInteractionPayload{
+			Proceed:         true,
+			TransactionCode: &wrong,
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+	require.NotNil(t, session.RemainingTxCodeAttempts,
+		"a re-prompt after a rejected code should say how many attempts are left")
+
+	requireNoAvMdocStored(t, c)
+}
+
+// testEudiPidPythonIssuerUnknownConfiguration offers a credential configuration
+// the issuer does not publish in its metadata.
+//
+// OID4VCI 1.0 §4.1.1. The reference issuer mints the offer regardless — it does
+// not check its own advertised set — so what this measures is the wallet's
+// redemption of it: the configuration id in an offer is what selects the format,
+// the signing algorithms and the display metadata, and an id that resolves to
+// nothing leaves every one of those unanswered. The refusal comes at metadata
+// validation, before any transaction code is asked for.
+func testEudiPidPythonIssuerUnknownConfiguration(t *testing.T) {
+	c, sessionHandler := createPidIssuerTestClient(t)
+	defer c.Close()
+
+	offerJSON := createAvMdocOfferJsonViaPythonIssuer(t, "eu.europa.ec.eudi.not_a_real_configuration")
+
+	startOpenID4VCISession(t, c, 1, offerUriFromJson(t, offerJSON))
+
+	requireMdocViolationRefused(t, awaitSessionState(t, sessionHandler))
+	requireNoAvMdocStored(t, c)
+}
+
+// testEudiPidPythonIssuerPreAuthCodeReplay redeems one offer with two wallets.
+//
+// OID4VCI 1.0 §4.1.1: a pre-authorized code is single use. The first redemption
+// must succeed, which is what makes the second a replay rather than an unrelated
+// failure — a link that stays redeemable is a bearer credential for anyone who
+// sees it, and these links travel by QR and email.
+//
+// The refusal is the issuer's, surfacing in the wallet as the re-prompt a rejected
+// code produces.
+func testEudiPidPythonIssuerPreAuthCodeReplay(t *testing.T) {
+	offer := createAvMdocOfferViaPythonIssuer(t)
+
+	first, firstHandler := createPidIssuerTestClient(t)
+	defer first.Close()
+
+	session := redeemAvMdocOffer(t, first, 1, firstHandler, offer)
+	grantPermission(t, first, session.Id)
+	session = awaitSessionState(t, firstHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	second, secondHandler := createPidIssuerTestClient(t)
+	defer second.Close()
+
+	startOpenID4VCISession(t, second, 1, offer.URI)
+	replay := awaitSessionState(t, secondHandler)
+	requireSessionState(t, replay, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+
+	userInteractionAllowingFailure(second, clientmodels.SessionUserInteraction{
+		SessionId: replay.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload: clientmodels.SessionPreAuthorizedCodeInteractionPayload{
+			Proceed:         true,
+			TransactionCode: &offer.TxCode,
+		},
+	})
+
+	replay = awaitSessionState(t, secondHandler)
+	requireSessionState(t, replay, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+	requireNoAvMdocStored(t, second)
+}
+
+// testEudiPidPythonIssuerOfferWithoutPreAuthCode removes the pre-authorized code
+// from the grant that requires it.
+//
+// OID4VCI 1.0 §4.1.1 makes pre-authorized_code REQUIRED inside that grant. The
+// wallet refuses while parsing the offer, before contacting the issuer at all,
+// which is the behaviour worth having: a grant it cannot complete should not cost
+// a token request, and a wallet that filled the gap by guessing — an empty code,
+// the authorization-code flow instead — would be inventing a grant the issuer
+// never offered.
+func testEudiPidPythonIssuerOfferWithoutPreAuthCode(t *testing.T) {
+	c, sessionHandler := createPidIssuerTestClient(t)
+	defer c.Close()
+
+	offerJSON := createAvMdocOfferJsonViaPythonIssuer(t, eudiPidIssuerPyAvCredentialConfigID)
+
+	grants, ok := offerJSON["grants"].(map[string]any)
+	require.True(t, ok, "the offer should carry grants")
+	grant, ok := grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"].(map[string]any)
+	require.True(t, ok, "the offer should carry the pre-authorized_code grant")
+	require.Contains(t, grant, "pre-authorized_code", "there should be a code to remove")
+	delete(grant, "pre-authorized_code")
+
+	startOpenID4VCISession(t, c, 1, offerUriFromJson(t, offerJSON))
+
+	requireMdocViolationRefused(t, awaitSessionState(t, sessionHandler))
+	requireNoAvMdocStored(t, c)
+}
+
+// testEudiPidPythonIssuerEmptyConfigurationIds asks the issuer to mint an offer
+// naming no credential configurations at all.
+//
+// OID4VCI 1.0 §4.1.1: credential_configuration_ids MUST have at least one entry. No
+// wallet is involved — an offer that was never minted cannot be redeemed — so this
+// asserts the container's behaviour, and it is the only thing standing between the
+// wallet and an offer with nothing in it.
+//
+// The status is not pinned: the issuer answers 500 rather than a validation error,
+// which is an internal failure rather than a considered refusal. What matters here
+// is that no offer comes back, so the assertion is that the response is not a
+// success. A control offer is minted first, because a 500 is also what this issuer
+// answers when it has degraded — without the control, a broken container would make
+// this subtest pass for the wrong reason.
+func testEudiPidPythonIssuerEmptyConfigurationIds(t *testing.T) {
+	controlStatus, controlBody := postAvMdocOfferRequest(t, map[string]any{
+		"credentials": []map[string]any{
+			{
+				"credential_configuration_id": eudiPidIssuerPyAvCredentialConfigID,
+				"data":                        map[string]any{avMandatoryElement: true},
+			},
+		},
+	})
+	require.Equal(t, http.StatusOK, controlStatus,
+		"the issuer must be healthy for the refusal below to mean anything: %s", controlBody)
+
+	status, body := postAvMdocOfferRequest(t, map[string]any{
+		"credentials": []map[string]any{},
+	})
+
+	require.NotEqual(t, http.StatusOK, status,
+		"the issuer minted an offer naming no credential configurations: %s", body)
+}
+
+// requireNoAvMdocStored asserts the wallet holds no age-verification credential.
+//
+// Every issuance refusal above ends with this: a session that fails is only half
+// the property, since a wallet that refused the session and stored the credential
+// anyway would satisfy every assertion about the session state.
+func requireNoAvMdocStored(t *testing.T, c *client.Client) {
+	t.Helper()
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	for _, cred := range creds {
+		require.NotEqual(t, eudiPidIssuerPyAvDocType, cred.CredentialId,
+			"a refused issuance must leave nothing in the wallet")
+	}
 }
 
 // testEudiPidPythonIssuerOfferNamesEverything asserts the text of the permission
@@ -321,8 +507,21 @@ func offerAvMdocViaPythonIssuer(
 	sessionHandler *MockSessionHandler,
 ) clientmodels.SessionState {
 	t.Helper()
+	return redeemAvMdocOffer(t, c, sessionId, sessionHandler, createAvMdocOfferViaPythonIssuer(t))
+}
 
-	offer := createAvMdocOfferViaPythonIssuer(t)
+// redeemAvMdocOffer is offerAvMdocViaPythonIssuer against an offer the caller
+// already has, for the subtests that need to mint one themselves — a replay needs
+// the same offer twice, and one wallet's success is what makes the second
+// redemption a replay rather than an unrelated failure.
+func redeemAvMdocOffer(
+	t *testing.T,
+	c *client.Client,
+	sessionId int,
+	sessionHandler *MockSessionHandler,
+	offer pidOfferResponse,
+) clientmodels.SessionState {
+	t.Helper()
 
 	startOpenID4VCISession(t, c, sessionId, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
@@ -382,16 +581,53 @@ func issueAvMdocViaPythonIssuer(
 func createAvMdocOfferViaPythonIssuer(t *testing.T) pidOfferResponse {
 	t.Helper()
 
-	requestPayload := map[string]any{
+	offerJSON := createAvMdocOfferJsonViaPythonIssuer(t, eudiPidIssuerPyAvCredentialConfigID)
+
+	txCode := extractTxCodeValue(t, offerJSON)
+	require.NotEmpty(t, txCode,
+		"Python issuer offer must embed grants.<pre-authorized_code>.tx_code.value")
+
+	return pidOfferResponse{URI: offerUriFromJson(t, offerJSON), TxCode: txCode}
+}
+
+// createAvMdocOfferJsonViaPythonIssuer returns the offer as the issuer minted it,
+// before it becomes a deep link.
+//
+// Split out for the refusal subtests, which need either a configuration id the
+// issuer does not publish or a chance to remove a member the offer is required to
+// carry. Neither can go through the helper above: one changes what is asked for,
+// the other has to edit the JSON.
+func createAvMdocOfferJsonViaPythonIssuer(t *testing.T, credentialConfigID string) map[string]any {
+	t.Helper()
+
+	status, body := postAvMdocOfferRequest(t, map[string]any{
 		"credentials": []map[string]any{
 			{
-				"credential_configuration_id": eudiPidIssuerPyAvCredentialConfigID,
+				"credential_configuration_id": credentialConfigID,
 				"data": map[string]any{
 					avMandatoryElement: true,
 				},
 			},
 		},
-	}
+	})
+	require.Equal(t, http.StatusOK, status,
+		"Python issuer /credentialOfferReq2 should accept the mdoc request: %s", body)
+
+	var offerJSON map[string]any
+	require.NoError(t, json.Unmarshal([]byte(body), &offerJSON))
+	return offerJSON
+}
+
+// postAvMdocOfferRequest posts an offer request and returns what the issuer
+// answered, without requiring success.
+//
+// The endpoint decodes the payload without verifying the signature (see
+// app/preauthorization.py upstream), so the header and signature segments can be
+// empty. Returning the status rather than asserting it is what lets a subtest ask
+// what the issuer does with a request it should refuse.
+func postAvMdocOfferRequest(t *testing.T, requestPayload map[string]any) (int, string) {
+	t.Helper()
+
 	payloadJSON, err := json.Marshal(requestPayload)
 	require.NoError(t, err)
 
@@ -411,21 +647,19 @@ func createAvMdocOfferViaPythonIssuer(t *testing.T) pidOfferResponse {
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode,
-		"Python issuer /credentialOfferReq2 should accept the mdoc request")
 
-	var offerJSON map[string]any
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&offerJSON))
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return resp.StatusCode, string(body)
+}
 
-	txCode := extractTxCodeValue(t, offerJSON)
-	require.NotEmpty(t, txCode,
-		"Python issuer offer must embed grants.<pre-authorized_code>.tx_code.value")
+// offerUriFromJson wraps an offer in the deep link a wallet is handed.
+func offerUriFromJson(t *testing.T, offerJSON map[string]any) string {
+	t.Helper()
 
 	offerBytes, err := json.Marshal(offerJSON)
 	require.NoError(t, err)
-
-	uri := "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerBytes))
-	return pidOfferResponse{URI: uri, TxCode: txCode}
+	return "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerBytes))
 }
 
 // createAvMdocAuthRequest builds the verifier's session-creation request for the
@@ -443,19 +677,44 @@ func createAvMdocAuthRequest(t *testing.T) string {
 func createAvMdocAuthRequestWithClaims(t *testing.T, claims []map[string]any) string {
 	t.Helper()
 
+	return createAvMdocAuthRequestWithCredentialQuery(t, map[string]any{
+		"id":     "age",
+		"format": string(clientmodels.Format_MsoMdoc),
+		"meta":   map[string]any{"doctype_value": eudiPidIssuerPyAvDocType},
+		"claims": claims,
+	})
+}
+
+// createAvMdocAuthRequestWithCredentialQuery is the same with the whole DCQL
+// credential query supplied by the caller.
+//
+// The refusal subtests need to vary what the helper above fixes — the docType, the
+// format, the namespace inside a claim path — because that is precisely what they
+// are about. Everything outside dcql_query stays as the reference verifier
+// requires it, so a refusal is about the query and not about a malformed session
+// request.
+func createAvMdocAuthRequestWithCredentialQuery(t *testing.T, credential map[string]any) string {
+	t.Helper()
+	return createAvMdocSessionRequest(t, credential, nil)
+}
+
+// createAvMdocSessionRequest is the same with a hook to change the session request
+// itself, for the subtests about what the *container* refuses to start — a request
+// missing a member the profile requires never reaches a wallet, so the only way to
+// assert that is to send it.
+func createAvMdocSessionRequest(
+	t *testing.T,
+	credential map[string]any,
+	mutate func(request map[string]any),
+) string {
+	t.Helper()
+
 	caPEM := readEudiPidIssuerPyCA(t)
 
 	request := map[string]any{
 		"type": "vp_token",
 		"dcql_query": map[string]any{
-			"credentials": []map[string]any{
-				{
-					"id":     "age",
-					"format": string(clientmodels.Format_MsoMdoc),
-					"meta":   map[string]any{"doctype_value": eudiPidIssuerPyAvDocType},
-					"claims": claims,
-				},
-			},
+			"credentials": []map[string]any{credential},
 		},
 		"nonce":    "nonce",
 		"jar_mode": "by_reference",
@@ -467,6 +726,10 @@ func createAvMdocAuthRequestWithClaims(t *testing.T, claims []map[string]any) st
 		"request_uri_method": "get",
 		"intended_use_id":    eudiVerifierIntendedUseId,
 		"issuer_chain":       string(caPEM),
+	}
+
+	if mutate != nil {
+		mutate(request)
 	}
 
 	body, err := json.Marshal(request)

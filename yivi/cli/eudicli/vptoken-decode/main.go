@@ -10,7 +10,7 @@
 // terms.
 //
 // Nothing here verifies anything: no signature check, no digest recomputation,
-// no chain validation. The wallet and mdoc-e2e do that. This answers "what is
+// no chain validation. The wallet does that, as do the integration tests. This answers "what is
 // in these bytes", which is a different question from "are they genuine".
 //
 // Usage, from the repository root:
@@ -228,8 +228,8 @@ func dumpDeviceResponse(b []byte) error {
 	var resp mdoc.DeviceResponse
 	if err := cbor.Unmarshal(b, &resp); err != nil || len(resp.Documents) == 0 {
 		// A bare document rather than a full response is worth handling: the
-		// tests and mdoc-demo pass MDoc values around directly, and those get
-		// pasted in here too.
+		// tests pass MDoc values around directly, and those get pasted in here
+		// too.
 		var single mdoc.MDoc
 		if err2 := cbor.Unmarshal(b, &single); err2 != nil {
 			if err == nil {

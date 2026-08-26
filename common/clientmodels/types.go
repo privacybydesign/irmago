@@ -220,6 +220,11 @@ type Credential struct {
 	// it knows uses this to substitute one only where the issuer left a gap,
 	// rather than overriding what the issuer did publish. Always true when the
 	// issuer published no display metadata at all.
+	//
+	// Set for EUDI credentials, whose text comes from issuer metadata. False for
+	// IRMA credentials: their text comes from the Yivi scheme, which carries every
+	// language it supports, so a client has nothing to substitute and no gap to
+	// fill.
 	DisplayIsFallback bool `json:"display_is_fallback"`
 	// All information about the credential issuer.
 	Issuer TrustedParty `json:"issuer"`
@@ -317,6 +322,11 @@ type SelectableCredentialInstance struct {
 	// it knows uses this to substitute one only where the issuer left a gap,
 	// rather than overriding what the issuer did publish. Always true when the
 	// issuer published no display metadata at all.
+	//
+	// Set for EUDI credentials, whose text comes from issuer metadata. False for
+	// IRMA credentials: their text comes from the Yivi scheme, which carries every
+	// language it supports, so a client has nothing to substitute and no gap to
+	// fill.
 	DisplayIsFallback bool `json:"display_is_fallback"`
 	// All information about the credential issuer.
 	Issuer TrustedParty `json:"issuer"`

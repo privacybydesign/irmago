@@ -1,14 +1,14 @@
-// Package mdocdecode structurally decodes the CBOR that eudi/credentials/mdoc
-// produces — issuerAuth, deviceAuth, a presented mdoc, a whole DeviceResponse —
-// and prints what is inside it.
+// The decoding half of this command: it structurally decodes the CBOR that
+// eudi/credentials/mdoc produces — issuerAuth, deviceAuth, a presented mdoc, a
+// whole DeviceResponse — and prints what is inside it.
 //
 // It deliberately verifies nothing. Its job is to answer "what shape is this,
 // really", which is the question that comes up when two implementations disagree
 // about the wire format and each insists its own bytes are right.
 //
-// This was the body of the mdoc-decode CLI, which is now a thin wrapper over
-// Dump; mdoc-demo calls the same code to show the bytes it just produced.
-package mdocdecode
+// This lived in internal/mdocdecode while mdoc-demo shared it; with that demo
+// gone there is one caller, so the split had nothing left to buy.
+package main
 
 import (
 	"encoding/hex"
@@ -19,9 +19,9 @@ import (
 	"github.com/fxamacker/cbor/v2"
 )
 
-// Dump prints data as a COSE_Sign1 when it looks like one, and as generic CBOR
+// dump prints data as a COSE_Sign1 when it looks like one, and as generic CBOR
 // otherwise. Output goes to stdout, as it did when this was the CLI's main.
-func Dump(data []byte) {
+func dump(data []byte) {
 	fmt.Printf("Input: %d bytes\n\n", len(data))
 
 	if tryDecodeAsCOSESign1(data) {

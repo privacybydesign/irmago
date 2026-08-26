@@ -284,13 +284,20 @@ func numericDateOrNil(unix int64) *jwt.NumericDate {
 
 const AuthRequestJwtTyp string = "oauth-authz-req+jwt"
 
-// WalletAudience is how a verifier addresses a statically discovered wallet in a
-// signed request object. OpenID4VP § 5.8 covers both discovery cases: under
-// dynamic discovery the aud claim must equal the iss claim, and otherwise it
-// "MUST be https://self-issued.me/v2". This wallet publishes no issuer
-// identifier for a verifier to address it by, so the static case is the one that
-// applies, and the symbolic value stands even though nothing here uses SIOPv2.
-const WalletAudience = "https://self-issued.me/v2"
+// The aud claim is parsed into AuthorizationRequest.Audience but deliberately
+// not validated. OpenID4VP § 5.8 tells a *verifier* what to put there --
+// https://self-issued.me/v2 under static discovery, the wallet's issuer
+// identifier under dynamic -- and places no validation duty on the wallet.
+//
+// A check against the static value was tried and removed. It refused the veramo
+// reference verifier, which puts its own client_id in aud
+// (decentralized_identifier:did:jwk:...) rather than any wallet identifier, so
+// the field in practice says who *sent* the request as often as who it is for.
+// Refusing that rejects a verifier doing nothing harmful, and the wallet has no
+// issuer identifier of its own to recognise the conformant form by either.
+//
+// Not an mdoc concern in any case: aud lives in the OpenID4VP request object and
+// is the same for every credential format.
 
 // authRequestParserOptions are the validations the JWT parser applies to every
 // authorization request object, wherever it arrived from.
@@ -323,22 +330,8 @@ func validateRedirectAuthorizationRequest(request *AuthorizationRequest) error {
 	if err := validateNonce(request.Nonce); err != nil {
 		return err
 	}
-	// An absent aud is tolerated, a wrong one is not. Section 5.8 tells a verifier
-	// what to send but puts no validation duty on the wallet, so refusing a
-	// request that merely omits the claim would turn a permission into a
-	// requirement and reject verifiers doing nothing harmful. A request that names
-	// some other audience is a different matter: it was written for someone else,
-	// and honouring it means answering a question that was not addressed here.
+	// aud is deliberately not validated -- see the note above AuthRequestJwtTyp.
 	//
-	// Checked only on this path. Over the Digital Credentials API the response is
-	// bound to the platform-authenticated origin rather than to a client
-	// identifier, and Appendix A gives that transport its own audience handling,
-	// so § 5.8's static-discovery value is not the rule to hold it to.
-	if request.Audience != "" && request.Audience != WalletAudience {
-		return fmt.Errorf(
-			"request names audience %q, but a statically discovered wallet is addressed as %q",
-			request.Audience, WalletAudience)
-	}
 	// "Either a dcql_query or a scope parameter representing a DCQL Query MUST
 	// be present in the Authorization Request, but not both."
 	hasQuery := len(request.DcqlQuery.Credentials) > 0

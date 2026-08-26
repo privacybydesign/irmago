@@ -2,9 +2,9 @@
 // local EUDI containers and prints the commands needed to drive a real phone
 // through them.
 //
-// It shares its request-building with mdoc-e2e via internal/localstack, so the
-// links a device is handed and the ones the automated demo uses cannot drift
-// apart -- which they had, when this logic existed twice.
+// Its request-building lives in localstack.go beside this file rather than inline
+// here, so the links a device is handed are built by the same code that talks to
+// the containers -- which had drifted, when this logic existed twice.
 //
 // Usage, from the repository root:
 //
@@ -14,7 +14,7 @@
 //	go run ./yivi/cli/eudicli/mint-session -value any         no constraint
 //
 // -value constrains the DCQL query only. What -issue mints is
-// localstack.DefaultAVElements unless -mint says otherwise, so the offer and the
+// DefaultAVElements unless -mint says otherwise, so the offer and the
 // query can be made to disagree on purpose -- which is what testing a refusal
 // requires.
 //
@@ -40,7 +40,7 @@
 // testdata/eudi/verifier/README.md for widening that set.
 //
 // The one-time code is never in the offer link -- see
-// localstack.stripTransactionCodeValue. By default it is printed here; -email
+// stripTransactionCodeValue. By default it is printed here; -email
 // sends it instead, so the demo can show the code arriving on a channel the link
 // did not travel on:
 //
@@ -72,8 +72,6 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
-
-	"github.com/privacybydesign/irmago/yivi/cli/eudicli/internal/localstack"
 )
 
 var (
@@ -86,7 +84,7 @@ var (
 	value   = flag.String("value", "true", `query value constraint: "true", "false", or "any" to omit it. Does not affect what -issue mints`)
 
 	issue = flag.Bool("issue", false, "also mint a credential offer, so the credential can be installed first")
-	mint  = flag.String("mint", "", `what -issue puts in the credential, as "age_over_18=true,age_over_40=false". Empty mints localstack.DefaultAVElements. Independent of -element/-value, which constrain the query`)
+	mint  = flag.String("mint", "", `what -issue puts in the credential, as "age_over_18=true,age_over_40=false". Empty mints DefaultAVElements. Independent of -element/-value, which constrain the query`)
 
 	reverse = flag.Bool("reverse", true, "run adb reverse for the verifier and issuer ports first, so localhost on the phone reaches this machine")
 
@@ -109,7 +107,7 @@ var (
 	// point is to hand over something runnable after the phone has answered.
 	decoder = flag.String("decoder", "", "path to a prebuilt vptoken-decode binary to name in the verify command")
 
-	// Printed from localstack.DcqlQuery rather than read back from the session,
+	// Printed from DcqlQuery rather than read back from the session,
 	// because reading it back is not possible without destroying it: request_uri
 	// is single use, so fetching the request object to decode the query leaves
 	// nothing for the phone to fetch. The verifier cannot answer either -- it
@@ -127,7 +125,7 @@ func main() {
 		fail(fmt.Errorf("-email needs -issue: without an issuance there is no one-time code to send"))
 	}
 
-	cfg := localstack.Config{
+	cfg := Config{
 		IssuerURL:    *issuerURL,
 		VerifierHost: *verifierHost,
 		TestdataDir:  *testdataDir,
@@ -139,7 +137,7 @@ func main() {
 
 	// Only the issuer is behind TLS, so without this a presentation-only run
 	// works and -issue fails as an unknown authority.
-	if err := localstack.TrustProxyCertificate(cfg); err != nil {
+	if err := TrustProxyCertificate(cfg); err != nil {
 		fail(err)
 	}
 
@@ -148,7 +146,7 @@ func main() {
 	}
 
 	// The constraint applies to the query only. What gets issued is whatever
-	// localstack.DefaultAVElements says and nothing else: an offer that silently
+	// DefaultAVElements says and nothing else: an offer that silently
 	// disagreed with the source it claims to mint made the tool useless for
 	// checking what the issuer actually does with a given set of values.
 	var wantValue, unconstrained bool
@@ -165,8 +163,7 @@ func main() {
 
 	step := 1
 	if *issue {
-		// localstack.DefaultAVElements unless -mint overrides it: the same
-		// five-element set mdoc-e2e mints, verbatim.
+		// DefaultAVElements unless -mint overrides it.
 		//
 		// -mint is a flag of its own rather than something -value feeds into.
 		// That separation is the point: -value constrains the query and -mint
@@ -174,7 +171,7 @@ func main() {
 		// which is what testing a refusal needs. A single flag driving both
 		// would make every run agree with itself and quietly remove the ability
 		// to test that value constraints are enforced at all.
-		data := localstack.DefaultAVElements()
+		data := DefaultAVElements()
 		if *mint != "" {
 			parsed, err := parseMintElements(*mint)
 			if err != nil {
@@ -182,7 +179,7 @@ func main() {
 			}
 			data = parsed
 		}
-		offer, err := localstack.CreateOffer(cfg, localstack.AVCredentialConfigID, data)
+		offer, err := CreateOffer(cfg, AVCredentialConfigID, data)
 		if err != nil {
 			fail(fmt.Errorf("create offer: %w", err))
 		}
@@ -219,12 +216,12 @@ func main() {
 		step++
 	}
 
-	req := localstack.NewSessionRequest(*docType, *element)
+	req := NewSessionRequest(*docType, *element)
 	if !unconstrained {
 		req.Value = &wantValue
 	}
 
-	session, err := localstack.CreateSession(cfg, req)
+	session, err := CreateSession(cfg, req)
 	if err != nil {
 		fail(fmt.Errorf("create session: %w", err))
 	}
@@ -262,56 +259,12 @@ func main() {
 	fmt.Println("   the verifier saying \"no answer yet\", not a failure.")
 }
 
-// quotingBreakers are the characters a link must not contain, because each of
-// them can escape one of adbCommand's two quoting layers: a single quote closes
-// the inner quoting the device's shell sees, a double quote closes the outer
-// quoting the local shell sees, and `$`, a backtick or a backslash are still
-// live inside double quotes.
-const quotingBreakers = "'\"`$\\"
-
-// adbCommand wraps a wallet link for `adb shell`. The inner single quotes are
-// load-bearing: adb concatenates its arguments and the device's own shell
-// re-parses them, so an unquoted & would background the command there.
-//
-// The link is validated rather than escaped, and rather than trusted. It arrives
-// from an HTTP response — the verifier's session or the issuer's offer — so it is
-// another party's data, and what this builds is a command a human is expected to
-// paste into a shell. A quote surviving into it would not break this process,
-// which only prints the string, but it would break out of the quoting in the
-// shell the user pastes into.
-//
-// In practice it cannot happen: both links are percent-encoded before they get
-// here (url.Values.Encode and url.QueryEscape turn ' into %27, " into %22, $ into
-// %24 and a backtick into %60), so a raw quote never survives. That invariant
-// lives two packages away in localstack though, and nothing here depended on it
-// visibly. Checking makes it explicit and turns a silently mangled command into a
-// refusal.
-//
-// Validated, not escaped, on purpose: correctly escaping for two nested shells
-// would produce something unreadable, and the point of the output is that a human
-// can read it and paste it. A link needing escaping is a link something is wrong
-// with.
-func adbCommand(link string) (string, error) {
-	if i := strings.IndexAny(link, quotingBreakers); i >= 0 {
-		return "", fmt.Errorf(
-			"refusing to print an adb command for a link containing %q at offset %d: it would break out of the shell quoting when pasted. Links reaching here are percent-encoded, so this means one arrived that was not",
-			link[i], i)
-	}
-	for _, r := range link {
-		if r < 0x20 || r == 0x7f {
-			return "", fmt.Errorf(
-				"refusing to print an adb command for a link containing the control character %U: it would break the command when pasted", r)
-		}
-	}
-	return fmt.Sprintf(`adb shell "am start -a android.intent.action.VIEW -d '%s'"`, link), nil
-}
-
 // printAdbCommand prints the adb command for a link, or fails the run. A link
 // this tool cannot quote safely is not something to warn about and continue past:
 // the command is the entire output, and printing a broken one is worse than
 // printing none.
 func printAdbCommand(link string) {
-	command, err := adbCommand(link)
+	command, err := AdbCommand(link)
 	if err != nil {
 		fail(err)
 	}
@@ -325,8 +278,8 @@ func printAdbCommand(link string) {
 // This is the query as the verifier receives it. What the wallet sees is this
 // object embedded in the signed request object it fetches from request_uri,
 // alongside nonce, response_uri, response_mode and client_metadata.
-func printDcqlQuery(req localstack.SessionRequest) {
-	encoded, err := json.MarshalIndent(localstack.DcqlQuery(req), "   ", "  ")
+func printDcqlQuery(req SessionRequest) {
+	encoded, err := json.MarshalIndent(DcqlQuery(req), "   ", "  ")
 	if err != nil {
 		// Not fatal: the links below are the point of the run, and losing the
 		// query dump is no reason to withhold them.
@@ -500,7 +453,7 @@ func describe(data map[string]any) string {
 // to run and gets out of the way. It is looked up once rather than per port: two
 // identical "executable file not found" lines say nothing the guidance below does
 // not, and they push the part worth reading off the top of the output.
-func reversePorts(cfg localstack.Config, withIssuer bool) {
+func reversePorts(cfg Config, withIssuer bool) {
 	specs := []string{"tcp:" + portOf(cfg.VerifierHost)}
 	if withIssuer {
 		specs = append(specs, "tcp:"+portOf(cfg.IssuerURL))

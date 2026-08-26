@@ -141,22 +141,26 @@ fails if it ever stops happening.
 ## Without a phone
 
 ```
-go run ./yivi/cli/eudicli/mdoc-e2e
+docker compose build --pull test
+docker compose run --rm test -run 'TestSessionHandler/openid4vp/mdoc-av' -v ./internal/sessiontest/
+docker compose run --rm test -run 'TestSessionHandler/openid4vci/mdoc' -v ./internal/sessiontest/
 ```
 
 The same protocols end to end against the same containers, with a real
-`client.Client` wallet in-process instead of a device. Needs no `adb`, no
-`.aar`, and no part of the local trust patch -- it installs the test CAs into
-its own throwaway wallet storage. Use it to tell "the stack is broken" apart from
-"the phone is misconfigured".
+`client.Client` wallet in-process instead of a device. Needs no `adb`, no `.aar`,
+and no part of the local trust patch -- each test installs the test CAs into its
+own throwaway wallet storage. Use it to tell "the stack is broken" apart from "the
+phone is misconfigured". The whole mdoc set runs in about a minute; add
+`openid4vp/dc-api/mdoc` and `eudi/logs/mdoc` for the rest of it.
 
-```
-go run ./yivi/cli/eudicli/mdoc-violations
-```
+This replaced the `mdoc-e2e` walkthrough, which drove the same flow for the sake
+of narration and has been removed.
 
-Drives the same stack through protocol violations and reports whether each was
-refused. Note that with the local trust patch applied, scenario 13 can no longer
-create an untrusted verifier and is expected to report ACCEPTED.
+The protocol violations that `mdoc-violations` used to drive — a corrupted
+signature, an expired relying party certificate, a response_uri on another host,
+62 of them — are subtests of the same groups now, each sitting with the flow it
+subverts. They run with everything else, so a violation that stops being refused
+fails a build instead of waiting for someone to run a report.
 
 ## Applying the local trust patch
 
@@ -182,7 +186,9 @@ They fail one at a time in that order, so fixing one reveals the next -- a singl
 stage the error names.
 
 Three separate stores, deliberately: an issuer anchor must not be able to
-authenticate a relying party, which `mdoc-violations` scenario 38 pins.
+authenticate a relying party, which
+TestSessionHandler/openid4vp/mdoc-av/the_issuer.s_own_certificate_cannot_authenticate_a_verifier
+pins.
 
 **Stores 2 and 3 need developer mode on**, store 1 does not. Store 1 installs from
 `init()`, so it applies unconditionally; the other two live inside
@@ -201,5 +207,6 @@ grep -rn "DO NOT COMMIT" --include=*.go .     # must find nothing
 
 Do that before running the full test suite or merging: with the anchors applied,
 `testEudiPidPythonIssuerUntrustedIssuerIsRejected` fails for reasons unrelated to
-the code under test, and `mdoc-violations` scenario 13 can no longer build an
-untrusted verifier, so it reports ACCEPTED.
+the code under test. The relying-party half no longer has that problem -- the
+subtest that covers it signs with a self-signed certificate rather than relying on
+a CA file being absent, so a compiled-in anchor cannot quietly satisfy it.

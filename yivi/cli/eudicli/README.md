@@ -1,89 +1,29 @@
 # eudicli — EUDI command line tools
 
-Six `package main` programs for working with the EUDI credential code by hand.
+Three `package main` programs for working with the EUDI credential code by hand.
 They live here rather than beside the packages they exercise because Go does not
 allow a `func main()` to sit in the same package as library code.
 
 | Tool | What it does | Needs |
 |---|---|---|
 | [`mdoc-decode`](#mdoc-decode--cosecbor-inspector) | decodes a hex-encoded COSE_Sign1 or CBOR blob and prints its structure | nothing |
-| [`mdoc-demo`](#mdoc-demo--selective-disclosure-in-process) | walks one credential through issue → disclose → verify in-process, printing what each side sees | nothing |
-| [`mdoc-e2e`](#mdoc-e2e--the-real-protocols-against-the-reference-containers) | the same story over real OpenID4VCI and OpenID4VP against the EUDI reference containers | `docker compose up -d` |
-| [`mdoc-violations`](#mdoc-violations--protocol-violations-end-to-end) | runs protocol violations through the same real stack and reports whether each was refused | `docker compose up -d` |
 | [`mint-session`](#mint-session--drive-a-real-phone) | starts an issuance and/or presentation and prints the `adb` commands to drive a phone through them | `docker compose up -d`, `adb reverse` |
 | [`vptoken-decode`](#vptoken-decode--read-back-what-was-disclosed) | decodes a verifier's `vp_token` and reports what each document actually disclosed | nothing |
 
 Each program's own package comment is the detailed reference; this file is the
 map. Run any of them from the repository root.
 
----
-
-## mdoc-demo — selective disclosure, in process
-
-```bash
-go run ./yivi/cli/eudicli/mdoc-demo
-```
-
-Issues an age-verification credential with two claims — `age_over_18`, the one
-element the AV profile makes mandatory, plus an optional threshold it withholds —
-presents one, and verifies it as a party that trusts only the issuer's root,
-printing the MSO's digests next to the disclosed items at each step, so it is
-visible *why* withholding a claim is safe for the verifier and private for the
-holder. The withheld one is minted `false` on purpose: a false boolean has to
-survive as a digest rather than being dropped as an absent element. No containers, no wallet storage,
-no network: everything runs against `eudi/credentials/mdoc` directly.
-
-## mdoc-e2e — the real protocols, against the reference containers
-
-```bash
-docker compose up -d
-go run ./yivi/cli/eudicli/mdoc-e2e
-```
-
-The counterpart to `mdoc-demo`: same story, but issued over OpenID4VCI by the EUDI
-reference issuer and presented over OpenID4VP to the EUDI reference verifier, with
-a real `client.Client` wallet in between. Nothing is mocked, so what fails here
-fails on a phone too.
-
-What it mints, what it asks for and what it checks did not arrive all come from
-`localstack.DefaultAVElements` and `requestedElement`; no threshold is named
-anywhere else. The leak check rejects *any* disclosed element other than the one
-requested, so changing that map cannot leave the assertion asserting nothing.
-
-The walkthrough goes to stdout and the wallet's own log to stderr, so they can be
-read apart (`2> e2e.log`) or together (`2>&1 | tee e2e.log`). Neither is the
-wallet's *activity* log — the entries the app shows the user; step 7 prints those
-as JSON, and `-logs <path>` writes them somewhere they outlive the run.
-
----
-
-## mdoc-violations — protocol violations, end to end
-
-```bash
-docker compose up -d
-go run ./yivi/cli/eudicli/mdoc-violations
-go run ./yivi/cli/eudicli/mdoc-violations -only 22,33,34   # a subset
-```
-
-Where `mdoc-e2e` shows the happy path, this drives the same stack — real issuer
-container, real `client.Client` on fresh storage, real verifier container —
-through a battery of things a conformant party would never send, and reports for
-each whether it was refused. A scenario passes only when the real wallet or the
-real container rejects the session; no verification function is called directly.
-
-Requests that have to differ from what the reference verifier sends are made by
-taking the container's own signed request JWT, changing exactly one field, and
-re-signing with the verifier private key from `testdata/eudi/verifier`. The
-modified request is served from a throwaway local HTTP server standing in for
-`request_uri`. Scenario 1 is the control for that rig: an unmodified re-signed
-request must still succeed, or every later rejection would be an artifact of the
-minting rather than a property of the wallet.
-
-Two results are expected not to be refused, and the summary says so rather than
-hiding them. One depends on a trust anchor not being compiled in (see the note it
-prints); the other is the `aud` claim, which is reported but deliberately
-unchecked — the reasoning is in the CHANGELOG entry for the request-object
-claims.
+Three programs used to live here and are gone, because what they did is now
+asserted rather than reported. `mdoc-demo` walked a credential through issue →
+disclose → verify in process, and `mdoc-e2e` did the same over the real protocols;
+both are covered by the unit tests in `eudi/credentials/mdoc` and the mdoc groups
+of `TestSessionHandler`, and what they added over those was narration.
+`mdoc-violations` drove 62 protocol violations through the real stack and printed
+whether each was refused; every one of them is now a subtest in
+`internal/sessiontest`, sitting with the flow it subverts, with the minting rig in
+`helper_mdoc_request_variants_test.go`. A report is read only when someone runs it,
+and its summary could not tell a refusal apart from a run that broke before
+reaching the violation -- ten of the 62 were passing that way on its last run.
 
 ---
 
@@ -99,11 +39,14 @@ go run ./yivi/cli/eudicli/mint-session -issue -email   mail the one-time code
 go run ./yivi/cli/eudicli/mint-session -issue -mint age_over_42=true
 ```
 
-Where `mdoc-e2e` drives a wallet it builds itself, this prints the three commands
-needed to drive a real phone: the `adb` deep link for an offer, the one for a
-presentation, and the `curl` that reads the answer back. It shares its
-request-building with `mdoc-e2e` through `internal/localstack`, so the links a
-device is handed cannot drift from the ones the automated demo uses.
+Where the integration tests drive a wallet they build themselves, this prints the
+three commands needed to drive a real phone: the `adb` deep link for an offer, the
+one for a presentation, and the `curl` that reads the answer back. Its
+request-building lives in `localstack.go` beside `main.go`, so the links a device
+is handed are built by the same code that talks to the containers -- as is the
+`adb` command wrapping, which validates a link rather than escaping it: a quote
+surviving into a command a human pastes into two nested shells would break out of
+the quoting there, invisibly from here.
 
 Three flag pairs are easy to confuse, and the separation is deliberate:
 
@@ -154,8 +97,9 @@ Inspects any hex-encoded COSE_Sign1 or CBOR blob produced by
 `eudi/credentials/mdoc` (`issuerAuth`, `deviceAuth`, a full presented mdoc, or any
 raw CBOR bytes). Read-only — it does not verify signatures, certificate chains, or
 digests; it only decodes and prints structure so you can eyeball what's actually
-inside. The decoding itself lives in `internal/mdocdecode` so the demos can call
-it too.
+inside. The decoding is in `decode.go` beside the command; it lived in a shared
+`internal/mdocdecode` while `mdoc-demo` printed the same view, and moved back when
+that demo went away.
 
 ---
 

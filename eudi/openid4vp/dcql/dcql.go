@@ -46,6 +46,15 @@ func (q DcqlQuery) Validate() error {
 	// otherwise a required set can never be satisfied and the wallet would go
 	// looking for a credential the verifier never described.
 	for _, set := range q.CredentialSets {
+		// Options is REQUIRED and non-empty per OID4VP § 6.2. An empty array is the
+		// same unsatisfiable-set problem as the check below, reached by a different
+		// route: there are no options rather than options naming nothing. It needs
+		// its own condition because the loop over Options never runs for an empty
+		// one, so every check inside it silently passes — which is how an
+		// unsatisfiable required set reached the permission screen.
+		if len(set.Options) == 0 {
+			return fmt.Errorf("credential set has an empty options array, so it can never be satisfied")
+		}
 		for _, option := range set.Options {
 			for _, id := range option {
 				if _, known := seen[id]; !known {

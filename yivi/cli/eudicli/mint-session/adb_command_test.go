@@ -20,7 +20,7 @@ func TestAdbCommand_AcceptsARealLink(t *testing.T) {
 		"&request_uri=http%3A%2F%2Flocalhost%3A8090%2Fwallet%2Frequest.jwt%2FabC-_9xyz" +
 		"&request_uri_method=get&transaction_id=aB3-_xY"
 
-	command, err := adbCommand(link)
+	command, err := AdbCommand(link)
 
 	require.NoError(t, err, "an ordinary percent-encoded link must be accepted")
 	require.Contains(t, command, link)
@@ -72,7 +72,7 @@ func TestAdbCommand_RefusesQuotingBreakers(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			command, err := adbCommand(test.link)
+			command, err := AdbCommand(test.link)
 
 			require.Error(t, err, "a link that cannot be quoted safely must be refused")
 			require.Empty(t, command, "no partial command may be returned alongside the error")
@@ -90,9 +90,9 @@ func TestPercentEncodingRemovesEveryQuotingBreaker(t *testing.T) {
 	t.Run("url.QueryEscape, as the offer link uses", func(t *testing.T) {
 		escaped := url.QueryEscape(hostile)
 		require.NotContains(t, escaped, "'")
-		require.Equal(t, -1, strings.IndexAny(escaped, quotingBreakers))
+		require.Equal(t, -1, strings.IndexAny(escaped, adbQuotingBreakers))
 
-		_, err := adbCommand("openid-credential-offer://?credential_offer=" + escaped)
+		_, err := AdbCommand("openid-credential-offer://?credential_offer=" + escaped)
 		require.NoError(t, err)
 	})
 
@@ -100,9 +100,9 @@ func TestPercentEncodingRemovesEveryQuotingBreaker(t *testing.T) {
 		query := url.Values{}
 		query.Add("transaction_id", hostile)
 		encoded := query.Encode()
-		require.Equal(t, -1, strings.IndexAny(encoded, quotingBreakers))
+		require.Equal(t, -1, strings.IndexAny(encoded, adbQuotingBreakers))
 
-		_, err := adbCommand("eudi-openid4vp://?" + encoded)
+		_, err := AdbCommand("eudi-openid4vp://?" + encoded)
 		require.NoError(t, err)
 	})
 }

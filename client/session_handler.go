@@ -230,6 +230,11 @@ func findCredential(credentials []*clientmodels.Credential, hash string) *client
 					Revoked:                     c.Revoked,
 					RevocationSupported:         c.RevocationSupported,
 					IssueURL:                    c.IssueURL,
+					// Carried over with the text it describes. Dropping it here would
+					// have the same credential report its display language one way in
+					// the wallet list and another on the permission screen, which is
+					// the disagreement the flag exists to prevent.
+					DisplayIsFallback: c.DisplayIsFallback,
 				}
 			}
 		}

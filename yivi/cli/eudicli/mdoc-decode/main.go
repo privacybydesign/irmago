@@ -3,8 +3,9 @@
 // or a full presented mdoc. It does NOT verify signatures or validate
 // anything; it only decodes structure so you can eyeball what's inside.
 //
-// The decoding lives in internal/mdocdecode so that mdoc-demo can print the same
-// view of the bytes it produces, rather than the two drifting apart.
+// The decoding is in decode.go beside this file. It lived in
+// internal/mdocdecode while the mdoc-demo walkthrough printed the same view of
+// its own bytes; with that demo gone there is one caller left.
 //
 // Usage, from the repository root:
 //
@@ -22,8 +23,6 @@ import (
 	"io"
 	"os"
 	"strings"
-
-	"github.com/privacybydesign/irmago/yivi/cli/eudicli/internal/mdocdecode"
 )
 
 func main() {
@@ -54,5 +53,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	mdocdecode.Dump(data)
+	dump(data)
 }
