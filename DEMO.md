@@ -90,7 +90,7 @@ Useful variations:
 go run ./yivi/cli/eudicli/mint-session                      presentation only, reuse a held credential
 go run ./yivi/cli/eudicli/mint-session -value false         ask for false, to see a refusal
 go run ./yivi/cli/eudicli/mint-session -value any           no value constraint
-go run ./yivi/cli/eudicli/mint-session -element age_over_21 ask for a different threshold
+go run ./yivi/cli/eudicli/mint-session -element age_over_40 ask for a different threshold
 go run ./yivi/cli/eudicli/mint-session -show-query          print the DCQL query being sent
 go run ./yivi/cli/eudicli/mint-session -issue -email        mail the one-time code
 go run ./yivi/cli/eudicli/mint-session -issue -mint age_over_42=true
@@ -115,10 +115,13 @@ way to obtain a second identical credential -- it is the renewal path.
 
 ## What to expect
 
-The credential holds five thresholds and the query asks for one, so the
-permission screen shows a single attribute while the wallet holds five. That is
-the point: `vptoken-decode` shows one disclosed element against five digests in
-the MSO, which is selective disclosure visible in the bytes.
+The credential holds every threshold in `localstack.DefaultAVElements` — four as
+of 2026-08-25, `age_over_18` plus three optional ones — and the query asks for
+one, so the permission screen shows a single attribute while the wallet holds all
+four. That is the point: `vptoken-decode` shows one disclosed element against the
+full set of digests in the MSO, which is selective disclosure visible in the
+bytes. Read the count off `DefaultAVElements` rather than this paragraph; only
+`age_over_18` is guaranteed, every other threshold being the issuer's choice.
 
 Two runs on two machines agree on the parts that carry meaning and differ on the
 parts that are supposed to:

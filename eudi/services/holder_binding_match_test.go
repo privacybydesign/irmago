@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/stretchr/testify/require"
@@ -91,7 +91,7 @@ func TestMatchHolderBindingKey_MdocAgainstDidBoundKey(t *testing.T) {
 func TestMatchHolderBindingKey_MdocAgainstThumbprintBoundKey(t *testing.T) {
 	privKey := testECDSAKey(t)
 
-	pubJwk, err := jwk.Import(&privKey.PublicKey)
+	pubJwk, err := jwk.Import[jwk.Key](&privKey.PublicKey)
 	require.NoError(t, err)
 	require.NoError(t, pubJwk.Set(jwk.KeyUsageKey, jwk.ForSignature))
 

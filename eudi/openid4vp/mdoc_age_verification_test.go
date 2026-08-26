@@ -80,6 +80,8 @@ func TestOpenID4VP_MdocAgeVerification(t *testing.T) {
 	t.Run("an issued mdoc is offered as an owned candidate", testMdocAv_IssuedCredential_IsOwnedCandidate)
 	t.Run("without the credential the query yields an unobtainable descriptor", testMdocAv_WithoutCredential_IsUnobtainable)
 	t.Run("stored display metadata names the credential and its claim", testMdocAv_DisplayMetadata_NamesCredentialAndClaim)
+	t.Run("display metadata resolves per locale", testMdocAv_DisplayMetadata_ResolvesPerLocale)
+	t.Run("one credential's text never mixes languages", testMdocAv_DisplayMetadata_DoesNotMixLanguages)
 	t.Run("a one-component claim path still resolves the claim label", testMdocAv_BareClaimPath_StillResolvesLabel)
 	t.Run("a two-component path wins over a bare one for the same element", testMdocAv_ExactClaimPath_WinsOverBarePath)
 }
@@ -165,6 +167,110 @@ func testMdocAv_DisplayMetadata_NamesCredentialAndClaim(t *testing.T) {
 	require.Len(t, candidate.Attributes, 1)
 	require.NotNil(t, candidate.Attributes[0].DisplayName)
 	require.Equal(t, "Over 18", *candidate.Attributes[0].DisplayName)
+}
+
+// testMdocAv_DisplayMetadata_ResolvesPerLocale proves the mdoc display path is
+// actually translated rather than merely locale-shaped: the credential name, the
+// claim label and the issuer name each follow the wallet's UI locale.
+//
+// It is worth pinning on the mdoc path specifically even though
+// clientmodels.Resolve is tested on its own. The mdoc handler resolves three
+// different things through three different helpers — credentialDisplayName,
+// claimDisplayName and issuerTrustedParty — and a helper that forgot to pass the
+// locale, or passed a snapshot of it, would still return correct English and pass
+// every single-locale test in this file.
+//
+// The fallback cases matter as much as the hits. An issuer publishing no
+// translation for the user's language must not blank the field: the wallet shows
+// the credential in the language it has rather than showing nothing, which is why
+// the chain ends at English and then at any translation at all.
+func testMdocAv_DisplayMetadata_ResolvesPerLocale(t *testing.T) {
+	tests := []struct {
+		name           string
+		locale         string
+		credentialName string
+		claimLabel     string
+		issuerName     string
+	}{
+		{
+			name:           "english resolves the english bundle",
+			locale:         "en",
+			credentialName: "Proof of Age",
+			claimLabel:     "Over 18",
+			issuerName:     "Yivi Age Issuer",
+		},
+		{
+			name:           "dutch resolves the dutch bundle",
+			locale:         "nl",
+			credentialName: "Leeftijdsbewijs",
+			claimLabel:     "Ouder dan 18",
+			issuerName:     "Yivi Leeftijdsuitgever",
+		},
+		{
+			// The base-language step of the chain: nl-BE is not published, nl is.
+			name:           "a regional locale falls back to its base language",
+			locale:         "nl-BE",
+			credentialName: "Leeftijdsbewijs",
+			claimLabel:     "Ouder dan 18",
+			issuerName:     "Yivi Leeftijdsuitgever",
+		},
+		{
+			// Neither the locale nor its base language is published, so the chain
+			// reaches English rather than leaving the user with empty labels.
+			name:           "an unpublished locale falls back to english",
+			locale:         "de",
+			credentialName: "Proof of Age",
+			claimLabel:     "Over 18",
+			issuerName:     "Yivi Age Issuer",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			eudiStorage := newTestEudiStorage(t)
+			storeIssuedAvMdoc(t, eudiStorage, withAvDisplayMetadataInTwoLocales)
+
+			handler := newAvMdocHandlerForLocale(t, eudiStorage, test.locale)
+
+			result, err := handler.FindCandidates(avCredentialQuery(t))
+
+			require.NoError(t, err)
+			require.Len(t, result.OwnedCandidates, 1)
+
+			candidate := result.OwnedCandidates[0]
+			require.Equal(t, test.credentialName, candidate.Name)
+			require.Equal(t, test.issuerName, candidate.Issuer.Name)
+
+			require.Len(t, candidate.Attributes, 1)
+			require.NotNil(t, candidate.Attributes[0].DisplayName,
+				"a published claim label must resolve for every locale, by fallback if not directly")
+			require.Equal(t, test.claimLabel, *candidate.Attributes[0].DisplayName)
+		})
+	}
+}
+
+// One object's text must not mix languages. A credential whose name resolved to
+// Dutch while its claim label resolved to English would read as a bug to the
+// user, and is the failure mode a per-field fallback invites.
+func testMdocAv_DisplayMetadata_DoesNotMixLanguages(t *testing.T) {
+	eudiStorage := newTestEudiStorage(t)
+	storeIssuedAvMdoc(t, eudiStorage, withAvDisplayMetadataInTwoLocales)
+
+	handler := newAvMdocHandlerForLocale(t, eudiStorage, "nl")
+
+	result, err := handler.FindCandidates(avCredentialQuery(t))
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+
+	candidate := result.OwnedCandidates[0]
+	require.Len(t, candidate.Attributes, 1)
+	require.NotNil(t, candidate.Attributes[0].DisplayName)
+
+	dutch := []string{candidate.Name, candidate.Issuer.Name, *candidate.Attributes[0].DisplayName}
+	for _, text := range dutch {
+		require.NotContains(t, []string{"Proof of Age", "Over 18", "Yivi Age Issuer"}, text,
+			"no English string may survive into a Dutch rendering of the same credential")
+	}
 }
 
 // testMdocAv_BareClaimPath_StillResolvesLabel covers the metadata an issuer
@@ -362,16 +468,16 @@ func storeIssuedAvMdoc(t *testing.T, eudiStorage storage.Storage, decorate ...fu
 
 	now := time.Now()
 	batch := &models.CredentialBatch{
-		IssuerURL:                "https://av-issuer.example.com",
-		CredentialIssuer:         "https://av-issuer.example.com",
-		VerifiableCredentialType: avDocType,
-		Format:                   models.CredentialFormatMsoMdoc,
-		Hash:                     "av-test-batch-hash",
-		ProcessedSdJwtPayload:    datatypes.JSON(resolvedClaims),
-		IssuedAt:                 datatypes.NullTime{V: now.Add(-time.Hour), Valid: true},
-		ExpiresAt:                datatypes.NullTime{V: now.Add(24 * time.Hour), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
+		IssuerIdentifier:           "https://av-issuer.example.com",
+		CredentialIssuerIdentifier: "https://av-issuer.example.com",
+		VerifiableCredentialType:   avDocType,
+		Format:                     models.CredentialFormatMsoMdoc,
+		Hash:                       "av-test-batch-hash",
+		ProcessedSdJwtPayload:      datatypes.JSON(resolvedClaims),
+		IssuedAt:                   datatypes.NullTime{V: now.Add(-time.Hour), Valid: true},
+		ExpiresAt:                  datatypes.NullTime{V: now.Add(24 * time.Hour), Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             1,
 		Instances: []models.IssuedCredentialInstance{
 			{RawCredential: rawCredential},
 		},
@@ -404,6 +510,36 @@ func withAvBareClaimPathMetadata(batch *models.CredentialBatch) {
 	batch.CredentialMetadata.Claims[0].Path = datatypes.JSON(`["age_over_18"]`)
 }
 
+// withAvDisplayMetadataInTwoLocales publishes every displayed string in both
+// English and Dutch: the credential name, the claim label, and the issuer name.
+//
+// Synthetic on purpose, and it has to be. The EUDI reference issuer advertises
+// exactly one locale — every one of the 577 display entries in its metadata is
+// `en` — so an integration test against that container has no second translation
+// to resolve and cannot prove translation at all. Proving it needs metadata a
+// test controls.
+func withAvDisplayMetadataInTwoLocales(batch *models.CredentialBatch) {
+	batch.IssuerDisplay = []models.IssuerMetadataDisplay{
+		{Name: "Yivi Age Issuer", Locale: datatypes.NullString{V: "en", Valid: true}},
+		{Name: "Yivi Leeftijdsuitgever", Locale: datatypes.NullString{V: "nl", Valid: true}},
+	}
+	batch.CredentialMetadata = &models.CredentialMetadata{
+		Display: []models.CredentialDisplay{
+			{Name: "Proof of Age", Locale: datatypes.NullString{V: "en", Valid: true}},
+			{Name: "Leeftijdsbewijs", Locale: datatypes.NullString{V: "nl", Valid: true}},
+		},
+		Claims: []models.CredentialClaim{
+			{
+				Path: datatypes.JSON(`["` + avDocType + `", "age_over_18"]`),
+				Display: []models.ClaimDisplay{
+					{Name: "Over 18", Locale: datatypes.NullString{V: "en", Valid: true}},
+					{Name: "Ouder dan 18", Locale: datatypes.NullString{V: "nl", Valid: true}},
+				},
+			},
+		},
+	}
+}
+
 func withAvDisplayMetadata(batch *models.CredentialBatch) {
 	batch.IssuerDisplay = []models.IssuerMetadataDisplay{
 		{Name: "Yivi Age Issuer", Locale: datatypes.NullString{V: "en", Valid: true}},
@@ -432,9 +568,17 @@ func withAvDisplayMetadata(batch *models.CredentialBatch) {
 func newAvMdocHandler(t *testing.T, eudiStorage storage.Storage) *mdoc_dcql.MdocDcqlHandler {
 	t.Helper()
 
+	return newAvMdocHandlerForLocale(t, eudiStorage, "en")
+}
+
+// newAvMdocHandlerForLocale is newAvMdocHandler with the wallet's UI locale
+// under the test's control, which is what the per-locale display assertions need.
+func newAvMdocHandlerForLocale(t *testing.T, eudiStorage storage.Storage, locale string) *mdoc_dcql.MdocDcqlHandler {
+	t.Helper()
+
 	return mdoc_dcql.NewMdocDcqlHandler(
 		eudiStorage,
-		clientmodels.NewCurrentLocale("en"),
+		clientmodels.NewCurrentLocale(locale),
 		services.NewMdocDeviceKeyBinder(db.NewHolderBindingKeyStore(eudiStorage.Db())),
 	)
 }

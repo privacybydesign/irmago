@@ -1,9 +1,14 @@
 package statuslist
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -212,6 +217,121 @@ func Test_VerifyStatusListToken_TTLSignal_AbsentWhenNoTTLorExp(t *testing.T) {
 	_, ok := v.payloadTTLSignal()
 	require.False(t, ok)
 }
+
+// ─── OAuth discovery key resolution ──────────────────────────────────────────
+// verifyStatusListToken registers two key providers: the OAuth-discovery
+// provider (iss → RFC 8414 metadata → jwks_uri → kid) followed by the
+// typ-checking x5c/DID provider. jwx tries them in order and only fails when no
+// provider produces a key that verifies the signature.
+
+func Test_VerifyStatusListToken_OAuthDiscoveredKey_Accepted(t *testing.T) {
+	signer := NewTestStatusListSigner(t)
+	srv := newTestJwksIssuerServer(t, signer, "status-key-1")
+
+	body := signer.SignToken(t, TestStatusListOpts{
+		Issuer:    srv.URL(),
+		Subject:   srv.URL() + "/sl/1",
+		IssuedAt:  time.Now(),
+		Bits:      1,
+		Statuses:  map[uint64]uint8{0: 0, 1: 1},
+		KidHeader: "status-key-1",
+		OmitX5c:   true,
+	})
+
+	// No X509Context: the key comes from the issuer's published JWKS, not from a
+	// certificate chain.
+	v, err := verifyStatusListToken(body, VerificationContext{}, srv.URL()+"/sl/1", time.Now())
+	require.NoError(t, err)
+	require.Equal(t, srv.URL(), v.payload.Issuer)
+	require.Equal(t, int64(1), srv.jwksHits.Load())
+}
+
+func Test_VerifyStatusListToken_OAuthDiscoveredKey_WrongTyp_Rejected(t *testing.T) {
+	// Both key providers check the `statuslist+jwt` typ allow-list, so any JWT the
+	// issuer signed with a published key — an ID token, an access token — must
+	// not be accepted here just because its claims happen to fit.
+	signer := NewTestStatusListSigner(t)
+	srv := newTestJwksIssuerServer(t, signer, "status-key-1")
+
+	body := signer.SignTokenWithTyp(t, TestStatusListOpts{
+		Issuer:    srv.URL(),
+		Subject:   srv.URL() + "/sl/1",
+		IssuedAt:  time.Now(),
+		Bits:      1,
+		Statuses:  map[uint64]uint8{0: 0},
+		KidHeader: "status-key-1",
+		OmitX5c:   true,
+	}, "JWT")
+
+	_, err := verifyStatusListToken(body, VerificationContext{}, srv.URL()+"/sl/1", time.Now())
+	require.ErrorIs(t, err, ErrUnauthorized)
+}
+
+func Test_VerifyStatusListToken_X5cToken_SkipsDiscoveryNetworkTraffic(t *testing.T) {
+	// The common case is an x5c-signed token with no kid. Registering the
+	// discovery provider first must not make it fetch anything.
+	signer := NewTestStatusListSigner(t)
+	srv := newTestJwksIssuerServer(t, signer, "status-key-1")
+
+	body := signer.SignToken(t, TestStatusListOpts{
+		Issuer:   srv.URL(),
+		Subject:  srv.URL() + "/sl/1",
+		IssuedAt: time.Now(),
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0},
+	})
+
+	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
+	_, err := verifyStatusListToken(body, vc, srv.URL()+"/sl/1", time.Now())
+	require.NoError(t, err)
+	require.Zero(t, srv.discoveryHits.Load(), "an x5c token carries no kid, so discovery must be skipped entirely")
+	require.Zero(t, srv.jwksHits.Load())
+}
+
+// testJwksIssuerServer plays the issuer: it serves RFC 8414 authorization server
+// metadata pointing at its own JWKS, which publishes the signer's public key. It
+// counts requests so tests can assert whether discovery was attempted.
+type testJwksIssuerServer struct {
+	server        *httptest.Server
+	jwks          []byte
+	discoveryHits atomic.Int64
+	jwksHits      atomic.Int64
+}
+
+func newTestJwksIssuerServer(t *testing.T, signer *TestStatusListSigner, kid string) *testJwksIssuerServer {
+	t.Helper()
+
+	key, err := jwk.Import[jwk.Key](signer.PrivKey.Public())
+	require.NoError(t, err)
+	require.NoError(t, key.Set(jwk.KeyIDKey, kid))
+	set := jwk.NewSet()
+	require.NoError(t, set.AddKey(key))
+	jwks, err := json.Marshal(set)
+	require.NoError(t, err)
+
+	s := &testJwksIssuerServer{jwks: jwks}
+	s.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/oauth-authorization-server", "/.well-known/openid-configuration":
+			s.discoveryHits.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer":   s.URL(),
+				"jwks_uri": s.URL() + "/jwks.json",
+			})
+		case "/jwks.json":
+			s.jwksHits.Add(1)
+			w.Header().Set("Content-Type", "application/jwk-set+json")
+			_, _ = w.Write(s.jwks)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(s.server.Close)
+	return s
+}
+
+func (s *testJwksIssuerServer) URL() string { return s.server.URL }
 
 // buildTokenWithBits builds a token whose status_list.bits is set to
 // an arbitrary integer for negative-path tests.

@@ -168,8 +168,8 @@ func signDeviceAuthOver(t *testing.T, h *DefaultHolder, docType string, transcri
 	if err != nil {
 		t.Fatalf("create signer: %v", err)
 	}
-	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers}
-	msg.Payload = payload
+	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers,
+		Payload: payload}
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 	if err := msg.Sign(rand.Reader, nil, signer); err != nil {
 		t.Fatalf("sign deviceAuth: %v", err)

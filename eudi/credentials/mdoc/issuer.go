@@ -299,8 +299,8 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any
 	// Sign1Message marshals the COSE_Sign1_Tagged form instead (prefixing tag
 	// 18, 0xd2). The tag sits outside Sig_structure, so this changes only the
 	// envelope, never the signature.
-	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers}
-	msg.Payload = msoBytes
+	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers,
+		Payload: msoBytes}
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 
 	// x5chain header 33: [DS cert DER, IACA cert DER]

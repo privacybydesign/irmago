@@ -80,6 +80,15 @@ type CredentialStore interface {
 	// UpdateInstanceStatus writes last_known_status and last_status_check_at
 	// on a single IssuedCredentialInstance. Returns ErrNotFound on no match.
 	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
+
+	// UpdateBatchHash rewrites a CredentialBatch's deduplication hash. Returns
+	// ErrNotFound on no match.
+	//
+	// Exists for the one job of migrating rows written under an older hash
+	// definition, not for ordinary use: the hash is a credential's identity and a
+	// unique index, so changing it on a live batch is only correct when the
+	// recomputation is over the same inputs the batch already holds.
+	UpdateBatchHash(batchID datatypes.UUID, hash string) error
 }
 
 type credentialStore struct {
@@ -270,6 +279,25 @@ func (s *credentialStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanc
 		Where("issued_credential_instances.status_list_uri IS NOT NULL").
 		Scan(&out).Error
 	return out, err
+}
+
+func (s *credentialStore) UpdateBatchHash(batchID datatypes.UUID, hash string) error {
+	if batchID.IsNil() {
+		return fmt.Errorf("batchID is required")
+	}
+	if hash == "" {
+		return fmt.Errorf("hash is required")
+	}
+	res := s.db.Model(&models.CredentialBatch{}).
+		Where("id = ?", batchID).
+		Update("hash", hash)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *credentialStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {

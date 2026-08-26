@@ -2,8 +2,10 @@ package didweb
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/privacybydesign/irmago/eudi/did"
@@ -146,7 +148,7 @@ func Test_Resolve_HTTPErrorReturnsError(t *testing.T) {
 
 	_, err := resolver.Resolve("did:web:example.com")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "404")
+	require.Contains(t, err.Error(), "did:web: DID document not found")
 }
 
 func Test_Resolve_UnmarshalDocumentCorrectly(t *testing.T) {
@@ -176,6 +178,124 @@ func Test_Resolve_UnmarshalDocumentCorrectly(t *testing.T) {
 	require.Equal(t, did.VerificationMethodType_JsonWebKey2020, doc.VerificationMethod[0].Type)
 	require.Equal(t, "did:web:issuer.dev.eduid.nl", doc.VerificationMethod[0].Controller)
 	require.NotNil(t, doc.VerificationMethod[0].PublicKeyJwk)
+}
+
+// ─── insecure HTTP fallback ───────────────────────────────────────────────────
+// The fallback is deliberately narrow: only a 404 from the HTTPS endpoint means
+// "this host serves its DID document over plain HTTP instead". Every other
+// failure mode must surface as-is, so a hostile or broken HTTPS host cannot
+// downgrade key resolution to an unauthenticated channel.
+
+func Test_Resolve_AllowInsecure_NotFound_FallsBackToHTTP(t *testing.T) {
+	httpsSrv, httpsHits := newDidDocumentServer(t, http.StatusNotFound, nil)
+	httpSrv, httpHits := newDidDocumentServer(t, http.StatusOK, didDocumentBytes(t, "did:web:example.com"))
+
+	resolver := newSchemeRoutingResolver(httpsSrv, httpSrv, true)
+
+	doc, err := resolver.Resolve("did:web:example.com")
+	require.NoError(t, err)
+	require.Equal(t, "did:web:example.com", doc.ID)
+	require.Equal(t, int64(1), httpsHits.Load())
+	require.Equal(t, int64(1), httpHits.Load(), "404 over HTTPS must trigger exactly one plain-HTTP retry")
+}
+
+func Test_Resolve_AllowInsecure_ServerError_DoesNotFallBackToHTTP(t *testing.T) {
+	httpsSrv, _ := newDidDocumentServer(t, http.StatusInternalServerError, nil)
+	httpSrv, httpHits := newDidDocumentServer(t, http.StatusOK, didDocumentBytes(t, "did:web:example.com"))
+
+	resolver := newSchemeRoutingResolver(httpsSrv, httpSrv, true)
+
+	_, err := resolver.Resolve("did:web:example.com")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unexpected HTTP status 500")
+	require.Zero(t, httpHits.Load(), "a non-404 HTTPS response must not be retried over plain HTTP")
+}
+
+func Test_Resolve_AllowInsecure_TransportError_DoesNotFallBackToHTTP(t *testing.T) {
+	// Pins current behaviour: when the HTTPS request never completes (no TLS
+	// listener, dial refused, handshake failure) there is no 404 to observe, so
+	// no fallback happens. Note this is exactly the shape of a dev host that
+	// only listens on plain HTTP — if that flow must keep working, the fallback
+	// condition needs to widen, and this expectation flips.
+	httpSrv, httpHits := newDidDocumentServer(t, http.StatusOK, didDocumentBytes(t, "did:web:example.com"))
+
+	resolver := newSchemeRoutingResolver(nil, httpSrv, true)
+
+	_, err := resolver.Resolve("did:web:example.com")
+	require.Error(t, err)
+	require.Zero(t, httpHits.Load())
+}
+
+func Test_Resolve_WithoutAllowInsecure_NotFound_DoesNotFallBackToHTTP(t *testing.T) {
+	httpsSrv, _ := newDidDocumentServer(t, http.StatusNotFound, nil)
+	httpSrv, httpHits := newDidDocumentServer(t, http.StatusOK, didDocumentBytes(t, "did:web:example.com"))
+
+	resolver := newSchemeRoutingResolver(httpsSrv, httpSrv, false)
+
+	_, err := resolver.Resolve("did:web:example.com")
+	require.Error(t, err)
+	require.Zero(t, httpHits.Load(), "the plain-HTTP retry requires AllowInsecure")
+}
+
+func didDocumentBytes(t *testing.T, id string) []byte {
+	t.Helper()
+	body, err := json.Marshal(did.Document{
+		Context: []string{"https://www.w3.org/ns/did/v1"},
+		ID:      id,
+	})
+	require.NoError(t, err)
+	return body
+}
+
+// newDidDocumentServer serves body with the given status and counts requests.
+func newDidDocumentServer(t *testing.T, status int, body []byte) (*httptest.Server, *atomic.Int64) {
+	t.Helper()
+	hits := &atomic.Int64{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/did+json")
+		w.WriteHeader(status)
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(server.Close)
+	return server, hits
+}
+
+// newSchemeRoutingResolver builds a resolver whose HTTPS and plain-HTTP
+// attempts land on separate backends, so a test can observe which one was used.
+// A nil httpsSrv makes the HTTPS attempt fail at the transport level.
+func newSchemeRoutingResolver(httpsSrv, httpSrv *httptest.Server, allowInsecure bool) *DocumentResolver {
+	transport := &schemeRoutingTransport{httpHost: httpSrv.Listener.Addr().String()}
+	if httpsSrv != nil {
+		transport.httpsHost = httpsSrv.Listener.Addr().String()
+	}
+	return &DocumentResolver{
+		HTTPClient:    &http.Client{Transport: transport},
+		AllowInsecure: allowInsecure,
+	}
+}
+
+// schemeRoutingTransport sends a request to a different backend depending on the
+// scheme the resolver chose. Both backends are plain-HTTP test servers; the
+// https branch only stands in for "the HTTPS attempt". An empty httpsHost makes
+// the https attempt fail before it reaches any server.
+type schemeRoutingTransport struct {
+	httpsHost string
+	httpHost  string
+}
+
+func (t *schemeRoutingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	clone := req.Clone(req.Context())
+	if req.URL.Scheme == "https" {
+		if t.httpsHost == "" {
+			return nil, fmt.Errorf("simulated TLS dial failure")
+		}
+		clone.URL.Host = t.httpsHost
+	} else {
+		clone.URL.Host = t.httpHost
+	}
+	clone.URL.Scheme = "http"
+	return http.DefaultTransport.RoundTrip(clone)
 }
 
 // hostOverrideTransport redirects all requests to a test server.

@@ -38,13 +38,18 @@ func (p *sdJwtVcCredentialFormatParser) ParseAndVerify(raw, _ string, _ bool) (*
 	return &ParsedCredential{
 		Format:                   models.CredentialFormatSdJwtVc,
 		VerifiableCredentialType: jwtPayload.VerifiableCredentialType,
-		IssuerURL:                jwtPayload.Issuer,
-		ResolvedClaims:           resolvedClaims,
-		RawCredentialBytes:       []byte(verified.GetRawSdJwtVc()),
-		IssuedAt:                 jwtPayload.IssuedAt,
-		ExpiresAt:                jwtPayload.Expiry,
-		NotBefore:                jwtPayload.NotBefore,
-		SdJwtVc:                  verified,
+		// verified.IssuerIdentifier rather than jwtPayload.Issuer: `iss` is
+		// OPTIONAL in SD-JWT VC, and the verifier falls back to the subject of the
+		// x5c end-entity certificate when it is absent (SD-JWT VC §2.2.2.3).
+		// Reading the claim directly would store an empty issuer for a credential
+		// that has a perfectly good verified identity.
+		IssuerIdentifier:   verified.IssuerIdentifier,
+		ResolvedClaims:     resolvedClaims,
+		RawCredentialBytes: []byte(verified.GetRawSdJwtVc()),
+		IssuedAt:           jwtPayload.IssuedAt,
+		ExpiresAt:          jwtPayload.Expiry,
+		NotBefore:          jwtPayload.NotBefore,
+		SdJwtVc:            verified,
 	}, nil
 }
 

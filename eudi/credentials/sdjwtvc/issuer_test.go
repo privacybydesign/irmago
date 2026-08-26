@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/utils"
@@ -98,7 +98,7 @@ func Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_DefaultsToSha256(t *testing.
 
 	builder := NewSdJwtVcBuilder().
 		WithPayload(
-			sdjwt.Claim(jwt.IssuerKey, "https://example.com"),
+			sdjwt.Claim(jwt.IssuerKey, "https://irma.app"),
 			sdjwt.Claim(jwt.ExpirationKey, time.Now().Unix()),
 			sdjwt.Claim(VerifiableCredentialTypeKey, "test.test.email"),
 			sdjwt.SdClaim("email", "test@gmail.com"),

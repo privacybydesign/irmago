@@ -18,9 +18,9 @@
 // query can be made to disagree on purpose -- which is what testing a refusal
 // requires.
 //
-//	go run ./yivi/cli/eudicli/mint-session -element age_over_21
+//	go run ./yivi/cli/eudicli/mint-session -element age_over_40
 //	go run ./yivi/cli/eudicli/mint-session -issue -mint age_over_42=true
-//	go run ./yivi/cli/eudicli/mint-session -issue -mint "age_over_18=false,age_over_21=false"
+//	go run ./yivi/cli/eudicli/mint-session -issue -mint "age_over_18=false,age_over_40=false"
 //
 // -show-query prints the DCQL query as sent. There is no other way to read it: the
 // request object is single use, so fetching it to decode the query leaves nothing
@@ -86,7 +86,7 @@ var (
 	value   = flag.String("value", "true", `query value constraint: "true", "false", or "any" to omit it. Does not affect what -issue mints`)
 
 	issue = flag.Bool("issue", false, "also mint a credential offer, so the credential can be installed first")
-	mint  = flag.String("mint", "", `what -issue puts in the credential, as "age_over_18=true,age_over_21=false". Empty mints localstack.DefaultAVElements. Independent of -element/-value, which constrain the query`)
+	mint  = flag.String("mint", "", `what -issue puts in the credential, as "age_over_18=true,age_over_40=false". Empty mints localstack.DefaultAVElements. Independent of -element/-value, which constrain the query`)
 
 	reverse = flag.Bool("reverse", true, "run adb reverse for the verifier and issuer ports first, so localhost on the phone reaches this machine")
 

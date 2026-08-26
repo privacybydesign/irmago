@@ -21,9 +21,13 @@ type ParsedCredential struct {
 	// 18013-5 docType (mso_mdoc).
 	VerifiableCredentialType string
 
-	// IssuerURL is the iss claim (dc+sd-jwt) or the credential_issuer used
-	// at issuance (mso_mdoc, which has no iss claim of its own).
-	IssuerURL string
+	// IssuerIdentifier is the issuer identity the credential itself asserts and
+	// was verified against: the `iss` claim, or the subject of the x5c end-entity
+	// certificate when `iss` is absent (dc+sd-jwt, SD-JWT VC §2.2.2.3); the
+	// credential_issuer used at issuance for mso_mdoc, which has no iss claim of
+	// its own. Distinct from CredentialBatch.CredentialIssuerIdentifier, which is
+	// the issuer the wallet went to according to the Credential Offer.
+	IssuerIdentifier string
 
 	// ResolvedClaims is the JSON-encoded claims to cache into
 	// models.CredentialBatch.ProcessedSdJwtPayload — misleadingly named on the

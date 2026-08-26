@@ -73,10 +73,10 @@ func run() error {
 	// ── 2. Issuance ─────────────────────────────────────────────────────
 	section("2. Issuance — the issuer certifies two claims")
 
-	claims := map[string]any{"age_over_18": true, "age_over_21": true}
+	claims := map[string]any{"age_over_18": true, "age_over_40": false}
 	fmt.Printf("  docType   : %s\n", docType)
 	fmt.Printf("  namespace : %s\n", namespace)
-	fmt.Printf("  claims    : age_over_18=true, age_over_21=true\n")
+	fmt.Printf("  claims    : age_over_18=true, age_over_40=false\n")
 
 	credential, err := issuer.Issue(docType, namespace, claims, holder.PublicKey())
 	if err != nil {
@@ -99,7 +99,7 @@ func run() error {
 	section("3. The verifier asks for one claim only")
 
 	fmt.Printf("  requested: age_over_18\n")
-	fmt.Printf("  withheld : age_over_21 (the holder has it, the verifier did not ask)\n")
+	fmt.Printf("  withheld : age_over_40 (the holder has it, the verifier did not ask)\n")
 
 	// ── 4. Selective disclosure ─────────────────────────────────────────
 	section("4. The holder discloses exactly what was asked")
@@ -154,15 +154,15 @@ func run() error {
 	}
 	fmt.Printf("  RequireElements(\"age_over_18\") -> ok\n")
 
-	if err := result.RequireElements("age_over_21"); err == nil {
-		return fmt.Errorf("age_over_21 was disclosed but should not have been")
+	if err := result.RequireElements("age_over_40"); err == nil {
+		return fmt.Errorf("age_over_40 was disclosed but should not have been")
 	} else {
-		fmt.Printf("  RequireElements(\"age_over_21\") -> %v\n", err)
+		fmt.Printf("  RequireElements(\"age_over_40\") -> %v\n", err)
 	}
 
 	fmt.Printf("\n  So the verifier learned age_over_18=true and nothing else. It still holds a\n")
-	fmt.Printf("  signed digest of age_over_21 — but a digest over a 16-byte random salt plus the\n")
-	fmt.Printf("  value, so guessing \"true\" and hashing it does not confirm anything.\n")
+	fmt.Printf("  signed digest of age_over_40 — but a digest over a 16-byte random salt plus the\n")
+	fmt.Printf("  value, so guessing the boolean and hashing it does not confirm anything.\n")
 
 	// ── 7. The bytes themselves ─────────────────────────────────────────
 	section("7. What actually went over the wire")

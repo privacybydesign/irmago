@@ -3,6 +3,7 @@ package services
 import (
 	"crypto"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,7 +11,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -100,7 +101,22 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 
 		display := ResolveBatchDisplay(batch, locale)
 		issuerName := display.IssuerName
+		// Fall back to the credential type identifier — the vct for SD-JWT VC, the
+		// docType for mdoc, both held in this one column — when the issuer published
+		// no display text this locale can resolve. Both DCQL handlers already do
+		// exactly this (mdoc_dcql and eudi_sdjwt_dcql credentialDisplayName), so
+		// without it the same credential shows as a blank row in this list while the
+		// consent screen names it.
+		//
+		// Applied here rather than inside ResolveBatchDisplay on purpose: the log
+		// service reads the same resolver and treats an empty CredentialName as "the
+		// live credential has no name to re-resolve", keeping the text it snapshotted
+		// at disclosure. A fallback in there would let a type identifier overwrite a
+		// snapshotted display name.
 		credentialName := display.CredentialName
+		if credentialName == "" {
+			credentialName = batch.VerifiableCredentialType
+		}
 
 		attrs := BuildAttributesFromPayload(processedSdJwtPayload, display.ClaimNames, display.ClaimOrder)
 
@@ -133,7 +149,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			Image:        credentialImage,
 			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
-				Id:     batch.CredentialIssuer,
+				Id:     batch.CredentialIssuerIdentifier,
 				Name:   issuerName,
 				Image:  issuerImage,
 				Url:    nil,
@@ -240,11 +256,11 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	// configuration, lacked credential_metadata within it, or carried no display
 	// entries — three issuer-side causes that look identical from the app.
 	if reason := missingDisplayMetadataReason(credentialConfigurationId, credentialConfiguration, credentialConfigurationFound); reason != "" {
-		eudi.Logger.Warnf("credential from issuer %q will render as its raw type %q: %s", first.IssuerURL, first.VerifiableCredentialType, reason)
+		eudi.Logger.Warnf("credential from issuer %q will render as its raw type %q: %s", first.IssuerIdentifier, first.VerifiableCredentialType, reason)
 	}
 
 	batch := &models.CredentialBatch{
-		IssuerURL:                first.IssuerURL,
+		IssuerIdentifier:         first.IssuerIdentifier,
 		VerifiableCredentialType: first.VerifiableCredentialType,
 		// The format of the credential that was actually parsed and verified, not
 		// the one the issuer's metadata advertises. The two normally agree — the
@@ -263,13 +279,17 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		// trust anchor does not hold, so an unauthenticated issuer never gets as far
 		// as a batch. Recording it here, at the one place where that is guaranteed,
 		// avoids a per-parser flag that a new format could silently forget to set.
-		IssuerVerified:     true,
-		CredentialIssuer:   first.IssuerURL,
-		IssuerDisplay:      slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
-		CredentialMetadata: convertCredentialMetadata(credentialConfiguration),
-		BatchSize:          uint(len(parsedCredentials)),
-		RemainingCount:     uint(len(parsedCredentials)),
-		Instances:          buildInstances(parsedCredentials),
+		IssuerVerified: true,
+		// From the Credential Offer rather than from the credential, which is the
+		// distinction master drew when it split these two fields: IssuerIdentifier
+		// is the identity the credential itself asserts and was verified against,
+		// CredentialIssuerIdentifier is the issuer the wallet went to.
+		CredentialIssuerIdentifier: issuerMetadata.CredentialIssuer,
+		IssuerDisplay:              slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
+		CredentialMetadata:         convertCredentialMetadata(credentialConfiguration),
+		BatchSize:                  uint(len(parsedCredentials)),
+		RemainingCount:             uint(len(parsedCredentials)),
+		Instances:                  buildInstances(parsedCredentials),
 	}
 
 	if first.IssuedAt != nil {
@@ -297,9 +317,9 @@ func (s *credentialService) computeHashAndDeleteExisting(p *ParsedCredential) (s
 	var hash string
 	var err error
 	if p.SdJwtVc != nil {
-		hash, err = hashForSdJwtVc(p.VerifiableCredentialType, p.ResolvedClaims)
+		hash, err = hashForSdJwtVc(p.VerifiableCredentialType, p.IssuerIdentifier, p.ResolvedClaims)
 	} else {
-		hash, err = hashGeneric(p.VerifiableCredentialType, p.ResolvedClaims)
+		hash, err = hashGeneric(p.VerifiableCredentialType, p.IssuerIdentifier, p.ResolvedClaims)
 	}
 	if err != nil {
 		return "", fmt.Errorf("failed to compute credential hash: %w", err)
@@ -315,7 +335,7 @@ func (s *credentialService) computeHashAndDeleteExisting(p *ParsedCredential) (s
 	// collide here and the second is refused as a duplicate of the first. That is
 	// a property of the hash rather than of this check, and it predates it --
 	// Hash is a unique index, so the storage layer could not hold both regardless.
-	// Changing it means putting IssuerURL in the hash, which rewrites every
+	// Changing it means putting the issuer in the hash, which rewrites every
 	// existing hash and breaks the deliberate compatibility with
 	// irmaclient.CreateHashForSdJwtVc. The message below therefore names the
 	// stored copy's issuer as information, and does not claim the issuers were
@@ -340,7 +360,7 @@ func (s *credentialService) computeHashAndDeleteExisting(p *ParsedCredential) (s
 		if reason := batchStillUsable(existing, time.Now()); reason != "" {
 			return "", fmt.Errorf(
 				"credential %q is already held (stored copy issued by %q) and %s; re-issuing identical claims would replace it and discard its unused instances",
-				existing.VerifiableCredentialType, existing.IssuerURL, reason)
+				existing.VerifiableCredentialType, existing.CredentialIssuerIdentifier, reason)
 		}
 		if err := s.credentialStore.DeleteBatch(existing.ID); err != nil {
 			return "", fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
@@ -452,13 +472,12 @@ func buildInstances(parsedCredentials []*ParsedCredential) []models.IssuedCreden
 	return instances
 }
 
-// hashGeneric hashes credType+claims directly, with no standard-claim
-// stripping — used for formats (mso_mdoc) whose ResolvedClaims is already a
-// bare namespace->element->value map with nothing resembling
-// sdjwtvc.StandardClaims mixed in, unlike hashForSdJwtVc.
-func hashGeneric(credType string, resolvedClaimsBytes []byte) (string, error) {
-	combined := append([]byte(credType), resolvedClaimsBytes...)
-	return fmt.Sprintf("%x", sha256.Sum256(combined)), nil
+// hashGeneric hashes the claims directly, with no standard-claim stripping —
+// used for formats (mso_mdoc) whose ResolvedClaims is already a bare
+// namespace->element->value map with nothing resembling sdjwtvc.StandardClaims
+// mixed in, unlike hashForSdJwtVc.
+func hashGeneric(credType, issuerIdentifier string, resolvedClaimsBytes []byte) (string, error) {
+	return credentialHash(credType, issuerIdentifier, resolvedClaimsBytes), nil
 }
 
 // missingDisplayMetadataReason explains why a credential stored against this
@@ -469,10 +488,11 @@ func hashGeneric(credType string, resolvedClaimsBytes []byte) (string, error) {
 // worth telling apart rather than reporting as one "no display" case:
 //   - the configuration is absent, so the offer's credential_configuration_id does
 //     not match any key the issuer advertises;
-//   - the configuration has no credential_metadata, which is what an issuer
-//     emitting an older OID4VCI draft looks like from here — those place display
-//     and claims directly on the configuration, while metadata.CredentialConfiguration
-//     reads them only from the nested credential_metadata object;
+//   - the configuration carries no display metadata in either placement — neither
+//     the nested credential_metadata of OID4VCI v1.0 nor the older drafts' display
+//     and claims on the configuration itself, both of which
+//     metadata.CredentialConfiguration.UnmarshalJSON now normalises into the
+//     nested shape;
 //   - the metadata is present but empty, so the issuer genuinely advertises no
 //     display text (or no per-claim text, which costs the attribute labels rather
 //     than the credential name).
@@ -481,7 +501,7 @@ func missingDisplayMetadataReason(configID string, config metadata.CredentialCon
 	case !configFound:
 		return fmt.Sprintf("the issuer advertises no credential configuration %q", configID)
 	case config.CredentialMetadata == nil:
-		return fmt.Sprintf("configuration %q carries no credential_metadata (an issuer using an older OID4VCI draft puts display and claims on the configuration itself, which is not read)", configID)
+		return fmt.Sprintf("configuration %q carries no display metadata, in neither credential_metadata nor the older drafts' display/claims on the configuration itself", configID)
 	case len(config.CredentialMetadata.Display) == 0:
 		return fmt.Sprintf("configuration %q carries credential_metadata with no display entries", configID)
 	case len(config.CredentialMetadata.Claims) == 0:
@@ -554,6 +574,24 @@ func matchAllHolderBindingKeys(
 		}
 	}
 
+	// An issuer may echo the kid with the verification method fragment the DID method
+	// uses to reference the key (`did:key:z…#z…`) where the proof sent it without, so
+	// register the fragmentless form too. Second pass, so an exact DID URL always wins
+	// over a fragmentless alias.
+	//
+	// Format-independent: this fixes up the key map, which both the cnf path and the
+	// identifier path below look keys up in.
+	for _, pk := range publicKeyIdentifiers {
+		if pk.DidUrl == nil {
+			continue
+		}
+		if base := stripFragment(*pk.DidUrl); base != *pk.DidUrl {
+			if _, taken := keyByDidUrl[base]; !taken {
+				keyByDidUrl[base] = pk.ID
+			}
+		}
+	}
+
 	result := make([]datatypes.UUID, len(parsedCredentials))
 	for i, p := range parsedCredentials {
 		var keyID datatypes.UUID
@@ -618,11 +656,20 @@ func holderBindingKeyIdentifiers(p *ParsedCredential) (thumbprint *string, didUr
 		return thumbprint, nil
 	}
 
+	// Both did:key forms, because which one the kid carries depends on which proof
+	// builder ran: JwtProofBuilder uses
+	// didkey.CreateWithVerificationMethodIdentifier and emits the verification
+	// method fragment (`did:key:z…#z…`), while the other builder emits the bare
+	// DID. Deriving only one silently fails to match half the time, which is what
+	// TestDerivedDidUrlsMatchProofBuilder exists to catch.
 	if didKey, err := didkey.Create(*p.HolderBindingKeyPublicKey); err == nil {
 		didUrls = append(didUrls, didKey)
 	}
+	if didKeyWithFragment, err := didkey.CreateWithVerificationMethodIdentifier(*p.HolderBindingKeyPublicKey); err == nil {
+		didUrls = append(didUrls, didKeyWithFragment)
+	}
 
-	pubJwk, err := jwk.Import(p.HolderBindingKeyPublicKey)
+	pubJwk, err := jwk.Import[jwk.Key](p.HolderBindingKeyPublicKey)
 	if err != nil {
 		return thumbprint, didUrls
 	}
@@ -669,6 +716,13 @@ func matchHolderBindingKey(cnf *sdjwt.CnfField, keyByThumbprint map[string]datat
 	if cnf.Kid != nil {
 		if keyID, ok := keyByDidUrl[*cnf.Kid]; ok {
 			return keyID, nil
+		}
+		// Then the base DID, for a kid that carries a verification method fragment the
+		// stored DID URL does not (mirrors GetAndRemovePrivateKey).
+		if base := stripFragment(*cnf.Kid); base != *cnf.Kid {
+			if keyID, ok := keyByDidUrl[base]; ok {
+				return keyID, nil
+			}
 		}
 	}
 
@@ -905,7 +959,7 @@ func lookupDisplayName(lookup map[string]string, path []any) (string, bool) {
 // order in the input does not affect the hash. Array element order IS significant
 // — ["A","B"] and ["B","A"] produce different hashes, which is the correct
 // behaviour since array ordering is meaningful in SD-JWT claims.
-func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) (string, error) {
+func hashForSdJwtVc(credType, issuerIdentifier string, processedSdJwtPayloadBytes []byte) (string, error) {
 	// Unmarshal into a map so we can strip standard claims before hashing.
 	var payload map[string]any
 	if err := json.Unmarshal(processedSdJwtPayloadBytes, &payload); err != nil {
@@ -921,6 +975,36 @@ func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) (string,
 		return "", fmt.Errorf("hashForSdJwtVc: failed to marshal cleaned payload: %w", err)
 	}
 
-	combined := append([]byte(credType), cleanedBytes...)
-	return fmt.Sprintf("%x", sha256.Sum256(combined)), nil
+	return credentialHash(credType, issuerIdentifier, cleanedBytes), nil
+}
+
+// credentialHash is the one place a credential's deduplication hash is computed,
+// for every format.
+//
+// The issuer is part of the identity on purpose. Two different issuers minting the
+// same credential type with the same claims are two different credentials —
+// "over 18, according to the Dutch state" and "over 18, according to a shop's own
+// loyalty scheme" are not interchangeable, and a wallet that hashed them alike
+// could hold only one of them, silently refusing or replacing the other. Because
+// the hash is a unique index, that was not a display quirk: the storage layer
+// could not represent both.
+//
+// Renewal still works, which is the property that constrains this: the issuer of
+// a credential does not change when it is re-issued, so a renewal produces the
+// same hash and is still recognised as the same credential.
+//
+// Length-prefixed rather than concatenated. Plain concatenation cannot tell field
+// boundaries apart, so a type ending in the issuer's first characters would hash
+// identically to a shorter type and a longer issuer — ("a.b", "cd") and ("a.bc",
+// "d") were the same bytes. Nothing observed that, but a hash that decides
+// credential identity should not have a preimage ambiguity in it at all.
+func credentialHash(credType, issuerIdentifier string, claims []byte) string {
+	digest := sha256.New()
+	for _, field := range [][]byte{[]byte(credType), []byte(issuerIdentifier), claims} {
+		var length [8]byte
+		binary.BigEndian.PutUint64(length[:], uint64(len(field)))
+		digest.Write(length[:])
+		digest.Write(field)
+	}
+	return fmt.Sprintf("%x", digest.Sum(nil))
 }

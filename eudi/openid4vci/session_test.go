@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwe"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwe"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
@@ -173,12 +173,12 @@ func Test_openid4vciSession_obtainCredential_successResponses(t *testing.T) {
 
 	holderKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	holderJwkKey, err := jwk.Import(holderKey)
+	holderJwkKey, err := jwk.Import[jwk.Key](holderKey)
 	require.NoError(t, err)
 
 	testCredential, err := createTestSdJwtVcWithHolderKey(
 		"test.credential.type",
-		"https://test-issuer.example.com",
+		"https://openid4vc.staging.yivi.app",
 		map[string]string{"name": "Test User"},
 		certChain,
 		holderJwkKey,
@@ -270,13 +270,13 @@ func Test_openid4vciSession_configureIssuerSettings_credentialRequestEncryption(
 	ecPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
-	encKey, err := jwk.Import(ecPrivateKey)
+	encKey, err := jwk.Import[jwk.Key](ecPrivateKey)
 	require.NoError(t, err)
 	require.NoError(t, encKey.Set(jwk.AlgorithmKey, jwa.ECDH_ES()))
 	require.NoError(t, encKey.Set(jwk.KeyUsageKey, "enc"))
 
 	// Same key but without "enc" usage, to test the "no suitable key" error path
-	keyWithoutUsage, err := jwk.Import(ecPrivateKey)
+	keyWithoutUsage, err := jwk.Import[jwk.Key](ecPrivateKey)
 	require.NoError(t, err)
 	require.NoError(t, keyWithoutUsage.Set(jwk.AlgorithmKey, jwa.ECDH_ES()))
 
@@ -522,7 +522,7 @@ func Test_openid4vciSession_obtainCredential_sendsEncryptedRequest(t *testing.T)
 	ecPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
-	jwkPrivKey, err := jwk.Import(ecPrivateKey)
+	jwkPrivKey, err := jwk.Import[jwk.Key](ecPrivateKey)
 	require.NoError(t, err)
 	require.NoError(t, jwkPrivKey.Set(jwk.AlgorithmKey, jwa.ECDH_ES()))
 	require.NoError(t, jwkPrivKey.Set(jwk.KeyUsageKey, "enc"))
@@ -565,8 +565,8 @@ func Test_openid4vciSession_obtainCredential_sendsEncryptedRequest(t *testing.T)
 	token, err := jwt.Parse(decrypted, jwt.WithVerify(false))
 	require.NoError(t, err)
 
-	var configId string
-	require.NoError(t, token.Get("credential_configuration_id", &configId), "expected credential_configuration_id claim in decrypted JWT")
+	configId, err := jwt.Get[string](token, "credential_configuration_id")
+	require.NoError(t, err, "expected credential_configuration_id claim in decrypted JWT")
 	require.Equal(t, "credential-config-1", configId)
 }
 

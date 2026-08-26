@@ -1611,7 +1611,7 @@ func discloseServing(w *wallet, body string, status int, contentType string) err
 // ============================================================================
 
 func defaultClaims() map[string]any {
-	return map[string]any{"age_over_18": true, "age_over_21": true}
+	return map[string]any{"age_over_18": true, "age_over_40": false}
 }
 
 func defaultDcql(dt, ns, element, format string) map[string]any {

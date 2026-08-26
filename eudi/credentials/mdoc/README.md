@@ -165,7 +165,8 @@ Tests for the protocol layers live with the code they cover, not here:
 | `eudi/openid4vci/metadata_validators_test.go` | `mso_mdoc` accepted as a supported credential format, and `credential_signing_alg_values_supported` validated as COSE algorithm identifiers — ES256 (`-7`) required, an identifier ISO 18013-5 permits but this wallet cannot verify distinguished from one it does not permit at all |
 | `eudi/storage/db/credential_store_test.go` | `GetBatchesByDocType` against an `mso_mdoc` batch |
 | `eudi/openid4vp/mdoc_age_verification_test.go` | `TestOpenID4VP_MdocAgeVerification` — the EU Age Verification profile (`eu.europa.ec.av.1`) across the two stages that decide a presentation and fail independently: whether the relying party is authorized to ask (its certificate's authorized sets, via the real `SchemeQueryValidator`) and whether the wallet can answer (a genuinely issued mdoc in storage, matched by `mdoc_dcql`). Also pins display-name resolution, including from the one-component claim path an issuer may publish |
-| `internal/sessiontest/openid4vp_mdoc_av_disclosure_test.go` | `TestSessionHandler/openid4vp/mdoc-av` — the only mdoc disclosure that runs end to end against a real verifier (the EU reference `eudi-srv-web-verifier-endpoint` container): DCQL matching, the device-signed `DeviceResponse`, and the verifier accepting it, with the returned `vp_token` decoded from CBOR and its Tag-24 items unwrapped. A second subtest asks for an unauthorized docType and requires the refusal, so the passing case cannot pass by a skipped authorization check |
+| `internal/sessiontest/openid4vp_mdoc_av_disclosure_test.go` | `TestSessionHandler/openid4vp/mdoc-av` — disclosure end to end against a real verifier (the EU reference `eudi-srv-web-verifier-endpoint` container), in both response modes: DCQL matching, the device-signed `DeviceResponse`, and the verifier accepting it, with the returned `vp_token` decoded from CBOR and its Tag-24 items unwrapped and `deviceAuth` verified against a transcript the test rebuilds from the captured request. A third subtest asks for an unauthorized docType and requires the refusal, so the passing cases cannot pass by a skipped authorization check |
+| `internal/sessiontest/eudi_pid_python_issuer_mdoc_test.go` | `TestSessionHandler/openid4vci/mdoc/eudi-pid-python` — issuance from the EU reference issuer, and the permission screen it produces: the credential's name, its issuer, and a label and value per claim, all resolved from the issuer's OpenID4VCI metadata (ISO 18013-5 defines no display concept, so there is no other source). One subtest runs the same offer on a Dutch wallet against this `en`-only issuer, pinning that an unpublished locale falls back rather than resolving to an empty name |
 
 ### `mdoc-decode` — standalone CBOR/COSE inspector
 
@@ -361,6 +362,15 @@ enforce its own list either: it mints an `age_over_NN` absent from the advertise
 set without complaint. What actually constrains a deployment is the relying party
 certificate's authorized attributes, a policy decision per verifier rather than a
 property of the profile.
+
+Because only `age_over_18` is mandatory, **no test or demo may name another
+threshold in an assertion.** The integration suites mint `age_over_18` alone and
+check anything else by shape — a qualified `[namespace, elementIdentifier]` path, a
+label resolved from the issuer's metadata, a boolean value — so an issuer that
+changes which optional elements it publishes breaks nothing. The unit tests in this
+package do name others (`age_over_21`, `age_over_16`) as synthetic fixture data in
+credentials they build themselves, where a second element is what makes withholding
+observable; that is a fixture, not a claim about the profile.
 
 An earlier revision of this section cited "Annex A §4.1.1 and §4.1.2" and added "no
 other attributes permitted". Neither survived checking: the Blueprint's own data-model

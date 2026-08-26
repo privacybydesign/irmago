@@ -130,7 +130,7 @@ type ResolvedBatchDisplay struct {
 // one locale, in one pass.
 func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedBatchDisplay {
 	d := ResolvedBatchDisplay{
-		IssuerId:    batch.CredentialIssuer,
+		IssuerId:    batch.CredentialIssuerIdentifier,
 		IssuerNames: IssuerNamesByLanguage(batch.IssuerDisplay),
 		ClaimNames:  map[string]string{},
 		ClaimOrder:  map[string]int{},

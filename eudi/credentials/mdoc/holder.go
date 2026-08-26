@@ -148,8 +148,8 @@ func (h *DefaultHolder) SignDeviceAuth(docType string, transcript SessionTranscr
 
 	// Untagged, for the reason given in issuer.go: ISO 18013-5's
 	// DeviceSignature is a bare COSE_Sign1 array, not COSE_Sign1_Tagged.
-	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers}
-	msg.Payload = payload
+	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers,
+		Payload: payload}
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 	// unprotected headers intentionally empty — no cert in deviceAuth
 	// trust comes from deviceKey being embedded in the already-trusted MSO

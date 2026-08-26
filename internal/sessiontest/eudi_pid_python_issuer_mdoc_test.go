@@ -39,6 +39,40 @@ import (
 const (
 	eudiPidIssuerPyAvCredentialConfigID = "eu.europa.ec.eudi.age_verification_mdoc"
 	eudiPidIssuerPyAvDocType            = "eu.europa.ec.av.1"
+
+	// The one element the AV profile makes mandatory. Every other age_over_NN is
+	// optional, so it is the only element any assertion here may name; the rest are
+	// found by asking the credential what it carries.
+	avMandatoryElement = "age_over_18"
+)
+
+// The display metadata this configuration publishes, as read from the pinned
+// image's metadata document (/.well-known/openid-credential-issuer, configuration
+// eu.europa.ec.eudi.age_verification_mdoc): credential_metadata.display[0].name,
+// the issuer metadata's own top-level display[0].name, and the claim display for
+// each ["eu.europa.ec.av.1", age_over_NN] path the offers here request.
+//
+// Both mdoc suites read these — this one for the offer, the AV disclosure suite
+// for the permission screen and the log — which is why they live with the issuer
+// rather than with either set of assertions.
+//
+// Asserted literally rather than read back out of the wallet: reading them back
+// would pass just as happily against the empty strings a credential with no
+// display metadata produces, which is exactly what the seeded fixture these
+// subtests used to run on produced, and what made the wallet look as though it
+// could not name an mdoc credential at all.
+//
+// Only an "en" locale is published, for the credential, the issuer and every
+// claim alike, so this issuer can prove a fallback but not a translation.
+//
+// age_over_18 is the only claim named here on purpose: the AV profile makes it the
+// one mandatory element and every other age_over_NN optional, so pinning another
+// element's label would assert something the issuer is free to stop publishing.
+// The rest are checked by shape where they appear.
+const (
+	avCredentialDisplayName = "Proof of Age"
+	avIssuerDisplayName     = "Digital Credentials Issuer"
+	avAgeOver18DisplayName  = "Age Over 18"
 )
 
 // testSessionHandlerForEudiPidPythonIssuerMdoc is registered alongside the
@@ -51,12 +85,12 @@ const (
 // path is covered for.
 func testSessionHandlerForEudiPidPythonIssuerMdoc(t *testing.T) {
 	t.Run("issuance/stores the credential its signed MSO describes", testEudiPidPythonIssuerIssuesAvMdoc)
+	t.Run("issuance/the offer names the credential, its issuer and every claim", testEudiPidPythonIssuerOfferNamesEverything)
+	t.Run("issuance/offer text falls back to a locale the issuer does publish", testEudiPidPythonIssuerOfferFallsBackToPublishedLocale)
 	t.Run("issuance/refuses a credential from an untrusted issuer", testEudiPidPythonIssuerUntrustedIssuerIsRejected)
 
 	t.Run("disclosure/discloses issued mdoc to EUDI Kotlin verifier", testEudiPidPythonIssuerDisclosesAvMdoc)
 	t.Run("disclosure/batch instances are spent one per presentation", testEudiPidPythonIssuerBatchIsSingleUse)
-	t.Run("disclosure/discloses two claims at once", testEudiPidPythonIssuerDisclosesTwoClaims)
-	t.Run("disclosure/discloses only the requested claim", testEudiPidPythonIssuerDisclosesOnlyRequestedClaim)
 	t.Run("disclosure/matches a values constraint", testEudiPidPythonIssuerMatchesValuesConstraint)
 	t.Run("disclosure/refuses an unsatisfied values constraint", testEudiPidPythonIssuerRejectsUnsatisfiedValuesConstraint)
 }
@@ -82,9 +116,9 @@ func testEudiPidPythonIssuerIssuesAvMdoc(t *testing.T) {
 	require.Contains(t, cred.CredentialInstanceIds, clientmodels.Format_MsoMdoc,
 		"the stored instance must be filed under the mso_mdoc format, which is what every format-keyed read depends on")
 
-	// Both booleans the offer asked for, in the docType's own namespace: the AV
-	// profile allows nothing else in this credential.
-	require.Len(t, cred.Attributes, 2)
+	// The one element the AV profile makes mandatory, in the docType own namespace.
+	// Every other age_over_NN is optional, so this offer mints none of them.
+	require.Len(t, cred.Attributes, 1)
 	for _, attr := range cred.Attributes {
 		require.Equal(t, eudiPidIssuerPyAvDocType, attr.ClaimPath[0],
 			"an AV element lives in the namespace named after the docType")
@@ -112,7 +146,112 @@ func testEudiPidPythonIssuerIssuesAvMdoc(t *testing.T) {
 		"the issuance log must name the docType; an mso_mdoc configuration carries no vct to fall back on")
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc}, logged.Formats,
 		"the issuance log must file the entry under mso_mdoc, which is what every format-keyed read depends on")
-	require.Len(t, logged.Attributes, 2, "both issued claims are logged; the selective part happens at presentation")
+	require.Len(t, logged.Attributes, 1, "the issued claim is logged; the selective part happens at presentation")
+}
+
+// testEudiPidPythonIssuerOfferNamesEverything asserts the text of the permission
+// screen the user is shown before accepting an mdoc: the credential's name, its
+// issuer, and a label and value for every claim.
+//
+// This is the screen where consent is actually given, and every string on it is
+// resolved from the issuer's OpenID4VCI metadata rather than from the credential
+// — ISO 18013-5 has no display concept, so the signed mdoc carries element
+// identifiers and values and nothing a user would read. That is exactly why it is
+// worth pinning here: the wallet joins two documents by claim path to build this
+// screen, and a join that silently misses leaves a dialog of raw identifiers
+// asking for consent.
+//
+// Two things this issuer cannot prove, deliberately not asserted:
+//
+//   - Translations. The pinned image publishes an "en" locale only, for the
+//     credential, the issuer and every claim, so there is no second locale to
+//     compare against. The subtest below asserts the fallback instead, and the
+//     locale switch itself is covered end to end against the veramo issuer in
+//     eudi_logs_test.go ("Test Issuer" / "Test Uitgever").
+//   - The logo. Both logo URIs in the upstream metadata point at third-party
+//     hosts (examplestate.com, dev.issuer.eudiw.dev), so whether an image
+//     resolves depends on outbound network access to someone else's server.
+//     Asserting either way would make this subtest fail for a reason that has
+//     nothing to do with the wallet.
+func testEudiPidPythonIssuerOfferNamesEverything(t *testing.T) {
+	c, sessionHandler := createPidIssuerTestClient(t)
+	defer c.Close()
+
+	session := offerAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
+	offered := session.OfferedCredentials[0]
+
+	require.Equal(t, avCredentialDisplayName, offered.Name,
+		"the offer must name the credential from the issuer's credential_metadata")
+	require.Equal(t, avIssuerDisplayName, offered.Issuer.Name,
+		"the offer must name the issuer from the issuer metadata's own display entry")
+	require.True(t, offered.Issuer.Verified,
+		"the credentials were fetched and their chain verified before this screen is built")
+
+	requireAvOfferAttributes(t, offered.Attributes)
+
+	grantPermission(t, c, session.Id)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+}
+
+// testEudiPidPythonIssuerOfferFallsBackToPublishedLocale runs the same offer on a
+// Dutch wallet against an issuer that publishes "en" only.
+//
+// The property is that an unpublished locale falls back to what the issuer does
+// publish, rather than resolving to an empty string: a wallet whose language the
+// issuer never translated must still show a name, a claim label and a value. This
+// is the half of the translation question this container can answer — the other
+// half, that a published translation is preferred, needs metadata with two
+// locales and is covered against the veramo issuer instead.
+func testEudiPidPythonIssuerOfferFallsBackToPublishedLocale(t *testing.T) {
+	caPEM := readEudiPidIssuerPyCA(t)
+	c, _, sessionHandler := instantiateClient(t, caPEM, "nl")
+	defer c.Close()
+
+	session := offerAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
+	offered := session.OfferedCredentials[0]
+
+	require.Equal(t, avCredentialDisplayName, offered.Name,
+		"a locale the issuer does not publish must fall back to one it does, not to an empty name")
+	require.Equal(t, avIssuerDisplayName, offered.Issuer.Name,
+		"the issuer name must survive the same fallback")
+	requireAvOfferAttributes(t, offered.Attributes)
+}
+
+// requireAvOfferAttributes checks the claims on an AV offer: age_over_18 by name,
+// everything else by shape.
+//
+// Only age_over_18 is named because the AV profile makes it the single mandatory
+// element and leaves every other age_over_NN optional — which of them a given
+// configuration mints is the issuer's choice, so naming one would make this fail
+// on an issuer change that breaks nothing about the permission screen. What has to
+// hold for all of them is the part the wallet is responsible for: a qualified
+// [namespace, elementIdentifier] path in the docType's namespace, a label resolved
+// from the issuer's metadata, and the boolean that was actually signed.
+func requireAvOfferAttributes(t *testing.T, attrs []clientmodels.Attribute) {
+	t.Helper()
+
+	require.NotEmpty(t, attrs, "the offer must list the claims the credential carries")
+
+	ageOver18 := findAttr(attrs, eudiPidIssuerPyAvDocType, avMandatoryElement)
+	require.NotNil(t, ageOver18, "the mandatory age_over_18 element is missing from the offer")
+	require.Equal(t, boolVal(true), ageOver18.Value)
+	require.NotNil(t, ageOver18.DisplayName, "age_over_18 reached the offer with no label")
+	require.Equal(t, avAgeOver18DisplayName, *ageOver18.DisplayName)
+
+	for i, attr := range attrs {
+		// A label never replaces the path, and the namespace is the docType. This is
+		// what makes the join non-trivial: the issuer publishes its claim paths in
+		// the same two-component form, and a bare elementIdentifier matches nothing.
+		require.Len(t, attr.ClaimPath, 2,
+			"attribute %d lost its qualified [namespace, elementIdentifier] path", i)
+		require.Equal(t, eudiPidIssuerPyAvDocType, attr.ClaimPath[0],
+			"attribute %d is not in the namespace named after the docType", i)
+		require.NotNil(t, attr.DisplayName, "attribute %d reached the offer with no label", i)
+		require.NotEmpty(t, *attr.DisplayName, "attribute %d has an empty label", i)
+		require.NotNil(t, attr.Value, "attribute %d has no value", i)
+		require.NotNil(t, attr.Value.Bool, "attribute %d should be an age_over_NN boolean", i)
+	}
 }
 
 func testEudiPidPythonIssuerDisclosesAvMdoc(t *testing.T) {
@@ -164,16 +303,19 @@ func testEudiPidPythonIssuerDisclosesAvMdoc(t *testing.T) {
 // Helpers
 // ----------------------------------------------------------------------------
 
-// issueAvMdocViaPythonIssuer drives the pre-authorized OID4VCI flow for the
-// age-verification mdoc, mirroring issuePidViaPythonIssuer. The display name is
-// not asserted on the offer: the issuer publishes no display metadata for this
-// configuration, so the wallet falls back to rendering the raw docType.
-func issueAvMdocViaPythonIssuer(
+// offerAvMdocViaPythonIssuer drives the pre-authorized OID4VCI flow for the
+// age-verification mdoc up to the permission screen, and returns the session
+// state carrying the offer.
+//
+// Split from issueAvMdocViaPythonIssuer so a subtest can assert what the offer
+// says before accepting it: once permission is granted the state moves on, and
+// the offered-credential snapshot is only populated on RequestPermission.
+func offerAvMdocViaPythonIssuer(
 	t *testing.T,
 	c *client.Client,
 	sessionId int,
 	sessionHandler *MockSessionHandler,
-) {
+) clientmodels.SessionState {
 	t.Helper()
 
 	offer := createAvMdocOfferViaPythonIssuer(t)
@@ -202,6 +344,29 @@ func issueAvMdocViaPythonIssuer(
 	require.Equal(t, eudiPidIssuerPyAvDocType, session.OfferedCredentials[0].CredentialId,
 		"the offered credential must be named by the docType the issuer signed")
 
+	return session
+}
+
+// issueAvMdocViaPythonIssuer accepts the offer above, leaving the credential in
+// the wallet.
+//
+// The display text is not asserted here, and not because there is none to assert:
+// the issuer publishes credential, issuer and per-claim display metadata for this
+// configuration. It is asserted in testEudiPidPythonIssuerOfferNamesEverything,
+// and again against the permission screen in
+// openid4vp_mdoc_av_disclosure_test.go. This helper is a fixture for the subtests
+// about presentation, and re-asserting the wording in every one of them would pin
+// it in eight places.
+func issueAvMdocViaPythonIssuer(
+	t *testing.T,
+	c *client.Client,
+	sessionId int,
+	sessionHandler *MockSessionHandler,
+) {
+	t.Helper()
+
+	session := offerAvMdocViaPythonIssuer(t, c, sessionId, sessionHandler)
+
 	grantPermission(t, c, session.Id)
 
 	session = awaitSessionState(t, sessionHandler)
@@ -218,8 +383,7 @@ func createAvMdocOfferViaPythonIssuer(t *testing.T) pidOfferResponse {
 			{
 				"credential_configuration_id": eudiPidIssuerPyAvCredentialConfigID,
 				"data": map[string]any{
-					"age_over_18": true,
-					"age_over_21": true,
+					avMandatoryElement: true,
 				},
 			},
 		},
@@ -266,7 +430,7 @@ func createAvMdocOfferViaPythonIssuer(t *testing.T) pidOfferResponse {
 func createAvMdocAuthRequest(t *testing.T) string {
 	t.Helper()
 	return createAvMdocAuthRequestWithClaims(t, []map[string]any{
-		{"path": []string{eudiPidIssuerPyAvDocType, "age_over_18"}},
+		{"path": []string{eudiPidIssuerPyAvDocType, avMandatoryElement}},
 	})
 }
 
@@ -306,9 +470,11 @@ func createAvMdocAuthRequestWithClaims(t *testing.T, claims []map[string]any) st
 	return string(body)
 }
 
-// findMdocCredentialByDocType locates a stored credential by its docType,
-// rather than by display name as the SD-JWT tests do: this configuration
-// publishes no display metadata, so the wallet has no name to match on.
+// findMdocCredentialByDocType locates a stored credential by its docType, rather
+// than by display name as the SD-JWT tests do. The wallet does resolve a name for
+// this configuration — the issuer publishes one — but the docType is the identity
+// the credential is filed under, and matching on the name would make every caller
+// of this helper fail on an issuer wording change that breaks nothing.
 func findMdocCredentialByDocType(t *testing.T, creds []*clientmodels.Credential, docType string) *clientmodels.Credential {
 	t.Helper()
 
@@ -472,47 +638,6 @@ func presentedDocument(t *testing.T, walletResponse map[string]any, queryId stri
 	return response.Documents[0]
 }
 
-// testEudiPidPythonIssuerDisclosesTwoClaims asks for both age booleans at once.
-//
-// Every other mdoc test discloses a single element, which cannot tell "discloses
-// what was asked" apart from "discloses the whole namespace": with one element in
-// the query and one in the credential the two are the same set. Here the
-// credential carries two and both are requested; the test below covers the other
-// direction.
-func testEudiPidPythonIssuerDisclosesTwoClaims(t *testing.T) {
-	c, sessionHandler := createPidIssuerTestClient(t)
-	defer c.Close()
-
-	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
-
-	request := createAvMdocAuthRequestWithClaims(t, []map[string]any{
-		{"path": []string{eudiPidIssuerPyAvDocType, "age_over_18"}},
-		{"path": []string{eudiPidIssuerPyAvDocType, "age_over_21"}},
-	})
-	disclosed := discloseAvMdocAndDecode(t, c, sessionHandler, 2, request)
-
-	require.Equal(t, map[string]any{"age_over_18": true, "age_over_21": true}, disclosed)
-}
-
-// testEudiPidPythonIssuerDisclosesOnlyRequestedClaim is that other direction: the
-// credential holds two elements, the query names one, and the response must carry
-// exactly that one. Selective disclosure is the point of the format, and a wallet
-// that shipped both would leak an attribute nobody asked for while every
-// single-element test still passed.
-func testEudiPidPythonIssuerDisclosesOnlyRequestedClaim(t *testing.T) {
-	c, sessionHandler := createPidIssuerTestClient(t)
-	defer c.Close()
-
-	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
-
-	request := createAvMdocAuthRequestWithClaims(t, []map[string]any{
-		{"path": []string{eudiPidIssuerPyAvDocType, "age_over_21"}},
-	})
-	disclosed := discloseAvMdocAndDecode(t, c, sessionHandler, 2, request)
-
-	require.Equal(t, map[string]any{"age_over_21": true}, disclosed)
-}
-
 // testEudiPidPythonIssuerMatchesValuesConstraint covers a DCQL values constraint
 // the credential satisfies.
 //
@@ -528,11 +653,11 @@ func testEudiPidPythonIssuerMatchesValuesConstraint(t *testing.T) {
 	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 
 	request := createAvMdocAuthRequestWithClaims(t, []map[string]any{
-		{"path": []string{eudiPidIssuerPyAvDocType, "age_over_18"}, "values": []any{true}},
+		{"path": []string{eudiPidIssuerPyAvDocType, avMandatoryElement}, "values": []any{true}},
 	})
 	disclosed := discloseAvMdocAndDecode(t, c, sessionHandler, 2, request)
 
-	require.Equal(t, map[string]any{"age_over_18": true}, disclosed)
+	require.Equal(t, map[string]any{avMandatoryElement: true}, disclosed)
 }
 
 // testEudiPidPythonIssuerRejectsUnsatisfiedValuesConstraint asks for
@@ -549,7 +674,7 @@ func testEudiPidPythonIssuerRejectsUnsatisfiedValuesConstraint(t *testing.T) {
 	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 
 	request := createAvMdocAuthRequestWithClaims(t, []map[string]any{
-		{"path": []string{eudiPidIssuerPyAvDocType, "age_over_18"}, "values": []any{false}},
+		{"path": []string{eudiPidIssuerPyAvDocType, avMandatoryElement}, "values": []any{false}},
 	})
 
 	verifierSession, err := StartTestSessionAtEudiVerifier(testdata.OpenID4VP_DirectPostJwt_Host, request)

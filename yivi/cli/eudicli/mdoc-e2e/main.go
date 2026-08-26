@@ -200,11 +200,17 @@ func run() error {
 		fmt.Printf("    %s = %v\n", identifier, value)
 	}
 
-	if _, leaked := disclosed["age_over_21"]; leaked {
-		return fmt.Errorf("age_over_21 reached the verifier but was never requested")
+	// Checked against the requested element rather than against a named threshold:
+	// what must not arrive is anything the query did not ask for, whichever elements
+	// DefaultAVElements happens to mint.
+	for identifier := range disclosed {
+		if identifier != requestedElement {
+			return fmt.Errorf("%s reached the verifier but was never requested", identifier)
+		}
 	}
-	fmt.Printf("\n  age_over_21 is absent: the wallet held it, the verifier did not ask, and the\n")
-	fmt.Printf("  issuer's signature still verifies over what did arrive.\n")
+	fmt.Printf("\n  %s is all that arrived: the wallet also held %s, the verifier did not ask,\n",
+		requestedElement, withheldSummary())
+	fmt.Printf("  and the issuer's signature still verifies over what did arrive.\n")
 
 	// ── 7. What the wallet wrote down ───────────────────────────────────
 	section("7. The wallet's own activity log")
@@ -332,7 +338,7 @@ func (w *wallet) await(want clientmodels.SessionStatus) (clientmodels.SessionSta
 // issue drives the pre-authorized OpenID4VCI flow to completion.
 func (w *wallet) issue(offer *offerResponse) error {
 	request, err := json.Marshal(client.SessionRequestData{
-		Qr:       irma.Qr{URL: offer.URI},
+		URL:      offer.URI,
 		Protocol: clientmodels.Protocol_OpenID4VCI,
 		// Required even for a pre-authorized offer: the wallet refuses a session
 		// that could not complete an authorization-code flow if the offer turned
@@ -390,7 +396,7 @@ func (w *wallet) issue(offer *offerResponse) error {
 // disclose drives the OpenID4VP flow, consenting to whatever the plan offers.
 func (w *wallet) disclose(link string) error {
 	request, err := json.Marshal(client.SessionRequestData{
-		Qr:       irma.Qr{Type: irma.ActionDisclosing, URL: link},
+		Type: irma.ActionDisclosing, URL: link,
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	})
 	if err != nil {
@@ -477,9 +483,11 @@ func createOffer() (*offerResponse, error) {
 
 type verifierSession = localstack.Session
 
-// requestedElement is the one element this demo asks for, out of the five that
-// DefaultAVElements mints. Asking for one of five is what makes the selective
-// disclosure visible in the bytes.
+// requestedElement is the one element this demo asks for, out of everything
+// DefaultAVElements mints. It is age_over_18 because that is the only element the
+// AV profile makes mandatory; every other age_over_NN is the issuer's choice.
+// Asking for one of several is what makes the selective disclosure visible in the
+// bytes.
 const requestedElement = "age_over_18"
 
 // mintedSummary and withheldSummary render what was minted and what was not

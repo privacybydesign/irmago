@@ -5,18 +5,28 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/cert"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/cert"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
+	"github.com/privacybydesign/irmago/eudi/oauth2"
 )
+
+// maxJwksBytes caps the JWKS response body. jwks_uri is reached through the
+// unverified `iss` claim of the JWT being verified, so the endpoint is
+// attacker-chosen and an unbounded io.ReadAll would let it exhaust memory.
+// jwk.Fetch capped this at 10 MB before jwx v4 removed it; 1 MiB matches the
+// other remote-document fetches in eudi/ and is far above any real JWKS.
+const maxJwksBytes = 1 << 20 // 1 MiB
 
 // JwtKeyProvider validates the 'typ' header against a configured allow-list,
 // then dispatches signature key resolution to either X509KeyProvider (when the
@@ -46,9 +56,11 @@ func NewJwtKeyProvider(allowedTyps []string, allowInsecure bool) *JwtKeyProvider
 // X509KeyProvider or KidKeyProvider depending on which header is present.
 // 'typ' MUST be present in the protected header and MUST be one of allowedTyps.
 func (p *JwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
+	// If no signature is present, we cannot/do not need resolve the key to verify the signature.
 	if sig == nil {
-		return fmt.Errorf("missing JWS signature")
+		return nil
 	}
+
 	typ, ok := sig.ProtectedHeaders().Type()
 	if !ok || !slices.Contains(p.allowedTyps, typ) {
 		return fmt.Errorf("invalid 'typ' header: %v", typ)
@@ -70,7 +82,7 @@ func (p *JwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 	case x5cPresent:
 		p.InnerKeyProvider = NewX509KeyProvider(x5c)
 	case kidPresent:
-		p.InnerKeyProvider = NewKidKeyProvider(kid, p.allowInsecure)
+		p.InnerKeyProvider = NewDidKeyProvider(kid, p.allowInsecure)
 	default:
 		return fmt.Errorf("no supported key reference header (x5c or kid) present in the signature")
 	}
@@ -124,12 +136,19 @@ func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *
 	if !ok {
 		return fmt.Errorf("missing alg header in JWS signature")
 	}
+
+	// Only allow the algorithms this module accepts, to prevent the use of weak, unsupported or
+	// substituted algorithms. See SupportedSignatureAlgorithms for the list and its rationale.
+	if !IsSupportedSignatureAlgorithm(alg) {
+		return fmt.Errorf("unsupported signature algorithm %q in JWS protected header", alg)
+	}
+
 	sink.Key(alg, cert.PublicKey)
 
 	return nil
 }
 
-type KidKeyProvider struct {
+type DidKeyProvider struct {
 	kidHeader string
 	// httpClient resolves did:web DID documents. NewKidKeyProvider sets it to a
 	// timeout-bounded client (didweb.NewHTTPClient); tests inject their own.
@@ -137,18 +156,34 @@ type KidKeyProvider struct {
 	allowInsecure bool
 }
 
-func NewKidKeyProvider(kidHeader string, allowInsecure bool) *KidKeyProvider {
-	return &KidKeyProvider{
+func NewDidKeyProvider(kidHeader string, allowInsecure bool) *DidKeyProvider {
+	return &DidKeyProvider{
 		kidHeader:     kidHeader,
 		httpClient:    didweb.NewHTTPClient(),
 		allowInsecure: allowInsecure,
 	}
 }
 
-func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
+func (p *DidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
+	if sig == nil {
+		return nil
+	}
+
+	alg, ok := sig.ProtectedHeaders().Algorithm()
+	if !ok {
+		return nil
+	}
+
+	// Only allow the algorithms this module accepts, to prevent the use of weak, unsupported or
+	// substituted algorithms. See SupportedSignatureAlgorithms for the list and its rationale.
+	if !IsSupportedSignatureAlgorithm(alg) {
+		return fmt.Errorf("unsupported signature algorithm %q in JWS protected header", alg)
+	}
+
 	// Parse the JWT payload, without verifying the signature, to obtain the iss claim value
 	// (which is expected to be a did:web or did:jwk DID referencing the public key) in
 	// combination with the kid header value.
+	// It can also be used to create the OAuth2 discovery endpoint in case the JWT header specify an `alg` header.
 	jwtPayload, err := jwt.ParseInsecure(msg.Payload())
 	if err != nil {
 		return fmt.Errorf("cannot resolve key identifier: failed to parse JWT payload: %v", err)
@@ -156,9 +191,17 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 
 	issClaim, ok := jwtPayload.Issuer()
 	if !ok {
-		return fmt.Errorf("cannot resolve key identifier: failed to obtain 'iss' claim from JWT payload")
+		// If the iss claim is not present, we cannot resolve the key identifier using the kid header. We return without setting a key on the sink, so that the signature verification will fail later.
+		return nil
 	}
 
+	if !strings.HasPrefix(issClaim, didweb.Prefix) && !strings.HasPrefix(issClaim, didjwk.Prefix) {
+		// If the iss claim is not a did:web or did:jwk DID, we cannot resolve the key identifier.
+		// We return without setting a key on the sink, so that the signature verification will fail later.
+		return nil
+	}
+
+	// TODO: move parts to DID resolution package, so that the same code can be reused for SD-JWT VC verification and Status List Token verification.
 	fullKid := p.kidHeader
 	if strings.HasPrefix(p.kidHeader, "#") {
 		fullKid = issClaim + p.kidHeader
@@ -173,45 +216,37 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 		if vm.ID == fullKid {
 			pk := vm.PublicKey()
 			if pk == nil {
-				return fmt.Errorf("verification method %s has no publicKeyJwk", vm.ID)
+				return nil
 			}
 
 			// Verify the key is a public key, or throw an error if it contains private key material (which should not be used in a did:web document, but we want to be sure)
-			isPrivateKey, err := jwk.IsPrivateKey(*pk)
+			isPrivateKey, err := jwk.IsPrivateKey(pk)
 			if err != nil {
 				return fmt.Errorf("failed to determine if JWK contains private key material: %v", err)
 			}
 			if isPrivateKey {
-				return fmt.Errorf("cannot use a JWK containing private key material")
+				return nil
 			}
 
-			if sig == nil {
-				return fmt.Errorf("missing JWS signature")
-			}
-			alg, ok := sig.ProtectedHeaders().Algorithm()
-			if !ok {
-				return fmt.Errorf("missing alg header in JWS signature")
+			// Check if the key does not have the "sig" key usage, and if so, skip it. This is a security measure to prevent the use of keys that are not intended for signature verification.
+			if use, found := pk.KeyUsage(); found && use != "sig" {
+				return nil
 			}
 
-			sink.Key(alg, *pk)
-
+			sink.Key(alg, pk)
 			return nil
 		}
 	}
 
-	return fmt.Errorf("failed to find matching verification method for kid: %s", fullKid)
+	return nil
 }
 
 // resolveDidDocument resolves the DID document for the issuer DID, dispatching on the DID method.
 // Supports did:web (fetched over HTTPS) and did:jwk (synthesized from the embedded JWK).
-func (p *KidKeyProvider) resolveDidDocument(issClaim string) (*did.Document, error) {
+func (p *DidKeyProvider) resolveDidDocument(issClaim string) (*did.Document, error) {
 	switch {
 	case strings.HasPrefix(issClaim, didjwk.Prefix):
-		key, err := didjwk.Resolve(issClaim)
-		if err != nil {
-			return nil, err
-		}
-		return (&didjwk.DocumentBuilder{}).FromJwk(key)
+		return didjwk.ResolveDocument(issClaim)
 
 	case strings.HasPrefix(issClaim, didweb.Prefix):
 		resolver := didweb.DocumentResolver{
@@ -223,4 +258,128 @@ func (p *KidKeyProvider) resolveDidDocument(issClaim string) (*did.Document, err
 	default:
 		return nil, fmt.Errorf("unsupported DID method for kid resolution: %s", issClaim)
 	}
+}
+
+type OAuthDiscoveryJwkKeyProvider struct {
+	allowedTyps []string
+	httpClient  *http.Client
+}
+
+func NewOAuthDiscoveryJwkKeyProvider(allowedTyps []string, httpClient *http.Client) *OAuthDiscoveryJwkKeyProvider {
+	return &OAuthDiscoveryJwkKeyProvider{
+		allowedTyps: allowedTyps,
+		httpClient:  httpClient,
+	}
+}
+
+func (p *OAuthDiscoveryJwkKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
+	headers := sig.ProtectedHeaders()
+
+	typ, ok := headers.Type()
+	if !ok || !slices.Contains(p.allowedTyps, typ) {
+		return nil
+	}
+
+	alg, ok := headers.Algorithm()
+	if !ok {
+		// If the alg header is not present, we cannot verify the identified key using OAuth2 discovery. We return without setting a key on the sink, and fail fast to avoid unnecessary network requests.
+		return nil
+	}
+
+	// Only allow supported algorithms for OAuth2 discovered keys. This is a security measure to prevent the use of weak, unsupported or substituted algorithms.
+	if !IsSupportedSignatureAlgorithm(alg) {
+		return nil
+	}
+
+	kid, ok := headers.KeyID()
+	if !ok {
+		// If the kid header is not present, we cannot resolve the key identifier using OAuth2 discovery. We return without setting a key on the sink, so that the signature verification will fail later.
+		return nil
+	}
+
+	jwtPayload, err := jwt.ParseInsecure(msg.Payload())
+	if err != nil {
+		return fmt.Errorf("cannot resolve key identifier: failed to parse JWT payload: %v", err)
+	}
+
+	iss, ok := jwtPayload.Issuer()
+	if !ok {
+		// If the iss claim is not present, we cannot resolve the key identifier using OAuth2 discovery. We return without setting a key on the sink, so that the signature verification will fail later.
+		return nil
+	}
+
+	// Check if the iss claim is in fact a URL we can try to fetch OAuth metadata from
+	url, err := url.Parse(iss)
+	if err != nil {
+		return nil
+	}
+
+	if url.Scheme != "https" && url.Scheme != "http" {
+		return nil
+	}
+
+	// Use the iss claim to resolve the OAuth2 discovery endpoint and obtain the public key for the specified algorithm.
+	metadata, err := oauth2.TryFetchAuthorizationServerMetadata(iss)
+	if err != nil {
+		// We fail explicitly here, since the JWT might actually be signed with a key that is currently not resolvable because of network issues.
+		return fmt.Errorf("failed to fetch OAuth2/OpenID discovery metadata for issuer %s: %v", iss, err)
+	}
+
+	if metadata.JwksUri == nil {
+		// If the discovery metadata does not contain a jwks_uri, try checking the "jwks" claim in the metadata. This is a non-standard extension, but some issuers may provide it.
+		if metadata.Jwks != nil {
+			// If the discovery metadata contains a jwks member (and there is no jwks_uri present), we should resolve the key identifier directly using that.
+			key, ok := metadata.Jwks.LookupKeyID(kid)
+			if !ok {
+				return fmt.Errorf("no key found in jwks member of discovery metadata for issuer %s with kid %s", iss, kid)
+			}
+			sink.Key(alg, key)
+		}
+
+		// Either the key was found in the jwks member, or it was not. In either case, we return here, since there is no jwks_uri to fetch from.
+		return nil
+	}
+
+	// Fetch the JWKS from the jwks_uri. jwx v4 dropped jwk.Fetch, so fetch and parse it ourselves,
+	// keeping the body cap and the strict set parsing that jwk.Fetch applied for us.
+	// We fail explicitly on any error here, since the JWT might actually be signed with a key
+	// that is currently not resolvable because of network issues.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, *metadata.JwksUri, nil)
+	if err != nil {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: %v", *metadata.JwksUri, err)
+	}
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: %v", *metadata.JwksUri, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: unexpected HTTP status %d", *metadata.JwksUri, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxJwksBytes+1))
+	if err != nil {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: %v", *metadata.JwksUri, err)
+	}
+	if len(body) > maxJwksBytes {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: response exceeds %d bytes", *metadata.JwksUri, maxJwksBytes)
+	}
+
+	// Strict parsing rejects the whole set when any entry is unparseable. jwx v4
+	// instead keeps such an entry as a placeholder key that retains its own kid,
+	// which LookupKeyID below would hand to the sink.
+	jwks, err := jwk.Parse(body, jwk.WithStrictKeySetParsing(true))
+	if err != nil {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: %v", *metadata.JwksUri, err)
+	}
+
+	// Find the key in the JWKS that matches the kid header and the specified algorithm
+	key, ok := jwks.LookupKeyID(kid)
+	if !ok {
+		return fmt.Errorf("no key found in JWKS with kid %s", kid)
+	}
+
+	sink.Key(alg, key)
+	return nil
 }

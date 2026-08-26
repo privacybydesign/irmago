@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/stretchr/testify/require"
 
 	"github.com/privacybydesign/irmago/client"
@@ -31,24 +31,9 @@ import (
 // certificate rather than only in unit tests.
 const avDocType = "eu.europa.ec.av.1"
 
-// The display metadata the AV mdoc credential configuration publishes, resolved
-// to the client's locale. These are asserted literally rather than read back out
-// of the wallet, because reading them back would pass just as happily against the
-// empty strings a credential with no display metadata produces -- which is exactly
-// what the seeded fixture these subtests used to run on did produce, and what made
-// the wallet look as though it could not name an mdoc credential at all.
-//
-// They come from the pinned issuer image's metadata document
-// (/.well-known/openid-credential-issuer, configuration
-// eu.europa.ec.eudi.age_verification_mdoc): credential_metadata.display[0].name,
-// the top-level display[0].name, and the claim display for
-// ["eu.europa.ec.av.1", "age_over_18"]. Only an "en" locale is published, so a
-// translation-fallback assertion is not available from this issuer.
-const (
-	avCredentialDisplayName = "Proof of Age"
-	avIssuerDisplayName     = "Digital Credentials Issuer"
-	avAgeOver18DisplayName  = "Age Over 18"
-)
+// The display text these subtests assert lives with the issuer that publishes it,
+// in eudi_pid_python_issuer_mdoc_test.go: avCredentialDisplayName,
+// avIssuerDisplayName and the per-claim labels.
 
 // testSessionHandlerForOpenID4VPWithMdocAv covers an mso_mdoc age-verification
 // presentation end to end against the EU reference verifier container.
@@ -100,7 +85,7 @@ func testOpenID4VP_MdocAv_UnauthorizedDocType(t *testing.T) {
 			"format": "mso_mdoc",
 			"meta": { "doctype_value": "eu.europa.ec.av.2" },
 			"claims": [
-			  { "path": ["eu.europa.ec.av.2", "age_over_21"] }
+			  { "path": ["eu.europa.ec.av.2", "age_over_18"] }
 			]
 		  }
 		]
@@ -270,19 +255,24 @@ func requireMdocAvDisclosureLog(t *testing.T, c *client.Client, approvedRequesto
 	require.Equal(t, avDocType, logged.CredentialId)
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc}, logged.Formats,
 		"the disclosure log must file the entry under mso_mdoc, which is what every format-keyed read depends on")
-	// The AV profile publishes no display metadata, so the name falls back to the
-	// raw docType — the same fallback the disclosure plan above asserts, and the
-	// case where a read-time re-resolution against live credential metadata could
-	// overwrite the snapshot with an empty string.
-	require.Equal(t, avDocType, logged.Name)
+	// The same name the permission screen showed, asserted through the constant the
+	// disclosure plan above uses so the two cannot drift apart. This is the case
+	// where a read-time re-resolution against live credential metadata could
+	// overwrite the snapshot with an empty string, which is why it is the resolved
+	// display name that is pinned here and not the docType.
+	//
+	// This asserted the raw docType until the seeded fixture was removed, "because
+	// the AV profile publishes no display metadata". The profile does not, but the
+	// issuer does, and the credential is issued by the issuer.
+	require.Equal(t, avCredentialDisplayName, logged.Name)
 
 	// The disclosed claim keeps its qualified path, with the value resolved from
-	// the batch's namespaced claim map. requireAttrsInOrder also asserts the
-	// absent DisplayName, which is correct here for the same reason as the name
-	// fallback: no claim display metadata exists to label it with.
+	// the batch's namespaced claim map, and carries the label the issuer published
+	// for it — a label never replaces the path.
 	requireAttrsInOrder(t, logged.Attributes, expectedAttr{
-		Path:  []any{avDocType, "age_over_18"},
-		Value: boolVal(true),
+		Path:        []any{avDocType, "age_over_18"},
+		DisplayName: new(avAgeOver18DisplayName),
+		Value:       boolVal(true),
 	})
 
 	// The batch timestamps come along; they are what dates the entry in the UI.
@@ -336,10 +326,8 @@ func startMdocAvSessionCapturingRequest(
 	// Built by hand rather than through url.URL: a Scheme carrying its own "//"
 	// makes String() emit "eudi-openid4vp://:?...", with a stray colon.
 	sessionRequest, err := json.Marshal(client.SessionRequestData{
-		Qr: irma.Qr{
-			Type: irma.ActionDisclosing,
-			URL:  "eudi-openid4vp://?" + query.Encode(),
-		},
+		Type:     irma.ActionDisclosing,
+		URL:      "eudi-openid4vp://?" + query.Encode(),
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	})
 	require.NoError(t, err)

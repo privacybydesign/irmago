@@ -24,11 +24,19 @@ const (
 type CredentialBatch struct {
 	ID datatypes.UUID
 
-	// IssuerURL is the iss claim from the issuer-signed JWT (SD-JWT) or the credential_issuer
-	// used at issuance (mdoc), equal to the credential_issuer in the credential offer
-	// (OID4VCI §7.1.1 requires iss == credential_issuer). This is the value used for DCQL
-	// TrustedAuthority resolution in OID4VP.
-	IssuerURL string
+	// IssuerIdentifier is the credential's issuer identity as resolved during
+	// verification: the `iss` claim, or the subject of the x5c end-entity
+	// certificate when `iss` is absent (SD-JWT VC §2.2.2.3). For an mso_mdoc
+	// credential there is no `iss` claim at all, so this is the credential_issuer
+	// used at issuance.
+	// This is the value used for DCQL TrustedAuthority resolution in OID4VP.
+	// The column has been renamed from a previously called `IssuerURL` column and is now more in line with the specification naming conventions.
+	IssuerIdentifier string `gorm:"column:issuer_url;not null"`
+
+	// CredentialIssuerIdentifier is the credential's issuer identity as resolved
+	// from the Credential Offer (OID4VCI §12.2.1).
+	// The column has been renamed from a previously called `CredentialIssuer` column and is now more in line with the specification naming conventions.
+	CredentialIssuerIdentifier string `gorm:"column:credential_issuer;not null"`
 
 	// VerifiableCredentialType is the credential type identifier: the vct claim for
 	// "dc+sd-jwt" credentials, or the ISO 18013-5 docType (e.g. "eu.europa.ec.av.1") for
@@ -38,9 +46,17 @@ type CredentialBatch struct {
 	// Format is the credential format identifier (e.g. "dc+sd-jwt", "mso_mdoc").
 	Format CredentialFormat
 
-	// Hash is a deterministic hash over the credential type and its sorted disclosed attributes.
-	// Computed with the same algorithm as irmaclient.CreateHashForSdJwtVc so that the EUDI
-	// storage remains compatible with the IRMA client's deduplication logic.
+	// Hash is a deterministic hash over the credential type, the issuer that
+	// asserted it, and its sorted disclosed attributes — the three things that make
+	// two credentials the same credential. Computed by services.credentialHash.
+	//
+	// Not the same algorithm as irmaclient.CreateHashForSdJwtVc, which serves
+	// IRMA-issued SD-JWTs: that one is a URL-encoded hash over concatenated sorted
+	// key/value pairs, this one a hex SHA-256 over length-prefixed fields. An
+	// earlier version of this comment claimed the two were the same for
+	// compatibility, which was never true and had been contradicted by
+	// hashForSdJwtVc's own doc comment for as long as both existed. The two are
+	// independent, and no table holds both.
 	Hash string `gorm:"uniqueIndex"`
 
 	// ProcessedSdJwtPayload holds the credential's JSON-encoded claims, cached at issuance time
@@ -92,13 +108,9 @@ type CredentialBatch struct {
 	// is the conservative direction and matches the log table's precedent.
 	IssuerVerified bool
 
-	// CredentialIssuer is the canonical URL of the credential issuer (credential_issuer claim).
-	CredentialIssuer string
-	IssuerDisplay    []IssuerMetadataDisplay `gorm:"constraint:OnDelete:CASCADE"`
-
-	CredentialMetadata *CredentialMetadata `gorm:"constraint:OnDelete:CASCADE"`
-
-	Instances []IssuedCredentialInstance `gorm:"constraint:OnDelete:CASCADE"`
+	CredentialMetadata *CredentialMetadata        `gorm:"constraint:OnDelete:CASCADE"`
+	Instances          []IssuedCredentialInstance `gorm:"constraint:OnDelete:CASCADE"`
+	IssuerDisplay      []IssuerMetadataDisplay    `gorm:"constraint:OnDelete:CASCADE"`
 }
 
 func (b *CredentialBatch) BeforeCreate(tx *gorm.DB) error {
@@ -122,11 +134,14 @@ func (b *CredentialBatch) normalizeChildren() {
 }
 
 func (b *CredentialBatch) validate() error {
-	if b.IssuerURL == "" {
-		return fmt.Errorf("issuer_url is required")
-	}
 	if b.VerifiableCredentialType == "" {
 		return fmt.Errorf("verifiable_credential_type is required")
+	}
+	if b.IssuerIdentifier == "" {
+		return fmt.Errorf("issuer_identifier is required")
+	}
+	if b.CredentialIssuerIdentifier == "" {
+		return fmt.Errorf("credential_issuer_identifier is required")
 	}
 	if b.Format == "" {
 		return fmt.Errorf("format is required")
@@ -142,9 +157,6 @@ func (b *CredentialBatch) validate() error {
 	}
 	if b.RemainingCount > b.BatchSize {
 		return fmt.Errorf("remaining_count cannot exceed batch_size")
-	}
-	if b.CredentialIssuer == "" {
-		return fmt.Errorf("credential_issuer is required")
 	}
 	return nil
 }

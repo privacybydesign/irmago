@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -74,6 +74,51 @@ type CredentialConfiguration struct {
 	// The following fields are present/absent, depending on the credential format
 	VerifiableCredentialType string                   `json:"vct,omitempty"`                   // SD-JWT VC
 	CredentialDefinition     *W3CCredentialDefinition `json:"credential_definition,omitempty"` // W3C VC Signed as JWT, no JSON-LD
+}
+
+// UnmarshalJSON accepts both placements OpenID4VCI has used for a
+// configuration's display metadata.
+//
+// v1.0 (draft 16) nests it in credential_metadata; earlier drafts put display and
+// claims directly on the configuration. Reading only the nested object made an
+// issuer on an older draft indistinguishable from one publishing no display text
+// at all — the credential rendered as its raw vct/docType, with a log line as the
+// only explanation.
+//
+// Normalising here rather than at each consumer keeps CredentialMetadata the one
+// shape everything downstream reads: convertCredentialMetadata, the VCI baseline
+// the VCT merge starts from in resolveCredentialMetadataFromVct, and the display
+// resolvers. It also means a legacy-shape issuer's text takes part in the VCT
+// merge on equal terms.
+//
+// The nested object wins whenever it is present, even when empty: an issuer that
+// publishes credential_metadata is speaking the current version, so emptiness
+// there is a statement rather than an omission, and the legacy fields on such a
+// document would be a leftover.
+func (c *CredentialConfiguration) UnmarshalJSON(data []byte) error {
+	// A defined type without methods, so unmarshalling it does not re-enter here.
+	type configuration CredentialConfiguration
+	var raw struct {
+		configuration
+		LegacyDisplay CredentialDisplays  `json:"display,omitempty"`
+		LegacyClaims  []ClaimsDescription `json:"claims,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	*c = CredentialConfiguration(raw.configuration)
+	if c.CredentialMetadata != nil {
+		return nil
+	}
+	if len(raw.LegacyDisplay) == 0 && len(raw.LegacyClaims) == 0 {
+		return nil
+	}
+	c.CredentialMetadata = &CredentialMetadata{
+		Display: raw.LegacyDisplay,
+		Claims:  raw.LegacyClaims,
+	}
+	return nil
 }
 
 type ProofType struct {
@@ -249,7 +294,9 @@ func (c *CredentialRequestEncryption) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("invalid 'jwks': %w", err)
 		}
-		if jwks, err := jwk.Parse(rawJwksBytes); err != nil {
+		// jwx v4 by default keeps unparseable set entries as placeholder keys;
+		// strict parsing preserves the v3 behavior of rejecting the whole set.
+		if jwks, err := jwk.Parse(rawJwksBytes, jwk.WithStrictKeySetParsing(true)); err != nil {
 			return fmt.Errorf("invalid 'jwks': %w", err)
 		} else {
 			c.Jwks = jwks

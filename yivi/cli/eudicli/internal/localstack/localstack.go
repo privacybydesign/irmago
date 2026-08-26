@@ -435,7 +435,6 @@ func TrustProxyCertificate(cfg Config) error {
 func DefaultAVElements() map[string]any {
 	return map[string]any{
 		"age_over_18": true,
-		"age_over_21": true,
 		"age_over_40": false,
 		"age_over_60": false,
 		"age_over_67": false,

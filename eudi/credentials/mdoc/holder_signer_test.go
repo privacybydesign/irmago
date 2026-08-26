@@ -162,7 +162,9 @@ func TestDefaultHolderSatisfiesHolder(t *testing.T) {
 		t.Fatalf("NewHolderFromPrivateKey: %v", err)
 	}
 
-	var holders []Holder = []Holder{software, fromKey}
+	// The []Holder element type is the assertion: both values have to satisfy the
+	// interface, which is what this test is named for.
+	holders := []Holder{software, fromKey}
 	for i, h := range holders {
 		if h.PublicKey() == nil {
 			t.Errorf("holder %d returned a nil public key", i)

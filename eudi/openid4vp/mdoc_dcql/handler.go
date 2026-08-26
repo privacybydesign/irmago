@@ -533,7 +533,7 @@ func (h *MdocDcqlHandler) credentialImage(batch *models.CredentialBatch, locale 
 // metadata, mirroring eudi_sdjwt_dcql's identical helper.
 func (h *MdocDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, locale string) clientmodels.TrustedParty {
 	return clientmodels.TrustedParty{
-		Id:       batch.CredentialIssuer,
+		Id:       batch.CredentialIssuerIdentifier,
 		Name:     clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
 		Image:    h.issuerImage(batch, locale),
 		Verified: batch.IssuerVerified,

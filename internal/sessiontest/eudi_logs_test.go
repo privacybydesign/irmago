@@ -546,33 +546,34 @@ func testMdocCredentialRemovalCreatesLog(t *testing.T) {
 	require.Len(t, removalLog.RemovalLog.Credentials, 1)
 	require.Equal(t, avDocType, removalLog.RemovalLog.Credentials[0].CredentialId)
 
-	// Both issued booleans are logged. They are found by path rather than by
-	// position: which order the namespaced claim map yields them in is not
-	// something the removal log promises, and pinning it would fail on a change
-	// that breaks nothing.
+	// The issued boolean is logged, found by path rather than by position: which
+	// order the namespaced claim map yields them in is not something the removal log
+	// promises, and pinning it would fail on a change that breaks nothing.
+	//
+	// Only age_over_18 is named. It is the AV profile's one mandatory element, while
+	// every other age_over_NN is the issuer's choice, so the others are checked for
+	// the property that matters here — a label that survived the locale switch — and
+	// not for which threshold they are.
 	nlAttrs := removalLog.RemovalLog.Credentials[0].Attributes
-	require.Len(t, nlAttrs, 2, "both issued age_over_NN booleans should be logged")
-	for _, expected := range []struct {
-		element string
-		label   string
-	}{
-		{"age_over_18", "Age Over 18"},
-		{"age_over_21", "Age Over 21"},
-	} {
-		var found *clientmodels.Attribute
-		for i, attr := range nlAttrs {
-			if clientmodels.ClaimPathKey(attr.ClaimPath) ==
-				clientmodels.ClaimPathKey([]any{avDocType, expected.element}) {
-				found = &nlAttrs[i]
-				break
-			}
-		}
-		require.NotNil(t, found, "the removal log lost %s", expected.element)
-		require.Equal(t, boolVal(true), found.Value, "%s should be true", expected.element)
-		require.NotNil(t, found.DisplayName, "%s lost its snapshotted label", expected.element)
-		require.Equal(t, expected.label, *found.DisplayName,
-			"%s should keep the label snapshotted at removal time, not re-resolve under nl",
-			expected.element)
+	require.Len(t, nlAttrs, 1, "the issued age_over_NN boolean should be logged")
+
+	mandatory := findAttr(nlAttrs, avDocType, avMandatoryElement)
+	require.NotNil(t, mandatory, "the removal log lost %s", avMandatoryElement)
+	require.Equal(t, boolVal(true), mandatory.Value)
+	require.NotNil(t, mandatory.DisplayName, "%s lost its snapshotted label", avMandatoryElement)
+	require.Equal(t, avAgeOver18DisplayName, *mandatory.DisplayName,
+		"%s should keep the label snapshotted at removal time, not re-resolve under nl",
+		avMandatoryElement)
+
+	for i, attr := range nlAttrs {
+		require.Len(t, attr.ClaimPath, 2, "attribute %d lost its qualified path", i)
+		require.Equal(t, avDocType, attr.ClaimPath[0],
+			"attribute %d is not in the namespace named after the docType", i)
+		require.NotNil(t, attr.Value, "attribute %d has no value", i)
+		require.NotNil(t, attr.Value.Bool, "attribute %d should be an age_over_NN boolean", i)
+		require.NotNil(t, attr.DisplayName, "attribute %d lost its snapshotted label", i)
+		require.NotEmpty(t, *attr.DisplayName,
+			"attribute %d resolved to an empty label under nl instead of keeping its snapshot", i)
 	}
 }
 

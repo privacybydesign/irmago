@@ -56,15 +56,15 @@ func TestAutoMigrateOverPopulatedDatabase(t *testing.T) {
 	require.NoError(t, d.AutoMigrate(&models.CredentialBatch{}))
 
 	batch := &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example",
-		VerifiableCredentialType: "https://vct.example/x",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     "hash-existing",
-		ProcessedSdJwtPayload:    []byte(`{"sub":"pre-existing-user"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
-		CredentialIssuer:         "https://issuer.example",
+		IssuerIdentifier:           "https://issuer.example",
+		VerifiableCredentialType:   "https://vct.example/x",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       "hash-existing",
+		ProcessedSdJwtPayload:      []byte(`{"sub":"pre-existing-user"}`),
+		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             1,
+		CredentialIssuerIdentifier: "https://issuer.example",
 	}
 	require.NoError(t, d.Create(batch).Error)
 
@@ -142,16 +142,16 @@ func TestAutoMigrateAddsIssuerVerifiedToPopulatedBatchTable(t *testing.T) {
 	// And one written after it round-trips the flag, so the column is readable as
 	// well as present.
 	require.NoError(t, d.Create(&models.CredentialBatch{
-		IssuerURL:                "https://issuer.example",
-		VerifiableCredentialType: "https://vct.example/x",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     "hash-verified",
-		ProcessedSdJwtPayload:    []byte(`{"sub":"new-user"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
-		CredentialIssuer:         "https://issuer.example",
-		IssuerVerified:           true,
+		IssuerIdentifier:           "https://issuer.example",
+		VerifiableCredentialType:   "https://vct.example/x",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       "hash-verified",
+		ProcessedSdJwtPayload:      []byte(`{"sub":"new-user"}`),
+		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             1,
+		CredentialIssuerIdentifier: "https://issuer.example",
+		IssuerVerified:             true,
 	}).Error)
 
 	var reread models.CredentialBatch

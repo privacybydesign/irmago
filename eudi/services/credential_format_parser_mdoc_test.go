@@ -45,7 +45,7 @@ func TestMdocCredentialFormatParser_ParseAndVerify(t *testing.T) {
 
 	require.Equal(t, models.CredentialFormatMsoMdoc, parsed.Format)
 	require.Equal(t, "eu.europa.ec.av.1", parsed.VerifiableCredentialType)
-	require.Equal(t, "https://test-issuer.example.com", parsed.IssuerURL)
+	require.Equal(t, "https://test-issuer.example.com", parsed.IssuerIdentifier)
 	require.NotEmpty(t, parsed.ResolvedClaims)
 	require.NotEmpty(t, parsed.RawCredentialBytes)
 	require.NotNil(t, parsed.IssuedAt)

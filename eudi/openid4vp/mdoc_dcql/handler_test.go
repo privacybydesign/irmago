@@ -602,18 +602,18 @@ func newTestEnvWithExpiry(t *testing.T, batchSize uint, expiresAt *time.Time) *t
 
 	const hash = "test-mdoc-batch-hash"
 	require.NoError(t, store.StoreBatch(&models.CredentialBatch{
-		IssuerURL:                first.IssuerURL,
-		VerifiableCredentialType: first.VerifiableCredentialType,
-		Format:                   first.Format,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(first.ResolvedClaims),
-		IssuedAt:                 nullTimeFromUnix(first.IssuedAt),
-		ExpiresAt:                storedExpiry(first, expiresAt),
-		NotBefore:                nullTimeFromUnix(first.NotBefore),
-		BatchSize:                batchSize,
-		RemainingCount:           batchSize,
-		CredentialIssuer:         testIssuerURL,
-		Instances:                instances,
+		IssuerIdentifier:           first.IssuerIdentifier,
+		VerifiableCredentialType:   first.VerifiableCredentialType,
+		Format:                     first.Format,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(first.ResolvedClaims),
+		IssuedAt:                   nullTimeFromUnix(first.IssuedAt),
+		ExpiresAt:                  storedExpiry(first, expiresAt),
+		NotBefore:                  nullTimeFromUnix(first.NotBefore),
+		BatchSize:                  batchSize,
+		RemainingCount:             batchSize,
+		CredentialIssuerIdentifier: testIssuerURL,
+		Instances:                  instances,
 	}))
 
 	return &testEnv{

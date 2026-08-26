@@ -121,8 +121,8 @@ func mdocFromItems(
 	if err != nil {
 		t.Fatalf("create signer: %v", err)
 	}
-	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers}
-	msg.Payload = msoBytes
+	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers,
+		Payload: msoBytes}
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 	msg.Headers.Unprotected[int64(33)] = [][]byte{iss.dscert.Raw, iss.iacacert.Raw}
 	if err := msg.Sign(rand.Reader, nil, signer); err != nil {

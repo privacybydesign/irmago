@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
@@ -72,7 +72,9 @@ type Jwks struct {
 }
 
 func (s *Jwks) UnmarshalJSON(content []byte) error {
-	set, err := jwk.Parse(content)
+	// jwx v4 by default keeps unparseable set entries as placeholder keys;
+	// strict parsing preserves the v3 behavior of rejecting the whole set.
+	set, err := jwk.Parse(content, jwk.WithStrictKeySetParsing(true))
 	if err != nil {
 		return err
 	}

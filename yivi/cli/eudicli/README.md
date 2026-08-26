@@ -24,10 +24,13 @@ map. Run any of them from the repository root.
 go run ./yivi/cli/eudicli/mdoc-demo
 ```
 
-Issues an age-verification credential with two claims, presents one, and verifies
-it as a party that trusts only the issuer's root — printing the MSO's digests next
-to the disclosed items at each step, so it is visible *why* withholding a claim is
-safe for the verifier and private for the holder. No containers, no wallet storage,
+Issues an age-verification credential with two claims — `age_over_18`, the one
+element the AV profile makes mandatory, plus an optional threshold it withholds —
+presents one, and verifies it as a party that trusts only the issuer's root,
+printing the MSO's digests next to the disclosed items at each step, so it is
+visible *why* withholding a claim is safe for the verifier and private for the
+holder. The withheld one is minted `false` on purpose: a false boolean has to
+survive as a digest rather than being dropped as an absent element. No containers, no wallet storage,
 no network: everything runs against `eudi/credentials/mdoc` directly.
 
 ## mdoc-e2e — the real protocols, against the reference containers
@@ -41,6 +44,11 @@ The counterpart to `mdoc-demo`: same story, but issued over OpenID4VCI by the EU
 reference issuer and presented over OpenID4VP to the EUDI reference verifier, with
 a real `client.Client` wallet in between. Nothing is mocked, so what fails here
 fails on a phone too.
+
+What it mints, what it asks for and what it checks did not arrive all come from
+`localstack.DefaultAVElements` and `requestedElement`; no threshold is named
+anywhere else. The leak check rejects *any* disclosed element other than the one
+requested, so changing that map cannot leave the assertion asserting nothing.
 
 The walkthrough goes to stdout and the wallet's own log to stderr, so they can be
 read apart (`2> e2e.log`) or together (`2>&1 | tee e2e.log`). Neither is the
@@ -85,7 +93,7 @@ claims.
 go run ./yivi/cli/eudicli/mint-session                 presentation only
 go run ./yivi/cli/eudicli/mint-session -issue          issuance too
 go run ./yivi/cli/eudicli/mint-session -value false    ask for false
-go run ./yivi/cli/eudicli/mint-session -element age_over_21
+go run ./yivi/cli/eudicli/mint-session -element age_over_40
 go run ./yivi/cli/eudicli/mint-session -show-query     print the DCQL being sent
 go run ./yivi/cli/eudicli/mint-session -issue -email   mail the one-time code
 go run ./yivi/cli/eudicli/mint-session -issue -mint age_over_42=true

@@ -3,7 +3,7 @@ package services
 import (
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
@@ -43,18 +43,18 @@ func TestSdJwtVcCredentialFormatParser_ParseAndVerify(t *testing.T) {
 	x5c, err := utils.ParsePemCertificateChainToX5cFormat(chain)
 	require.NoError(t, err)
 
-	sdJwt := newTestSdJwtVcKb(t, "test.credential.type", "https://test-issuer.example.com", map[string]string{"name": "Test User"}, x5c)
+	sdJwt := newTestSdJwtVcKb(t, "test.credential.type", "https://openid4vc.staging.yivi.app", map[string]string{"name": "Test User"}, x5c)
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdjwtvc.CreateDefaultVerificationContext(chain))
 	parser := NewSdJwtVcCredentialFormatParser(holderVerifier)
 
-	parsed, err := parser.ParseAndVerify(string(sdJwt), "https://test-issuer.example.com", false)
+	parsed, err := parser.ParseAndVerify(string(sdJwt), "https://openid4vc.staging.yivi.app", false)
 	require.NoError(t, err)
 	require.NotNil(t, parsed)
 
 	require.Equal(t, models.CredentialFormatSdJwtVc, parsed.Format)
 	require.Equal(t, "test.credential.type", parsed.VerifiableCredentialType)
-	require.Equal(t, "https://test-issuer.example.com", parsed.IssuerURL)
+	require.Equal(t, "https://openid4vc.staging.yivi.app", parsed.IssuerIdentifier)
 	require.NotEmpty(t, parsed.ResolvedClaims)
 	require.NotEmpty(t, parsed.RawCredentialBytes)
 	require.NotNil(t, parsed.IssuedAt)
@@ -68,7 +68,7 @@ func TestSdJwtVcCredentialFormatParser_ParseAndVerify_InvalidCredential(t *testi
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdjwtvc.CreateDefaultVerificationContext(chain))
 	parser := NewSdJwtVcCredentialFormatParser(holderVerifier)
 
-	_, err := parser.ParseAndVerify("not-a-real-sd-jwt", "https://test-issuer.example.com", false)
+	_, err := parser.ParseAndVerify("not-a-real-sd-jwt", "https://openid4vc.staging.yivi.app", false)
 	require.Error(t, err)
 }
 

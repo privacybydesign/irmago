@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -67,7 +67,7 @@ func (p *mdocCredentialFormatParser) ParseAndVerify(raw, credentialIssuer string
 		// credential's type, which DCQL doctype_value matching and relying-party
 		// authorization key off, so it should visibly come from the signed side.
 		VerifiableCredentialType: result.DocType,
-		IssuerURL:                credentialIssuer,
+		IssuerIdentifier:         credentialIssuer,
 		ResolvedClaims:           resolvedClaimsBytes,
 		RawCredentialBytes:       rawBytes,
 		IssuedAt:                 unixPtrIfNotZero(result.ValidityInfo.Signed),
@@ -105,7 +105,7 @@ func (p *mdocCredentialFormatParser) CheckBatchUniqueness(batch []*ParsedCredent
 }
 
 func jwkThumbprintFromECDSAPublicKey(pub any) (string, error) {
-	key, err := jwk.Import(pub)
+	key, err := jwk.Import[jwk.Key](pub)
 	if err != nil {
 		return "", fmt.Errorf("convert ecdsa pub key to jwk: %w", err)
 	}

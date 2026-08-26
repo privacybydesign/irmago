@@ -7,8 +7,8 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -71,7 +71,7 @@ func testPublicKey(t *testing.T, alg jwa.KeyAlgorithm, use, kid string) jwk.Key 
 	ecPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
-	privateKey, err := jwk.Import(ecPrivateKey)
+	privateKey, err := jwk.Import[jwk.Key](ecPrivateKey)
 	require.NoError(t, err)
 	require.NoError(t, privateKey.Set(jwk.AlgorithmKey, alg))
 	require.NoError(t, privateKey.Set(jwk.KeyUsageKey, use))

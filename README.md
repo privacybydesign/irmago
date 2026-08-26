@@ -28,11 +28,35 @@
 
 The EUDI client's architecture is designed to accommodate multiple signature schemes, holder binding methods and DID methods side by side, so that algorithms and key representations can evolve without changing the surrounding protocol code:
 
-* **Signature algorithms**: holder signing currently uses ES256 (ECDSA over P-256). Issuer-signature verification is algorithm-agile via [`lestrrat-go/jwx`](https://github.com/lestrrat-go/jwx).
+* **Signature algorithms**: holder signing currently uses ES256 (ECDSA over P-256). Issuer-signature verification is algorithm-agile via [`lestrrat-go/jwx`](https://github.com/lestrrat-go/jwx), bounded by a single allow-list defined in `eudi/jwt/signature_algorithms.go`: `ES256`, `ES384`, `ES512`, `EdDSA`, `Ed25519`, `PS256`, `PS384`, `PS512`, `RS256`, `RS384` and `RS512`, plus `ES256K` in builds carrying the `jwx_es256k` [build tag](#build-tags). That one list is read both when verifying a signature and when validating the algorithms an issuer advertises, so a credential configuration accepted up front is one whose signatures can actually be verified afterwards. Both the deprecated `EdDSA` name and the curve-specific `Ed25519` one are accepted: RFC 9864 supersedes the former, but issuers still publish and sign with it and jwx verifies either, so the curve comes from the key rather than the name. `Ed448` is not accepted, since jwx does not register it and the Go standard library does not implement it. The post-quantum `ML-DSA-44`, `ML-DSA-65` and `ML-DSA-87` are not accepted either, but for a different reason: no OpenID4VC or EUDI profile specifies post-quantum issuer signatures yet. jwx registers them from v4.4.0 on and verifies them against `crypto/mldsa`, so this build could check such a signature; it declines to. A test asserts that every algorithm jwx knows is either accepted or rejected on purpose, so an algorithm a future jwx release adds cannot enter the accepted set without someone deciding it should.
 * **Holder binding**: `jwk`, `did:key`, `did:jwk` and COSE key binding.
 * **DID methods**: `did:web`, `did:jwk` and `did:key` resolution for verifying issuers and verifiers.
 
 Sensitive material such as holder binding keys, key metadata and issued credentials is stored encrypted at rest using [SQLCipher](https://www.zetetic.net/sqlcipher/) (see [Prerequisites](#prerequisites)).
+
+### Build tags
+
+| Tag | Effect |
+| --- | --- |
+| `jwx_es256k` | Imports [`jwx-go/es256k`](https://github.com/jwx-go/es256k), the companion module holding `lestrrat-go/jwx`'s secp256k1 support, which adds `ES256K` to the accepted JWS signature algorithms (see [Cryptographic agility](#cryptographic-agility)). |
+
+`irmago`'s own builds and CI do **not** set `jwx_es256k`, so in this repository `ES256K` is rejected
+on both paths: an issuer advertising it in `credential_signing_alg_values_supported` is turned away
+while the credential offer is validated, and a JWS protected header naming it is refused before any
+key reaches signature verification.
+
+Projects that embed `irmago` and need `ES256K` pass the tag through their own build, which enables it
+on both paths:
+
+    go build -tags jwx_es256k ./...
+    go test -tags jwx_es256k ./...
+
+The allow-list follows the tag rather than the algorithm name. Under jwx v3 that was load-bearing:
+`jwa.LookupSignatureAlgorithm("ES256K")` resolved the name whether or not the tag was set, so
+accepting `ES256K` in a build that cannot verify it would let a credential through validation only
+to fail later as an opaque signature error instead of a clear algorithm error. Under jwx v4 the name
+resolves only once the companion module is imported, so an untagged build does not know `ES256K` at
+all and turns it away on both paths without the allow-list having to.
 
 ## Documentation
 
