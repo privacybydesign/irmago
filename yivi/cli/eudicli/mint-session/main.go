@@ -199,7 +199,7 @@ func main() {
 		}
 
 		fmt.Printf("%d. ISSUANCE            %s\n\n", step, delivered)
-		fmt.Println(adbCommand(offer.URI))
+		printAdbCommand(offer.URI)
 		switch {
 		case *email && isMailhog(*smtpAddr):
 			// Said plainly because it has surprised someone: mailhog captures
@@ -237,7 +237,7 @@ func main() {
 	if *showQuery {
 		printDcqlQuery(req)
 	}
-	fmt.Println(adbCommand(session.Link))
+	printAdbCommand(session.Link)
 	fmt.Print("\n   Approve on the phone.\n")
 	fmt.Print("   The app then disappears. That is deliberate, not a crash: on a\n")
 	fmt.Print("   same-device session irmamobile hands the user back to whatever called\n")
@@ -262,11 +262,60 @@ func main() {
 	fmt.Println("   the verifier saying \"no answer yet\", not a failure.")
 }
 
+// quotingBreakers are the characters a link must not contain, because each of
+// them can escape one of adbCommand's two quoting layers: a single quote closes
+// the inner quoting the device's shell sees, a double quote closes the outer
+// quoting the local shell sees, and `$`, a backtick or a backslash are still
+// live inside double quotes.
+const quotingBreakers = "'\"`$\\"
+
 // adbCommand wraps a wallet link for `adb shell`. The inner single quotes are
 // load-bearing: adb concatenates its arguments and the device's own shell
 // re-parses them, so an unquoted & would background the command there.
-func adbCommand(link string) string {
-	return fmt.Sprintf(`adb shell "am start -a android.intent.action.VIEW -d '%s'"`, link)
+//
+// The link is validated rather than escaped, and rather than trusted. It arrives
+// from an HTTP response — the verifier's session or the issuer's offer — so it is
+// another party's data, and what this builds is a command a human is expected to
+// paste into a shell. A quote surviving into it would not break this process,
+// which only prints the string, but it would break out of the quoting in the
+// shell the user pastes into.
+//
+// In practice it cannot happen: both links are percent-encoded before they get
+// here (url.Values.Encode and url.QueryEscape turn ' into %27, " into %22, $ into
+// %24 and a backtick into %60), so a raw quote never survives. That invariant
+// lives two packages away in localstack though, and nothing here depended on it
+// visibly. Checking makes it explicit and turns a silently mangled command into a
+// refusal.
+//
+// Validated, not escaped, on purpose: correctly escaping for two nested shells
+// would produce something unreadable, and the point of the output is that a human
+// can read it and paste it. A link needing escaping is a link something is wrong
+// with.
+func adbCommand(link string) (string, error) {
+	if i := strings.IndexAny(link, quotingBreakers); i >= 0 {
+		return "", fmt.Errorf(
+			"refusing to print an adb command for a link containing %q at offset %d: it would break out of the shell quoting when pasted. Links reaching here are percent-encoded, so this means one arrived that was not",
+			link[i], i)
+	}
+	for _, r := range link {
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf(
+				"refusing to print an adb command for a link containing the control character %U: it would break the command when pasted", r)
+		}
+	}
+	return fmt.Sprintf(`adb shell "am start -a android.intent.action.VIEW -d '%s'"`, link), nil
+}
+
+// printAdbCommand prints the adb command for a link, or fails the run. A link
+// this tool cannot quote safely is not something to warn about and continue past:
+// the command is the entire output, and printing a broken one is worse than
+// printing none.
+func printAdbCommand(link string) {
+	command, err := adbCommand(link)
+	if err != nil {
+		fail(err)
+	}
+	fmt.Println(command)
 }
 
 // printDcqlQuery prints the dcql_query this session carries, indented, from the

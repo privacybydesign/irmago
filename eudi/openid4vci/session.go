@@ -82,6 +82,52 @@ type openid4vciSessionIssuerSettings struct {
 	credentialRequestEncryptionKey        *jwk.Key
 }
 
+// maxBatchInstances bounds how many instances of one credential this wallet will
+// ask for in a single issuance, whatever the issuer's ceiling is.
+//
+// Thirty, following the EU Age Verification Blueprint: "It is recommended that
+// each batch consist of thirty (30) attestations." A recommendation rather than a
+// requirement — unlike the accompanying "An Age Verification App SHALL use a
+// Proof of Age attestation only once and then remove it from the batch", which is
+// what makes a batch necessary in the first place. Paired with the profile's
+// three-month maximum validity, thirty is about one presentation every three
+// days.
+//
+// It has to be the wallet's number rather than the issuer's, because the cost is
+// the wallet's: every instance is a keypair generated and stored on the device,
+// and once issuance mints in hardware, a Secure Enclave or StrongBox operation
+// each. The EUDI reference issuer advertises 100, which is its ceiling and not a
+// demand; taking it literally meant a hundred enclave keygens in one issuance,
+// and an issuer advertising an implausible ceiling could ask for arbitrarily many
+// — a denial of service at issuance from a party the wallet trusts for credential
+// content and not for arithmetic.
+//
+// Raising it does not buy more privacy. The batch defeats collusion between
+// relying parties, and it does that per presentation rather than per batch; a
+// bigger batch only means refilling less often, which the issuer sees either way.
+// What the number has to cover is the presentations expected before the next
+// renewal.
+const maxBatchInstances uint = 30
+
+// batchInstancesToRequest decides how many instances to ask for, given what the
+// issuer's metadata advertises.
+//
+// batch_size is the issuer's *maximum* — the largest `proofs` array it will
+// accept in a Credential Request — and not an instruction to fill it. Requesting
+// fewer is ordinary, which is what makes taking the minimum both safe and
+// correct; treating the advertised value as the count meant always minting the
+// most any issuer would allow.
+//
+// A zero or one advertised value yields one instance, matching the non-batch
+// case. Metadata validation already refuses batch_size <= 1 outright, so that is
+// belt-and-braces rather than a second policy.
+func batchInstancesToRequest(advertised uint) uint {
+	if advertised < 1 {
+		return 1
+	}
+	return min(advertised, maxBatchInstances)
+}
+
 // sessionCredentialRequestPreferences contains wallet-based preferences related to the credential that will be requested
 // We define this struct, so that we apply logic to the credential metadata, and choose the preferences from the available options, in case multiple options are offered by the issuer metadata (e.g. multiple supported encryption algorithms, or multiple supported key binding methods)
 type sessionCredentialRequestPreferences struct {
@@ -693,7 +739,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	if requireCryptographicKeyBinding {
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
-			num = s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize
+			num = batchInstancesToRequest(s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize)
 		}
 
 		// The issuer should be equal to the client ID registered with the authorization server

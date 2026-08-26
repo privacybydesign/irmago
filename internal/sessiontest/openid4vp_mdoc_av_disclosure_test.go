@@ -64,6 +64,78 @@ func testSessionHandlerForOpenID4VPWithMdocAv(t *testing.T) {
 		testOpenID4VP_MdocAv_DisclosureDirectPost)
 	t.Run("an unauthorized mdoc doctype is refused",
 		testOpenID4VP_MdocAv_UnauthorizedDocType)
+	t.Run("the permission screen falls back to a locale the issuer publishes",
+		testOpenID4VP_MdocAv_DisclosureUnderUnpublishedLocale)
+}
+
+// testOpenID4VP_MdocAv_DisclosureUnderUnpublishedLocale runs a full disclosure on
+// a Dutch wallet against an issuer that publishes "en" only.
+//
+// The five display resolvers in mdoc_dcql (credentialDisplayName,
+// claimDisplayName, issuerTrustedParty and the two logo loaders) each take the
+// wallet's locale and resolve stored metadata against it, and until this subtest
+// every test in the suite asked for the one locale the metadata carries — so the
+// path where the requested locale is absent was reached nowhere. What must not
+// happen is that it resolves to an empty string: a Dutch user would then be asked
+// to approve a nameless credential from a nameless issuer, on the one screen where
+// consent is given.
+//
+// The offer side of the same question is covered in
+// eudi_pid_python_issuer_mdoc_test.go; this is the disclosure side, which is
+// different code (mdoc_dcql.FindCandidates, not openid4vci.buildOfferedCredentials)
+// and would fail independently. The disclosure runs to completion rather than
+// stopping at the screen, so the log written afterwards is checked under the same
+// locale: log text is re-resolved against live credential metadata on read, which
+// is a third resolver with the same missing-locale input.
+func testOpenID4VP_MdocAv_DisclosureUnderUnpublishedLocale(t *testing.T) {
+	caPEM := readEudiPidIssuerPyCA(t)
+	c, _, sessionHandler := instantiateClient(t, caPEM, "nl")
+	defer c.Close()
+
+	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
+
+	testSession, _ := startMdocAvSessionCapturingRequest(t, c, 2, sessionHandler,
+		testdata.OpenID4VP_DirectPost_Host, createAvMdocAuthRequest(t))
+
+	session := testSession.ClientSession
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	// The same text the English wallet is shown, because "en" is all the issuer
+	// published — asserted through the same constants, so the two subtests cannot
+	// drift apart on what the fallback is falling back to.
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{{
+					CredentialId: avDocType,
+					Name:         avCredentialDisplayName,
+					IssuerName:   avIssuerDisplayName,
+					Attributes: []expectedAttr{
+						{
+							Path:        []any{avDocType, avMandatoryElement},
+							DisplayName: new(avAgeOver18DisplayName),
+							Value:       boolVal(true),
+						},
+					},
+				}},
+			},
+		},
+	})
+
+	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	approvedRequestor := session.Requestor
+	require.True(t, approvedRequestor.Verified,
+		"the relying party certificate authenticated the request, and the screen must say so in any locale")
+	grantPermission(t, c, 2, makeDisclosureChoice(choice))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	requireMdocVerifierResult(t, testSession.VerifierSession, "age", avDocType, avMandatoryElement, true)
+
+	// The log is read back under "nl" too, so the read-time re-resolution runs with
+	// the absent locale as well.
+	requireMdocAvDisclosureLog(t, c, approvedRequestor)
 }
 
 // testOpenID4VP_MdocAv_UnauthorizedDocType asks for a docType the verifier's
