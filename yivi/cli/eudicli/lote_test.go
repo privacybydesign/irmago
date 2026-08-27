@@ -464,6 +464,96 @@ func TestSign_ACuratedDirectoryGrantsThroughTheWalletsOwnChecker(t *testing.T) {
 		trust.Evidence{Identifiers: []string{"did:web:retired.example.com"}}))
 }
 
+// runSign drives `sign` the way the CLI does, over a key and certificate keygen
+// wrote for the example scheme, and returns the error the command returned.
+// Flags are package-level state, so every one this command reads is set on each
+// call.
+func runSign(t *testing.T, keyDir, input, output string) error {
+	t.Helper()
+	Logger = logrus.New()
+	Logger.SetOutput(io.Discard)
+	require.NoError(t, loteSignCmd.Flags().Set("key", filepath.Join(keyDir, "signer.key")))
+	require.NoError(t, loteSignCmd.Flags().Set("cert", filepath.Join(keyDir, "signer.crt")))
+	require.NoError(t, loteSignCmd.Flags().Set("anchor", filepath.Join(keyDir, "ca.crt")))
+	require.NoError(t, loteSignCmd.Flags().Set("output", output))
+	loteSignCmd.SetOut(io.Discard)
+	return loteSignCmd.RunE(loteSignCmd, []string{input})
+}
+
+// writeBuiltDocument writes the example list the way `build` does, after letting
+// the caller edit it as raw JSON, and returns the path.
+func writeBuiltDocument(t *testing.T, edit func(document map[string]any)) string {
+	t.Helper()
+	list, _, err := loadSource(exampleSource(t), time.Now().UTC(), 5)
+	require.NoError(t, err)
+	raw, err := documentJSON(list)
+	require.NoError(t, err)
+
+	var document map[string]any
+	require.NoError(t, json.Unmarshal(raw, &document))
+	if edit != nil {
+		edit(document)
+	}
+	edited, err := json.MarshalIndent(document, "", "  ")
+	require.NoError(t, err)
+
+	path := filepath.Join(t.TempDir(), "list.json")
+	require.NoError(t, os.WriteFile(path, edited, 0o644))
+	return path
+}
+
+// The command end to end: what `build` wrote signs, and the output verifies the
+// way the wallet verifies.
+func TestSignCommand_SignsABuiltDocument(t *testing.T) {
+	keyDir := runKeygen(t, "Yivi Example")
+	input := writeBuiltDocument(t, nil)
+	output := filepath.Join(t.TempDir(), "list.jws")
+
+	require.NoError(t, runSign(t, keyDir, input, output))
+
+	signed, err := os.ReadFile(output)
+	require.NoError(t, err)
+	ca, err := readCertificateChain(filepath.Join(keyDir, "ca.crt"))
+	require.NoError(t, err)
+	pool := x509.NewCertPool()
+	pool.AddCert(ca[0])
+	verified, err := lote.VerifySigned(signed, &eudi_jwt.StaticVerificationContext{VerifyOpts: x509.VerifyOptions{
+		Roots:     pool,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+	}})
+	require.NoError(t, err)
+	require.Equal(t, uint64(5), verified.SchemeInformation.SequenceNumber)
+}
+
+// `sign` is a standalone command that takes any file, so it — not only `build` —
+// has to refuse a document that does not conform: a mandatory Annex A member
+// deleted by hand would otherwise be signed and published as null.
+func TestSignCommand_RefusesANonConformantDocument(t *testing.T) {
+	keyDir := runKeygen(t, "Yivi Example")
+	input := writeBuiltDocument(t, func(document map[string]any) {
+		entity := document["LoTE"].(map[string]any)["TrustedEntitiesList"].([]any)[0].(map[string]any)
+		delete(entity["TrustedEntityInformation"].(map[string]any), "TEAddress")
+	})
+	output := filepath.Join(t.TempDir(), "list.jws")
+
+	err := runSign(t, keyDir, input, output)
+	require.ErrorContains(t, err, "Annex A")
+	require.NoFileExists(t, output, "nothing is written when the document is refused")
+}
+
+// Signing re-marshals the decoded document, so a member the model does not know
+// would be dropped from what is signed. A file saying more than the model can
+// carry is refused rather than silently rewritten.
+func TestSignCommand_RefusesAMemberItWouldDrop(t *testing.T) {
+	keyDir := runKeygen(t, "Yivi Example")
+	input := writeBuiltDocument(t, func(document map[string]any) {
+		document["LoTE"].(map[string]any)["Bogus"] = 1
+	})
+
+	err := runSign(t, keyDir, input, filepath.Join(t.TempDir(), "list.jws"))
+	require.ErrorContains(t, err, "Bogus")
+}
+
 type stubStore map[string][]byte
 
 func (s stubStore) Get(listId string) ([]byte, bool) {

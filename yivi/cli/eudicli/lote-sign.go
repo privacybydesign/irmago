@@ -1,12 +1,14 @@
 package eudicli
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -28,8 +30,11 @@ The signature encapsulates the document rather than sitting inside it, which is
 the form clause 6.8.0 permits for a JSON LoTE and the reason Annex A's schema has
 no Signature member.
 
-Before signing, the certificate is checked against the document it is about to
-sign, per clause 6.8.0:
+Before signing, the document is read strictly — a member the model does not know
+is refused, since signing would silently drop it — and validated against the
+Annex A schema, so a file that did not come out of 'build' cannot be signed into
+a non-conformant list. Then the certificate is checked against the document it
+is about to sign, per clause 6.8.0:
 
   * subject Country must equal the scheme's SchemeTerritory
   * subject Organization must be one of the SchemeOperatorName values
@@ -52,9 +57,17 @@ guard and the document are checked but the chain is not.`,
 		if err != nil {
 			return err
 		}
-		var document lote.Document
-		if err := json.Unmarshal(raw, &document); err != nil {
+		document, err := decodeDocument(raw)
+		if err != nil {
 			return fmt.Errorf("parse %s: %w", args[0], err)
+		}
+
+		// Conformance is checked on the document as it will be signed, not on the
+		// file as it was read: lote.Sign marshals the decoded value, so this is the
+		// same marshalling of the same value. `build` validates what it writes; this
+		// is the gate for a file that reached `sign` any other way.
+		if err := lote.ValidateList(document.LoTE); err != nil {
+			return fmt.Errorf("%s: %w", args[0], err)
 		}
 
 		chain, err := readCertificateChain(certPath)
@@ -112,6 +125,24 @@ func init() {
 	loteSignCmd.Flags().String("cert", "signer.crt", "PEM signing certificate, leaf first; intermediates are carried in x5c")
 	loteSignCmd.Flags().String("anchor", "", "PEM trust anchor to check the chain against, as the wallet will")
 	loteSignCmd.Flags().StringP("output", "o", "", "write the signed document here (default stdout)")
+}
+
+// decodeDocument reads a LoTE document strictly. Signing re-marshals the decoded
+// value, so any member the model does not know would be dropped from what gets
+// signed — a document hand-edited to say more than the model can carry is refused
+// rather than silently rewritten.
+func decodeDocument(raw []byte) (lote.Document, error) {
+	var document lote.Document
+
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&document); err != nil {
+		return lote.Document{}, err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return lote.Document{}, fmt.Errorf("trailing data after the document")
+	}
+	return document, nil
 }
 
 // verificationAnchors builds the pool the freshly signed document is checked
