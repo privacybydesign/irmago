@@ -99,10 +99,11 @@ func (c *CredentialConfiguration) UnmarshalJSON(data []byte) error {
 		}
 		// Before credential_metadata existed these fields were unknown to the
 		// parser and ignored, so a malformed legacy block must not start rejecting
-		// a document that used to parse; it just yields no metadata.
-		if err := json.Unmarshal(data, &legacy); err != nil {
-			return nil
-		}
+		// a document that used to parse. The error is deliberately dropped rather
+		// than returned early: encoding/json keeps filling the other fields past a
+		// type mismatch, and draft-13 issuers write `claims` as an object keyed by
+		// claim name — the `display` decoded next to it must still be kept.
+		_ = json.Unmarshal(data, &legacy)
 		if len(legacy.Display) > 0 || len(legacy.Claims) > 0 {
 			c.CredentialMetadata = &CredentialMetadata{
 				Display: legacy.Display,

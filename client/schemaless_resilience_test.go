@@ -2,9 +2,11 @@ package client
 
 import (
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,4 +46,53 @@ func TestCredentialInfoListToSchemaless_EmptyInput(t *testing.T) {
 	good, problematic := credentialInfoListToSchemaless(conf, irma.CredentialInfoList{}, "en")
 	assert.Empty(t, good)
 	assert.Empty(t, problematic)
+}
+
+// Deleting a credential whose type is not in the configuration — the very
+// credential a ProblematicCredential points at — must still yield a removal log
+// entry (without attributes, since there is no type to name them) rather than
+// dereference the missing type.
+func TestCreateRemovalLog_UnknownTypeLogsWithoutAttributes(t *testing.T) {
+	conf := &irma.Configuration{
+		CredentialTypes: map[irma.CredentialTypeIdentifier]*irma.CredentialType{},
+	}
+	id := irma.NewCredentialTypeIdentifier("irma-demo.acme.gone")
+
+	entry, err := createRemovalLog(conf, id,
+		map[irma.AttributeTypeIdentifier]irma.TranslatedString{},
+		[]clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc})
+
+	require.NoError(t, err)
+	require.Contains(t, entry.Removed, id)
+	assert.Empty(t, entry.Removed[id])
+	assert.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc}, entry.RemovedFormats)
+}
+
+// The activity log must render the removal of a credential whose type is not in
+// the configuration: the entry falls back to the bare identifiers instead of
+// dereferencing the missing type and taking the whole log down.
+func TestRawLogEntryToLogInfo_RemovalOfUnknownTypeRenders(t *testing.T) {
+	client := newClientOnFreshStorage(t)()
+	defer client.Close()
+
+	id := irma.NewCredentialTypeIdentifier("irma-demo.acme.gone")
+	entry := &irmaclient.LogEntry{
+		Time:           irmaclient.LogTime(time.Now()),
+		Type:           irmaclient.ActionRemoval,
+		Removed:        map[irma.CredentialTypeIdentifier][]irma.TranslatedString{id: {}},
+		RemovedFormats: []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
+	}
+
+	info, err := client.rawLogEntryToLogInfo(entry)
+
+	require.NoError(t, err)
+	require.Equal(t, clientmodels.LogType_CredentialRemoval, info.Type)
+	require.NotNil(t, info.RemovalLog)
+	require.Len(t, info.RemovalLog.Credentials, 1)
+	cred := info.RemovalLog.Credentials[0]
+	assert.Equal(t, "irma-demo.acme.gone", cred.CredentialId)
+	assert.Equal(t, "irma-demo.acme.gone", cred.Name, "the type id is the only label left")
+	assert.Equal(t, "irma-demo.acme", cred.Issuer.Id)
+	assert.Empty(t, cred.Attributes)
+	assert.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc}, cred.Formats)
 }

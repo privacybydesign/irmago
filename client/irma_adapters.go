@@ -302,13 +302,26 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 		removedCreds := []clientmodels.LogCredential{}
 
 		for credentialTypeId, attributeValues := range entry.Removed {
-			credTypeInfo := irmaConfig.CredentialTypes[credentialTypeId]
-			issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
-
 			formats := make([]clientmodels.CredentialFormat, len(entry.RemovedFormats))
 			for i, f := range entry.RemovedFormats {
 				formats[i] = clientmodels.CredentialFormat(f)
 			}
+
+			// The removed credential's type may not be in the configuration — that
+			// is what made it a ProblematicCredential worth deleting. Its log entry
+			// then carries only the identifiers; the activity log must still render.
+			credTypeInfo := irmaConfig.CredentialTypes[credentialTypeId]
+			if credTypeInfo == nil {
+				removedCreds = append(removedCreds, clientmodels.LogCredential{
+					CredentialId: credentialTypeId.String(),
+					Formats:      formats,
+					Name:         credentialTypeId.String(),
+					Issuer:       clientmodels.TrustedParty{Id: credentialTypeId.IssuerIdentifier().String()},
+					Attributes:   []clientmodels.Attribute{},
+				})
+				continue
+			}
+			issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
 
 			attributes := []clientmodels.Attribute{}
 			for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {

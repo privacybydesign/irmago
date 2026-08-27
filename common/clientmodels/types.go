@@ -235,8 +235,8 @@ func CredentialToLogCredential(c *Credential) LogCredential {
 }
 
 // ProblematicCredential describes a stored credential that could not be loaded
-// into a full Credential — its metadata failed to resolve (e.g. an unknown IRMA
-// credential type whose scheme is no longer installed). It carries just enough
+// into a full Credential — its metadata failed to resolve (e.g. an SD-JWT-over-IRMA
+// credential whose type was dropped from its scheme). It carries just enough
 // to show an informative placeholder and, above all, to delete it:
 // CredentialInstanceIds maps each format to the storage hash that
 // RemoveCredentialsByHash needs, so a credential the wallet cannot render can

@@ -346,8 +346,8 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 
 // GetCredentials returns every credential the wallet can render, plus a list of
 // the credentials it has stored but cannot load into a full Credential (see
-// ProblematicCredential — e.g. an IRMA credential whose scheme is no longer
-// installed). Both come from one pass, so they are a consistent snapshot, and
+// ProblematicCredential — e.g. an SD-JWT-over-IRMA credential whose type was
+// dropped from its scheme). Both come from one pass, so they are a consistent snapshot, and
 // each problematic entry carries the storage hash(es) needed to delete it. A
 // single bad credential is never fatal; the error is reserved for a total EUDI
 // store-read failure, and even then the IRMA credentials that did load are

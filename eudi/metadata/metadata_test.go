@@ -238,8 +238,6 @@ func TestCredentialConfiguration_UnmarshalJSON_CredentialMetadataTakesPrecedence
 	}
 }
 
-// A configuration with neither credential_metadata nor legacy top-level display
-// leaves CredentialMetadata nil (the legitimately-no-display case).
 func TestCredentialConfiguration_UnmarshalJSON_NoDisplayLeavesMetadataNil(t *testing.T) {
 	data := []byte(`{"format": "dc+sd-jwt", "vct": "urn:example:pid"}`)
 	var c CredentialConfiguration
@@ -266,5 +264,32 @@ func TestCredentialConfiguration_UnmarshalJSON_MalformedLegacyDisplayIsIgnored(t
 	}
 	if c.CredentialMetadata != nil {
 		t.Errorf("expected no metadata synthesized from a malformed legacy block, got %+v", c.CredentialMetadata)
+	}
+}
+
+// Draft-13 issuers write legacy `claims` as an object keyed by claim name, which
+// does not fit []ClaimsDescription. That type mismatch must not throw away the
+// `display` decoded next to it — the legacy issuer's credential still gets its
+// name; only the claims stay empty.
+func TestCredentialConfiguration_UnmarshalJSON_LegacyClaimsObjectKeepsDisplay(t *testing.T) {
+	data := []byte(`{
+		"format": "dc+sd-jwt",
+		"vct": "urn:example:pid",
+		"display": [{"name": "PID", "locale": "en"}],
+		"claims": {"given_name": {"display": [{"name": "First name", "locale": "en"}]}}
+	}`)
+
+	var c CredentialConfiguration
+	if err := json.Unmarshal(data, &c); err != nil {
+		t.Fatalf("legacy claims object must not reject the document, got: %v", err)
+	}
+	if c.CredentialMetadata == nil {
+		t.Fatal("expected CredentialMetadata synthesized from the legacy display, got nil")
+	}
+	if len(c.CredentialMetadata.Display) != 1 || c.CredentialMetadata.Display[0].GetName() != "PID" {
+		t.Errorf("expected the legacy display to survive the claims type mismatch, got %+v", c.CredentialMetadata.Display)
+	}
+	if len(c.CredentialMetadata.Claims) != 0 {
+		t.Errorf("expected no claims from an object-shaped legacy block, got %+v", c.CredentialMetadata.Claims)
 	}
 }
