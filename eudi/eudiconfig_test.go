@@ -91,8 +91,8 @@ func testUpdateCertificateRevocationListsFetchesForEveryTrustModel(t *testing.T)
 	}
 	for path, tm := range models {
 		tm.httpClient = ts.Client()
-		tm.revocationListsDistributionPoints = []string{ts.URL + path}
-		tm.allCerts = []*x509.Certificate{rootCert}
+		tm.mutate(func(s *trustState) { s.distributionPoints = []string{ts.URL + path} })
+		tm.mutate(func(s *trustState) { s.allCerts = []*x509.Certificate{rootCert} })
 	}
 
 	require.NoError(t, conf.UpdateCertificateRevocationLists())
@@ -133,14 +133,14 @@ func testNewConfigurationSuccessfulInitialization(t *testing.T) {
 	require.DirExists(t, filepath.Join(verifierBasePath, "crls"))
 	require.DirExists(t, filepath.Join(verifierBasePath, "logos"))
 
-	require.NotNil(t, conf.Issuers.trustedRootCertificates)
-	require.NotNil(t, conf.Issuers.trustedRootCertificates)
-	require.NotNil(t, conf.Issuers.revocationLists)
-	require.Len(t, conf.Issuers.revocationLists, 0)
-	require.NotNil(t, conf.Verifiers.trustedRootCertificates)
-	require.NotNil(t, conf.Verifiers.trustedIntermediateCertificates)
-	require.NotNil(t, conf.Verifiers.revocationLists)
-	require.Len(t, conf.Verifiers.revocationLists, 0)
+	require.NotNil(t, conf.Issuers.state().roots)
+	require.NotNil(t, conf.Issuers.state().roots)
+	require.NotNil(t, conf.Issuers.state().revocationLists)
+	require.Len(t, conf.Issuers.state().revocationLists, 0)
+	require.NotNil(t, conf.Verifiers.state().roots)
+	require.NotNil(t, conf.Verifiers.state().intermediates)
+	require.NotNil(t, conf.Verifiers.state().revocationLists)
+	require.Len(t, conf.Verifiers.state().revocationLists, 0)
 }
 
 func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
@@ -164,11 +164,11 @@ func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 	// by value to require would copy a lock. Emptiness is asserted against a fresh
 	// pool rather than with NotEmpty, since testify sees an empty *x509.CertPool
 	// as non-empty.
-	require.False(t, conf.Verifiers.trustedRootCertificates.Equal(x509.NewCertPool()),
+	require.False(t, conf.Verifiers.state().roots.Equal(x509.NewCertPool()),
 		"the pinned verifier root anchors are loaded")
-	require.False(t, conf.Issuers.trustedRootCertificates.Equal(x509.NewCertPool()),
+	require.False(t, conf.Issuers.state().roots.Equal(x509.NewCertPool()),
 		"the pinned issuer root anchors are loaded")
-	require.False(t, conf.Issuers.trustedIntermediateCertificates.Equal(x509.NewCertPool()),
+	require.False(t, conf.Issuers.state().intermediates.Equal(x509.NewCertPool()),
 		"the pinned issuer intermediate anchors are loaded")
 }
 
@@ -209,11 +209,12 @@ func TestAddTrustAnchors_DiscoversDistributionPointsFromTheChain(t *testing.T) {
 	conf := newTestConfiguration(t)
 	require.NoError(t, conf.Reload())
 
-	before := len(conf.Issuers.revocationListsDistributionPoints)
+	before := len(conf.Issuers.state().distributionPoints)
 	require.NoError(t, conf.Issuers.addTrustAnchors(
 		clientmodels.TrustLevel_Medium, []byte(Production_Yivi_IssuerTrustAnchor)))
+	conf.Issuers.commit()
 
-	require.GreaterOrEqual(t, len(conf.Issuers.revocationListsDistributionPoints), before,
+	require.GreaterOrEqual(t, len(conf.Issuers.state().distributionPoints), before,
 		"an intermediate advertising a CRL contributes it without being told")
 }
 
@@ -230,9 +231,9 @@ func TestExtraTrustListTrustAnchors_RegisterTheirDistributionPoints(t *testing.T
 
 	require.NoError(t, conf.Reload())
 
-	require.Contains(t, conf.TrustLists.revocationListsDistributionPoints, distPoint,
+	require.Contains(t, conf.TrustLists.state().distributionPoints, distPoint,
 		"the CRL sync walks these, so an anchor missing from them is never revocable")
-	require.NotContains(t, conf.Issuers.revocationListsDistributionPoints, distPoint,
+	require.NotContains(t, conf.Issuers.state().distributionPoints, distPoint,
 		"and it goes to the trust-list model only, never the issuer one")
 }
 
@@ -257,8 +258,8 @@ func TestExtraTrustAnchors_RegisterDistributionPointsForEveryModel(t *testing.T)
 
 	require.NoError(t, conf.Reload())
 
-	require.Contains(t, conf.Issuers.revocationListsDistributionPoints, issuerCRL)
-	require.Contains(t, conf.Verifiers.revocationListsDistributionPoints, verifierCRL)
-	require.NotContains(t, conf.Issuers.revocationListsDistributionPoints, verifierCRL,
+	require.Contains(t, conf.Issuers.state().distributionPoints, issuerCRL)
+	require.Contains(t, conf.Verifiers.state().distributionPoints, verifierCRL)
+	require.NotContains(t, conf.Issuers.state().distributionPoints, verifierCRL,
 		"the three models stay apart")
 }

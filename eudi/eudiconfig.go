@@ -79,6 +79,11 @@ type Configuration struct {
 	// ExtraTrustListTrustAnchors are anchors a recognized list's signature may
 	// chain to. Their Confers is ignored.
 	ExtraTrustListTrustAnchors []ExtraTrustAnchor
+
+	// reloadMu serialises Reload: the CRL refresh job and the developer-mode
+	// toggle can both ask for one, and each trust model assembles its next state
+	// in a single pending slot.
+	reloadMu sync.Mutex
 }
 
 // NewConfiguration returns a new configuration. After this ParseFolder() should be called to parse the specified path.
@@ -88,22 +93,19 @@ func NewConfiguration(s storage.Storage) (conf *Configuration, err error) {
 	conf = &Configuration{
 		Storage: s,
 		Issuers: TrustModel{
-			storageContainer:                  s.FileSystem().Issuers(),
-			logger:                            Logger,
-			httpClient:                        httpClient,
-			revocationListsDistributionPoints: []string{},
+			storageContainer: s.FileSystem().Issuers(),
+			logger:           Logger,
+			httpClient:       httpClient,
 		},
 		Verifiers: TrustModel{
-			storageContainer:                  s.FileSystem().Verifiers(),
-			logger:                            Logger,
-			httpClient:                        httpClient,
-			revocationListsDistributionPoints: []string{},
+			storageContainer: s.FileSystem().Verifiers(),
+			logger:           Logger,
+			httpClient:       httpClient,
 		},
 		TrustLists: TrustModel{
-			storageContainer:                  s.FileSystem().TrustLists(),
-			logger:                            Logger,
-			httpClient:                        httpClient,
-			revocationListsDistributionPoints: []string{},
+			storageContainer: s.FileSystem().TrustLists(),
+			logger:           Logger,
+			httpClient:       httpClient,
 		},
 	}
 
@@ -132,7 +134,27 @@ func (c *Configuration) SetCertificateVerificationMode(mode CertificateVerificat
 // Reload assumes the latest files (trust anchors and certificate revocation lists) are downloaded.
 // Reload (re)populates the Configuration by loading the pinned trust anchors, followed by the downloaded ones.
 // Intermediate certificates are checked against the revocation list of the root certificates befor being added to the trust model.
-func (c *Configuration) Reload() error {
+//
+// The three trust models are assembled off to the side and published together at
+// the end, so a session running meanwhile sees the previous state in full — with
+// its revocation lists — right up to the moment the new one is complete. A Reload
+// that fails publishes nothing: an unparseable extra anchor or an unreadable store
+// leaves the last good state in force rather than an emptied one.
+func (c *Configuration) Reload() (err error) {
+	c.reloadMu.Lock()
+	defer c.reloadMu.Unlock()
+
+	models := []*TrustModel{&c.Issuers, &c.Verifiers, &c.TrustLists}
+	defer func() {
+		for _, tm := range models {
+			if err != nil {
+				tm.discard()
+			} else {
+				tm.commit()
+			}
+		}
+	}()
+
 	c.Issuers.clear()
 	c.Verifiers.clear()
 	c.TrustLists.clear()
@@ -167,16 +189,16 @@ func (c *Configuration) Reload() error {
 			return fmt.Errorf("failed to add extra trust list trust anchor: %v", err)
 		}
 	}
-	// Read the trust anchors from storage
-	if err := c.Issuers.Reload(); err != nil {
+	// Read the trust anchors from storage; the deferred commit publishes them.
+	if err := c.Issuers.load(); err != nil {
 		return fmt.Errorf("failed to load issuer trust model: %v", err)
 	}
 
-	if err := c.Verifiers.Reload(); err != nil {
+	if err := c.Verifiers.load(); err != nil {
 		return fmt.Errorf("failed to load verifier trust model: %v", err)
 	}
 
-	if err := c.TrustLists.Reload(); err != nil {
+	if err := c.TrustLists.load(); err != nil {
 		return fmt.Errorf("failed to load trust list trust model: %v", err)
 	}
 
@@ -271,8 +293,9 @@ func (c *Configuration) UpdateCertificateRevocationLists() error {
 
 	wg.Wait()
 
-	// TODO: implement locking on the config to pause/start the job.
-	// We should not update if we are in the middle of handling a session, because it might disrupt the session.
+	// Reload publishes the new state whole, so a session in flight never sees a
+	// half-built trust model. What it can still see is a different complete state
+	// between two of its own checks, which is the intended effect of a refresh.
 	return c.Reload()
 }
 

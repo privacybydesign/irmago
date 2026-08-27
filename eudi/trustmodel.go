@@ -7,9 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"slices"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -20,30 +21,118 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type TrustModel struct {
-	storageContainer filesystem.FileSystemContainer
-
-	trustedRootCertificates           *x509.CertPool
-	trustedIntermediateCertificates   *x509.CertPool
-	allCerts                          []*x509.Certificate
-	revocationLists                   []*x509.RevocationList
-	revocationListsDistributionPoints []string
-	httpClient                        *http.Client
-	logger                            *logrus.Logger
-	certificateVerificationMode       CertificateVerificationMode
+// trustState is everything a TrustModel knows about who it trusts, as one
+// immutable value. A reload assembles a fresh one off to the side and publishes it
+// whole, so a reader — a session gate, Classify, the CRL sync — always sees a
+// complete state: never the roots of a new reload beside the revocation lists of
+// the old one, and never the emptied-out middle of a reload in progress. That
+// middle used to be fail-open: with the revocation lists cleared and unanchored
+// certificates admitted as low, a revoked certificate passed the gate until the
+// reload finished.
+//
+// Nothing mutates a trustState after commit publishes it.
+type trustState struct {
+	roots         *x509.CertPool
+	intermediates *x509.CertPool
+	// allCerts holds every anchored root and intermediate, for finding the
+	// certificate a CRL is issued by.
+	allCerts           []*x509.Certificate
+	revocationLists    []*x509.RevocationList
+	distributionPoints []string
 
 	// anchorLevels records, per anchored root (keyed by the SHA-256 of its DER),
 	// the trust level its certificates confer. Every path that adds an anchor
 	// states the level explicitly; nothing defaults to high.
-	//
-	// anchorLevelsMu guards it: Classify reads the map on the session path while
-	// the CRL refresh job rewrites it from another goroutine, and a map is the one
-	// shape Go answers that with a throw rather than a stale read. The model's
-	// other reloaded fields are raced too — see the TODO on
-	// Configuration.UpdateCertificateRevocationLists — but they at worst read
-	// stale.
-	anchorLevelsMu sync.RWMutex
-	anchorLevels   map[[sha256.Size]byte]clientmodels.TrustLevel
+	anchorLevels map[[sha256.Size]byte]clientmodels.TrustLevel
+}
+
+func newTrustState() *trustState {
+	return &trustState{
+		roots:              x509.NewCertPool(),
+		intermediates:      x509.NewCertPool(),
+		allCerts:           []*x509.Certificate{},
+		revocationLists:    []*x509.RevocationList{},
+		distributionPoints: []string{},
+		anchorLevels:       map[[sha256.Size]byte]clientmodels.TrustLevel{},
+	}
+}
+
+// emptyTrustState is what a TrustModel answers with before its first reload.
+// Its pools are empty rather than nil: a nil Roots pool makes x509.Verify fall
+// back to the operating system's root store, which is the one thing a wallet
+// that has not loaded its anchors yet must not do.
+var emptyTrustState = newTrustState()
+
+func (s *trustState) clone() *trustState {
+	return &trustState{
+		roots:              s.roots.Clone(),
+		intermediates:      s.intermediates.Clone(),
+		allCerts:           slices.Clone(s.allCerts),
+		revocationLists:    slices.Clone(s.revocationLists),
+		distributionPoints: slices.Clone(s.distributionPoints),
+		anchorLevels:       maps.Clone(s.anchorLevels),
+	}
+}
+
+// issuerOf finds the anchored certificate a CRL is issued by.
+func (s *trustState) issuerOf(crl *x509.RevocationList) *x509.Certificate {
+	for _, cert := range s.allCerts {
+		if bytes.Equal(crl.AuthorityKeyId, cert.SubjectKeyId) && cert.Subject.ToRDNSequence().String() == crl.Issuer.ToRDNSequence().String() {
+			return cert
+		}
+	}
+	return nil
+}
+
+// anchorLevel reports the level this root's certificates confer, and whether the
+// root is anchored at all.
+func (s *trustState) anchorLevel(root *x509.Certificate) (clientmodels.TrustLevel, bool) {
+	level, ok := s.anchorLevels[sha256.Sum256(root.Raw)]
+	return level, ok
+}
+
+// recordAnchorLevel remembers the level this root's certificates confer. A root
+// that arrives twice — the same CA pinned by two callers — keeps the strongest
+// statement made about it.
+func (s *trustState) recordAnchorLevel(root *x509.Certificate, confers clientmodels.TrustLevel) {
+	key := sha256.Sum256(root.Raw)
+	if existing, ok := s.anchorLevels[key]; ok && !trust.Stronger(confers, existing) {
+		return
+	}
+	s.anchorLevels[key] = confers
+}
+
+// A trustState is itself an X509VerificationContext, so a caller that needs
+// several answers about one moment — chains, then revocation — can bind them to
+// the same snapshot rather than asking the model twice.
+func (s *trustState) GetVerificationOptionsTemplate() x509.VerifyOptions {
+	return x509.VerifyOptions{
+		Roots:         s.roots,
+		Intermediates: s.intermediates,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny}, // VerifyOptions does not check against the KeyUsage extension, but we set it to ExtKeyUsageAny to allow any usage and validate the digital signature key usage ourselfs.
+	}
+}
+
+func (s *trustState) GetRevocationLists() []*x509.RevocationList {
+	return s.revocationLists
+}
+
+type TrustModel struct {
+	storageContainer filesystem.FileSystemContainer
+
+	httpClient                  *http.Client
+	logger                      *logrus.Logger
+	certificateVerificationMode CertificateVerificationMode
+
+	// current is the state every reader sees. It is replaced whole by commit and
+	// never written in place, which is what lets Classify run on the session path
+	// while the CRL refresh job reloads from another goroutine.
+	current atomic.Pointer[trustState]
+
+	// pending is the state a reload is assembling: clear starts it, the add and
+	// load methods fill it, commit publishes it. Only the reload sequence touches
+	// it, which Configuration serialises; readers never see it.
+	pending *trustState
 }
 
 type CertificateVerificationMode int
@@ -53,8 +142,43 @@ const (
 	DeveloperModeCertificateVerification
 )
 
+// state is what readers consult: the last committed state, or the empty one
+// before any reload has committed.
+func (tm *TrustModel) state() *trustState {
+	if s := tm.current.Load(); s != nil {
+		return s
+	}
+	return emptyTrustState
+}
+
+// building is the state the reload sequence is assembling. Without a preceding
+// clear it starts from a copy of the current state, so an anchor added outside a
+// full reload extends what is there rather than replacing it.
+func (tm *TrustModel) building() *trustState {
+	if tm.pending == nil {
+		tm.pending = tm.state().clone()
+	}
+	return tm.pending
+}
+
+// commit publishes the pending state to every reader at once. A model with
+// nothing pending keeps what it has.
+func (tm *TrustModel) commit() {
+	if tm.pending == nil {
+		return
+	}
+	tm.current.Store(tm.pending)
+	tm.pending = nil
+}
+
+// discard drops a pending state a reload could not finish, so what readers see
+// stays the last state that was assembled in full.
+func (tm *TrustModel) discard() {
+	tm.pending = nil
+}
+
 func (tm *TrustModel) GetRevocationLists() []*x509.RevocationList {
-	return tm.revocationLists
+	return tm.state().GetRevocationLists()
 }
 
 func (tm *TrustModel) SetCertificateVerificationMode(mode CertificateVerificationMode) {
@@ -65,32 +189,10 @@ func (tm *TrustModel) GetCertificateVerificationMode() CertificateVerificationMo
 	return tm.certificateVerificationMode
 }
 
+// clear starts a reload: an empty pending state, which the add and load methods
+// fill and commit publishes. What readers see is untouched until then.
 func (tm *TrustModel) clear() {
-	tm.allCerts = []*x509.Certificate{}
-	tm.trustedRootCertificates = x509.NewCertPool()
-	tm.trustedIntermediateCertificates = x509.NewCertPool()
-	tm.revocationLists = []*x509.RevocationList{}
-	tm.revocationListsDistributionPoints = []string{}
-	tm.clearAnchorLevels()
-}
-
-// clearAnchorLevels drops every recorded anchor level. Kept apart from clear so
-// that every write to the map goes through anchorLevelsMu.
-func (tm *TrustModel) clearAnchorLevels() {
-	tm.anchorLevelsMu.Lock()
-	defer tm.anchorLevelsMu.Unlock()
-
-	tm.anchorLevels = map[[sha256.Size]byte]clientmodels.TrustLevel{}
-}
-
-func (tm *TrustModel) findCertificateForRevocationList(crl *x509.RevocationList) *x509.Certificate {
-	// Find the certificate that matches the CRL's issuer
-	for _, cert := range tm.allCerts {
-		if bytes.Equal(crl.AuthorityKeyId, cert.SubjectKeyId) && cert.Subject.ToRDNSequence().String() == crl.Issuer.ToRDNSequence().String() {
-			return cert
-		}
-	}
-	return nil
+	tm.pending = newTrustState()
 }
 
 func (tm *TrustModel) readAndVerifyRevocationListsForCert(cert *x509.Certificate, parentCert *x509.Certificate) ([]*x509.RevocationList, error) {
@@ -128,8 +230,8 @@ func (tm *TrustModel) isCrlValid(crl *x509.RevocationList) bool {
 		return false
 	}
 
-	// Find issuing certificate for the CRL
-	cert := tm.findCertificateForRevocationList(crl)
+	// Find issuing certificate for the CRL among the anchors in force
+	cert := tm.state().issuerOf(crl)
 
 	if cert == nil {
 		tm.logger.Warnf("No valid certificate found for CRL from issuer %s", crl.Issuer.ToRDNSequence().String())
@@ -156,7 +258,21 @@ func (tm *TrustModel) isCrlUpToDate(crl *x509.RevocationList) bool {
 	return updateNeeded
 }
 
+// Reload loads the stored trust chains and revocation lists on top of whatever
+// the pending state holds, and publishes the result. On error nothing is
+// published: readers keep the last complete state.
 func (tm *TrustModel) Reload() error {
+	if err := tm.load(); err != nil {
+		tm.discard()
+		return err
+	}
+	tm.commit()
+	return nil
+}
+
+// load fills the pending state from storage without publishing it, so a caller
+// reloading several models can commit them together.
+func (tm *TrustModel) load() error {
 	// Load all trust chains from the certs folder
 	if err := tm.loadTrustChains(); err != nil {
 		return fmt.Errorf("failed to load trust chains: %v", err)
@@ -186,7 +302,8 @@ func (tm *TrustModel) loadTrustChains() error {
 }
 
 func (tm *TrustModel) addRevocationListDistributionPoints(distPointUrls ...string) {
-	tm.revocationListsDistributionPoints = append(tm.revocationListsDistributionPoints, distPointUrls...)
+	s := tm.building()
+	s.distributionPoints = append(s.distributionPoints, distPointUrls...)
 }
 
 func (tm *TrustModel) getRootVerificationOptions(rootCerts *x509.CertPool) x509.VerifyOptions {
@@ -205,11 +322,11 @@ func (tm *TrustModel) getRootVerificationOptions(rootCerts *x509.CertPool) x509.
 	return validationOptions
 }
 
-func (tm *TrustModel) getIntermediateCertificateVerificationOptions() x509.VerifyOptions {
+func (tm *TrustModel) getIntermediateCertificateVerificationOptions(s *trustState) x509.VerifyOptions {
 	validationOptions := x509.VerifyOptions{
 		CurrentTime:   time.Now(),
-		Roots:         tm.trustedRootCertificates,
-		Intermediates: tm.trustedIntermediateCertificates,
+		Roots:         s.roots,
+		Intermediates: s.intermediates,
 	}
 
 	if tm.certificateVerificationMode == StrictCertificateVerification {
@@ -222,16 +339,19 @@ func (tm *TrustModel) getIntermediateCertificateVerificationOptions() x509.Verif
 	return validationOptions
 }
 
-// addTrustAnchors installs trust anchor chains, recording confers as the trust
-// level every root in them passes on to the certificates that validate to it.
+// addTrustAnchors installs trust anchor chains into the pending state, recording
+// confers as the trust level every root in them passes on to the certificates
+// that validate to it.
 func (tm *TrustModel) addTrustAnchors(confers clientmodels.TrustLevel, trustAnchors ...[]byte) error {
+	s := tm.building()
+
 	// An anchor that yields no revocation endpoint is one whose certificates can
 	// never be revoked: an absent CRL reads as "not revoked", and only
 	// intermediates are scanned below — a root's own extension is never read. That
 	// is silent everywhere else, so it is said here.
-	before := len(tm.revocationListsDistributionPoints)
+	before := len(s.distributionPoints)
 	defer func() {
-		if len(tm.revocationListsDistributionPoints) == before {
+		if len(s.distributionPoints) == before {
 			tm.logger.Warnf("Trust anchor added with no CRL distribution point: certificates under it cannot be revoked")
 		}
 	}()
@@ -261,7 +381,7 @@ func (tm *TrustModel) addTrustAnchors(confers clientmodels.TrustLevel, trustAnch
 			// Self-signed root cert, verify other options, add to the root pool and continue with intermediate certs
 			// Note: duplicates are filtered out by the call to .AddCert()
 
-			rootCertsForValidation := tm.trustedRootCertificates.Clone()
+			rootCertsForValidation := s.roots.Clone()
 			rootCertsForValidation.AddCert(rootCert)
 			rootValidationOptions := tm.getRootVerificationOptions(rootCertsForValidation)
 
@@ -273,15 +393,15 @@ func (tm *TrustModel) addTrustAnchors(confers clientmodels.TrustLevel, trustAnch
 			}
 
 			// Only add the root again if it wasn't already part of another chain loaded into memory
-			if !slices.ContainsFunc(tm.allCerts, func(cert *x509.Certificate) bool {
+			if !slices.ContainsFunc(s.allCerts, func(cert *x509.Certificate) bool {
 				return bytes.Equal(cert.Raw, rootCert.Raw)
 			}) {
-				tm.allCerts = append(tm.allCerts, rootCert)
+				s.allCerts = append(s.allCerts, rootCert)
 			}
 
 			// Valid root cert, add to the trusted root pool
-			tm.trustedRootCertificates.AddCert(rootCert)
-			tm.recordAnchorLevel(rootCert, confers)
+			s.roots.AddCert(rootCert)
+			s.recordAnchorLevel(rootCert, confers)
 
 			// Add the intermediate certs to the intermediate pool. The chain
 			// on disk is leaf-to-root, so to walk outward from the root we
@@ -292,7 +412,7 @@ func (tm *TrustModel) addTrustAnchors(confers clientmodels.TrustLevel, trustAnch
 				for i, c := range intermediateChain {
 					intermediateCerts[len(intermediateChain)-1-i] = c
 				}
-				validationOptions := tm.getIntermediateCertificateVerificationOptions()
+				validationOptions := tm.getIntermediateCertificateVerificationOptions(s)
 
 				for _, caCert := range intermediateCerts {
 					// Verify the certificate against the root pools
@@ -330,14 +450,14 @@ func (tm *TrustModel) addTrustAnchors(confers clientmodels.TrustLevel, trustAnch
 						break
 					}
 
-					tm.trustedIntermediateCertificates.AddCert(caCert)
-					tm.allCerts = append(tm.allCerts, caCert)
+					s.intermediates.AddCert(caCert)
+					s.allCerts = append(s.allCerts, caCert)
 					parentCert = caCert
 
 					// If the revocation list distribution points of this intermediate cert are known, add them to the list of known distribution points
 					for _, distPoint := range caCert.CRLDistributionPoints {
-						if !slices.Contains(tm.revocationListsDistributionPoints, distPoint) {
-							tm.revocationListsDistributionPoints = append(tm.revocationListsDistributionPoints, distPoint)
+						if !slices.Contains(s.distributionPoints, distPoint) {
+							s.distributionPoints = append(s.distributionPoints, distPoint)
 						}
 					}
 				}
@@ -348,6 +468,7 @@ func (tm *TrustModel) addTrustAnchors(confers clientmodels.TrustLevel, trustAnch
 }
 
 func (tm *TrustModel) loadRevocationLists() error {
+	s := tm.building()
 	mgr := tm.storageContainer.CertificateRevocationListManager()
 
 	loaded, err := mgr.LoadAll(func(loadErr error) {
@@ -359,8 +480,8 @@ func (tm *TrustModel) loadRevocationLists() error {
 
 	verified := make([]*x509.RevocationList, 0, len(loaded))
 	for _, crl := range loaded {
-		// Find the issuing certificate for this CRL
-		issuingCert := tm.findCertificateForRevocationList(crl)
+		// Find the issuing certificate for this CRL among the anchors being loaded
+		issuingCert := s.issuerOf(crl)
 		if issuingCert == nil {
 			tm.logger.Warnf("No issuing certificate found for CRL from issuer %s, skipping loading the CRL", crl.Issuer.ToRDNSequence().String())
 			continue
@@ -376,16 +497,12 @@ func (tm *TrustModel) loadRevocationLists() error {
 		tm.logger.Tracef("Successfully loaded and verified CRL %x issued by %s", crl.Signature, crl.Issuer.ToRDNSequence().String())
 		verified = append(verified, crl)
 	}
-	tm.revocationLists = verified
+	s.revocationLists = verified
 	return nil
 }
 
 func (tm *TrustModel) GetVerificationOptionsTemplate() x509.VerifyOptions {
-	return x509.VerifyOptions{
-		Roots:         tm.trustedRootCertificates,
-		Intermediates: tm.trustedIntermediateCertificates,
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny}, // VerifyOptions does not check against the KeyUsage extension, but we set it to ExtKeyUsageAny to allow any usage and validate the digital signature key usage ourselfs.
-	}
+	return tm.state().GetVerificationOptionsTemplate()
 }
 
 func (tm *TrustModel) syncCertificateRevocationLists() {
@@ -394,7 +511,7 @@ func (tm *TrustModel) syncCertificateRevocationLists() {
 	mgr := tm.storageContainer.CertificateRevocationListManager()
 
 	// Loop over the known distribution points to download and verify CRLs
-	for _, distPoint := range tm.revocationListsDistributionPoints {
+	for _, distPoint := range tm.state().distributionPoints {
 		tm.logger.Debugf("Checking CRL distribution point %q...", distPoint)
 
 		// If the CRL is not cached, download and verify it
@@ -489,31 +606,10 @@ func (tm *TrustModel) RemoveCertificate(thumbprint string) error {
 	return tm.storageContainer.CertificateManager().RemoveCertificate(thumbprint)
 }
 
-// recordAnchorLevel remembers the level this root's certificates confer. A root
-// that arrives twice — the same CA pinned by two callers — keeps the strongest
-// statement made about it.
-func (tm *TrustModel) recordAnchorLevel(root *x509.Certificate, confers clientmodels.TrustLevel) {
-	tm.anchorLevelsMu.Lock()
-	defer tm.anchorLevelsMu.Unlock()
-
-	if tm.anchorLevels == nil {
-		tm.anchorLevels = map[[sha256.Size]byte]clientmodels.TrustLevel{}
-	}
-	key := sha256.Sum256(root.Raw)
-	if existing, ok := tm.anchorLevels[key]; ok && !trust.Stronger(confers, existing) {
-		return
-	}
-	tm.anchorLevels[key] = confers
-}
-
-// anchorLevel reports the level this root's certificates confer, and whether the
-// root is anchored at all. The read side of anchorLevelsMu.
+// anchorLevel reports the level this root's certificates confer in the state
+// currently in force, and whether the root is anchored at all.
 func (tm *TrustModel) anchorLevel(root *x509.Certificate) (clientmodels.TrustLevel, bool) {
-	tm.anchorLevelsMu.RLock()
-	defer tm.anchorLevelsMu.RUnlock()
-
-	level, ok := tm.anchorLevels[sha256.Sum256(root.Raw)]
-	return level, ok
+	return tm.state().anchorLevel(root)
 }
 
 // Classify implements [trust.CertificateClassifier]: the trust level conferred by
@@ -528,13 +624,17 @@ func (tm *TrustModel) anchorLevel(root *x509.Certificate) (clientmodels.TrustLev
 // from expiry — the session gate checks the validity window against the wall
 // clock before evaluation sees the certificate.
 func (tm *TrustModel) Classify(leaf *x509.Certificate) clientmodels.TrustLevel {
-	if leaf == nil || tm.trustedRootCertificates == nil {
+	if leaf == nil {
 		return clientmodels.TrustLevel_Unevaluated
 	}
 
+	// One snapshot for the whole classification, so the chains and the revocation
+	// lists come from the same reload even if one lands halfway through.
+	s := tm.state()
+
 	// The acceptance rules are shared with the session gate, so a rule added there
 	// also governs ranking. Only the moment differs.
-	chains, err := eudi_jwt.VerifyCertificateChains(tm, leaf, nil, classificationTime(time.Now(), leaf))
+	chains, err := eudi_jwt.VerifyCertificateChains(s, leaf, nil, classificationTime(time.Now(), leaf))
 	if err != nil {
 		// A revocation is an act of distrust rather than the ordinary absence of an
 		// anchor, so it is worth saying out loud.
@@ -551,7 +651,7 @@ func (tm *TrustModel) Classify(leaf *x509.Certificate) clientmodels.TrustLevel {
 	best := clientmodels.TrustLevel_Unevaluated
 	for _, chain := range chains {
 		root := chain[len(chain)-1]
-		if level, ok := tm.anchorLevel(root); ok && trust.Stronger(level, best) {
+		if level, ok := s.anchorLevel(root); ok && trust.Stronger(level, best) {
 			best = level
 		}
 	}

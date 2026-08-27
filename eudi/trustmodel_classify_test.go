@@ -39,6 +39,7 @@ func classifyFixture(t *testing.T, confers clientmodels.TrustLevel) (*TrustModel
 		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw}),
 		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootCert.Raw})...)
 	require.NoError(t, tm.addTrustAnchors(confers, chainPem))
+	tm.commit()
 
 	return tm, caCert, caKey
 }
@@ -116,7 +117,7 @@ func testClassifyRevokedLeafConfersNothing(t *testing.T) {
 	require.NoError(t, err)
 	crl, err := x509.ParseRevocationList(crlDer)
 	require.NoError(t, err)
-	tm.revocationLists = append(tm.revocationLists, crl)
+	tm.mutate(func(s *trustState) { s.revocationLists = append(s.revocationLists, crl) })
 
 	require.Equal(t, clientmodels.TrustLevel_Unevaluated, tm.Classify(leaf))
 }
