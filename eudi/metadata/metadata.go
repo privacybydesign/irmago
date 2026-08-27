@@ -97,8 +97,11 @@ func (c *CredentialConfiguration) UnmarshalJSON(data []byte) error {
 			Display CredentialDisplays  `json:"display"`
 			Claims  []ClaimsDescription `json:"claims"`
 		}
+		// Before credential_metadata existed these fields were unknown to the
+		// parser and ignored, so a malformed legacy block must not start rejecting
+		// a document that used to parse; it just yields no metadata.
 		if err := json.Unmarshal(data, &legacy); err != nil {
-			return err
+			return nil
 		}
 		if len(legacy.Display) > 0 || len(legacy.Claims) > 0 {
 			c.CredentialMetadata = &CredentialMetadata{

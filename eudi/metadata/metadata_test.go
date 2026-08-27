@@ -250,3 +250,21 @@ func TestCredentialConfiguration_UnmarshalJSON_NoDisplayLeavesMetadataNil(t *tes
 		t.Errorf("expected nil CredentialMetadata when no display/claims, got %+v", c.CredentialMetadata)
 	}
 }
+
+// A malformed legacy top-level display (here: not an array) was an unknown field
+// the parser silently ignored before credential_metadata was synthesized from it.
+// It must stay that way: the document still parses, it just yields no metadata.
+func TestCredentialConfiguration_UnmarshalJSON_MalformedLegacyDisplayIsIgnored(t *testing.T) {
+	data := []byte(`{"format": "dc+sd-jwt", "vct": "urn:example:pid", "display": "not-an-array"}`)
+
+	var c CredentialConfiguration
+	if err := json.Unmarshal(data, &c); err != nil {
+		t.Fatalf("malformed legacy display must not reject the document, got: %v", err)
+	}
+	if c.VerifiableCredentialType != "urn:example:pid" {
+		t.Errorf("expected the rest of the document to parse, got vct %q", c.VerifiableCredentialType)
+	}
+	if c.CredentialMetadata != nil {
+		t.Errorf("expected no metadata synthesized from a malformed legacy block, got %+v", c.CredentialMetadata)
+	}
+}

@@ -126,17 +126,12 @@ type ResolvedBatchDisplay struct {
 	ClaimOrder map[string]int
 }
 
-// fallbackCredentialName is the label used when the issuer supplied no resolvable
-// credential display name (e.g. an issuer that omits credential display metadata
-// entirely). The SD-JWT vct is the credential's stable type identifier and the
-// best label available; anything is better than an empty name, which leaves the
-// wallet unable to render the credential.
-func fallbackCredentialName(batch *models.CredentialBatch) string {
-	return batch.VerifiableCredentialType
-}
-
 // ResolveBatchDisplay resolves everything a batch's display metadata says, for
-// one locale, in one pass.
+// one locale, in one pass. It reports only what the metadata actually says:
+// CredentialName is "" when the batch carries no resolvable credential name, so
+// that callers can tell "no live name" apart from a real one — the activity log
+// relies on this to keep its persisted snapshot. The credential list applies
+// its own fallback label at its call site.
 func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedBatchDisplay {
 	d := ResolvedBatchDisplay{
 		IssuerId:    batch.CredentialIssuerIdentifier,
@@ -147,13 +142,9 @@ func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedB
 	d.IssuerName = clientmodels.Resolve(d.IssuerNames, locale)
 
 	if batch.CredentialMetadata == nil {
-		d.CredentialName = fallbackCredentialName(batch)
 		return d
 	}
 	d.CredentialName = clientmodels.Resolve(CredentialNamesByLanguage(batch.CredentialMetadata.Display), locale)
-	if d.CredentialName == "" {
-		d.CredentialName = fallbackCredentialName(batch)
-	}
 
 	for i, claim := range batch.CredentialMetadata.Claims {
 		var path []any

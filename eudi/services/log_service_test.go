@@ -258,7 +258,17 @@ func TestGetLogsBefore_Pagination(t *testing.T) {
 // read paths can re-resolve text against it.
 func newLiveBatch(t *testing.T, svc *eudiLogService, vct string, issuer string) {
 	t.Helper()
-	batch := &models.CredentialBatch{
+	storeLiveBatch(t, svc, liveBatch(vct, issuer))
+}
+
+func storeLiveBatch(t *testing.T, svc *eudiLogService, batch *models.CredentialBatch) {
+	t.Helper()
+	require.NoError(t, svc.credentialStore.StoreBatch(batch))
+}
+
+// liveBatch is a stored batch with full display metadata in "en" and "nl".
+func liveBatch(vct string, issuer string) *models.CredentialBatch {
+	return &models.CredentialBatch{
 		IssuerIdentifier:           issuer,
 		VerifiableCredentialType:   vct,
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -289,7 +299,36 @@ func newLiveBatch(t *testing.T, svc *eudiLogService, vct string, issuer string) 
 		},
 		Instances: []models.IssuedCredentialInstance{{RawCredential: []byte("raw")}},
 	}
-	require.NoError(t, svc.credentialStore.StoreBatch(batch))
+}
+
+// TestLogReadKeepsSnapshotNameWhenLiveBatchHasNoDisplay pins the guard on
+// re-resolution: a stored batch of the same type that carries no credential
+// display metadata offers no live name, so the entry keeps its persisted
+// snapshot name instead of being relabeled with the raw vct.
+func TestLogReadKeepsSnapshotNameWhenLiveBatchHasNoDisplay(t *testing.T) {
+	svc := newTestLogServiceWithLocale(t, "en")
+
+	const vct = "https://example.com/vct/test"
+	issuer := "https://example.com/issuer"
+	batch := liveBatch(vct, issuer)
+	batch.CredentialMetadata = nil
+	storeLiveBatch(t, svc, batch)
+
+	require.NoError(t, svc.AddRemovalLog([]clientmodels.LogCredential{{
+		CredentialId: vct,
+		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
+		Name:         "Test Credential",
+		Issuer:       clientmodels.TrustedParty{Id: issuer, Name: "Test Issuer"},
+		Attributes:   []clientmodels.Attribute{},
+	}}))
+
+	logs, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+
+	cred := logs[0].RemovalLog.Credentials[0]
+	require.Equal(t, "Test Credential", cred.Name, "no live name → keep the snapshot, not the vct")
+	require.Equal(t, "Test Issuer", cred.Issuer.Name, "issuer display is still live and matches")
 }
 
 // TestLogReadReResolvesTextFromLiveMetadata pins that the activity log follows

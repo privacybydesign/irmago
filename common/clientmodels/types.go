@@ -247,7 +247,9 @@ type ProblematicCredential struct {
 	CredentialInstanceIds map[CredentialFormat]string `json:"credential_instance_ids"`
 	// Human/debug explanation of why the credential could not be loaded.
 	Reason string `json:"reason"`
-	// Best-effort credential id (IRMA type id or EUDI vct) if recoverable, empty otherwise.
+	// The IRMA credential type id the credential was stored under (e.g.
+	// "irma-demo.RU.studentCard"). Only IRMA credentials are currently reported
+	// as problematic; EUDI credentials degrade per field instead.
 	CredentialId string `json:"credential_id,omitempty"`
 }
 
