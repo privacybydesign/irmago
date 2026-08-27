@@ -76,6 +76,40 @@ type CredentialConfiguration struct {
 	CredentialDefinition     *W3CCredentialDefinition `json:"credential_definition,omitempty"` // W3C VC Signed as JWT, no JSON-LD
 }
 
+// UnmarshalJSON accepts both the OID4VCI v1.0 shape, where a credential's
+// display and claims live inside a `credential_metadata` object (§12.2.4), and
+// the widely-deployed pre-1.0 shape, where `display` and `claims` sit directly
+// on the credential configuration. When an issuer uses the legacy layout there
+// is no `credential_metadata`, so the metadata is synthesized from the top-level
+// fields — every downstream reader consults CredentialMetadata, so this one seam
+// is enough to make a legacy issuer's credentials display and store with a name.
+func (c *CredentialConfiguration) UnmarshalJSON(data []byte) error {
+	// alias drops the method set so this Unmarshal does not recurse.
+	type alias CredentialConfiguration
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	*c = CredentialConfiguration(a)
+
+	if c.CredentialMetadata == nil {
+		var legacy struct {
+			Display CredentialDisplays  `json:"display"`
+			Claims  []ClaimsDescription `json:"claims"`
+		}
+		if err := json.Unmarshal(data, &legacy); err != nil {
+			return err
+		}
+		if len(legacy.Display) > 0 || len(legacy.Claims) > 0 {
+			c.CredentialMetadata = &CredentialMetadata{
+				Display: legacy.Display,
+				Claims:  legacy.Claims,
+			}
+		}
+	}
+	return nil
+}
+
 type ProofType struct {
 	ProofSigningAlgValuesSupported []string                   `json:"proof_signing_alg_values_supported"`
 	KeyAttestationsRequired        *KeyAttestationRequirement `json:"key_attestations_required,omitempty"`

@@ -189,3 +189,64 @@ func TestCredentialRequestEncryption_UnmarshalJSON_UnparseableKeyInJwks_ReturnsE
 		t.Fatal("jwks with an unparseable key should be rejected")
 	}
 }
+
+// Pre-1.0 OpenID4VCI issuers place credential display and claims directly on the
+// credential configuration, with no credential_metadata object. UnmarshalJSON
+// must synthesize CredentialMetadata from them so downstream display resolution,
+// which only consults CredentialMetadata, still works.
+func TestCredentialConfiguration_UnmarshalJSON_LegacyTopLevelDisplayAndClaims(t *testing.T) {
+	data := []byte(`{
+		"format": "dc+sd-jwt",
+		"vct": "urn:example:pid",
+		"display": [{"name": "PID", "locale": "en"}],
+		"claims": [{"path": ["given_name"], "display": [{"name": "First name", "locale": "en"}]}]
+	}`)
+
+	var c CredentialConfiguration
+	if err := json.Unmarshal(data, &c); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if c.CredentialMetadata == nil {
+		t.Fatal("expected CredentialMetadata to be synthesized from top-level display/claims, got nil")
+	}
+	if len(c.CredentialMetadata.Display) != 1 || c.CredentialMetadata.Display[0].GetName() != "PID" {
+		t.Errorf("expected synthesized display name PID, got %+v", c.CredentialMetadata.Display)
+	}
+	if len(c.CredentialMetadata.Claims) != 1 {
+		t.Errorf("expected 1 synthesized claim, got %d", len(c.CredentialMetadata.Claims))
+	}
+}
+
+// When credential_metadata is present (OID4VCI v1.0), it is authoritative and
+// the legacy top-level fields are ignored.
+func TestCredentialConfiguration_UnmarshalJSON_CredentialMetadataTakesPrecedence(t *testing.T) {
+	data := []byte(`{
+		"format": "dc+sd-jwt",
+		"display": [{"name": "Legacy", "locale": "en"}],
+		"credential_metadata": {"display": [{"name": "Modern", "locale": "en"}]}
+	}`)
+
+	var c CredentialConfiguration
+	if err := json.Unmarshal(data, &c); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if c.CredentialMetadata == nil {
+		t.Fatal("expected CredentialMetadata from credential_metadata, got nil")
+	}
+	if got := c.CredentialMetadata.Display[0].GetName(); got != "Modern" {
+		t.Errorf("expected credential_metadata to win with 'Modern', got %q", got)
+	}
+}
+
+// A configuration with neither credential_metadata nor legacy top-level display
+// leaves CredentialMetadata nil (the legitimately-no-display case).
+func TestCredentialConfiguration_UnmarshalJSON_NoDisplayLeavesMetadataNil(t *testing.T) {
+	data := []byte(`{"format": "dc+sd-jwt", "vct": "urn:example:pid"}`)
+	var c CredentialConfiguration
+	if err := json.Unmarshal(data, &c); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if c.CredentialMetadata != nil {
+		t.Errorf("expected nil CredentialMetadata when no display/claims, got %+v", c.CredentialMetadata)
+	}
+}

@@ -153,7 +153,7 @@ func testRevocationAll(t *testing.T, dbType string) {
 			"discovering an idemix revocation must tell the app",
 		)
 
-		creds, err := c.GetCredentials()
+		creds, _, err := c.GetCredentials()
 		require.NoError(t, err)
 		revoked := false
 		for _, cred := range creds {

@@ -77,11 +77,9 @@ func (a *irmaSessionAdapter) RequestIssuancePermission(
 	irmaConfig := s.client.irmaClient.Configuration
 	creds := request.CredentialInfoList
 
-	offeredCredentials, err := credentialInfoListToSchemaless(irmaConfig, creds, s.client.locale())
-	if err != nil {
-		s.error(err)
-		return
-	}
+	// Problematic credentials are irrelevant to an issuance offer's disclosure
+	// plan, so they are dropped here.
+	offeredCredentials, _ := credentialInfoListToSchemaless(irmaConfig, creds, s.client.locale())
 
 	credentials, err := s.client.getCredentialsIncludingKeyshare()
 	if err != nil {
