@@ -161,6 +161,13 @@ type RequestorBaseRequest struct {
 
 type NextSessionData struct {
 	URL string `json:"url"` // URL from which to get the next session after this one
+	// Seconds to wait for URL to respond, overriding the server's default request timeout.
+	// Capped by the server's max_next_session_timeout. Zero means the default.
+	//
+	// Requestors that compose the next session request only after a round trip of their own
+	// (asking a browser, a wallet, or another backend what to issue) need more than the default
+	// few seconds, especially when the user is on a slow mobile connection.
+	Timeout int `json:"timeout,omitempty"`
 }
 
 // RequestorRequest is the message with which requestors start an IRMA session. It contains a

@@ -140,7 +140,13 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r.Use(server.LogMiddleware("client", opts))
 
 	r.Use(server.SizeLimitMiddleware)
-	r.Use(server.TimeoutMiddleware([]string{"/statusevents", "/updateevents"}, server.WriteTimeout))
+	// /commitments and /proofs are excepted here and bounded by nextSessionTimeoutMiddleware
+	// instead, which can read the session's own timeout. They still get server.WriteTimeout
+	// when the session does not chain into another one.
+	r.Use(server.TimeoutMiddleware(
+		[]string{"/statusevents", "/updateevents", "/commitments", "/proofs"},
+		server.WriteTimeout,
+	))
 
 	notfound := &irma.RemoteError{Status: 404, ErrorName: string(server.ErrorInvalidRequest.Type)}
 	notallowed := &irma.RemoteError{Status: 405, ErrorName: string(server.ErrorInvalidRequest.Type)}
@@ -165,8 +171,10 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 			r.Group(func(r chi.Router) {
 				r.Use(s.pairingMiddleware)
 				r.Get("/request", s.handleSessionGetRequest)
-				r.Post("/commitments", s.handleSessionCommitments)
-				r.Post("/proofs", s.handleSessionProofs)
+				// Finishing a chained session means fetching the next request from the
+				// requestor while the client waits, so these two need the session's timeout.
+				r.With(s.nextSessionTimeoutMiddleware).Post("/commitments", s.handleSessionCommitments)
+				r.With(s.nextSessionTimeoutMiddleware).Post("/proofs", s.handleSessionProofs)
 			})
 		})
 	})
@@ -243,6 +251,12 @@ func (s *Server) startNextSession(
 
 	pairingRecommended := false
 	if rrequest.Base().NextSession != nil && rrequest.Base().NextSession.URL != "" {
+		if timeout := rrequest.Base().NextSession.Timeout; timeout > s.conf.MaxNextSessionTimeout {
+			return nil, "", nil, errors.Errorf(
+				"nextSession timeout of %d seconds exceeds the maximum of %d",
+				timeout, s.conf.MaxNextSessionTimeout,
+			)
+		}
 		pairingRecommended = true
 	} else if action == irma.ActionDisclosing {
 		err := request.Disclosure().Disclose.Iterate(func(attr *irma.AttributeRequest) error {
