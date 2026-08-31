@@ -84,6 +84,7 @@ func TestOpenID4VP_MdocAgeVerification(t *testing.T) {
 	t.Run("one credential's text never mixes languages", testMdocAv_DisplayMetadata_DoesNotMixLanguages)
 	t.Run("a one-component claim path still resolves the claim label", testMdocAv_BareClaimPath_StillResolvesLabel)
 	t.Run("a two-component path wins over a bare one for the same element", testMdocAv_ExactClaimPath_WinsOverBarePath)
+	t.Run("any advertised age_over_NN is taken in and disclosable", testMdocAv_AcceptsAnyAdvertisedThreshold)
 }
 
 func testMdocAv_AuthorizedCertificate_PermitsQuery(t *testing.T) {
@@ -138,10 +139,13 @@ func testMdocAv_IssuedCredential_IsOwnedCandidate(t *testing.T) {
 	require.Equal(t, []any{avDocType, "age_over_18"}, candidate.Attributes[0].ClaimPath)
 
 	// No display metadata was stored, so both names fall back rather than error:
-	// the credential renders as its raw docType and the claim has no label at all.
-	// This is the contrast the next two subtests measure against.
+	// the credential renders as its raw docType, and the claim gets the name
+	// services.DerivedMdocClaimName reads out of the element identifier, which is
+	// all an age_over_NN needs. This is the contrast the next two subtests measure
+	// against -- they check that published metadata displaces both fallbacks.
 	require.Equal(t, avDocType, candidate.Name)
-	require.Nil(t, candidate.Attributes[0].DisplayName)
+	require.NotNil(t, candidate.Attributes[0].DisplayName)
+	require.Equal(t, "Age Over 18", *candidate.Attributes[0].DisplayName)
 }
 
 func testMdocAv_DisplayMetadata_NamesCredentialAndClaim(t *testing.T) {
@@ -422,16 +426,79 @@ func setupMdocAvVerifier(t *testing.T, schemeData string) (string, *RequestorCer
 func avCredentialQuery(t *testing.T) dcql.CredentialQuery {
 	t.Helper()
 
+	return avCredentialQueryForElement(t, "age_over_18")
+}
+
+// avCredentialQueryForElement is avCredentialQuery for a threshold other than the
+// mandatory one. The AV profile enumerates no thresholds, so nothing here may
+// assume the set an issuer publishes.
+func avCredentialQueryForElement(t *testing.T, element string) dcql.CredentialQuery {
+	t.Helper()
+
 	raw := `{
 		"id": "age",
 		"format": "mso_mdoc",
 		"meta": { "doctype_value": "` + avDocType + `" },
-		"claims": [ { "path": ["` + avDocType + `", "age_over_18"] } ]
+		"claims": [ { "path": ["` + avDocType + `", "` + element + `"] } ]
 	}`
 
 	var query dcql.CredentialQuery
 	require.NoError(t, json.Unmarshal([]byte(raw), &query))
 	return query
+}
+
+// The AV profile fixes age_over_18 as the only mandatory element and leaves every
+// other age_over_NN to the issuer, without enumerating them. So the wallet must
+// take in and disclose any threshold the issuer advertises and signs, including
+// one outside the thirteen the EU reference issuer happens to publish -- there is
+// nothing anywhere in irmago that may hold an allowed list.
+//
+// Exercised through the real path: a genuinely signed mdoc under a fresh
+// IACA/document-signer hierarchy, stored the way issuance stores it, then matched
+// by a DCQL query naming the threshold.
+func testMdocAv_AcceptsAnyAdvertisedThreshold(t *testing.T) {
+	eudiStorage := newTestEudiStorage(t)
+
+	storeIssuedAvMdocWithElements(t,
+		eudiStorage,
+		map[string]any{"age_over_18": true, "age_over_39": true},
+		func(batch *models.CredentialBatch) {
+			withAvDisplayMetadata(batch)
+			// The issuer advertises the unusual threshold alongside the mandatory
+			// one, which is the case this is about: nothing may treat a claim as
+			// unknown for being outside a set irmago never had.
+			batch.CredentialMetadata.Claims = append(batch.CredentialMetadata.Claims,
+				models.CredentialClaim{
+					Path: datatypes.JSON(`["` + avDocType + `", "age_over_39"]`),
+					Display: []models.ClaimDisplay{
+						{Name: "Over 39", Locale: datatypes.NullString{V: "en", Valid: true}},
+					},
+				})
+		})
+
+	handler := newAvMdocHandler(t, eudiStorage)
+	query := avCredentialQueryForElement(t, "age_over_39")
+
+	require.True(t, handler.CanHandleCredentialQuery(query))
+
+	result, err := handler.FindCandidates(query)
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1,
+		"a credential carrying the requested threshold must be offered for disclosure")
+	require.Empty(t, result.ObtainableDescriptors)
+
+	candidate := result.OwnedCandidates[0]
+	require.Len(t, candidate.Attributes, 1,
+		"only the requested element is disclosed; age_over_18 stays withheld")
+
+	attr := candidate.Attributes[0]
+	require.Equal(t, []any{avDocType, "age_over_39"}, attr.ClaimPath)
+	require.NotNil(t, attr.Value)
+	require.NotNil(t, attr.Value.Bool)
+	require.True(t, *attr.Value.Bool)
+	require.NotNil(t, attr.DisplayName,
+		"the issuer published a name for this threshold, so it must be used")
+	require.Equal(t, "Over 39", *attr.DisplayName)
 }
 
 // storeIssuedAvMdoc issues a real mso_mdoc age credential under a freshly
@@ -447,13 +514,28 @@ func avCredentialQuery(t *testing.T) dcql.CredentialQuery {
 func storeIssuedAvMdoc(t *testing.T, eudiStorage storage.Storage, decorate ...func(*models.CredentialBatch)) {
 	t.Helper()
 
+	storeIssuedAvMdocWithElements(t, eudiStorage, map[string]any{"age_over_18": true}, decorate...)
+}
+
+// storeIssuedAvMdocWithElements is storeIssuedAvMdoc over an arbitrary element
+// set, for the subtests about thresholds other than the mandatory one. The AV
+// profile leaves every age_over_NN but 18 to the issuer, so a fixture that can
+// only carry 18 cannot show what the wallet does with the rest.
+func storeIssuedAvMdocWithElements(
+	t *testing.T,
+	eudiStorage storage.Storage,
+	elements map[string]any,
+	decorate ...func(*models.CredentialBatch),
+) {
+	t.Helper()
+
 	issuer, err := stdmdoc.NewIssuer()
 	require.NoError(t, err)
 
 	holderKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
-	issued, err := issuer.Issue(avDocType, avDocType, map[string]any{"age_over_18": true}, &holderKey.PublicKey)
+	issued, err := issuer.Issue(avDocType, avDocType, elements, &holderKey.PublicKey)
 	require.NoError(t, err)
 
 	rawCredential, err := cbor.Marshal(issued)
@@ -462,7 +544,7 @@ func storeIssuedAvMdoc(t *testing.T, eudiStorage storage.Storage, decorate ...fu
 	// The namespace -> elementIdentifier -> value shape mdoc_dcql reads, which is
 	// what the mso_mdoc format parser caches at issuance.
 	resolvedClaims, err := json.Marshal(map[string]map[string]any{
-		avDocType: {"age_over_18": true},
+		avDocType: elements,
 	})
 	require.NoError(t, err)
 

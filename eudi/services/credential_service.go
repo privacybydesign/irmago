@@ -784,6 +784,25 @@ func BuildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, 
 		displayLookup[key] = clientmodels.Resolve(display, locale)
 	}
 
+	// Elements the metadata named no usable text for fall back to a name derived
+	// from the element identifier; see DerivedMdocClaimName. Both key shapes are
+	// checked before deriving, because an issuer may publish an mdoc claim under
+	// the bare [element] path rather than [namespace, element], and its own text
+	// — in whatever language — outranks anything derived here.
+	for namespace, elements := range resolved {
+		for element := range elements {
+			name, ok := DerivedMdocClaimName(element)
+			if !ok {
+				continue
+			}
+			key := clientmodels.ClaimPathKey([]any{namespace, element})
+			if displayLookup[key] != "" || displayLookup[clientmodels.ClaimPathKey([]any{element})] != "" {
+				continue
+			}
+			displayLookup[key] = name
+		}
+	}
+
 	topLevel := make(map[string]any, len(resolved))
 	for namespace, elements := range resolved {
 		topLevel[namespace] = elements

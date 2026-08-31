@@ -275,10 +275,19 @@ func (v *W3CDILDFormatVerifier) Verify(credentialConfiguration *metadata.Credent
 	return nil
 }
 
-// Verify returns nil for now — mso_mdoc has no format-specific issuer metadata
-// fields to validate yet (docType is confirmed against the issued credential
-// itself, not the issuer metadata), so just accept any metadata that we get.
+// Verify checks the mso_mdoc format-specific issuer metadata.
+//
+// doctype is REQUIRED for mso_mdoc by OpenID4VCI's credential format profile,
+// exactly as vct is for dc+sd-jwt above, and it is the only value the wallet can
+// hold an issued credential against: the docType inside the MSO is signed, but
+// signed by whoever signed it, so on its own it says only "this is what the
+// issuer chose to send", never "this is what I asked for". Rejecting a
+// configuration without it is what makes that comparison possible at all — see
+// the check in session.obtainCredential.
 func (v *MdocFormatVerifier) Verify(credentialConfiguration *metadata.CredentialConfiguration) error {
+	if credentialConfiguration.Doctype == "" {
+		return fmt.Errorf("missing 'doctype' field for mso_mdoc credential format")
+	}
 	return nil
 }
 

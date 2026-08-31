@@ -324,6 +324,49 @@ services:
       - "localhost:host-gateway"
     volumes:
       - ./testdata/eudi-pid-issuer-py/conf/config_issuer_backend.yaml:/etc/issuer_config/config_issuer_backend.yaml:ro
+      # The age-verification credential configuration, overriding the image's
+      # own -- currently a verbatim copy of it, so it changes nothing until
+      # edited.
+      #
+      # Its credential_metadata.claims is what decides which age_over_NN the
+      # issuer will mint. populate_pdata (app/dynamic_func.py) walks the claims
+      # declared here and copies a value out of the offer only where one is
+      # named, so an element the offer asks for and this file does not declare
+      # is discarded before the MSO is signed -- the offer still returns 200 and
+      # issuance still succeeds, just without that element. Add the claim here
+      # to mint it. The same file also carries the credential's display name,
+      # the "Proof of Age" the wallet shows as a card title.
+      #
+      # app/__init__.py loads that directory with os.listdir at start-up, so
+      # replacing the one file is enough -- no image fork -- but the container
+      # must be recreated for an edit to take effect:
+      #   docker compose up -d --force-recreate eudi_pid_issuer_py
+      #
+      # Keep the list short. The wallet's issuance offer screen enumerates every
+      # advertised claim (convertClaimsToAttributes in eudi/openid4vci/client.go),
+      # so each threshold here is a row the user scrolls past before accepting.
+      # Note this affects the local container only: staging serves its own copy,
+      # so a staging QR is unchanged by anything here.
+      - ./testdata/eudi-pid-issuer-py/metadata/age_verification_mdoc.json:/app/app/metadata_config/credentials_supported/age_verification_mdoc.json:ro
+      # A patched populate_pdata, so the issuer will mint ANY age_over_NN rather
+      # than only the thirteen thresholds it advertises. Upstream walks its own
+      # configured claims and copies a value only where the key is in `data`, so
+      # an unlisted threshold is accepted by the offer endpoint and then silently
+      # dropped before signing -- which is what makes testing an arbitrary
+      # threshold impossible against a stock image.
+      #
+      # Deliberately a code patch and not an extra hundred entries in the
+      # configuration above: the wallet renders one row per *advertised* claim on
+      # the issuance offer screen (convertClaimsToAttributes in
+      # eudi/openid4vci/client.go), so enumerating 0-99 works and buries the
+      # offer screen in a hundred rows. This widens what may be minted while
+      # leaving the advertised metadata byte-identical to staging.
+      #
+      # The whole file is vendored because a bind mount replaces a file, not a
+      # function; re-vendor it after an image bump, since nothing here will
+      # notice upstream changing around the patch. The patch is marked
+      # "LOCAL TEST PATCH" inside it.
+      - ./testdata/eudi-pid-issuer-py/patches/dynamic_func.py:/app/app/dynamic_func.py:ro
       - ./testdata/eudi-pid-issuer-py/certs/issuer.key:/etc/eudiw/pid-issuer-dev/privKey/issuer.key:ro
       - ./testdata/eudi-pid-issuer-py/certs/issuer.der:/etc/eudiw/pid-issuer-dev/cert/issuer.der:ro
       - ./testdata/eudi-pid-issuer-py/certs/metadata_signing.key:/etc/eudiw/pid-issuer-dev/cert/metadata_signing.key:ro
@@ -520,7 +563,7 @@ services:
       # when it does not match. Recompute it after regenerating the keystore with:
       # openssl x509 -in testdata/eudi/verifier/verifier.crt -outform der |
       #   openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '='
-      - VERIFIER_ORIGINALCLIENTID=jiPOinGG-_OKb0phKev7RlY9kzn4FbxPNHFTbrYNzd8
+      - VERIFIER_ORIGINALCLIENTID=aVN7DUXyudb-q0oc-LhUwl_NdgUgPEzisa5MiX1pB98
       - VERIFIER_CLIENTIDPREFIX=x509_hash
       # See the note on the other verifier services: the buildpack caps direct
       # memory at 10M and Netty exhausts it after a few dozen sessions.

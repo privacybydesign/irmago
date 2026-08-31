@@ -102,12 +102,23 @@ what testing a refusal requires -- a single flag driving both would make every r
 agree with itself. `-issue` without `-mint` mints exactly
 `localstack.DefaultAVElements`.
 
-Two boundaries are worth knowing before changing either. The issuer does **not**
-validate what it is asked to mint: `-mint age_over_42=true` is accepted even
-though 42 is absent from its advertised claim set. Presenting one is a different
-matter -- the relying party certificate's authorized set decides what may be
-requested, so an unadvertised element can be issued and then never asked for. See
-`testdata/eudi/verifier/README.md` for widening that set.
+Two boundaries are worth knowing before changing either.
+
+**`-mint` can only name elements the issuer advertises.** `-mint
+age_over_42=true` returns HTTP 200 and then mints a credential without it: the
+issuer builds the document by walking its *own* configured claims and copying a
+value only where the offer supplies one (`populate_pdata` in
+`app/dynamic_func.py`, `if attr in data`), so anything the configuration does not
+list is dropped before signing, with no error anywhere. An earlier revision of
+this paragraph said the opposite -- read as "the offer request was accepted",
+which it is. Only the thirteen `age_over_NN` in
+`app/metadata_config/credentials_supported/age_verification_mdoc.json` can be
+minted; adding another means adding it there.
+
+**Presenting one is a separate matter.** The relying party certificate's
+authorized set decides what may be requested, so an element can be advertised and
+issued and still never asked for. See `testdata/eudi/verifier/README.md` for
+widening that set.
 
 Re-issuing the same claims twice is now refused while the stored credential is
 still presentable, and accepted once it is spent or expired, so `-issue` is not a
@@ -115,12 +126,12 @@ way to obtain a second identical credential -- it is the renewal path.
 
 ## What to expect
 
-The credential holds every threshold in `localstack.DefaultAVElements` — four as
-of 2026-08-25, `age_over_18` plus three optional ones — and the query asks for
-one, so the permission screen shows a single attribute while the wallet holds all
-four. That is the point: `vptoken-decode` shows one disclosed element against the
-full set of digests in the MSO, which is selective disclosure visible in the
-bytes. Read the count off `DefaultAVElements` rather than this paragraph; only
+The credential holds every threshold in `localstack.DefaultAVElements` — five as
+of 2026-08-31, `age_over_18` plus four optional ones — and the query asks for one,
+so the permission screen shows a single attribute while the wallet holds all five.
+That is the point: `vptoken-decode` shows one disclosed element against the full
+set of digests in the MSO, which is selective disclosure visible in the bytes.
+Read the count off `DefaultAVElements` rather than this paragraph; only
 `age_over_18` is guaranteed, every other threshold being the issuer's choice.
 
 Two runs on two machines agree on the parts that carry meaning and differ on the

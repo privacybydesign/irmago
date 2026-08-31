@@ -924,6 +924,12 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		if err != nil {
 			return nil, fmt.Errorf("failed to verify credential: %v", err)
 		}
+		if err := requireMdocDocTypeMatchesMetadata(&credentialConfig, parsed); err != nil {
+			return nil, fmt.Errorf("credential %d of configuration %q: %v", i+1, credentialConfigurationId, err)
+		}
+		if err := requireMandatoryMdocElements(&credentialConfig, parsed); err != nil {
+			return nil, fmt.Errorf("credential %d of configuration %q: %v", i+1, credentialConfigurationId, err)
+		}
 		parsedCredentials[i] = parsed
 	}
 
@@ -939,6 +945,116 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		publicKeyIdentifiers:           publicKeyIdentifiers,
 		keyBindingService:              keyBindingService,
 	}, nil
+}
+
+// requireMdocDocTypeMatchesMetadata binds what the issuer signed to what it
+// advertised, refusing an mdoc whose MSO docType is not the doctype its
+// credential configuration declares.
+//
+// The MSO's docType is signed, but by the issuer — so on its own it says only
+// "this is what I chose to send", never "this is what you asked for". Nothing
+// else in the issuance path compares the two: the parser is selected by format
+// alone, so an issuer answering a request for one docType with another was
+// stored under the docType it sent, and DCQL doctype_value matching and
+// relying-party authorization then key off that. The EKU check upstream
+// establishes that the signer may sign mdocs at all; it is docType-agnostic by
+// design (one document signer serves every docType an issuer mints), so it
+// cannot express this.
+//
+// Guarded on the format because obtainCredential is shared: Doctype is empty
+// for dc+sd-jwt, whose own cross-instance vct consistency check lives in
+// storeCredentials.
+//
+// Not reachable through the EUDI reference issuer, which derives both values
+// from one field — mdocFormatter is called with
+// doctype=credential_metadata["doctype"], the same field the metadata document
+// advertises, so the two cannot disagree there however the configuration is
+// edited. Measured against the container on 2026-08-31. Build the mismatch with
+// mdoc.Issuer.Issue, as the tests here do.
+func requireMdocDocTypeMatchesMetadata(config *metadata.CredentialConfiguration, parsed *services.ParsedCredential) error {
+	if models.CredentialFormat(config.Format) != models.CredentialFormatMsoMdoc {
+		return nil
+	}
+	if parsed.VerifiableCredentialType != config.Doctype {
+		return fmt.Errorf(
+			"was issued with docType %q but the issuer's metadata declares doctype %q",
+			parsed.VerifiableCredentialType, config.Doctype,
+		)
+	}
+	return nil
+}
+
+// requireMandatoryMdocElements refuses an mdoc that omits an element the
+// issuer's own metadata marks mandatory.
+//
+// OpenID4VCI lets a credential configuration mark a claim `mandatory`, and the
+// AV profile uses it: eu.europa.ec.av.1 marks age_over_18 mandatory and every
+// other age_over_NN optional. Until now the wallet parsed that field, merged it
+// across VCT and VCI metadata and stored it on the batch, but never checked it —
+// so an issuer could advertise age_over_18 as mandatory and mint a credential
+// without it, and the wallet would store an age-verification attestation that
+// verifies nobody's age.
+//
+// Keyed on the metadata rather than on the docType on purpose. Reading
+// "docType == eu.europa.ec.av.1 therefore age_over_18" would be the first
+// docType-specific rule in a package that is deliberately general mso_mdoc, and
+// it would cover exactly one profile. The issuer already states which elements
+// it considers mandatory; taking it at its word covers PID, mDL and every
+// docType nobody has minted yet, and says the same thing for AV.
+//
+// Silent for issuers that publish no mandatory claims: the field defaults to
+// false (see CredentialConfigurationValidator), so this rejects nothing an
+// issuer did not first promise.
+func requireMandatoryMdocElements(config *metadata.CredentialConfiguration, parsed *services.ParsedCredential) error {
+	if models.CredentialFormat(config.Format) != models.CredentialFormatMsoMdoc ||
+		config.CredentialMetadata == nil {
+		return nil
+	}
+
+	var mandatory []string
+	for _, claim := range config.CredentialMetadata.Claims {
+		if claim.Mandatory == nil || !*claim.Mandatory {
+			continue
+		}
+		// Only two-component [namespace, elementIdentifier] paths address an
+		// mdoc element. A one-component path is the namespace-less form some
+		// issuers publish; it names an element but not where it lives, so it
+		// cannot be checked against the payload's namespace map without
+		// guessing, and guessing wrong would reject a valid credential.
+		if len(claim.Path) != 2 {
+			continue
+		}
+		namespace, nsOk := claim.Path[0].(string)
+		element, elOk := claim.Path[1].(string)
+		if !nsOk || !elOk {
+			continue
+		}
+		mandatory = append(mandatory, namespace+"/"+element)
+	}
+	if len(mandatory) == 0 {
+		return nil
+	}
+
+	var resolved map[string]map[string]any
+	if err := json.Unmarshal(parsed.ResolvedClaims, &resolved); err != nil {
+		return fmt.Errorf("could not read the issued mdoc's elements to check the mandatory ones: %v", err)
+	}
+
+	var missing []string
+	for _, path := range mandatory {
+		namespace, element, _ := strings.Cut(path, "/")
+		if _, ok := resolved[namespace][element]; !ok {
+			missing = append(missing, path)
+		}
+	}
+	if len(missing) > 0 {
+		slices.Sort(missing)
+		return fmt.Errorf(
+			"the issuer's metadata marks %s mandatory for docType %q, but the credential it signed does not contain %s",
+			strings.Join(mandatory, ", "), config.Doctype, strings.Join(missing, ", "),
+		)
+	}
+	return nil
 }
 
 // requestNonce requests a fresh nonce from the issuer's nonce endpoint

@@ -233,9 +233,26 @@ const AVCredentialConfigID = "eu.europa.ec.eudi.age_verification_mdoc"
 // CreateOffer asks the issuer for a credential offer carrying the given element
 // values.
 //
-// data decides what the credential actually contains, and nothing else does: the
-// issuer's metadata advertises thirteen age_over_NN claims, but only what is
-// passed here is minted.
+// What data can actually put in the credential is the issuer's decision, not
+// this call's. Upstream, populate_pdata in app/dynamic_func.py walks its own
+// configured claims and copies a value only where `attr in data`, so an element
+// this map names and the credential configuration does not is dropped before
+// signing -- no error here, no error at the credential endpoint, and nothing in
+// the issued document. The issuer advertises thirteen age_over_NN claims, so
+// upstream that is the whole mintable set.
+//
+// The container this talks to is not upstream: docker-compose.yml bind-mounts a
+// patched dynamic_func.py (testdata/eudi-pid-issuer-py/patches/) that mints any
+// age_over_NN whether or not the configuration lists it, because ISO 18013-5 and
+// the AV profile both leave the thresholds open and the wallet has to be testable
+// against an arbitrary one. So against this stack every age_over_NN in data is
+// minted, while any *other* undeclared element is still dropped -- the patch is
+// scoped to the age-verification namespace and to that element name shape.
+//
+// The advertised metadata stays at the upstream thirteen on purpose, so the
+// wallet's issuance offer screen is not buried in a hundred rows. An element
+// minted this way therefore appears in the credential without a published label
+// and is named by DerivedMdocClaimName instead.
 //
 // The endpoint decodes the payload segment without verifying it, so the header
 // and signature of the JWT-shaped request can be empty -- see

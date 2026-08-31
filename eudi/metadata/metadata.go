@@ -73,6 +73,7 @@ type CredentialConfiguration struct {
 
 	// The following fields are present/absent, depending on the credential format
 	VerifiableCredentialType string                   `json:"vct,omitempty"`                   // SD-JWT VC
+	Doctype                  string                   `json:"doctype,omitempty"`               // mso_mdoc
 	CredentialDefinition     *W3CCredentialDefinition `json:"credential_definition,omitempty"` // W3C VC Signed as JWT, no JSON-LD
 }
 

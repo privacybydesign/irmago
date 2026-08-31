@@ -36,8 +36,32 @@ go run ./yivi/cli/eudicli/mint-session -value false    ask for false
 go run ./yivi/cli/eudicli/mint-session -element age_over_40
 go run ./yivi/cli/eudicli/mint-session -show-query     print the DCQL being sent
 go run ./yivi/cli/eudicli/mint-session -issue -email   mail the one-time code
-go run ./yivi/cli/eudicli/mint-session -issue -mint age_over_42=true
+go run ./yivi/cli/eudicli/mint-session -issue -mint age_over_21=true
 ```
+
+`-mint` may name any `age_over_NN`, advertised or not. Upstream the issuer builds
+the credential from its own configured claims and copies a value only where the
+offer supplies one, so a threshold outside its thirteen would return 200, issue
+successfully, and simply be absent — no error at either end. The compose stack
+bind-mounts a patched `populate_pdata`
+(`testdata/eudi-pid-issuer-py/patches/dynamic_func.py`) that lifts that
+restriction for the age-verification namespace, because ISO 18013-5 and the AV
+profile both leave the thresholds open. Any *other* undeclared element is still
+dropped silently.
+
+The advertised metadata deliberately stays at the upstream thirteen: the wallet
+renders one row per advertised claim on the issuance offer screen, so listing a
+hundred makes the demo unusable. A threshold minted but not advertised therefore
+carries no published label and is named `Age Over NN` by the wallet's own derived
+name. To change what is *advertised*, edit
+`testdata/eudi-pid-issuer-py/metadata/age_verification_mdoc.json` (bind-mounted
+over the container's copy) and recreate the container — then
+`docker compose restart tls_proxy`, since recreating the issuer changes its IP and
+the proxy caches the old one.
+
+Requesting a threshold is a separate permission again: the relying party
+certificate's authorized set decides that, and it covers `age_over_0` through
+`age_over_99`. See `testdata/eudi/verifier/README.md`.
 
 Where the integration tests drive a wallet they build themselves, this prints the
 three commands needed to drive a real phone: the `adb` deep link for an offer, the

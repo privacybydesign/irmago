@@ -920,9 +920,17 @@ func testOpenID4VP_MdocAv_AudienceNotValidated(t *testing.T) {
 // ordering is the point: a query is checked against what the relying party may ask
 // before the wallet looks at what it holds, so an unauthorized request is refused
 // whether or not the wallet could have answered it.
+//
+// age_over_100 rather than a lower threshold because the test certificate now
+// authorizes age_over_0 through age_over_99: ISO 18013-5 and the AV profile both
+// leave the set of thresholds open, so the local verifier authorizes every
+// two-digit one to keep pace with an issuer that will mint any of them. The probe
+// has to sit outside whatever the certificate lists, and 100 is the first
+// threshold past that boundary — still a well-formed age_over_NN, so this stays a
+// test of the authorized set rather than of the identifier's shape.
 func testOpenID4VP_MdocAv_AttributeNotAuthorized(t *testing.T) {
 	requireMdocAvQueryRefused(t, avDocType, string(clientmodels.Format_MsoMdoc),
-		[]map[string]any{{"path": []string{avDocType, "age_over_99"}}})
+		[]map[string]any{{"path": []string{avDocType, "age_over_100"}}})
 }
 
 // testOpenID4VP_MdocAv_ForbiddenAttribute asks a proof-of-age attestation for a

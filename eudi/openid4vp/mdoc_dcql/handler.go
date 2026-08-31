@@ -580,7 +580,30 @@ func credentialDisplayName(batch *models.CredentialBatch, locale string) string 
 // resolves names by claim-path key rather than per claim, so it cannot call this.
 // If the rule changes, change both — the two views disagreeing about one claim is
 // exactly the bug that motivated it.
+//
+// Once the metadata has nothing to say, the identifier itself is the last
+// resort: services.DerivedMdocClaimName names an age_over_NN the issuer never
+// advertised. The credential list gets that from addDerivedMdocClaimNames, on
+// the same "change both" footing as the rule above.
 func claimDisplayName(batch *models.CredentialBatch, namespace, elementIdentifier string, locale string) *string {
+	if dn := publishedClaimDisplayName(batch, namespace, elementIdentifier, locale); dn != nil {
+		return dn
+	}
+	if name, ok := services.DerivedMdocClaimName(elementIdentifier); ok {
+		return &name
+	}
+	// Nothing names this element, so name it after itself. The consent screen and
+	// the activity log both render whatever this returns, and a nil name leaves
+	// the row's identity to the app — an element the issuer never declared would
+	// then be asked for, or recorded as disclosed, with nothing on screen saying
+	// which one. The raw identifier is poor text but it names the right thing,
+	// and it matches what addDerivedMdocClaimNames does for the credential list.
+	return &elementIdentifier
+}
+
+// publishedClaimDisplayName is claimDisplayName restricted to what the issuer
+// actually published, yielding nil when its metadata names this claim nowhere.
+func publishedClaimDisplayName(batch *models.CredentialBatch, namespace, elementIdentifier string, locale string) *string {
 	if batch.CredentialMetadata == nil {
 		return nil
 	}

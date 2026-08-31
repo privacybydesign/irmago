@@ -22,6 +22,15 @@
 //	go run ./yivi/cli/eudicli/mint-session -issue -mint age_over_42=true
 //	go run ./yivi/cli/eudicli/mint-session -issue -mint "age_over_18=false,age_over_40=false"
 //
+// -element also takes -mint's name=value form, so the two flags can be written
+// alike and a value need not be split across two flags:
+//
+//	go run ./yivi/cli/eudicli/mint-session -element "age_over_95=true"
+//	go run ./yivi/cli/eudicli/mint-session -element "age_over_40=any"
+//
+// Giving the value twice and differently ("-element age_over_95=true -value
+// false") is refused rather than resolved, since either choice would be a guess.
+//
 // -show-query prints the DCQL query as sent. There is no other way to read it: the
 // request object is single use, so fetching it to decode the query leaves nothing
 // for the phone, and the verifier answers 400 until the wallet responds.
@@ -33,11 +42,17 @@
 // -issue is the renewal path rather than a way to obtain a second identical
 // credential.
 //
-// The issuer mints whatever -mint asks for, including element names absent from
-// its advertised claim set. Presenting one is a separate matter: the relying
-// party certificate's authorized set decides what may be requested, so an
-// unadvertised element can be issued and then never asked for. See
-// testdata/eudi/verifier/README.md for widening that set.
+// -mint may name any age_over_NN, advertised or not: the compose stack mounts a
+// patched populate_pdata over the issuer's own (see CreateOffer in localstack.go),
+// because the thresholds are open-ended in both ISO 18013-5 and the AV profile.
+// Any *other* element outside the issuer's configured claim set is still accepted
+// by the offer endpoint and then silently left out of the credential, with no
+// error at either end.
+//
+// Presenting one is a separate matter again: the relying party certificate's
+// authorized set decides what may be *requested*, so an element can be issued and
+// still never asked for. It authorizes age_over_0 through age_over_99; see
+// testdata/eudi/verifier/README.md for changing that.
 //
 // The one-time code is never in the offer link -- see
 // stripTransactionCodeValue. By default it is printed here; -email
@@ -81,7 +96,7 @@ var (
 	testdataDir  = flag.String("testdata", "testdata", "path to the repository's testdata folder")
 
 	docType = flag.String("doctype", "eu.europa.ec.av.1", "mdoc docType to request")
-	element = flag.String("element", "age_over_18", "element to request")
+	element = flag.String("element", "age_over_18", `element to request; also accepts -mint's "name=value" form, e.g. "age_over_95=true"`)
 	value   = flag.String("value", "true", `query value constraint: "true", "false", or "any" to omit it. Does not affect what -issue mints`)
 
 	issue = flag.Bool("issue", false, "also mint a credential offer, so the credential can be installed first")
@@ -124,6 +139,34 @@ func main() {
 	// mail setup.
 	if *email && !*issue {
 		fail(fmt.Errorf("-email needs -issue: without an issuance there is no one-time code to send"))
+	}
+
+	// -element accepts "age_over_95=true" as well as a bare identifier, splitting
+	// it across -element and -value.
+	//
+	// -mint takes name=value and -element takes a bare name, which is easy to mix
+	// up with both on one command line. Left alone, "-element age_over_95=true"
+	// parses fine and builds the claim path
+	// ["eu.europa.ec.av.1", "age_over_95=true"], because
+	// AuthorizationAttributeNames (dcql.go) takes the last path component
+	// verbatim. The certificate authorizes "age_over_95", so the wallet refuses
+	// with "requested attribute age_over_95=true is not in the authorized set" --
+	// an authorization error naming an element nobody meant to ask for, which
+	// reads as a certificate problem and cost an afternoon of re-signing one.
+	//
+	// The intent is unambiguous, so it is honoured rather than rejected. The one
+	// case that is genuinely ambiguous is a value given twice and disagreeing;
+	// that is refused, since picking a winner silently is the same class of
+	// failure this is here to prevent.
+	if name, inlineValue, found := strings.Cut(*element, "="); found {
+		explicitValue := flagWasSet("value")
+		if explicitValue && !strings.EqualFold(*value, inlineValue) {
+			fail(fmt.Errorf(
+				"-element %q and -value %q disagree: give the value once, either as -element %s -value %s or as -element %s",
+				*element, *value, name, inlineValue, *element))
+		}
+		*element = name
+		*value = inlineValue
 	}
 
 	cfg := Config{
@@ -532,4 +575,18 @@ func portOf(rawURL string) string {
 		return "80"
 	}
 	return ""
+}
+
+// flagWasSet reports whether a flag was given on the command line, as opposed to
+// carrying its default. flag.Visit walks only what was set, which is what
+// separates "-value true" from the "true" default and lets an inline value in
+// -element be merged without a false conflict.
+func flagWasSet(name string) bool {
+	seen := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			seen = true
+		}
+	})
+	return seen
 }

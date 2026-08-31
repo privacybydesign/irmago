@@ -374,11 +374,25 @@ same pinned image, which already advertised twelve — read the metadata rather 
 trusting this list, since a claim about a running container is only as good as the
 day it was checked.
 
-Nothing in the Blueprint enumerates the thresholds, and the issuer does not
-enforce its own list either: it mints an `age_over_NN` absent from the advertised
-set without complaint. What actually constrains a deployment is the relying party
-certificate's authorized attributes, a policy decision per verifier rather than a
-property of the profile.
+Nothing in the Blueprint enumerates the thresholds, but the reference issuer does
+enforce its own list. An earlier revision of this paragraph said it "mints an
+`age_over_NN` absent from the advertised set without complaint"; that was read off
+the offer endpoint answering HTTP 200, which it does. The credential comes back
+without the element. `populate_pdata` in `app/dynamic_func.py` builds the document
+by walking the configuration's own mandatory, optional and issuer-filled claims
+and copying a value only `if attr in data`, so an element the offer names and the
+configuration does not is dropped before the MSO is signed — no error at the
+offer, none at the credential endpoint, and nothing in the issued document to say
+a value went missing. A fourteenth threshold means editing
+`app/metadata_config/credentials_supported/age_verification_mdoc.json`.
+
+That is still that implementation's choice rather than a limit of the profile, and
+it says nothing about what this wallet accepts: irmago resolves and stores every
+element the issuer signed, whatever the metadata advertises (see
+`DerivedMdocClaimName`, which names an unadvertised `age_over_NN` so it does not
+render as a raw identifier). Beyond issuance, what constrains a deployment is the
+relying party certificate's authorized attributes, a policy decision per verifier
+rather than a property of the profile.
 
 Because only `age_over_18` is mandatory, **no test or demo may name another
 threshold in an assertion.** The integration suites mint `age_over_18` alone and

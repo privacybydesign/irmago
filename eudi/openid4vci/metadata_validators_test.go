@@ -9,6 +9,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,6 +36,7 @@ func TestValidateCredentialConfiguration_SupportedFormats(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &metadata.CredentialConfiguration{
 				Format:                   tt.format,
+				Doctype:                  "eu.europa.ec.av.1",
 				VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
 			}
 			validator := CredentialConfigurationValidator{}
@@ -462,8 +464,9 @@ func TestCredentialConfiguration_ValidateAndGetSupportedFeatures(t *testing.T) {
 		{
 			name: "mso_mdoc is a supported format",
 			config: metadata.CredentialConfiguration{
-				Format: metadata.CredentialFormatIdentifier_MsoMdoc,
-				Scope:  &scope,
+				Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
+				Doctype: "eu.europa.ec.av.1",
+				Scope:   &scope,
 			},
 			wantErr: false,
 		},
@@ -1280,4 +1283,222 @@ func TestGetSupportedCredentialSigningAlgorithm_ES256K_FollowsBuildTag(t *testin
 	}
 
 	require.EqualError(t, err, "no supported credential signing algorithms found")
+}
+
+// TestMdocFormatVerifierRequiresDoctype pins the field that makes the docType
+// consistency check in session.obtainCredential possible.
+//
+// doctype is REQUIRED for mso_mdoc by OpenID4VCI's credential format profile,
+// but until it was parsed at all an issuer could advertise one docType and sign
+// another with nothing to compare against — see the check in
+// session.obtainCredential. Accepting a configuration without it would silently
+// restore that.
+func TestMdocFormatVerifierRequiresDoctype(t *testing.T) {
+	verifier := MdocFormatVerifier{}
+
+	t.Run("a configuration without doctype is rejected", func(t *testing.T) {
+		err := verifier.Verify(&metadata.CredentialConfiguration{
+			Format: metadata.CredentialFormatIdentifier_MsoMdoc,
+		})
+		require.Error(t, err, "mso_mdoc without doctype must not validate")
+		require.Contains(t, err.Error(), "doctype",
+			"the rejection has to name the missing field: it is the issuer, not the wallet, that has to act on it")
+	})
+
+	t.Run("a custom doctype is accepted", func(t *testing.T) {
+		// Nothing here is an allowlist: the check is that the issuer declared a
+		// docType, not that it declared one of ours. A Yivi-minted docType has
+		// to validate exactly as an EU one does, or the wallet is limited to
+		// doctypes someone hardcoded.
+		require.NoError(t, verifier.Verify(&metadata.CredentialConfiguration{
+			Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
+			Doctype: "nl.yivi.email.1",
+		}))
+	})
+
+	t.Run("doctype is not required of other formats", func(t *testing.T) {
+		validator := CredentialConfigurationValidator{}
+		require.NoError(t, validator.Verify(&metadata.CredentialConfiguration{
+			Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
+			VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
+		}), "dc+sd-jwt names its type with vct; requiring doctype of it would reject every SD-JWT issuer")
+	})
+}
+
+// TestCredentialConfigurationDoctypeRoundTrips guards the wiring rather than the
+// policy: CredentialConfiguration has a custom UnmarshalJSON, so a new field
+// reaches it only through the embedded alias type.
+func TestCredentialConfigurationDoctypeRoundTrips(t *testing.T) {
+	const emailMdoc = `{
+		"format": "mso_mdoc",
+		"doctype": "nl.yivi.email.1",
+		"credential_signing_alg_values_supported": [-7],
+		"credential_metadata": {
+			"claims": [{ "path": ["nl.yivi.email.1", "email"] }]
+		}
+	}`
+
+	var config metadata.CredentialConfiguration
+	require.NoError(t, json.Unmarshal([]byte(emailMdoc), &config))
+	require.Equal(t, "nl.yivi.email.1", config.Doctype,
+		"doctype has to survive the custom UnmarshalJSON, or the check downstream compares against an empty string")
+
+	validator := CredentialConfigurationValidator{}
+	_, err := validator.ValidateAndGetSupportedFeatures(&config)
+	require.NoError(t, err, "a non-EU mdoc configuration must validate")
+}
+
+// TestRequireMandatoryMdocElements covers the check that refuses an mdoc missing
+// an element the issuer's own metadata marks mandatory.
+//
+// The motivating case is age verification: eu.europa.ec.av.1 marks age_over_18
+// mandatory and every other age_over_NN optional, so a credential without
+// age_over_18 is an age attestation that attests no age. The check is written
+// against the metadata rather than the docType, so these cases also pin that a
+// non-AV docType gets the same treatment from the same code.
+func TestRequireMandatoryMdocElements(t *testing.T) {
+	mandatory := true
+	optional := false
+
+	avConfig := func() *metadata.CredentialConfiguration {
+		return &metadata.CredentialConfiguration{
+			Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
+			Doctype: "eu.europa.ec.av.1",
+			CredentialMetadata: &metadata.CredentialMetadata{
+				Claims: []metadata.ClaimsDescription{
+					{Path: metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_18"}, Mandatory: &mandatory},
+					{Path: metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_65"}, Mandatory: &optional},
+				},
+			},
+		}
+	}
+	credentialWith := func(t *testing.T, elements map[string]any) *services.ParsedCredential {
+		t.Helper()
+		raw, err := json.Marshal(map[string]map[string]any{"eu.europa.ec.av.1": elements})
+		require.NoError(t, err)
+		return &services.ParsedCredential{ResolvedClaims: raw}
+	}
+
+	t.Run("an AV credential without age_over_18 is refused", func(t *testing.T) {
+		err := requireMandatoryMdocElements(avConfig(), credentialWith(t, map[string]any{
+			"age_over_65": false,
+		}))
+		require.Error(t, err, "an age attestation missing its mandatory element must not be stored")
+		require.Contains(t, err.Error(), "age_over_18",
+			"the refusal has to name the missing element: it is the issuer that has to act on it")
+	})
+
+	t.Run("age_over_18 present is enough; optional thresholds may be absent", func(t *testing.T) {
+		require.NoError(t, requireMandatoryMdocElements(avConfig(), credentialWith(t, map[string]any{
+			"age_over_18": true,
+		})), "every other age_over_NN is optional, so a credential carrying only the mandatory one is valid")
+	})
+
+	t.Run("a mandatory element present but false still satisfies the check", func(t *testing.T) {
+		// Presence, not truthiness: age_over_18=false is a meaningful assertion
+		// about the holder, not a missing claim.
+		require.NoError(t, requireMandatoryMdocElements(avConfig(), credentialWith(t, map[string]any{
+			"age_over_18": false,
+		})))
+	})
+
+	t.Run("an issuer publishing no mandatory claims is unaffected", func(t *testing.T) {
+		config := avConfig()
+		for i := range config.CredentialMetadata.Claims {
+			config.CredentialMetadata.Claims[i].Mandatory = nil
+		}
+		require.NoError(t, requireMandatoryMdocElements(config, credentialWith(t, map[string]any{})),
+			"mandatory defaults to false, so this must reject nothing an issuer did not first promise")
+	})
+
+	t.Run("a namespace-less claim path is not guessed at", func(t *testing.T) {
+		// A one-component path names an element but not where it lives. Guessing
+		// the namespace and guessing wrong would reject a valid credential, so
+		// such a path is skipped rather than enforced.
+		config := avConfig()
+		config.CredentialMetadata.Claims[0].Path = metadata.ClaimsPathPointer{"age_over_18"}
+		require.NoError(t, requireMandatoryMdocElements(config, credentialWith(t, map[string]any{})))
+	})
+
+	t.Run("dc+sd-jwt is left alone", func(t *testing.T) {
+		config := avConfig()
+		config.Format = metadata.CredentialFormatIdentifier_SdJwtVc
+		require.NoError(t, requireMandatoryMdocElements(config, credentialWith(t, map[string]any{})),
+			"an SD-JWT payload is not a namespace map; this check does not apply to it")
+	})
+
+	t.Run("the rule is not AV-specific", func(t *testing.T) {
+		config := &metadata.CredentialConfiguration{
+			Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
+			Doctype: "nl.yivi.email.1",
+			CredentialMetadata: &metadata.CredentialMetadata{
+				Claims: []metadata.ClaimsDescription{
+					{Path: metadata.ClaimsPathPointer{"nl.yivi.email.1", "email"}, Mandatory: &mandatory},
+				},
+			},
+		}
+		raw, err := json.Marshal(map[string]map[string]any{"nl.yivi.email.1": {"domain": "example.com"}})
+		require.NoError(t, err)
+		err = requireMandatoryMdocElements(config, &services.ParsedCredential{ResolvedClaims: raw})
+		require.Error(t, err, "the check reads the metadata, so it covers any docType")
+		require.Contains(t, err.Error(), "email")
+	})
+}
+
+// The docType inside the MSO is signed by the issuer, so on its own it says only
+// "this is what I sent". Binding it to the advertised doctype is what turns it
+// into "this is what I asked for" -- and the value is load-bearing: it becomes
+// the credential's type, which DCQL doctype_value matching and relying-party
+// authorization both key off.
+//
+// Unit-tested rather than driven through the container on purpose: the EUDI
+// reference issuer calls mdocFormatter with doctype=credential_metadata["doctype"],
+// the same field it advertises, so the two cannot disagree there however the
+// bind-mounted configuration is edited (measured 2026-08-31). A mismatch has to
+// be built here.
+func TestRequireMdocDocTypeMatchesMetadata(t *testing.T) {
+	mdocConfig := func(doctype string) *metadata.CredentialConfiguration {
+		return &metadata.CredentialConfiguration{
+			Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
+			Doctype: doctype,
+		}
+	}
+	signedAs := func(docType string) *services.ParsedCredential {
+		return &services.ParsedCredential{VerifiableCredentialType: docType}
+	}
+
+	t.Run("a matching docType is accepted", func(t *testing.T) {
+		require.NoError(t, requireMdocDocTypeMatchesMetadata(
+			mdocConfig("eu.europa.ec.av.1"), signedAs("eu.europa.ec.av.1")))
+	})
+
+	t.Run("a different docType is refused", func(t *testing.T) {
+		err := requireMdocDocTypeMatchesMetadata(
+			mdocConfig("eu.europa.ec.av.1"), signedAs("org.iso.18013.5.1.mDL"))
+		require.Error(t, err,
+			"an issuer answering a request for one docType with another must not be stored")
+		require.Contains(t, err.Error(), "org.iso.18013.5.1.mDL", "the refusal must name what was signed")
+		require.Contains(t, err.Error(), "eu.europa.ec.av.1", "and what was advertised")
+	})
+
+	t.Run("a configuration declaring no doctype refuses everything", func(t *testing.T) {
+		// MdocFormatVerifier already rejects such a configuration at metadata
+		// validation, so this never runs in practice -- but failing closed is the
+		// right behaviour if that gate is ever relaxed: an empty expectation must
+		// not silently match every docType.
+		require.Error(t, requireMdocDocTypeMatchesMetadata(
+			mdocConfig(""), signedAs("eu.europa.ec.av.1")))
+	})
+
+	t.Run("dc+sd-jwt is untouched", func(t *testing.T) {
+		// Doctype is empty for SD-JWT VC, whose cross-instance vct consistency
+		// check lives in storeCredentials. Applying this one would reject every
+		// SD-JWT credential.
+		config := &metadata.CredentialConfiguration{
+			Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
+			VerifiableCredentialType: "urn:eudi:pid:1",
+		}
+		require.NoError(t, requireMdocDocTypeMatchesMetadata(
+			config, &services.ParsedCredential{VerifiableCredentialType: "urn:eudi:pid:1"}))
+	})
 }

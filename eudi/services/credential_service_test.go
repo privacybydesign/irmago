@@ -1664,14 +1664,103 @@ func TestBuildMdocAttributesFromResolvedClaims_NoMetadataStillEmitsValues(t *tes
 	resolved := map[string]map[string]any{
 		"eu.europa.ec.av.1": {
 			"age_over_18": true,
+			// Not an age_over_NN, so nothing derives a name for it: the value
+			// still travels, unlabelled, exactly as before.
+			"issuing_country": "NL",
 		},
 	}
 
 	attrs := BuildMdocAttributesFromResolvedClaims(nil, resolved, "en")
 
+	require.Len(t, attrs, 2)
+
+	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
+	require.NotNil(t, attrs[0].Value)
+	// Derived from the element identifier, since no metadata named it.
+	require.NotNil(t, attrs[0].DisplayName)
+	assert.Equal(t, "Age Over 18", *attrs[0].DisplayName)
+
+	require.Equal(t, []any{"eu.europa.ec.av.1", "issuing_country"}, attrs[1].ClaimPath)
+	require.NotNil(t, attrs[1].Value)
+	assert.Nil(t, attrs[1].DisplayName)
+}
+
+// A threshold the issuer never advertised is the case the derived name exists
+// for: the EU reference issuer publishes thirteen age_over_NN claims and mints
+// whatever it is asked for, so this arrives with a value and no metadata entry.
+func TestBuildMdocAttributesFromResolvedClaims_DerivesUnadvertisedAgeOver(t *testing.T) {
+	en := "en"
+	claims := []metadata.ClaimsDescription{{
+		Path:    metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_18"},
+		Display: []metadata.Display{{Name: "Age Over 18", Locale: &en}},
+	}}
+	resolved := map[string]map[string]any{
+		"eu.europa.ec.av.1": {
+			"age_over_18": true,
+			"age_over_35": true,
+		},
+	}
+
+	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "en")
+
+	require.Len(t, attrs, 2)
+
+	// Published metadata, unchanged.
+	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
+	require.NotNil(t, attrs[0].DisplayName)
+	assert.Equal(t, "Age Over 18", *attrs[0].DisplayName)
+
+	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_35"}, attrs[1].ClaimPath)
+	require.NotNil(t, attrs[1].DisplayName)
+	assert.Equal(t, "Age Over 35", *attrs[1].DisplayName)
+}
+
+// An issuer's own text wins over a derived name even when it is published under
+// the namespace-less path shape, and even when it is in another language: the
+// derived name is English only, so overriding a published nl label with it would
+// make a Dutch wallet read worse, not better.
+func TestBuildMdocAttributesFromResolvedClaims_PublishedBareElementNameWins(t *testing.T) {
+	nl := "nl"
+	claims := []metadata.ClaimsDescription{{
+		Path:    metadata.ClaimsPathPointer{"age_over_18"},
+		Display: []metadata.Display{{Name: "Ouder dan 18", Locale: &nl}},
+	}}
+	resolved := map[string]map[string]any{
+		"eu.europa.ec.av.1": {"age_over_18": true},
+	}
+
+	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "nl")
+
 	require.Len(t, attrs, 1)
-	assert.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
-	assert.Nil(t, attrs[0].DisplayName)
+	assert.Nil(t, attrs[0].DisplayName, "a bare-element publication is not overridden by the derived English name")
+}
+
+func TestDerivedMdocClaimName(t *testing.T) {
+	for _, tc := range []struct {
+		element string
+		want    string
+		ok      bool
+	}{
+		{element: "age_over_18", want: "Age Over 18", ok: true},
+		{element: "age_over_9", want: "Age Over 9", ok: true},
+		// NN is two digits, so 99 is the ceiling and 100 is past it.
+		{element: "age_over_99", want: "Age Over 99", ok: true},
+		{element: "age_over_00", want: "Age Over 00", ok: true},
+		{element: "age_over_100", ok: false},
+		{element: "age_over_120", ok: false},
+		{element: "age_over_1234", ok: false},
+		{element: "age_over_", ok: false},
+		{element: "age_over_18a", ok: false},
+		{element: "age_in_years", ok: false},
+		{element: "issuing_country", ok: false},
+		{element: "", ok: false},
+	} {
+		t.Run(tc.element, func(t *testing.T) {
+			got, ok := DerivedMdocClaimName(tc.element)
+			assert.Equal(t, tc.ok, ok)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 // ========== GetCredentialMetadataList — mso_mdoc ==========
@@ -1720,4 +1809,99 @@ func TestGetCredentialMetadataList_MdocLabelsBareElementClaims(t *testing.T) {
 		"age_over_18": "Older than 18",
 		"age_over_21": "Older than 21",
 	}, labels)
+}
+
+// The credential list must label a threshold the issuer never advertised the
+// same way the disclosure screen does, and must not disturb the ones it did.
+// The two views disagreeing about one claim is the bug aliasMdocBareElementPaths
+// was written for; the derived name is on the same footing.
+func TestGetCredentialMetadataList_MdocLabelsUnadvertisedAgeOver(t *testing.T) {
+	batch := newStorageBatch()
+	batch.Format = models.CredentialFormatMsoMdoc
+	batch.VerifiableCredentialType = "eu.europa.ec.av.1"
+	batch.ProcessedSdJwtPayload = datatypes.JSON(
+		`{"eu.europa.ec.av.1":{"age_over_18":true,"age_over_35":true,"issuing_country":"NL"}}`)
+	batch.CredentialMetadata.Claims = []models.CredentialClaim{
+		{
+			Path:    datatypes.JSON(`["eu.europa.ec.av.1","age_over_18"]`),
+			Display: []models.ClaimDisplay{{Name: "Older than 18", Locale: datatypes.NullString{V: "en", Valid: true}}},
+		},
+	}
+
+	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+
+	result, err := svc.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	labels := map[string]*string{}
+	for _, attr := range result[0].Attributes {
+		require.Len(t, attr.ClaimPath, 2, "an mdoc attribute path is [namespace, elementIdentifier]")
+		labels[attr.ClaimPath[1].(string)] = attr.DisplayName
+	}
+
+	require.NotNil(t, labels["age_over_18"])
+	assert.Equal(t, "Older than 18", *labels["age_over_18"], "published text is not displaced by the derived name")
+	require.NotNil(t, labels["age_over_35"], "an unadvertised threshold must still be labelled")
+	assert.Equal(t, "Age Over 35", *labels["age_over_35"])
+
+	// The derived name covers age_over_NN only, but no attribute may reach the
+	// app nameless: an element the issuer signed without declaring is stored and
+	// is disclosable, so leaving it without a label is what lets it sit in the
+	// credential unseen. It falls back to its own identifier.
+	require.NotNil(t, labels["issuing_country"],
+		"an element no metadata names must not render without a label")
+	assert.Equal(t, "issuing_country", *labels["issuing_country"])
+}
+
+// TestGetCredentialMetadataList_MdocNamesUndeclaredElement is the case that
+// motivated the fallback: an element the issuer signed into the namespace but
+// never declared in its metadata at all.
+//
+// Nothing upstream rejects it — the docType binding in session.obtainCredential
+// compares docTypes, not elements, and the document signer's EKU is
+// docType-agnostic — so it is stored and disclosable through DCQL. Without a
+// name it reached the app as an Attribute with a nil DisplayName, and whether
+// that renders as a blank row or as nothing at all was the app's decision. The
+// holder has to be able to see everything their credential actually contains.
+func TestGetCredentialMetadataList_MdocNamesUndeclaredElement(t *testing.T) {
+	batch := newStorageBatch()
+	batch.Format = models.CredentialFormatMsoMdoc
+	batch.VerifiableCredentialType = "eu.europa.ec.av.1"
+	batch.ProcessedSdJwtPayload = datatypes.JSON(
+		`{"eu.europa.ec.av.1":{"age_over_18":true,"email":"holder@example.com"}}`)
+	batch.CredentialMetadata.Claims = []models.CredentialClaim{
+		{
+			Path:    datatypes.JSON(`["eu.europa.ec.av.1","age_over_18"]`),
+			Display: []models.ClaimDisplay{{Name: "Older than 18", Locale: datatypes.NullString{V: "en", Valid: true}}},
+		},
+	}
+
+	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+
+	result, err := svc.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	labels := map[string]*string{}
+	values := map[string]bool{}
+	for _, attr := range result[0].Attributes {
+		require.Len(t, attr.ClaimPath, 2, "an mdoc attribute path is [namespace, elementIdentifier]")
+		el := attr.ClaimPath[1].(string)
+		labels[el] = attr.DisplayName
+		values[el] = attr.Value != nil
+	}
+
+	require.Contains(t, labels, "email",
+		"an undeclared element is stored and disclosable, so it has to appear in the credential list")
+	require.NotNil(t, labels["email"], "an undeclared element must not render without a label")
+	assert.Equal(t, "email", *labels["email"],
+		"with nothing to name it, an element is named after itself rather than left blank")
+	assert.True(t, values["email"], "the value has to be shown alongside the label, not just the path")
+
+	require.NotNil(t, labels["age_over_18"])
+	assert.Equal(t, "Older than 18", *labels["age_over_18"],
+		"published text is never displaced by the fallback")
 }

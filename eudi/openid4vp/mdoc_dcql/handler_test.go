@@ -878,3 +878,91 @@ func TestFindCandidatesOffersABatchInsideItsValidityWindow(t *testing.T) {
 	assert.Empty(t, result.ObtainableDescriptors,
 		"a credential the wallet owns must not also be advertised as obtainable")
 }
+
+// ========== claimDisplayName ==========
+
+// The disclosure screen labels an age_over_NN the issuer never advertised, so a
+// consent prompt for it does not read as a raw identifier. Published text always
+// wins, in either path shape, and nothing else is derived.
+func TestClaimDisplayNameDerivesUnadvertisedAgeOver(t *testing.T) {
+	batchWithClaims := func(claims ...models.CredentialClaim) *models.CredentialBatch {
+		return &models.CredentialBatch{
+			VerifiableCredentialType: testDocType,
+			CredentialMetadata:       &models.CredentialMetadata{Claims: claims},
+		}
+	}
+	en := func(name string) []models.ClaimDisplay {
+		return []models.ClaimDisplay{{Name: name, Locale: datatypes.NullString{V: "en", Valid: true}}}
+	}
+
+	published := models.CredentialClaim{
+		Path:    datatypes.JSON(`["` + testNamespace + `","age_over_18"]`),
+		Display: en("Older than 18"),
+	}
+
+	for _, tc := range []struct {
+		name    string
+		batch   *models.CredentialBatch
+		element string
+		want    *string
+	}{
+		{
+			name:    "unadvertised threshold is derived",
+			batch:   batchWithClaims(published),
+			element: "age_over_35",
+			want:    strptr("Age Over 35"),
+		},
+		{
+			name:    "published text wins",
+			batch:   batchWithClaims(published),
+			element: "age_over_18",
+			want:    strptr("Older than 18"),
+		},
+		{
+			name: "published bare-element text wins",
+			batch: batchWithClaims(models.CredentialClaim{
+				Path:    datatypes.JSON(`["age_over_18"]`),
+				Display: en("Older than 18"),
+			}),
+			element: "age_over_18",
+			want:    strptr("Older than 18"),
+		},
+		{
+			name:    "derived even with no metadata at all",
+			batch:   &models.CredentialBatch{VerifiableCredentialType: testDocType},
+			element: "age_over_18",
+			want:    strptr("Age Over 18"),
+		},
+		{
+			// The derived name covers age_over_NN only, but the consent screen
+			// and the activity log both render whatever this returns, so a nil
+			// name would ask for — or record as disclosed — an element with
+			// nothing on screen saying which one. It falls back to its own
+			// identifier, matching what the credential list does.
+			name:    "an element nothing names falls back to its identifier",
+			batch:   batchWithClaims(published),
+			element: "issuing_country",
+			want:    strptr("issuing_country"),
+		},
+		{
+			// The case that motivated the fallback: an element the issuer signed
+			// into the namespace but declared nowhere in its metadata.
+			name:    "an element the issuer never declared is still named",
+			batch:   batchWithClaims(published),
+			element: "email",
+			want:    strptr("email"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := claimDisplayName(tc.batch, testNamespace, tc.element, "en")
+			if tc.want == nil {
+				assert.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			assert.Equal(t, *tc.want, *got)
+		})
+	}
+}
+
+func strptr(s string) *string { return &s }
