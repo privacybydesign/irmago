@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## [1.3.1] - 2026-09-01
 ### Added
 - The Ver.iD root CAs are pinned as EUDI trust anchors, in both the issuer and the verifier trust model since the same root signs both kinds of certificates. The production root (`CN=Ver.iD Root CA`) is always trusted; the development root (`CN=Ver.iD Dev Root CA`) is only trusted in developer mode, alongside the Yivi staging anchors
 - `client.GetCredentials` now also surfaces the credentials the wallet has stored but cannot render, as a new `clientmodels.ProblematicCredential` list returned alongside the normal credentials. A stored credential whose metadata will not resolve — an SD-JWT-over-IRMA credential whose type was dropped from its scheme, or one that cannot be hashed — is isolated as a `ProblematicCredential` instead of failing the whole conversion, so a single corrupt credential can no longer blank the entire overview. Each entry carries the storage hash of every format it exists in (`CredentialInstanceIds`), a `Reason`, and a best-effort `CredentialId`, so a credential the wallet cannot display can still be selected and deleted through `RemoveCredentialsByHash`. Both lists come from one pass, so they are a consistent snapshot; the error return is now reserved for a total EUDI store read failure, and even then the IRMA credentials that did load are still returned.
@@ -788,6 +790,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[1.3.1]: https://github.com/privacybydesign/irmago/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/privacybydesign/irmago/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/privacybydesign/irmago/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/privacybydesign/irmago/compare/v1.1.0...v1.1.1
