@@ -131,7 +131,16 @@ type Attribute struct {
 	Value *AttributeValue `json:"value,omitempty"`
 
 	// The value that a verifier requested for this attribute (if any).
+	// When RequestedValues is non-empty this duplicates its first entry,
+	// kept for backwards compatibility with frontends that predate it.
 	RequestedValue *AttributeValue `json:"requested_value,omitempty"`
+
+	// All values the verifier accepts for this attribute, in the verifier's
+	// order. The IRMA protocol allows a single required value per attribute;
+	// OpenID4VP DCQL (section 6) allows several acceptable values, of which
+	// the holder must disclose one. Empty when the verifier does not
+	// constrain the value.
+	RequestedValues []AttributeValue `json:"requested_values,omitempty"`
 }
 
 // ClaimPathKey produces a deterministic string key from a claim path for use
