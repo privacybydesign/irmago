@@ -295,6 +295,10 @@ func TestGetCredentialMetadataList_MapsRemainingCount(t *testing.T) {
 	}
 }
 
+// TestGetCredentialMetadataList_NilCredentialMetadata pins that a batch without
+// any credential display metadata still yields a usable credential: no
+// attributes, but a name that falls back to the vct rather than being empty (an
+// empty name leaves the wallet unable to render the credential).
 func TestGetCredentialMetadataList_NilCredentialMetadata(t *testing.T) {
 	batch := newStorageBatch()
 	batch.CredentialMetadata = nil
@@ -307,7 +311,7 @@ func TestGetCredentialMetadataList_NilCredentialMetadata(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	assert.Empty(t, result[0].Attributes)
-	assert.Empty(t, result[0].Name)
+	assert.Equal(t, batch.VerifiableCredentialType, result[0].Name)
 }
 
 func TestGetCredentialMetadataList_IssuerDisplayWithoutLocale_ResultsInDefaultLocale(t *testing.T) {
