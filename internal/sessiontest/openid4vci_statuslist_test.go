@@ -74,7 +74,7 @@ func testOpenID4VCIStatusListRevocationNotifiesApp(t *testing.T) {
 		"a status change must wake the app")
 
 	// The credential is revoked in what the app would now re-request.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	cred := findCredentialByName(t, creds, "Status List Credential (SD-JWT)")
 	require.True(t, cred.Revoked, "the revocation the app was told about")
@@ -149,7 +149,7 @@ func testOpenID4VCIStatusListIssuanceAcceptsValid(t *testing.T) {
 	issueStatusListCredential(t, c, sessionHandler, 1)
 
 	// The credential is present in the wallet.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	cred := findCredentialByName(t, creds, "Status List Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued status-list credential should appear in GetCredentials")

@@ -237,6 +237,16 @@ func (c *Configuration) addProductionTrustAnchors() error {
 			return fmt.Errorf("failed to add yivi production trust list trust anchors: %v", err)
 		}
 	}
+
+	// The Ver.iD root signs both issuer and verifier certificates. It is a
+	// third-party CA rather than one of Yivi's own, so it confers medium: somebody
+	// vouches, but not Yivi.
+	if err := c.Issuers.addTrustAnchors(clientmodels.TrustLevel_Medium, []byte(Production_VerID_TrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Ver.iD production issuer trust anchors: %v", err)
+	}
+	if err := c.Verifiers.addTrustAnchors(clientmodels.TrustLevel_Medium, []byte(Production_VerID_TrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Ver.iD production verifier trust anchors: %v", err)
+	}
 	return nil
 }
 
@@ -267,6 +277,15 @@ func (c *Configuration) addStagingTrustAnchors() error {
 	}
 	if err := c.Verifiers.addTrustAnchors(clientmodels.TrustLevel_High, []byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add Yivi staging verifier trust anchors: %v", err)
+	}
+
+	// The Ver.iD development root signs both issuer and verifier certificates. Like
+	// its production counterpart it is a third-party CA, so it confers medium.
+	if err := c.Issuers.addTrustAnchors(clientmodels.TrustLevel_Medium, []byte(Development_VerID_TrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Ver.iD development issuer trust anchors: %v", err)
+	}
+	if err := c.Verifiers.addTrustAnchors(clientmodels.TrustLevel_Medium, []byte(Development_VerID_TrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Ver.iD development verifier trust anchors: %v", err)
 	}
 
 	return nil

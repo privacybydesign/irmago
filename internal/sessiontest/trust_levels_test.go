@@ -571,7 +571,7 @@ const testCredentialClaims = `{
 
 func storedIssuerLevel(t *testing.T, c *client.Client) clientmodels.TrustLevel {
 	t.Helper()
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 	return creds[0].Issuer.TrustLevel

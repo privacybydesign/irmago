@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 
@@ -48,6 +49,7 @@ func TestConfig(t *testing.T) {
 	t.Run("NewConfiguration creates required directories and initializes successfully", testNewConfigurationSuccessfulInitialization)
 	t.Run("NewConfiguration reads the pinned issuer and verifier trust anchor(s)", testNewConfigurationReadsPinnedTrustAnchors)
 	t.Run("UpdateCertificateRevocationLists fetches for every trust model", testUpdateCertificateRevocationListsFetchesForEveryTrustModel)
+	t.Run("Ver.iD development trust anchor is only trusted when staging trust anchors are enabled", testVerIDDevelopmentTrustAnchorRequiresStaging)
 }
 
 func testUpdateCertificateRevocationListsFetchesForEveryTrustModel(t *testing.T) {
@@ -262,4 +264,39 @@ func TestExtraTrustAnchors_RegisterDistributionPointsForEveryModel(t *testing.T)
 	require.Contains(t, conf.Verifiers.state().distributionPoints, verifierCRL)
 	require.NotContains(t, conf.Issuers.state().distributionPoints, verifierCRL,
 		"the three models stay apart")
+}
+
+func testVerIDDevelopmentTrustAnchorRequiresStaging(t *testing.T) {
+	storageFolder := test.CreateTestStorage(t)
+	eudiAppDataPath := filepath.Join(storageFolder, "eudi")
+
+	err := common.EnsureDirectoryExists(eudiAppDataPath)
+	require.NoError(t, err)
+
+	aesKey := [32]byte{}
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	s, err := sqlcipherstorage.New(aesKey, ":memory:", eudiAppDataPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(s)
+	require.NoError(t, err)
+
+	trustsRoot := func(tm *TrustModel, commonName string) bool {
+		return slices.ContainsFunc(tm.state().allCerts, func(cert *x509.Certificate) bool {
+			return cert.Subject.CommonName == commonName
+		})
+	}
+
+	require.NoError(t, conf.Reload())
+	for _, tm := range []*TrustModel{&conf.Issuers, &conf.Verifiers} {
+		require.True(t, trustsRoot(tm, "Ver.iD Root CA"))
+		require.False(t, trustsRoot(tm, "Ver.iD Dev Root CA"))
+	}
+
+	conf.SetUseStagingTrustAnchors(true)
+	require.NoError(t, conf.Reload())
+	for _, tm := range []*TrustModel{&conf.Issuers, &conf.Verifiers} {
+		require.True(t, trustsRoot(tm, "Ver.iD Root CA"))
+		require.True(t, trustsRoot(tm, "Ver.iD Dev Root CA"))
+	}
 }

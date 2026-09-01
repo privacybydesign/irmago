@@ -35,7 +35,7 @@ import (
 func TestClientStorageRegressionV1_0_0(t *testing.T) {
 	c, sessionHandler, irmaServer := setupStorageRegressionClient(t, "v1.0.0")
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.fullName")
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.singleton")
@@ -198,7 +198,7 @@ func TestClientStorageRegressionV1_1_1(t *testing.T) {
 	// loadClientFromFixture asserts the loaded EUDI DB is encrypted at rest.
 	c, sessionHandler, irmaServer := setupStorageRegressionClient(t, "v1.1.1")
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.fullName")
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.singleton")
@@ -254,7 +254,7 @@ func TestClientStorageRegressionV1_1_1(t *testing.T) {
 func TestClientStorageRegressionV1_3_0(t *testing.T) {
 	c, sessionHandler, irmaServer := setupStorageRegressionClient(t, "v1.3.0")
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.fullName")
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.singleton")
@@ -458,7 +458,7 @@ func TestClientStorageRegressionV1_3_0(t *testing.T) {
 func TestClientStorageRegressionV0_19_2(t *testing.T) {
 	c, sessionHandler, irmaServer := setupStorageRegressionClient(t, "v0.19.2")
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.fullName")
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.singleton")

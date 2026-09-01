@@ -156,7 +156,7 @@ func TestRefreshStatusesNotifiesOnStatusChange(t *testing.T) {
 	require.Equal(t, 1, handler.CredentialsChangedCount(), "a status change must wake the app")
 
 	// And the wallet reflects it, which is what the app finds when it re-reads.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 	require.True(t, creds[0].Revoked, "the revocation the app was woken for")
@@ -221,7 +221,7 @@ func TestRefreshStatusesNotifiesOnChangeCommittedBeforeCancellation(t *testing.T
 	require.Equal(t, 1, handler.CredentialsChangedCount(), "a committed change must reach the app even though the caller gave up")
 
 	// And the wallet holds the revocation, which is what the woken app reads.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 	require.True(t, creds[0].Revoked)

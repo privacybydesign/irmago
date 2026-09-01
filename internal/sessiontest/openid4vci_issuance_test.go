@@ -118,7 +118,7 @@ func testOpenID4VCIPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 		"server should have issued the credential via pre-authorized code flow")
 
 	// Verify the credential appears in GetCredentials with correct attribute metadata.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
@@ -208,7 +208,7 @@ func testOpenID4VCIPreAuthFlowWithTxCode(t *testing.T) {
 	require.Equal(t, "CREDENTIAL_ISSUED", status)
 
 	// Verify the credential appears in GetCredentials with correct attribute metadata.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
@@ -505,7 +505,7 @@ func testOpenID4VCIPreAuthFlowNestedClaims(t *testing.T) {
 	}`)
 
 	// Verify the credential appears in GetCredentials with correct attributes.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "House Possession Credential (SD-JWT)")
@@ -566,7 +566,7 @@ func testOpenID4VCIPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 		}
 	}`)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	// Verify EmailCredential attributes.
@@ -649,7 +649,7 @@ func testOpenID4VCIPreAuthFlowArrayClaims(t *testing.T) {
 		"courses": ["Algorithms", "Databases", "Security"]
 	}`)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "Student Card Credential (SD-JWT)")
@@ -701,7 +701,7 @@ func testOpenID4VCIPreAuthFlowMixedSdNonSd(t *testing.T) {
 		"membership_type": "gold"
 	}`)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "Membership Credential (SD-JWT)")
@@ -750,7 +750,7 @@ func testOpenID4VCIPreAuthFlowEduIdCredential(t *testing.T) {
 		"is_library-walk-in": false
 	}`)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "eduID")
@@ -999,7 +999,7 @@ func testOpenID4VCIPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// Verify the credential appears in GetCredentials.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "Organization Credential (SD-JWT)")
@@ -1154,7 +1154,7 @@ func testOpenID4VCIPreAuthFlowCredentialDeletion(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// Verify the credential was issued.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
@@ -1166,7 +1166,7 @@ func testOpenID4VCIPreAuthFlowCredentialDeletion(t *testing.T) {
 	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
 
 	// Verify the specific credential is gone by checking no credential has the deleted hash.
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	for _, c := range creds {
 		require.NotEqual(t, deletedHash, c.Hash, "deleted credential (hash %s) should no longer appear in GetCredentials", deletedHash)
@@ -1340,7 +1340,7 @@ func testOpenID4VCIAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 		"server should have issued the credential via authorization code flow")
 
 	// Verify the credential appears in GetCredentials with correct attribute metadata.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
@@ -1537,7 +1537,7 @@ func testOpenID4VCIAuthCodeFlowNestedClaims(t *testing.T) {
 	}`)
 
 	// Verify the credential appears in GetCredentials with correct attributes.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "House Possession Credential (SD-JWT)")
@@ -1678,7 +1678,7 @@ func testDutchOpenID4VCIIssuanceAndDataTab(t *testing.T) {
 
 	// Data tab: the stored EUDI credential resolves through the Dutch
 	// metadata displays, and the issuer logo still shows.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	cred := findCredentialByName(t, creds, "E-mail Credential (SD-JWT)")
 	require.NotNil(t, cred, "expected the issued credential under its Dutch name")
@@ -1705,7 +1705,7 @@ func testOpenID4VCILocaleSwitchDataTabAndLogs(t *testing.T) {
 		"domain": "example.com"
 	}`)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	cred := findCredentialByName(t, creds, "Email Credential (SD-JWT)")
 	require.NotNil(t, cred)
@@ -1719,7 +1719,7 @@ func testOpenID4VCILocaleSwitchDataTabAndLogs(t *testing.T) {
 	// Switch to Dutch: the next pull resolves through the Dutch displays.
 	c.SetLocale("nl")
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	require.Nil(t, findCredentialByName(t, creds, "Email Credential (SD-JWT)"),
 		"the English name must no longer appear after the locale switch")
@@ -1756,7 +1756,7 @@ func testOpenID4VCILocaleSwitchDataTabAndLogs(t *testing.T) {
 	// Switching back restores the English resolution everywhere.
 	c.SetLocale("en")
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	cred = findCredentialByName(t, creds, "Email Credential (SD-JWT)")
 	require.NotNil(t, cred, "the English name returns after switching back")

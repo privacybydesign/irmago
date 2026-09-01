@@ -463,8 +463,19 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 
 	for _, fc := range fetched {
 		config, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId]
-		if !ok || config.CredentialMetadata == nil {
+		if !ok {
 			continue
+		}
+
+		// A credential whose configuration carries no display metadata at all is
+		// still offered: it is shown with a fallback name (below) and no
+		// attributes, rather than silently dropped from the permission screen
+		// while it is nonetheless fetched and stored.
+		var credentialDisplay metadata.CredentialDisplays
+		var claims []metadata.ClaimsDescription
+		if config.CredentialMetadata != nil {
+			credentialDisplay = config.CredentialMetadata.Display
+			claims = config.CredentialMetadata.Claims
 		}
 
 		// Use the first credential in the batch as source of attribute values.
@@ -473,13 +484,13 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			payload = fc.verifiedSdJwtVcs[0].ProcessedSdJwtPayload
 		}
 
-		displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
+		displays := metadata.ToTranslateableList(credentialDisplay)
 		name := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), s.locale)
 
 		image := services.LoadResolvedLogo(credentialLogoManager,
-			metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), s.locale)
+			metadata.LogoURIsByLanguage(credentialDisplay), s.locale)
 
-		attrs := buildAttributesWithValues(config.CredentialMetadata.Claims, payload, s.locale)
+		attrs := buildAttributesWithValues(claims, payload, s.locale)
 
 		var batchSize *uint
 		if batch != nil {
@@ -503,6 +514,12 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			if vct := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload.VerifiableCredentialType; vct != "" {
 				credentialId = vct
 			}
+		}
+
+		// Never offer a nameless credential: fall back to the credential id (the
+		// vct) so the permission screen and the resulting card have a label.
+		if name == "" {
+			name = credentialId
 		}
 
 		cred := clientmodels.Credential{

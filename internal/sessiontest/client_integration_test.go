@@ -124,7 +124,7 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -136,7 +136,7 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -154,7 +154,7 @@ func testCredentialInstanceCount(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -168,7 +168,7 @@ func testCredentialInstanceCount(t *testing.T) {
 	for i := range numInstances {
 		discloseOverOpenID4VP(t, c, int(i)+2, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
 
-		creds, err = c.GetCredentials()
+		creds, _, err = c.GetCredentials()
 		require.NoError(t, err)
 		require.Len(t, creds, 1)
 
@@ -481,7 +481,7 @@ func testRemoveStorageClearsEudiDatabaseAndFilesystem(t *testing.T) {
 	}`)
 
 	// Verify credentials exist before removal.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.NotEmpty(t, creds, "should have at least one credential after issuance")
 
@@ -506,7 +506,7 @@ func testRemoveStorageClearsEudiDatabaseAndFilesystem(t *testing.T) {
 	require.NoError(t, c.RemoveStorage())
 
 	// Assert: EUDI credentials are gone.
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	require.Empty(t, creds, "credentials should be empty after RemoveStorage")
 
@@ -563,7 +563,7 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 
 		awaitSessionState(t, sessionHandler)
 
-		credentials, err := c.GetCredentials()
+		credentials, _, err := c.GetCredentials()
 		require.NoError(t, err)
 		fullNameCred := findCredentialById(credentials, "irma-demo.MijnOverheid.fullName")
 		require.NotNil(t, fullNameCred)
@@ -639,7 +639,7 @@ func testIdemixAndSdJwtCombinedRemovalLog(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	credentials, err := c.GetCredentials()
+	credentials, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	emailCred := findCredentialById(credentials, "test.test.email")
 	require.NotNil(t, emailCred)
@@ -725,7 +725,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 	awaitSessionState(t, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -756,7 +756,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	// TODO: how to check that it failed?
 	failIssueSdJwtAndIdemixToClient(t, c, 2, sessionHandler, irmaServer)
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -987,7 +987,7 @@ func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -996,7 +996,7 @@ func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
 
 	require.NoError(t, c.RemoveCredentialsByHash(credentialHashByFormat(emailCred)))
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 0)
 }
@@ -1016,7 +1016,7 @@ func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -1561,7 +1561,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	issue(t, irmaServer, c, sessionHandler, 2, reqWithPrefix)
 	awaitSessionState(t, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	// Find both credentials and distinguish them by attribute count
@@ -1640,7 +1640,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	issue(t, irmaServer, c, sessionHandler, 3, reqEmptyNonOptional)
 	awaitSessionState(t, sessionHandler)
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 
 	// Find the credential with empty firstname (distinct from the others by its attribute values)

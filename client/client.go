@@ -587,11 +587,15 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 		}
 	}
 
-	// Delete EUDI credentials (read metadata first for the removal log).
+	// Delete EUDI credentials. The removal log is best-effort: the metadata read
+	// only enriches the log, and a corrupt credential — the very case that makes
+	// deletion necessary — is exactly what can make that read fail. A failed or
+	// empty log must never block the deletion itself.
 	if len(eudiHashes) > 0 {
 		allEudiCreds, err := client.credentialService.GetCredentialMetadataList()
 		if err != nil {
-			return fmt.Errorf("failed to read eudi credentials for removal log: %v", err)
+			irma.Logger.Warnf("could not read eudi credentials for removal log; deleting without it: %v", err)
+			allEudiCreds = nil
 		}
 
 		// Find the credentials being deleted.
@@ -607,11 +611,12 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 		}
 
 		// Create removal log before deleting, so the log service can still
-		// look up batch metadata to resolve the credential logo filename.
+		// look up batch metadata to resolve the credential logo filename. A
+		// failure here must not block deletion either.
 		if len(removedCreds) > 0 {
 			logService := services.NewEudiLogService(client.eudiStorage, client.locale())
 			if err := logService.AddRemovalLog(removedCreds); err != nil {
-				return fmt.Errorf("failed to create eudi removal log: %v", err)
+				irma.Logger.Warnf("failed to create eudi removal log; deleting anyway: %v", err)
 			}
 		}
 
@@ -643,10 +648,16 @@ func createRemovalLog(
 ) (*irmaclient.LogEntry, error) {
 	attrs := []irma.TranslatedString{}
 
-	// loop over it in display order
-	for _, t := range sortedAttributeTypes(irmaConfiguration.CredentialTypes[credentialType].AttributeTypes) {
-		id := t.GetAttributeTypeIdentifier()
-		attrs = append(attrs, attributes[id])
+	// Loop over the attributes in display order. A credential whose type is not
+	// in the configuration (a ProblematicCredential being cleaned up — reachable
+	// for an SD-JWT-over-IRMA credential whose type was dropped from its scheme)
+	// has no attribute types to order by, so its log entry records no attributes;
+	// the removal itself must still be logged.
+	if credType := irmaConfiguration.CredentialTypes[credentialType]; credType != nil {
+		for _, t := range sortedAttributeTypes(credType.AttributeTypes) {
+			id := t.GetAttributeTypeIdentifier()
+			attrs = append(attrs, attributes[id])
+		}
 	}
 
 	return &irmaclient.LogEntry{

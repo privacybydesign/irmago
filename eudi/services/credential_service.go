@@ -108,6 +108,14 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		display := ResolveBatchDisplay(batch, locale)
 		issuerName := display.IssuerName
 		credentialName := display.CredentialName
+		if credentialName == "" {
+			// The issuer supplied no resolvable credential display name (e.g. it
+			// omits credential display metadata entirely). The SD-JWT vct is the
+			// credential's stable type identifier and the best label available;
+			// anything beats an empty name, which leaves the wallet unable to
+			// render the credential.
+			credentialName = batch.VerifiableCredentialType
+		}
 
 		attrs := BuildAttributesFromPayload(processedSdJwtPayload, display.ClaimNames, display.ClaimOrder)
 

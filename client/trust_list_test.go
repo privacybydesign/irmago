@@ -210,7 +210,7 @@ func seedBatchWithoutIssuerEvidence(t *testing.T, gdb *gorm.DB, issuer string) {
 // issuer on right now — the read the transition behaviour is about.
 func storedIssuerLevel(t *testing.T, c *Client) clientmodels.TrustLevel {
 	t.Helper()
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 	return creds[0].Issuer.TrustLevel

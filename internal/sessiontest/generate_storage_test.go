@@ -128,7 +128,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	require.NoError(t, c.RefreshStatuses(context.Background()))
 
 	// Verify credentials are present
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	t.Logf("Credentials after issuance: %d", len(creds))
 	for _, cred := range creds {
@@ -228,7 +228,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 		"https://localhost:8443/vct/organization": true, // keep the deeply nested credential
 		"https://localhost:8443/vct/statuslist":   true, // keep the revoked status-list credential
 	}
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	removals := 0
 	for _, cred := range creds {
@@ -254,7 +254,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 		t.Logf("  - type=%s", log.Type)
 	}
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	t.Logf("Final credentials: %d", len(creds))
 	for _, cred := range creds {

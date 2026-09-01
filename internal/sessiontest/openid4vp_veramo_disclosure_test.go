@@ -240,7 +240,7 @@ func testPayloadOnlyClaimAcrossLifecycle(t *testing.T) {
 	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// Surface "GetCredentials": stored credential.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	stored := findCredentialByName(t, creds, "Student Card Credential (SD-JWT)")
 	require.NotNil(t, stored, "issued StudentCardCredential should appear in GetCredentials")
@@ -4883,7 +4883,7 @@ func findCredentialByName(t *testing.T, creds []*clientmodels.Credential, expect
 // found by display name. Pass expected=nil for unlimited (batch-of-1), or a *uint for finite counts.
 func requireBatchRemaining(t *testing.T, c *client.Client, credName string, expected *uint) {
 	t.Helper()
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	cred := findCredentialByName(t, creds, credName)
 	require.NotNil(t, cred, "credential %q not found", credName)

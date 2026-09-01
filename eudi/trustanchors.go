@@ -71,11 +71,36 @@ Si3+IDl+vIXsGmEwWgSitfB2x1wCIQDOxRpQEqIf+E6VIPR0erh7TRw7Zez04M8n
 lzAIUfg4LA==
 -----END CERTIFICATE-----
 `
+	// The Ver.iD root signs both issuer and verifier certificates, so it is
+	// added to both trust models.
+	Production_VerID_TrustAnchor = `
+Subject: CN=Ver.iD Root CA,OU=Development team,O=Subst.id B.V.,postalCode=1013 AM,street=Koivistokade 3,L=Amsterdam,ST=Noord-Holland,C=NL
+Issuer: CN=Ver.iD Root CA,OU=Development team,O=Subst.id B.V.,postalCode=1013 AM,street=Koivistokade 3,L=Amsterdam,ST=Noord-Holland,C=NL
+-----BEGIN CERTIFICATE-----
+MIIDBTCCAoqgAwIBAgIUR5qEGqVIjmng2qfbHTbs2CIXLTgwCgYIKoZIzj0EAwMw
+gbAxCzAJBgNVBAYTAk5MMRYwFAYDVQQIEw1Ob29yZC1Ib2xsYW5kMRIwEAYDVQQH
+EwlBbXN0ZXJkYW0xFzAVBgNVBAkTDktvaXZpc3Rva2FkZSAzMRAwDgYDVQQREwcx
+MDEzIEFNMRYwFAYDVQQKEw1TdWJzdC5pZCBCLlYuMRkwFwYDVQQLExBEZXZlbG9w
+bWVudCB0ZWFtMRcwFQYDVQQDEw5WZXIuaUQgUm9vdCBDQTAeFw0yNTExMjEwNzQ0
+MjFaFw0zNTExMTkwNzQ0NTFaMIGwMQswCQYDVQQGEwJOTDEWMBQGA1UECBMNTm9v
+cmQtSG9sbGFuZDESMBAGA1UEBxMJQW1zdGVyZGFtMRcwFQYDVQQJEw5Lb2l2aXN0
+b2thZGUgMzEQMA4GA1UEERMHMTAxMyBBTTEWMBQGA1UEChMNU3Vic3QuaWQgQi5W
+LjEZMBcGA1UECxMQRGV2ZWxvcG1lbnQgdGVhbTEXMBUGA1UEAxMOVmVyLmlEIFJv
+b3QgQ0EwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAATdqsle7OmL9SfSuP7yRid1seWc
+Wl1oBPt/Qrguufwj85CYyio40D3dcWyJHK/o4cKo5ww+/sWXE+zYz1utx+FiwllC
+5WQb16HPWdXEMJCIqzb2XInxiZ9dWYVpTVDNmGGjYzBhMA4GA1UdDwEB/wQEAwIB
+BjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBQTFeWtyRJNbgRTUFs3ou1DvGBX
+2jAfBgNVHSMEGDAWgBQTFeWtyRJNbgRTUFs3ou1DvGBX2jAKBggqhkjOPQQDAwNp
+ADBmAjEAph4IfXR83FEZ0dzrtyXMfFsQwyU/l3lo65ncAkO7wqZ+VfFScG0Q1DLe
+QUGM3jboAjEApaYVEZwRz+VSxRWGqdifcDt+aoJrj6Bvzdc36dfOQ1Qrka91wXnz
+iOCWv27pguzW
+-----END CERTIFICATE-----
+`
 )
 
 // ------------------------------------------------------------------------------
 
-// Staging trust anchors
+// Staging/development trust anchors, only trusted when developer mode is enabled
 const (
 	Staging_Yivi_RootCertificateRevocationListDistributionPoint       = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=kFCOt8NLhJ8g0WqMAnl%2BvoN2RuY"
 	Staging_Yivi_IssuerCaCertificateRevocationListDistributionPoint   = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=NGSB30tAE2E/Z/j4V%2B%2BTTTS5Ay0"
@@ -149,6 +174,31 @@ eJPEEhA1RUyGtPTLIZTjY5rHwR6foTSVThGrraNjMGEwDwYDVR0TAQH/BAUwAwEB
 1bOa4Q5wtC9gFIvu53Ml3tYwDgYDVR0PAQH/BAQDAgGGMAoGCCqGSM49BAMEA0cA
 MEQCIDCSNbPoyhDZ5A3SWupsyPj/tDF4xNoHYnE0WFIs2pz8AiA9mhXswiJPFbVR
 9dYSupOhXkuQRk8CgJuN++OnESd8uw==
+-----END CERTIFICATE-----
+`
+	// The Ver.iD development root signs both issuer and verifier certificates,
+	// so it is added to both trust models.
+	Development_VerID_TrustAnchor = `
+Subject: CN=Ver.iD Dev Root CA,OU=Development team,O=Subst.id B.V.,postalCode=1013 AM,street=Koivistokade 3,L=Amsterdam,ST=Noord-Holland,C=NL
+Issuer: CN=Ver.iD Dev Root CA,OU=Development team,O=Subst.id B.V.,postalCode=1013 AM,street=Koivistokade 3,L=Amsterdam,ST=Noord-Holland,C=NL
+-----BEGIN CERTIFICATE-----
+MIIDDDCCApKgAwIBAgIUNxnfZr1ei5h+X2CFs2izisJly5swCgYIKoZIzj0EAwMw
+gbQxCzAJBgNVBAYTAk5MMRYwFAYDVQQIEw1Ob29yZC1Ib2xsYW5kMRIwEAYDVQQH
+EwlBbXN0ZXJkYW0xFzAVBgNVBAkTDktvaXZpc3Rva2FkZSAzMRAwDgYDVQQREwcx
+MDEzIEFNMRYwFAYDVQQKEw1TdWJzdC5pZCBCLlYuMRkwFwYDVQQLExBEZXZlbG9w
+bWVudCB0ZWFtMRswGQYDVQQDExJWZXIuaUQgRGV2IFJvb3QgQ0EwHhcNMjUwNzAy
+MTEyOTQ5WhcNMzUwNjMwMTEzMDE5WjCBtDELMAkGA1UEBhMCTkwxFjAUBgNVBAgT
+DU5vb3JkLUhvbGxhbmQxEjAQBgNVBAcTCUFtc3RlcmRhbTEXMBUGA1UECRMOS29p
+dmlzdG9rYWRlIDMxEDAOBgNVBBETBzEwMTMgQU0xFjAUBgNVBAoTDVN1YnN0Lmlk
+IEIuVi4xGTAXBgNVBAsTEERldmVsb3BtZW50IHRlYW0xGzAZBgNVBAMTElZlci5p
+RCBEZXYgUm9vdCBDQTB2MBAGByqGSM49AgEGBSuBBAAiA2IABD3NwwE2awGI8KSz
+86yYWoOR3EHJnhkPSsYEYkqQtQ4yRUak7206eGHC6brGtv3PTFviqQhmT93QCLgm
+meJCzkRGqWgvscOtfx2INEwkWYe5/HsCwuKCH4YjrsTH/iFpeKNjMGEwDgYDVR0P
+AQH/BAQDAgEGMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFI6IeA0r74RwATsB
+EP7S4sZRdb85MB8GA1UdIwQYMBaAFI6IeA0r74RwATsBEP7S4sZRdb85MAoGCCqG
+SM49BAMDA2gAMGUCMQD8rLlq1QTBqw2IsZfFTNJyqOfrQCEmf+R/VMYxKrmK051L
+3TB6nw+/NtwVIl6fBJECMF8sl61iMvaY5q02RZOqJZIMknCqJwy4/JMGVRFmpfcR
+pfcb9ZXzcEeIf/fVPsaMTg==
 -----END CERTIFICATE-----
 `
 )
