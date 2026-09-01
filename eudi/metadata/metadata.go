@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -74,6 +74,44 @@ type CredentialConfiguration struct {
 	// The following fields are present/absent, depending on the credential format
 	VerifiableCredentialType string                   `json:"vct,omitempty"`                   // SD-JWT VC
 	CredentialDefinition     *W3CCredentialDefinition `json:"credential_definition,omitempty"` // W3C VC Signed as JWT, no JSON-LD
+}
+
+// UnmarshalJSON accepts both the OID4VCI v1.0 shape, where a credential's
+// display and claims live inside a `credential_metadata` object (§12.2.4), and
+// the widely-deployed pre-1.0 shape, where `display` and `claims` sit directly
+// on the credential configuration. When an issuer uses the legacy layout there
+// is no `credential_metadata`, so the metadata is synthesized from the top-level
+// fields — every downstream reader consults CredentialMetadata, so this one seam
+// is enough to make a legacy issuer's credentials display and store with a name.
+func (c *CredentialConfiguration) UnmarshalJSON(data []byte) error {
+	// alias drops the method set so this Unmarshal does not recurse.
+	type alias CredentialConfiguration
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	*c = CredentialConfiguration(a)
+
+	if c.CredentialMetadata == nil {
+		var legacy struct {
+			Display CredentialDisplays  `json:"display"`
+			Claims  []ClaimsDescription `json:"claims"`
+		}
+		// Before credential_metadata existed these fields were unknown to the
+		// parser and ignored, so a malformed legacy block must not start rejecting
+		// a document that used to parse. The error is deliberately dropped rather
+		// than returned early: encoding/json keeps filling the other fields past a
+		// type mismatch, and draft-13 issuers write `claims` as an object keyed by
+		// claim name — the `display` decoded next to it must still be kept.
+		_ = json.Unmarshal(data, &legacy)
+		if len(legacy.Display) > 0 || len(legacy.Claims) > 0 {
+			c.CredentialMetadata = &CredentialMetadata{
+				Display: legacy.Display,
+				Claims:  legacy.Claims,
+			}
+		}
+	}
+	return nil
 }
 
 type ProofType struct {
@@ -249,7 +287,9 @@ func (c *CredentialRequestEncryption) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("invalid 'jwks': %w", err)
 		}
-		if jwks, err := jwk.Parse(rawJwksBytes); err != nil {
+		// jwx v4 by default keeps unparseable set entries as placeholder keys;
+		// strict parsing preserves the v3 behavior of rejecting the whole set.
+		if jwks, err := jwk.Parse(rawJwksBytes, jwk.WithStrictKeySetParsing(true)); err != nil {
 			return fmt.Errorf("invalid 'jwks': %w", err)
 		} else {
 			c.Jwks = jwks

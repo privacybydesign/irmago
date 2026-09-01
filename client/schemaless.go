@@ -223,19 +223,51 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 	}, nil
 }
 
-func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.CredentialInfoList, locale string) ([]*clientmodels.Credential, error) {
+// credentialInfoListToSchemaless converts IRMA credential instances to the
+// schemaless client model. It is resilient by design: a single credential whose
+// type is no longer in the configuration, or that cannot be hashed, is isolated
+// as a ProblematicCredential (which still carries its storage hash, so it can be
+// deleted) instead of failing the whole list. One corrupt credential must never
+// blank the overview.
+func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.CredentialInfoList, locale string) ([]*clientmodels.Credential, []*clientmodels.ProblematicCredential) {
 	result := []*clientmodels.Credential{}
 	intermediateResult := map[string]*clientmodels.Credential{}
+	problematic := []*clientmodels.ProblematicCredential{}
+	problematicByHash := map[string]*clientmodels.ProblematicCredential{}
+
+	// addProblematic records a credential that could not be loaded. When instanceKey
+	// is non-empty, instances of the same logical credential in different formats
+	// are merged into one entry (all their hashes kept, so all are deletable).
+	addProblematic := func(instanceKey string, format clientmodels.CredentialFormat, hash, credId, reason string) {
+		if instanceKey != "" {
+			if p, ok := problematicByHash[instanceKey]; ok {
+				p.CredentialInstanceIds[format] = hash
+				return
+			}
+		}
+		p := &clientmodels.ProblematicCredential{
+			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{format: hash},
+			Reason:                reason,
+			CredentialId:          credId,
+		}
+		if instanceKey != "" {
+			problematicByHash[instanceKey] = p
+		}
+		problematic = append(problematic, p)
+	}
 
 	// loop over all credentials and immediately combine them when they're the same
 	// attributes + credential ID in different credential formats
 	for _, cred := range creds {
+		format := clientmodels.CredentialFormat(cred.CredentialFormat)
+		id := cred.Identifier()
+
 		instanceHash, err := hashAttributesAndCredType(cred)
 		if err != nil {
-			return nil, fmt.Errorf("failed to hash attributes and cred type: %w", err)
+			addProblematic("", format, cred.Hash, id.String(),
+				fmt.Sprintf("failed to hash attributes and cred type: %v", err))
+			continue
 		}
-
-		format := clientmodels.CredentialFormat(cred.CredentialFormat)
 
 		// if there's an existing instance we just add some format specific info
 		// and combine the two formats into a single credential result
@@ -247,11 +279,12 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 		} else
 		// if there's no existing one we create a new one
 		{
-			id := cred.Identifier()
 			info, ok := irmaConfig.CredentialTypes[id]
 
 			if !ok {
-				return nil, fmt.Errorf("failed to find credential info for %s", id.String())
+				addProblematic(instanceHash, format, cred.Hash, id.String(),
+					fmt.Sprintf("unknown credential type %s", id.String()))
+				continue
 			}
 
 			issuerId := info.IssuerIdentifier()
@@ -308,38 +341,42 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 		result = append(result, credential)
 	}
 
-	return result, nil
+	return result, problematic
 }
 
-func (client *Client) GetCredentials() ([]*clientmodels.Credential, error) {
+// GetCredentials returns every credential the wallet can render, plus a list of
+// the credentials it has stored but cannot load into a full Credential (see
+// ProblematicCredential — e.g. an SD-JWT-over-IRMA credential whose type was
+// dropped from its scheme). Both come from one pass, so they are a consistent snapshot, and
+// each problematic entry carries the storage hash(es) needed to delete it. A
+// single bad credential is never fatal; the error is reserved for a total EUDI
+// store-read failure, and even then the IRMA credentials that did load are
+// returned so a caller can surface the error without blanking the overview.
+func (client *Client) GetCredentials() ([]*clientmodels.Credential, []*clientmodels.ProblematicCredential, error) {
 	// Get IRMA + SDJWT-over-IRMA credentials, filter out keyshare credentials
 	creds := client.getIrmaCredentialInfoList()
 	creds = filterOutKeyshareCredentials(client.irmaClient.Configuration, creds)
 
-	irmaCreds, err := credentialInfoListToSchemaless(client.irmaClient.Configuration, creds, client.locale())
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert IRMA credentials to schemaless format: %v", err)
-	}
+	irmaCreds, problematic := credentialInfoListToSchemaless(client.irmaClient.Configuration, creds, client.locale())
 
 	// Get EUDI credentials and convert to the same format, then combine with IRMA credentials.
 	oidCreds, err := client.credentialService.GetCredentialMetadataList()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get OID4VCI credentials from storage: %v", err)
+		return irmaCreds, problematic, fmt.Errorf("failed to get OID4VCI credentials from storage: %v", err)
 	}
 
-	return append(irmaCreds, oidCreds...), nil
+	return append(irmaCreds, oidCreds...), problematic, nil
 }
 
 // getCredentialsIncludingKeyshare returns the same credentials as GetCredentials
 // but without filtering out keyshare credentials, so they can be considered for
-// disclosure during session permission flows.
+// disclosure during session permission flows. Problematic credentials are dropped
+// (they cannot be disclosed), but a single bad IRMA credential no longer fails the
+// whole set.
 func (client *Client) getCredentialsIncludingKeyshare() ([]*clientmodels.Credential, error) {
 	creds := client.getIrmaCredentialInfoList()
 
-	irmaCreds, err := credentialInfoListToSchemaless(client.irmaClient.Configuration, creds, client.locale())
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert IRMA credentials to schemaless format: %v", err)
-	}
+	irmaCreds, _ := credentialInfoListToSchemaless(client.irmaClient.Configuration, creds, client.locale())
 
 	oidCreds, err := client.credentialService.GetCredentialMetadataList()
 	if err != nil {

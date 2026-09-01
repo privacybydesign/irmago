@@ -35,7 +35,7 @@ import (
 func TestClientStorageRegressionV1_0_0(t *testing.T) {
 	c, sessionHandler, irmaServer := setupStorageRegressionClient(t, "v1.0.0")
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.fullName")
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.singleton")
@@ -198,7 +198,7 @@ func TestClientStorageRegressionV1_1_1(t *testing.T) {
 	// loadClientFromFixture asserts the loaded EUDI DB is encrypted at rest.
 	c, sessionHandler, irmaServer := setupStorageRegressionClient(t, "v1.1.1")
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.fullName")
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.singleton")
@@ -231,12 +231,234 @@ func TestClientStorageRegressionV1_1_1(t *testing.T) {
 	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
 }
 
+// TestClientStorageRegressionV1_3_0 validates the first snapshot written by the
+// locale-aware client. Three storage-visible changes landed in v1.3.0, and this
+// fixture is the first to carry all of them:
+//
+//   - EUDI activity logs persist text already resolved to a locale, where
+//     v1.0.0/v1.1.1 wrote translation maps. Those older fixtures pin the legacy
+//     decode path; this one pins the native read path for the current format.
+//   - OpenID4VCI issuance logs record the issued JWT's vct as the credential id,
+//     instead of the issuer metadata's placeholder ("unknown" in the older
+//     snapshots), so such a log finally names its credential.
+//   - Token Status List state exists at rest for the first time: a credential whose
+//     instances carry a status.status_list reference, stored with the INVALID
+//     LastKnownStatus a revocation left behind.
+//
+// Its eudi_client_db is born encrypted, like v1.1.1's, so loading it exercises the
+// steady-state encrypted read path rather than the plaintext migration.
+//
+// As in the older EUDI fixtures, no image is expected on an EUDI credential or log
+// entry: the database stores only a logo URI, while the bytes and their MIME type
+// live in the eudi filesystem, which is not part of the database snapshot.
+func TestClientStorageRegressionV1_3_0(t *testing.T) {
+	c, sessionHandler, irmaServer := setupStorageRegressionClient(t, "v1.3.0")
+
+	creds, _, err := c.GetCredentials()
+	require.NoError(t, err)
+	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.fullName")
+	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.singleton")
+	requireCredentialPresent(t, creds, "test.test.email")
+	requireSdJwtInstancesRemaining(t, creds, "test.test.email", 8)
+
+	// IRMA credentials: logos present + valid, attribute names and values correct.
+	fullName := findCredentialById(creds, "irma-demo.MijnOverheid.fullName")
+	require.NotNil(t, fullName)
+	requireValidImage(t, fullName.Image, "fullName credential")
+	requireValidImage(t, fullName.Issuer.Image, "fullName issuer")
+	requireAttrsInOrder(t, fullName.Attributes,
+		expectedAttr{Path: []any{"firstnames"}, DisplayName: new("First names"), Value: strVal("Barry")},
+		expectedAttr{Path: []any{"firstname"}, DisplayName: new("First name"), Value: strVal("Bar")},
+		expectedAttr{Path: []any{"familyname"}, DisplayName: new("Family name"), Value: strVal("Batsbak")},
+		expectedAttr{Path: []any{"prefix"}, DisplayName: new("Prefix"), Value: strVal("Sir")},
+	)
+
+	singleton := findCredentialById(creds, "irma-demo.MijnOverheid.singleton")
+	require.NotNil(t, singleton)
+	requireAttrsInOrder(t, singleton.Attributes,
+		expectedAttr{Path: []any{"BSN"}, DisplayName: new("BSN"), Value: strVal("12345")},
+	)
+
+	email := findCredentialById(creds, "test.test.email")
+	require.NotNil(t, email)
+	requireValidImage(t, email.Image, "email credential")
+	requireValidImage(t, email.Issuer.Image, "email issuer")
+	requireAttrsInOrder(t, email.Attributes,
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email address"), Value: strVal("test@gmail.com")},
+	)
+
+	// OpenID4VCI credentials read back through the encrypted connection with
+	// every attribute name and value intact, nesting included.
+	testCred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
+	require.NotNil(t, testCred, "expected OpenID4VCI credential from the EUDI DB")
+	requireEudiCredentialMeta(t, testCred)
+	requireAttrsInOrder(t, testCred.Attributes,
+		expectedAttr{Path: []any{"given_name"}, DisplayName: new("Given Name"), Value: strVal("Test")},
+		expectedAttr{Path: []any{"family_name"}, DisplayName: new("Family Name"), Value: strVal("User")},
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("test@example.com")},
+	)
+
+	org := findCredentialById(creds, "https://localhost:8443/vct/organization")
+	require.NotNil(t, org, "expected deeply nested organization credential")
+	requireEudiCredentialMeta(t, org)
+	requireAttrsInOrder(t, org.Attributes, expectedOrganizationAttrs()...)
+
+	// Token Status List state at rest. The generator revoked this credential and
+	// refreshed, so the wallet persisted an INVALID LastKnownStatus against the
+	// instances' status.status_list reference. Both flags are read straight out of
+	// storage — GetCredentials derives them from the stored status and never goes to
+	// the network — so this pins the status columns surviving a reload, without
+	// depending on the status-list agent still serving that list and index.
+	statusList := findCredentialById(creds, "https://localhost:8443/vct/statuslist")
+	require.NotNil(t, statusList, "expected the revoked status-list credential")
+	require.True(t, statusList.RevocationSupported,
+		"a stored status.status_list reference must read back as revocation-supporting")
+	require.True(t, statusList.Revoked,
+		"the stored INVALID status must read back as revoked")
+	requireAttrsInOrder(t, statusList.Attributes,
+		expectedAttr{Path: []any{"given_name"}, DisplayName: new("Given Name"), Value: strVal("Test")},
+		expectedAttr{Path: []any{"family_name"}, DisplayName: new("Family Name"), Value: strVal("StatusList")},
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal(statusListCredentialEmail)},
+	)
+
+	// The contrast that gives the two flags above their meaning: a credential with
+	// no status reference reads back as neither revocable nor revoked
+	// (requireEudiCredentialMeta already asserts Revoked is false on it).
+	require.False(t, testCred.RevocationSupported,
+		"a credential without a status reference must not read back as revocation-supporting")
+
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logs, 22)
+	requireLogTypePresent(t, logs, clientmodels.LogType_Issuance)
+	requireLogTypePresent(t, logs, clientmodels.LogType_Disclosure)
+	requireLogTypePresent(t, logs, clientmodels.LogType_Signature)
+	requireLogTypePresent(t, logs, clientmodels.LogType_CredentialRemoval)
+	assertLogsNewestFirst(t, logs)
+	require.Equal(t, 4, countDisclosures(logs, clientmodels.Protocol_OpenID4VP))
+	require.Equal(t, 4, countDisclosures(logs, clientmodels.Protocol_Irma))
+
+	// The three credential removals were the final generator actions, so they are
+	// the newest log entries.
+	for i := range 3 {
+		require.Equal(t, clientmodels.LogType_CredentialRemoval, logs[i].Type,
+			"expected the 3 newest logs to be credential removals")
+	}
+
+	// OpenID4VCI issuance logs name the credential they issued. v1.0.0 and v1.1.1
+	// stored the issuer metadata's placeholder here, so every one of these read
+	// back as "unknown"; from v1.3.0 the issued JWT's vct claim takes precedence.
+	vciIssued := map[string]int{}
+	for _, log := range logs {
+		if log.Type != clientmodels.LogType_Issuance || log.IssuanceLog == nil ||
+			log.IssuanceLog.Protocol != clientmodels.Protocol_OpenID4VCI {
+			continue
+		}
+		for _, lc := range log.IssuanceLog.Credentials {
+			vciIssued[lc.CredentialId]++
+		}
+	}
+	require.Equal(t, map[string]int{
+		"https://localhost:8443/vct/test":         3,
+		"https://localhost:8443/vct/organization": 1,
+		"https://localhost:8443/vct/statuslist":   1,
+	}, vciIssued, "OpenID4VCI issuance logs must record the issued JWT's vct as credential id")
+
+	// Log content: the multi-credential disclosure discloses the expected
+	// credentials and attribute values.
+	var multiDisc *clientmodels.DisclosureLog
+	for _, log := range logs {
+		if log.Type == clientmodels.LogType_Disclosure && log.DisclosureLog != nil && len(log.DisclosureLog.Credentials) > 1 {
+			multiDisc = log.DisclosureLog
+			break
+		}
+	}
+	require.NotNil(t, multiDisc, "expected a disclosure log spanning multiple credentials")
+	require.Equal(t, clientmodels.Protocol_Irma, multiDisc.Protocol)
+	require.Len(t, multiDisc.Credentials, 3)
+	discByID := map[string]clientmodels.LogCredential{}
+	for _, lc := range multiDisc.Credentials {
+		discByID[lc.CredentialId] = lc
+	}
+	requireValidImage(t, discByID["irma-demo.MijnOverheid.fullName"].Image, "disclosure log fullName")
+	requireAttrsInOrder(t, discByID["irma-demo.MijnOverheid.fullName"].Attributes,
+		expectedAttr{Path: []any{"familyname"}, DisplayName: new("Family name"), Value: strVal("Batsbak")})
+	requireValidImage(t, discByID["irma-demo.MijnOverheid.singleton"].Image, "disclosure log singleton")
+	requireAttrsInOrder(t, discByID["irma-demo.MijnOverheid.singleton"].Attributes,
+		expectedAttr{Path: []any{"BSN"}, DisplayName: new("BSN"), Value: strVal("12345")})
+	requireValidImage(t, discByID["irma-demo.RU.studentCard"].Image, "disclosure log studentCard")
+	requireAttrsInOrder(t, discByID["irma-demo.RU.studentCard"].Attributes,
+		expectedAttr{Path: []any{"university"}, DisplayName: new("University"), Value: strVal("University of the Arts")})
+
+	// The signature log records the signed message, the disclosed attribute, and
+	// a valid credential image.
+	sig := findLog(logs, clientmodels.LogType_Signature)
+	require.NotNil(t, sig)
+	require.NotNil(t, sig.SignedMessageLog)
+	require.Equal(t, "Hello, World!", sig.SignedMessageLog.Message)
+	require.Len(t, sig.SignedMessageLog.Credentials, 1)
+	require.Equal(t, "test.test.email", sig.SignedMessageLog.Credentials[0].CredentialId)
+	requireValidImage(t, sig.SignedMessageLog.Credentials[0].Image, "signature log email")
+	requireAttrsInOrder(t, sig.SignedMessageLog.Credentials[0].Attributes,
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email address"), Value: strVal("test@gmail.com")})
+
+	// The removal logs reference exactly the removed credentials, and an EUDI
+	// removal entry keeps the name of a credential that no longer exists — the
+	// snapshot in the log row is all that is left to resolve from.
+	removed := map[string]int{}
+	for _, log := range logs {
+		if log.Type == clientmodels.LogType_CredentialRemoval {
+			require.NotNil(t, log.RemovalLog)
+			require.Len(t, log.RemovalLog.Credentials, 1)
+			removed[log.RemovalLog.Credentials[0].CredentialId]++
+			if log.RemovalLog.Credentials[0].CredentialId == "https://localhost:8443/vct/test" {
+				require.Equal(t, "Test Credential (SD-JWT)", log.RemovalLog.Credentials[0].Name,
+					"a removed EUDI credential's name must survive in its removal log")
+			}
+		}
+	}
+	require.Equal(t, map[string]int{
+		"https://localhost:8443/vct/test": 2,
+		"irma-demo.RU.studentCard":        1,
+	}, removed)
+
+	// EUDI (SQLCipher) log content: the OpenID4VP disclosure of the
+	// OpenID4VCI-issued credential reads back with all its text intact. These rows
+	// were written in the resolved-string format, so this pins the current encode
+	// and decode paths against a real database, where TestClientStorageRegressionV1_0_0
+	// pins the legacy translation-map one.
+	var eudiDisc *clientmodels.DisclosureLog
+	for _, log := range logs {
+		if log.Type == clientmodels.LogType_Disclosure && log.DisclosureLog != nil &&
+			len(log.DisclosureLog.Credentials) == 1 &&
+			log.DisclosureLog.Credentials[0].CredentialId == "https://localhost:8443/vct/test" {
+			eudiDisc = log.DisclosureLog
+			break
+		}
+	}
+	require.NotNil(t, eudiDisc, "expected an OpenID4VP disclosure log of the EUDI credential")
+	require.Equal(t, "Test Credential (SD-JWT)", eudiDisc.Credentials[0].Name)
+	require.Equal(t, "Test Issuer", eudiDisc.Credentials[0].Issuer.Name)
+	requireAttrsInOrder(t, eudiDisc.Credentials[0].Attributes,
+		expectedAttr{Path: []any{"given_name"}, DisplayName: new("Given Name"), Value: strVal("Test")},
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("test@example.com")},
+	)
+
+	// Hand the shared usability check the same baseline the other fixtures give it.
+	// assertStatusListSessionsWork issues a fresh status-list credential and expects
+	// to disclose a valid one; leaving this revoked credential in place would put a
+	// second, revoked candidate of the same vct in front of it.
+	require.NoError(t, c.RemoveCredentialsByHash(statusList.CredentialInstanceIds))
+
+	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
+}
+
 // TestClientStorageRegressionV0_19_2 validates a snapshot from before the EUDI
 // SQLCipher store existed: bbolt only, no OpenID4VCI credentials, no removals.
 func TestClientStorageRegressionV0_19_2(t *testing.T) {
 	c, sessionHandler, irmaServer := setupStorageRegressionClient(t, "v0.19.2")
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.fullName")
 	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.singleton")

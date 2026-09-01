@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
@@ -239,7 +239,7 @@ func newDidJwkIssuerConfig(t *testing.T) (*testSdJwtVcConfig, SdJwtVcVerificatio
 	issuerKey, err := readTestIssuerPrivateKey()
 	require.NoError(t, err)
 
-	pubJwk, err := jwk.Import(issuerKey.Public())
+	pubJwk, err := jwk.Import[jwk.Key](issuerKey.Public())
 	require.NoError(t, err)
 	doc, err := (&didjwk.DocumentBuilder{}).FromJwk(pubJwk)
 	require.NoError(t, err)

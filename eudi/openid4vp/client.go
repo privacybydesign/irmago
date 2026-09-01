@@ -201,8 +201,6 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			return
 		}
 
-		eudi.Logger.Infof("auth request: %#v", request)
-
 		// Without the DC API the response is bound to the client identifier.
 		err = client.handleAuthorizationRequest(session, request, requestor, request.ClientId)
 

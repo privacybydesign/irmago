@@ -110,7 +110,7 @@ func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
 
 	// Step 3: Start an OpenID4VP session in the client using the verifier's request URI.
 	sessionReq, err := json.Marshal(client.SessionRequestData{
-		Qr:       irma.Qr{URL: veramoSession.RequestUri},
+		URL:      veramoSession.RequestUri,
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	})
 	require.NoError(t, err)
@@ -240,7 +240,7 @@ func testPayloadOnlyClaimAcrossLifecycle(t *testing.T) {
 	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// Surface "GetCredentials": stored credential.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	stored := findCredentialByName(t, creds, "Student Card Credential (SD-JWT)")
 	require.NotNil(t, stored, "issued StudentCardCredential should appear in GetCredentials")
@@ -2757,7 +2757,7 @@ func testEudiVerifierRequestingVeramoCredentialFails(t *testing.T) {
 	require.NoError(t, err)
 
 	sessionReq, err := json.Marshal(client.SessionRequestData{
-		Qr:       irma.Qr{URL: verifierSession.SessionLink},
+		URL:      verifierSession.SessionLink,
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	})
 	require.NoError(t, err)
@@ -4883,7 +4883,7 @@ func findCredentialByName(t *testing.T, creds []*clientmodels.Credential, expect
 // found by display name. Pass expected=nil for unlimited (batch-of-1), or a *uint for finite counts.
 func requireBatchRemaining(t *testing.T, c *client.Client, credName string, expected *uint) {
 	t.Helper()
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	cred := findCredentialByName(t, creds, credName)
 	require.NotNil(t, cred, "credential %q not found", credName)
@@ -4904,7 +4904,7 @@ func startOpenID4VPDisclosureSession(t *testing.T, c *client.Client, sessionId i
 	t.Helper()
 
 	sessionReq, err := json.Marshal(client.SessionRequestData{
-		Qr:       irma.Qr{URL: requestUri},
+		URL:      requestUri,
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	})
 	require.NoError(t, err)
