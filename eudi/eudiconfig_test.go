@@ -168,8 +168,19 @@ func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 		"the pinned verifier root anchors are loaded")
 	require.False(t, conf.Issuers.state().roots.Equal(x509.NewCertPool()),
 		"the pinned issuer root anchors are loaded")
-	require.False(t, conf.Issuers.state().intermediates.Equal(x509.NewCertPool()),
-		"the pinned issuer intermediate anchors are loaded")
+	// The anchor is the CA that issues the leaves, not the root above it: the
+	// root signs the verifier CA too, and anchoring it would trust both pools'
+	// certificates from either.
+	issuerAnchors := conf.Issuers.Anchors()
+	require.Len(t, issuerAnchors, 1)
+	require.Equal(t, "Yivi Attestation Providers CA", issuerAnchors[0].Certificate.Subject.CommonName)
+	require.Equal(t, clientmodels.TrustLevel_High, issuerAnchors[0].Level)
+	require.True(t, conf.Issuers.state().intermediates.Equal(x509.NewCertPool()),
+		"anchor installation fills no intermediates pool")
+
+	verifierAnchors := conf.Verifiers.Anchors()
+	require.Len(t, verifierAnchors, 1)
+	require.Equal(t, "Yivi Relying Parties CA", verifierAnchors[0].Certificate.Subject.CommonName)
 }
 
 func newTestConfiguration(t *testing.T) *Configuration {

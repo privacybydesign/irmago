@@ -40,10 +40,18 @@ const (
 // SignatureAlgorithmFor picks the JWS algorithm for a signing key. Every case
 // satisfies clause 5.1.2 and clause 6.2.1, and an unsupported key is an error
 // rather than a fallback, so there is no path to a weak signature.
+//
+// It decides on the public key, so an opaque crypto.Signer — a key in an HSM, a
+// PKCS#11 token or a cloud KMS, which never hands out its private half — signs
+// the same as an in-memory one. That is what makes moving the list signer to
+// hardware a constructor swap rather than a rewrite.
 func SignatureAlgorithmFor(key crypto.Signer) (jwa.SignatureAlgorithm, error) {
-	switch typed := key.(type) {
-	case *ecdsa.PrivateKey:
-		switch typed.Curve {
+	if key == nil {
+		return jwa.SignatureAlgorithm{}, fmt.Errorf("unsupported key type: no key")
+	}
+	switch public := key.Public().(type) {
+	case *ecdsa.PublicKey:
+		switch public.Curve {
 		case elliptic.P256():
 			return jwa.ES256(), nil
 		case elliptic.P384():
@@ -51,9 +59,9 @@ func SignatureAlgorithmFor(key crypto.Signer) (jwa.SignatureAlgorithm, error) {
 		case elliptic.P521():
 			return jwa.ES512(), nil
 		}
-		return jwa.SignatureAlgorithm{}, fmt.Errorf("unsupported EC curve %s", typed.Curve.Params().Name)
-	case *rsa.PrivateKey:
+		return jwa.SignatureAlgorithm{}, fmt.Errorf("unsupported EC curve %s", public.Curve.Params().Name)
+	case *rsa.PublicKey:
 		return jwa.RS256(), nil
 	}
-	return jwa.SignatureAlgorithm{}, fmt.Errorf("unsupported key type %T", key)
+	return jwa.SignatureAlgorithm{}, fmt.Errorf("unsupported key type %T", key.Public())
 }

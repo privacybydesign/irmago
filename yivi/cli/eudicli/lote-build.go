@@ -65,7 +65,12 @@ publishes rather than to whoever curates.`,
 			issuedAt = issuedAt.UTC()
 		}
 
-		list, stats, err := loadSource(args[0], issuedAt, sequenceNumber)
+		offline, err := cmd.Flags().GetBool("offline")
+		if err != nil {
+			return err
+		}
+
+		list, stats, err := loadSourceWith(args[0], issuedAt, sequenceNumber, buildOptions{Offline: offline})
 		if err != nil {
 			return err
 		}
@@ -114,4 +119,6 @@ func init() {
 		"LoTESequenceNumber to stamp; overrides scheme.json. Clause 6.3.2: 1 at the first release, incremented at every release, never lowered")
 	loteBuildCmd.Flags().String("issued-at", "",
 		"RFC 3339 issue time (default now); set it to make a rebuild byte-identical")
+	loteBuildCmd.Flags().Bool("offline", false,
+		"do not fetch the CRL distribution points an anchor list's CA services name; a release build must")
 }

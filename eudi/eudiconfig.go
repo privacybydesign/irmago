@@ -2,6 +2,7 @@ package eudi
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -84,6 +85,52 @@ type Configuration struct {
 	// toggle can both ask for one, and each trust model assembles its next state
 	// in a single pending slot.
 	reloadMu sync.Mutex
+
+	// The anchors the recognized anchor lists deliver, replaced whole by
+	// SetListTrustAnchors from the trust-list refresh and read by Reload. Issuer
+	// and verifier pools only; there is deliberately no slot for the trust-list
+	// pool, because a list must never be able to widen the set of keys allowed to
+	// sign lists.
+	listAnchorsMu            sync.Mutex
+	listIssuerTrustAnchors   []ExtraTrustAnchor
+	listVerifierTrustAnchors []ExtraTrustAnchor
+}
+
+// SetListTrustAnchors replaces the anchors the recognized anchor lists deliver
+// and reloads, so they take effect together with everything else the models
+// hold. Only the issuer and verifier pools take them: a certificate that may
+// sign lists is compiled in and stays so.
+//
+// A pinned anchor a list also names keeps the stronger of the two levels
+// (recordAnchorLevel keeps the strongest statement made about a root), so a list
+// can add and promote, never demote or remove what is compiled in. An anchor the
+// list delivers that does not install — a certificate that is not a CA, say — is
+// skipped with a warning rather than failing the reload: the lists are fail-soft,
+// and one bad entry must not leave the wallet on its previous state for good.
+func (c *Configuration) SetListTrustAnchors(issuers, verifiers []ExtraTrustAnchor) error {
+	c.listAnchorsMu.Lock()
+	c.listIssuerTrustAnchors = slices.Clone(issuers)
+	c.listVerifierTrustAnchors = slices.Clone(verifiers)
+	c.listAnchorsMu.Unlock()
+	return c.Reload()
+}
+
+// ListTrustAnchors reports what SetListTrustAnchors last installed, per role.
+func (c *Configuration) ListTrustAnchors() (issuers, verifiers []ExtraTrustAnchor) {
+	c.listAnchorsMu.Lock()
+	defer c.listAnchorsMu.Unlock()
+	return slices.Clone(c.listIssuerTrustAnchors), slices.Clone(c.listVerifierTrustAnchors)
+}
+
+// addListTrustAnchors installs list-delivered anchors into one model, skipping
+// the ones that do not hold up rather than failing: see SetListTrustAnchors.
+func (c *Configuration) addListTrustAnchors(tm *TrustModel, pool string, anchors []ExtraTrustAnchor) {
+	for _, anchor := range anchors {
+		tm.addRevocationListDistributionPoints(anchor.CRLDistributionPoints...)
+		if err := tm.addTrustAnchors(anchor.Confers, anchor.PEM); err != nil {
+			Logger.Warnf("eudi: a list-delivered %s anchor does not install and is skipped: %v", pool, err)
+		}
+	}
 }
 
 // NewConfiguration returns a new configuration. After this ParseFolder() should be called to parse the specified path.
@@ -189,6 +236,14 @@ func (c *Configuration) Reload() (err error) {
 			return fmt.Errorf("failed to add extra trust list trust anchor: %v", err)
 		}
 	}
+
+	// The anchors the recognized anchor lists deliver, after the pinned ones so a
+	// pinned level is already recorded when a list names the same certificate.
+	c.listAnchorsMu.Lock()
+	listIssuers, listVerifiers := c.listIssuerTrustAnchors, c.listVerifierTrustAnchors
+	c.listAnchorsMu.Unlock()
+	c.addListTrustAnchors(&c.Issuers, "issuer", listIssuers)
+	c.addListTrustAnchors(&c.Verifiers, "verifier", listVerifiers)
 	// Read the trust anchors from storage; the deferred commit publishes them.
 	if err := c.Issuers.load(); err != nil {
 		return fmt.Errorf("failed to load issuer trust model: %v", err)

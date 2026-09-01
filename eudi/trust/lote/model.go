@@ -40,6 +40,14 @@ const (
 	// production share it; the per-list identity is SchemeName.
 	LoTETypeRecognizedParties = "https://yivi.app/19602/LoTEType/YiviRecognizedPartiesList"
 
+	// LoTETypeTrustAnchors names the anchor list: a LoTE whose services are CAs the
+	// wallet installs as trust anchors, rather than parties it matches. A separate
+	// document from the party list because a CA entry delegates — one entry
+	// vouches for every certificate the CA issues — and so gets its own signer,
+	// review path and cadence. A Source pins one type or the other; a document of
+	// one type served at a source of the other is refused.
+	LoTETypeTrustAnchors = "https://yivi.app/19602/LoTEType/YiviTrustAnchorsList"
+
 	StatusDeterminationApproachYivi = "https://yivi.app/19602/YiviRecognizedPartiesList/StatusDetn/Yivi"
 	SchemeTypeCommunityRulesYivi    = "https://yivi.app/19602/YiviRecognizedParties/schemerules/Yivi"
 )
@@ -52,10 +60,21 @@ type ServiceTypeIdentifier string
 const (
 	ServiceTypeIssuer   ServiceTypeIdentifier = "https://yivi.app/19602/Svctype/Issuer"
 	ServiceTypeVerifier ServiceTypeIdentifier = "https://yivi.app/19602/Svctype/Verifier"
+
+	// The anchor service types: a CA whose certificates identify parties in the
+	// role. The wallet installs such a service's certificate as a trust anchor in
+	// that role's pool instead of matching parties against it. Role-typed like the
+	// party types, because the wallet keeps one anchor pool per role — which is
+	// why 119 612's Svctype/CA/PKC, conventional as it is, is not reused: it
+	// carries no role.
+	ServiceTypeIssuerCA   ServiceTypeIdentifier = "https://yivi.app/19602/Svctype/IssuerCA"
+	ServiceTypeVerifierCA ServiceTypeIdentifier = "https://yivi.app/19602/Svctype/VerifierCA"
 )
 
-// Role maps a service type onto the ladder's role. An unrecognized URI maps to no
-// role, so a list naming one this wallet does not know grants nothing.
+// Role maps a service type onto the ladder's role, for party lookups. An
+// unrecognized URI maps to no role, so a list naming one this wallet does not
+// know grants nothing. An anchor type maps to no party role either: a CA is not a
+// party, and a party lookup must never match one.
 func (t ServiceTypeIdentifier) Role() (trust.Role, bool) {
 	switch t {
 	case ServiceTypeIssuer:
@@ -75,6 +94,42 @@ func ServiceTypeForRole(role trust.Role) ServiceTypeIdentifier {
 		return ServiceTypeVerifier
 	}
 	return ""
+}
+
+// AnchorRole maps an anchor service type onto the role whose anchor pool the
+// service's certificate belongs in. A party type, or an unknown URI, is no anchor.
+func (t ServiceTypeIdentifier) AnchorRole() (trust.Role, bool) {
+	switch t {
+	case ServiceTypeIssuerCA:
+		return trust.RoleIssuer, true
+	case ServiceTypeVerifierCA:
+		return trust.RoleVerifier, true
+	}
+	return "", false
+}
+
+// AnchorServiceTypeForRole is the inverse of [ServiceTypeIdentifier.AnchorRole].
+func AnchorServiceTypeForRole(role trust.Role) ServiceTypeIdentifier {
+	switch role {
+	case trust.RoleIssuer:
+		return ServiceTypeIssuerCA
+	case trust.RoleVerifier:
+		return ServiceTypeVerifierCA
+	}
+	return ""
+}
+
+// SupplyPointTypeCRL is the ServiceType of a supply point (clause 6.6, the
+// binding's ServiceSupplyPoints) at which the CRLs a CA issues are published. A
+// CA certificate's own CRL extension says where the CA gets revoked, not where
+// it revokes its leaves, so an anchor list has to say the latter itself.
+const SupplyPointTypeCRL = "https://yivi.app/19602/SvcSupplyPoint/CRL"
+
+// ServiceSupplyPoint is one entry of the binding's ServiceSupplyPoints: a typed
+// URI at which the service supplies something — for an anchor, its CRLs.
+type ServiceSupplyPoint struct {
+	ServiceType string `json:"ServiceType"`
+	URIValue    string `json:"uriValue"`
 }
 
 // ServiceStatus is the current status of a grant (clause 6.6.4), as a URI.
@@ -257,7 +312,48 @@ type ServiceInformation struct {
 	// Clause 6.6.4. Absent means granted; see [ServiceStatus].
 	Status ServiceStatus `json:"ServiceStatus,omitempty"`
 
+	// SupplyPoints is where the service supplies things; on an anchor service, the
+	// CRLs the CA issues. See [SupplyPointTypeCRL].
+	SupplyPoints []ServiceSupplyPoint `json:"ServiceSupplyPoints,omitempty"`
+
 	Extensions []YiviExtension `json:"ServiceInformationExtensions,omitempty"`
+}
+
+// IsAnchor reports whether this service is a CA the wallet installs as a trust
+// anchor rather than a party it matches.
+func (si ServiceInformation) IsAnchor() bool {
+	_, ok := si.Type.AnchorRole()
+	return ok
+}
+
+// Confers is the level an anchor service's CA passes on to the certificates under
+// it, as the entry states it: medium when it states nothing. What the wallet
+// actually installs is this capped by the source's ceiling — an entry cannot
+// promote itself past what its list may confer.
+//
+// A deliberate departure from "the rung is the source's word, never the entry's",
+// which holds for parties because being listed means one thing. A CA has two
+// states Yivi wants to tell apart, anchored and under contract, and promotion has
+// to be a change to data.
+func (si ServiceInformation) Confers() clientmodels.TrustLevel {
+	for _, ext := range si.Extensions {
+		if ext.Confers != clientmodels.TrustLevel_Unevaluated {
+			return ext.Confers
+		}
+	}
+	return clientmodels.TrustLevel_Medium
+}
+
+// CRLDistributionPoints returns the CRL supply points of an anchor service: where
+// the CRLs its CA issues are published.
+func (si ServiceInformation) CRLDistributionPoints() []string {
+	var points []string
+	for _, point := range si.SupplyPoints {
+		if point.ServiceType == SupplyPointTypeCRL && point.URIValue != "" {
+			points = append(points, point.URIValue)
+		}
+	}
+	return points
 }
 
 // DigitalIdentity is the set of identities a service may be recognized by
@@ -305,6 +401,11 @@ type YiviExtension struct {
 	// Marking is one scheme-specific qualifier, carried for round-tripping but not
 	// acted on: the rung a grant confers is the source's, never the entry's.
 	Marking string `json:"YiviMarking,omitempty"`
+
+	// Confers is the level an anchor service's CA passes on, on a
+	// ServiceInformationExtensions element of an anchor service only. See
+	// [ServiceInformation.Confers] for why this one is the entry's word.
+	Confers clientmodels.TrustLevel `json:"YiviConfers,omitempty"`
 }
 
 // OrganizationIdentifier returns the entity's registered identifier, or "" when

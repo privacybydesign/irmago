@@ -32,10 +32,20 @@ import (
 //
 // Nothing mutates a trustState after commit publishes it.
 type trustState struct {
-	roots         *x509.CertPool
+	// roots holds the anchors: the certificates chain building ends at. An anchor
+	// is trusted for what it signs directly — a CA, self-signed or not — and never
+	// for what its own issuer signed besides it.
+	roots *x509.CertPool
+	// intermediates is not filled by anchor installation any more, since the anchor
+	// is the CA that issues end-entity certificates and no path building beyond it
+	// is wanted. It stays for callers that assemble a model by hand.
 	intermediates *x509.CertPool
-	// allCerts holds every anchored root and intermediate, for finding the
-	// certificate a CRL is issued by.
+	// anchors lists what roots holds, in installation order, since a CertPool
+	// cannot be enumerated.
+	anchors []*x509.Certificate
+	// allCerts holds every anchor and every anchor's issuers, for finding the
+	// certificate a CRL is issued by: an anchor's CRL revokes its leaves, an
+	// issuer's revokes the anchor.
 	allCerts           []*x509.Certificate
 	revocationLists    []*x509.RevocationList
 	distributionPoints []string
@@ -50,6 +60,7 @@ func newTrustState() *trustState {
 	return &trustState{
 		roots:              x509.NewCertPool(),
 		intermediates:      x509.NewCertPool(),
+		anchors:            []*x509.Certificate{},
 		allCerts:           []*x509.Certificate{},
 		revocationLists:    []*x509.RevocationList{},
 		distributionPoints: []string{},
@@ -67,6 +78,7 @@ func (s *trustState) clone() *trustState {
 	return &trustState{
 		roots:              s.roots.Clone(),
 		intermediates:      s.intermediates.Clone(),
+		anchors:            slices.Clone(s.anchors),
 		allCerts:           slices.Clone(s.allCerts),
 		revocationLists:    slices.Clone(s.revocationLists),
 		distributionPoints: slices.Clone(s.distributionPoints),
@@ -297,7 +309,7 @@ func (tm *TrustModel) loadTrustChains() error {
 	}
 	// Locally installed chains confer high: this storage is the dev, staging and
 	// test seam standing in for the Yivi CA, and nothing writes here in a released
-	// wallet. A third-party CA is pinned in code with its level instead.
+	// wallet. A third-party CA arrives through the anchor list with its own level.
 	return tm.addTrustAnchors(clientmodels.TrustLevel_High, trustedChainFiles...)
 }
 
@@ -306,49 +318,28 @@ func (tm *TrustModel) addRevocationListDistributionPoints(distPointUrls ...strin
 	s.distributionPoints = append(s.distributionPoints, distPointUrls...)
 }
 
-func (tm *TrustModel) getRootVerificationOptions(rootCerts *x509.CertPool) x509.VerifyOptions {
-	validationOptions := x509.VerifyOptions{
-		CurrentTime: time.Now(),
-		Roots:       rootCerts,
-	}
-
-	if tm.certificateVerificationMode == StrictCertificateVerification {
-		validationOptions.KeyUsages = []x509.ExtKeyUsage{
-			x509.ExtKeyUsage(x509.KeyUsageCertSign),
-			x509.ExtKeyUsage(x509.KeyUsageCRLSign),
-		}
-	}
-
-	return validationOptions
-}
-
-func (tm *TrustModel) getIntermediateCertificateVerificationOptions(s *trustState) x509.VerifyOptions {
-	validationOptions := x509.VerifyOptions{
-		CurrentTime:   time.Now(),
-		Roots:         s.roots,
-		Intermediates: s.intermediates,
-	}
-
-	if tm.certificateVerificationMode == StrictCertificateVerification {
-		validationOptions.KeyUsages = []x509.ExtKeyUsage{
-			x509.ExtKeyUsage(x509.KeyUsageCertSign),
-			x509.ExtKeyUsage(x509.KeyUsageCRLSign),
-		}
-	}
-
-	return validationOptions
-}
-
-// addTrustAnchors installs trust anchor chains into the pending state, recording
-// confers as the trust level every root in them passes on to the certificates
-// that validate to it.
+// addTrustAnchors installs anchors into the pending state, recording confers as
+// the trust level each passes on to the certificates that validate to it.
+//
+// Each PEM is one anchor chain. Its first certificate is the anchor: the
+// certificate chain building ends at, trusted for what it signs directly and for
+// nothing else, whether or not it is self-signed. Any certificates after it are
+// its issuers, root last. They are never anchors themselves — anchoring a root
+// would trust every sibling CA under it — and are kept for one purpose: only an
+// issuer's CRL can say whether the anchor has been revoked, so the issuers are
+// what that CRL is verified against, and where it is published is registered
+// for the sync.
+//
+// An anchor that does not hold up — not a CA, outside its validity window, an
+// issuer chain that does not actually issue it, or revoked by its issuer — is
+// skipped with a warning; the rest of the PEMs still install.
 func (tm *TrustModel) addTrustAnchors(confers clientmodels.TrustLevel, trustAnchors ...[]byte) error {
 	s := tm.building()
 
 	// An anchor that yields no revocation endpoint is one whose certificates can
-	// never be revoked: an absent CRL reads as "not revoked", and only
-	// intermediates are scanned below — a root's own extension is never read. That
-	// is silent everywhere else, so it is said here.
+	// never be revoked: an absent CRL reads as "not revoked", and the CRLs a CA
+	// issues are advertised in the certificates it issues, not in the CA
+	// certificate itself. That is silent everywhere else, so it is said here.
 	before := len(s.distributionPoints)
 	defer func() {
 		if len(s.distributionPoints) == before {
@@ -361,110 +352,140 @@ func (tm *TrustModel) addTrustAnchors(confers clientmodels.TrustLevel, trustAnch
 		if err != nil {
 			return err
 		}
+		if len(chain) == 0 {
+			continue
+		}
 
-		// Add the root cert to the root pool. Chains on disk are stored in
-		// leaf-to-root order (matching the convention enforced by
-		// certificateManager.InstallCertificate, where the filename is
-		// derived from chain[0] — the leaf). The root is therefore the
-		// last element, and the intermediates follow in root→leaf order.
-		if len(chain) >= 1 {
-			rootCert := chain[len(chain)-1]
-			intermediateChain := chain[:len(chain)-1]
+		anchor, issuers := chain[0], chain[1:]
+		subject := anchor.Subject.ToRDNSequence().String()
 
-			// For now, we only accept the root certs that are self-signed (no system CA certs)
-			// Verify if the root is self-signed, otherwise this is not a valid root cert
-			if !bytes.Equal(rootCert.RawSubject, rootCert.RawIssuer) {
-				tm.logger.Warnf("Root certificate %s is no root or self-signed certificate. Skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String())
-				continue
-			}
+		if err := tm.checkAnchor(anchor); err != nil {
+			tm.logger.Warnf("Trust anchor %s is not installed: %v", subject, err)
+			continue
+		}
+		if err := checkIssuerChain(anchor, issuers); err != nil {
+			tm.logger.Warnf("Trust anchor %s is not installed: %v", subject, err)
+			continue
+		}
+		if tm.chainRevoked(chain) {
+			tm.logger.Warnf("Trust anchor %s is not installed: it or one of its issuers is revoked", subject)
+			continue
+		}
 
-			// Self-signed root cert, verify other options, add to the root pool and continue with intermediate certs
-			// Note: duplicates are filtered out by the call to .AddCert()
-
-			rootCertsForValidation := s.roots.Clone()
-			rootCertsForValidation.AddCert(rootCert)
-			rootValidationOptions := tm.getRootVerificationOptions(rootCertsForValidation)
-
-			_, err = rootCert.Verify(rootValidationOptions)
-			if err != nil {
-				// If the root cert is not valid, skip the rest of the chain
-				tm.logger.Warnf("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
-				continue
-			}
-
-			// Only add the root again if it wasn't already part of another chain loaded into memory
-			if !slices.ContainsFunc(s.allCerts, func(cert *x509.Certificate) bool {
-				return bytes.Equal(cert.Raw, rootCert.Raw)
-			}) {
-				s.allCerts = append(s.allCerts, rootCert)
-			}
-
-			// Valid root cert, add to the trusted root pool
-			s.roots.AddCert(rootCert)
-			s.recordAnchorLevel(rootCert, confers)
-
-			// Add the intermediate certs to the intermediate pool. The chain
-			// on disk is leaf-to-root, so to walk outward from the root we
-			// iterate intermediateChain in reverse (last → first).
-			if len(intermediateChain) > 0 {
-				parentCert := rootCert
-				intermediateCerts := make([]*x509.Certificate, len(intermediateChain))
-				for i, c := range intermediateChain {
-					intermediateCerts[len(intermediateChain)-1-i] = c
+		// Where the anchor and its intermediate issuers are revoked is on those
+		// certificates; a self-signed root has nowhere to be revoked.
+		for _, cert := range chain[:len(chain)-1] {
+			for _, distPoint := range cert.CRLDistributionPoints {
+				if !slices.Contains(s.distributionPoints, distPoint) {
+					s.distributionPoints = append(s.distributionPoints, distPoint)
 				}
-				validationOptions := tm.getIntermediateCertificateVerificationOptions(s)
+			}
+		}
 
-				for _, caCert := range intermediateCerts {
-					// Verify the certificate against the root pools
-					if _, err := caCert.Verify(validationOptions); err != nil {
-						// Skip this intermediate cert, as it is not valid
-						tm.logger.Warnf("Intermediate certificate %s is not valid: %v, skipping the rest of the chain", caCert.Subject.ToRDNSequence().String(), err)
-						continue
-					}
-
-					// Add the CA parents CRLs
-					crls, err := tm.readAndVerifyRevocationListsForCert(caCert, parentCert)
-					if err != nil {
-						tm.logger.Warnf("Failed to read or verify CRLs to verify intermediate certificate %s revocation: %v", caCert.Subject.ToRDNSequence().String(), err)
-					}
-
-					// Validate intermediate cert against parent CRLs (if any)
-					isRevoked := false
-					for _, crl := range crls {
-						for _, revoked := range crl.RevokedCertificateEntries {
-							if revoked.SerialNumber.Cmp(caCert.SerialNumber) == 0 {
-								isRevoked = true
-								tm.logger.Warnf("Intermediate certificate %s is revoked by CRL %s (number %s), skipping the rest of the chain", caCert.Subject.ToRDNSequence().String(), crl.Issuer.ToRDNSequence().String(), crl.Number.String())
-								break
-							}
-						}
-
-						if isRevoked {
-							break
-						}
-					}
-
-					// Only if the validations passes, add the cert to the intermediate pool
-					// Otherwise, skip this (and all following) intermediate certs in the chain
-					if isRevoked {
-						break
-					}
-
-					s.intermediates.AddCert(caCert)
-					s.allCerts = append(s.allCerts, caCert)
-					parentCert = caCert
-
-					// If the revocation list distribution points of this intermediate cert are known, add them to the list of known distribution points
-					for _, distPoint := range caCert.CRLDistributionPoints {
-						if !slices.Contains(s.distributionPoints, distPoint) {
-							s.distributionPoints = append(s.distributionPoints, distPoint)
-						}
-					}
-				}
+		s.roots.AddCert(anchor)
+		s.recordAnchorLevel(anchor, confers)
+		if !containsCertificate(s.anchors, anchor) {
+			s.anchors = append(s.anchors, anchor)
+		}
+		// Every certificate in the chain may issue a CRL the sync downloads: the
+		// anchor's revoke its leaves, its issuers' revoke the anchor.
+		for _, cert := range chain {
+			if !containsCertificate(s.allCerts, cert) {
+				s.allCerts = append(s.allCerts, cert)
 			}
 		}
 	}
 	return nil
+}
+
+// checkAnchor says whether a certificate can serve as an anchor at all: inside
+// its validity window and, in strict mode, a CA. Developer mode keeps the window
+// but lets a test anchor at anything, as it always has.
+func (tm *TrustModel) checkAnchor(anchor *x509.Certificate) error {
+	now := time.Now()
+	if now.Before(anchor.NotBefore) || now.After(anchor.NotAfter) {
+		return fmt.Errorf("not valid at %s (notBefore %s, notAfter %s)",
+			now.Format(time.RFC3339), anchor.NotBefore.Format(time.RFC3339), anchor.NotAfter.Format(time.RFC3339))
+	}
+	if tm.certificateVerificationMode != StrictCertificateVerification {
+		return nil
+	}
+	if !anchor.BasicConstraintsValid || !anchor.IsCA {
+		return fmt.Errorf("not a CA certificate")
+	}
+	if anchor.KeyUsage != 0 && anchor.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return fmt.Errorf("key usage does not include keyCertSign")
+	}
+	return nil
+}
+
+// checkIssuerChain checks that the issuers given with an anchor are its issuers:
+// each signed the one before it, and the last is self-signed. Their validity
+// windows are deliberately not checked — an issuer that has since expired can
+// still have signed the anchor, and its CRL is still what revokes it.
+func checkIssuerChain(anchor *x509.Certificate, issuers []*x509.Certificate) error {
+	if len(issuers) == 0 {
+		return nil
+	}
+	root := issuers[len(issuers)-1]
+	if !bytes.Equal(root.RawSubject, root.RawIssuer) {
+		return fmt.Errorf("last certificate in the chain, %s, is not self-signed", root.Subject.ToRDNSequence().String())
+	}
+	child := anchor
+	for _, issuer := range issuers {
+		if err := child.CheckSignatureFrom(issuer); err != nil {
+			return fmt.Errorf("%s did not issue %s: %v",
+				issuer.Subject.ToRDNSequence().String(), child.Subject.ToRDNSequence().String(), err)
+		}
+		child = issuer
+	}
+	return nil
+}
+
+// chainRevoked reports whether the anchor or any intermediate issuer in a chain
+// is named on its issuer's stored CRL. An absent CRL reads as not revoked, as it
+// does for leaves.
+func (tm *TrustModel) chainRevoked(chain []*x509.Certificate) bool {
+	for i := 0; i+1 < len(chain); i++ {
+		cert, parent := chain[i], chain[i+1]
+		crls, err := tm.readAndVerifyRevocationListsForCert(cert, parent)
+		if err != nil {
+			tm.logger.Warnf("Failed to read or verify CRLs for %s: %v", cert.Subject.ToRDNSequence().String(), err)
+		}
+		for _, crl := range crls {
+			for _, revoked := range crl.RevokedCertificateEntries {
+				if revoked.SerialNumber.Cmp(cert.SerialNumber) == 0 {
+					tm.logger.Warnf("Certificate %s is revoked by CRL %s (number %s)",
+						cert.Subject.ToRDNSequence().String(), crl.Issuer.ToRDNSequence().String(), crl.Number.String())
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func containsCertificate(certs []*x509.Certificate, cert *x509.Certificate) bool {
+	return slices.ContainsFunc(certs, func(c *x509.Certificate) bool {
+		return bytes.Equal(c.Raw, cert.Raw)
+	})
+}
+
+// Anchor is one installed trust anchor and the level it confers.
+type Anchor struct {
+	Certificate *x509.Certificate
+	Level       clientmodels.TrustLevel
+}
+
+// Anchors lists the anchors in force, in installation order.
+func (tm *TrustModel) Anchors() []Anchor {
+	s := tm.state()
+	anchors := make([]Anchor, 0, len(s.anchors))
+	for _, cert := range s.anchors {
+		level, _ := s.anchorLevel(cert)
+		anchors = append(anchors, Anchor{Certificate: cert, Level: level})
+	}
+	return anchors
 }
 
 func (tm *TrustModel) loadRevocationLists() error {

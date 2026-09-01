@@ -478,7 +478,7 @@ func TestVerify_RejectsAJwsMintedForSomethingElse(t *testing.T) {
 	signer := NewTestLoteSigner(t)
 	raw := signer.SignListWithTyp(t, NewTestList(testListId, 1), "statuslist+jwt")
 
-	_, err := verify(raw, signer.X509VerificationContext())
+	_, err := verify(raw, signer.X509VerificationContext(), nil)
 
 	require.ErrorContains(t, err, "typ")
 }
@@ -499,7 +499,7 @@ func TestVerify_RejectsASignatureWithAnUnderstoodExtensionItCannotHonour(t *test
 		"crit": []string{"sigT"},
 	})
 
-	_, err := verify(raw, signer.X509VerificationContext())
+	_, err := verify(raw, signer.X509VerificationContext(), nil)
 
 	require.ErrorContains(t, err, "crit")
 	require.ErrorContains(t, err, "sigT")
@@ -510,7 +510,7 @@ func TestVerify_RejectsASignatureWithAnUnderstoodExtensionItCannotHonour(t *test
 func TestVerify_AcceptsOurOwnHeadersWithCritValidationOn(t *testing.T) {
 	signer := NewTestLoteSigner(t)
 
-	verified, err := verify(signer.SignList(t, NewTestList(testListId, 1)), signer.X509VerificationContext())
+	verified, err := verify(signer.SignList(t, NewTestList(testListId, 1)), signer.X509VerificationContext(), nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, verified)
@@ -523,7 +523,7 @@ func TestVerify_RejectsAListWithoutANextUpdate(t *testing.T) {
 
 	// Sign refuses this document (clause 6.6.5 has nothing to check against), so
 	// the fixture takes the raw path: the point is what verification rejects.
-	_, err := verify(signer.SignListRaw(t, list), signer.X509VerificationContext())
+	_, err := verify(signer.SignListRaw(t, list), signer.X509VerificationContext(), nil)
 
 	require.ErrorContains(t, err, "NextUpdate")
 }
@@ -544,7 +544,7 @@ func TestChecker_RejectsAListDeclaringAnotherLoTEType(t *testing.T) {
 func TestVerify_RejectsWithoutAnAnchorSet(t *testing.T) {
 	signer := NewTestLoteSigner(t)
 
-	_, err := verify(signer.SignList(t, NewTestList(testListId, 1)), nil)
+	_, err := verify(signer.SignList(t, NewTestList(testListId, 1)), nil, nil)
 
 	require.Error(t, err)
 }
@@ -552,7 +552,7 @@ func TestVerify_RejectsWithoutAnAnchorSet(t *testing.T) {
 func TestVerify_RejectsGarbage(t *testing.T) {
 	signer := NewTestLoteSigner(t)
 
-	_, err := verify([]byte("not a jws"), signer.X509VerificationContext())
+	_, err := verify([]byte("not a jws"), signer.X509VerificationContext(), nil)
 
 	require.Error(t, err)
 }

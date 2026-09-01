@@ -105,7 +105,7 @@ func goldenPartyCertificate(t *testing.T) *x509.Certificate {
 // A document nobody re-signed, parsed by whatever model.go currently says a LoTE
 // looks like.
 func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
-	verified, err := verify(goldenRaw(t), goldenAnchors(t))
+	verified, err := verify(goldenRaw(t), goldenAnchors(t), nil)
 	require.NoError(t, err, "the committed document must keep verifying")
 
 	scheme := verified.list.SchemeInformation
@@ -185,7 +185,7 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 
 // golden/list.json must parse to exactly the list that was signed.
 func TestGoldenReadableCopyMatchesTheSignedOne(t *testing.T) {
-	verified, err := verify(goldenRaw(t), goldenAnchors(t))
+	verified, err := verify(goldenRaw(t), goldenAnchors(t), nil)
 	require.NoError(t, err)
 
 	readable, err := os.ReadFile(filepath.Join(goldenDir(t), "list.json"))

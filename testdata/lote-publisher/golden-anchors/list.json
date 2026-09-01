@@ -1,0 +1,195 @@
+{
+  "LoTE": {
+    "ListAndSchemeInformation": {
+      "LoTEVersionIdentifier": 1,
+      "LoTESequenceNumber": 1,
+      "LoTEType": "https://yivi.app/19602/LoTEType/YiviTrustAnchorsList",
+      "SchemeOperatorName": [
+        {
+          "lang": "en",
+          "value": "Yivi Example"
+        }
+      ],
+      "SchemeOperatorAddress": {
+        "SchemeOperatorPostalAddress": [
+          {
+            "lang": "en",
+            "StreetAddress": "Test Lane 1",
+            "Locality": "Utrecht",
+            "PostalCode": "3512 AA",
+            "Country": "NL"
+          }
+        ],
+        "SchemeOperatorElectronicAddress": [
+          {
+            "lang": "en",
+            "uriValue": "mailto:trustanchors@yivi.example"
+          }
+        ]
+      },
+      "SchemeName": [
+        {
+          "lang": "en",
+          "value": "NL:Yivi Trust Anchors"
+        }
+      ],
+      "SchemeInformationURI": [
+        {
+          "lang": "en",
+          "uriValue": "https://yivi.example/trustanchors"
+        }
+      ],
+      "StatusDeterminationApproach": "https://yivi.app/19602/YiviRecognizedPartiesList/StatusDetn/Yivi",
+      "SchemeTypeCommunityRules": [
+        {
+          "lang": "en",
+          "uriValue": "https://yivi.app/19602/YiviRecognizedParties/schemerules/Yivi"
+        }
+      ],
+      "SchemeTerritory": "NL",
+      "PolicyOrLegalNotice": [
+        {
+          "LoTEPolicy": {
+            "lang": "en",
+            "uriValue": "https://yivi.example/trustanchors/policy"
+          }
+        }
+      ],
+      "ListIssueDateTime": "2026-08-27T15:00:12Z",
+      "NextUpdate": "2027-02-23T15:00:12Z",
+      "DistributionPoints": [
+        "https://trustlist.yivi.example/anchors"
+      ]
+    },
+    "TrustedEntitiesList": [
+      {
+        "TrustedEntityInformation": {
+          "TEName": [
+            {
+              "lang": "en",
+              "value": "Example Trust Services"
+            }
+          ],
+          "TEAddress": {
+            "TEPostalAddress": [
+              {
+                "lang": "en",
+                "StreetAddress": "Example Street 2",
+                "Locality": "Utrecht",
+                "PostalCode": "3512 AA",
+                "Country": "NL"
+              }
+            ],
+            "TEElectronicAddress": [
+              {
+                "lang": "en",
+                "uriValue": "mailto:pki@trust.example.com"
+              }
+            ]
+          },
+          "TEInformationURI": [
+            {
+              "lang": "en",
+              "uriValue": "https://trust.example.com/pki"
+            }
+          ]
+        },
+        "TrustedEntityServices": [
+          {
+            "ServiceInformation": {
+              "ServiceName": [
+                {
+                  "lang": "en",
+                  "value": "Example Attestation CA"
+                }
+              ],
+              "ServiceDigitalIdentity": {
+                "X509Certificates": [
+                  {
+                    "val": "MIIBljCCAT2gAwIBAgIUQV5HaZKiMElhN+N1AuRLk7PJvOgwCgYIKoZIzj0EAwIwITEfMB0GA1UEAwwWWWl2aSBUZXN0IEVVREkgUm9vdCBDQTAeFw0yNjA1MTkxMTM5MTlaFw0zNjA1MTYxMTM5MTlaMCExHzAdBgNVBAMMFllpdmkgVGVzdCBFVURJIFJvb3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAS5gZajtxbEX9SRRDLM06zhR27Ui/vAyTp8l+a/6MnoWkcF/96Nxyb9ejFNB0pxf601OZYrO7lBIH3KsZQTwJVDo1MwUTAdBgNVHQ4EFgQUbRtcp/I/esL49jc0k2509Wd6JRgwHwYDVR0jBBgwFoAUbRtcp/I/esL49jc0k2509Wd6JRgwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNHADBEAiAl3QlSoUhzlnRP6ewQH67IIIV6iybC3FegBsFi24/zLgIgWeUPY83KWTiL/Ir3Vw28eyT/vH82rx6wlkYbhRrKEzk="
+                  }
+                ]
+              },
+              "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/IssuerCA",
+              "ServiceSupplyPoints": [
+                {
+                  "ServiceType": "https://yivi.app/19602/SvcSupplyPoint/CRL",
+                  "uriValue": "https://trust.example.com/crl/attestation.crl"
+                }
+              ],
+              "ServiceInformationExtensions": [
+                {
+                  "YiviConfers": "medium"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "TrustedEntityInformation": {
+          "TEName": [
+            {
+              "lang": "en",
+              "value": "Example Relying Party CA B.V."
+            }
+          ],
+          "TEAddress": {
+            "TEPostalAddress": [
+              {
+                "lang": "en",
+                "StreetAddress": "Example Street 3",
+                "Locality": "Utrecht",
+                "PostalCode": "3512 AA",
+                "Country": "NL"
+              }
+            ],
+            "TEElectronicAddress": [
+              {
+                "lang": "en",
+                "uriValue": "mailto:info@rp-ca.example.com"
+              }
+            ]
+          },
+          "TEInformationURI": [
+            {
+              "lang": "en",
+              "uriValue": "https://rp-ca.example.com/about"
+            }
+          ]
+        },
+        "TrustedEntityServices": [
+          {
+            "ServiceInformation": {
+              "ServiceName": [
+                {
+                  "lang": "en",
+                  "value": "Example Relying Party CA B.V."
+                }
+              ],
+              "ServiceDigitalIdentity": {
+                "X509Certificates": [
+                  {
+                    "val": "MIIB5DCCAYmgAwIBAgIUKp3l1e+X2zF9p49OH70NS4rA3VcwCgYIKoZIzj0EAwIwRzELMAkGA1UEBhMCTkwxGTAXBgNVBAoMEERlbW8gVmVyaWZpZXIgQ0ExHTAbBgNVBAMMFERlbW8gUmVxdWVzdG9ycyBSb290MB4XDTI1MDgwNTA5MjQzOFoXDTM1MDgwMzA5MjQzOFowRzELMAkGA1UEBhMCTkwxGTAXBgNVBAoMEERlbW8gVmVyaWZpZXIgQ0ExHTAbBgNVBAMMFERlbW8gUmVxdWVzdG9ycyBSb290MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAElfHqkpjpSmmijr87vW0ruduYTL/KKMTdzZFPBm3EMV8xzZALseXE5MY0bUbBkqAG5bWJUPf1KewjhlwMuTNTI6NTMFEwHQYDVR0OBBYEFDz3b3XVIzc6lHcdBjuEo5SA4pZ2MB8GA1UdIwQYMBaAFDz3b3XVIzc6lHcdBjuEo5SA4pZ2MA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSQAwRgIhALfx43cubHCyMgts23wjCKEPHUfoO9b5mI3qqIPZzwzbAiEA1iNh6vj9xUt5G0NPEd4ToTl1p6nqjKYEs7X4XJAYkfM="
+                  }
+                ]
+              },
+              "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/VerifierCA",
+              "ServiceSupplyPoints": [
+                {
+                  "ServiceType": "https://yivi.app/19602/SvcSupplyPoint/CRL",
+                  "uriValue": "https://rp-ca.example.com/crl/verifiers.crl"
+                }
+              ],
+              "ServiceInformationExtensions": [
+                {
+                  "YiviConfers": "medium"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -62,6 +62,11 @@ func NewTestLoteSigner(t *testing.T) *TestLoteSigner {
 
 	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
+	// A subject key identifier, as a CA-issued signing certificate carries: an
+	// anchor Source pins its signer by it.
+	leafPub, err := x509.MarshalPKIXPublicKey(leafKey.Public())
+	require.NoError(t, err)
+	leafSKI := sha256.Sum256(leafPub)
 	leafTmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(2),
 		// Country and Organization match NewTestList's, since SignList goes through
@@ -71,9 +76,10 @@ func NewTestLoteSigner(t *testing.T) *TestLoteSigner {
 			Country:      []string{"NL"},
 			Organization: []string{"Yivi Test"},
 		},
-		NotBefore: time.Now().Add(-time.Hour),
-		NotAfter:  time.Now().Add(24 * time.Hour),
-		KeyUsage:  x509.KeyUsageDigitalSignature,
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		SubjectKeyId: leafSKI[:20],
 	}
 	leafDer, err := x509.CreateCertificate(rand.Reader, leafTmpl, rootCert, leafKey.Public(), rootKey)
 	require.NoError(t, err)
@@ -382,3 +388,41 @@ func (s *TestLoteServer) SetStatus(code int) { s.statusCode.Store(int64(code)) }
 func (s *TestLoteServer) Close() { s.server.Close() }
 
 func (s *TestLoteServer) Hits() int64 { return s.hits.Load() }
+
+// NewTestAnchorList is NewTestList for the anchor list: the same scheme, typed as
+// an anchor list, so a Source that delivers anchors accepts it.
+func NewTestAnchorList(listId string, sequenceNumber uint64, entities ...Entity) List {
+	list := NewTestList(listId, sequenceNumber, entities...)
+	list.SchemeInformation.LoTEType = LoTETypeTrustAnchors
+	return list
+}
+
+// NewTestCaService is a granted anchor service for the given CA certificate,
+// conferring the given level (unevaluated leaves the entry silent, which reads as
+// medium) and publishing its CRLs at the given distribution points.
+func NewTestCaService(role trust.Role, caCert *x509.Certificate, confers clientmodels.TrustLevel, crlDistributionPoints ...string) Service {
+	service := Service{Information: ServiceInformation{
+		Type: AnchorServiceTypeForRole(role),
+		DigitalIdentity: DigitalIdentity{
+			X509Certificates: []PKIObject{{Val: caCert.Raw}},
+		},
+	}}
+	for _, point := range crlDistributionPoints {
+		service.Information.SupplyPoints = append(service.Information.SupplyPoints,
+			ServiceSupplyPoint{ServiceType: SupplyPointTypeCRL, URIValue: point})
+	}
+	if confers != clientmodels.TrustLevel_Unevaluated {
+		service.Information.Extensions = append(service.Information.Extensions, YiviExtension{Confers: confers})
+	}
+	return service
+}
+
+// AnchorSource returns a Source pointing at this server as an anchor list with
+// the given ceiling, pinned to the given signer's certificate.
+func (s *TestLoteServer) AnchorSource(listId string, signer *TestLoteSigner, ceiling clientmodels.TrustLevel) Source {
+	source := s.Source(listId, ceiling)
+	source.LoTEType = LoTETypeTrustAnchors
+	source.Delivers = DeliversAnchors
+	source.SignerSKI = signer.Cert.SubjectKeyId
+	return source
+}

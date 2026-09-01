@@ -1,6 +1,7 @@
 package eudicli
 
 import (
+	"crypto/x509"
 	"fmt"
 	"os"
 	"slices"
@@ -105,6 +106,12 @@ func writeService(out *strings.Builder, service lote.ServiceInformation) {
 	role := "unknown"
 	if mapped, ok := service.Type.Role(); ok {
 		role = string(mapped)
+	} else if mapped, ok := service.Type.AnchorRole(); ok {
+		role = string(mapped) + "-ca"
+	}
+	if service.IsAnchor() {
+		writeAnchorService(out, role, service)
+		return
 	}
 	// Through IsGranted, so absent-means-granted is read the way the wallet reads
 	// it: comparing against the granted URI directly would label every entry of a
@@ -117,6 +124,32 @@ func writeService(out *strings.Builder, service lote.ServiceInformation) {
 	fmt.Fprintf(out, "  %-8s %-11s %s\n", role, status, translated(service.Name))
 	for _, line := range identityLines(service.DigitalIdentity) {
 		fmt.Fprintf(out, "      %s\n", line)
+	}
+	if markings := service.Markings(); len(markings) > 0 {
+		fmt.Fprintf(out, "      markings: %s\n", strings.Join(markings, ", "))
+	}
+}
+
+// writeAnchorService renders a CA the list delivers as an anchor: what the wallet
+// installs, what it confers, and where its CRLs are.
+func writeAnchorService(out *strings.Builder, role string, service lote.ServiceInformation) {
+	status := "NOT GRANTED"
+	if service.IsGranted() {
+		status = "granted"
+	}
+	fmt.Fprintf(out, "  %-11s %-11s %s\n", role, status, translated(service.Name))
+	fmt.Fprintf(out, "      confers: %s (as the entry states it; the source may cap it)\n", service.Confers())
+	for _, listed := range service.DigitalIdentity.X509Certificates {
+		cert, err := x509.ParseCertificate(listed.Val)
+		if err != nil {
+			fmt.Fprintf(out, "      ca: %d bytes that do not parse as a certificate: %v\n", len(listed.Val), err)
+			continue
+		}
+		fmt.Fprintf(out, "      ca: %s\n", cert.Subject.ToRDNSequence().String())
+		fmt.Fprintf(out, "          ski %s, valid until %s\n", hexBytes(cert.SubjectKeyId), cert.NotAfter.Format(time.RFC3339))
+	}
+	for _, point := range service.CRLDistributionPoints() {
+		fmt.Fprintf(out, "      crl: %s\n", point)
 	}
 	if markings := service.Markings(); len(markings) > 0 {
 		fmt.Fprintf(out, "      markings: %s\n", strings.Join(markings, ", "))

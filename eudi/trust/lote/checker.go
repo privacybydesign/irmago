@@ -3,11 +3,13 @@ package lote
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -43,7 +45,75 @@ type Source struct {
 	// Yivi's own LoTE confers high; any other list confers what it was compiled
 	// in as. Unset lifts no rung, though the entry still carries its curated
 	// display metadata.
+	//
+	// On a source that delivers anchors it is the ceiling instead: the most a CA
+	// entry on the list may confer, whatever the entry says. Unset caps at medium.
 	Confers clientmodels.TrustLevel
+
+	// Delivers says what a document from this source may put into the wallet:
+	// party listings (the zero value) or trust anchors. A source delivers one or
+	// the other, never both — a party list whose services turn out to be CAs
+	// installs nothing, and an anchor list's party services grant nobody — so a
+	// document reaching the wrong source cannot do the other one's work.
+	Delivers Delivery
+
+	// SignerSKI pins the subject key identifier of the certificate the list must
+	// be signed with, on top of the anchor set. The anchor set says which CA may
+	// sign lists; this says which certificate under it signs this one. Required
+	// on an anchor source: the party list's daily key must not be able to sign a
+	// document the wallet installs anchors from. Empty pins nothing.
+	SignerSKI []byte
+}
+
+// Delivery is what a Source's documents may deliver.
+type Delivery int
+
+const (
+	// DeliversParties is a list of parties: entries the wallet matches sessions
+	// against. The zero value, so an existing Source is one.
+	DeliversParties Delivery = iota
+	// DeliversAnchors is a list of CAs: entries the wallet installs as trust
+	// anchors in the role's pool.
+	DeliversAnchors
+)
+
+func (d Delivery) String() string {
+	switch d {
+	case DeliversParties:
+		return "parties"
+	case DeliversAnchors:
+		return "anchors"
+	}
+	return fmt.Sprintf("Delivery(%d)", int(d))
+}
+
+// ValidateSources reports what is wrong with a source set before a Checker is
+// built on it: an empty or duplicate Key (the storage key, and the map the held
+// lists live in), an empty URL, an empty LoTEType (which would disable the type
+// check that keeps two lists apart), or an anchor source without a signer pin.
+func ValidateSources(sources []Source) error {
+	var errs []error
+	keys := map[string]bool{}
+	for i, source := range sources {
+		at := fmt.Sprintf("source %d (%q)", i, source.Key)
+		switch {
+		case source.Key == "":
+			errs = append(errs, fmt.Errorf("source %d: Key is empty", i))
+		case keys[source.Key]:
+			errs = append(errs, fmt.Errorf("%s: Key is used by another source", at))
+		}
+		keys[source.Key] = true
+		if source.URL == "" {
+			errs = append(errs, fmt.Errorf("%s: URL is empty", at))
+		}
+		if source.LoTEType == "" {
+			errs = append(errs, fmt.Errorf("%s: LoTEType is empty, which disables the check that keeps two lists apart", at))
+		}
+		if source.Delivers == DeliversAnchors && len(source.SignerSKI) == 0 {
+			errs = append(errs, fmt.Errorf("%s: an anchor source must pin its signer (SignerSKI)", at))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // Config is what a Checker needs. Only Sources and X509Context have no sensible
@@ -92,14 +162,29 @@ type Checker struct {
 
 // NewChecker builds a Checker. Persisted lists are read and re-verified against
 // the anchors on first use; one that no longer verifies is dropped.
+//
+// Sources that fail [ValidateSources] are dropped with a warning rather than
+// consulted half-configured: the checker is fail-soft, so a misconfigured source
+// is absent evidence here, and client.New is where it is an error.
 func NewChecker(cfg Config) *Checker {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &Checker{
+	c := &Checker{
 		cfg:  cfg,
 		held: map[string]*verifiedList{},
 	}
+	if err := ValidateSources(cfg.Sources); err != nil {
+		c.logger().Warnf("lote: dropping misconfigured sources: %v", err)
+		valid := make([]Source, 0, len(cfg.Sources))
+		for _, source := range cfg.Sources {
+			if ValidateSources(append(slices.Clone(valid), source)) == nil {
+				valid = append(valid, source)
+			}
+		}
+		c.cfg.Sources = valid
+	}
+	return c
 }
 
 // logger is where the checker writes its fail-soft notes. eudi.Logger is nil
@@ -130,7 +215,7 @@ func (c *Checker) loadPersisted() {
 			if !ok {
 				continue
 			}
-			verified, err := verify(raw, c.cfg.X509Context)
+			verified, err := verify(raw, c.cfg.X509Context, source.SignerSKI)
 			if err != nil {
 				c.logger().Warnf("lote: stored list %q no longer verifies, dropping it: %v", source.Key, err)
 				continue
@@ -204,7 +289,7 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 		return false, fmt.Errorf("fetch: %w", err)
 	}
 
-	verified, err := verify(raw, c.cfg.X509Context)
+	verified, err := verify(raw, c.cfg.X509Context, source.SignerSKI)
 	if err != nil {
 		return false, err
 	}
@@ -247,7 +332,9 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 	if !held {
 		return false, nil
 	}
-	return entriesDiffer(previous, verified), nil
+	// A held list past its next_update was already out of every snapshot, so a
+	// re-issue lifts every party on it even when the entries are the same.
+	return !previous.current(c.cfg.Now()) || entriesDiffer(previous, verified), nil
 }
 
 // entriesDiffer reports whether two issues of the same list say different things
@@ -281,15 +368,105 @@ func (c *Checker) Snapshot() trust.ListSnapshot {
 
 	pinned := make([]pinnedList, 0, len(c.cfg.Sources))
 	for _, source := range c.cfg.Sources {
-		held, ok := c.held[source.Key]
-		if !ok {
+		// An anchor list grants no party, whatever it carries.
+		if source.Delivers != DeliversParties {
 			continue
 		}
-		if !held.current(now) {
-			c.logger().Infof("lote: list %q is past its next_update, ignoring it", source.Key)
+		held, ok := c.currentList(source, now)
+		if !ok {
 			continue
 		}
 		pinned = append(pinned, pinnedList{source: source, list: held.list})
 	}
 	return snapshot{lists: pinned}
+}
+
+// currentList is the held list for a source if there is one and it is current.
+// Called with c.mu held.
+func (c *Checker) currentList(source Source, now time.Time) (*verifiedList, bool) {
+	held, ok := c.held[source.Key]
+	if !ok {
+		return nil, false
+	}
+	if !held.current(now) {
+		c.logger().Infof("lote: list %q is past its next_update, ignoring it", source.Key)
+		return nil, false
+	}
+	return held, true
+}
+
+// Anchor is one CA a recognized anchor list delivers: the certificate the wallet
+// installs as a trust anchor in the role's pool, the level it confers, and where
+// the CRLs it issues are published.
+type Anchor struct {
+	SourceKey   string
+	Role        trust.Role
+	Certificate *x509.Certificate
+	// Confers is the entry's level capped by the source's ceiling.
+	Confers               clientmodels.TrustLevel
+	CRLDistributionPoints []string
+}
+
+// Anchors lists the CAs every current anchor-delivering list grants, in
+// configuration order. Like Snapshot it reads what the checker holds and never
+// fetches; an absent, expired or unverifiable list contributes nothing, and a
+// withdrawn service, or one whose certificate does not parse, is skipped.
+//
+// A party-delivering list's CA services are not here: a source delivers one kind
+// of thing, and installing an anchor is the more consequential kind.
+func (c *Checker) Anchors() []Anchor {
+	c.loadPersisted()
+	now := c.cfg.Now()
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var anchors []Anchor
+	for _, source := range c.cfg.Sources {
+		if source.Delivers != DeliversAnchors {
+			continue
+		}
+		held, ok := c.currentList(source, now)
+		if !ok {
+			continue
+		}
+		ceiling := source.Confers
+		if ceiling == clientmodels.TrustLevel_Unevaluated {
+			ceiling = clientmodels.TrustLevel_Medium
+		}
+		for i := range held.list.Entities {
+			entity := &held.list.Entities[i]
+			for j := range entity.Services {
+				info := &entity.Services[j].Information
+				role, ok := info.Type.AnchorRole()
+				if !ok || !info.IsGranted() {
+					continue
+				}
+				for _, listed := range info.DigitalIdentity.X509Certificates {
+					cert, err := x509.ParseCertificate(listed.Val)
+					if err != nil {
+						c.logger().Warnf("lote: anchor list %q: certificate of %q does not parse, skipping it: %v",
+							source.Key, entity.Information.Name.Translated()["en"], err)
+						continue
+					}
+					anchors = append(anchors, Anchor{
+						SourceKey:             source.Key,
+						Role:                  role,
+						Certificate:           cert,
+						Confers:               capLevel(info.Confers(), ceiling),
+						CRLDistributionPoints: info.CRLDistributionPoints(),
+					})
+				}
+			}
+		}
+	}
+	return anchors
+}
+
+// capLevel is level, unless it outranks ceiling.
+func capLevel(level, ceiling clientmodels.TrustLevel) clientmodels.TrustLevel {
+	if trust.Stronger(level, ceiling) {
+		return ceiling
+	}
+	return level
 }

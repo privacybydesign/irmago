@@ -1,0 +1,28 @@
+{
+  "delivers": "anchors",
+  "confers_ceiling": "high",
+  "sequence_number": 1,
+  "next_update_days": 180,
+
+  "scheme_name": { "en": "NL:Yivi Trust Anchors" },
+  "territory": "NL",
+  "operator_name": { "en": "Yivi Example" },
+
+  "information_uri": { "en": "https://yivi.example/trustanchors" },
+  "policy_uri": { "en": "https://yivi.example/trustanchors/policy" },
+
+  "operator_address": {
+    "postal": [
+      {
+        "lang": "en",
+        "street": "Test Lane 1",
+        "locality": "Utrecht",
+        "postal_code": "3512 AA",
+        "country": "NL"
+      }
+    ],
+    "electronic": { "en": "mailto:trustanchors@yivi.example" }
+  },
+
+  "distribution_points": ["https://trustlist.yivi.example/anchors"]
+}

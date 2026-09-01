@@ -1,6 +1,7 @@
 package lote
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -41,7 +42,13 @@ type verifiedList struct {
 // The list's own time bounds are not checked here: a correctly signed but expired
 // list is still genuine, it just no longer says anything. The checker applies
 // that separately, so a fetch failure and an expiry can be told apart.
-func verify(rawJws Signed, x509Context eudi_jwt.X509VerificationContext) (*verifiedList, error) {
+//
+// A non-empty signerSKI pins the signing certificate by its subject key
+// identifier, on top of the chain check. The anchor set says which CA may sign
+// lists; the pin says which certificate under it signs this one, so two lists
+// under one CA — the party list's daily key and the anchor list's — cannot sign
+// each other's documents.
+func verify(rawJws Signed, x509Context eudi_jwt.X509VerificationContext, signerSKI []byte) (*verifiedList, error) {
 	if x509Context == nil {
 		return nil, fmt.Errorf("no X509 verification context configured")
 	}
@@ -55,6 +62,10 @@ func verify(rawJws Signed, x509Context eudi_jwt.X509VerificationContext) (*verif
 
 	if err := eudi_jwt.VerifyCertificate(x509Context, signature.Signer, nil); err != nil {
 		return nil, fmt.Errorf("validate signing certificate: %v", err)
+	}
+	if len(signerSKI) > 0 && !bytes.Equal(signature.Signer.SubjectKeyId, signerSKI) {
+		return nil, fmt.Errorf("signed by certificate with subject key identifier %x, expected %x",
+			signature.Signer.SubjectKeyId, signerSKI)
 	}
 
 	// Annex A wraps the list in a single `LoTE` member.
@@ -82,7 +93,14 @@ func verify(rawJws Signed, x509Context eudi_jwt.X509VerificationContext) (*verif
 // parse-only variant, so there is no way to read a LoTE in this codebase without
 // its signature having held. As in the wallet, time bounds are not checked.
 func VerifySigned(rawJws Signed, x509Context eudi_jwt.X509VerificationContext) (*List, error) {
-	verified, err := verify(rawJws, x509Context)
+	return VerifySignedBy(rawJws, x509Context, nil)
+}
+
+// VerifySignedBy is VerifySigned with the signing certificate pinned by subject
+// key identifier, as a Source with a SignerSKI verifies. An empty signerSKI pins
+// nothing.
+func VerifySignedBy(rawJws Signed, x509Context eudi_jwt.X509VerificationContext, signerSKI []byte) (*List, error) {
+	verified, err := verify(rawJws, x509Context, signerSKI)
 	if err != nil {
 		return nil, err
 	}

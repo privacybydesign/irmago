@@ -26,16 +26,18 @@ var yiviCrlDistPoint = "https://yivi.app/crl.crl"
 
 func TestTrustModel(t *testing.T) {
 	// Happy path tests
-	t.Run("Reload reads single certificate chain (root-only, no crl) successfully", testReloadReadsSingleChainRootOnlyNoCrlSuccessfully)
-	t.Run("Reload reads certificate chain (root + single sub-CA + crl) successfully", testReloadReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully)
-	t.Run("Reload reads certificate chains (root with multiple sub-CAs + crls) successfully", testReloadReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully)
-	t.Run("Reload reads certificate chain (root with multi level sub-CA + crls) successfully", testReloadReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully)
+	// The first certificate of a stored chain is the anchor; the rest are its
+	// issuers, kept for revocation checking and never anchored themselves.
+	t.Run("Reload anchors a self-signed root given on its own", testReloadReadsSingleChainRootOnlyNoCrlSuccessfully)
+	t.Run("Reload anchors the CA of a (CA, root) chain and loads the root's CRL", testReloadReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully)
+	t.Run("Reload anchors both CAs of two chains sharing a root", testReloadReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully)
+	t.Run("Reload anchors the sub-CA of a (sub-CA, CA, root) chain and loads both issuers' CRLs", testReloadReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully)
 
 	// Error handling tests
-	t.Run("Reload reads multiple chains (valid root + 1 valid sub-CA + 1 revoked sub-CA), should only add the valid chain", testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain)
-	t.Run("Reload reads multiple chains (1 valid + 1 expired root, both with sub-CAs), should add both root certs but only one sub-CA", testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa)
-	t.Run("Reload reads chain (valid root + expired sub-CA), should only add root cert", testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert)
-	t.Run("Reload reads invalid certificate chain (root + CA in reversed order), not add any certificates to the pools", testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates)
+	t.Run("Reload skips a CA its issuer's CRL revokes and anchors the other", testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain)
+	t.Run("Reload anchors a valid CA whose root has expired", testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa)
+	t.Run("Reload skips an expired CA and does not fall back to anchoring its root", testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert)
+	t.Run("Reload skips a chain whose issuers did not issue its first certificate", testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates)
 
 	// Certificate removal tests
 	t.Run("RemoveCertificate removes installed chain and Reload drops it from the pools", testRemoveCertificateRemovesInstalledChainAndReloadDropsItFromThePools)
@@ -93,8 +95,11 @@ func testReloadReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t *testing
 	err := tm.Reload()
 	require.NoError(t, err)
 
+	// The CA is the anchor; the root is its issuer, not an anchor, but it is what
+	// the stored root-issued CRL verifies against.
 	require.Len(t, tm.state().roots.Subjects(), 1)
-	require.Len(t, tm.state().intermediates.Subjects(), 1)
+	require.Equal(t, caCerts[0].Raw, tm.Anchors()[0].Certificate.Raw)
+	require.Len(t, tm.state().intermediates.Subjects(), 0)
 	require.Len(t, tm.state().revocationLists, 1)
 }
 
@@ -114,8 +119,9 @@ func testReloadReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully(t *t
 	err := tm.Reload()
 	require.NoError(t, err)
 
-	require.Len(t, tm.state().roots.Subjects(), 1)
-	require.Len(t, tm.state().intermediates.Subjects(), 2)
+	// Two anchors, one per CA; the shared root is an anchor of neither.
+	require.Len(t, tm.state().roots.Subjects(), 2)
+	require.Len(t, tm.state().intermediates.Subjects(), 0)
 	require.Len(t, tm.state().revocationLists, 1)
 }
 
@@ -139,8 +145,11 @@ func testReloadReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *
 	err := tm.Reload()
 	require.NoError(t, err)
 
+	// The sub-CA is the anchor; the CA and the root are its issuers, and each
+	// issuer's CRL is loaded because each could revoke the certificate below it.
 	require.Len(t, tm.state().roots.Subjects(), 1)
-	require.Len(t, tm.state().intermediates.Subjects(), 2)
+	require.Equal(t, subCaCert.Raw, tm.Anchors()[0].Certificate.Raw)
+	require.Len(t, tm.state().intermediates.Subjects(), 0)
 	require.Len(t, tm.state().revocationLists, 2)
 }
 
@@ -164,9 +173,10 @@ func testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAdd
 	err := tm.Reload()
 	require.NoError(t, err)
 
-	// The revoked sub-CA should not be added to the pools
+	// The revoked CA is not anchored; the other one is.
 	require.Len(t, tm.state().roots.Subjects(), 1)
-	require.Len(t, tm.state().intermediates.Subjects(), 1)
+	require.Equal(t, caCert2.Raw, tm.Anchors()[0].Certificate.Raw)
+	require.Len(t, tm.state().intermediates.Subjects(), 0)
 }
 
 func testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa(t *testing.T) {
@@ -186,9 +196,11 @@ func testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBoth
 	err := tm.Reload()
 	require.NoError(t, err)
 
-	// The expired root (+intermediates) should not be added to the pools
-	require.Len(t, tm.state().roots.Subjects(), 1)
-	require.Len(t, tm.state().intermediates.Subjects(), 1)
+	// Both CAs are anchored: an anchor is trusted for what it signs, and its
+	// issuer's expiry says nothing about that. The expired root still signed the
+	// CA, and its CRL would still be what revokes it.
+	require.Len(t, tm.state().roots.Subjects(), 2)
+	require.Len(t, tm.state().intermediates.Subjects(), 0)
 }
 
 func testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testing.T) {
@@ -205,12 +217,11 @@ func testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testin
 	err := tm.Reload()
 	require.NoError(t, err)
 
-	// Only the root cert should be added to the pools
-	require.Len(t, tm.state().roots.Subjects(), 1)
+	// The expired CA cannot anchor, and the model does not quietly anchor its
+	// root instead — that would trust every sibling CA under it.
+	require.Len(t, tm.state().roots.Subjects(), 0)
 	require.Len(t, tm.state().intermediates.Subjects(), 0)
-
-	// The expired sub-CA cert should not be added to the pools
-	require.NotContains(t, tm.state().intermediates.Subjects(), caCerts[0].Subject.ToRDNSequence().String())
+	require.Empty(t, tm.Anchors())
 }
 
 func testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t *testing.T) {
@@ -542,7 +553,7 @@ func testRemoveCertificateRemovesInstalledChainAndReloadDropsItFromThePools(t *t
 	installCertChain(t, tm, caCerts[1], rootCert)
 
 	require.NoError(t, tm.Reload())
-	require.Len(t, tm.state().intermediates.Subjects(), 2)
+	require.Len(t, tm.state().roots.Subjects(), 2, "one anchor per CA")
 
 	// Remove the first chain by its leaf's thumbprint
 	require.NoError(t, tm.RemoveCertificate(fmt.Sprintf("%x", caCerts[0].Signature)))
@@ -556,7 +567,7 @@ func testRemoveCertificateRemovesInstalledChainAndReloadDropsItFromThePools(t *t
 	tm.clear()
 	require.NoError(t, tm.Reload())
 	require.Len(t, tm.state().roots.Subjects(), 1)
-	require.Len(t, tm.state().intermediates.Subjects(), 1)
+	require.Equal(t, caCerts[1].Raw, tm.Anchors()[0].Certificate.Raw)
 
 	// Removing it again fails, as it is no longer installed
 	require.ErrorContains(t, tm.RemoveCertificate(fmt.Sprintf("%x", caCerts[0].Signature)), "no certificate found")

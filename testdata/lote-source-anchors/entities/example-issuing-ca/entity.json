@@ -1,0 +1,27 @@
+{
+  "name": { "en": "Example Trust Services" },
+  "information_uri": { "en": "https://trust.example.com/pki" },
+
+  "address": {
+    "postal": [
+      {
+        "lang": "en",
+        "street": "Example Street 2",
+        "locality": "Utrecht",
+        "postal_code": "3512 AA",
+        "country": "NL"
+      }
+    ],
+    "electronic": { "en": "mailto:pki@trust.example.com" }
+  },
+
+  "services": [
+    {
+      "role": "issuer-ca",
+      "name": { "en": "Example Attestation CA" },
+      "identity": { "certificates": ["issuing-ca.crt"] },
+      "confers": "medium",
+      "crl_distribution_points": ["https://trust.example.com/crl/attestation.crl"]
+    }
+  ]
+}

@@ -3,11 +3,16 @@ package eudicli
 import (
 	"bytes"
 	"cmp"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"maps"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -73,6 +78,18 @@ type schemeSource struct {
 
 	DistributionPoints []string `json:"distribution_points,omitempty"`
 
+	// Delivers is what a document built from this scheme puts into the wallet:
+	// "parties" (the default) or "anchors". The roles a curation may use follow
+	// from it — a party list cannot carry a CA and an anchor list cannot carry a
+	// party — and so does the default LoTEType. One document delivers one kind of
+	// thing; the wallet enforces the same rule on its side.
+	Delivers string `json:"delivers,omitempty"`
+
+	// ConfersCeiling is the most a CA on an anchor scheme may confer, "medium" or
+	// "high" (the default). Read only when delivers is "anchors". The wallet caps
+	// on its own too, per source; this makes the curation refuse before publish.
+	ConfersCeiling string `json:"confers_ceiling,omitempty"`
+
 	// The scheme URIs. Empty takes the Yivi defaults from the lote package;
 	// overridable so this tool can also build another operator's list.
 	LoTEType                    string            `json:"lote_type,omitempty"`
@@ -112,9 +129,22 @@ type entitySource struct {
 }
 
 type serviceSource struct {
-	// Role is "issuer" or "verifier". `build` maps it to the service type URI, so
-	// a curator never types one.
+	// Role is "issuer" or "verifier" on a party list, "issuer-ca" or "verifier-ca"
+	// on an anchor list. `build` maps it to the service type URI, so a curator
+	// never types one.
 	Role string `json:"role"`
+
+	// Confers is the level a CA passes on to the certificates under it: "medium"
+	// (the default) or "high". CA roles only. "high" on a CA the scheme operator
+	// does not itself run must be marked "contracted", so the promotion is visible
+	// in review.
+	Confers string `json:"confers,omitempty"`
+
+	// CRLDistributionPoints is where the CRLs the CA issues are published. Required
+	// on a CA role: a CA certificate says where it gets revoked, not where it
+	// revokes its leaves, and the wallet has no other way to learn the latter.
+	// `build` fetches each and checks the CRL verifies against the CA.
+	CRLDistributionPoints []string `json:"crl_distribution_points,omitempty"`
 
 	// Status is "granted" or "withdrawn"; empty means granted.
 	//
@@ -156,7 +186,29 @@ type buildStats struct {
 	DroppedEntities []string
 }
 
-// loadSource reads a curation directory and turns it into a conformant list.
+// buildOptions is what the caller decides about a build beyond the curation.
+type buildOptions struct {
+	// Offline skips fetching the CRLs a CA service names. For tests and air-gapped
+	// builds; the release build fetches, so a distribution point that serves
+	// nothing, or a CRL another CA signed, is refused before publish.
+	Offline bool
+}
+
+// buildContext is what a service needs to know about the scheme it is built
+// under.
+type buildContext struct {
+	delivery lote.Delivery
+	ceiling  clientmodels.TrustLevel
+	// operatorNames is who runs the scheme; a CA whose subject organization is
+	// one of them is the operator's own.
+	operatorNames []string
+	offline       bool
+}
+
+// loadSource reads a curation directory and turns it into a conformant list,
+// offline: the CRLs a CA service names are not fetched. `build` uses
+// loadSourceWith.
+//
 // issuedAt is stamped into ListIssueDateTime and NextUpdate derived from it; a
 // parameter rather than time.Now() so a test can build the same document twice.
 // documentJSON renders a list as the published document. `build` writes it and
@@ -178,6 +230,10 @@ const sequenceFromScheme uint64 = 0
 // loadSource reads a curation directory into a list. A non-zero sequenceNumber is
 // the publisher's, and overrides whatever scheme.json says.
 func loadSource(dir string, issuedAt time.Time, sequenceNumber uint64) (lote.List, buildStats, error) {
+	return loadSourceWith(dir, issuedAt, sequenceNumber, buildOptions{Offline: true})
+}
+
+func loadSourceWith(dir string, issuedAt time.Time, sequenceNumber uint64, opts buildOptions) (lote.List, buildStats, error) {
 	var stats buildStats
 
 	scheme, err := readSchemeSource(dir)
@@ -194,13 +250,27 @@ func loadSource(dir string, issuedAt time.Time, sequenceNumber uint64) (lote.Lis
 	if err != nil {
 		return lote.List{}, stats, fmt.Errorf("%s: %w", schemeFileName, err)
 	}
+	delivery, err := scheme.delivery()
+	if err != nil {
+		return lote.List{}, stats, fmt.Errorf("%s: %w", schemeFileName, err)
+	}
+	ceiling, err := scheme.ceiling()
+	if err != nil {
+		return lote.List{}, stats, fmt.Errorf("%s: %w", schemeFileName, err)
+	}
+	ctx := buildContext{
+		delivery:      delivery,
+		ceiling:       ceiling,
+		operatorNames: slices.Sorted(maps.Values(scheme.OperatorName)),
+		offline:       opts.Offline,
+	}
 
 	list := lote.List{SchemeInformation: schemeInfo}
 	// claimed maps an identity to the file that already claimed it, so two
 	// entries recognizing the same party can be reported with both filenames.
 	claimed := map[string]string{}
 	for _, named := range entities {
-		entity, withdrawn, err := named.source.toEntity(named.dir, claimed, named.file)
+		entity, withdrawn, err := named.source.toEntity(named.dir, claimed, named.file, ctx)
 		if err != nil {
 			return lote.List{}, stats, fmt.Errorf("%s: %w", named.file, err)
 		}
@@ -327,10 +397,20 @@ func (s schemeSource) toSchemeInformation(issuedAt time.Time, sequenceNumber uin
 		communityRules = lote.MultiLangURI(s.SchemeTypeCommunityRules)
 	}
 
+	// The type follows what the list delivers, unless the curation names one.
+	delivery, err := s.delivery()
+	if err != nil {
+		return info, err
+	}
+	defaultType := lote.LoTETypeRecognizedParties
+	if delivery == lote.DeliversAnchors {
+		defaultType = lote.LoTETypeTrustAnchors
+	}
+
 	return lote.SchemeInformation{
 		LoTEVersionIdentifier: lote.LoTEVersion,
 		SequenceNumber:        sequence,
-		LoTEType:              cmp.Or(s.LoTEType, lote.LoTETypeRecognizedParties),
+		LoTEType:              cmp.Or(s.LoTEType, defaultType),
 		SchemeOperatorName:    lote.MultiLang(s.OperatorName),
 		SchemeOperatorAddress: lote.SchemeOperatorAddress{
 			PostalAddress:     operatorAddress.postal,
@@ -346,6 +426,46 @@ func (s schemeSource) toSchemeInformation(issuedAt time.Time, sequenceNumber uin
 		NextUpdate:                  issuedAt.AddDate(0, 0, s.NextUpdateDays),
 		DistributionPoints:          s.DistributionPoints,
 	}, nil
+}
+
+// delivery reads what the scheme delivers; parties when it says nothing.
+func (s schemeSource) delivery() (lote.Delivery, error) {
+	switch s.Delivers {
+	case "", "parties":
+		return lote.DeliversParties, nil
+	case "anchors":
+		return lote.DeliversAnchors, nil
+	}
+	return 0, fmt.Errorf("unknown delivers %q (expected \"parties\" or \"anchors\")", s.Delivers)
+}
+
+// ceiling reads the most a CA on this scheme may confer; high when it says
+// nothing. Meaningless on a party scheme, and refused there so it cannot look
+// like it does something.
+func (s schemeSource) ceiling() (clientmodels.TrustLevel, error) {
+	delivery, err := s.delivery()
+	if err != nil {
+		return "", err
+	}
+	if s.ConfersCeiling != "" && delivery != lote.DeliversAnchors {
+		return "", fmt.Errorf("confers_ceiling is only meaningful when delivers is \"anchors\"")
+	}
+	if s.ConfersCeiling == "" {
+		return clientmodels.TrustLevel_High, nil
+	}
+	return parseConfers(s.ConfersCeiling, "confers_ceiling")
+}
+
+// parseConfers reads a conferred level: "medium" or "high", the two rungs the
+// certificate channel hands out. Low is not conferred by anyone.
+func parseConfers(text, field string) (clientmodels.TrustLevel, error) {
+	switch text {
+	case "medium":
+		return clientmodels.TrustLevel_Medium, nil
+	case "high":
+		return clientmodels.TrustLevel_High, nil
+	}
+	return "", fmt.Errorf("unknown %s %q (expected \"medium\" or \"high\")", field, text)
 }
 
 // policyOrLegalNotice builds clause 6.3.11. The binding's `oneOf` means a
@@ -407,7 +527,7 @@ func (a addressSource) validate(field string) (validatedAddress, error) {
 // toEntity converts one curation file, reporting how many of its services were
 // left out as withdrawn. One with none left comes back empty for the caller to
 // drop.
-func (e entitySource) toEntity(entityDir string, claimed map[string]string, file string) (lote.Entity, int, error) {
+func (e entitySource) toEntity(entityDir string, claimed map[string]string, file string, ctx buildContext) (lote.Entity, int, error) {
 	var entity lote.Entity
 
 	if e.Name["en"] == "" {
@@ -454,7 +574,7 @@ func (e entitySource) toEntity(entityDir string, claimed map[string]string, file
 			continue
 		}
 
-		service, err := source.toService(entityDir, e.Name, claimed, file)
+		service, err := source.toService(entityDir, e.Name, claimed, file, ctx)
 		if err != nil {
 			return entity, 0, fmt.Errorf("services[%d]: %w", i, err)
 		}
@@ -468,12 +588,29 @@ func (s serviceSource) toService(
 	entityName map[string]string,
 	claimed map[string]string,
 	file string,
+	ctx buildContext,
 ) (lote.Service, error) {
 	var service lote.Service
 
-	role, err := parseRole(s.Role)
+	role, anchor, err := parseRole(s.Role)
 	if err != nil {
 		return service, err
+	}
+
+	// One document delivers one kind of thing. The wallet ignores a CA on a party
+	// list and a party on an anchor list; this refuses them before they are
+	// published as dead weight — or, worse, as something a reader takes for a grant.
+	if anchor && ctx.delivery != lote.DeliversAnchors {
+		return service, fmt.Errorf("role %q is a CA, and this scheme delivers parties; a CA belongs on a scheme with delivers: \"anchors\"", s.Role)
+	}
+	if !anchor && ctx.delivery == lote.DeliversAnchors {
+		return service, fmt.Errorf("role %q is a party, and this scheme delivers anchors; a party belongs on a scheme with delivers: \"parties\"", s.Role)
+	}
+	if anchor {
+		return s.toAnchorService(entityDir, entityName, role, claimed, file, ctx)
+	}
+	if s.Confers != "" || len(s.CRLDistributionPoints) > 0 {
+		return service, fmt.Errorf("confers and crl_distribution_points are for CA roles only")
 	}
 
 	identity, err := s.Identity.toDigitalIdentity(entityDir, role, claimed, file)
@@ -504,6 +641,170 @@ func (s serviceSource) toService(
 
 	service.Information = information
 	return service, nil
+}
+
+// toAnchorService converts a CA role: the CA's certificate becomes the digital
+// identity the wallet installs as an anchor, the level it confers and the CRLs it
+// publishes ride along, and everything a CA must be to anchor is checked here —
+// on the way in, where a curator sees the error, rather than in a wallet that
+// would skip the entry with a log line nobody reads.
+func (s serviceSource) toAnchorService(
+	entityDir string,
+	entityName map[string]string,
+	role trust.Role,
+	claimed map[string]string,
+	file string,
+	ctx buildContext,
+) (lote.Service, error) {
+	var service lote.Service
+
+	if len(s.Identity.CertificateSKIs) > 0 || len(s.Identity.DIDs) > 0 {
+		return service, fmt.Errorf("a CA is anchored by its certificate: certificate_skis and dids are not allowed on a CA role")
+	}
+	if len(s.Identity.Certificates) == 0 {
+		return service, fmt.Errorf("identity.certificates is required on a CA role: the wallet installs the certificate itself")
+	}
+
+	confers := clientmodels.TrustLevel_Medium
+	if s.Confers != "" {
+		level, err := parseConfers(s.Confers, "confers")
+		if err != nil {
+			return service, err
+		}
+		confers = level
+	}
+	if trust.Stronger(confers, ctx.ceiling) {
+		return service, fmt.Errorf("confers %s exceeds this scheme's confers_ceiling %s", confers, ctx.ceiling)
+	}
+
+	if len(s.CRLDistributionPoints) == 0 {
+		return service, fmt.Errorf("crl_distribution_points is required on a CA role: without one, no certificate under this CA can ever be revoked")
+	}
+	for _, point := range s.CRLDistributionPoints {
+		parsed, err := url.Parse(point)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+			return service, fmt.Errorf("crl_distribution_points entry %q must be an absolute https URL", point)
+		}
+	}
+
+	var identity lote.DigitalIdentity
+	for _, name := range s.Identity.Certificates {
+		cert, err := readCertificate(entityDir, name)
+		if err != nil {
+			return service, err
+		}
+		if err := checkCaCertificate(cert); err != nil {
+			return service, fmt.Errorf("certificate %s cannot anchor: %w", name, err)
+		}
+		// A promotion to the top rung of a CA the operator does not run itself is
+		// the decision review exists to see, so it has to be said in so many words.
+		if confers == clientmodels.TrustLevel_High && !ctx.operatorOwns(cert) && !slices.Contains(s.Markings, "contracted") {
+			return service, fmt.Errorf(
+				"certificate %s confers high but its subject organization %v is not the scheme operator %v: add markings: [\"contracted\"] to say this is under contract",
+				name, cert.Subject.Organization, ctx.operatorNames)
+		}
+		if !ctx.offline {
+			for _, point := range s.CRLDistributionPoints {
+				if err := fetchAndVerifyCRL(point, cert); err != nil {
+					return service, fmt.Errorf("crl_distribution_points entry %q for certificate %s: %w", point, name, err)
+				}
+			}
+		}
+
+		// Claimed by content, not filename: the same CA under two entities is a
+		// contradiction whatever the files are called.
+		digest := sha256.Sum256(cert.Raw)
+		key := string(role) + "\x00anchor\x00" + hex.EncodeToString(digest[:])
+		if previous, ok := claimed[key]; ok {
+			return service, fmt.Errorf("certificate %s (%s) is already anchored as %s in %s",
+				name, cert.Subject.ToRDNSequence().String(), role, previous)
+		}
+		claimed[key] = file
+		identity.X509Certificates = append(identity.X509Certificates, lote.PKIObject{Val: cert.Raw})
+	}
+
+	name := s.Name
+	if len(name) == 0 {
+		name = entityName
+	}
+	information := lote.ServiceInformation{
+		Name:            lote.MultiLang(name),
+		DigitalIdentity: identity,
+		Type:            lote.AnchorServiceTypeForRole(role),
+		Extensions:      []lote.YiviExtension{{Confers: confers}},
+	}
+	for _, point := range s.CRLDistributionPoints {
+		information.SupplyPoints = append(information.SupplyPoints,
+			lote.ServiceSupplyPoint{ServiceType: lote.SupplyPointTypeCRL, URIValue: point})
+	}
+	if s.LogoURI != "" {
+		information.Extensions = append(information.Extensions, lote.YiviExtension{LogoURI: s.LogoURI})
+	}
+	for _, marking := range s.Markings {
+		information.Extensions = append(information.Extensions, lote.YiviExtension{Marking: marking})
+	}
+
+	service.Information = information
+	return service, nil
+}
+
+// operatorOwns reports whether a certificate's subject organization is one of the
+// scheme operator's names: whether the CA is the operator's own.
+func (ctx buildContext) operatorOwns(cert *x509.Certificate) bool {
+	for _, organization := range cert.Subject.Organization {
+		if slices.Contains(ctx.operatorNames, organization) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkCaCertificate says whether a certificate can anchor at all, the same way
+// the wallet's strict mode judges it: a CA, allowed to sign certificates, and
+// inside its validity window.
+func checkCaCertificate(cert *x509.Certificate) error {
+	if !cert.BasicConstraintsValid || !cert.IsCA {
+		return fmt.Errorf("it is not a CA certificate (basicConstraints CA is not set)")
+	}
+	if cert.KeyUsage != 0 && cert.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return fmt.Errorf("its key usage does not include keyCertSign")
+	}
+	now := time.Now()
+	if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
+		return fmt.Errorf("it is not valid now (notBefore %s, notAfter %s)",
+			cert.NotBefore.Format(time.RFC3339), cert.NotAfter.Format(time.RFC3339))
+	}
+	return nil
+}
+
+// fetchAndVerifyCRL fetches a CRL distribution point and checks the CRL it serves
+// is one the CA signed: a wrong URL, or one serving another CA's CRL, would leave
+// every certificate under the CA irrevocable while looking covered.
+func fetchAndVerifyCRL(point string, ca *x509.Certificate) error {
+	client := &http.Client{Timeout: 10 * time.Second}
+	response, err := client.Get(point)
+	if err != nil {
+		return fmt.Errorf("fetch: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("fetch: HTTP %s", response.Status)
+	}
+	raw, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("read: %w", err)
+	}
+	if block, _ := pem.Decode(raw); block != nil {
+		raw = block.Bytes
+	}
+	crl, err := x509.ParseRevocationList(raw)
+	if err != nil {
+		return fmt.Errorf("the response is not a CRL: %w", err)
+	}
+	if err := crl.CheckSignatureFrom(ca); err != nil {
+		return fmt.Errorf("the CRL is not signed by this CA: %w", err)
+	}
+	return nil
 }
 
 func (i identitySource) toDigitalIdentity(
@@ -596,16 +897,24 @@ func readCertificate(entityDir, name string) (*x509.Certificate, error) {
 	return cert, nil
 }
 
-func parseRole(role string) (trust.Role, error) {
+// parseRole reads a service role: the party roles, or the CA roles, which report
+// anchor. A CA role names the role whose anchor pool the CA goes into.
+func parseRole(role string) (parsed trust.Role, anchor bool, err error) {
 	switch role {
 	case string(trust.RoleIssuer):
-		return trust.RoleIssuer, nil
+		return trust.RoleIssuer, false, nil
 	case string(trust.RoleVerifier):
-		return trust.RoleVerifier, nil
+		return trust.RoleVerifier, false, nil
+	case string(trust.RoleIssuer) + "-ca":
+		return trust.RoleIssuer, true, nil
+	case string(trust.RoleVerifier) + "-ca":
+		return trust.RoleVerifier, true, nil
 	case "":
-		return "", fmt.Errorf("role is required (%q or %q)", trust.RoleIssuer, trust.RoleVerifier)
+		return "", false, fmt.Errorf("role is required (%q, %q, %q or %q)",
+			trust.RoleIssuer, trust.RoleVerifier, string(trust.RoleIssuer)+"-ca", string(trust.RoleVerifier)+"-ca")
 	}
-	return "", fmt.Errorf("unknown role %q (expected %q or %q)", role, trust.RoleIssuer, trust.RoleVerifier)
+	return "", false, fmt.Errorf("unknown role %q (expected %q, %q, %q or %q)",
+		role, trust.RoleIssuer, trust.RoleVerifier, string(trust.RoleIssuer)+"-ca", string(trust.RoleVerifier)+"-ca")
 }
 
 // isWithdrawn reports whether this service is left out of the published document;

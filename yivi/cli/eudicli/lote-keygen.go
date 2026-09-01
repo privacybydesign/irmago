@@ -1,9 +1,11 @@
 package eudicli
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -87,6 +89,9 @@ and one of its SchemeOperatorName values.`,
 			// Checked explicitly by the wallet, so a chain generated here has to
 			// carry it or `sign`'s own re-verification fails.
 			KeyUsage: x509.KeyUsageDigitalSignature,
+			// A CA-issued signing certificate carries a subject key identifier, and
+			// an anchor source pins its signer by it; Go only derives one for CAs.
+			SubjectKeyId: subjectKeyIdentifier(signerKey.Public()),
 		}
 		signerDer, err := x509.CreateCertificate(rand.Reader, signerTemplate, caCert, signerKey.Public(), caKey)
 		if err != nil {
@@ -129,4 +134,16 @@ func init() {
 	loteKeygenCmd.Flags().String("country", "NL", "subject Country; must equal the scheme's SchemeTerritory")
 	loteKeygenCmd.Flags().String("organization", "Yivi", "subject Organization; must be one of the scheme's SchemeOperatorName values")
 	loteKeygenCmd.Flags().Int("days", 1, "certificate validity in days")
+}
+
+// subjectKeyIdentifier derives a subject key identifier from a public key: the
+// truncated SHA-256 of its encoding, as RFC 7093 method 1 describes. Any stable
+// value works; what matters is that the certificate carries one.
+func subjectKeyIdentifier(public crypto.PublicKey) []byte {
+	der, err := x509.MarshalPKIXPublicKey(public)
+	if err != nil {
+		return nil
+	}
+	digest := sha256.Sum256(der)
+	return digest[:20]
 }

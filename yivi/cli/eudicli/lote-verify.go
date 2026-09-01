@@ -3,8 +3,10 @@ package eudicli
 import (
 	"context"
 	"crypto/x509"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
@@ -29,17 +31,23 @@ bump loud, so it fails on equal too.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		anchorPath, _ := cmd.Flags().GetString("anchor")
 		against, _ := cmd.Flags().GetString("against")
+		signerSKIHex, _ := cmd.Flags().GetString("signer-ski")
 
 		signed, err := os.ReadFile(args[0])
 		if err != nil {
 			return err
 		}
 
+		signerSKI, err := parseSKI(signerSKIHex)
+		if err != nil {
+			return fmt.Errorf("--signer-ski: %w", err)
+		}
+
 		anchors, checksChain, err := verifyAnchors(anchorPath, signed)
 		if err != nil {
 			return err
 		}
-		list, err := lote.VerifySigned(signed, anchors)
+		list, err := lote.VerifySignedBy(signed, anchors, signerSKI)
 		if err != nil {
 			return err
 		}
@@ -70,6 +78,21 @@ func init() {
 	loteVerifyCmd.Flags().String("anchor", "", "PEM trust anchor to check the chain against, as the wallet will")
 	loteVerifyCmd.Flags().String("against", "",
 		"URL of the currently published list; fails unless this document's sequence number is higher")
+	loteVerifyCmd.Flags().String("signer-ski", "",
+		"hex subject key identifier the signing certificate must carry, as an anchor source pins it")
+}
+
+// parseSKI reads a subject key identifier as hex, with or without the colons
+// `openssl x509 -ext subjectKeyIdentifier` prints. Empty pins nothing.
+func parseSKI(text string) ([]byte, error) {
+	if text == "" {
+		return nil, nil
+	}
+	ski, err := hex.DecodeString(strings.ReplaceAll(strings.TrimSpace(text), ":", ""))
+	if err != nil {
+		return nil, fmt.Errorf("not a hex subject key identifier: %w", err)
+	}
+	return ski, nil
 }
 
 // compareToPublished refuses a document that would not advance the live list.
@@ -90,8 +113,8 @@ func compareToPublished(ctx context.Context, url string, anchors eudi_jwt.X509Ve
 
 	if sequenceNumber <= live.SchemeInformation.SequenceNumber {
 		return fmt.Errorf(
-			"sequence number %d does not advance the published %d: bump sequence_number in %s",
-			sequenceNumber, live.SchemeInformation.SequenceNumber, schemeFileName)
+			"sequence number %d does not advance the published %d: build with --sequence-number %d",
+			sequenceNumber, live.SchemeInformation.SequenceNumber, live.SchemeInformation.SequenceNumber+1)
 	}
 	Logger.Infof("advances the published list (%d -> %d)",
 		live.SchemeInformation.SequenceNumber, sequenceNumber)

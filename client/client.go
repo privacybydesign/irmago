@@ -189,9 +189,16 @@ func New(cfg Config) (*Client, error) {
 	// credentials sign a document the wallet accepts as a recognized list.
 	//
 	// One pool for every source, deliberately. Both the source set and the anchor
-	// set are compiled in, so a list that verifies here is one Yivi added against a
-	// CA Yivi anchored for this purpose. What separates two such lists is the
-	// LoTEType check and, between environments, their separate signing CAs.
+	// set are fixed by the app that builds the wallet, so a list that verifies here
+	// is one Yivi added against a CA Yivi anchored for this purpose. What separates
+	// two such lists is the LoTEType check, the signer pin an anchor source carries,
+	// and, between environments, their separate signing CAs.
+	//
+	// Validated here rather than dropped: a misconfigured source is a build error
+	// of the app, not something to run without.
+	if err := lote.ValidateSources(cfg.RecognizedTrustLists); err != nil {
+		return nil, fmt.Errorf("recognized trust lists: %w", err)
+	}
 	trustChecker := lote.NewChecker(lote.Config{
 		Sources:     cfg.RecognizedTrustLists,
 		X509Context: &eudiConf.TrustLists,
@@ -253,6 +260,15 @@ func New(cfg Config) (*Client, error) {
 
 	if err := openid4vpClient.Configuration.Reload(); err != nil {
 		return nil, fmt.Errorf("reloading eudi configuration failed: %v", err)
+	}
+
+	// The anchors the persisted anchor lists deliver go in after the pinned ones
+	// are loaded — a stored list is re-verified against them — and before the
+	// client is handed out, so a restarted wallet has its anchors before its first
+	// session. Fail-soft, like everything about the lists: an error here leaves the
+	// wallet on its compiled-in anchors.
+	if err := trustService.InstallListAnchorsInto(eudiConf); err != nil {
+		eudi.Logger.Warnf("installing list-delivered trust anchors: %v", err)
 	}
 
 	scheduler, err := gocron.NewScheduler()

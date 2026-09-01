@@ -1,0 +1,25 @@
+{
+  "name": { "en": "Example Relying Party CA B.V." },
+  "information_uri": { "en": "https://rp-ca.example.com/about" },
+
+  "address": {
+    "postal": [
+      {
+        "lang": "en",
+        "street": "Example Street 3",
+        "locality": "Utrecht",
+        "postal_code": "3512 AA",
+        "country": "NL"
+      }
+    ],
+    "electronic": { "en": "mailto:info@rp-ca.example.com" }
+  },
+
+  "services": [
+    {
+      "role": "verifier-ca",
+      "identity": { "certificates": ["verifier-ca.crt"] },
+      "crl_distribution_points": ["https://rp-ca.example.com/crl/verifiers.crl"]
+    }
+  ]
+}

@@ -31,7 +31,7 @@ func TestTrustModel_ReadersNeverSeeAHalfBuiltReload(t *testing.T) {
 
 func testAnchorLevelConcurrentWithReload(t *testing.T) {
 	tm, caCert, caKey := classifyFixture(t, clientmodels.TrustLevel_High)
-	root := selfSignedRootOf(t, tm)
+	root := issuerRootOf(t, tm)
 	leaf := mintLeaf(t, caCert, caKey, testdata.PkiOption_None)
 	require.Equal(t, clientmodels.TrustLevel_High, tm.Classify(leaf), "the fixture classifies before the readers start")
 
@@ -42,8 +42,8 @@ func testAnchorLevelConcurrentWithReload(t *testing.T) {
 	for range 4 {
 		readers.Go(func() {
 			for range 200_000 {
-				level, ok := tm.anchorLevel(root)
-				require.True(t, ok, "every published state anchors the root, so it is never absent")
+				level, ok := tm.anchorLevel(caCert)
+				require.True(t, ok, "every published state anchors the CA, so it is never absent")
 				require.Equal(t, clientmodels.TrustLevel_High, level)
 			}
 		})
@@ -53,7 +53,7 @@ func testAnchorLevelConcurrentWithReload(t *testing.T) {
 
 func testClassifyConcurrentWithReload(t *testing.T) {
 	tm, caCert, caKey := classifyFixture(t, clientmodels.TrustLevel_High)
-	root := selfSignedRootOf(t, tm)
+	root := issuerRootOf(t, tm)
 	leaf := mintLeaf(t, caCert, caKey, testdata.PkiOption_None)
 
 	stop := reloadContinuously(t, tm, caCert, root, nil)
@@ -75,7 +75,7 @@ func testClassifyConcurrentWithReload(t *testing.T) {
 
 func testRevokedLeafStaysRefusedDuringReload(t *testing.T) {
 	tm, caCert, caKey := classifyFixture(t, clientmodels.TrustLevel_High)
-	root := selfSignedRootOf(t, tm)
+	root := issuerRootOf(t, tm)
 	leaf := mintLeaf(t, caCert, caKey, testdata.PkiOption_None)
 
 	crlTemplate := testdata.GetDefaultCrlTemplate(caCert)
@@ -142,9 +142,9 @@ func reloadContinuously(t *testing.T, tm *TrustModel, caCert, root *x509.Certifi
 	}
 }
 
-// selfSignedRootOf returns the anchor the fixture installed. The level map is
-// keyed by the root, while classifyFixture hands back the CA under it.
-func selfSignedRootOf(t *testing.T, tm *TrustModel) *x509.Certificate {
+// issuerRootOf returns the self-signed root the fixture gave as the CA's issuer.
+// It is not an anchor — the CA is — but a reload needs it to rebuild the chain.
+func issuerRootOf(t *testing.T, tm *TrustModel) *x509.Certificate {
 	t.Helper()
 
 	for _, cert := range tm.state().allCerts {
