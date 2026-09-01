@@ -240,20 +240,33 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	// Use the first credential as the source of truth for batch-level metadata.
 	first := verifiedSdJwtVcs[0]
 
-	hash, processedPayload, err := s.computeHashAndDeleteExisting(first)
-	if err != nil {
-		return err
-	}
-
 	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
 
-	batch := &models.CredentialBatch{
-		IssuerIdentifier:           first.IssuerIdentifier,
-		VerifiableCredentialType:   first.IssuerSignedJwtPayload.VerifiableCredentialType,
+	processedPayload, err := json.Marshal(first.ProcessedSdJwtPayload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
+	}
+	hash, err := hashForSdJwtVc(first.IssuerSignedJwtPayload.VerifiableCredentialType, processedPayload)
+	if err != nil {
+		return fmt.Errorf("failed to compute credential hash: %w", err)
+	}
+
+	// The logical grouping identity (#686) is computed from the same stored
+	// payload the migration reads, so a credential re-issued later lands the same
+	// identity as its migrated copy. StoreFormatBinding replaces any existing
+	// binding for this (identity, format), so no explicit delete is needed.
+	identity, err := LogicalIdentityFromProcessedPayload(
+		models.CredentialFormat(credentialConfiguration.Format), first.IssuerIdentifier, processedPayload)
+	if err != nil {
+		return fmt.Errorf("failed to compute logical credential identity: %w", err)
+	}
+
+	binding := &models.FormatBinding{
 		Format:                     models.CredentialFormat(credentialConfiguration.Format),
+		TypeLabel:                  first.IssuerSignedJwtPayload.VerifiableCredentialType,
 		Hash:                       hash,
-		ProcessedSdJwtPayload:      datatypes.JSON(processedPayload),
 		CredentialIssuerIdentifier: issuerMetadata.CredentialIssuer,
+		ProcessedPayload:           datatypes.JSON(processedPayload),
 		IssuerDisplay:              slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
 		CredentialMetadata:         convertCredentialMetadata(credentialConfiguration),
 		BatchSize:                  uint(len(verifiedSdJwtVcs)),
@@ -262,54 +275,23 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	}
 
 	if first.IssuerSignedJwtPayload.IssuedAt != nil {
-		batch.IssuedAt = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.IssuedAt, 0), Valid: true}
+		binding.IssuedAt = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.IssuedAt, 0), Valid: true}
 	}
 	if first.IssuerSignedJwtPayload.Expiry != nil {
-		batch.ExpiresAt = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.Expiry, 0), Valid: true}
+		binding.ExpiresAt = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.Expiry, 0), Valid: true}
 	}
 	if first.IssuerSignedJwtPayload.NotBefore != nil {
-		batch.NotBefore = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.NotBefore, 0), Valid: true}
+		binding.NotBefore = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.NotBefore, 0), Valid: true}
 	}
 
-	if err := s.credentialStore.StoreBatch(batch); err != nil {
+	if err := s.credentialStore.StoreFormatBinding(identity, first.IssuerIdentifier, binding); err != nil {
 		return err
 	}
 
 	if requireCryptographicKeyBinding {
-		s.linkHolderBindingKeys(matchedKeyIDs, batch.Instances)
+		s.linkHolderBindingKeys(matchedKeyIDs, binding.Instances)
 	}
 
-	return nil
-}
-
-func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJwtVc) (string, []byte, error) {
-	processedPayload, err := json.Marshal(vc.ProcessedSdJwtPayload)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
-	}
-
-	hash, err := hashForSdJwtVc(vc.IssuerSignedJwtPayload.VerifiableCredentialType, processedPayload)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to compute credential hash: %w", err)
-	}
-
-	// If a batch with this hash already exists, delete it so the new issuance
-	// replaces it (e.g. with updated timestamps or a fresh holder binding key).
-	if err := s.deleteExistingBatchByHash(hash); err != nil {
-		return "", nil, err
-	}
-
-	return hash, processedPayload, nil
-}
-
-// deleteExistingBatchByHash deletes a stored batch with the given hash, if
-// any, so a re-issuance of the same logical credential replaces it.
-func (s *credentialService) deleteExistingBatchByHash(hash string) error {
-	if existing, err := s.credentialStore.GetBatchByHash(hash); err == nil {
-		if err := s.credentialStore.DeleteBatch(existing.ID); err != nil {
-			return fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
-		}
-	}
 	return nil
 }
 

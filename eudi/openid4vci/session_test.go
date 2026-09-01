@@ -691,7 +691,7 @@ func Test_expectedDataModel(t *testing.T) {
 
 	holderKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	holderJwkKey, err := jwk.Import(holderKey)
+	holderJwkKey, err := jwk.Import[jwk.Key](holderKey)
 	require.NoError(t, err)
 	sdJwtVcCredential, err := createTestSdJwtVcWithHolderKey(
 		"test.credential.type", "https://test-issuer.example.com",

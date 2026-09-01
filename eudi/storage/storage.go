@@ -70,6 +70,8 @@ func autoMigrateHolderModels(db *gorm.DB) error {
 	// inline REFERENCES target does not exist yet, so the order matters here.
 	if err := db.AutoMigrate(
 		&models.CredentialBatch{},
+		&models.LogicalCredential{},
+		&models.FormatBinding{},
 		&models.IssuedCredentialInstance{},
 		&models.HolderBindingKey{},
 		&models.ECDSAKeyMetadata{},

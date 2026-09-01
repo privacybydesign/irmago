@@ -8,7 +8,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// TODO: we need to add polymorphic associations to support multiple credential formats in the future, but for now we only support SD-JWT VCs, so we can keep all fields in one table and use the Format field to distinguish them. See https://gorm.io/docs/polymorphism.html for reference on how to implement this when we need it.
+// The cross-format storage model (#679/#686) is realized below as LogicalCredential
+// + FormatBinding, superseding the single-table "Format field distinguishes formats"
+// approach. CredentialBatch is the legacy flat model: as of #685 it is no longer
+// written — the store persists FormatBindings and the read methods project them back
+// to this shape — and it is retained only as that read-projection DTO and as the type
+// the one-time flat->three-layer migration reads. It (and the credential_batch_id
+// foreign keys on the child tables) can be dropped in a future release, once every
+// install has run the migration.
 
 // CredentialFormat represents the credential format identifier as defined in the OID4VCI spec.
 type CredentialFormat string
@@ -26,6 +33,11 @@ const (
 // request within one OID4VCI issuance session. When the issuer supports batch issuance,
 // BatchSize > 1 and multiple IssuedCredentialInstance rows belong to this batch. Single-use
 // wallets decrement RemainingCount on each presentation; the batch is exhausted when it reaches 0.
+//
+// LEGACY (#685): no longer written. The store persists FormatBinding rows; the read
+// methods build CredentialBatch values in memory as a projection of a FormatBinding
+// (see db.projectBinding). This struct is kept only as that projection DTO and as the
+// model the flat->three-layer migration reads.
 type CredentialBatch struct {
 	ID datatypes.UUID
 
@@ -86,14 +98,15 @@ func (b *CredentialBatch) BeforeCreate(tx *gorm.DB) error {
 }
 
 func (b *CredentialBatch) normalizeChildren() {
+	id := b.ID
 	if b.CredentialMetadata != nil {
-		b.CredentialMetadata.CredentialBatchID = b.ID
+		b.CredentialMetadata.CredentialBatchID = &id
 	}
 	for i := range b.Instances {
-		b.Instances[i].CredentialBatchID = b.ID
+		b.Instances[i].CredentialBatchID = &id
 	}
 	for i := range b.IssuerDisplay {
-		b.IssuerDisplay[i].CredentialBatchID = b.ID
+		b.IssuerDisplay[i].CredentialBatchID = &id
 	}
 }
 
@@ -131,7 +144,11 @@ func (b *CredentialBatch) validate() error {
 type IssuedCredentialInstance struct {
 	ID datatypes.UUID
 
-	CredentialBatchID datatypes.UUID
+	// Foreign keys — exactly one is set: CredentialBatchID for the legacy flat
+	// batch, FormatBindingID for the three-layer model (#685). Both are nullable
+	// so the unused parent's FK column is NULL, which PRAGMA foreign_keys exempts.
+	CredentialBatchID *datatypes.UUID
+	FormatBindingID   *datatypes.UUID
 
 	// HolderBindingKey is the key pair bound to this credential instance during issuance.
 	// Nil if the credential configuration did not require cryptographic key binding.
@@ -181,8 +198,10 @@ func (i *IssuedCredentialInstance) BeforeCreate(tx *gorm.DB) error {
 }
 
 func (i *IssuedCredentialInstance) validate() error {
-	if i.CredentialBatchID.IsNil() {
-		return fmt.Errorf("batch_id is required")
+	batchUnset := i.CredentialBatchID == nil || i.CredentialBatchID.IsNil()
+	bindingUnset := i.FormatBindingID == nil || i.FormatBindingID.IsNil()
+	if batchUnset && bindingUnset {
+		return fmt.Errorf("either batch_id or format_binding_id is required")
 	}
 	if len(i.RawCredential) == 0 {
 		return fmt.Errorf("raw_credential is required")
@@ -195,8 +214,11 @@ func (i *IssuedCredentialInstance) validate() error {
 type IssuerMetadataDisplay struct {
 	ID datatypes.UUID
 
-	// Foreign key
-	CredentialBatchID datatypes.UUID
+	// Foreign keys — exactly one is set: CredentialBatchID for the legacy flat
+	// batch, FormatBindingID for the three-layer model (#685). Both nullable so
+	// the unused FK column is NULL, which PRAGMA foreign_keys exempts.
+	CredentialBatchID *datatypes.UUID
+	FormatBindingID   *datatypes.UUID
 
 	Name   string
 	Locale datatypes.NullString
@@ -218,7 +240,11 @@ func (d *IssuerMetadataDisplay) BeforeCreate(tx *gorm.DB) error {
 type CredentialMetadata struct {
 	ID datatypes.UUID
 
-	CredentialBatchID datatypes.UUID
+	// Exactly one FK is set: CredentialBatchID (legacy flat batch) or
+	// FormatBindingID (three-layer model, #685). Both nullable so the unused FK
+	// column is NULL, which PRAGMA foreign_keys exempts.
+	CredentialBatchID *datatypes.UUID
+	FormatBindingID   *datatypes.UUID
 
 	Display []CredentialDisplay `gorm:"constraint:OnDelete:CASCADE"`
 	Claims  []CredentialClaim   `gorm:"constraint:OnDelete:CASCADE"`
@@ -323,6 +349,154 @@ type ClaimDisplay struct {
 func (d *ClaimDisplay) BeforeCreate(tx *gorm.DB) error {
 	if d.ID.IsNil() {
 		d.ID = datatypes.NewUUIDv4()
+	}
+	return nil
+}
+
+// ── Three-layer storage model (map #685, realizing #679) ─────────────────────
+//
+// The flat CredentialBatch above stores one securing format per row. The models
+// below introduce the cross-format grouping decided in #679/#686: a
+// LogicalCredential owner — keyed by the #686 content-hash identity — with a
+// FormatBinding per securing format. They are added ADDITIVELY as the first step
+// of the restructure: the store/read rewiring, the reparenting of
+// IssuedCredentialInstance and the display children onto FormatBinding, the data
+// migration off CredentialBatch, and CredentialBatch's eventual removal are
+// later steps (see #685).
+
+// LogicalCredential is the cross-format owner: one row per logical credential,
+// grouping the FormatBindings that carry the same credential (same issuer, same
+// content) in different securing formats (dc+sd-jwt / vc+sd-jwt / ldp_vc).
+type LogicalCredential struct {
+	ID datatypes.UUID
+
+	// Identity is the data-model-agnostic grouping key from #686
+	// (services.LogicalCredentialID): a hash over the issuer and the credential's
+	// normalized content claims, deliberately excluding type/vct so copies in
+	// different formats share it.
+	Identity string `gorm:"uniqueIndex;not null"`
+
+	// IssuerURL is shared across every format of the credential (the iss /
+	// credential_issuer), so it lives on the owner rather than per format.
+	IssuerURL string
+
+	FormatBindings []FormatBinding `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+func (c *LogicalCredential) BeforeCreate(tx *gorm.DB) error {
+	if c.ID.IsNil() {
+		c.ID = datatypes.NewUUIDv4()
+	}
+	c.normalizeChildren()
+	return c.validate()
+}
+
+func (c *LogicalCredential) normalizeChildren() {
+	for i := range c.FormatBindings {
+		c.FormatBindings[i].LogicalCredentialID = c.ID
+	}
+}
+
+func (c *LogicalCredential) validate() error {
+	if c.Identity == "" {
+		return fmt.Errorf("identity is required")
+	}
+	if c.IssuerURL == "" {
+		return fmt.Errorf("issuer_url is required")
+	}
+	return nil
+}
+
+// FormatBinding is one securing format of a LogicalCredential: the decoded
+// document/payload for that format plus its per-issuance metadata. It is unique
+// per (LogicalCredential, Format). Display children and IssuedCredentialInstances
+// attach here via nullable FormatBindingID FKs; the flat CredentialBatch keeps
+// its own copies until the data migration (#685 step 2) retires it.
+type FormatBinding struct {
+	ID datatypes.UUID
+
+	// LogicalCredentialID is the owning LogicalCredential; unique together with
+	// Format — one binding per (logical credential, securing format).
+	LogicalCredentialID datatypes.UUID `gorm:"uniqueIndex:idx_format_binding_logical_format"`
+
+	// LogicalCredential is the owning row, loaded (Preload) when projecting a
+	// binding back to the flat read model (CredentialBatch) for the credential
+	// list; its IssuerURL is the credential's issuer identity.
+	LogicalCredential *LogicalCredential
+
+	// Format is the credential format identifier (dc+sd-jwt / vc+sd-jwt / ldp_vc).
+	Format CredentialFormat `gorm:"uniqueIndex:idx_format_binding_logical_format"`
+
+	// Hash is the per-format deterministic dedup/correlation key (type + sorted
+	// disclosed content) — the same value the flat CredentialBatch stored. It
+	// stays the wallet-facing credential id and the Token Status List correlation
+	// key, so the read projection keeps exposing it unchanged.
+	Hash string `gorm:"index"`
+
+	// CredentialIssuerIdentifier is the OID4VCI credential_issuer (the offer's
+	// issuer), distinct from LogicalCredential.IssuerURL (the credential's iss).
+	CredentialIssuerIdentifier string
+
+	// TypeLabel is the per-format type identifier: the `vct` for an IETF SD-JWT
+	// VC, or the @context+type composite for a VCDM credential.
+	TypeLabel string
+
+	// ProcessedPayload is the decoded/disclosed document for this format.
+	ProcessedPayload datatypes.JSON `gorm:"type:JSON;not null"`
+
+	// IssuedAt/ExpiresAt/NotBefore and the batch counts are per format, since
+	// each format is issued in its own OpenID4VCI exchange.
+	IssuedAt  datatypes.NullTime
+	ExpiresAt datatypes.NullTime
+	NotBefore datatypes.NullTime
+
+	BatchSize      uint
+	RemainingCount uint
+
+	// Children reparented from CredentialBatch (#685 step 2). They carry a
+	// nullable FormatBindingID; the flat CredentialBatch keeps its own copies
+	// until the data migration retires it.
+	Instances          []IssuedCredentialInstance `gorm:"constraint:OnDelete:CASCADE"`
+	IssuerDisplay      []IssuerMetadataDisplay    `gorm:"constraint:OnDelete:CASCADE"`
+	CredentialMetadata *CredentialMetadata        `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+func (f *FormatBinding) BeforeCreate(tx *gorm.DB) error {
+	if f.ID.IsNil() {
+		f.ID = datatypes.NewUUIDv4()
+	}
+	f.normalizeChildren()
+	return f.validate()
+}
+
+// normalizeChildren stamps this binding's ID onto the FormatBindingID FK of its
+// reparented children, mirroring CredentialBatch.normalizeChildren for the
+// three-layer model.
+func (f *FormatBinding) normalizeChildren() {
+	id := f.ID
+	for i := range f.Instances {
+		f.Instances[i].FormatBindingID = &id
+	}
+	for i := range f.IssuerDisplay {
+		f.IssuerDisplay[i].FormatBindingID = &id
+	}
+	if f.CredentialMetadata != nil {
+		f.CredentialMetadata.FormatBindingID = &id
+	}
+}
+
+func (f *FormatBinding) validate() error {
+	if f.Format == "" {
+		return fmt.Errorf("format is required")
+	}
+	if len(f.ProcessedPayload) == 0 {
+		return fmt.Errorf("processed_payload is required")
+	}
+	if f.BatchSize == 0 {
+		return fmt.Errorf("batch_size must be at least 1")
+	}
+	if f.RemainingCount > f.BatchSize {
+		return fmt.Errorf("remaining_count cannot exceed batch_size")
 	}
 	return nil
 }

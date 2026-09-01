@@ -30,11 +30,44 @@ func newTestCredentialStore(t *testing.T) CredentialStore {
 		&models.CredentialClaim{},
 		&models.ClaimDisplay{},
 		&models.CredentialBatch{},
+		&models.LogicalCredential{},
+		&models.FormatBinding{},
 		&models.IssuedCredentialInstance{},
 	)
 	require.NoError(t, err)
 
 	return &credentialStore{db: db}
+}
+
+// storeAsBinding stores a flat-shaped test CredentialBatch through the three-layer
+// write path: it converts the batch into a FormatBinding and upserts it via
+// StoreFormatBinding, giving each test batch its own LogicalCredential keyed by
+// the batch hash. The assigned binding and instance IDs are reflected back onto
+// the batch so callers can address them (GetUnusedInstance, MarkInstanceUsed,
+// DeleteBatch); reads project the binding back to this same flat shape.
+func storeAsBinding(t *testing.T, store CredentialStore, batch *models.CredentialBatch) error {
+	t.Helper()
+	binding := &models.FormatBinding{
+		Format:                     batch.Format,
+		TypeLabel:                  batch.VerifiableCredentialType,
+		Hash:                       batch.Hash,
+		CredentialIssuerIdentifier: batch.CredentialIssuerIdentifier,
+		ProcessedPayload:           batch.ProcessedSdJwtPayload,
+		IssuedAt:                   batch.IssuedAt,
+		ExpiresAt:                  batch.ExpiresAt,
+		NotBefore:                  batch.NotBefore,
+		BatchSize:                  batch.BatchSize,
+		RemainingCount:             batch.RemainingCount,
+		Instances:                  batch.Instances,
+		IssuerDisplay:              batch.IssuerDisplay,
+		CredentialMetadata:         batch.CredentialMetadata,
+	}
+	if err := store.StoreFormatBinding(batch.Hash, batch.IssuerIdentifier, binding); err != nil {
+		return err
+	}
+	batch.ID = binding.ID
+	batch.Instances = binding.Instances
+	return nil
 }
 
 func newBatch(hash string) *models.CredentialBatch {
@@ -170,7 +203,7 @@ func TestStoreBatch_Success(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch := newBatch("hash-store-success")
-	err := store.StoreBatch(batch)
+	err := storeAsBinding(t, store, batch)
 	require.NoError(t, err)
 	assert.NotZero(t, batch.ID)
 }
@@ -179,17 +212,17 @@ func TestStoreBatch_AssignsInstanceIDs(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch := newBatch("hash-instance-ids")
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	for _, inst := range batch.Instances {
 		assert.NotEqual(t, uuid.Nil, inst.ID)
 	}
 }
 
-func TestStoreBatch_NilBatch(t *testing.T) {
+func TestStoreFormatBinding_NilBinding(t *testing.T) {
 	store := newTestCredentialStore(t)
 
-	err := store.StoreBatch(nil)
+	err := store.StoreFormatBinding("id", "https://issuer.example.com", nil)
 	require.Error(t, err)
 }
 
@@ -199,16 +232,7 @@ func TestStoreBatch_EmptyInstances(t *testing.T) {
 	batch := newBatch("hash-empty-instances")
 	batch.Instances = nil
 
-	err := store.StoreBatch(batch)
-	require.Error(t, err)
-}
-
-func TestStoreBatch_UniqueHashConstraint(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	require.NoError(t, store.StoreBatch(newBatch("hash-duplicate")))
-
-	err := store.StoreBatch(newBatch("hash-duplicate"))
+	err := storeAsBinding(t, store, batch)
 	require.Error(t, err)
 }
 
@@ -224,7 +248,7 @@ func TestStoreBatch_PersistsStatusListColumns(t *testing.T) {
 	batch.Instances[0].LastKnownStatus = 1 // StatusValid
 	batch.Instances[0].LastStatusCheckAt = &checked
 
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	got, err := store.GetUnusedInstance(batch.ID)
 	require.NoError(t, err)
@@ -246,10 +270,10 @@ func TestListStatusReferencedInstanceStatuses(t *testing.T) {
 	withStatus.Instances[0].StatusListURI = &uri
 	withStatus.Instances[0].StatusListIdx = &idx
 	withStatus.Instances[0].LastKnownStatus = 2 // StatusInvalid
-	require.NoError(t, store.StoreBatch(withStatus))
+	require.NoError(t, storeAsBinding(t, store, withStatus))
 
 	// Batch without a status reference must be excluded (status_list_uri IS NULL).
-	require.NoError(t, store.StoreBatch(newBatch("hash-no-status")))
+	require.NoError(t, storeAsBinding(t, store, newBatch("hash-no-status")))
 
 	got, err := store.ListStatusReferencedInstanceStatuses()
 	require.NoError(t, err)
@@ -259,7 +283,7 @@ func TestListStatusReferencedInstanceStatuses(t *testing.T) {
 func TestStoreBatch_StatusListColumnsDefaultToNil(t *testing.T) {
 	store := newTestCredentialStore(t)
 	batch := newBatch("hash-no-status")
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	got, err := store.GetUnusedInstance(batch.ID)
 	require.NoError(t, err)
@@ -273,7 +297,7 @@ func TestStoreBatch_MultipleInstances(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch := newBatchWithInstances("hash-multi", 3)
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 	assert.Len(t, batch.Instances, 3)
 }
 
@@ -290,8 +314,8 @@ func TestGetCredentialBatchList_Empty(t *testing.T) {
 func TestGetCredentialBatchList_ReturnsBatches(t *testing.T) {
 	store := newTestCredentialStore(t)
 
-	require.NoError(t, store.StoreBatch(newBatch("hash-list-1")))
-	require.NoError(t, store.StoreBatch(newBatch("hash-list-2")))
+	require.NoError(t, storeAsBinding(t, store, newBatch("hash-list-1")))
+	require.NoError(t, storeAsBinding(t, store, newBatch("hash-list-2")))
 
 	batches, err := store.GetCredentialBatchList()
 	require.NoError(t, err)
@@ -302,7 +326,7 @@ func TestGetCredentialBatchList_ContainsBatchFields(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch := newBatch("hash-fields-check")
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	batches, err := store.GetCredentialBatchList()
 	require.NoError(t, err)
@@ -319,7 +343,7 @@ func TestGetCredentialBatchList_ContainsIssuerAndCredentialMetadataDisplays(t *t
 	store := newTestCredentialStore(t)
 
 	batch := newBatch("hash-fields-check")
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	batches, err := store.GetCredentialBatchList()
 	require.NoError(t, err)
@@ -340,7 +364,7 @@ func TestGetBatchByHash_Found(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch := newBatch("hash-get-by-hash")
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	got, err := store.GetBatchByHash("hash-get-by-hash")
 	require.NoError(t, err)
@@ -367,8 +391,8 @@ func TestGetBatchByHash_EmptyHash(t *testing.T) {
 func TestGetBatchesByVCT_Found(t *testing.T) {
 	store := newTestCredentialStore(t)
 
-	require.NoError(t, store.StoreBatch(newBatch("hash-vct-1")))
-	require.NoError(t, store.StoreBatch(newBatch("hash-vct-2")))
+	require.NoError(t, storeAsBinding(t, store, newBatch("hash-vct-1")))
+	require.NoError(t, storeAsBinding(t, store, newBatch("hash-vct-2")))
 
 	batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
 	require.NoError(t, err)
@@ -378,7 +402,7 @@ func TestGetBatchesByVCT_Found(t *testing.T) {
 func TestGetBatchesByVCT_NoMatch(t *testing.T) {
 	store := newTestCredentialStore(t)
 
-	require.NoError(t, store.StoreBatch(newBatch("hash-vct-nomatch")))
+	require.NoError(t, storeAsBinding(t, store, newBatch("hash-vct-nomatch")))
 
 	batches, err := store.GetBatchesByVCT("https://vct.example.com/OtherCredential")
 	require.NoError(t, err)
@@ -399,8 +423,8 @@ func TestGetBatchesByVCT_FiltersCorrectly(t *testing.T) {
 	batch2 := newBatch("hash-filter-2")
 	batch2.VerifiableCredentialType = "https://vct.example.com/OtherCredential"
 
-	require.NoError(t, store.StoreBatch(batch1))
-	require.NoError(t, store.StoreBatch(batch2))
+	require.NoError(t, storeAsBinding(t, store, batch1))
+	require.NoError(t, storeAsBinding(t, store, batch2))
 
 	batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
 	require.NoError(t, err)
@@ -428,7 +452,7 @@ func TestGetUnusedInstance_ReturnsUnusedInstance(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch := newBatch("hash-unused-instance")
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	instance, err := store.GetUnusedInstance(batch.ID)
 	require.NoError(t, err)
@@ -456,7 +480,7 @@ func TestMarkInstanceUsed_SetsUsedTrue(t *testing.T) {
 	db := store.(*credentialStore).db
 
 	batch := newBatch("hash-mark-used")
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	instanceID := batch.Instances[0].ID
 	require.NoError(t, store.MarkInstanceUsed(instanceID))
@@ -471,12 +495,12 @@ func TestMarkInstanceUsed_DecrementsRemainingCount(t *testing.T) {
 	db := store.(*credentialStore).db
 
 	batch := newBatchWithInstances("hash-decrement", 2)
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	instanceID := batch.Instances[0].ID
 	require.NoError(t, store.MarkInstanceUsed(instanceID))
 
-	var updated models.CredentialBatch
+	var updated models.FormatBinding
 	require.NoError(t, db.First(&updated, batch.ID).Error)
 	assert.Equal(t, uint(1), updated.RemainingCount)
 }
@@ -485,7 +509,7 @@ func TestMarkInstanceUsed_AlreadyUsed_ReturnsNotFound(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch := newBatch("hash-already-used")
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	instanceID := batch.Instances[0].ID
 	require.NoError(t, store.MarkInstanceUsed(instanceID))
@@ -502,7 +526,7 @@ func TestDeleteBatchByHash_Success(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch := newBatch("hash-delete-by-hash")
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	require.NoError(t, store.DeleteBatchByHash("hash-delete-by-hash"))
 
@@ -522,18 +546,18 @@ func TestDeleteBatchByHash_CascadeDeletesInstances(t *testing.T) {
 	db := store.(*credentialStore).db
 
 	batch := newBatchWithInstances("hash-cascade-delete", 3)
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	// Verify instances exist before deletion.
 	var countBefore int64
-	db.Model(&models.IssuedCredentialInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countBefore)
+	db.Model(&models.IssuedCredentialInstance{}).Where("format_binding_id = ?", batch.ID).Count(&countBefore)
 	assert.Equal(t, int64(3), countBefore)
 
 	require.NoError(t, store.DeleteBatchByHash("hash-cascade-delete"))
 
 	// Verify all instances are gone after deletion.
 	var countAfter int64
-	db.Model(&models.IssuedCredentialInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countAfter)
+	db.Model(&models.IssuedCredentialInstance{}).Where("format_binding_id = ?", batch.ID).Count(&countAfter)
 	assert.Equal(t, int64(0), countAfter)
 }
 
@@ -542,7 +566,7 @@ func TestDeleteBatchByHash_CascadeDeletesHolderBindingKeys(t *testing.T) {
 	db := store.(*credentialStore).db
 
 	batch := newBatchWithInstancesAndKeys("hash-cascade-delete-keys", 2)
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	// Collect holder binding key IDs from the stored instances.
 	var keyIDs []datatypes.UUID
@@ -601,7 +625,7 @@ func TestDeleteBatch_Success(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch := newBatch("hash-delete-success")
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	require.NoError(t, store.DeleteBatch(batch.ID))
 

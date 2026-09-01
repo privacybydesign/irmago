@@ -289,7 +289,7 @@ func newLiveBatch(t *testing.T, svc *eudiLogService, vct string, issuer string) 
 		},
 		Instances: []models.IssuedCredentialInstance{{RawCredential: []byte("raw")}},
 	}
-	require.NoError(t, svc.credentialStore.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, svc.credentialStore, batch))
 }
 
 // TestLogReadReResolvesTextFromLiveMetadata pins that the activity log follows

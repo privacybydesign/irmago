@@ -68,7 +68,7 @@ func TestVerifyAndStoreIssuedVcdmCredentials_EmptySlice(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	assert.Empty(t, mock.storedBatches)
+	assert.Empty(t, mock.storedBindings)
 }
 
 func TestVerifyAndStoreIssuedVcdmCredentials_StoresBatch(t *testing.T) {
@@ -83,13 +83,13 @@ func TestVerifyAndStoreIssuedVcdmCredentials_StoresBatch(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Len(t, mock.storedBatches, 1)
-	batch := mock.storedBatches[0]
+	require.Len(t, mock.storedBindings, 1)
+	batch := mock.storedBindings[0]
 
 	assert.Equal(t, models.CredentialFormatSdJwtVcdm, batch.Format)
-	assert.Equal(t, vcdm.ContextV2+" "+vcdm.TypeVerifiableCredential+" ExampleCredential", batch.VerifiableCredentialType)
-	assert.Equal(t, testVcdmIssuer, batch.IssuerURL)
-	assert.Equal(t, testVcdmIssuer, batch.CredentialIssuer)
+	assert.Equal(t, vcdm.ContextV2+" "+vcdm.TypeVerifiableCredential+" ExampleCredential", batch.TypeLabel)
+	assert.Equal(t, testVcdmIssuer, mock.storedIssuerURLs[0])
+	assert.Equal(t, testVcdmIssuer, batch.CredentialIssuerIdentifier)
 	assert.NotEmpty(t, batch.Hash)
 
 	// Validity comes from the document: no JWT iat/exp were signed, so
@@ -122,11 +122,11 @@ func TestVerifyAndStoreIssuedVcdmCredentials_SameContentSameHash(t *testing.T) {
 			[]*vcdmsdjwt.VerifiedSdJwtVcdm{v}, "config-id", issuerMetadata, false, nil))
 	}
 
-	require.Len(t, mock.storedBatches, 3)
+	require.Len(t, mock.storedBindings, 3)
 	// Re-issuance of the same logical credential reproduces the hash (so the
 	// stored batch is replaced); different content gets its own batch.
-	assert.Equal(t, mock.storedBatches[0].Hash, mock.storedBatches[1].Hash)
-	assert.NotEqual(t, mock.storedBatches[0].Hash, mock.storedBatches[2].Hash)
+	assert.Equal(t, mock.storedBindings[0].Hash, mock.storedBindings[1].Hash)
+	assert.NotEqual(t, mock.storedBindings[0].Hash, mock.storedBindings[2].Hash)
 }
 
 func TestVerifyAndStoreIssuedVcdmCredentials_KeyBindingMismatch(t *testing.T) {
@@ -142,7 +142,7 @@ func TestVerifyAndStoreIssuedVcdmCredentials_KeyBindingMismatch(t *testing.T) {
 	)
 
 	require.Error(t, err)
-	assert.Empty(t, mock.storedBatches)
+	assert.Empty(t, mock.storedBindings)
 }
 
 func TestGetCredentialMetadataList_VcdmBatch_SubjectRootedAttributes(t *testing.T) {
@@ -157,15 +157,15 @@ func TestGetCredentialMetadataList_VcdmBatch_SubjectRootedAttributes(t *testing.
 	require.NoError(t, err)
 
 	batch := &models.CredentialBatch{
-		ID:                       datatypes.NewUUIDv4(),
-		IssuerURL:                testVcdmIssuer,
-		VerifiableCredentialType: vcdm.ContextV2 + " " + vcdm.TypeVerifiableCredential + " ExampleCredential",
-		Format:                   models.CredentialFormatSdJwtVcdm,
-		Hash:                     "vcdm-hash",
-		ProcessedSdJwtPayload:    datatypes.JSON(payload),
-		CredentialIssuer:         testVcdmIssuer,
-		BatchSize:                1,
-		RemainingCount:           1,
+		ID:                         datatypes.NewUUIDv4(),
+		IssuerIdentifier:           testVcdmIssuer,
+		VerifiableCredentialType:   vcdm.ContextV2 + " " + vcdm.TypeVerifiableCredential + " ExampleCredential",
+		Format:                     models.CredentialFormatSdJwtVcdm,
+		Hash:                       "vcdm-hash",
+		ProcessedSdJwtPayload:      datatypes.JSON(payload),
+		CredentialIssuerIdentifier: testVcdmIssuer,
+		BatchSize:                  1,
+		RemainingCount:             1,
 	}
 
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}

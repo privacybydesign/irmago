@@ -49,6 +49,8 @@ func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.CredentialStore) {
 		&models.CredentialClaim{},
 		&models.ClaimDisplay{},
 		&models.CredentialBatch{},
+		&models.LogicalCredential{},
+		&models.FormatBinding{},
 		&models.IssuedCredentialInstance{},
 	))
 
@@ -82,6 +84,34 @@ func newTestBatch(hash, vct string, payload map[string]any) *models.CredentialBa
 	}
 }
 
+// storeAsBinding stores a flat-shaped test CredentialBatch through the three-layer
+// write path (StoreFormatBinding), so these DCQL tests keep building flat batches
+// while the store persists the three-layer model the reads project back.
+func storeAsBinding(t *testing.T, store db.CredentialStore, batch *models.CredentialBatch) error {
+	t.Helper()
+	binding := &models.FormatBinding{
+		Format:                     batch.Format,
+		TypeLabel:                  batch.VerifiableCredentialType,
+		Hash:                       batch.Hash,
+		CredentialIssuerIdentifier: batch.CredentialIssuerIdentifier,
+		ProcessedPayload:           batch.ProcessedSdJwtPayload,
+		IssuedAt:                   batch.IssuedAt,
+		ExpiresAt:                  batch.ExpiresAt,
+		NotBefore:                  batch.NotBefore,
+		BatchSize:                  batch.BatchSize,
+		RemainingCount:             batch.RemainingCount,
+		Instances:                  batch.Instances,
+		IssuerDisplay:              batch.IssuerDisplay,
+		CredentialMetadata:         batch.CredentialMetadata,
+	}
+	if err := store.StoreFormatBinding(batch.Hash, batch.IssuerIdentifier, binding); err != nil {
+		return err
+	}
+	batch.ID = binding.ID
+	batch.Instances = binding.Instances
+	return nil
+}
+
 func parseDcqlQuery(t *testing.T, raw string) dcql.CredentialQuery {
 	t.Helper()
 	var q dcql.CredentialQuery
@@ -100,7 +130,7 @@ func TestFindCandidates_ExpiredCredentialExcluded(t *testing.T) {
 		"email": "test@example.com",
 	})
 	batch.ExpiresAt = datatypes.NullTime{V: time.Now().Add(-1 * time.Hour), Valid: true}
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",
@@ -121,7 +151,7 @@ func TestFindCandidates_NotYetValidCredentialExcluded(t *testing.T) {
 		"email": "test@example.com",
 	})
 	batch.NotBefore = datatypes.NullTime{V: time.Now().Add(1 * time.Hour), Valid: true}
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",
@@ -143,7 +173,7 @@ func TestFindCandidates_ValidCredentialIncluded(t *testing.T) {
 	})
 	batch.ExpiresAt = datatypes.NullTime{V: time.Now().Add(24 * time.Hour), Valid: true}
 	batch.NotBefore = datatypes.NullTime{V: time.Now().Add(-24 * time.Hour), Valid: true}
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",
@@ -179,7 +209,7 @@ func TestFindCandidates_RevokedSurfaced(t *testing.T) {
 	idx := uint64(3)
 	batch.Instances[0].StatusListURI = &uri
 	batch.Instances[0].StatusListIdx = &idx
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",
@@ -209,7 +239,7 @@ func TestFindCandidates_NotRevoked(t *testing.T) {
 	idx := uint64(3)
 	batch.Instances[0].StatusListURI = &uri
 	batch.Instances[0].StatusListIdx = &idx
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	result, err := h.FindCandidates(parseDcqlQuery(t, `{
 		"id": "q1",
@@ -254,7 +284,7 @@ func TestFindCandidates_RegionalLocale_KeyedByBaseLanguage(t *testing.T) {
 			},
 		},
 	}
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",
@@ -282,7 +312,7 @@ func TestFindCandidates_NoExpiryOrNotBefore_Included(t *testing.T) {
 		"email": "test@example.com",
 	})
 	// ExpiresAt and NotBefore left as zero values (Valid = false)
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",
@@ -303,13 +333,13 @@ func TestFindCandidates_MixedValidAndExpired(t *testing.T) {
 		"email": "valid@example.com",
 	})
 	valid.ExpiresAt = datatypes.NullTime{V: time.Now().Add(24 * time.Hour), Valid: true}
-	require.NoError(t, store.StoreBatch(valid))
+	require.NoError(t, storeAsBinding(t, store, valid))
 
 	expired := newTestBatch("hash-mix-expired", "https://example.com/EmailCredential", map[string]any{
 		"email": "expired@example.com",
 	})
 	expired.ExpiresAt = datatypes.NullTime{V: time.Now().Add(-1 * time.Hour), Valid: true}
-	require.NoError(t, store.StoreBatch(expired))
+	require.NoError(t, storeAsBinding(t, store, expired))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",
@@ -331,10 +361,10 @@ func TestFindCandidates_MixedValidAndExpired(t *testing.T) {
 func TestFindCandidates_MultipleVctValues_MatchesAll(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-email", "https://example.com/EmailCredential", map[string]any{
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-email", "https://example.com/EmailCredential", map[string]any{
 		"email": "test@example.com",
 	})))
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-phone", "https://example.com/PhoneCredential", map[string]any{
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-phone", "https://example.com/PhoneCredential", map[string]any{
 		"email": "test@example.com", // same claim for simplicity
 	})))
 
@@ -353,7 +383,7 @@ func TestFindCandidates_MultipleVctValues_MatchesAll(t *testing.T) {
 func TestFindCandidates_MultipleVctValues_PartialMatch(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-email-only", "https://example.com/EmailCredential", map[string]any{
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-email-only", "https://example.com/EmailCredential", map[string]any{
 		"email": "test@example.com",
 	})))
 
@@ -373,7 +403,7 @@ func TestFindCandidates_MultipleVctValues_PartialMatch(t *testing.T) {
 func TestFindCandidates_MultipleVctValues_NoneMatch(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-other", "https://example.com/OtherCredential", map[string]any{
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-other", "https://example.com/OtherCredential", map[string]any{
 		"email": "test@example.com",
 	})))
 
@@ -392,8 +422,8 @@ func TestFindCandidates_MultipleVctValues_NoneMatch(t *testing.T) {
 func TestFindCandidates_NoVctValues_MatchesNone(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-a", "https://example.com/A", map[string]any{"email": "a@example.com"})))
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-b", "https://example.com/B", map[string]any{"email": "b@example.com"})))
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-a", "https://example.com/A", map[string]any{"email": "a@example.com"})))
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-b", "https://example.com/B", map[string]any{"email": "b@example.com"})))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",
@@ -417,7 +447,7 @@ func TestFindCandidates_NoVctValues_MatchesNone(t *testing.T) {
 func TestFindCandidates_NoClaims_MatchesCredential(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-noclaims", "https://example.com/EmailCredential", map[string]any{
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-noclaims", "https://example.com/EmailCredential", map[string]any{
 		"email": "test@example.com",
 	})))
 
@@ -435,7 +465,7 @@ func TestFindCandidates_NoClaims_MatchesCredential(t *testing.T) {
 func TestFindCandidates_ClaimPathDoesNotExist_NoMatch(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-missing-claim", "https://example.com/EmailCredential", map[string]any{
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-missing-claim", "https://example.com/EmailCredential", map[string]any{
 		"email": "test@example.com",
 	})))
 
@@ -455,7 +485,7 @@ func TestFindCandidates_ClaimPathDoesNotExist_NoMatch(t *testing.T) {
 func TestFindCandidates_ClaimValueMismatch_NoMatch(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-value-mismatch", "https://example.com/EmailCredential", map[string]any{
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-value-mismatch", "https://example.com/EmailCredential", map[string]any{
 		"email": "test@example.com",
 	})))
 
@@ -474,7 +504,7 @@ func TestFindCandidates_ClaimValueMismatch_NoMatch(t *testing.T) {
 func TestFindCandidates_ClaimValueMatchesBoolean(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-bool", "https://example.com/StudentCredential", map[string]any{
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-bool", "https://example.com/StudentCredential", map[string]any{
 		"is_student": true,
 		"name":       "Alice",
 	})))
@@ -494,7 +524,7 @@ func TestFindCandidates_ClaimValueMatchesBoolean(t *testing.T) {
 func TestFindCandidates_ClaimValueBooleanMismatch_NoMatch(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-bool-mismatch", "https://example.com/StudentCredential", map[string]any{
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-bool-mismatch", "https://example.com/StudentCredential", map[string]any{
 		"is_student": false,
 	})))
 
@@ -513,7 +543,7 @@ func TestFindCandidates_ClaimValueBooleanMismatch_NoMatch(t *testing.T) {
 func TestFindCandidates_ClaimValueMatchesInteger(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-int", "https://example.com/AgeCredential", map[string]any{
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-int", "https://example.com/AgeCredential", map[string]any{
 		"age": float64(25), // JSON numbers are float64
 	})))
 
@@ -532,7 +562,7 @@ func TestFindCandidates_ClaimValueMatchesInteger(t *testing.T) {
 func TestFindCandidates_ClaimValueIntegerMismatch_NoMatch(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-int-mismatch", "https://example.com/AgeCredential", map[string]any{
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-int-mismatch", "https://example.com/AgeCredential", map[string]any{
 		"age": float64(30),
 	})))
 
@@ -551,7 +581,7 @@ func TestFindCandidates_ClaimValueIntegerMismatch_NoMatch(t *testing.T) {
 func TestFindCandidates_ClaimValueMixedTypes(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	require.NoError(t, store.StoreBatch(newTestBatch("hash-mixed", "https://example.com/ProfileCredential", map[string]any{
+	require.NoError(t, storeAsBinding(t, store, newTestBatch("hash-mixed", "https://example.com/ProfileCredential", map[string]any{
 		"status": "active",
 	})))
 
@@ -593,7 +623,7 @@ func TestPrepareDisclosure_BatchOfOne_RemainsUsableAfterDisclosure(t *testing.T)
 	batch.Instances = []models.IssuedCredentialInstance{
 		{RawCredential: []byte(validTestSdJwtVc)},
 	}
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	selections := []dcql.DisclosureSelection{{
 		QueryId:        "q1",
@@ -632,7 +662,7 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 		{RawCredential: []byte(validTestSdJwtVc)},
 		{RawCredential: []byte(validTestSdJwtVc)},
 	}
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	selections := []dcql.DisclosureSelection{{
 		QueryId:        "q1",
@@ -673,7 +703,7 @@ func TestFindCandidates_ExpiryDateSetCorrectly(t *testing.T) {
 		"email": "test@example.com",
 	})
 	batch.ExpiresAt = datatypes.NullTime{V: expiryTime, Valid: true}
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",
@@ -1016,7 +1046,7 @@ func TestFindCandidates_VcdmBatchExcluded(t *testing.T) {
 		"credentialSubject": map[string]any{"email": "test@example.com"},
 	})
 	batch.Format = models.CredentialFormatSdJwtVcdm
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, storeAsBinding(t, store, batch))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",

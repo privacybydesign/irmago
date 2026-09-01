@@ -7,6 +7,7 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
 // LogicalCredentialID computes the data-model-agnostic logical identity used to
@@ -81,4 +82,31 @@ func SdJwtVcContentClaims(payload map[string]any) map[string]any {
 		content[key] = value
 	}
 	return content
+}
+
+// LogicalIdentityFromProcessedPayload computes the #686 logical identity from a
+// stored processed payload — the JSON persisted as
+// CredentialBatch.ProcessedSdJwtPayload / FormatBinding.ProcessedPayload. It
+// dispatches content normalization by data model so the id is identical whether
+// computed at store time from a freshly verified credential or during migration
+// of an already-stored one: VCDM formats normalize via VcdmContentClaims (the
+// credentialSubject), all other (IETF SD-JWT VC) formats via SdJwtVcContentClaims.
+//
+// The VCDM branch also accepts a full SD-JWT processed payload (envelope + SD-JWT
+// claims around the credentialSubject): VcdmContentClaims reads only
+// credentialSubject, so the envelope and securing claims are ignored either way.
+// Future VCDM securing formats (ldp_vc, vc+jwt) join the VCDM branch here.
+func LogicalIdentityFromProcessedPayload(format models.CredentialFormat, issuerURL string, processedPayload []byte) (string, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(processedPayload, &payload); err != nil {
+		return "", fmt.Errorf("LogicalIdentityFromProcessedPayload: failed to unmarshal payload: %w", err)
+	}
+
+	var content map[string]any
+	if format == models.CredentialFormatSdJwtVcdm {
+		content = VcdmContentClaims(vcdm.Document(payload))
+	} else {
+		content = SdJwtVcContentClaims(payload)
+	}
+	return LogicalCredentialID(issuerURL, content)
 }

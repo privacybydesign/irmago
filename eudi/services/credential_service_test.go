@@ -429,7 +429,7 @@ func TestVerifyAndStoreIssuedCredentials_EmptySlice(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	assert.Empty(t, mock.storedBatches)
+	assert.Empty(t, mock.storedBindings)
 }
 
 func TestVerifyAndStoreIssuedCredentials_KeyBindingMismatch(t *testing.T) {
@@ -484,7 +484,7 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_CallsStoreBatch(t *testing
 	)
 
 	require.NoError(t, err)
-	require.Len(t, mock.storedBatches, 1)
+	require.Len(t, mock.storedBindings, 1)
 }
 
 // TODO: in the future, we need to link the private key used for holder binding to the stored credential batch, and then we can test that the correct key ID is set on the batch.
@@ -503,9 +503,9 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_CallsStoreBatch(t *testing
 // 	)
 
 // 	require.NoError(t, err)
-// 	require.Len(t, mock.storedBatches, 1)
-// 	require.Len(t, mock.storedBatches[0].Instances, 1)
-// 	assert.Equal(t, &keyID, mock.storedBatches[0].Instances[0].HolderBindingKeyID)
+// 	require.Len(t, mock.storedBindings, 1)
+// 	require.Len(t, mock.storedBindings[0].Instances, 1)
+// 	assert.Equal(t, &keyID, mock.storedBindings[0].Instances[0].HolderBindingKeyID)
 // }
 
 func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_NilHolderBindingKeyID(t *testing.T) {
@@ -523,8 +523,8 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_NilHolderBindingKeyID(t *t
 	)
 
 	require.NoError(t, err)
-	require.Len(t, mock.storedBatches, 1)
-	assert.Nil(t, mock.storedBatches[0].Instances[0].HolderBindingKey)
+	require.Len(t, mock.storedBindings, 1)
+	assert.Nil(t, mock.storedBindings[0].Instances[0].HolderBindingKey)
 }
 
 func TestVerifyAndStoreIssuedCredentials_BatchSize(t *testing.T) {
@@ -543,8 +543,8 @@ func TestVerifyAndStoreIssuedCredentials_BatchSize(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Len(t, mock.storedBatches, 1)
-	batch := mock.storedBatches[0]
+	require.Len(t, mock.storedBindings, 1)
+	batch := mock.storedBindings[0]
 	assert.Equal(t, uint(2), batch.BatchSize)
 	assert.Equal(t, uint(2), batch.RemainingCount)
 	assert.Len(t, batch.Instances, 2)
@@ -579,7 +579,7 @@ func TestVerifyAndStoreIssuedCredentials_DuplicateStatusReferences_Rejected(t *t
 		withStatusRef(newVc(), "https://sl.example/1", 5),
 	)
 	require.Error(t, err)
-	assert.Empty(t, mock.storedBatches, "double-allocated batch must not be stored")
+	assert.Empty(t, mock.storedBindings, "double-allocated batch must not be stored")
 }
 
 func TestVerifyAndStoreIssuedCredentials_DistinctStatusReferences_Stored(t *testing.T) {
@@ -592,8 +592,8 @@ func TestVerifyAndStoreIssuedCredentials_DistinctStatusReferences_Stored(t *test
 		withStatusRef(newVc(), "https://sl.example/1", 2),
 	)
 	require.NoError(t, err)
-	require.Len(t, mock.storedBatches, 1)
-	require.Len(t, mock.storedBatches[0].Instances, 2)
+	require.Len(t, mock.storedBindings, 1)
+	require.Len(t, mock.storedBindings[0].Instances, 2)
 }
 
 func TestVerifyAndStoreIssuedCredentials_PartialStatusReference_Rejected(t *testing.T) {
@@ -604,7 +604,7 @@ func TestVerifyAndStoreIssuedCredentials_PartialStatusReference_Rejected(t *test
 		newVc(),
 	)
 	require.Error(t, err)
-	assert.Empty(t, mock.storedBatches, "malformed batch must not be stored")
+	assert.Empty(t, mock.storedBindings, "malformed batch must not be stored")
 }
 
 func TestVerifyAndStoreIssuedCredentials_SetsIssuerMetadata(t *testing.T) {
@@ -623,9 +623,8 @@ func TestVerifyAndStoreIssuedCredentials_SetsIssuerMetadata(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	batch := mock.storedBatches[0]
-	assert.Equal(t, issuer, batch.IssuerIdentifier)
-	assert.Equal(t, issuer, batch.CredentialIssuerIdentifier)
+	assert.Equal(t, issuer, mock.storedIssuerURLs[0])
+	assert.Equal(t, issuer, mock.storedBindings[0].CredentialIssuerIdentifier)
 }
 
 func TestVerifyAndStoreIssuedCredentials_SetsVCT(t *testing.T) {
@@ -644,7 +643,7 @@ func TestVerifyAndStoreIssuedCredentials_SetsVCT(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	assert.Equal(t, vct, mock.storedBatches[0].VerifiableCredentialType)
+	assert.Equal(t, vct, mock.storedBindings[0].TypeLabel)
 }
 
 func TestVerifyAndStoreIssuedCredentials_SetsFormat(t *testing.T) {
@@ -662,7 +661,7 @@ func TestVerifyAndStoreIssuedCredentials_SetsFormat(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	assert.Equal(t, models.CredentialFormatSdJwtVc, mock.storedBatches[0].Format)
+	assert.Equal(t, models.CredentialFormatSdJwtVc, mock.storedBindings[0].Format)
 }
 
 func TestVerifyAndStoreIssuedCredentials_ExpirySet(t *testing.T) {
@@ -681,8 +680,8 @@ func TestVerifyAndStoreIssuedCredentials_ExpirySet(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.True(t, mock.storedBatches[0].ExpiresAt.Valid)
-	assert.Equal(t, expiry, mock.storedBatches[0].ExpiresAt.V.Unix())
+	require.True(t, mock.storedBindings[0].ExpiresAt.Valid)
+	assert.Equal(t, expiry, mock.storedBindings[0].ExpiresAt.V.Unix())
 }
 
 func TestVerifyAndStoreIssuedCredentials_ExpiryZero_NilExpiresAt(t *testing.T) {
@@ -700,8 +699,8 @@ func TestVerifyAndStoreIssuedCredentials_ExpiryZero_NilExpiresAt(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	assert.Equal(t, mock.storedBatches[0].ExpiresAt.Valid, true)
-	assert.Equal(t, mock.storedBatches[0].ExpiresAt.V, time.Unix(0, 0))
+	assert.Equal(t, mock.storedBindings[0].ExpiresAt.Valid, true)
+	assert.Equal(t, mock.storedBindings[0].ExpiresAt.V, time.Unix(0, 0))
 }
 
 func TestVerifyAndStoreIssuedCredentials_NotBeforeSet(t *testing.T) {
@@ -720,8 +719,8 @@ func TestVerifyAndStoreIssuedCredentials_NotBeforeSet(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.True(t, mock.storedBatches[0].NotBefore.Valid)
-	assert.Equal(t, nbf, mock.storedBatches[0].NotBefore.V.Unix())
+	require.True(t, mock.storedBindings[0].NotBefore.Valid)
+	assert.Equal(t, nbf, mock.storedBindings[0].NotBefore.V.Unix())
 }
 
 func TestVerifyAndStoreIssuedCredentials_NotBeforeZero_NilNotBefore(t *testing.T) {
@@ -739,13 +738,13 @@ func TestVerifyAndStoreIssuedCredentials_NotBeforeZero_NilNotBefore(t *testing.T
 	)
 
 	require.NoError(t, err)
-	assert.Equal(t, mock.storedBatches[0].NotBefore.Valid, true)
-	assert.Equal(t, mock.storedBatches[0].NotBefore.V, time.Unix(0, 0))
+	assert.Equal(t, mock.storedBindings[0].NotBefore.Valid, true)
+	assert.Equal(t, mock.storedBindings[0].NotBefore.V, time.Unix(0, 0))
 }
 
 func TestVerifyAndStoreIssuedCredentials_StoreError_Propagated(t *testing.T) {
 	storeErr := errors.New("storage failure")
-	mock := &mockCredentialStore{storeBatchErr: storeErr}
+	mock := &mockCredentialStore{storeBindingErr: storeErr}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
@@ -776,8 +775,8 @@ func TestVerifyAndStoreIssuedCredentials_FullMetadata_ClaimsConverted(t *testing
 	)
 
 	require.NoError(t, err)
-	require.Len(t, mock.storedBatches, 1)
-	batch := mock.storedBatches[0]
+	require.Len(t, mock.storedBindings, 1)
+	batch := mock.storedBindings[0]
 	require.NotNil(t, batch.CredentialMetadata)
 	require.Len(t, batch.CredentialMetadata.Claims, 1)
 	assert.True(t, batch.CredentialMetadata.Claims[0].Mandatory)
@@ -802,8 +801,8 @@ func TestVerifyAndStoreIssuedCredentials_NilCredentialMetadata_StoredWithEmptyCl
 	)
 
 	require.NoError(t, err)
-	require.Len(t, mock.storedBatches, 1)
-	batch := mock.storedBatches[0]
+	require.Len(t, mock.storedBindings, 1)
+	batch := mock.storedBindings[0]
 	require.NotNil(t, batch.CredentialMetadata)
 	assert.Empty(t, batch.CredentialMetadata.Claims)
 }
@@ -824,8 +823,8 @@ func TestVerifyAndStoreIssuedCredentials_HashIsDeterministic(t *testing.T) {
 		"config-id", m, false, nil,
 	)
 
-	require.Len(t, mock.storedBatches, 2)
-	assert.Equal(t, mock.storedBatches[0].Hash, mock.storedBatches[1].Hash)
+	require.Len(t, mock.storedBindings, 2)
+	assert.Equal(t, mock.storedBindings[0].Hash, mock.storedBindings[1].Hash)
 }
 
 // TestVerifyAndStore_SeedsStatusReference pins that issuance persists the
@@ -852,9 +851,9 @@ func TestVerifyAndStore_SeedsStatusReference(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Len(t, mock.storedBatches, 1)
-	require.Len(t, mock.storedBatches[0].Instances, 1)
-	inst := mock.storedBatches[0].Instances[0]
+	require.Len(t, mock.storedBindings, 1)
+	require.Len(t, mock.storedBindings[0].Instances, 1)
+	inst := mock.storedBindings[0].Instances[0]
 	require.NotNil(t, inst.StatusListURI)
 	assert.Equal(t, "https://issuer.example.com/sl/1", *inst.StatusListURI)
 	require.NotNil(t, inst.StatusListIdx)
@@ -879,9 +878,9 @@ func TestVerifyAndStore_NoStatusReference_LeavesStatusFieldsNil(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Len(t, mock.storedBatches, 1)
-	require.Len(t, mock.storedBatches[0].Instances, 1)
-	inst := mock.storedBatches[0].Instances[0]
+	require.Len(t, mock.storedBindings, 1)
+	require.Len(t, mock.storedBindings[0].Instances, 1)
+	inst := mock.storedBindings[0].Instances[0]
 	assert.Nil(t, inst.StatusListURI)
 	assert.Nil(t, inst.StatusListIdx)
 	assert.Equal(t, uint8(statuslist.StatusUnknown), inst.LastKnownStatus)
@@ -1075,10 +1074,10 @@ func TestMatchAllHolderBindingKeys_FragmentDroppedByIssuer(t *testing.T) {
 	baseDid := "did:key:zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
 	storedDidUrl := baseDid + "#zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
 
-	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwt.CnfField{Kid: &baseDid})
+	cnf := &sdjwt.CnfField{Kid: &baseDid}
 
 	keyIDs, err := matchAllHolderBindingKeys(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		[]*sdjwt.CnfField{cnf},
 		[]models.PublicHolderBindingKey{{ID: expectedID, DidUrl: &storedDidUrl}},
 	)
 
@@ -1093,10 +1092,10 @@ func TestMatchAllHolderBindingKeys_ExactDidUrlWinsOverAlias(t *testing.T) {
 	baseDid := "did:key:zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
 	fragmented := baseDid + "#zDnaehRUzpTmNSPT1An6s7s6pwkGYvvvzsEFpRfUBGsTopLJA"
 
-	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwt.CnfField{Kid: &baseDid})
+	cnf := &sdjwt.CnfField{Kid: &baseDid}
 
 	keyIDs, err := matchAllHolderBindingKeys(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		[]*sdjwt.CnfField{cnf},
 		[]models.PublicHolderBindingKey{
 			{ID: aliasID, DidUrl: &fragmented},
 			{ID: exactID, DidUrl: &baseDid},
@@ -1233,7 +1232,7 @@ func TestVerifyAndStore_UnknownCnfKey_ReturnsError(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no matching holder binding key found")
-	assert.Empty(t, credStore.storedBatches)
+	assert.Empty(t, credStore.storedBindings)
 }
 
 func TestVerifyAndStore_MissingCnfClaim_ReturnsError(t *testing.T) {
@@ -1256,7 +1255,7 @@ func TestVerifyAndStore_MissingCnfClaim_ReturnsError(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "has no cnf claim")
-	assert.Empty(t, credStore.storedBatches)
+	assert.Empty(t, credStore.storedBindings)
 }
 
 func TestVerifyAndStore_NoKeyBinding_DoesNotLink(t *testing.T) {
@@ -1282,19 +1281,21 @@ func TestVerifyAndStore_NoKeyBinding_DoesNotLink(t *testing.T) {
 // --- mock CredentialStore ---
 
 type mockCredentialStore struct {
-	storedBatches   []*models.CredentialBatch
-	batchListResult []*models.CredentialBatch
-	storeBatchErr   error
-	batchListErr    error
-	statusRefs      []db.BatchInstanceStatus
-	statusRefsErr   error
+	storedBindings   []*models.FormatBinding
+	storedIssuerURLs []string
+	batchListResult  []*models.CredentialBatch
+	storeBindingErr  error
+	batchListErr     error
+	statusRefs       []db.BatchInstanceStatus
+	statusRefsErr    error
 }
 
-func (m *mockCredentialStore) StoreBatch(batch *models.CredentialBatch) error {
-	if m.storeBatchErr != nil {
-		return m.storeBatchErr
+func (m *mockCredentialStore) StoreFormatBinding(identity, issuerURL string, binding *models.FormatBinding) error {
+	if m.storeBindingErr != nil {
+		return m.storeBindingErr
 	}
-	m.storedBatches = append(m.storedBatches, batch)
+	m.storedBindings = append(m.storedBindings, binding)
+	m.storedIssuerURLs = append(m.storedIssuerURLs, issuerURL)
 	return nil
 }
 
