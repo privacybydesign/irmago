@@ -248,7 +248,7 @@ func requireRequestorInfo(t *testing.T, session clientmodels.SessionState) {
 	t.Helper()
 	require.Equal(t, "test-requestors.test-requestor", session.Requestor.Id)
 	require.Equal(t, "Local IRMA server", session.Requestor.Name)
-	require.True(t, session.Requestor.Verified)
+	require.Equal(t, clientmodels.TrustLevel_High, session.Requestor.TrustLevel)
 }
 
 // grantPermission sends a permission granted interaction with optional disclosure choices

@@ -10,20 +10,30 @@ import (
 // NewTestTrustModel creates a TrustModel for testing with the given PKI components.
 func NewTestTrustModel(basePath string, rootPool, intermediatePool *x509.CertPool, revocationLists []*x509.RevocationList) *TrustModel {
 	fstorage := filesystem.NewFileSystemStorage([32]byte{}, filepath.Join(basePath, "testdata"))
-	return &TrustModel{
-		storageContainer:                fstorage.Issuers(),
-		trustedRootCertificates:         rootPool,
-		trustedIntermediateCertificates: intermediatePool,
-		revocationLists:                 revocationLists,
+	tm := &TrustModel{storageContainer: fstorage.Issuers()}
+
+	s := newTrustState()
+	if rootPool != nil {
+		s.roots = rootPool
 	}
+	if intermediatePool != nil {
+		s.intermediates = intermediatePool
+	}
+	s.revocationLists = revocationLists
+	tm.current.Store(s)
+	return tm
 }
 
 // ClearTrustedRootCertificates replaces the root cert pool (for testing missing roots).
 func (tm *TrustModel) ClearTrustedRootCertificates() {
-	tm.trustedRootCertificates = x509.NewCertPool()
+	s := tm.state().clone()
+	s.roots = x509.NewCertPool()
+	tm.current.Store(s)
 }
 
 // ClearTrustedIntermediateCertificates replaces the intermediate cert pool (for testing missing intermediates).
 func (tm *TrustModel) ClearTrustedIntermediateCertificates() {
-	tm.trustedIntermediateCertificates = x509.NewCertPool()
+	s := tm.state().clone()
+	s.intermediates = x509.NewCertPool()
+	tm.current.Store(s)
 }

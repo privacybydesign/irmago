@@ -1,0 +1,300 @@
+{
+  "LoTE": {
+    "ListAndSchemeInformation": {
+      "ListIssueDateTime": "2026-08-21T12:36:27Z",
+      "LoTESequenceNumber": 42,
+      "LoTEType": "https://yivi.app/19602/LoTEType/YiviRecognizedPartiesList",
+      "LoTEVersionIdentifier": 1,
+      "NextUpdate": "2026-09-20T12:36:27Z",
+      "PolicyOrLegalNotice": [
+        {
+          "LoTEPolicy": {
+            "lang": "en",
+            "uriValue": "https://yivi.test/trustlist/policy"
+          }
+        }
+      ],
+      "SchemeInformationURI": [
+        {
+          "lang": "en",
+          "uriValue": "https://yivi.test/trustlist"
+        }
+      ],
+      "SchemeName": [
+        {
+          "lang": "en",
+          "value": "NL:Yivi Golden Trust List"
+        }
+      ],
+      "SchemeOperatorAddress": {
+        "SchemeOperatorElectronicAddress": [
+          {
+            "lang": "en",
+            "uriValue": "mailto:trustlist@yivi.test"
+          }
+        ],
+        "SchemeOperatorPostalAddress": [
+          {
+            "Country": "NL",
+            "Locality": "Utrecht",
+            "PostalCode": "3512 AA",
+            "StreetAddress": "Test Lane 1",
+            "lang": "en"
+          }
+        ]
+      },
+      "SchemeOperatorName": [
+        {
+          "lang": "en",
+          "value": "Yivi Golden"
+        }
+      ],
+      "SchemeTerritory": "NL",
+      "SchemeTypeCommunityRules": [
+        {
+          "lang": "en",
+          "uriValue": "https://yivi.app/19602/YiviRecognizedParties/schemerules/Yivi"
+        }
+      ],
+      "StatusDeterminationApproach": "https://yivi.app/19602/YiviRecognizedPartiesList/StatusDetn/Yivi"
+    },
+    "TrustedEntitiesList": [
+      {
+        "TrustedEntityInformation": {
+          "TEAddress": {
+            "TEElectronicAddress": [
+              {
+                "lang": "en",
+                "uriValue": "mailto:info@example.test"
+              }
+            ],
+            "TEPostalAddress": [
+              {
+                "Country": "NL",
+                "Locality": "Utrecht",
+                "PostalCode": "3512 AA",
+                "StreetAddress": "Example Street 1",
+                "lang": "en"
+              }
+            ]
+          },
+          "TEInformationExtensions": [
+            {
+              "YiviOrganizationIdentifier": "VATNL-000000001"
+            },
+            {
+              "YiviLogoURI": "https://trustlist.example/logos/municipality.png"
+            }
+          ],
+          "TEInformationURI": [
+            {
+              "lang": "en",
+              "uriValue": "https://example.test/about"
+            }
+          ],
+          "TEName": [
+            {
+              "lang": "en",
+              "value": "Example Municipality"
+            },
+            {
+              "lang": "nl",
+              "value": "Example Municipality"
+            }
+          ]
+        },
+        "TrustedEntityServices": [
+          {
+            "ServiceInformation": {
+              "ServiceDigitalIdentity": {
+                "X509Certificates": [
+                  {
+                    "val": "MIICCDCCAa2gAwIBAgIUc8vEgi+AffM1T1edNYgpg3tNFuUwCgYIKoZIzj0EAwIwQzELMAkGA1UEBhMCTkwxFDASBgNVBAoMC1lpdmkgR29sZGVuMR4wHAYDVQQDDBVZaXZpIEdvbGRlbiBMb1RFIFJvb3QwHhcNMjYwODIxMDk1MzExWhcNMzYwODE4MDk1MzExWjBlMQswCQYDVQQGEwJOTDEdMBsGA1UECgwURXhhbXBsZSBNdW5pY2lwYWxpdHkxHTAbBgNVBAMMFHZlcmlmaWVyLmV4YW1wbGUuY29tMRgwFgYDVQRhDA9WQVROTC0wMDAwMDAwMDEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARJiHWOKAdAfnswtIg8rCnOfk0HeV/npTDVJf7tpK9Q8G8r7ZyvjHsUCeX+LbhAA+jyOr41o1UW28KC6jPSDUbFo10wWzALBgNVHQ8EBAMCB4AwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUT3FcZH/XE3KEuNJAfbrNiAD8H1IwHwYDVR0jBBgwFoAUim6WNFqTV3dPi0EeS4EmNvY3lzMwCgYIKoZIzj0EAwIDSQAwRgIhAIGIN7zbrYljQivb0TCv/g8N529TcsS7aHv6gvbaAd2DAiEAvuq78P0AmgkRuGY4UFCBMpQ8KAuB9KwEaWLYGby32fA="
+                  }
+                ]
+              },
+              "ServiceInformationExtensions": [
+                {
+                  "YiviMarking": "onboarded-by-yivi"
+                }
+              ],
+              "ServiceName": [
+                {
+                  "lang": "en",
+                  "value": "Example Municipality"
+                },
+                {
+                  "lang": "nl",
+                  "value": "Example Municipality"
+                }
+              ],
+              "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/Verifier"
+            }
+          }
+        ]
+      },
+      {
+        "TrustedEntityInformation": {
+          "TEAddress": {
+            "TEElectronicAddress": [
+              {
+                "lang": "en",
+                "uriValue": "mailto:info@example.test"
+              }
+            ],
+            "TEPostalAddress": [
+              {
+                "Country": "NL",
+                "Locality": "Utrecht",
+                "PostalCode": "3512 AA",
+                "StreetAddress": "Example Street 1",
+                "lang": "en"
+              }
+            ]
+          },
+          "TEInformationURI": [
+            {
+              "lang": "en",
+              "uriValue": "https://example.test/about"
+            }
+          ],
+          "TEName": [
+            {
+              "lang": "en",
+              "value": "Example Issuing Ltd"
+            }
+          ]
+        },
+        "TrustedEntityServices": [
+          {
+            "ServiceInformation": {
+              "ServiceDigitalIdentity": {
+                "X509SKIs": [
+                  "T3FcZH/XE3KEuNJAfbrNiAD8H1I="
+                ]
+              },
+              "ServiceInformationExtensions": [
+                {
+                  "YiviLogoURI": "https://trustlist.example/logos/diplomas.png"
+                },
+                {
+                  "YiviMarking": "some-future-qualifier"
+                }
+              ],
+              "ServiceName": [
+                {
+                  "lang": "en",
+                  "value": "Example Diplomas"
+                }
+              ],
+              "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/Issuer"
+            }
+          }
+        ]
+      },
+      {
+        "TrustedEntityInformation": {
+          "TEAddress": {
+            "TEElectronicAddress": [
+              {
+                "lang": "en",
+                "uriValue": "mailto:info@example.test"
+              }
+            ],
+            "TEPostalAddress": [
+              {
+                "Country": "NL",
+                "Locality": "Utrecht",
+                "PostalCode": "3512 AA",
+                "StreetAddress": "Example Street 1",
+                "lang": "en"
+              }
+            ]
+          },
+          "TEInformationURI": [
+            {
+              "lang": "en",
+              "uriValue": "https://example.test/about"
+            }
+          ],
+          "TEName": [
+            {
+              "lang": "en",
+              "value": "DID Verifier Ltd"
+            }
+          ]
+        },
+        "TrustedEntityServices": [
+          {
+            "ServiceInformation": {
+              "ServiceDigitalIdentity": {
+                "OtherIds": [
+                  "did:web:verifier.example.com"
+                ]
+              },
+              "ServiceName": [
+                {
+                  "lang": "en",
+                  "value": "DID Verifier Ltd"
+                }
+              ],
+              "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/Verifier"
+            }
+          }
+        ]
+      },
+      {
+        "TrustedEntityInformation": {
+          "TEAddress": {
+            "TEElectronicAddress": [
+              {
+                "lang": "en",
+                "uriValue": "mailto:info@example.test"
+              }
+            ],
+            "TEPostalAddress": [
+              {
+                "Country": "NL",
+                "Locality": "Utrecht",
+                "PostalCode": "3512 AA",
+                "StreetAddress": "Example Street 1",
+                "lang": "en"
+              }
+            ]
+          },
+          "TEInformationURI": [
+            {
+              "lang": "en",
+              "uriValue": "https://example.test/about"
+            }
+          ],
+          "TEName": [
+            {
+              "lang": "en",
+              "value": "Withdrawn Ltd"
+            }
+          ]
+        },
+        "TrustedEntityServices": [
+          {
+            "ServiceInformation": {
+              "ServiceDigitalIdentity": {
+                "OtherIds": [
+                  "did:web:withdrawn.example.com"
+                ]
+              },
+              "ServiceName": [
+                {
+                  "lang": "en",
+                  "value": "Withdrawn Ltd"
+                }
+              ],
+              "ServiceStatus": "https://yivi.app/19602/Svcstatus/Withdrawn",
+              "ServiceTypeIdentifier": "https://yivi.app/19602/Svctype/Issuer"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

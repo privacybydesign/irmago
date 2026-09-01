@@ -1,0 +1,35 @@
+{
+  "name": { "en": "Example Issuing Ltd" },
+  "information_uri": { "en": "https://issuing.example.com/about" },
+
+  "address": {
+    "postal": [
+      {
+        "lang": "en",
+        "street": "Diploma Street 7",
+        "locality": "Utrecht",
+        "postal_code": "3512 BB",
+        "country": "NL"
+      }
+    ],
+    "electronic": { "en": "mailto:info@issuing.example.com" }
+  },
+
+  "services": [
+    {
+      "role": "issuer",
+      "name": { "en": "Example Diplomas" },
+      "logo_uri": "https://trustlist.yivi.example/logos/diplomas.png",
+      "identity": {
+        "dids": ["did:web:issuing.example.com"]
+      }
+    },
+    {
+      "role": "verifier",
+      "status": "withdrawn",
+      "identity": {
+        "dids": ["did:web:retired.example.com"]
+      }
+    }
+  ]
+}

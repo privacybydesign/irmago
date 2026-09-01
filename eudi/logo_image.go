@@ -1,8 +1,6 @@
 package eudi
 
 import (
-	"encoding/base64"
-
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 )
@@ -22,9 +20,5 @@ func LoadLogoImage(manager filesystem.LogoManager, key string) *clientmodels.Ima
 	if err != nil {
 		return nil
 	}
-	image := &clientmodels.Image{Base64: base64.StdEncoding.EncodeToString(data)}
-	if mimeType != "" {
-		image.MimeType = &mimeType
-	}
-	return image
+	return clientmodels.NewImage(data, mimeType)
 }

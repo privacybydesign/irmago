@@ -119,12 +119,12 @@ func testIssuanceTrustedPartyLogoPaths(
 	require.NotNil(t, session.Requestor.Image, "requestor Image should not be nil")
 	require.NotEmpty(t, session.Requestor.Image.Base64, "requestor Image should have base64 data")
 
-	// Each offered credential's issuer should have a logo and be verified
+	// Each offered credential's issuer should have a logo and rank high
 	require.NotEmpty(t, session.OfferedCredentials, "expected at least one offered credential")
 	for _, cred := range session.OfferedCredentials {
 		require.NotNil(t, cred.Issuer.Image, "issuer Image for %s should not be nil", cred.CredentialId)
 		require.NotEmpty(t, cred.Issuer.Image.Base64, "issuer Image for %s should have base64 data", cred.CredentialId)
-		require.True(t, cred.Issuer.Verified, "issuer for %s should be verified", cred.CredentialId)
+		require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "issuer for %s should rank high", cred.CredentialId)
 	}
 }
 
@@ -410,8 +410,8 @@ func testTrustedPartyLogoPathsInLogs(
 
 	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	for _, ownedCred := range choice.Credentials {
-		require.True(t, ownedCred.Issuer.Verified,
-			"owned disclosure credential %s should have a verified issuer", ownedCred.CredentialId)
+		require.Equal(t, clientmodels.TrustLevel_High, ownedCred.Issuer.TrustLevel,
+			"owned disclosure credential %s should have a high-ranking issuer", ownedCred.CredentialId)
 	}
 
 	grantPermission(t, c, 2, makeDisclosureChoice(choice))
@@ -444,25 +444,25 @@ func testTrustedPartyLogoPathsInLogs(
 	require.NotNil(t, issuanceLog, "should have an issuance log")
 	require.NotNil(t, disclosureLog, "should have a disclosure log")
 
-	// The credential issuer's image should be set and verified in the issuance log
+	// The credential issuer's image should be set and its level high in the issuance log
 	require.NotEmpty(t, issuanceLog.Credentials, "issuance log should have credentials")
 	issuedCred := issuanceLog.Credentials[0]
 	require.NotNil(t, issuedCred.Issuer.Image,
 		"issued credential's issuer image should not be nil")
 	require.NotEmpty(t, issuedCred.Issuer.Image.Base64,
 		"issued credential's issuer image should have base64 data")
-	require.True(t, issuedCred.Issuer.Verified,
-		"issued credential's issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, issuedCred.Issuer.TrustLevel,
+		"issued credential's issuer should rank high")
 
-	// The credential issuer's image should be set and verified in the disclosure log
+	// The credential issuer's image should be set and its level high in the disclosure log
 	require.NotEmpty(t, disclosureLog.Credentials, "disclosure log should have credentials")
 	disclosedCred := disclosureLog.Credentials[0]
 	require.NotNil(t, disclosedCred.Issuer.Image,
 		"disclosed credential's issuer image should not be nil")
 	require.NotEmpty(t, disclosedCred.Issuer.Image.Base64,
 		"disclosed credential's issuer image should have base64 data")
-	require.True(t, disclosedCred.Issuer.Verified,
-		"disclosed credential's issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, disclosedCred.Issuer.TrustLevel,
+		"disclosed credential's issuer should rank high")
 }
 
 func testAttributesOrderedByDisplayIndex(

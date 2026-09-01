@@ -1,12 +1,10 @@
 package openid4vp
 
 import (
-	"crypto/x509"
 	"fmt"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/privacybydesign/irmago/eudi/scheme"
 )
 
 // CompositeVerifierValidator dispatches authorization request verification to the
@@ -28,15 +26,14 @@ func NewCompositeVerifierValidator(x509Validator *RequestorCertificateStoreVerif
 
 func (v *CompositeVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (
 	*AuthorizationRequest,
-	*x509.Certificate,
-	*scheme.RelyingPartyRequestor,
+	*VerifiedRequestor,
 	error,
 ) {
 	// Pre-parse to inspect client_id without verifying signature
 	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
 	token, _, err := parser.ParseUnverified(requestJwt, &AuthorizationRequest{})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to pre-parse auth request: %v", err)
+		return nil, nil, fmt.Errorf("failed to pre-parse auth request: %v", err)
 	}
 
 	claims := token.Claims.(*AuthorizationRequest)
@@ -46,27 +43,22 @@ func (v *CompositeVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJ
 	case strings.HasPrefix(clientId, string(ClientIdentifierPrefix_X509SanDns)) ||
 		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_X509Hash)):
 		if v.x509Validator == nil {
-			return nil, nil, nil, fmt.Errorf("X.509 verifier validator not configured")
+			return nil, nil, fmt.Errorf("X.509 verifier validator not configured")
 		}
 		return v.x509Validator.ParseAndVerifyAuthorizationRequest(requestJwt)
 
 	case strings.HasPrefix(clientId, string(ClientIdentifierPrefix_DecentralizedDid)):
 		if v.didValidator == nil {
-			return nil, nil, nil, fmt.Errorf("DID verifier validator not configured")
+			return nil, nil, fmt.Errorf("DID verifier validator not configured")
 		}
 		return v.didValidator.ParseAndVerifyAuthorizationRequest(requestJwt)
 
-	case strings.HasPrefix(clientId, string(ClientIdentifierPrefix_RedirectUri)) ||
-		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_OpenidFederation)) ||
-		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_VerifierAttestation)) ||
-		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_Origin)):
-		return nil, nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
-
 	default:
-		// Fallback to pre-registered client_id validation for backward compatibility
-		// if v.clientRegistry != nil && v.clientRegistry.IsRegistered(clientId) {
-		// 	return nil, nil, nil, fmt.Errorf("pre-registered client_id %q is not supported", clientId)
-		// }
-		return nil, nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
+		// Everything else is refused the same way, whether the scheme is one the
+		// spec defines and the wallet does not implement (redirect_uri,
+		// openid_federation, verifier_attestation, origin) or one nobody
+		// recognizes: an unsupported scheme is an unsupported scheme, and the
+		// wallet has nothing more specific to say about either.
+		return nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
 	}
 }

@@ -1,0 +1,26 @@
+{
+  "sequence_number": 1,
+  "next_update_days": 30,
+
+  "scheme_name": { "en": "NL:Yivi Recognized Parties" },
+  "territory": "NL",
+  "operator_name": { "en": "Yivi Example" },
+
+  "information_uri": { "en": "https://yivi.example/trustlist" },
+  "policy_uri": { "en": "https://yivi.example/trustlist/policy" },
+
+  "operator_address": {
+    "postal": [
+      {
+        "lang": "en",
+        "street": "Test Lane 1",
+        "locality": "Utrecht",
+        "postal_code": "3512 AA",
+        "country": "NL"
+      }
+    ],
+    "electronic": { "en": "mailto:trustlist@yivi.example" }
+  },
+
+  "distribution_points": ["https://trustlist.yivi.example/lote"]
+}

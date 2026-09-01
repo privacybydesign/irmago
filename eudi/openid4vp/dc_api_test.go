@@ -4,7 +4,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,7 +16,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/scheme"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,16 +39,14 @@ type mockVerifierValidator struct {
 
 func (v *mockVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (
 	*AuthorizationRequest,
-	*x509.Certificate,
-	*scheme.RelyingPartyRequestor,
+	*VerifiedRequestor,
 	error,
 ) {
 	if v.err != nil {
-		return nil, nil, nil, v.err
+		return nil, nil, v.err
 	}
-	requestor := &scheme.RelyingPartyRequestor{}
-	requestor.Organization.LegalName = map[string]string{"en": "Verifier Example"}
-	return v.request, nil, requestor, nil
+	// No certificate, so nothing is attested: the verifier describes itself.
+	return v.request, &VerifiedRequestor{SelfAssertedName: "Verifier Example"}, nil
 }
 
 // mockDcqlHandler answers a single DCQL credential query with one owned
@@ -201,9 +198,9 @@ func TestParseDcApiRequest_Unsigned_Succeeds(t *testing.T) {
 	require.Equal(t, "n-0S6_WzA2Mj", request.Nonce)
 	require.Len(t, request.DcqlQuery.Credentials, 1)
 	// An unsigned request is not backed by any trust framework, so the verifier is
-	// shown by its origin and never as verified.
+	// shown by its origin and lands on the bottom rung.
 	require.Equal(t, testOrigin, requestor.Name)
-	require.False(t, requestor.Verified)
+	require.Equal(t, clientmodels.TrustLevel_Low, requestor.TrustLevel)
 }
 
 // Nothing authenticates client_metadata in an unsigned request, so client_name
@@ -222,7 +219,7 @@ func TestParseDcApiRequest_Unsigned_IgnoresClientName(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "https://phishing.example.net", requestor.Name)
-	require.False(t, requestor.Verified)
+	require.Equal(t, clientmodels.TrustLevel_Low, requestor.TrustLevel)
 }
 
 // client_metadata itself must survive, because the jwks it carries is what a
@@ -395,6 +392,7 @@ func TestParseDcApiRequest_Signed_Succeeds(t *testing.T) {
 	client := &Client{
 		dcqlHandler:       dcql.NewDcqlHandler(nil),
 		verifierValidator: &mockVerifierValidator{request: signedAuthRequest([]string{testOrigin})},
+		trustEvaluator:    services.NewTrustService(nil, nil, nil),
 	}
 
 	request, requestor, err := client.parseDcApiRequest(&DcApiRequest{
@@ -406,6 +404,9 @@ func TestParseDcApiRequest_Signed_Succeeds(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "x509_san_dns:rp.example.com", request.ClientId)
 	require.Equal(t, "Verifier Example", requestor.Name)
+	// A signed request passes the identity gate and is ranked like any other
+	// party: no certificate, no listing, so the bottom rung — and it still asks.
+	require.Equal(t, clientmodels.TrustLevel_Low, requestor.TrustLevel)
 }
 
 // Appendix A.2: the wallet MUST return an error when the origin the platform
@@ -414,6 +415,7 @@ func TestParseDcApiRequest_Signed_RejectsOriginMismatch(t *testing.T) {
 	client := &Client{
 		dcqlHandler:       dcql.NewDcqlHandler(nil),
 		verifierValidator: &mockVerifierValidator{request: signedAuthRequest([]string{"https://other.example.com"})},
+		trustEvaluator:    services.NewTrustService(nil, nil, nil),
 	}
 
 	_, _, err := client.parseDcApiRequest(&DcApiRequest{
@@ -429,6 +431,7 @@ func TestParseDcApiRequest_Signed_RejectsMissingExpectedOrigins(t *testing.T) {
 	client := &Client{
 		dcqlHandler:       dcql.NewDcqlHandler(nil),
 		verifierValidator: &mockVerifierValidator{request: signedAuthRequest(nil)},
+		trustEvaluator:    services.NewTrustService(nil, nil, nil),
 	}
 
 	_, _, err := client.parseDcApiRequest(&DcApiRequest{
@@ -444,6 +447,7 @@ func TestParseDcApiRequest_Signed_ReportsVerificationFailure(t *testing.T) {
 	client := &Client{
 		dcqlHandler:       dcql.NewDcqlHandler(nil),
 		verifierValidator: &mockVerifierValidator{err: fmt.Errorf("bad signature")},
+		trustEvaluator:    services.NewTrustService(nil, nil, nil),
 	}
 
 	_, _, err := client.parseDcApiRequest(&DcApiRequest{
@@ -453,6 +457,43 @@ func TestParseDcApiRequest_Signed_ReportsVerificationFailure(t *testing.T) {
 	})
 
 	require.ErrorContains(t, err, "failed to verify authorization request")
+}
+
+// A session started over the DC API must be able to report a gate rejection the
+// same way one started from a request_uri does.
+func TestNewDcApiSession_RejectedVerifier_ReportsPartyValidationFailed(t *testing.T) {
+	client := newTestClient()
+	client.verifierValidator = &mockVerifierValidator{err: fmt.Errorf("bad signature")}
+
+	handler := &testHandler{failureCh: make(chan *clientmodels.SessionError, 1)}
+
+	client.NewDcApiSession(&DcApiRequest{
+		Protocol: DcApiProtocolSigned,
+		Origin:   testOrigin,
+		Data:     signedRequestData(t),
+	}, handler)
+
+	err := awaitOn(t, handler.failureCh, "a failure callback")
+	require.Equal(t, clientmodels.ErrorType_PartyValidationFailed, err.ErrorType,
+		"a rejected verifier must be distinguishable from a network or protocol error")
+}
+
+// Everything else that goes wrong while parsing is a plain failure: reporting it
+// as a rejection would call an unparseable request untrustworthy.
+func TestNewDcApiSession_MalformedRequest_ReportsGenericFailure(t *testing.T) {
+	client := newTestClient()
+
+	handler := &testHandler{failureCh: make(chan *clientmodels.SessionError, 1)}
+
+	client.NewDcApiSession(&DcApiRequest{
+		Protocol: DcApiProtocolUnsigned,
+		Origin:   testOrigin,
+		Data:     unsignedRequestData(t, map[string]any{"dcql_query": nil}),
+	}, handler)
+
+	err := awaitOn(t, handler.failureCh, "a failure callback")
+	require.Empty(t, err.ErrorType, "a malformed request is not a rejected party")
+	require.Contains(t, err.WrappedError, "missing a non-empty dcql_query")
 }
 
 func TestSameOrigin(t *testing.T) {
@@ -653,6 +694,7 @@ func TestNewDcApiSession_SignedRequestStillBindsToTheOrigin(t *testing.T) {
 	client := &Client{
 		dcqlHandler:       dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{dcqlHandler}),
 		verifierValidator: &mockVerifierValidator{request: signedAuthRequest([]string{testOrigin})},
+		trustEvaluator:    services.NewTrustService(nil, nil, nil),
 	}
 
 	handler := &testHandler{
@@ -753,6 +795,7 @@ func TestNewSession_RejectsDcApiResponseModeFromARequestUri(t *testing.T) {
 			client := &Client{
 				dcqlHandler:       dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{&mockDcqlHandler{}}),
 				verifierValidator: &mockVerifierValidator{request: request},
+				trustEvaluator:    services.NewTrustService(nil, nil, nil),
 			}
 			handler := &testHandler{
 				failureCh: make(chan *clientmodels.SessionError, 1),
@@ -807,6 +850,9 @@ func TestParseDcApiRequest_Unsigned_DisplayNameDistinguishesOrigins(t *testing.T
 
 			require.NoError(t, err)
 			require.Equal(t, test.displayName, requestor.Name)
+			// Id is what the app renders next to the name at the low rung, and it is
+			// serialized without omitempty, so unset ships an empty identifier.
+			require.Equal(t, test.displayName, requestor.Id)
 		})
 	}
 }

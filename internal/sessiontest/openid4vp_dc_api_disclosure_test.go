@@ -92,9 +92,9 @@ func testDcApiUnsignedDisclosure(
 	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
 
 	// An unsigned request is backed by no trust framework, so the verifier is
-	// shown by its origin and never as verified.
+	// shown by its origin and lands on the bottom rung.
 	require.Equal(t, dcApiOrigin, session.Requestor.Name)
-	require.False(t, session.Requestor.Verified)
+	require.Equal(t, clientmodels.TrustLevel_Low, session.Requestor.TrustLevel)
 
 	grantDcApiDisclosure(t, c, 2, session)
 
@@ -186,7 +186,7 @@ func testDcApiUnsignedClientNameCannotNameVerifier(
 
 	require.Equal(t, dcApiOrigin, session.Requestor.Name,
 		"an unsigned request must never present itself under a self-chosen name")
-	require.False(t, session.Requestor.Verified)
+	require.Equal(t, clientmodels.TrustLevel_Low, session.Requestor.TrustLevel)
 }
 
 // testDcApiEncryptedWithoutKeyFails checks that a dc_api.jwt request that carries

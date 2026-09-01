@@ -18,6 +18,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/eudi/trust"
 )
 
 // SdJwtVcStorageClient is the interface that the openid4vci client requires for
@@ -44,6 +46,10 @@ type Client struct {
 	// start, so a mid-flow locale change does not affect a running session.
 	currentLocale *clientmodels.CurrentLocale
 
+	// trustEvaluator ranks the issuer a session talks to; each session pins one
+	// view from it.
+	trustEvaluator trust.Evaluator
+
 	// Allow non-HTTPS for testing purposes
 	allowInsecureHttp bool
 }
@@ -51,19 +57,24 @@ type Client struct {
 // NewClient builds an OpenID4VCI client. holderKeyBinder is required: pass
 // services.NewHolderBindingKeyService(config.Storage.Db()) for the default
 // software, storage-backed binder, or a WSCA-backed implementation to keep the
-// holder private key out of this process.
+// holder private key out of this process. trustEvaluator is required too: every
+// session pins a trust view from it to rank the issuer it talks to.
 func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 	credentialService services.CredentialService,
 	holderKeyBinder HolderKeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
+	trustEvaluator trust.Evaluator,
 ) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
 	}
 	if holderKeyBinder == nil {
 		return nil, fmt.Errorf("holderKeyBinder cannot be nil")
+	}
+	if trustEvaluator == nil {
+		return nil, fmt.Errorf("trustEvaluator cannot be nil")
 	}
 	return &Client{
 		httpClient:        httpClient,
@@ -72,6 +83,7 @@ func NewClient(httpClient *http.Client,
 		credentialService: credentialService,
 		holderKeyBinder:   holderKeyBinder,
 		currentLocale:     currentLocale,
+		trustEvaluator:    trustEvaluator,
 	}, nil
 }
 
@@ -131,6 +143,9 @@ func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointU
 			return
 		}
 
+		// One pinned trust view for the whole flow, like the locale above.
+		trustView := client.trustEvaluator.Snapshot()
+
 		// SD-JWT VC type metadata is the spec-preferred source for credential
 		// display/claims (OID4VCI v1.0 § 12.2.4: format-specific mechanisms are
 		// "always preferred" over credential_metadata). Snapshot the VCI
@@ -147,7 +162,7 @@ func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointU
 		client.downloadLogos(ctx, credentialOffer, credentialIssuerMetadata, locale)
 
 		// Everything looks in order; handle the session by starting the Authorization flow (e.g. show UI to user, obtain authorization, etc)
-		err = client.handleCredentialOffer(sessionId, credentialOffer, credentialIssuerMetadata, baseline, resolver, redirectUri, locale, handler)
+		err = client.handleCredentialOffer(sessionId, credentialOffer, credentialIssuerMetadata, baseline, resolver, redirectUri, locale, trustView, handler)
 
 		if err != nil {
 			handleFailure(handler, "failed to handle credential offer: %v", err)
@@ -163,10 +178,11 @@ func (client *Client) handleCredentialOffer(
 	vctResolver *typemetadata.Resolver,
 	redirectUri string,
 	locale string,
+	trustView trust.View,
 	handler Handler,
 ) error {
-	requestorInfo := client.convertToTrustedParty(credentialIssuerMetadata, locale)
-	creds, err := client.convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata, requestorInfo.Name, locale)
+	requestorInfo := client.convertToTrustedParty(credentialIssuerMetadata, locale, trustView)
+	creds, err := client.convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata, requestorInfo, locale)
 	if err != nil {
 		return fmt.Errorf("failed to convert credential info list: %v", err)
 	}
@@ -187,6 +203,7 @@ func (client *Client) handleCredentialOffer(
 		allowInsecureHttp:          client.allowInsecureHttp,
 		originalCredentialMetadata: originalCredentialMetadata,
 		locale:                     locale,
+		trustView:                  trustView,
 		redirectUri:                redirectUri,
 	}
 	defer func() {
@@ -374,7 +391,7 @@ func constructCredentialIssuerMetadataUrl(credentialIssuer url.URL) string {
 func (client *Client) convertToCredentialInfoList(
 	requestedCredentialConfigs []string,
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
-	issuerName string,
+	issuer *clientmodels.TrustedParty,
 	locale string,
 ) ([]*clientmodels.CredentialDescriptor, error) {
 	result := make([]*clientmodels.CredentialDescriptor, 0, len(requestedCredentialConfigs))
@@ -402,7 +419,8 @@ func (client *Client) convertToCredentialInfoList(
 				CredentialId: config.VerifiableCredentialType,
 				Name:         name,
 				Issuer: clientmodels.TrustedParty{
-					Name: issuerName,
+					Name:       issuer.Name,
+					TrustLevel: issuer.TrustLevel,
 				},
 				Attributes: convertClaimsToAttributes(config.CredentialMetadata.Claims, locale),
 				Image:      image,
@@ -426,20 +444,57 @@ func convertClaimsToAttributes(claims []metadata.ClaimsDescription, locale strin
 	return attrs
 }
 
-func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.CredentialIssuerMetadata, locale string) *clientmodels.TrustedParty {
+func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.CredentialIssuerMetadata, locale string, trustView trust.View) *clientmodels.TrustedParty {
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
+
+	// Provisional: before a credential is fetched the only evidence is the
+	// issuer's own identifier, so the certificate channel has nothing to say. The
+	// session re-composes the party once the credentials are in hand.
+	verdict := trustView.Issuer(trust.Evidence{
+		Identifiers: []string{credentialIssuerMetadata.CredentialIssuer},
+	})
+
+	return composeIssuerParty(
+		credentialIssuerMetadata,
+		locale,
+		verdict,
+		client.Configuration.Storage.FileSystem().Issuers().LogoManager(),
+		client.httpClient,
+	)
+}
+
+// composeIssuerParty reduces what the wallet knows about the credential issuer to
+// the party the app renders, in display precedence: the curated list entry first,
+// what the issuer says about itself last.
+//
+// It takes the verdict rather than computing one, because the party is composed
+// twice in a session — provisionally at offer time, then again once the fetched
+// credentials reveal what signed them — and the second composition must use the
+// second verdict for the name and logo too, not only for the rung.
+func composeIssuerParty(
+	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
+	locale string,
+	verdict trust.Verdict,
+	issuerLogos filesystem.LogoManager,
+	httpClient *http.Client,
+) *clientmodels.TrustedParty {
 	displays := metadata.ToTranslateableList(credentialIssuerMetadata.Display)
 
-	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
-	issuerImage := services.LoadResolvedLogo(issuerLogoManager,
-		metadata.LogoURIsByLanguage(credentialIssuerMetadata.Display), locale)
+	display := trust.PartyDisplay{
+		Id: credentialIssuerMetadata.CredentialIssuer,
+		// Credential-issuer metadata over TLS says the issuer really published it,
+		// not that anybody else stands behind it. So it is the issuer's own word,
+		// and only the name reaches the user — never the logo.
+		SelfAssertedName: clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
 
-	return &clientmodels.TrustedParty{
-		Id:       credentialIssuerMetadata.CredentialIssuer,
-		Name:     clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
-		Image:    issuerImage,
-		Verified: false,
-	}
+		CuratedLogo: services.LoadCuratedLogo(
+			context.Background(),
+			issuerLogos,
+			httpClient,
+			verdict.CuratedLogoURI(),
+		)}
+
+	return display.TrustedParty(verdict, locale)
 }
 
 func handleFailure(handler Handler, message string, fmtArgs ...any) {

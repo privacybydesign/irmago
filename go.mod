@@ -27,6 +27,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/mr-tron/base58 v1.1.3
 	github.com/privacybydesign/gabi v0.0.0-20221212095008-68a086907750
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cast v1.10.0

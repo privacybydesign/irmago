@@ -555,7 +555,7 @@ func Test_DidKeyProvider_FetchKeys_AlgFromJWSHeaderNotJWK(t *testing.T) {
 	require.NotNil(t, sink.keys[0].key)
 }
 
-// ─── KidKeyProvider: did:jwk ─────────────────────────────────────────────────
+// ─── DidKeyProvider: did:jwk ─────────────────────────────────────────────────
 
 // newTestDidJwk derives a did:jwk DID from the public part of the given key.
 func newTestDidJwk(t *testing.T, privKey *ecdsa.PrivateKey) string {
@@ -816,6 +816,68 @@ func Test_JwtKeyProvider_FetchKeys_MultipleAllowedTyps_AcceptsAny(t *testing.T) 
 		err = p.FetchKeys(context.Background(), &testKeySink{}, sig, msg)
 		require.NoError(t, err, "typ %s should be accepted", typ)
 	}
+}
+
+func Test_DidKeyProvider_FetchKeys_AttestedKey_CapturesCertificate(t *testing.T) {
+	const issuerDID = "did:web:example.com"
+	const kidHeader = "#key-1"
+	fullKID := issuerDID + kidHeader
+
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	crt := selfSignedFor(t, privKey)
+	// The verification method's key carries an x5c over its own key.
+	pubJWK := attestedKey(t, &privKey.PublicKey, crt)
+
+	docBytes := newTestDIDDocument(t, issuerDID, fullKID, pubJWK)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(docBytes)
+	}))
+	defer server.Close()
+
+	msg := newTestJWSMessage(t, issuerDID)
+	sig := msg.Signatures()[0]
+	p := &DidKeyProvider{
+		kidHeader:     kidHeader,
+		allowInsecure: true,
+		httpClient:    &http.Client{Transport: &testRedirectTransport{targetAddr: server.Listener.Addr().String()}},
+	}
+
+	require.NoError(t, p.FetchKeys(context.Background(), &testKeySink{}, sig, msg))
+	require.NotNil(t, p.GetCert(), "the attesting certificate on the signing key is captured")
+	require.Equal(t, crt.SerialNumber, p.GetCert().SerialNumber)
+}
+
+func Test_DidKeyProvider_FetchKeys_MismatchedAttestingCertificate_ReturnsError(t *testing.T) {
+	const issuerDID = "did:web:example.com"
+	const kidHeader = "#key-1"
+	fullKID := issuerDID + kidHeader
+
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	// An x5c over a *different* key pasted onto the verification method's JWK.
+	otherKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	foreign := selfSignedFor(t, otherKey)
+	pubJWK := attestedKey(t, &privKey.PublicKey, foreign)
+
+	docBytes := newTestDIDDocument(t, issuerDID, fullKID, pubJWK)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(docBytes)
+	}))
+	defer server.Close()
+
+	msg := newTestJWSMessage(t, issuerDID)
+	sig := msg.Signatures()[0]
+	p := &DidKeyProvider{
+		kidHeader:     kidHeader,
+		allowInsecure: true,
+		httpClient:    &http.Client{Transport: &testRedirectTransport{targetAddr: server.Listener.Addr().String()}},
+	}
+
+	err = p.FetchKeys(context.Background(), &testKeySink{}, sig, msg)
+	require.ErrorIs(t, err, ErrAttestationKeyMismatch, "an x5c that does not certify the signing key refuses")
+	require.Nil(t, p.GetCert())
 }
 
 // ─── OAuthDiscoveryJwkKeyProvider ────────────────────────────────────────────

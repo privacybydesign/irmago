@@ -67,6 +67,16 @@ type CredentialBatch struct {
 	// Decremented on each use; the batch is exhausted when it reaches 0.
 	RemainingCount uint
 
+	// IssuerCertificate is the DER of the certificate attesting the key this
+	// batch's credentials were signed with: the `x5c` leaf, or the certificate a
+	// DID issuer's verification method carries. Nil for a bare DID issuer and for
+	// batches stored before the column existed, which rank through the
+	// recognized-list channel alone.
+	//
+	// Evidence rather than a verdict: the trust level is not stored but ranked
+	// again on every read, so a delisted issuer demotes without a migration.
+	IssuerCertificate []byte `gorm:"type:bytea"`
+
 	CredentialMetadata *CredentialMetadata        `gorm:"constraint:OnDelete:CASCADE"`
 	Instances          []IssuedCredentialInstance `gorm:"constraint:OnDelete:CASCADE"`
 	IssuerDisplay      []IssuerMetadataDisplay    `gorm:"constraint:OnDelete:CASCADE"`

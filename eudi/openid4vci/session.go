@@ -3,6 +3,7 @@ package openid4vci
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -26,6 +27,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/trust"
 	"gorm.io/datatypes"
 )
 
@@ -64,6 +66,10 @@ type session struct {
 	// session keeps resolving text and logos with it even when the app
 	// changes language mid-flow.
 	locale string
+
+	// trustView is pinned at flow start, like the locale: a list refresh landing
+	// mid-flow must not change what this session decided about the issuer.
+	trustView trust.View
 
 	redirectUri string
 
@@ -137,6 +143,7 @@ func (s *session) perform() {
 	if err != nil {
 		eudi.Logger.Infof("error obtaining credentials: %v", err)
 		s.handler.Failure(&clientmodels.SessionError{
+			ErrorType:    eudi.SessionErrorType(err),
 			WrappedError: err.Error(),
 		})
 		return
@@ -174,6 +181,19 @@ func (s *session) perform() {
 		})
 		return
 	}
+
+	// The credentials are in hand, which is the first moment the wallet holds the
+	// certificate the issuer signed with and the identifier it signed under.
+	// Compose the party again before the permission screen, so the user is asked
+	// to trust what was verified rather than what the metadata claimed at offer
+	// time. That governs the curated name and logo as much as the rung.
+	s.requestorInfo = composeIssuerParty(
+		s.credentialIssuerMetadata,
+		s.locale,
+		s.issuerVerdict(fetched...),
+		s.storage.FileSystem().Issuers().LogoManager(),
+		s.httpClient,
+	)
 
 	// Build offered credentials with actual attribute values from the verified SD-JWTs.
 	offeredCredentials := s.buildOfferedCredentials(fetched)
@@ -218,6 +238,52 @@ type fetchedCredential struct {
 	keyBindingService              HolderKeyBinder
 }
 
+// issuerVerdict ranks the issuer of the given credentials against the pinned
+// trust view. Called with the whole fetch it ranks the party behind the session;
+// called with one credential it ranks that credential's issuer.
+//
+// The certificate is the certificate channel's evidence: the `x5c` leaf the
+// credentials verified against, nil for a DID-identified issuer. The identifiers
+// are what a recognized list keys entries on: the `iss` the credentials were
+// signed under, and the credential issuer's own identifier.
+func (s *session) issuerVerdict(fetched ...*fetchedCredential) trust.Verdict {
+	identifiers := []string{}
+	for _, fc := range fetched {
+		for _, vc := range fc.verifiedSdJwtVcs {
+			if iss := vc.IssuerIdentifier; iss != "" && !slices.Contains(identifiers, iss) {
+				identifiers = append(identifiers, iss)
+			}
+		}
+	}
+	return s.trustView.Issuer(trust.Evidence{
+		Certificate: issuerCertificate(fetched...),
+		Identifiers: append(identifiers, s.credentialIssuerMetadata.CredentialIssuer),
+	})
+}
+
+// issuerCertificate returns the certificate every given credential was signed
+// with, or nil when they do not agree on one. One issuer serves one offer, so
+// disagreement means the wallet cannot name a single certificate for the party
+// and the issuer falls back to the recognized-list channel.
+func issuerCertificate(fetched ...*fetchedCredential) *x509.Certificate {
+	var found *x509.Certificate
+	for _, fc := range fetched {
+		for _, vc := range fc.verifiedSdJwtVcs {
+			if vc.IssuerCertificate == nil {
+				return nil
+			}
+			if found == nil {
+				found = vc.IssuerCertificate
+				continue
+			}
+			if !found.Equal(vc.IssuerCertificate) {
+				return nil
+			}
+		}
+	}
+	return found
+}
+
 func (fc *fetchedCredential) cleanupKeys() {
 	if !fc.requireCryptographicKeyBinding || len(fc.publicKeyIdentifiers) == 0 || fc.keyBindingService == nil {
 		return
@@ -249,7 +315,9 @@ func (s *session) obtainCredentials(accessToken string) ([]*fetchedCredential, e
 			for _, prev := range result {
 				prev.cleanupKeys()
 			}
-			return nil, fmt.Errorf("could not obtain credential %q: %v", credentialConfigurationId, err)
+			// Wrapped, not flattened: perform reads the identity gate marker off
+			// this error, and %v would strip it.
+			return nil, fmt.Errorf("could not obtain credential %q: %w", credentialConfigurationId, err)
 		}
 		result = append(result, fc)
 	}
@@ -385,6 +453,14 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 	batch := s.credentialIssuerMetadata.BatchCredentialIssuance
 	result := make([]*clientmodels.Credential, 0, len(fetched))
 
+	// The issuer's own account of itself and both logo managers are the same for
+	// every credential in one offer, and resolving the logo is a disk read.
+	issuerDisplays := metadata.ToTranslateableList(s.credentialIssuerMetadata.Display)
+	issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
+	credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
+	issuerImage := services.LoadResolvedLogo(s.storage.FileSystem().Issuers().LogoManager(),
+		metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale)
+
 	for _, fc := range fetched {
 		config, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId]
 		if !ok {
@@ -411,16 +487,8 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		displays := metadata.ToTranslateableList(credentialDisplay)
 		name := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), s.locale)
 
-		issuerDisplays := metadata.ToTranslateableList(s.credentialIssuerMetadata.Display)
-		issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
-
-		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
 		image := services.LoadResolvedLogo(credentialLogoManager,
 			metadata.LogoURIsByLanguage(credentialDisplay), s.locale)
-
-		issuerLogoManager := s.storage.FileSystem().Issuers().LogoManager()
-		issuerImage := services.LoadResolvedLogo(issuerLogoManager,
-			metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale)
 
 		attrs := buildAttributesWithValues(claims, payload, s.locale)
 
@@ -461,6 +529,9 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 				Id:    s.credentialIssuerMetadata.CredentialIssuer,
 				Name:  issuerName,
 				Image: issuerImage,
+				// Ranked per credential rather than copied from the session header:
+				// one offer's credentials need not share a signing key.
+				TrustLevel: s.issuerVerdict(fc).Level,
 			},
 			Image:                 image,
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},
@@ -831,7 +902,9 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	for i, cred := range credentialResponse.Credentials {
 		verifiedSdJwt, err := s.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
 		if err != nil {
-			return nil, fmt.Errorf("failed to verify credential: %v", err)
+			// The issuer's identity gate. Marked so the session reports a rejected
+			// party rather than a generic failure.
+			return nil, eudi.PartyValidationFailed(fmt.Errorf("failed to verify credential: %v", err))
 		}
 		verifiedSdJwtVcs[i] = verifiedSdJwt
 	}

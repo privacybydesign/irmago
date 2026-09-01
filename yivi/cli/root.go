@@ -6,6 +6,7 @@ import (
 	"runtime"
 
 	"github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/yivi/cli/eudicli"
 	"github.com/privacybydesign/irmago/yivi/cli/internal/clihelpers"
 	"github.com/privacybydesign/irmago/yivi/cli/irmacli"
 	"github.com/sirupsen/logrus"
@@ -44,9 +45,11 @@ func init() {
 	logger.Formatter = &prefixed.TextFormatter{FullTimestamp: true}
 
 	irmacli.Logger = logger
+	eudicli.Logger = logger
 
 	RootCmd.AddCommand(versionCmd)
 	RootCmd.AddCommand(irmacli.IrmaRootCmd)
+	RootCmd.AddCommand(eudicli.EudiRootCmd)
 
 	cobra.AddTemplateFunc("insertHeaders", clihelpers.InsertHeaders)
 }

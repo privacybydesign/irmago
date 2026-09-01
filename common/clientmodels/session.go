@@ -114,6 +114,15 @@ type AuthorizationCodeFlowRequest struct {
 	AuthorizationParameters map[string][]string // url.Values
 }
 
+// ErrorType_PartyValidationFailed is the ErrorType a session ends with when the
+// identity gate rejected the party it was talking to: a broken or revoked chain,
+// an invalid request signature, an unresolvable DID.
+//
+// It exists so the app can show the blocking copy ("not trustworthy, no data has
+// been shared") rather than a generic error screen. A party that merely fails to
+// be vouched for is not this — that is a low trust level (see TrustLevel).
+const ErrorType_PartyValidationFailed = "party_validation_failed"
+
 // SessionError is a frontend-friendly representation of a session error.
 type SessionError struct {
 	ErrorType    string       `json:"error_type"`

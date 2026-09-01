@@ -1,0 +1,82 @@
+package openid4vp
+
+import (
+	"testing"
+
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/testdata"
+	"github.com/stretchr/testify/require"
+)
+
+// Whole OpenID4VP sessions to the permission screen, asserting what the user is
+// shown about the verifier: the rung an entry on Yivi's own list lifts it to, and
+// which competing account of who it is wins. The bare did:web verifier says
+// nothing through the certificate channel.
+
+func TestNewSession_ListedOnYivisList_RanksHigh(t *testing.T) {
+	// Being on Yivi's list is being onboarded, the same word a scheme certificate
+	// gives.
+	authRequestJwt, validator, did := setupDidWebTest(t)
+	list := newYiviListFixture(t)
+	list.grant(t, 1, did)
+
+	client := newTrustTestClientWithLists(validator, list.checker(t))
+	handler := newSpyHandler()
+
+	defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
+
+	requestor := handler.awaitRequestor(t)
+	require.Equal(t, clientmodels.TrustLevel_High, requestor.TrustLevel,
+		"an entry on Yivi's own list is Yivi vouching for the verifier")
+	require.True(t, requestor.TrustLevel.IsVouchedFor())
+}
+
+func TestNewSession_ListedVerifier_RendersTheCuratedName(t *testing.T) {
+	// The verifier calls itself after its response URI's host; the list calls it
+	// "Listed BV". The curated name is the one somebody vouches for.
+	authRequestJwt, validator, did := setupDidWebTest(t)
+	list := newYiviListFixture(t)
+	list.grant(t, 1, did)
+
+	client := newTrustTestClientWithLists(validator, list.checker(t))
+	handler := newSpyHandler()
+
+	defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
+
+	require.Equal(t, "Listed BV", handler.awaitRequestor(t).Name)
+}
+
+func TestNewSession_LowVerifier_RendersItsOwnNameItsIdentifierAndNoLogo(t *testing.T) {
+	authRequestJwt, validator, did := setupDidWebTest(t)
+
+	client := newTrustTestClient(validator)
+	handler := newSpyHandler()
+
+	defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
+
+	requestor := handler.awaitRequestor(t)
+	require.Equal(t, clientmodels.TrustLevel_Low, requestor.TrustLevel)
+	require.Equal(t, "response.uri", requestor.Name,
+		"with nobody vouching for it, all the wallet has is what the request says")
+	require.Equal(t, did, requestor.Id,
+		"the identifier is the one thing on the screen the verifier did not choose itself")
+	require.Nil(t, requestor.Image, "a logo at low would be an impersonation the wallet drew itself")
+}
+
+func TestNewSession_CertifiedVerifierWithoutAListing_RendersItsAttestedName(t *testing.T) {
+	// With no list vouching for it, a certificate-authenticated verifier is shown
+	// under the name its anchored certificate attests: client_metadata does not
+	// displace it.
+	authRequestJwt, validator := setupTest(t, withClientName("Test Verifier"), testdata.PkiOption_None)
+
+	client := newTrustTestClient(validator)
+	handler := newSpyHandler()
+
+	defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
+
+	requestor := handler.awaitRequestor(t)
+	require.Equal(t, clientmodels.TrustLevel_High, requestor.TrustLevel)
+	require.Equal(t, "Yivi B.V.", requestor.Name,
+		"the certificate's attested account beats the request's client_metadata")
+	require.NotEmpty(t, requestor.Id, "a certificate-bearing verifier is known by its serial number")
+}

@@ -19,12 +19,18 @@ HOST=localhost
 #   -subj "/C=NL/O=Demo Verifier CA/CN=Demo Requestors Root"
 
 # create verifier certificate request
+# organizationIdentifier (OID 2.5.4.97) is what a LoTE entry pairs with a
+# certificate or SKI to key an entity: which key, and whose. The integration tests
+# exercise that pairing, so the leaf has to carry one.
 openssl req -new -key verifier_ec_priv.pem -out verifier.csr \
-  -subj "/C=NL/O=Yivi/CN=localhost/serialNumber=1234"
+  -subj "/C=NL/O=Yivi/CN=localhost/serialNumber=1234/organizationIdentifier=VATNL-000000000"
 
 # sign verifier certificate request
+# 3650 days, not the 825 a TLS end-entity certificate would get: committed test
+# material with a two-year fuse fails the suite for reasons nobody remembers. The
+# key is reused, so the subject key identifier list entries key on survives.
 openssl x509 -req -in verifier.csr -CA ca.crt -CAkey ca_ec_priv.pem -CAcreateserial \
-  -out verifier.crt -days 825 -sha256 \
+  -out verifier.crt -days 3650 -sha256 \
   -extfile end-entity.cfg -extensions v3_req
 
 # put both ca and verifier certs in chain
@@ -46,3 +52,9 @@ chmod a+r keystore.p12
 
 # remove unused files
 rm ca.srl verifier.csr
+
+# The eudi_openid4vp_dcapi service in docker-compose.yml pins VERIFIER_ORIGINALCLIENTID
+# to the hash of this certificate, and the verifier refuses to start when it does not
+# match, so update it there too:
+openssl x509 -in verifier.crt -outform der | openssl dgst -sha256 -binary |
+  base64 | tr '+/' '-_' | tr -d '='
