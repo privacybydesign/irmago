@@ -98,7 +98,7 @@ func detectWrongCredentialIssued(s *session, plan *clientmodels.DisclosurePlan) 
 		return
 	}
 
-	allCreds, err := s.client.GetCredentials()
+	allCreds, _, err := s.client.GetCredentials()
 	if err != nil {
 		return
 	}

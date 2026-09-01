@@ -314,7 +314,7 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// GetCredentials SHOULD include the random blind attribute (it has a value after issuance)
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	var stempasCred *clientmodels.Credential
 	for _, cred := range creds {
@@ -481,7 +481,7 @@ func testAttributesOrderedByDisplayIndex(
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// Check GetCredentials returns attributes in displayIndex order
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	var studentCard *clientmodels.Credential
 	for _, cred := range creds {
@@ -545,7 +545,7 @@ func testRevocationAttributesExcludedFromCredentials(
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// Get the credential via GetCredentials and check that the revocation attribute is present
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	var rootCred *clientmodels.Credential
@@ -603,7 +603,7 @@ func testRevocationAttributesExcludedFromCredentials(
 	require.Equal(t, clientmodels.Status_Error, session.Status)
 
 	// After the client has synced, GetCredentials should show the credential as revoked
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 
 	rootCred = nil
@@ -652,7 +652,7 @@ func testDutchIrmaIssuanceAndDataTab(
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// Data tab: the stored credential resolves through the Dutch scheme texts.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	cred := findCredentialById(creds, "test.test.email")
 	require.NotNil(t, cred)
@@ -700,7 +700,7 @@ func testIrmaLocaleSwitchDataTabAndLogs(
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	cred := findCredentialById(creds, "test.test.email")
 	require.NotNil(t, cred)
@@ -717,7 +717,7 @@ func testIrmaLocaleSwitchDataTabAndLogs(
 	// Switch to Dutch: the next pull resolves through the Dutch scheme texts.
 	c.SetLocale("nl")
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	cred = findCredentialById(creds, "test.test.email")
 	require.NotNil(t, cred)
@@ -750,7 +750,7 @@ func testIrmaLocaleSwitchDataTabAndLogs(
 	// Switching back restores the English resolution.
 	c.SetLocale("en")
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	cred = findCredentialById(creds, "test.test.email")
 	require.NotNil(t, cred)

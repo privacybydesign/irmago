@@ -124,6 +124,14 @@ func (c *Configuration) addProductionTrustAnchors() error {
 	if err := c.Verifiers.addTrustAnchors([]byte(Production_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add yivi production verifier trust anchors: %v", err)
 	}
+
+	// The Ver.iD root signs both issuer and verifier certificates
+	if err := c.Issuers.addTrustAnchors([]byte(Production_VerID_TrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Ver.iD production issuer trust anchors: %v", err)
+	}
+	if err := c.Verifiers.addTrustAnchors([]byte(Production_VerID_TrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Ver.iD production verifier trust anchors: %v", err)
+	}
 	return nil
 }
 
@@ -144,6 +152,14 @@ func (c *Configuration) addStagingTrustAnchors() error {
 	}
 	if err := c.Verifiers.addTrustAnchors([]byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add Yivi staging verifier trust anchors: %v", err)
+	}
+
+	// The Ver.iD development root signs both issuer and verifier certificates
+	if err := c.Issuers.addTrustAnchors([]byte(Development_VerID_TrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Ver.iD development issuer trust anchors: %v", err)
+	}
+	if err := c.Verifiers.addTrustAnchors([]byte(Development_VerID_TrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Ver.iD development verifier trust anchors: %v", err)
 	}
 
 	return nil
