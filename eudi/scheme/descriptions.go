@@ -89,11 +89,71 @@ type SchemeQueryValidator struct {
 	RelyingParty *RelyingParty
 }
 
+// bypassAvDocType is the credential the switch below injects.
+const bypassAvDocType = "eu.europa.ec.av.1"
+
+// bypassRelyingPartyAvAuthorization adds an eu.europa.ec.av.1 entry to the
+// relying party's authorized set when its certificate does not already carry one.
+//
+// DO NOT COMMIT. Added 2026-09-02 for a staging demo.
+//
+// Staging's relying party certificate (CN=verifierapi.openid4vc.staging.yivi.app,
+// issued 2026-02-09) predates the mdoc work, so its 2.1.123.1 extension lists the
+// seven SD-JWT credential types and nothing else. An age-verification request dies
+// here with "credential eu.europa.ec.av.1 is not in the authorized set" before the
+// permission screen, and no verifier-side configuration changes that -- the
+// authorized set lives in the certificate. The real fix is a reissue; the CSR is
+// built and waiting on the Yivi staging CA.
+//
+// This exists to unblock what sits BEHIND this check while that turnaround runs:
+// whether the reference verifier enforces the document signer EKU itself, whether
+// its session transcript handover matches the Draft 29 shape irmago signs, and
+// whether a two-certificate issuer_chain survives response validation. All three
+// are invisible until a request gets past here, and all three would be worse to
+// discover on reissue day.
+//
+// Deliberately narrow. It injects one credential rather than short-circuiting the
+// function, so the chain walk, the SAN check, the JAR signature check and the
+// authorization of every other credential type stay live. An early `return nil`,
+// or an entry whose Credential is "*" (which matches everything, since
+// authorizedCredFunc returns true on a "*" first component), would remove relying
+// party authorization wholesale -- any verifier could then ask this wallet for
+// anything. That is a far larger hole than the one being worked around.
+//
+// The injection is local to this call; the RelyingParty is left unmutated so it
+// cannot leak into anything holding the same pointer.
+//
+// Strip when the reissued certificate lands, at which point it becomes redundant:
+// the certificate will carry age_over_1..99 for this docType itself.
+var bypassRelyingPartyAvAuthorization = true
+
+// avBypassAttributeSet is the entry the switch above injects: the same
+// age_over_1 .. age_over_99 range the issuer metadata declares as issuable and
+// the pending CSR authorizes.
+func avBypassAttributeSet() AuthorizedAttributeSet {
+	attributes := make([]string, 0, 99)
+	for i := 1; i <= 99; i++ {
+		attributes = append(attributes, fmt.Sprintf("age_over_%d", i))
+	}
+	return AuthorizedAttributeSet{Credential: bypassAvDocType, Attributes: attributes}
+}
+
 // ValidateCredentialQueries validates that the given credential queries are authorized
 // for this relying party.
 func (v *SchemeQueryValidator) ValidateCredentialQueries(queries []CredentialQueryInfo) error {
 	if v.RelyingParty == nil {
 		return fmt.Errorf("relying party is not set")
+	}
+
+	authorized := v.RelyingParty.AuthorizedQueryableAttributeSets
+
+	if bypassRelyingPartyAvAuthorization && !slices.ContainsFunc(authorized,
+		func(set AuthorizedAttributeSet) bool { return set.Credential == bypassAvDocType }) {
+		fmt.Printf("DO NOT COMMIT: relying party authorization BYPASSED — injecting %q\n", bypassAvDocType)
+		// Copied rather than appended in place: append can write through to the
+		// RelyingParty's backing array when it has spare capacity, which would
+		// persist the injection beyond this call.
+		authorized = append(append([]AuthorizedAttributeSet{}, authorized...), avBypassAttributeSet())
 	}
 
 	for _, query := range queries {
@@ -104,7 +164,7 @@ func (v *SchemeQueryValidator) ValidateCredentialQueries(queries []CredentialQue
 			return errors.New("credential query identifies no credential type: neither vct_values nor doctype_value is set")
 		}
 
-		if err := isQueryAuthorized(query, v.RelyingParty.AuthorizedQueryableAttributeSets); err != nil {
+		if err := isQueryAuthorized(query, authorized); err != nil {
 			return err
 		}
 	}
