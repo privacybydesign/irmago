@@ -26,11 +26,6 @@ func TestAnonimizeRequest(t *testing.T) {
 func TestNextSessionTimeout(t *testing.T) {
 	const disclosure = `{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"MtILupG0g0J23GNR1YtupQ==","devMode":true,"disclose":[[["test.test.email.email"]]]}`
 
-	s := &Server{conf: &server.Configuration{
-		MaxNextSessionTimeout: 15,
-		Logger:                server.NewLogger(0, true, false),
-	}}
-
 	for _, tc := range []struct {
 		name     string
 		request  string
@@ -52,20 +47,38 @@ func TestNextSessionTimeout(t *testing.T) {
 			expected: 12 * time.Second,
 		},
 		{
-			name:     "a timeout above the maximum is capped",
-			request:  `{"nextSession":{"url":"https://example.com","timeout":600},"request":` + disclosure + `}`,
-			expected: 15 * time.Second,
-		},
-		{
 			name:     "a timeout below the default does not shorten the handler",
 			request:  `{"nextSession":{"url":"https://example.com","timeout":1},"request":` + disclosure + `}`,
+			expected: server.WriteTimeout,
+		},
+		{
+			// Without a URL nothing is fetched, so there is nothing to wait for.
+			name:     "a timeout without a next session URL is ignored",
+			request:  `{"nextSession":{"timeout":12},"request":` + disclosure + `}`,
 			expected: server.WriteTimeout,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req, err := server.ParseSessionRequest(tc.request)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, s.nextSessionTimeout(&sessionData{Rrequest: req}))
+			require.Equal(t, tc.expected, nextSessionTimeout(&sessionData{Rrequest: req}))
 		})
 	}
+}
+
+// A timeout above the configured maximum is refused when the session is started, which is what
+// lets nextSessionTimeout use the stored value as is.
+func TestNextSessionTimeoutAboveMaximumIsRefused(t *testing.T) {
+	conf := sessionsConf(t)
+	conf.MaxNextSessionTimeout = 15
+	s, err := New(conf)
+	require.NoError(t, err)
+	defer s.Stop()
+
+	_, _, _, err = s.StartSession(
+		`{"nextSession":{"url":"https://example.com","timeout":600},"request":{"@context":"https://irma.app/ld/request/disclosure/v2","disclose":[[["test.test.email.email"]]]}}`,
+		nil,
+		"",
+	)
+	require.ErrorContains(t, err, "nextSession.timeout of 600 seconds exceeds the server maximum of 15")
 }

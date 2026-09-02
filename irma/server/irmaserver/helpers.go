@@ -621,32 +621,27 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 }
 
 // nextSessionTimeout returns how long the handler for this session may take.
-func (s *Server) nextSessionTimeout(session *sessionData) time.Duration {
+//
+// Only a session that chains into another one carries a timeout of its own, and
+// startNextSession refused the request outright if that timeout exceeded
+// Configuration.MaxNextSessionTimeout.
+func nextSessionTimeout(session *sessionData) time.Duration {
 	next := session.Rrequest.Base().NextSession
-	if next == nil || next.Timeout <= 0 {
+	if next == nil || next.URL == "" {
 		return server.WriteTimeout
 	}
 
-	seconds := next.Timeout
-	if limit := s.conf.MaxNextSessionTimeout; seconds > limit {
-		s.conf.Logger.Warnf(
-			"session requested a next session timeout of %d seconds, capping at the configured maximum of %d",
-			seconds, limit,
-		)
-		seconds = limit
-	}
-
-	timeout := time.Duration(seconds) * time.Second
+	timeout := time.Duration(next.Timeout) * time.Second
 	if timeout < server.WriteTimeout {
 		return server.WriteTimeout
 	}
 	return timeout
 }
 
-func (s *Server) nextSessionTimeoutMiddleware(next http.Handler) http.Handler {
+func nextSessionTimeoutMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session := r.Context().Value("session").(*sessionData)
-		server.TimeoutHandler(next, s.nextSessionTimeout(session)).ServeHTTP(w, r)
+		server.TimeoutHandler(next, nextSessionTimeout(session)).ServeHTTP(w, r)
 	})
 }
 

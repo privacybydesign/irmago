@@ -173,8 +173,8 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 				r.Get("/request", s.handleSessionGetRequest)
 				// Finishing a chained session means fetching the next request from the
 				// requestor while the client waits, so these two need the session's timeout.
-				r.With(s.nextSessionTimeoutMiddleware).Post("/commitments", s.handleSessionCommitments)
-				r.With(s.nextSessionTimeoutMiddleware).Post("/proofs", s.handleSessionProofs)
+				r.With(nextSessionTimeoutMiddleware).Post("/commitments", s.handleSessionCommitments)
+				r.With(nextSessionTimeoutMiddleware).Post("/proofs", s.handleSessionProofs)
 			})
 		})
 	})
@@ -253,7 +253,7 @@ func (s *Server) startNextSession(
 	if rrequest.Base().NextSession != nil && rrequest.Base().NextSession.URL != "" {
 		if timeout := rrequest.Base().NextSession.Timeout; timeout > s.conf.MaxNextSessionTimeout {
 			return nil, "", nil, errors.Errorf(
-				"nextSession timeout of %d seconds exceeds the maximum of %d",
+				"nextSession.timeout of %d seconds exceeds the server maximum of %d",
 				timeout, s.conf.MaxNextSessionTimeout,
 			)
 		}

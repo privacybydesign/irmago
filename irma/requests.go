@@ -162,7 +162,8 @@ type RequestorBaseRequest struct {
 type NextSessionData struct {
 	URL string `json:"url"` // URL from which to get the next session after this one
 	// Seconds to wait for URL to respond, overriding the server's default request timeout.
-	// Capped by the server's max_next_session_timeout. Zero means the default.
+	// A value above the server's max_next_session_timeout is refused when the session is
+	// started. Zero, or anything below the default, means the default.
 	//
 	// Requestors that compose the next session request only after a round trip of their own
 	// (asking a browser, a wallet, or another backend what to issue) need more than the default
