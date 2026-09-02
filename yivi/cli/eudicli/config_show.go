@@ -115,6 +115,28 @@ func printConfigSummary(w io.Writer, config *walletconfig.Config, signed bool) e
 			}
 		}
 	}
+	fmt.Fprintf(w, "credential catalog: %d\n", len(config.CredentialCatalog))
+	for i := range config.CredentialCatalog {
+		entry := &config.CredentialCatalog[i]
+		flags := ""
+		if entry.InStore {
+			flags = ", in store"
+		}
+		fmt.Fprintf(w, "  %s (%d offering(s)%s)\n", entry.VCT, len(entry.Offerings), flags)
+		if entry.VCTMetadataURL != "" {
+			fmt.Fprintf(w, "    metadata: %s\n", entry.VCTMetadataURL)
+		}
+		for _, offering := range entry.Offerings {
+			line := "    issue at " + offering.IssuanceURLs[walletconfig.DefaultIssuanceURLKey]
+			if extra := len(offering.IssuanceURLs) - 1; extra > 0 {
+				line += fmt.Sprintf(" (+%d language(s))", extra)
+			}
+			if offering.IssuerMetadataURL != "" {
+				line += ", issuer " + offering.IssuerMetadataURL
+			}
+			fmt.Fprintln(w, line)
+		}
+	}
 	return nil
 }
 

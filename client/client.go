@@ -56,6 +56,9 @@ type Client struct {
 	// for the active environment, ranks parties, and keeps the trust models in
 	// step with it.
 	trustService *services.TrustService
+	// catalogService answers where a credential type the wallet does not hold
+	// can be obtained, from the wallet config's credential catalogue.
+	catalogService *services.CatalogService
 
 	// handler is how the wallet wakes the app when what it has already rendered
 	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
@@ -218,15 +221,24 @@ func New(cfg Config) (*Client, error) {
 	// The fetchers describe credentials the wallet has never seen so the
 	// frontend can tell the user what is missing instead of stalling on a
 	// blank permission prompt.
+	// The credential catalogue: where a credential the wallet does not hold can
+	// be obtained, for the disclosure flow and the browsable store. Display is
+	// resolved from type and issuer metadata through the same fetchers the
+	// handler uses to describe an unobtainable credential.
+	vctFetcher := typemetadata.NewDefaultVctFetcher(nil)
+	issuerFetcher := typemetadata.NewDefaultIssuerFetcher(nil)
+	catalogService := services.NewCatalogService(walletConfig, vctFetcher, issuerFetcher)
+
 	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(
 		eudiStorage,
 		credStore,
-		typemetadata.NewDefaultVctFetcher(nil),
-		typemetadata.NewDefaultIssuerFetcher(nil),
+		vctFetcher,
+		issuerFetcher,
 		sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
 		currentLocale,
 		revocationService,
 		trustService,
+		catalogService,
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
 
@@ -324,6 +336,7 @@ func New(cfg Config) (*Client, error) {
 		credentialService: credentialService,
 		revocationService: revocationService,
 		trustService:      trustService,
+		catalogService:    catalogService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,

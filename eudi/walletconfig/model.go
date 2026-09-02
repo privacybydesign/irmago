@@ -61,6 +61,11 @@ type Config struct {
 	// TrustedEntities is the one list of parties and CAs. It may be empty: a
 	// config that vouches for nobody is a valid config.
 	TrustedEntities []TrustedEntity `json:"trusted_entities"`
+
+	// CredentialCatalog is the lookup from credential type to where it can be
+	// issued (schema 1.1). Optional; entries reference no trusted entity and
+	// confer no trust.
+	CredentialCatalog []CatalogEntry `json:"credential_catalog,omitempty"`
 }
 
 // Policy is what the wallet enforces on every session, as opposed to what it
@@ -381,6 +386,8 @@ func (c *Config) Validate() error {
 			fail("%s: %v", at, err)
 		}
 	}
+
+	errs = append(errs, validateCatalog(c.CredentialCatalog)...)
 
 	return errors.Join(errs...)
 }

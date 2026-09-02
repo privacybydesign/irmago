@@ -62,6 +62,14 @@ type IssuerTrustChecker interface {
 	IssuerStanding(batch *models.CredentialBatch) (clientmodels.TrustLevel, bool)
 }
 
+// CatalogLookup consults the wallet config's credential catalogue for a
+// credential type the wallet does not hold: where it can be obtained, resolved
+// for the locale (see services.CatalogService). Nil when the catalogue does not
+// list the type.
+type CatalogLookup interface {
+	Lookup(ctx context.Context, vct string, locale string) *services.CatalogHit
+}
+
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
 // credentials stored in the eudi storage (SQLite).
 type SdJwtVcDcqlHandler struct {
@@ -79,6 +87,11 @@ type SdJwtVcDcqlHandler struct {
 	// issuerTrust ranks each candidate's issuer and excludes the ones below the
 	// issuance policy. Nil disables the check (candidates are then unranked).
 	issuerTrust IssuerTrustChecker
+
+	// catalog says where a credential the wallet does not hold can be obtained.
+	// Nil means every such credential is unobtainable from the wallet's point
+	// of view.
+	catalog CatalogLookup
 }
 
 // NewSdJwtVcDcqlHandler creates a new handler. vctFetcher and issuerFetcher are
@@ -99,6 +112,7 @@ func NewSdJwtVcDcqlHandler(
 	currentLocale *clientmodels.CurrentLocale,
 	revocation RevocationChecker,
 	issuerTrust IssuerTrustChecker,
+	catalog CatalogLookup,
 ) *SdJwtVcDcqlHandler {
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
@@ -109,6 +123,7 @@ func NewSdJwtVcDcqlHandler(
 		currentLocale:   currentLocale,
 		revocation:      revocation,
 		issuerTrust:     issuerTrust,
+		catalog:         catalog,
 	}
 }
 
@@ -223,16 +238,56 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 
 	// When no usable owned candidates were emitted -- either the wallet has
 	// no batches at all OR every batch was filtered out by claim matching --
-	// emit one descriptor with an empty IssueURL so the user sees what is
-	// being requested instead of a stuck permission prompt. See the
-	// "missing credentials" plan.
-	if len(result.OwnedCandidates) == 0 && len(query.VctValues()) > 0 && h.vctFetcher != nil {
-		if descriptor := h.composeUnobtainableDescriptor(query); descriptor != nil {
-			result.ObtainableDescriptors = append(result.ObtainableDescriptors, descriptor)
-		}
+	// describe what is being requested: where it can be obtained when the
+	// catalogue lists it, or one descriptor with an empty IssueURL otherwise,
+	// so the user sees what was asked for instead of a stuck permission prompt.
+	if len(result.OwnedCandidates) == 0 && len(query.VctValues()) > 0 {
+		result.ObtainableDescriptors = append(result.ObtainableDescriptors, h.composeObtainableDescriptors(query)...)
 	}
 
 	return result, nil
+}
+
+// composeObtainableDescriptors describes a credential the wallet does not hold.
+//
+// A catalogue hit yields one descriptor per offering, each with the issuance
+// URL for the wallet's locale: a non-nil IssueURL is what turns the permission
+// prompt from a dead end into issuance during disclosure. The type's display
+// comes from its metadata, the raw vct standing in when it will not resolve,
+// and the requested claims are listed as they are for an unobtainable one. A
+// miss keeps the unobtainable descriptor: what was asked for, no IssueURL.
+func (h *SdJwtVcDcqlHandler) composeObtainableDescriptors(query dcql.CredentialQuery) []*clientmodels.CredentialDescriptor {
+	if h.catalog != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		locale := h.currentLocale.Get()
+		for _, vct := range query.VctValues() {
+			hit := h.catalog.Lookup(ctx, vct, locale)
+			if hit == nil {
+				continue
+			}
+			descriptors := make([]*clientmodels.CredentialDescriptor, 0, len(hit.Offerings))
+			for _, offering := range hit.Offerings {
+				issueURL := offering.IssueURL
+				descriptors = append(descriptors, &clientmodels.CredentialDescriptor{
+					CredentialId: vct,
+					Name:         services.CatalogCredentialName(hit.Metadata, vct, locale),
+					Issuer:       offering.Issuer,
+					Attributes:   queryAttributes(query, hit.Metadata, locale),
+					IssueURL:     &issueURL,
+				})
+			}
+			return descriptors
+		}
+	}
+
+	if h.vctFetcher == nil {
+		return nil
+	}
+	if descriptor := h.composeUnobtainableDescriptor(query); descriptor != nil {
+		return []*clientmodels.CredentialDescriptor{descriptor}
+	}
+	return nil
 }
 
 // composeUnobtainableDescriptor builds a CredentialDescriptor for a credential

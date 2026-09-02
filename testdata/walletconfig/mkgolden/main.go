@@ -56,7 +56,7 @@ func main() {
 	})
 
 	config := &walletconfig.Config{
-		SchemaVersion:   "1.0",
+		SchemaVersion:   walletconfig.CurrentSchemaVersion,
 		ID:              "yivi-golden",
 		Environment:     "golden",
 		Version:         1,
@@ -110,6 +110,30 @@ func main() {
 						{Credential: "https://golden.example/vct/email", Attributes: []string{"email"}},
 					}},
 				},
+			},
+		},
+	}
+
+	// In directory-name order, as `config build` orders a curation directory.
+	config.CredentialCatalog = []walletconfig.CatalogEntry{
+		{
+			VCT:            "https://golden.example/vct/email",
+			VCTMetadataURL: "https://golden.example/.well-known/vct/email",
+			InStore:        true,
+			Offerings: []walletconfig.Offering{{
+				IssuanceURLs: map[string]string{
+					"default": "https://issue.golden.example/email",
+					"nl":      "https://issue.golden.example/nl/email",
+				},
+				IssuerMetadataURL: "https://issuer.golden.example",
+			}},
+		},
+		{
+			VCT:            "urn:eudi:pid:golden:1",
+			VCTMetadataURL: "https://metadata.golden.example/vct/urn-eudi-pid-golden-1.json",
+			Offerings: []walletconfig.Offering{
+				{IssuanceURLs: map[string]string{"default": "https://pid.golden.example/start"}},
+				{IssuanceURLs: map[string]string{"default": "https://pid-alt.golden.example/start"}, IssuerMetadataURL: "https://pid-alt.golden.example"},
 			},
 		},
 	}
@@ -213,6 +237,39 @@ func writeSource(dir string, issuerRoot, issuerCA, verifier *x509.Certificate) {
 	// The golden payload's logo digest is the SHA-256 of the empty string, so the
 	// example's logo file is empty: `build` computes the digest from it.
 	write("entities/golden-party/party.png", []byte{})
+
+	for _, sub := range []string{"email", "pid"} {
+		if err := os.MkdirAll(filepath.Join(dir, "credentials", sub), 0o755); err != nil {
+			log.Fatal(err)
+		}
+	}
+	write("credentials/email/credential.json", []byte(`{
+  "vct": "https://golden.example/vct/email",
+  "vct_metadata_url": "https://golden.example/.well-known/vct/email",
+  "in_store": true,
+  "offerings": [
+    {
+      "issuance_urls": {
+        "default": "https://issue.golden.example/email",
+        "nl": "https://issue.golden.example/nl/email"
+      },
+      "issuer_metadata_url": "https://issuer.golden.example"
+    }
+  ]
+}
+`))
+	write("credentials/pid/credential.json", []byte(`{
+  "vct": "urn:eudi:pid:golden:1",
+  "vct_metadata_url": "https://metadata.golden.example/vct/urn-eudi-pid-golden-1.json",
+  "offerings": [
+    { "issuance_urls": { "default": "https://pid.golden.example/start" } },
+    {
+      "issuance_urls": { "default": "https://pid-alt.golden.example/start" },
+      "issuer_metadata_url": "https://pid-alt.golden.example"
+    }
+  ]
+}
+`))
 	fmt.Printf("wrote %s\n", dir)
 }
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"context"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -75,6 +76,22 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 	}
 
 	return result, nil
+}
+
+// GetOpenID4VCCredentialStore is the browsable store's OpenID4VC section: the
+// credential types the wallet config's catalogue opts in, one descriptor per
+// offering, each with the web URL where issuance starts for the current locale.
+// Separate from GetCredentialStore, which serves the IRMA scheme's curated
+// items with their FAQ; catalogue entries carry no FAQ and no logo, their
+// display coming from the type's and the issuer's metadata.
+//
+// Metadata is fetched on first use and cached while the same config is held,
+// so the first call after a config refresh may take a network round trip per
+// entry; a type whose metadata will not resolve is listed under its raw vct.
+func (client *Client) GetOpenID4VCCredentialStore() []*clientmodels.CredentialDescriptor {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	return client.catalogService.StoreItems(ctx, client.locale())
 }
 
 // createIssuanceBundle builds an IssuanceBundle from one inner con. Attrs from

@@ -23,9 +23,12 @@ entity, each holding that entity and the certificates it is recognized by:
           entity.json                the trusted entity; the directory name is its id
           root.crt                   referenced by bare filename from entity.json
           issuing-ca.crt
+      credentials/
+        email/
+          credential.json            one credential catalogue entry, keyed by its vct
 
-Entities are read in directory-name order, so a rebuild of unchanged input is
-byte-identical. Certificates are read rather than transcribed, and resolved
+Entities and credentials are read in directory-name order, so a rebuild of
+unchanged input is byte-identical. Certificates are read rather than transcribed, and resolved
 inside their own entity's directory, so an entity can name only its own.
 Curation files are read strictly: a member this tool does not know is a typo
 and is refused, where the wallet would silently ignore it on the wire.
@@ -70,8 +73,8 @@ the wallet, so a missed bump delays nothing.`,
 		if err := os.WriteFile(out, raw, 0o644); err != nil {
 			return err
 		}
-		Logger.Infof("built %s: %s for %s, version %d, %d entities, next update %s",
-			out, config.ID, config.Environment, config.Version, len(config.TrustedEntities),
+		Logger.Infof("built %s: %s for %s, version %d, %d entities, %d catalogue entries, next update %s",
+			out, config.ID, config.Environment, config.Version, len(config.TrustedEntities), len(config.CredentialCatalog),
 			config.NextUpdate.Format(time.RFC3339))
 		return nil
 	},

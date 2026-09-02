@@ -38,6 +38,8 @@ const (
 	configSourceFileName = "config.json"
 	entitiesDirName      = "entities"
 	entityFileName       = "entity.json"
+	credentialsDirName   = "credentials"
+	credentialFileName   = "credential.json"
 )
 
 // configSource is config.json: the config's own information, which changes far
@@ -99,6 +101,21 @@ type handleSource struct {
 	DID string `json:"did,omitempty"`
 }
 
+// credentialSource is credentials/<name>/credential.json: one catalogue entry.
+// The directory name is for the curator's eyes only — a vct is a URL or URN and
+// makes a poor directory name — and the entry is keyed by its vct.
+type credentialSource struct {
+	VCT            string           `json:"vct"`
+	VCTMetadataURL string           `json:"vct_metadata_url,omitempty"`
+	InStore        bool             `json:"in_store,omitempty"`
+	Offerings      []offeringSource `json:"offerings"`
+}
+
+type offeringSource struct {
+	IssuanceURLs      map[string]string `json:"issuance_urls"`
+	IssuerMetadataURL string            `json:"issuer_metadata_url,omitempty"`
+}
+
 // buildOptions is what the publisher decides about a build beyond the curation.
 type buildOptions struct {
 	// IssuedAt is stamped into issued_at, and next_update derived from it. A
@@ -131,7 +148,7 @@ func loadSource(dir string, opts buildOptions) (*walletconfig.Config, error) {
 	}
 	schemaVersion := source.SchemaVersion
 	if schemaVersion == "" {
-		schemaVersion = fmt.Sprintf("%d.0", walletconfig.SupportedSchemaMajor)
+		schemaVersion = walletconfig.CurrentSchemaVersion
 	}
 
 	issuedAt := opts.IssuedAt.UTC().Truncate(time.Second)
@@ -158,6 +175,14 @@ func loadSource(dir string, opts buildOptions) (*walletconfig.Config, error) {
 			return nil, fmt.Errorf("%s: %w", filepath.Join(entitiesDirName, named.id, entityFileName), err)
 		}
 		config.TrustedEntities = append(config.TrustedEntities, entity)
+	}
+
+	credentials, err := readCredentialSources(dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, credential := range credentials {
+		config.CredentialCatalog = append(config.CredentialCatalog, credential.toCatalogEntry())
 	}
 
 	if err := config.Validate(); err != nil {
@@ -214,6 +239,48 @@ func readEntitySources(dir string) ([]namedEntitySource, error) {
 	}
 	sort.Slice(entities, func(i, j int) bool { return entities[i].id < entities[j].id })
 	return entities, nil
+}
+
+// readCredentialSources reads every credentials/<name>/credential.json, in
+// directory-name order.
+func readCredentialSources(dir string) ([]credentialSource, error) {
+	credentialsDir := filepath.Join(dir, credentialsDirName)
+	dirEntries, err := os.ReadDir(credentialsDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", credentialsDirName, err)
+	}
+
+	var credentials []credentialSource
+	for _, dirEntry := range dirEntries {
+		if !dirEntry.IsDir() {
+			continue
+		}
+		file := filepath.Join(credentialsDirName, dirEntry.Name(), credentialFileName)
+		raw, err := os.ReadFile(filepath.Join(dir, file))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", file, err)
+		}
+		var source credentialSource
+		if err := strictUnmarshal(raw, &source); err != nil {
+			return nil, fmt.Errorf("%s: %w", file, err)
+		}
+		credentials = append(credentials, source)
+	}
+	return credentials, nil
+}
+
+func (c credentialSource) toCatalogEntry() walletconfig.CatalogEntry {
+	entry := walletconfig.CatalogEntry{VCT: c.VCT, VCTMetadataURL: c.VCTMetadataURL, InStore: c.InStore}
+	for _, offering := range c.Offerings {
+		entry.Offerings = append(entry.Offerings, walletconfig.Offering{
+			IssuanceURLs:      offering.IssuanceURLs,
+			IssuerMetadataURL: offering.IssuerMetadataURL,
+		})
+	}
+	return entry
 }
 
 func (e entitySource) toEntity(id, dir string) (walletconfig.TrustedEntity, error) {

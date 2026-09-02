@@ -59,6 +59,12 @@ func TestBuild_TheCommittedExampleBuildsTheGoldenPayload(t *testing.T) {
 	require.Equal(t, "golden-party", config.TrustedEntities[1].ID)
 	require.Equal(t, "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=", config.TrustedEntities[1].Logo.Digest,
 		"the logo digest is computed from the file beside the entity")
+
+	require.Equal(t, walletconfig.CurrentSchemaVersion, config.SchemaVersion)
+	require.Len(t, config.CredentialCatalog, 2)
+	require.Equal(t, "https://golden.example/vct/email", config.CredentialCatalog[0].VCT, "credentials follow directory-name order")
+	require.True(t, config.CredentialCatalog[0].InStore)
+	require.Len(t, config.CredentialCatalog[1].Offerings, 2)
 }
 
 func TestBuild_VersionComesFromTheFlagOverTheFile(t *testing.T) {
@@ -132,6 +138,15 @@ func TestBuild_RefusesWhatACuratorGetsWrong(t *testing.T) {
 		{"no next_update_days", func(dir string) {
 			rewriteFile(t, filepath.Join(dir, "config.json"), `"next_update_days": 30,`, ``)
 		}, "next_update_days"},
+		{"an unknown member in credential.json", func(dir string) {
+			rewriteFile(t, filepath.Join(dir, "credentials", "email", "credential.json"), `"in_store": true,`, `"in_store": true, "instore": true,`)
+		}, `unknown field "instore"`},
+		{"a catalogue offering without a default url", func(dir string) {
+			rewriteFile(t, filepath.Join(dir, "credentials", "pid", "credential.json"), `"default": "https://pid.golden.example/start"`, `"nl": "https://pid.golden.example/start"`)
+		}, `needs a "default" entry`},
+		{"a catalogue entry listed twice", func(dir string) {
+			rewriteFile(t, filepath.Join(dir, "credentials", "pid", "credential.json"), `"vct": "urn:eudi:pid:golden:1"`, `"vct": "https://golden.example/vct/email"`)
+		}, "listed by another entry"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -258,6 +273,9 @@ func TestCommands_BuildSignVerifyShow(t *testing.T) {
 	require.Contains(t, out, "id:                yivi-golden")
 	require.Contains(t, out, "golden-verifier (Golden Verifier): verifier, medium")
 	require.Contains(t, out, "may request: https://golden.example/vct/email (email)")
+	require.Contains(t, out, "credential catalog: 2")
+	require.Contains(t, out, "https://golden.example/vct/email (1 offering(s), in store)")
+	require.Contains(t, out, "issue at https://issue.golden.example/email (+1 language(s)), issuer https://issuer.golden.example")
 
 	out, err = runConfigCommand(t, "show", built, "--json")
 	require.NoError(t, err)

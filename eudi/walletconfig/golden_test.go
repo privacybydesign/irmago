@@ -67,7 +67,7 @@ func TestGolden_VerifiesAndParses(t *testing.T) {
 	require.NoError(t, err)
 	config := verified.Config
 
-	require.Equal(t, "1.0", config.SchemaVersion)
+	require.Equal(t, CurrentSchemaVersion, config.SchemaVersion)
 	require.Equal(t, "yivi-golden", config.ID)
 	require.Equal(t, "golden", config.Environment)
 	require.Equal(t, uint64(1), config.Version)
@@ -113,6 +113,23 @@ func TestGolden_VerifiesAndParses(t *testing.T) {
 	require.Nil(t, verifier.Constraints.Issuance)
 
 	require.Equal(t, "yivi-golden-config-signer", verified.Signer.Subject.CommonName)
+
+	require.Len(t, config.CredentialCatalog, 2)
+	email := config.CatalogEntry("https://golden.example/vct/email")
+	require.NotNil(t, email)
+	require.True(t, email.InStore)
+	require.Equal(t, "https://golden.example/.well-known/vct/email", email.MetadataURL())
+	require.Len(t, email.Offerings, 1)
+	require.Equal(t, "https://issue.golden.example/nl/email", email.Offerings[0].IssuanceURL("nl-BE"), "base language falls back")
+	require.Equal(t, "https://issue.golden.example/email", email.Offerings[0].IssuanceURL("de"), "then the default")
+	require.Equal(t, "https://issuer.golden.example", email.Offerings[0].IssuerMetadataURL)
+
+	pid := config.CatalogEntry("urn:eudi:pid:golden:1")
+	require.NotNil(t, pid)
+	require.False(t, pid.InStore)
+	require.Len(t, pid.Offerings, 2, "two parties issue the same type")
+	require.Equal(t, "https://metadata.golden.example/vct/urn-eudi-pid-golden-1.json", pid.MetadataURL(), "a URN vct resolves through its listed metadata URL")
+	require.Nil(t, config.CatalogEntry("https://golden.example/vct/unknown"))
 }
 
 func TestGolden_ReadableCopyMatchesTheSignedOne(t *testing.T) {

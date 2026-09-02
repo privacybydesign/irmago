@@ -91,6 +91,75 @@ type IssuerMetadata struct {
 	LogoURI string
 }
 
+// Names is the credential's display name per locale, from the display entries
+// (an entry without a locale counts as the default fallback language), falling
+// back to the document-level name under the fallback language. Empty when the
+// document names the credential nowhere.
+func (m *VctTypeMetadata) Names() clientmodels.TranslatedString {
+	names := clientmodels.TranslatedString{}
+	if m == nil {
+		return names
+	}
+	for _, d := range m.Display {
+		if d.Name == "" {
+			continue
+		}
+		locale := d.Locale
+		if locale == "" {
+			locale = clientmodels.DefaultFallbackLanguage
+		}
+		names[locale] = d.Name
+	}
+	if len(names) == 0 && m.Name != "" {
+		names[clientmodels.DefaultFallbackLanguage] = m.Name
+	}
+	return names
+}
+
+// ClaimNames is a claim's display name per locale, for the claim whose path
+// equals path. Nil when the document does not describe the claim or names it
+// nowhere.
+func (m *VctTypeMetadata) ClaimNames(path []any) clientmodels.TranslatedString {
+	if m == nil {
+		return nil
+	}
+	for _, claim := range m.Claims {
+		if !ClaimPathsEqual(path, claim.Path) {
+			continue
+		}
+		names := clientmodels.TranslatedString{}
+		for _, d := range claim.Display {
+			if d.Name == "" {
+				continue
+			}
+			locale := d.Locale
+			if locale == "" {
+				locale = clientmodels.DefaultFallbackLanguage
+			}
+			names[locale] = d.Name
+		}
+		if len(names) > 0 {
+			return names
+		}
+	}
+	return nil
+}
+
+// ClaimPathsEqual compares two claim paths element by element, so an index
+// decoded as float64 from one document equals the same index decoded as int
+// from another.
+func ClaimPathsEqual(a, b []any) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if fmt.Sprint(a[i]) != fmt.Sprint(b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // VctFetcher fetches and parses the type-metadata document for a VCT URL.
 type VctFetcher interface {
 	Fetch(ctx context.Context, vctURL string) (*VctTypeMetadata, error)

@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "id": "yivi-golden",
   "environment": "golden",
   "version": 1,
@@ -27,9 +27,9 @@
       "handles": [
         {
           "type": "x509_ca",
-          "root_certificate": "MIIBszCCAVmgAwIBAgIJAKZ3yvq7V6rZMAoGCCqGSM49BAMCMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwIBcNMjYwOTAxMDAwMDAwWhgPMjA1NjA5MDEwMDAwMDBaMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAS1xahBsKGW5GZfCvSKFxvKLkW9+5pg5w/XtvkQDKmUPuGFcPVDsMkyZ5OYtinl+RNHitFgttSTcyar+MFMiPYho0IwQDAOBgNVHQ8BAf8EBAMCAQYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUJYAjzhf399A7bi0brrZpbM91VOEwCgYIKoZIzj0EAwIDSAAwRQIhAO+i5oRt+EffPtgq6bTrGgg4EK8rbdxpxNc1RmaDaTr1AiAsEkBKCr8amJx9ABhHe4ITHZpsqVUVGaFw7jni+TMsbQ==",
+          "root_certificate": "MIIBsjCCAVigAwIBAgIIAVPezIjcOBwwCgYIKoZIzj0EAwIwPDELMAkGA1UEBhMCTkwxDTALBgNVBAoTBFlpdmkxHjAcBgNVBAMTFUdvbGRlbiBJc3N1ZXIgUm9vdCBDQTAgFw0yNjA5MDEwMDAwMDBaGA8yMDU2MDkwMTAwMDAwMFowPDELMAkGA1UEBhMCTkwxDTALBgNVBAoTBFlpdmkxHjAcBgNVBAMTFUdvbGRlbiBJc3N1ZXIgUm9vdCBDQTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABMvc7orztUTfbrOhm2DJMMNuPp2wnPTrv2BUWol2VIGU+sog5xe7Gz16sfrNw1SdvFhNfcNMK+ka0hISnS0oq1CjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBTQnAxo+Rd7jOmt5lfxzdqv8okQ3TAKBggqhkjOPQQDAgNIADBFAiEA6eFmPat7YgQwE3pNlSAlDwBmN4moiAq+AwJxNQ8NcfECIEQcMmVckuuegiAkNp4Ng/C/ImlL2IMzmxYg5r+o1fBj",
           "intermediates": [
-            "MIIBzjCCAXOgAwIBAgIJAK8/o/BFL574MAoGCCqGSM49BAMCMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwHhcNMjYwOTAxMDAwMDAwWhcNNDYwOTAxMDAwMDAwWjA3MQswCQYDVQQGEwJOTDENMAsGA1UEChMEWWl2aTEZMBcGA1UEAxMQR29sZGVuIElzc3VlciBDQTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABNc/dkVQbrhAIZSy3WoTDLwX0h/DjAZtJHr/OlqCdJOnxoMB/mxAq2MFJ7ViyeBJNMu6B0aysrpl/2X/im2fBo2jYzBhMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBT6w2IHFSyj3tKUtE+ppYi5UZt3JjAfBgNVHSMEGDAWgBQlgCPOF/f30DtuLRuutmlsz3VU4TAKBggqhkjOPQQDAgNJADBGAiEAhsZGi8UMkSHX6z3796txwITU4Pi48YBT5IvsiwlPEl8CIQDKqXn1CB24sApAwtCor2pfCRNSY264XXF5HSZy+fi++A=="
+            "MIIBzjCCAXOgAwIBAgIJANHJWZ4cP4OCMAoGCCqGSM49BAMCMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwHhcNMjYwOTAxMDAwMDAwWhcNNDYwOTAxMDAwMDAwWjA3MQswCQYDVQQGEwJOTDENMAsGA1UEChMEWWl2aTEZMBcGA1UEAxMQR29sZGVuIElzc3VlciBDQTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABHZVaXJ1aC6nd4BaErQeRtxGaSu18fi7NjnLQhtNAGYkN1wJ/QuO6QAhFuD3eLElE45i5VxWYJ+xHEpKKqvSjuGjYzBhMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBQHXmtB94fYqy0KXoahYHNgOQ7f/jAfBgNVHSMEGDAWgBTQnAxo+Rd7jOmt5lfxzdqv8okQ3TAKBggqhkjOPQQDAgNJADBGAiEAgNnwlj+n2y19QEKTMcBOooyaf1QvNuNwk2zw0NaOgFYCIQD3BYFIDS0ivvkLXsDyEMwZE6EKsTvJiNH+gepKgi3Z9A=="
           ],
           "crl_distribution_points": [
             "https://crl.golden.example/root.crl"
@@ -78,7 +78,7 @@
       "handles": [
         {
           "type": "x509_cert",
-          "certificate": "MIIB8DCCAZegAwIBAgIIAodk2VCKwqswCgYIKoZIzj0EAwIwNzELMAkGA1UEBhMCTkwxDTALBgNVBAoTBFlpdmkxGTAXBgNVBAMTEEdvbGRlbiBJc3N1ZXIgQ0EwHhcNMjYwOTAxMDAwMDAwWhcNMzYwOTAxMDAwMDAwWjA+MQswCQYDVQQGEwJOTDENMAsGA1UEChMEWWl2aTEgMB4GA1UEAxMXdmVyaWZpZXIuZ29sZGVuLmV4YW1wbGUwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASbj4DKHMmh71NsIqIqoaRzGzRyggrHRAY2iE0eU2pQGJphuKvpd54sDfvQqW+mMsO9Cgz1STbj1stnacIjdfwNo4GFMIGCMA4GA1UdDwEB/wQEAwIHgDAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBTfgKp3y6OpxVO2VJlII3TZ5vV1HjAfBgNVHSMEGDAWgBT6w2IHFSyj3tKUtE+ppYi5UZt3JjAiBgNVHREEGzAZghd2ZXJpZmllci5nb2xkZW4uZXhhbXBsZTAKBggqhkjOPQQDAgNHADBEAiBTU4fkoSxjDgHCDa1e47hSmkn4LqCTwi0w7w3BgGUkOwIgYeWeHAzdXN0/Y5Elh5nknX4EcMgZ+/gPWl81h+J7Zb8="
+          "certificate": "MIIB8jCCAZegAwIBAgIIDl+UxI1RVbkwCgYIKoZIzj0EAwIwNzELMAkGA1UEBhMCTkwxDTALBgNVBAoTBFlpdmkxGTAXBgNVBAMTEEdvbGRlbiBJc3N1ZXIgQ0EwHhcNMjYwOTAxMDAwMDAwWhcNMzYwOTAxMDAwMDAwWjA+MQswCQYDVQQGEwJOTDENMAsGA1UEChMEWWl2aTEgMB4GA1UEAxMXdmVyaWZpZXIuZ29sZGVuLmV4YW1wbGUwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASCaz8k8CUm82WPx4/N2dQyXKndMevmsCdvk2SZh5Hq0lioZ5PN9d+qhuYDCu+Mi6LLKH9TZbNYdDugF8iUUmWRo4GFMIGCMA4GA1UdDwEB/wQEAwIHgDAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBQf+F2uqCJJdpBiNMxO2n/hAutJ9TAfBgNVHSMEGDAWgBQHXmtB94fYqy0KXoahYHNgOQ7f/jAiBgNVHREEGzAZghd2ZXJpZmllci5nb2xkZW4uZXhhbXBsZTAKBggqhkjOPQQDAgNJADBGAiEAjhHQXtOsdlCiNQ+69QtdsvoeQR0hOJLM8jHkukE+sngCIQCwttSsCmuTYbTyer2UhLxCa0Ga0dA68uakMqxSUBxQJA=="
         }
       ],
       "constraints": {
@@ -93,6 +93,39 @@
           ]
         }
       }
+    }
+  ],
+  "credential_catalog": [
+    {
+      "vct": "https://golden.example/vct/email",
+      "vct_metadata_url": "https://golden.example/.well-known/vct/email",
+      "in_store": true,
+      "offerings": [
+        {
+          "issuance_urls": {
+            "default": "https://issue.golden.example/email",
+            "nl": "https://issue.golden.example/nl/email"
+          },
+          "issuer_metadata_url": "https://issuer.golden.example"
+        }
+      ]
+    },
+    {
+      "vct": "urn:eudi:pid:golden:1",
+      "vct_metadata_url": "https://metadata.golden.example/vct/urn-eudi-pid-golden-1.json",
+      "offerings": [
+        {
+          "issuance_urls": {
+            "default": "https://pid.golden.example/start"
+          }
+        },
+        {
+          "issuance_urls": {
+            "default": "https://pid-alt.golden.example/start"
+          },
+          "issuer_metadata_url": "https://pid-alt.golden.example"
+        }
+      ]
     }
   ]
 }
