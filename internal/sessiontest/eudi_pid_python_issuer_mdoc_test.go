@@ -111,7 +111,7 @@ func testEudiPidPythonIssuerIssuesAvMdoc(t *testing.T) {
 
 	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findMdocCredentialByDocType(t, creds, eudiPidIssuerPyAvDocType)
@@ -327,7 +327,7 @@ func testEudiPidPythonIssuerEmptyConfigurationIds(t *testing.T) {
 func requireNoAvMdocStored(t *testing.T, c *client.Client) {
 	t.Helper()
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	for _, cred := range creds {
 		require.NotEqual(t, eudiPidIssuerPyAvDocType, cred.CredentialId,
@@ -810,7 +810,7 @@ func testEudiPidPythonIssuerBatchIsSingleUse(t *testing.T) {
 func avMdocInstancesRemaining(t *testing.T, c *client.Client) uint {
 	t.Helper()
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findMdocCredentialByDocType(t, creds, eudiPidIssuerPyAvDocType)
@@ -1068,7 +1068,7 @@ func testEudiPidPythonIssuerUntrustedIssuerIsRejected(t *testing.T) {
 	require.Empty(t, session.OfferedCredentials,
 		"the wallet offered a credential it was about to reject")
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	for _, cred := range creds {
 		require.NotEqual(t, eudiPidIssuerPyAvDocType, cred.CredentialId,

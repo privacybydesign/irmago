@@ -275,6 +275,25 @@ func CredentialToLogCredential(c *Credential) LogCredential {
 	}
 }
 
+// ProblematicCredential describes a stored credential that could not be loaded
+// into a full Credential — its metadata failed to resolve (e.g. an SD-JWT-over-IRMA
+// credential whose type was dropped from its scheme). It carries just enough
+// to show an informative placeholder and, above all, to delete it:
+// CredentialInstanceIds maps each format to the storage hash that
+// RemoveCredentialsByHash needs, so a credential the wallet cannot render can
+// still be removed.
+type ProblematicCredential struct {
+	// Maps each format this problematic instance exists in to its storage hash,
+	// so the wallet can delete it without resolving its metadata.
+	CredentialInstanceIds map[CredentialFormat]string `json:"credential_instance_ids"`
+	// Human/debug explanation of why the credential could not be loaded.
+	Reason string `json:"reason"`
+	// The IRMA credential type id the credential was stored under (e.g.
+	// "irma-demo.RU.studentCard"). Only IRMA credentials are currently reported
+	// as problematic; EUDI credentials degrade per field instead.
+	CredentialId string `json:"credential_id,omitempty"`
+}
+
 // CredentialDescriptor describes a credential type without any instance-specific values.
 // All text fields are resolved to the current locale.
 type CredentialDescriptor struct {

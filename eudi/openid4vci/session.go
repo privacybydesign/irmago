@@ -448,25 +448,36 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 
 	for _, fc := range fetched {
 		config, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId]
-		if !ok || config.CredentialMetadata == nil || len(fc.parsedCredentials) == 0 {
+		if !ok || len(fc.parsedCredentials) == 0 {
 			continue
+		}
+
+		// A credential whose configuration carries no display metadata at all is
+		// still offered: it is shown with a fallback name (below) and no
+		// attributes, rather than silently dropped from the permission screen
+		// while it is nonetheless fetched and stored.
+		var credentialDisplay metadata.CredentialDisplays
+		var claims []metadata.ClaimsDescription
+		if config.CredentialMetadata != nil {
+			credentialDisplay = config.CredentialMetadata.Display
+			claims = config.CredentialMetadata.Claims
 		}
 
 		// Use the first credential in the batch as source of attribute values.
 		first := fc.parsedCredentials[0]
 		var attrs []clientmodels.Attribute
 		if first.SdJwtVc != nil {
-			attrs = buildAttributesWithValues(config.CredentialMetadata.Claims, first.SdJwtVc.ProcessedSdJwtPayload, s.locale)
+			attrs = buildAttributesWithValues(claims, first.SdJwtVc.ProcessedSdJwtPayload, s.locale)
 		} else {
 			var resolved map[string]map[string]any
 			if err := json.Unmarshal(first.ResolvedClaims, &resolved); err != nil {
 				eudi.Logger.Warnf("failed to unmarshal resolved claims for %q: %v", fc.credentialConfigurationId, err)
 			} else {
-				attrs = services.BuildMdocAttributesFromResolvedClaims(config.CredentialMetadata.Claims, resolved, s.locale)
+				attrs = services.BuildMdocAttributesFromResolvedClaims(claims, resolved, s.locale)
 			}
 		}
 
-		displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
+		displays := metadata.ToTranslateableList(credentialDisplay)
 		names := metadata.ConvertDisplayToTranslatedString(displays)
 		name := clientmodels.Resolve(names, s.locale)
 		// Whether the offer screen is showing the user text in a language they did
@@ -482,7 +493,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 
 		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
 		image := services.LoadResolvedLogo(credentialLogoManager,
-			metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), s.locale)
+			metadata.LogoURIsByLanguage(credentialDisplay), s.locale)
 
 		issuerLogoManager := s.storage.FileSystem().Issuers().LogoManager()
 		issuerImage := services.LoadResolvedLogo(issuerLogoManager,
@@ -532,6 +543,12 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		credentialId := config.VerifiableCredentialType
 		if first.VerifiableCredentialType != "" {
 			credentialId = first.VerifiableCredentialType
+		}
+
+		// Never offer a nameless credential: fall back to the credential id (the
+		// vct) so the permission screen and the resulting card have a label.
+		if name == "" {
+			name = credentialId
 		}
 
 		cred := clientmodels.Credential{

@@ -151,7 +151,11 @@ func CredentialDisplayIsFallback(batch *models.CredentialBatch, locale string) b
 }
 
 // ResolveBatchDisplay resolves everything a batch's display metadata says, for
-// one locale, in one pass.
+// one locale, in one pass. It reports only what the metadata actually says:
+// CredentialName is "" when the batch carries no resolvable credential name, so
+// that callers can tell "no live name" apart from a real one — the activity log
+// relies on this to keep its persisted snapshot. The credential list applies
+// its own fallback label at its call site.
 func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedBatchDisplay {
 	d := ResolvedBatchDisplay{
 		IssuerId:    batch.CredentialIssuerIdentifier,

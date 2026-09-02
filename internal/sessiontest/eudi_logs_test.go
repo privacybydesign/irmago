@@ -361,7 +361,7 @@ func testEudiCredentialRemovalCreatesLog(t *testing.T) {
 	require.NotEmpty(t, issuanceCred.Issuer.Image.Base64)
 	issuerLogo := issuanceCred.Issuer.Image.Base64
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
@@ -407,7 +407,7 @@ func testEudiCredentialRemovalLogHasAttributes(t *testing.T) {
 		"email": "attrremove@example.com"
 	}`)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
@@ -467,7 +467,7 @@ func testMdocCredentialRemovalCreatesLog(t *testing.T) {
 	// asserting that the test agrees with itself.
 	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findMdocCredentialByDocType(t, creds, avDocType)
@@ -475,7 +475,7 @@ func testMdocCredentialRemovalCreatesLog(t *testing.T) {
 
 	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	for _, remaining := range creds {
 		require.NotEqual(t, avDocType, remaining.CredentialId,
@@ -673,7 +673,7 @@ func testDeeplyNestedRemovalLog(t *testing.T) {
 
 	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "OrganizationCredentialSdJwt", organizationClaimsJSON)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, "Organization Credential (SD-JWT)")
@@ -860,7 +860,7 @@ func testDuplicateCredentialRemovalCreatesLog(t *testing.T) {
 		issueCredentialViaOpenID4VCI(t, c, i+1, sessionHandler, "TestCredentialSdJwt", claims)
 	}
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	count := 0
@@ -878,7 +878,7 @@ func testDuplicateCredentialRemovalCreatesLog(t *testing.T) {
 	require.NoError(t, c.RemoveCredentialsByHash(target.CredentialInstanceIds))
 
 	// Verify the credential is gone.
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	for _, cr := range creds {
 		require.NotEqual(t, "Test Credential (SD-JWT)", cr.Name,
@@ -977,7 +977,7 @@ func testIrmaAndEudiLogsMergedChronologically(t *testing.T) {
 
 	// 6. Remove the EUDI credential → SQLCipher log.
 	sep()
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	eudiCred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
@@ -1121,7 +1121,7 @@ func testDutchEudiLogs(t *testing.T) {
 	)
 
 	// Removal logs snapshot the Dutch text too.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	cred := findCredentialByName(t, creds, "E-mail Credential (SD-JWT)")
 	require.NotNil(t, cred)

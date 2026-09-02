@@ -77,47 +77,40 @@ type CredentialConfiguration struct {
 	CredentialDefinition     *W3CCredentialDefinition `json:"credential_definition,omitempty"` // W3C VC Signed as JWT, no JSON-LD
 }
 
-// UnmarshalJSON accepts both placements OpenID4VCI has used for a
-// configuration's display metadata.
-//
-// v1.0 (draft 16) nests it in credential_metadata; earlier drafts put display and
-// claims directly on the configuration. Reading only the nested object made an
-// issuer on an older draft indistinguishable from one publishing no display text
-// at all — the credential rendered as its raw vct/docType, with a log line as the
-// only explanation.
-//
-// Normalising here rather than at each consumer keeps CredentialMetadata the one
-// shape everything downstream reads: convertCredentialMetadata, the VCI baseline
-// the VCT merge starts from in resolveCredentialMetadataFromVct, and the display
-// resolvers. It also means a legacy-shape issuer's text takes part in the VCT
-// merge on equal terms.
-//
-// The nested object wins whenever it is present, even when empty: an issuer that
-// publishes credential_metadata is speaking the current version, so emptiness
-// there is a statement rather than an omission, and the legacy fields on such a
-// document would be a leftover.
+// UnmarshalJSON accepts both the OID4VCI v1.0 shape, where a credential's
+// display and claims live inside a `credential_metadata` object (§12.2.4), and
+// the widely-deployed pre-1.0 shape, where `display` and `claims` sit directly
+// on the credential configuration. When an issuer uses the legacy layout there
+// is no `credential_metadata`, so the metadata is synthesized from the top-level
+// fields — every downstream reader consults CredentialMetadata, so this one seam
+// is enough to make a legacy issuer's credentials display and store with a name.
 func (c *CredentialConfiguration) UnmarshalJSON(data []byte) error {
-	// A defined type without methods, so unmarshalling it does not re-enter here.
-	type configuration CredentialConfiguration
-	var raw struct {
-		configuration
-		LegacyDisplay CredentialDisplays  `json:"display,omitempty"`
-		LegacyClaims  []ClaimsDescription `json:"claims,omitempty"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
+	// alias drops the method set so this Unmarshal does not recurse.
+	type alias CredentialConfiguration
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
 		return err
 	}
+	*c = CredentialConfiguration(a)
 
-	*c = CredentialConfiguration(raw.configuration)
-	if c.CredentialMetadata != nil {
-		return nil
-	}
-	if len(raw.LegacyDisplay) == 0 && len(raw.LegacyClaims) == 0 {
-		return nil
-	}
-	c.CredentialMetadata = &CredentialMetadata{
-		Display: raw.LegacyDisplay,
-		Claims:  raw.LegacyClaims,
+	if c.CredentialMetadata == nil {
+		var legacy struct {
+			Display CredentialDisplays  `json:"display"`
+			Claims  []ClaimsDescription `json:"claims"`
+		}
+		// Before credential_metadata existed these fields were unknown to the
+		// parser and ignored, so a malformed legacy block must not start rejecting
+		// a document that used to parse. The error is deliberately dropped rather
+		// than returned early: encoding/json keeps filling the other fields past a
+		// type mismatch, and draft-13 issuers write `claims` as an object keyed by
+		// claim name — the `display` decoded next to it must still be kept.
+		_ = json.Unmarshal(data, &legacy)
+		if len(legacy.Display) > 0 || len(legacy.Claims) > 0 {
+			c.CredentialMetadata = &CredentialMetadata{
+				Display: legacy.Display,
+				Claims:  legacy.Claims,
+			}
+		}
 	}
 	return nil
 }

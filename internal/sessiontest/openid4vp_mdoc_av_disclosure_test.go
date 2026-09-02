@@ -1787,7 +1787,7 @@ func eudiPidIssuerPyCACert(t *testing.T) *x509.Certificate {
 func avMdocIssuerName(t *testing.T, c *client.Client) string {
 	t.Helper()
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	return findMdocCredentialByDocType(t, creds, avDocType).Issuer.Name

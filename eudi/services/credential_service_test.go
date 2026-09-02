@@ -296,6 +296,10 @@ func TestGetCredentialMetadataList_MapsRemainingCount(t *testing.T) {
 	}
 }
 
+// TestGetCredentialMetadataList_NilCredentialMetadata pins that a batch without
+// any credential display metadata still yields a usable credential: no
+// attributes, but a name that falls back to the vct rather than being empty (an
+// empty name leaves the wallet unable to render the credential).
 func TestGetCredentialMetadataList_NilCredentialMetadata(t *testing.T) {
 	batch := newStorageBatch()
 	batch.CredentialMetadata = nil
