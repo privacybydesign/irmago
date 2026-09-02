@@ -463,13 +463,29 @@ var mdocAllowedSigningAlgorithms = []int64{
 }
 
 // mdocVerifiableSigningAlgorithms is the subset of mdocAllowedSigningAlgorithms
-// that this wallet can check today: eudi/credentials/mdoc builds its COSE
-// verifier with ES256 for both issuerAuth and the device signature. It is this
-// list, not the wider one above, that decides whether an offer is accepted —
-// see validateMdocCredentialSigningAlgValues. Teaching the mdoc verifier a
-// further algorithm is therefore a matter of moving its identifier here.
+// that this wallet can check today. It is this list, not the wider one above,
+// that decides whether an offer is accepted — see
+// validateMdocCredentialSigningAlgValues.
+//
+// The three ECDSA algorithms are here because eudi/credentials/mdoc now reads
+// `alg` from the COSE protected header and builds its verifier for whatever it
+// finds, gated on the same four identifiers 18013-5 permits (see
+// mdocSignatureAlgorithms there). Until that landed this list held ES256 alone,
+// and an issuer advertising ES384 was turned away at metadata validation before
+// a single credential was fetched — a refusal the wallet no longer has any
+// reason to make.
+//
+// EdDSA is deliberately still absent, and this is the one place the two lists
+// are allowed to disagree. The MSO signature would verify: the document signer's
+// key comes from its X.509 certificate, which can perfectly well be Ed25519. The
+// device key cannot — mdoc.ecdsaPublicKeyFromCOSE returns *ecdsa.PublicKey, so
+// an OKP deviceKeyInfo is refused, and the credential would be fetched, stored
+// and then fail at first presentation. Refusing the offer is the honest answer
+// until DeviceKey widens to crypto.PublicKey.
 var mdocVerifiableSigningAlgorithms = []int64{
-	int64(cose.AlgorithmES256),
+	int64(cose.AlgorithmES256), // -7
+	int64(cose.AlgorithmES384), // -35
+	int64(cose.AlgorithmES512), // -36
 }
 
 // validateCredentialSigningAlgValues checks that at least one advertised

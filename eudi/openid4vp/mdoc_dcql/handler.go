@@ -201,7 +201,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 		}
 
 		var doc stdmdoc.MDoc
-		if err := cbor.Unmarshal(instance.RawCredential, &doc); err != nil {
+		if err := stdmdoc.Unmarshal(instance.RawCredential, &doc); err != nil {
 			return nil, fmt.Errorf("decode stored mdoc: %w", err)
 		}
 

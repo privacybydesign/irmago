@@ -523,27 +523,28 @@ func TestCredentialConfiguration_ValidateAndGetSupportedFeatures(t *testing.T) {
 				CredentialSigningAlgValuesSupported: []any{float64(-8)},
 			},
 			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': [-8] is permitted by ISO 18013-5 but this wallet verifies only [-7]",
+			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': [-8] is permitted by ISO 18013-5 but this wallet verifies only [-7 -35 -36]",
 		},
 		{
+			// ES384 and ES512 became verifiable when the mdoc verifier started reading
+			// alg from the COSE protected header. Turning such an offer away here would
+			// refuse a credential the wallet can now check.
 			name: "mso_mdoc advertising only ES384",
 			config: metadata.CredentialConfiguration{
 				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
 				Scope:                               &scope,
 				CredentialSigningAlgValuesSupported: []any{float64(-35)},
 			},
-			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': [-35] is permitted by ISO 18013-5 but this wallet verifies only [-7]",
+			wantErr: false,
 		},
 		{
-			name: "mso_mdoc advertising only ES384 and ES512, neither verifiable here",
+			name: "mso_mdoc advertising ES384 and ES512, both verifiable",
 			config: metadata.CredentialConfiguration{
 				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
 				Scope:                               &scope,
 				CredentialSigningAlgValuesSupported: []any{float64(-35), float64(-36)},
 			},
-			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': [-35 -36] is permitted by ISO 18013-5 but this wallet verifies only [-7]",
+			wantErr: false,
 		},
 		{
 			name: "mso_mdoc mixing a disallowed identifier with an allowed one",

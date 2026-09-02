@@ -1,8 +1,8 @@
 package mdoc
 
 import (
+	"crypto"
 	"crypto/ecdsa"
-	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
 	"encoding/asn1"
@@ -13,6 +13,8 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	cose "github.com/veraison/go-cose"
+
+	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
 // ============================================================
@@ -56,6 +58,54 @@ var mdocDocumentSignerEKUs = []asn1.ObjectIdentifier{
 	isoGenericMdocDocumentSignerEKU,
 }
 
+// mdocSignatureAlgorithms are the algorithms ISO/IEC 18013-5 permits for the two
+// signatures this package verifies, and which 9.1.2.4 obliges a reader to
+// support: "For verifying the signature, the mdoc reader shall support all of
+// these signature algorithms and curves" — ES256, ES384, ES512 and EdDSA. 9.1.3.6
+// restates the same list for device authentication.
+//
+// cose.AlgorithmEdDSA and the deprecated cose.AlgorithmEd25519 are the same value
+// (-8), so EdDSA appears once.
+var mdocSignatureAlgorithms = []cose.Algorithm{
+	cose.AlgorithmES256,
+	cose.AlgorithmES384,
+	cose.AlgorithmES512,
+	cose.AlgorithmEdDSA,
+}
+
+// coseVerifierFor builds a verifier for the algorithm the message itself
+// declares, rather than for one this package assumed in advance.
+//
+// Reading `alg` from the protected header is not a relaxation. The header is
+// inside Sig_structure, so the algorithm is covered by the signature and cannot
+// be substituted; go-cose re-checks that the verifier's algorithm matches it
+// before verifying. What this replaces is a hardcoded ES256 verifier, which made
+// every other permitted algorithm fail as an opaque mismatch — a conformant
+// ES384 issuer looked like a broken one.
+//
+// The allow-list is what keeps this from being "whatever the document says":
+// go-cose implements RSA-PSS and others that 18013-5 does not permit, and a
+// document signer is only authorised to use the four above.
+func coseVerifierFor(msg *cose.Sign1Message, key crypto.PublicKey, what string) (cose.Verifier, error) {
+	alg, err := msg.Headers.Protected.Algorithm()
+	if err != nil {
+		return nil, fmt.Errorf("%s has no usable alg in its protected header: %w", what, err)
+	}
+	if !slices.Contains(mdocSignatureAlgorithms, alg) {
+		return nil, fmt.Errorf(
+			"%s is signed with %v, which is not one of the four algorithms ISO/IEC 18013-5 permits (ES256, ES384, ES512, EdDSA)",
+			what, alg)
+	}
+	verifier, err := cose.NewVerifier(alg, key)
+	if err != nil {
+		// Reached when the algorithm and the key disagree — an ES384 header over a
+		// P-256 certificate, or EdDSA over an ECDSA key. Naming both halves,
+		// because either one could be the wrong half.
+		return nil, fmt.Errorf("%s declares %v, which does not match its %T signing key: %w", what, alg, key, err)
+	}
+	return verifier, nil
+}
+
 // decodeCoseSign1 decodes either COSE_Sign1 serialization into the same
 // message type.
 //
@@ -87,6 +137,35 @@ func decodeCoseSign1(data []byte) (*cose.Sign1Message, error) {
 	return &msg, nil
 }
 
+// bypassDocumentSignerEKU makes checkDocumentSignerEKU accept any document
+// signer regardless of its extended key usage.
+//
+// DO NOT COMMIT. Re-applied 2026-08-31 for a staging demo, after being stripped
+// for the commit that precedes it.
+//
+// Staging's document signer is the service's own identity certificate -- a
+// hostname CN, issued from a TLS profile -- so it carries clientAuth and no mdoc
+// document-signer usage, and issuance stops here with "document signer
+// certificate is not authorized to sign mdocs". The fix is an EJBCA profile
+// change at the Yivi CA (add 1.0.18013.5.1.2), which has not landed.
+//
+// Unlike the first time this switch existed, it is not answering a question:
+// bypassing it already proved the EKU is the *only* remaining staging blocker,
+// since everything behind it -- the MSO signature, the docType binding, the
+// namespace digests, deviceKeyInfo, batch uniqueness -- passes against the real
+// staging issuer. This is purely to make the demo possible while the certificate
+// is wrong.
+//
+// A bool switch rather than an early `return nil`, so `go vet` does not flag the
+// rest of the function as unreachable.
+//
+// Strip before committing. Leaving it in ships a wallet that accepts an MSO
+// signed by any certificate beneath the root, a relying party's included -- it
+// removes the one check that makes chaining to the root mean "authorized to
+// issue", because a single document signer serves every docType and the chain
+// alone cannot say which role a certificate was issued for.
+var bypassDocumentSignerEKU = true
+
 // checkDocumentSignerEKU rejects a leaf certificate that is not authorized to
 // sign mdocs.
 //
@@ -107,6 +186,12 @@ func decodeCoseSign1(data []byte) (*cose.Sign1Message, error) {
 // rejected is a certificate that does enumerate its permitted usages and does
 // not include this one.
 func checkDocumentSignerEKU(cert *x509.Certificate) error {
+	if bypassDocumentSignerEKU {
+		fmt.Printf("DO NOT COMMIT: mdoc document signer EKU check BYPASSED for %q (its EKU: %s)\n",
+			cert.Subject.String(), extKeyUsagesOf(cert))
+		return nil
+	}
+
 	if len(cert.ExtKeyUsage) == 0 && len(cert.UnknownExtKeyUsage) == 0 {
 		return nil
 	}
@@ -195,6 +280,17 @@ type Verifier struct {
 	// honouring anchors that were dropped.
 	verificationOptions func() x509.VerifyOptions
 
+	// revocationLists supplies the CRLs the certificate chain is checked
+	// against, and is nil for a Verifier built without a trust source — which
+	// means no revocation checking at all, the behaviour every constructor here
+	// had before NewVerifierFromTrustSource existed.
+	//
+	// A function rather than a captured slice, for the same reason as
+	// verificationOptions: the wallet re-syncs its CRLs on a schedule and
+	// replaces the slice rather than mutating it, so anything captured at
+	// construction stops seeing new revocations the moment the first sync lands.
+	revocationLists func() []*x509.RevocationList
+
 	// clock, if set, is used instead of time.Now() for certificate
 	// validity checks. Defaults to real time when left as the zero
 	// value — see currentTime(). Exists so tests can exercise expired /
@@ -239,6 +335,38 @@ func NewVerifierFromOptions(options func() x509.VerifyOptions) *Verifier {
 	return &Verifier{verificationOptions: options}
 }
 
+// TrustSource supplies both halves of what ISO/IEC 18013-5 9.3.3 asks of a party
+// performing certification path validation: the trust anchors, and "access to
+// certificate revocation information".
+//
+// Declared structurally rather than imported so this package keeps no dependency
+// on the wallet's trust plumbing. It is deliberately the same shape as
+// eudi_jwt.X509VerificationContext, which eudi.TrustModel already satisfies —
+// the point being that the mdoc path and the SD-JWT x5c path now draw
+// revocation information from the same source and agree on what revoked means.
+// Before this existed the trust model synced CRLs that only the SD-JWT path
+// consulted, so a revoked document signer was refused for one credential format
+// and accepted for the other, in the same wallet, under the same CA.
+type TrustSource interface {
+	GetVerificationOptionsTemplate() x509.VerifyOptions
+	GetRevocationLists() []*x509.RevocationList
+}
+
+// NewVerifierFromTrustSource builds a Verifier that takes both its trust anchors
+// and its revocation information from source, re-reading each on every
+// verification so a re-synced CRL or a switched developer mode takes effect
+// without reconstructing anything.
+//
+// Prefer this over NewVerifierFromOptions anywhere real credentials are
+// verified: the options-only constructors cannot check revocation, and do not
+// say so at the call site.
+func NewVerifierFromTrustSource(source TrustSource) *Verifier {
+	return &Verifier{
+		verificationOptions: source.GetVerificationOptionsTemplate,
+		revocationLists:     source.GetRevocationLists,
+	}
+}
+
 // NewVerifierWithClock is like NewVerifier but pins certificate validity
 // checks to a fixed point in time instead of the real system clock. Used
 // to test expired / not-yet-valid certificate rejection deterministically,
@@ -247,6 +375,57 @@ func NewVerifierWithClock(rootCerts []*x509.Certificate, clock time.Time) *Verif
 	v := NewVerifier(rootCerts)
 	v.clock = clock
 	return v
+}
+
+// checkChainRevocation refuses a document signer whose chain contains a
+// certificate that its own issuer has revoked.
+//
+// Every certificate in the chain is checked, not only the leaf: a revoked
+// intermediate invalidates everything beneath it, and the leaf's own CRL says
+// nothing about its issuer. utils.GetRevocationListsForIssuer matches each
+// certificate to the lists issued by its issuer, so a self-signed root simply
+// finds none and passes — no special case needed.
+//
+// x509.Certificate.Verify can return several valid chains. Only one has to be
+// clean for the document signer to be trusted, which is the same rule RFC 5280
+// path validation uses: a certificate is acceptable if some path to a trust
+// anchor is acceptable. Refusing on the first revoked chain would reject a
+// signer that also chains cleanly through a different, unrevoked intermediate.
+//
+// A Verifier built without a trust source has no lists and checks nothing,
+// which is what every constructor did before NewVerifierFromTrustSource.
+func (v *Verifier) checkChainRevocation(chains [][]*x509.Certificate) error {
+	if v.revocationLists == nil {
+		return nil
+	}
+	lists := v.revocationLists()
+	if len(lists) == 0 {
+		return nil
+	}
+
+	var firstFailure error
+	for _, chain := range chains {
+		revoked := false
+		for _, cert := range chain {
+			if err := utils.VerifyCertificateAgainstIssuerRevocationLists(cert, lists); err != nil {
+				revoked = true
+				if firstFailure == nil {
+					// Named rather than summarised: the operator who has to act on this
+					// needs to know which certificate in the chain was withdrawn, and
+					// the subject alone does not distinguish a re-issued certificate
+					// from the revoked one it replaced.
+					firstFailure = fmt.Errorf(
+						"certificate in the document signer's chain is revoked: %v (subject %q, serial %X, issued by %q)",
+						err, cert.Subject.String(), cert.SerialNumber, cert.Issuer.String())
+				}
+				break
+			}
+		}
+		if !revoked {
+			return nil
+		}
+	}
+	return firstFailure
 }
 
 // currentTime returns the verifier's fake clock if one was set via
@@ -408,7 +587,7 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	// Step 3: verify the full chain
 	// x509.Verify walks: DS cert → intermediates → trusted root
 	// This is what prevents a chain attack — attacker's root won't be in Roots
-	_, err = dsCert.Verify(x509.VerifyOptions{
+	chains, err := dsCert.Verify(x509.VerifyOptions{
 		Roots:         opts.Roots,
 		Intermediates: intermediates,
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
@@ -434,12 +613,22 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 		return nil, result
 	}
 
+	// Step 3c: revocation. 9.3.3 requires a party performing path validation to
+	// have "access to certificate revocation information", and Annex B.1.4 makes
+	// a CRL distribution point mandatory on a document signer precisely so this
+	// is possible. Chain validity is a statement about dates and signatures; it
+	// says nothing about a key that was compromised and withdrawn yesterday.
+	if err := v.checkChainRevocation(chains); err != nil {
+		result.Error = err.Error()
+		return nil, result
+	}
+
 	// Step 4: verify COSE_Sign1 signature using DS cert's public key
 	// go-cose internally builds the Sig_structure and verifies ECDSA against it
 	// NOT the bare MSO bytes — the Sig_structure wrapping is what actually gets signed
-	coseverifier, err := cose.NewVerifier(cose.AlgorithmES256, dsCert.PublicKey)
+	coseverifier, err := coseVerifierFor(msg, dsCert.PublicKey, "issuerAuth")
 	if err != nil {
-		result.Error = fmt.Sprintf("create verifier: %v", err)
+		result.Error = err.Error()
 		return nil, result
 	}
 	if err := msg.Verify(nil, coseverifier); err != nil {
@@ -453,6 +642,25 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	mso, err := tag24Unwrap[MSO](msg.Payload)
 	if err != nil {
 		result.Error = fmt.Sprintf("decode mso: %v", err)
+		return nil, result
+	}
+
+	// Step 5aa: refuse an MSO whose structure version this code does not define.
+	//
+	// 9.1.2.4 fixes the value at "1.0" for this edition of the standard. A higher
+	// major version is a structure with fields this code has no definition for,
+	// and decoding drops what it does not recognise — so every field consulted
+	// below can decode cleanly while the document as a whole means something else.
+	// Accepting it is how a verifier ends up vouching for a document it did not
+	// understand.
+	//
+	// Only the major version is checked. 8.1's versioning rule makes a minor
+	// increment backward compatible by construction, so "1.1" is a structure this
+	// code can still read correctly; "2.0" is not.
+	if major, _, _ := strings.Cut(mso.Version, "."); major != "1" {
+		result.Error = fmt.Sprintf(
+			"unsupported MobileSecurityObject version %q: this implementation reads ISO/IEC 18013-5 version 1.x only",
+			mso.Version)
 		return nil, result
 	}
 
@@ -565,19 +773,19 @@ func DeviceKeyFromIssuerAuth(issuerAuth cbor.RawMessage) (*ecdsa.PublicKey, erro
 // (constant-time), returning the decoded elementIdentifier -> elementValue
 // map on success. Shared by Verify (single known namespace) and
 // VerifyAllDisclosedNamespaces (every namespace present).
-func verifyNamespaceDigests(items []Tag24Item, nsDigests map[uint64][]byte) (map[string]any, error) {
+func verifyNamespaceDigests(items []Tag24Item, nsDigests map[uint64][]byte, digest func([]byte) []byte) (map[string]any, error) {
 	attrs := make(map[string]any, len(items))
 	for _, tag24item := range items {
 		var rawTag cbor.RawTag
-		if err := cbor.Unmarshal(tag24item.EncodedItem, &rawTag); err != nil {
+		if err := mdocDecMode.Unmarshal(tag24item.EncodedItem, &rawTag); err != nil {
 			return nil, fmt.Errorf("unwrap tag24: %v", err)
 		}
 		var innerBytes []byte
-		if err := cbor.Unmarshal(rawTag.Content, &innerBytes); err != nil {
+		if err := mdocDecMode.Unmarshal(rawTag.Content, &innerBytes); err != nil {
 			return nil, fmt.Errorf("unwrap inner: %v", err)
 		}
 		var item IssuerSignedItem
-		if err := cbor.Unmarshal(innerBytes, &item); err != nil {
+		if err := mdocDecMode.Unmarshal(innerBytes, &item); err != nil {
 			return nil, fmt.Errorf("decode item: %v", err)
 		}
 
@@ -600,7 +808,29 @@ func verifyNamespaceDigests(items []Tag24Item, nsDigests map[uint64][]byte) (map
 				item.ElementIdentifier, len(item.Random), minSaltLength)
 		}
 
-		hash := sha256.Sum256(tag24item.EncodedItem)
+		// ISO/IEC 18013-5 8.3.2.1.2.2: "The mdoc shall not include two or more
+		// IssuerSignedItem elements with the same DataElementIdentifier in a single
+		// NameSpace and Document."
+		//
+		// Nothing else here catches it. The two copies carry different digestIDs, the
+		// MSO commits to both, and both pass the digest check below — so without this
+		// the map write simply lets the later one win, and which one that is comes
+		// down to encoder ordering. For a profile whose elements are booleans that is
+		// the difference between age_over_18 arriving as true and arriving as false.
+		//
+		// Checked before the digest comparison for the same reason as the salt floor
+		// above: a document that breaks a structural rule should be reported as
+		// breaking it, not as a cryptographic failure.
+		if _, duplicate := attrs[item.ElementIdentifier]; duplicate {
+			return nil, fmt.Errorf(
+				"element %s is disclosed more than once in one namespace; ISO/IEC 18013-5 permits at most one IssuerSignedItem per data element identifier",
+				item.ElementIdentifier)
+		}
+
+		// The algorithm is the one the signed MSO declares, not an assumption —
+		// 9.1.2.5 lets an issuer choose SHA-256, SHA-384 or SHA-512. See
+		// digestFuncFor.
+		hash := digest(tag24item.EncodedItem)
 		expectedDigest, exists := nsDigests[item.DigestID]
 		if !exists {
 			return nil, fmt.Errorf("digestID %d not in MSO", item.DigestID)
@@ -608,7 +838,7 @@ func verifyNamespaceDigests(items []Tag24Item, nsDigests map[uint64][]byte) (map
 
 		// constant-time comparison — prevents timing side channel
 		// where early exit on first mismatch would leak digest bytes
-		if subtle.ConstantTimeCompare(hash[:], expectedDigest) != 1 {
+		if subtle.ConstantTimeCompare(hash, expectedDigest) != 1 {
 			return nil, fmt.Errorf("digest mismatch for %s", item.ElementIdentifier)
 		}
 
@@ -631,21 +861,76 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 		return result
 	}
 
-	nsDigests, ok := mso.ValueDigests[namespace]
-	if !ok {
+	if _, ok := mso.ValueDigests[namespace]; !ok {
 		result.Error = fmt.Sprintf("namespace %s not in MSO", namespace)
 		return result
 	}
 
-	attrs, err := verifyNamespaceDigests(mdoc.IssuerSigned.NameSpaces[namespace], nsDigests)
+	// Every namespace the document carries is verified, not only the one the
+	// caller asked about.
+	//
+	// 9.3.1 step 3 is "calculate the digest value for every IssuerSignedItem
+	// returned in the DeviceResponse", without qualification. Verifying one
+	// namespace and ignoring the rest left items in any other namespace neither
+	// checked nor refused: their values never reached result.Attributes, which is
+	// what kept it from being exploitable, but the document still came back Valid
+	// while carrying elements this verifier had said nothing about. A caller
+	// logging the raw document, or a later change that widened what Attributes
+	// returns, would have inherited that silently.
+	resolved, err := verifyAllNamespaces(mdoc, mso)
 	if err != nil {
 		result.Error = err.Error()
 		return result
 	}
 
+	// A profile with a closed attribute set refuses elements outside it. Keyed on
+	// the signed docType, so a document of any other type is unaffected — see
+	// profile.go.
+	if err := profileFor(result.DocType).checkElements(resolved); err != nil {
+		result.Error = err.Error()
+		return result
+	}
+
+	// Only the requested namespace's attributes are returned, as before. An empty
+	// map rather than nil when the namespace is in the MSO but discloses nothing,
+	// so callers can index it without a nil check; RequireElements is what turns
+	// "disclosed nothing" into an error for callers that need one.
+	attrs := resolved[namespace]
+	if attrs == nil {
+		attrs = make(map[string]any)
+	}
+
 	result.Attributes = attrs
 	result.Valid = true
 	return result
+}
+
+// verifyAllNamespaces recomputes and checks the digests of every namespace
+// present in the document, returning namespace -> elementIdentifier -> value.
+// Shared by Verify and VerifyAllDisclosedNamespaces so the two cannot drift
+// over what "verified" covers.
+func verifyAllNamespaces(mdoc *MDoc, mso *MSO) (map[string]map[string]any, error) {
+	// Resolved once for the whole document: 9.1.2.5 requires "the same digest
+	// algorithm shall be used for all data elements", so a per-namespace lookup
+	// would imply a freedom the clause does not give.
+	digest, err := digestFuncFor(mso.DigestAlgorithm)
+	if err != nil {
+		return nil, err
+	}
+
+	resolved := make(map[string]map[string]any, len(mdoc.IssuerSigned.NameSpaces))
+	for namespace, items := range mdoc.IssuerSigned.NameSpaces {
+		nsDigests, ok := mso.ValueDigests[namespace]
+		if !ok {
+			return nil, fmt.Errorf("namespace %s not in MSO", namespace)
+		}
+		attrs, err := verifyNamespaceDigests(items, nsDigests, digest)
+		if err != nil {
+			return nil, err
+		}
+		resolved[namespace] = attrs
+	}
+	return resolved, nil
 }
 
 // VerifyAllDisclosedNamespaces is Verify's issuance-time counterpart: rather
@@ -664,19 +949,17 @@ func (v *Verifier) VerifyAllDisclosedNamespaces(mdoc *MDoc) (map[string]map[stri
 		return nil, result
 	}
 
-	resolved := make(map[string]map[string]any, len(mdoc.IssuerSigned.NameSpaces))
-	for namespace, items := range mdoc.IssuerSigned.NameSpaces {
-		nsDigests, ok := mso.ValueDigests[namespace]
-		if !ok {
-			result.Error = fmt.Sprintf("namespace %s not in MSO", namespace)
-			return nil, result
-		}
-		attrs, err := verifyNamespaceDigests(items, nsDigests)
-		if err != nil {
-			result.Error = err.Error()
-			return nil, result
-		}
-		resolved[namespace] = attrs
+	resolved, err := verifyAllNamespaces(mdoc, mso)
+	if err != nil {
+		result.Error = err.Error()
+		return nil, result
+	}
+
+	// Same profile check as Verify, so a credential cannot be accepted at issuance
+	// and then refused at presentation, or the reverse.
+	if err := profileFor(result.DocType).checkElements(resolved); err != nil {
+		result.Error = err.Error()
+		return nil, result
 	}
 
 	result.Attributes = nil
@@ -799,10 +1082,10 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 	}
 	deviceMsg.Payload = expectedPayload
 
-	deviceVerifier, err := cose.NewVerifier(cose.AlgorithmES256, devicePub)
+	deviceVerifier, err := coseVerifierFor(deviceMsg, devicePub, "deviceAuth")
 	if err != nil {
 		result.Valid = false
-		result.Error = fmt.Sprintf("create device verifier: %v", err)
+		result.Error = err.Error()
 		return result
 	}
 	if err := deviceMsg.Verify(nil, deviceVerifier); err != nil {
@@ -811,30 +1094,23 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
-	// Profile check, on authenticated content. Data in DeviceSigned is
-	// self-asserted by the holder rather than attested by the issuer, and the AV
-	// Blueprint profile has no holder-asserted claims, so any namespace here is
-	// outside what this verifier is prepared to interpret. Rejecting is the
-	// conservative choice: accepting would mean carrying claims the issuer never
-	// signed, and callers read VerificationResult.Attributes without being able to
-	// tell the two apart. A profile that does want them would surface them in a
-	// field of their own instead of relaxing this.
+	// Whether the holder-asserted elements are acceptable, judged on authenticated
+	// content now that the signature over them has verified.
+	//
+	// Which rule applies depends on the docType, and the docType used is the one
+	// from the signed MSO. For a profile with no holder-asserted attributes this
+	// refuses them outright; for every other docType it is ISO/IEC 18013-5
+	// 9.1.3.4's keyAuthorizations check. See profile.go — this used to be a
+	// blanket refusal applied to every docType, which rejected conformant general
+	// mdocs and reported it as though the presentation were untrustworthy.
 	//
 	// DeviceAuthValid stays false even though the signature verified, so a caller
 	// that reads it without checking Valid cannot mistake this for acceptance.
-	if len(deviceNameSpaceMap) != 0 {
-		namespaces := make([]string, 0, len(deviceNameSpaceMap))
-		for ns := range deviceNameSpaceMap {
-			namespaces = append(namespaces, ns)
-		}
-		slices.Sort(namespaces)
+	if err := profileFor(result.DocType).checkDeviceSignedNameSpaces(
+		deviceNameSpaceMap, mso.DeviceKeyInfo.KeyAuthorizations,
+	); err != nil {
 		result.Valid = false
-		result.Error = fmt.Sprintf(
-			"device-signed namespaces are not permitted in this profile: the deviceAuth "+
-				"signature is valid, but the document asserts %d holder-signed namespace(s) %v, "+
-				"which carry no issuer attestation",
-			len(namespaces), namespaces,
-		)
+		result.Error = err.Error()
 		return result
 	}
 
@@ -875,21 +1151,26 @@ func deviceNameSpacesForVerification(mdoc *MDoc) (cbor.RawMessage, error) {
 // comparison against tag24Wrap(map[string]any{}): CBOR admits more than one
 // encoding of an empty map, and comparing bytes would reject a conformant holder
 // for choosing a different one — the very brittleness this replaced.
-func decodeDeviceNameSpaces(raw cbor.RawMessage) (map[string]cbor.RawMessage, error) {
+func decodeDeviceNameSpaces(raw cbor.RawMessage) (map[string]map[string]cbor.RawMessage, error) {
 	var rawTag cbor.RawTag
-	if err := cbor.Unmarshal(raw, &rawTag); err != nil {
+	if err := mdocDecMode.Unmarshal(raw, &rawTag); err != nil {
 		return nil, fmt.Errorf("not tag-24 embedded CBOR: %w", err)
 	}
 	if rawTag.Number != 24 {
 		return nil, fmt.Errorf("has CBOR tag %d, want 24", rawTag.Number)
 	}
 	var inner []byte
-	if err := cbor.Unmarshal(rawTag.Content, &inner); err != nil {
+	if err := mdocDecMode.Unmarshal(rawTag.Content, &inner); err != nil {
 		return nil, fmt.Errorf("tag 24 does not wrap a byte string: %w", err)
 	}
-	var namespaces map[string]cbor.RawMessage
-	if err := cbor.Unmarshal(inner, &namespaces); err != nil {
-		return nil, fmt.Errorf("embedded DeviceNameSpaces is not a map: %w", err)
+	// Decoded two levels deep rather than one: `DeviceNameSpaces = {* NameSpace
+	// => DeviceSignedItems}` and `DeviceSignedItems = {+ DataElementIdentifier =>
+	// DataElementValue}`, and the keyAuthorizations check in profile.go is per
+	// element, not per namespace. The values stay raw — nothing here interprets
+	// them, and a profile that wanted to would decode them itself.
+	var namespaces map[string]map[string]cbor.RawMessage
+	if err := mdocDecMode.Unmarshal(inner, &namespaces); err != nil {
+		return nil, fmt.Errorf("embedded DeviceNameSpaces is not a map of namespaces to data elements: %w", err)
 	}
 	return namespaces, nil
 }

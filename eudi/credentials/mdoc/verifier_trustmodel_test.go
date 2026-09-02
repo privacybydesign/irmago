@@ -120,7 +120,7 @@ func buildPinnedChainMDoc(t *testing.T) (doc *MDoc, root, intermediate *x509.Cer
 		DocType:         docType,
 		ValidityInfo:    ValidityInfo{Signed: now, ValidFrom: now, ValidUntil: now.Add(24 * time.Hour)},
 		DeviceKeyInfo:   DeviceKeyInfo{DeviceKey: deviceKey},
-	}, avTimeEncMode)
+	}, tdateEncMode)
 	if err != nil {
 		t.Fatalf("wrap mso: %v", err)
 	}

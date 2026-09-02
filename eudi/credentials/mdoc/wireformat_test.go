@@ -268,7 +268,7 @@ func TestTag24WrapUnwrapRoundTrip(t *testing.T) {
 
 // TestTag24WrapWithModeUsesGivenEncMode confirms tag24WrapWithMode's inner
 // payload is actually encoded with the EncMode passed in, rather than
-// falling back to cbor.Marshal's default mode. Uses avTimeEncMode's
+// falling back to cbor.Marshal's default mode. Uses tdateEncMode's
 // RFC3339 tag-0 encoding as the observable difference: the default mode
 // would encode time.Time as a bare epoch integer with no tag at all.
 func TestTag24WrapWithModeUsesGivenEncMode(t *testing.T) {
@@ -277,7 +277,7 @@ func TestTag24WrapWithModeUsesGivenEncMode(t *testing.T) {
 	}
 	payload := withTime{When: time.Date(2025, 6, 20, 8, 45, 29, 0, time.UTC)}
 
-	wrapped, err := tag24WrapWithMode(payload, avTimeEncMode)
+	wrapped, err := tag24WrapWithMode(payload, tdateEncMode)
 	if err != nil {
 		t.Fatalf("tag24WrapWithMode: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestTag24WrapWithModeUsesGivenEncMode(t *testing.T) {
 		t.Fatalf("when field missing from decoded payload")
 	}
 	if len(whenRaw) == 0 || whenRaw[0] != 0xc0 {
-		t.Fatalf("expected tag-0 (RFC3339) encoding for when (first byte %#x) — avTimeEncMode was not applied", whenRaw[0])
+		t.Fatalf("expected tag-0 (RFC3339) encoding for when (first byte %#x) — tdateEncMode was not applied", whenRaw[0])
 	}
 }
 
@@ -904,7 +904,7 @@ func TestInteropForeignEudiDigestsSurviveReEncoding(t *testing.T) {
 		t.Fatal("no namespaces survived the round trip")
 	}
 	for ns, items := range roundTripped.IssuerSigned.NameSpaces {
-		values, err := verifyNamespaceDigests(items, mso.ValueDigests[ns])
+		values, err := verifyNamespaceDigests(items, mso.ValueDigests[ns], sha256Digest)
 		if err != nil {
 			t.Fatalf("digest check failed for namespace %s after a round trip through our types "+
 				"(the issuer's IssuerSignedItem bytes were not preserved): %v", ns, err)

@@ -112,7 +112,7 @@ func mdocFromItems(
 		DeviceKeyInfo: DeviceKeyInfo{DeviceKey: deviceKey},
 	}
 
-	msoBytes, err := tag24WrapWithMode(mso, avTimeEncMode)
+	msoBytes, err := tag24WrapWithMode(mso, tdateEncMode)
 	if err != nil {
 		t.Fatalf("wrap mso: %v", err)
 	}

@@ -34,7 +34,7 @@ func TestVerifyNamespaceDigestsRejectsShortSalt(t *testing.T) {
 	}
 	items, digests := wrapItemWithMatchingDigest(t, item)
 
-	attrs, err := verifyNamespaceDigests(items, digests)
+	attrs, err := verifyNamespaceDigests(items, digests, sha256Digest)
 	if err == nil {
 		t.Fatalf("a %d-byte salt was accepted; the undisclosed elements of such a credential are brute-forceable", len(item.Random))
 	}
@@ -59,7 +59,7 @@ func TestVerifyNamespaceDigestsAcceptsSaltAtFloor(t *testing.T) {
 	}
 	items, digests := wrapItemWithMatchingDigest(t, item)
 
-	attrs, err := verifyNamespaceDigests(items, digests)
+	attrs, err := verifyNamespaceDigests(items, digests, sha256Digest)
 	if err != nil {
 		t.Fatalf("a salt exactly at the ISO floor was rejected: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestVerifyNamespaceDigestsRejectsMissingSalt(t *testing.T) {
 	}
 	items, digests := wrapItemWithMatchingDigest(t, item)
 
-	if _, err := verifyNamespaceDigests(items, digests); err == nil {
+	if _, err := verifyNamespaceDigests(items, digests, sha256Digest); err == nil {
 		t.Fatal("an item with no random value at all was accepted")
 	}
 }

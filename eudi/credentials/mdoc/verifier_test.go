@@ -115,7 +115,7 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 		ValidityInfo:    ValidityInfo{Signed: now, ValidFrom: now, ValidUntil: now.Add(24 * time.Hour)},
 		DeviceKeyInfo:   DeviceKeyInfo{DeviceKey: deviceKey},
 	}
-	msoBytes, err := tag24WrapWithMode(mso, avTimeEncMode)
+	msoBytes, err := tag24WrapWithMode(mso, tdateEncMode)
 	if err != nil {
 		t.Fatalf("wrap mso: %v", err)
 	}
@@ -885,8 +885,12 @@ func TestDeviceAuthAcceptsAlternativelyEncodedEmptyNameSpaces(t *testing.T) {
 }
 
 // TestDeviceAuthRejectsHolderAssertedNameSpaces pins that holder-signed claims are
-// still refused — but by the profile check, with a diagnosis that says so, rather
-// than as a signature failure.
+// still refused for the AV docType — but by the profile check, with a diagnosis
+// that says so, rather than as a signature failure.
+//
+// buildHappyPathMDoc issues under eu.europa.ec.av.1, so this is the AV branch of
+// checkDeviceSignedNameSpaces. The general-docType branch, which allows exactly
+// what the MSO's keyAuthorizations permits, is covered in profile_test.go.
 func TestDeviceAuthRejectsHolderAssertedNameSpaces(t *testing.T) {
 	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
 
@@ -908,8 +912,13 @@ func TestDeviceAuthRejectsHolderAssertedNameSpaces(t *testing.T) {
 		t.Error("DeviceAuthValid is true on a rejected document — a caller reading it " +
 			"without checking Valid would treat this as accepted")
 	}
-	if !strings.Contains(result.Error, "not permitted") {
+	if !strings.Contains(result.Error, "no holder-asserted attributes") {
 		t.Errorf("error does not name the profile rule: %q", result.Error)
+	}
+	// The rejection has to say which profile decided this, so it cannot be
+	// mistaken for a rule the format imposes on every docType.
+	if !strings.Contains(result.Error, AgeVerificationDocType) {
+		t.Errorf("error does not name the docType whose profile refused it: %q", result.Error)
 	}
 	if strings.Contains(result.Error, "signature invalid") {
 		t.Errorf("rejected as a signature failure rather than a profile decision: %q", result.Error)
@@ -1161,7 +1170,7 @@ func issueWithValidity(t *testing.T, issuer *Issuer, validFrom, validUntil time.
 		ValidityInfo:    ValidityInfo{Signed: validFrom, ValidFrom: validFrom, ValidUntil: validUntil},
 		DeviceKeyInfo:   DeviceKeyInfo{DeviceKey: deviceKey},
 	}
-	msoBytes, err := tag24WrapWithMode(mso, avTimeEncMode)
+	msoBytes, err := tag24WrapWithMode(mso, tdateEncMode)
 	if err != nil {
 		t.Fatalf("wrap mso: %v", err)
 	}

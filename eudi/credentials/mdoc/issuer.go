@@ -67,15 +67,27 @@ func NewIssuer() (*Issuer, error) {
 			CommonName:   "Test Age Verification IACA Root CA",
 			Organization: []string{"Yivi Test"},
 		},
-		// NotBefore is backdated 5 minutes: real CAs do this to absorb clock
-		// skew between issuer/verifier clocks, as per common practice in
-		// CA/Browser Forum baseline requirements and general X.509 issuance
-		// guidance — not something the AV Blueprint or ISO 18013-5 mandates
-		// itself. It also means the cert's own validity window starts
-		// meaningfully before the MSO's validFrom (set later, in Issue()) —
-		// giving tests a real, deterministic gap to check the MSO
-		// validityInfo check independently of cert expiry.
-		NotBefore:             time.Now().Add(-5 * time.Minute),
+		// NotBefore is backdated past the ValidityInfo coarsening boundary, not
+		// merely far enough to absorb clock skew.
+		//
+		// Issue() truncates `signed` to midnight UTC (9.1.2.4's unlinkability
+		// recommendation, which the AV Blueprint makes a SHALL). A certificate
+		// backdated by minutes is therefore issued *after* the `signed` timestamp of
+		// every credential it goes on to sign that same day — so 9.3.1 step 5's
+		// "the 'signed' date is within the validity period of the certificate in the
+		// MSO header" could never hold here, and the check could not be enabled
+		// without failing every test.
+		//
+		// That is a property of a certificate minted seconds before it is used, which
+		// is a thing only a test issuer does. A real DS certificate is days or weeks
+		// old by the time it signs anything, so the conflict is confined to its own
+		// issuance day. Backdating past midnight removes it for the fixtures too, and
+		// is exactly what the Yivi CA is being asked to do for staging.
+		//
+		// 25 hours rather than 24: the boundary is the start of the issuance day, and
+		// an hour of margin keeps a run started just after midnight UTC from landing
+		// on it.
+		NotBefore:             time.Now().Add(-25 * time.Hour),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour), // 10 years
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
@@ -107,8 +119,8 @@ func NewIssuer() (*Issuer, error) {
 			CommonName:   "Test Age Verification DS - 001",
 			Organization: []string{"Yivi Test"},
 		},
-		// Backdated 5 minutes — see IACA NotBefore comment above.
-		NotBefore:             time.Now().Add(-5 * time.Minute),
+		// Backdated past the coarsening boundary — see IACA NotBefore comment above.
+		NotBefore:             time.Now().Add(-25 * time.Hour),
 		NotAfter:              time.Now().Add(365 * 24 * time.Hour), // 1 year
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
@@ -245,32 +257,27 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any
 	// ── Build MSO ────────────────────────────────────────────────
 	//
 	// The validity timestamps are coarsened to midnight UTC rather than stamped
-	// with the wallclock. Proof-of-age attestations are single-use and issued in
-	// batches precisely so a holder cannot be followed between relying parties,
-	// and a per-second timestamp defeats that on its own: every attestation in a
-	// batch would carry a distinct validUntil, which is as good a correlator as
-	// the credential it is trying to protect. The AV profile therefore has the
-	// provider "set timestamps in the ValidityInfo structure with a precision
-	// that limits the linkability information, following the ISO/IEC 18013-5
-	// recommendation by setting the hh, mm and ss information to the same value
-	// on each Proof of Age Attestation" (Annex A). The EU reference issuer does
-	// the same for batch credentials — see is_batch_credential in its
-	// formatter_func.py, which replaces hour/minute/second with zero.
+	// with the wallclock. Single-use credentials are issued in batches precisely
+	// so a holder cannot be followed between relying parties, and a per-second
+	// timestamp defeats that on its own: every credential in a batch would carry a
+	// distinct validUntil, which is as good a correlator as the credential it is
+	// trying to protect. The EU reference issuer does the same for batch
+	// credentials — see is_batch_credential in its formatter_func.py, which
+	// replaces hour/minute/second with zero.
 	//
-	// Coarsening downwards also keeps validFrom in the past, so a credential is
-	// never briefly not-yet-valid against a verifier whose clock trails ours.
-	now := time.Now().UTC().Truncate(24 * time.Hour)
+	// Whether to coarsen, and for how long the credential stays valid, are the
+	// docType's business rather than this function's: 9.1.2.4 recommends
+	// coarsening for any mdoc while the AV Blueprint makes it a SHALL, and only
+	// AV puts a ceiling on the validity period. Both live in profile.go so the
+	// clause each answers to stays attached to it.
+	profile := profileFor(docType)
 	mso := MSO{
 		Version:         "1.0",
 		DigestAlgorithm: "SHA-256",
 		ValueDigests:    map[string]map[uint64][]byte{namespace: valueDigests},
 		DocType:         docType,
-		ValidityInfo: ValidityInfo{
-			Signed:     now,
-			ValidFrom:  now,
-			ValidUntil: now.Add(90 * 24 * time.Hour),
-		},
-		DeviceKeyInfo: DeviceKeyInfo{DeviceKey: deviceKey},
+		ValidityInfo:    profile.issuedValidityInfo(time.Now()),
+		DeviceKeyInfo:   DeviceKeyInfo{DeviceKey: deviceKey},
 	}
 
 	// MSO travels as Tag24(CBOR(MSO)) inside issuerAuth's payload — per ISO
@@ -278,7 +285,7 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any
 	// MobileSecurityObject), and directly confirmed by the AV Blueprint's
 	// own worked example (Annex A §A.11 shows "24(<<{...}>>)" for the MSO
 	// payload, not a bare map).
-	msoBytes, err := tag24WrapWithMode(mso, avTimeEncMode)
+	msoBytes, err := tag24WrapWithMode(mso, tdateEncMode)
 	if err != nil {
 		return nil, fmt.Errorf("wrap mso: %w", err)
 	}

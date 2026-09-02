@@ -43,12 +43,12 @@ keeps the tools that answer a question a test cannot — `mdoc-decode` and
 | CBOR encoding | ✓ | shortest-form deterministic, fxamacker/cbor |
 | Tag-24 wrapping | ✓ | freezes bytes before hashing |
 | Per-item random value (salt) | ✓ | 16 bytes from `crypto/rand`, one per item. ISO/IEC 18013-5 puts the floor at 16; `Issue` sits on it, and both a compile-time assertion and a runtime check in `Issue` reject anything shorter. The salt is what stops a verifier brute-forcing an undisclosed boolean claim, since the digest of every item travels whether or not the item does. Enforced on receipt as well — see "Short-salt rejection" below |
-| SHA-256 valueDigests | ✓ | `hash(Tag24(CBOR(item)))` per item |
+| SHA-256 valueDigests | ✓ | `hash(Tag24(CBOR(item)))` per item. SHA-256 is this issuer's choice of the three 9.1.2.5 permits; verification follows whatever the MSO declares |
 | Randomized digest-ID assignment | ✓ | claim order is cryptographically shuffled before digestID assignment (not sorted) — prevents a verifier inferring undisclosed claims' relative order from a disclosed claim's digestID, matching Multipaz's `MdocUtil.generateIssuerNameSpaces` |
 | MSO construction | ✓ | version, digestAlgorithm, valueDigests, docType, validityInfo, deviceKeyInfo |
 | `deviceKeyInfo` in MSO | ✓ | holder's public key embedded at issuance, COSEKey uses `keyasint` (real CBOR int keys per RFC 9053) |
 | `MobileSecurityObjectBytes`/`DeviceAuthenticationBytes` framing | ✓ | issuerAuth's and deviceAuth's payloads are each Tag24-wrapped as a whole (`24(<<{...}>>)`), not just the individual items inside them — confirmed against the AV Blueprint's own §A.11 worked example (MSO) and Multipaz's `MdocDocument.kt` signing code (DeviceAuthentication) |
-| COSE_Sign1 issuerAuth | ✓ | ES256, x5chain (header 33) carries DS + IACA cert when this package mints it, and is read as whatever an issuer sends — the DS alone is legal, and the missing CA then comes from the trust model. Written as the bare four-element array ISO 18013-5 specifies, not go-cose's tag-18 `COSE_Sign1_Tagged`; `decodeCoseSign1` reads either, since the tag is outside `Sig_structure` |
+| COSE_Sign1 issuerAuth | ✓ | ES256 when this package mints (see "Crypto suite" for what it accepts), x5chain (header 33) carries DS + IACA cert when this package mints it, and is read as whatever an issuer sends — the DS alone is legal, and the missing CA then comes from the trust model. Written as the bare four-element array ISO 18013-5 specifies, not go-cose's tag-18 `COSE_Sign1_Tagged`; `decodeCoseSign1` reads either, since the tag is outside `Sig_structure` |
 | ISO wire shape at every CBOR position | ✓ | `issuerAuth`/`deviceSignature` inline COSE arrays, `IssuerSignedItemBytes` and `deviceSigned.nameSpaces` bare `#6.24(bstr)`. A Go `[]byte` field encodes as a byte string *wrapping* the value, and a one-field struct as a map keyed by the Go field name — both round-trip against this package and no other implementation, so `wireformat_test.go` decodes a real `DeviceResponse` generically (into `any`) and asserts each position |
 | Two-level certificate chain | ✓ | IACA root CA → DS cert, real x509 chain walk |
 | Chain attack rejection | ✓ | untrusted root rejected before signature check |
@@ -70,6 +70,15 @@ keeps the tools that answer a question a test cannot — `mdoc-decode` and
 | Real OpenID4VP `SessionTranscript`/`Handover` | ✓ | now built in `eudi/openid4vp/mdoc_dcql` (production code), not in this package — `["OpenID4VPHandover", SHA-256(CBOR([clientId, nonce, jwkThumbprint, responseUri]))]`, the redirect variant of OpenID4VP Annex B.2.6.1, matching Multipaz's `OpenID4VP.kt`. `jwkThumbprint` is the SHA-256 JWK thumbprint of the verifier's response encryption key, and CBOR null when the response is unencrypted — which is the AV Blueprint's `response_mode=direct_post` case, so that profile produces the null form. A request delivered through the W3C Digital Credentials API signs the other variant, `["OpenID4VPDCAPIHandover", SHA-256(CBOR([origin, nonce, jwkThumbprint]))]` (Annex B.2.6.2), built alongside it in the same file. Which one applies follows the transport the request arrived on, never the shape of the values |
 | OpenID4VCI `pre-authorized_code` issuance | ✓ | wired for real through `eudi/openid4vci` (generic) + `eudi/services/credential_format_parser_mdoc.go` (mdoc-specific parsing/verification) — not modeled in this package |
 | OpenID4VCI `authorization_code` grant | ✓ | inherited for free — `eudi/openid4vci` already implements it generically for every format |
+| Profile separation (AV vs general mdoc) | ✓ | `profile.go` is the only file that knows a docType by name. `eu.europa.ec.av.1` gets the Blueprint's closed attribute set (`age_over_NN` only — "A Proof of Age Attestation SHALL NOT include any other attribute") and no holder-asserted claims; every other docType gets plain 18013-5, which restricts neither. Until this existed the AV rules ran against every docType, so a conformant mDL carrying `family_name` or a legitimately key-authorized device-signed element was rejected, and rejected as though the presentation were untrustworthy rather than as a policy decision |
+| `keyAuthorizations` (9.1.3.4) | ✓ | for a general docType, holder-asserted elements in `deviceSigned.nameSpaces` are permitted exactly as far as the MSO's `keyAuthorizations` reaches — whole-namespace grants included — and refused element-by-element otherwise. Modelled on `DeviceKeyInfo` as `omitempty` so the encoded, signed bytes of a credential without them are unchanged |
+| Algorithm agility | ✓ | `alg` is read from the COSE protected header and the verifier built for it, gated on 18013-5's four. The header is inside `Sig_structure`, so this is not a relaxation — the allow-list is what keeps go-cose's RSA-PSS support unreachable. See "Crypto suite" |
+| Digest agility | ✓ | `digestAlgorithm` is read from the MSO and resolved through Table 21; anything else is refused by name. Resolved once per document, since 9.1.2.5 requires one algorithm for every element |
+| Strict CBOR decoding | ✓ | `mdocDecMode` rejects duplicate map keys, per 8.1's "maps shall not have multiple entries with the same key". fxamacker's default keeps the last silently, which lets two implementations decode the same signed bytes to different documents. Exported as `mdoc.Unmarshal` so the callers that decode an envelope themselves get the same rules |
+| Duplicate `elementIdentifier` rejection | ✓ | 8.3.2.1.2.2 forbids two `IssuerSignedItem`s with the same identifier in one namespace. Both can carry valid digests, so nothing cryptographic catches it and the later one silently won — for a boolean profile, that decided `age_over_18` by encoder ordering |
+| MSO `version` check | ✓ | major version must be 1. A higher one is a structure with fields this code has no definition for, and decoding drops what it does not recognise |
+| Every disclosed namespace verified | ✓ | `Verify` checks digests for every namespace present, not only the one asked about — 9.3.1 step 3 is unqualified. Previously a document could carry an uncovered namespace and still return `Valid` |
+| Document signer revocation | ✓ | `NewVerifierFromTrustSource` takes anchors and CRLs from one source, and every certificate in the verified chain is checked. A signer is refused only when *every* valid chain to an anchor contains a revoked certificate, matching RFC 5280 path semantics. Until this existed the trust model synced CRLs that only the SD-JWT `x5c` path consulted. **Operational caveat:** staging's CRLs have not been republished since 2025-10-02, so on that environment this checks ~11-month-old data — see "Known gaps" |
 | Session encryption (BLE/NFC) | ✗ | transport layer not built; also explicitly out of scope for the AV Blueprint (proximity presentation is excluded — see Annex A §A.6) |
 | W3C Digital Credentials API path (`DeviceRequest`, HPKE `EncryptedResponse`) | ✗ | out of scope for this package by design — see "OpenID4VP only" below |
 
@@ -110,11 +119,11 @@ monolithic test file:
 | `mdoc_test.go` | `TestDeviceSignedOmittedWhenNilPresentWhenAttached` | `deviceSigned,omitempty` actually omits the key pre-presentation and includes it only after `AttachDeviceSigned` |
 | `crypto_test.go` | `TestCOSEKeyUsesIntegerMapKeys` | Decodes the real MSO bytes generically and asserts `deviceKey`'s map keys are actual CBOR integers — regression test for the `keyasint` struct-tag fix |
 | `crypto_test.go` | `TestTag24WrapUnwrapRoundTrip` | `tag24Unwrap` is the exact inverse of `tag24Wrap` — wrapped bytes carry a real CBOR tag 24, and the round-tripped value matches the original |
-| `crypto_test.go` | `TestTag24WrapWithModeUsesGivenEncMode` | `tag24WrapWithMode`'s inner payload is encoded with the `EncMode` actually passed in (using `avTimeEncMode`'s RFC3339 tagging as the observable difference), not `cbor.Marshal`'s default mode |
+| `crypto_test.go` | `TestTag24WrapWithModeUsesGivenEncMode` | `tag24WrapWithMode`'s inner payload is encoded with the `EncMode` actually passed in (using `tdateEncMode`'s RFC3339 tagging as the observable difference), not `cbor.Marshal`'s default mode |
 | `crypto_test.go` | `TestValidityInfoUsesRFC3339Tag` | Confirms `signed`/`validFrom`/`validUntil` are CBOR tag-0 RFC3339 strings, matching the AV Blueprint's own worked example, not a bare Unix epoch integer |
 | `wireformat_test.go` | `TestDeviceAuthPayloadIsDetached` | Transmitted `deviceAuth` has `payload = null` (detached), matching the spec's `deviceSignature` example |
 | `holder_signer_test.go` | `TestOpaqueSignerProducesVerifiableDeviceAuth` | A device key reached only through `crypto.Signer` — no method returns the private half, as with a StrongBox / Secure Enclave key handle — produces a `deviceAuth` the verifier accepts, and is called exactly once with a 32-byte digest and nil `SignerOpts`, pinning the contract a hardware wrapper must honour |
-| `holder_signer_test.go` | `TestNewHolderFromSignerRejectsNonP256` | A P-384 device key is refused at construction, where the error can name the curve, rather than at signing time where it yields a wrong-width signature the verifier rejects for no stated reason |
+| `holder_signer_test.go` | `TestNewHolderFromSignerCurves` | P-256, P-384 and P-521 are accepted and each paired with the algorithm 9.1.3.6 fixes for it; a curve outside that table (P-224) is refused at construction, where the error can name the curve, rather than at signing time where it yields a wrong-width signature the verifier rejects for no stated reason |
 | `issuer_test.go` | `TestClaimOrderingIsRandomized` | Issues the same claims 30 times, confirms `digestID` assignment varies across issuances (not a fixed/predictable order) while every claim stays reachable via its digestID |
 | `issuer_test.go` | `TestIssueAcceptsArbitraryDocTypeAndClaims` | `Issue()` signs any docType/namespace/claims combination as given (age verification, PID, mDL, email) — pins the doc-type-agnostic contract described under "Data model" |
 | `verifier_test.go` | `TestUntrustedRootIsRejected` | Attacker's own valid IACA→DS chain, signed correctly, still rejected — root isn't in the verifier's trust pool |
@@ -144,6 +153,19 @@ monolithic test file:
 | `verifier_trustmodel_test.go` | `TestVerifierUsesPinnedIntermediates` | A three-level PKI (root → intermediate CA → DS) whose `x5chain` carries the document signer alone verifies when the intermediate comes from the trust model. This is the shape of every real deployment and of Yivi's staging PKI, and nothing else in this package covers it — every other test signs under a self-signed IACA one level shallower |
 | `verifier_trustmodel_test.go` | `TestVerifierRejectsUnbridgeableChain` | The same credential against `Roots` alone is refused, and the refusal carries the document signer's subject, issuer and serial — the bare x509 error cannot tell an unpinned CA from one a level deeper, and those are different defects with different owners |
 | `verifier_trustmodel_test.go` | `TestVerifierReadsAnchorsPerVerification` | Anchors appearing after construction take effect, and anchors dropped stop being honoured. The second direction is the one that matters: a wallet must not keep accepting staging-issued credentials after developer mode is switched back off |
+| `verifier_strictness_test.go` | `TestDuplicateCBORMapKeyIsRejected` | An `IssuerSignedItem` carrying two `elementValue` entries â byte-identical to what the MSO commits to, so the digest matches and the signature is untouched. Under fxamacker's default it decoded to whichever entry won and verified clean, which lets two implementations read the same signed bytes differently |
+| `verifier_strictness_test.go` | `TestDuplicateElementIdentifierIsRejected` | Two genuinely signed items with the same identifier and different digestIDs. Every cryptographic check passes; only the structural rule catches it |
+| `verifier_strictness_test.go` | `TestMSOVersionMustBeMajorOne` | `1.0` and `1.1` accepted, `2.0`/`0.9`/empty refused by name |
+| `verifier_strictness_test.go` | `TestVerifyCoversEveryNamespacePresent` | A namespace the MSO does not cover is refused even when the caller asked about a different one |
+| `verifier_strictness_test.go` | `TestSelectiveDiscloseRefusesEmptyResult` | Disclosing nothing errors rather than emitting a namespace mapped to CBOR null |
+| `profile_test.go` | `TestClosedAttributeSetAppliesToAVOnly` | `nationality` under `eu.europa.ec.av.1` is refused and named; the same element under a general docType passes untouched. The twin is the point â a check that only ever runs against AV documents cannot show it stays off for the rest |
+| `profile_test.go` | `TestGeneralProfileAllowsHolderAssertedClaims` | 9.1.3.4 both ways: authorized by namespace, authorized by element, no authorizations at all, authorized for a different element, and AV refusing regardless of what the issuer authorized |
+| `profile_test.go` | `TestKeyAuthorizationsRoundTripDoesNotChangeSignedBytes` | `DeviceKeyInfo` still encodes as a one-entry map. If the new optional fields ever started emitting, every issued credential's MSO digest would change |
+| `profile_test.go` | `TestRevokedDocumentSignerIsRefused` | Unrelated CRL does not reject; the signer's own revocation does and names the certificate; no CRLs is a no-op; options-only verifiers still skip revocation |
+| `agility_test.go` | `TestIssuerAuthAlgorithmAgility` | Complete credentials signed ES256/ES384/ES512 on their matching curves, each a real chain and a real signature |
+| `agility_test.go` | `TestDigestAlgorithmAgility` | SHA-256, SHA-384 and SHA-512 end to end; an identifier outside Table 21 refused by name |
+| `agility_test.go` | `TestDeviceKeyCurveAgility` | Coordinate widths asserted per curve â the assertion that would have caught the silent P-384 truncation â plus brainpool refused by identifier and an OKP key refused by name |
+| `agility_test.go` | `TestDeviceAuthOnEveryCurve` | A device key on each curve signs a presentation the verifier accepts, algorithm resolved from the curve independently on both sides |
 | `wireformat_test.go` | `TestAttachDeviceSignedRoundTrips` | `AttachDeviceSigned` populates `MDoc.DeviceSigned` with the exact deviceAuth bytes passed in, and returns a copy — the original mdoc is left untouched |
 | `verifier_test.go` | `TestVerifyDeviceResponseSucceeds` | Full flow through the real `DeviceResponse` container (`AttachDeviceSigned` → `NewDeviceResponse` → `VerifyDeviceResponse`) produces the same result as calling `VerifyWithDeviceAuth` directly |
 | `verifier_test.go` | `TestVerifyDeviceResponseRejectsMissingDeviceSigned` | A document without `DeviceSigned` attached is rejected with a descriptive error, not a nil-dereference panic |
@@ -335,7 +357,7 @@ no longer stands in the way.
 
 ## Crypto suite
 
-Matches EU AV Blueprint Annex A §A.7:
+What this package **mints** is the AV Blueprint's Annex A §A.7 suite:
 
 ```
 Key type:   P-256 (secp256r1)
@@ -343,8 +365,37 @@ Algorithm:  ES256 (ECDSA + P-256 + SHA-256), COSE alg id = -7
 Hash:       SHA-256
 Encoding:   CBOR (RFC 8949), deterministic shortest-form
 Signing:    COSE_Sign1 (RFC 9052)
-COSE keys:  integer map keys per RFC 9053 (kty=1, crv=-1, x=-2, y=-3)
+COSE keys:  integer map keys per RFC 9053 (labels kty=1, crv=-1, x=-2, y=-3)
 ```
+
+What it **accepts** is wider, and deliberately so. ISO/IEC 18013-5 9.1.2.4 obliges
+a reader to support every algorithm an issuer is allowed to choose — "For verifying
+the signature, the mdoc reader shall support all of these signature algorithms and
+curves" — and the AV Blueprint narrows none of that: it specifies the doctype, the
+attribute set and the timestamp handling, and defers cryptography to 18013-5. A
+verifier that only accepted what this issuer happens to emit would reject
+conformant credentials from anyone else.
+
+| | Accepted on verification | Source |
+|---|---|---|
+| Signature algorithm | ES256, ES384, ES512, EdDSA | read from the COSE protected header, gated on `mdocSignatureAlgorithms` |
+| Signing curve | P-256, P-384, P-521 | follows the algorithm |
+| Device key curve | P-256, P-384, P-521 | `coseCurves`; each paired with its algorithm per 9.1.3.6 |
+| Digest | SHA-256, SHA-384, SHA-512 | read from the MSO's `digestAlgorithm`, gated on `digestFuncFor` (Table 21) |
+
+Two Table 22 curves are still out, both for stated reasons rather than oversight:
+**Ed25519/Ed448** are OKP keys, so admitting one as a *device* key means widening
+`VerificationResult.DeviceKey` from `*ecdsa.PublicKey` to `crypto.PublicKey` and
+following that through the device-key binder; **brainpool** is absent from the Go
+standard library entirely, so literal conformance to "support for all curves is
+mandatory" needs a third-party curve implementation in the verification path.
+EdDSA therefore sits in an asymmetric position, deliberately: the mdoc verifier
+accepts it, because an Ed25519 *document signer* takes its key from an X.509
+certificate and verifies fine — but it is absent from `eudi/openid4vci`'s
+`mdocVerifiableSigningAlgorithms`, so an offer advertising it is declined at
+metadata validation. That is the honest answer while an Ed25519 *device* key
+cannot be rebuilt: accepting the offer would fetch and store a credential that
+fails at first presentation.
 
 ---
 
@@ -429,6 +480,82 @@ mdocs itself, the check belongs in that issuance path, not in `Issue()`.
 ---
 
 ## Known gaps vs real mDoc
+
+### Open ISO/IEC 18013-5 conformance items
+
+Four, as of the 2 Sept 2026 conformance review. Three are blocked on a certificate
+change at the Yivi CA rather than on code here.
+
+**9.3.1 step 5, first bullet — `signed` is not checked against the DS certificate's
+validity window.** The other two bullets (`validFrom`, `validUntil`) are checked.
+
+There is a real conflict between two clauses here, but it is narrower than it first
+looks and it is worth stating precisely. 9.1.2.4 asks for the ValidityInfo
+timestamps to be coarsened for unlinkability and the AV Blueprint makes that a
+SHALL, so `signed` is midnight UTC of the day a credential is minted. The DS
+certificate's `notBefore` is a wallclock instant. `signed` therefore precedes
+`notBefore` **only for credentials minted on the DS certificate's own issuance UTC
+day** — from the next day onward `signed` is midnight of a later day and sits
+comfortably inside the window.
+
+Measured on staging: `notBefore = 2026-08-26 11:02:17Z`, so a credential minted on
+2026-09-02 carries `signed = 2026-09-02T00:00:00Z` and passes. The check would have
+passed there every day since 2026-08-27.
+
+An earlier version of this note claimed the check rejects every credential. That was
+an artifact of measuring against `NewIssuer`, which mints a DS certificate seconds
+before using it and so is *always* on its own issuance day — a property no real
+issuer has. `NewIssuer` now backdates past the coarsening boundary (see its
+`NotBefore` comment), which removes the fixture-side blocker entirely.
+
+What remains is a one-day footgun rather than a standing failure: reissue a DS
+certificate and mint a credential the same day, and it fails. That is exactly the
+sequence a CA change runs, so enabling this check is deliberately deferred until the
+staging EKU reissue has landed. Asking the CA to backdate `notBefore` by ≥24h
+removes the window permanently and is still worth doing; it is low severity and
+self-healing, not blocking.
+
+**9.3.3 — the IACA/DS `countryName` and `stateOrProvinceName` equality steps are not
+implemented.** Note this is now only a code gap: the staging chain was measured and
+carries `C=NL` on the DS, the Attestation Providers CA and the Requestors Root CA
+alike, so the check would pass once written. The test fixtures are what block it —
+`NewIssuer` mints subjects with only CN and O, so there is nothing to assert against.
+
+**Table 22 — brainpool and Ed25519/Ed448 device keys are unsupported.** See "Crypto
+suite" for why each, and what admitting them would cost.
+
+**Annex B.1.4 — the DS certificate's `keyUsage` is not checked.** The profile makes
+`digitalSignature` the only permitted bit; the mdoc path checks the *extended* key
+usage and not this one, while `eudi/jwt`'s `VerifyCertificate` does the opposite.
+
+Two further items are held rather than open, both one-line changes deliberately not
+made while the staging cluster is under investigation for an unrelated certificate
+defect: `indefLengthMode` in `crypto.go` (8.1's definite-length rule, enforced on
+receipt) and the `keyUsage` check above. A new decode or certificate failure
+appearing on staging right now would be attributed to the wrong cause.
+
+### Revocation data can be stale without saying so
+
+The verifier checks the chain against whatever CRLs the trust model holds, and has
+no opinion about how old they are. On staging, measured 2 Sept 2026, the
+Attestation Providers CA CRL had `nextUpdate` 2025-10-02 and the Requestors Root CA
+CRL 2025-11-06 — both roughly eleven months expired, and the current DS certificate
+postdates its own CRL by eleven months, so it could not appear on it even if it had
+been revoked. `isCrlUpToDate` (`eudi/trustmodel.go`) correctly reports both as
+out of date, which makes every sync re-download them; nothing then refuses to *use*
+the stale copy. "We check revocation" is therefore a weaker statement on that
+environment than it sounds, and the remedy is republication at the CA, not code
+here. Worth deciding separately whether an expired CRL should be a refusal, a
+warning, or the current silence.
+
+### Timestamp coarsening leaves microseconds intact upstream
+
+The EU reference issuer coarsens batch credentials with
+`.replace(hour=0, minute=0, second=0)`, which does not zero microseconds — so
+`signed` is `00:00:00.<micros>Z` and differs per credential within a batch. Harmless
+for the `notBefore` comparison above, but it is a per-credential correlator in
+exactly the field the coarsening exists to neutralise. This package's own `Issue`
+truncates to a whole day and is unaffected; the finding is upstream.
 
 ### OpenID4VP only — ISO 18013-5's own DC API wire format is out of scope by design
 

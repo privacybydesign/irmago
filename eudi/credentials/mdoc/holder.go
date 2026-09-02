@@ -81,10 +81,10 @@ func NewHolderFromPrivateKey(deviceKey *ecdsa.PrivateKey) (*DefaultHolder, error
 //     the raw r||s COSE form itself. Android Keystore's "SHA256withECDSA"
 //     already returns DER, so it fits without conversion.
 //
-// The curve is checked here rather than left to signing time: ES256 is the only
-// algorithm ISO 18013-5 device authentication uses in this package, and a signer
-// on any other curve would otherwise produce a signature of the wrong width that
-// fails at the verifier with nothing naming the cause.
+// The curve is checked here rather than left to signing time: 9.1.3.6 pairs each
+// curve with exactly one algorithm (see deviceAuthAlgorithmFor), and a signer on
+// a curve outside that table would otherwise produce a signature the verifier
+// rejects with nothing naming the cause.
 func NewHolderFromSigner(signer crypto.Signer) (*DefaultHolder, error) {
 	if signer == nil {
 		return nil, fmt.Errorf("device key signer is nil")
@@ -93,10 +93,38 @@ func NewHolderFromSigner(signer crypto.Signer) (*DefaultHolder, error) {
 	if !ok {
 		return nil, fmt.Errorf("device key must be ECDSA, got %T", signer.Public())
 	}
-	if pub.Curve != elliptic.P256() {
-		return nil, fmt.Errorf("device key must be on P-256 for ES256 device authentication, got %s", pub.Curve.Params().Name)
+	if _, err := deviceAuthAlgorithmFor(pub.Curve); err != nil {
+		return nil, err
 	}
 	return &DefaultHolder{signer: signer, pub: pub}, nil
+}
+
+// deviceAuthAlgorithmFor pairs a device key's curve with the COSE algorithm
+// ISO/IEC 18013-5 9.1.3.6 requires with it: "ES256 shall be used with curves
+// P-256 [...] ES384 shall be used with curves P-384 [...] ES512 shall be used
+// with curves P-521".
+//
+// The pairing is not a free choice, which is why it is resolved from the curve
+// rather than passed in. Signing with a mismatched algorithm is not caught by
+// go-cose — cose.NewSigner(AlgorithmES256, aP384Key) succeeds — so the wrong
+// pairing produces a signature that transmits fine and fails at the verifier
+// with nothing naming the cause.
+//
+// Ed25519 and Ed448 are absent for the reason given on coseCurves: an
+// ed25519.PublicKey is not an *ecdsa.PublicKey, and admitting one means widening
+// this type and the device-key binder.
+func deviceAuthAlgorithmFor(curve elliptic.Curve) (cose.Algorithm, error) {
+	switch curve {
+	case elliptic.P256():
+		return cose.AlgorithmES256, nil
+	case elliptic.P384():
+		return cose.AlgorithmES384, nil
+	case elliptic.P521():
+		return cose.AlgorithmES512, nil
+	}
+	return 0, fmt.Errorf(
+		"device key is on %s; ISO/IEC 18013-5 device authentication in this package supports P-256, P-384 and P-521",
+		curve.Params().Name)
 }
 
 // PublicKey returns the holder's device public key — the only part of the
@@ -137,11 +165,15 @@ func (h *DefaultHolder) SignDeviceAuth(docType string, transcript SessionTranscr
 		return nil, fmt.Errorf("wrap deviceAuthentication: %w", err)
 	}
 
-	// Sign with the device key — uses the same ES256 (ECDSA P-256 + SHA-256) as
-	// issuerAuth but with a completely separate key pair (holder's device key,
-	// not issuer's DS key). go-cose takes a crypto.Signer, so a hardware-backed
-	// signer needs nothing extra here.
-	signer, err := cose.NewSigner(cose.AlgorithmES256, h.signer)
+	// Sign with the device key — a completely separate key pair from the issuer's
+	// DS key. The algorithm follows the key's curve per 9.1.3.6 rather than being
+	// fixed at ES256; see deviceAuthAlgorithmFor. go-cose takes a crypto.Signer,
+	// so a hardware-backed signer needs nothing extra here.
+	algorithm, err := deviceAuthAlgorithmFor(h.pub.Curve)
+	if err != nil {
+		return nil, err
+	}
+	signer, err := cose.NewSigner(algorithm, h.signer)
 	if err != nil {
 		return nil, fmt.Errorf("create device signer: %w", err)
 	}
@@ -150,7 +182,7 @@ func (h *DefaultHolder) SignDeviceAuth(docType string, transcript SessionTranscr
 	// DeviceSignature is a bare COSE_Sign1 array, not COSE_Sign1_Tagged.
 	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers,
 		Payload: payload}
-	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
+	msg.Headers.Protected.SetAlgorithm(algorithm)
 	// unprotected headers intentionally empty — no cert in deviceAuth
 	// trust comes from deviceKey being embedded in the already-trusted MSO
 

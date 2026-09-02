@@ -147,12 +147,12 @@ func decodeIssuedMdoc(encoded []byte) (*mdoc.MDoc, error) {
 	// Document first: it carries the envelope docType, which the verifier binds
 	// to the signed one.
 	var doc mdoc.MDoc
-	if err := cbor.Unmarshal(encoded, &doc); err == nil && len(doc.IssuerSigned.IssuerAuth) > 0 {
+	if err := mdoc.Unmarshal(encoded, &doc); err == nil && len(doc.IssuerSigned.IssuerAuth) > 0 {
 		return &doc, nil
 	}
 
 	var resp mdoc.DeviceResponse
-	if err := cbor.Unmarshal(encoded, &resp); err == nil && len(resp.Documents) > 0 {
+	if err := mdoc.Unmarshal(encoded, &resp); err == nil && len(resp.Documents) > 0 {
 		if len(resp.Documents) > 1 {
 			return nil, fmt.Errorf("mdoc credential holds %d documents; expected exactly one", len(resp.Documents))
 		}
@@ -166,7 +166,7 @@ func decodeIssuedMdoc(encoded []byte) (*mdoc.MDoc, error) {
 	// the MSO the issuer signed. Leaving it empty would fail the verifier's
 	// docType check against a value the issuer never sent.
 	var issuerSigned mdoc.IssuerSigned
-	if err := cbor.Unmarshal(encoded, &issuerSigned); err == nil && len(issuerSigned.IssuerAuth) > 0 {
+	if err := mdoc.Unmarshal(encoded, &issuerSigned); err == nil && len(issuerSigned.IssuerAuth) > 0 {
 		docType, err := mdoc.DocTypeFromIssuerAuth(issuerSigned.IssuerAuth)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read docType from issuerAuth: %w", err)

@@ -10,6 +10,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	cose "github.com/veraison/go-cose"
 )
 
 // ============================================================
@@ -117,17 +119,48 @@ func TestOpaqueSignerProducesVerifiableDeviceAuth(t *testing.T) {
 	}
 }
 
-// TestNewHolderFromSignerRejectsNonP256 keeps the wrong-curve failure at
-// construction. Left to signing time it produces a signature of the wrong
-// width, which fails at the verifier with nothing naming the cause.
-func TestNewHolderFromSignerRejectsNonP256(t *testing.T) {
-	_, err := NewHolderFromSigner(newOpaqueSigner(t, elliptic.P384()))
-	if err == nil {
-		t.Fatal("a P-384 device key was accepted for ES256 device authentication")
+// TestNewHolderFromSignerCurves keeps the wrong-curve failure at construction.
+// Left to signing time it produces a signature the verifier rejects with nothing
+// naming the cause — and go-cose does not catch it, since
+// cose.NewSigner(AlgorithmES256, aP384Key) succeeds.
+//
+// The accepted set is the three NIST curves 9.1.3.6 pairs with ES256, ES384 and
+// ES512. It was P-256 alone until the reader gained algorithm agility; a device
+// key on P-384 is conformant and there is no longer any reason to refuse one.
+func TestNewHolderFromSignerCurves(t *testing.T) {
+	for _, curve := range []elliptic.Curve{elliptic.P256(), elliptic.P384(), elliptic.P521()} {
+		t.Run("accepts "+curve.Params().Name, func(t *testing.T) {
+			holder, err := NewHolderFromSigner(newOpaqueSigner(t, curve))
+			if err != nil {
+				t.Fatalf("ISO/IEC 18013-5 9.1.3.6 pairs %s with an ES algorithm; it must be accepted: %v",
+					curve.Params().Name, err)
+			}
+			// The algorithm is not a free choice — the clause fixes one per curve.
+			alg, err := deviceAuthAlgorithmFor(holder.PublicKey().Curve)
+			if err != nil {
+				t.Fatalf("no algorithm for an accepted curve: %v", err)
+			}
+			want := map[string]cose.Algorithm{
+				"P-256": cose.AlgorithmES256,
+				"P-384": cose.AlgorithmES384,
+				"P-521": cose.AlgorithmES512,
+			}[curve.Params().Name]
+			if alg != want {
+				t.Errorf("%s paired with %v, want %v", curve.Params().Name, alg, want)
+			}
+		})
 	}
-	if !strings.Contains(err.Error(), "P-256") {
-		t.Errorf("error was %q, want it to name the required curve", err)
-	}
+
+	t.Run("refuses a curve outside the table", func(t *testing.T) {
+		// P-224 is a real curve that 18013-5 does not list for cipher suite 1.
+		_, err := NewHolderFromSigner(newOpaqueSigner(t, elliptic.P224()))
+		if err == nil {
+			t.Fatal("a P-224 device key was accepted; it has no ISO/IEC 18013-5 algorithm pairing")
+		}
+		if !strings.Contains(err.Error(), "P-224") {
+			t.Errorf("error was %q, want it to name the offending curve", err)
+		}
+	})
 }
 
 func TestNewHolderFromSignerRejectsNonECDSA(t *testing.T) {

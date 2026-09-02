@@ -1,6 +1,7 @@
 package mdoc
 
 import (
+	"crypto/sha256"
 	"crypto/x509"
 	"testing"
 
@@ -86,4 +87,12 @@ func unwrapTag24Generic(t *testing.T, data []byte) []byte {
 		t.Fatalf("unwrap tag24 inner bytes: %v", err)
 	}
 	return inner
+}
+
+// sha256Digest is the digest function tests pass to verifyNamespaceDigests, which
+// now takes it from the MSO's declared digestAlgorithm rather than assuming it.
+// Every fixture in this package declares "SHA-256".
+func sha256Digest(b []byte) []byte {
+	sum := sha256.Sum256(b)
+	return sum[:]
 }

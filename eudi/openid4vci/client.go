@@ -105,7 +105,7 @@ func newCredentialFormatParsers(
 	return services.CredentialFormatParsers{
 		models.CredentialFormatSdJwtVc: services.NewSdJwtVcCredentialFormatParser(holderVerifier),
 		models.CredentialFormatMsoMdoc: services.NewMdocCredentialFormatParser(
-			mdoc.NewVerifierFromOptions(config.Issuers.GetVerificationOptionsTemplate),
+			mdoc.NewVerifierFromTrustSource(&config.Issuers),
 		),
 	}
 }

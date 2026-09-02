@@ -34,8 +34,39 @@ type IssuerSignedItem struct {
 
 // DeviceKeyInfo wraps the holder's device public key inside the MSO
 // The issuer embeds this at issuance — locks in which device can present this credential
+//
+// KeyAuthorizations and KeyInfo are optional in ISO/IEC 18013-5 9.1.2.4 and are
+// carried here so a document that has them can be verified, not so this issuer
+// can emit them: both are omitempty and left nil by Issue, which keeps the
+// encoded — and therefore signed — DeviceKeyInfo byte-identical to before they
+// were modelled. Dropping them from the struct instead meant the verifier
+// silently discarded keyAuthorizations at decode and then had nothing to check
+// holder-asserted elements against, which is half of why those elements were
+// refused for every docType.
 type DeviceKeyInfo struct {
-	DeviceKey COSEKey `cbor:"deviceKey"`
+	DeviceKey         COSEKey            `cbor:"deviceKey"`
+	KeyAuthorizations *KeyAuthorizations `cbor:"keyAuthorizations,omitempty"`
+	KeyInfo           map[int64]any      `cbor:"keyInfo,omitempty"`
+}
+
+// KeyAuthorizations names what the device key is allowed to assert on the
+// holder's behalf, per ISO/IEC 18013-5 9.1.2.4:
+//
+//	KeyAuthorizations = { ? "nameSpaces" : AuthorizedNameSpaces,
+//	                      ? "dataElements" : AuthorizedDataElements }
+//
+// A namespace listed in NameSpaces authorizes everything under it, and the
+// clause forbids that namespace also appearing in DataElements.
+type KeyAuthorizations struct {
+	NameSpaces   []string            `cbor:"nameSpaces,omitempty"`
+	DataElements map[string][]string `cbor:"dataElements,omitempty"`
+}
+
+// isEmpty reports the case 9.1.2.4 forbids an issuer from producing ("If the
+// KeyAuthorizations map is present, it shall not be empty") and which a verifier
+// therefore has to treat as authorizing nothing.
+func (k *KeyAuthorizations) isEmpty() bool {
+	return k == nil || (len(k.NameSpaces) == 0 && len(k.DataElements) == 0)
 }
 
 // MSO (Mobile Security Object) is the signed data structure inside issuerAuth
@@ -99,14 +130,14 @@ func (t Tag24Item) MarshalCBOR() ([]byte, error) {
 // verifying only that this really is a tag 24 wrapping a byte string.
 func (t *Tag24Item) UnmarshalCBOR(data []byte) error {
 	var rawTag cbor.RawTag
-	if err := cbor.Unmarshal(data, &rawTag); err != nil {
+	if err := mdocDecMode.Unmarshal(data, &rawTag); err != nil {
 		return fmt.Errorf("mdoc: issuerSignedItem is not tag-24 embedded CBOR: %w", err)
 	}
 	if rawTag.Number != 24 {
 		return fmt.Errorf("mdoc: issuerSignedItem has CBOR tag %d, want 24", rawTag.Number)
 	}
 	var inner []byte
-	if err := cbor.Unmarshal(rawTag.Content, &inner); err != nil {
+	if err := mdocDecMode.Unmarshal(rawTag.Content, &inner); err != nil {
 		return fmt.Errorf("mdoc: tag-24 issuerSignedItem does not wrap a byte string: %w", err)
 	}
 	t.EncodedItem = append([]byte(nil), data...)
@@ -170,21 +201,38 @@ func SelectiveDisclose(mdoc *MDoc, namespace string, reveal []string) (*MDoc, er
 	for _, tag24item := range allItems {
 		// decode Tag-24 wrapped item to peek at the elementIdentifier
 		var rawTag cbor.RawTag
-		if err := cbor.Unmarshal(tag24item.EncodedItem, &rawTag); err != nil {
+		if err := mdocDecMode.Unmarshal(tag24item.EncodedItem, &rawTag); err != nil {
 			return nil, fmt.Errorf("unwrap tag24: %w", err)
 		}
 		var innerBytes []byte
-		if err := cbor.Unmarshal(rawTag.Content, &innerBytes); err != nil {
+		if err := mdocDecMode.Unmarshal(rawTag.Content, &innerBytes); err != nil {
 			return nil, fmt.Errorf("unwrap inner bytes: %w", err)
 		}
 		var item IssuerSignedItem
-		if err := cbor.Unmarshal(innerBytes, &item); err != nil {
+		if err := mdocDecMode.Unmarshal(innerBytes, &item); err != nil {
 			return nil, fmt.Errorf("decode item: %w", err)
 		}
 
 		if revealSet[item.ElementIdentifier] {
 			disclosed = append(disclosed, tag24item)
 		}
+	}
+
+	// ISO 18013-5 has `IssuerNameSpaces = {+ NameSpace => [+ IssuerSignedItemBytes]}`
+	// — a namespace key must map to at least one item. A nil slice here encodes as
+	// CBOR null under a present namespace key, which is neither an array nor an
+	// absent namespace, and no conformant verifier can read it.
+	//
+	// Erroring rather than dropping the namespace, for the reason
+	// selectiveDiscloseByPaths gives: a presentation quietly missing what the user
+	// consented to disclose is indistinguishable downstream from a verifier that
+	// asked for less. Unreachable through the DCQL handler, which refuses an empty
+	// claim set up front — this is the guard for direct callers of the exported
+	// function.
+	if len(disclosed) == 0 {
+		return nil, fmt.Errorf(
+			"selective disclosure of namespace %q revealed no elements: none of %v is present in the credential",
+			namespace, reveal)
 	}
 
 	return &MDoc{
