@@ -334,7 +334,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 					ClaimPath:   []any{atType.ID},
 					DisplayName: name,
 					Description: description,
-					Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
+					Value:       buildAttributeValue(atType.DisplayHint, &rawVal, locale),
 				})
 			}
 
@@ -401,7 +401,7 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 				ClaimPath:   []any{atType.ID},
 				DisplayName: name,
 				Description: description,
-				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
+				Value:       buildAttributeValue(atType.DisplayHint, &rawVal, locale),
 			})
 		}
 
@@ -448,7 +448,7 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 				ClaimPath:   []any{atType.ID},
 				DisplayName: name,
 				Description: description,
-				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
+				Value:       buildAttributeValue(atType.DisplayHint, &rawVal, locale),
 			})
 		}
 
@@ -501,7 +501,7 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 				ClaimPath:   []any{atType.ID},
 				DisplayName: name,
 				Description: description,
-				Value:       buildAttributeValue(atType.DisplayHint, &irmaVal),
+				Value:       buildAttributeValue(atType.DisplayHint, &irmaVal, locale),
 			})
 		}
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
@@ -60,7 +61,7 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	// TODO: we'll need to figure out if/how we want to authorize on attribute level when we're dealing with a non-Yivi issued certificate. For now, we only support that functionality for Yivi issued certificates, and we authorize all attribute for certificates issued by third parties.
 
 	if authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil {
-		requestorInfo.Organization.LegalName = map[string]string{"en": *authRequest.ClientMetadata.ClientName}
+		requestorInfo.Organization.LegalName = map[string]string{clientmodels.DefaultFallbackLanguage: *authRequest.ClientMetadata.ClientName}
 
 		if authRequest.ClientMetadata.LogoUri != nil {
 			logoData, mimeType, err := helpers.DownloadRemoteImage(context.Background(), common.HTTPClient, *authRequest.ClientMetadata.LogoUri)
@@ -85,7 +86,7 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 			return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
 		}
 	} else {
-		requestorInfo.Organization.LegalName = map[string]string{"en": leafCert.Subject.CommonName}
+		requestorInfo.Organization.LegalName = map[string]string{clientmodels.DefaultFallbackLanguage: leafCert.Subject.CommonName}
 	}
 
 	return &authRequest, leafCert, requestorInfo, nil

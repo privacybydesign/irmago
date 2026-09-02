@@ -2,6 +2,8 @@
 	<Name>
 		<en>Demo Email address</en>
 		<nl>Demo E-mailadres</nl>
+		<fr>Demo Adresse e-mail</fr>
+		<de>Demo E-Mail-Adresse</de>
 	</Name>
 	<SchemeManager>test</SchemeManager>
 	<IssuerID>test</IssuerID>
@@ -9,6 +11,8 @@
 	<Description>
 		<en>Your verified email address</en>
 		<nl>Uw geverifiëerde e-mailadres</nl>
+		<fr>Votre adresse e-mail vérifiée</fr>
+		<de>Ihre verifizierte E-Mail-Adresse</de>
 	</Description>
 	<IssueURL><en></en><nl></nl></IssueURL>
 	<ShouldBeSingleton>false</ShouldBeSingleton>
@@ -18,10 +22,14 @@
 			<Name>
 				<en>Email address</en>
 				<nl>E-mailadres</nl>
+				<fr>Adresse e-mail</fr>
+				<de>E-Mail-Adresse</de>
 			</Name>
 			<Description>
 				<en>Your verified email address</en>
 				<nl>Uw geverifiëerde e-mailadres</nl>
+				<fr>Votre adresse e-mail vérifiée</fr>
+				<de>Ihre verifizierte E-Mail-Adresse</de>
 			</Description>
 		</Attribute>
 	</Attributes>

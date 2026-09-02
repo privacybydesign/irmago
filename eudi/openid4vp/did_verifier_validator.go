@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
@@ -95,7 +96,7 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 	}
 
 	requestorInfo := &scheme.RelyingPartyRequestor{}
-	requestorInfo.Organization.LegalName = map[string]string{"en": displayName}
+	requestorInfo.Organization.LegalName = map[string]string{clientmodels.DefaultFallbackLanguage: displayName}
 
 	// We don't validate credential queries using queryValidator.ValidateCredentialQueries(..) on purpose here, because we have no external requestorInfo containing authorized attributes
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -74,7 +75,10 @@ func convertConDisCon(cdc AttributeConDisCon, labels map[int]TranslatedString) (
 			}
 			l.Attributes = append(l.Attributes, AttributeRequest{Type: con[0].Type, Value: con[0].Value})
 		}
-		l.Label = labels[i]["en"]
+		// A legacy request carries one untranslated label, so resolve to the
+		// default language rather than dropping labels that were only written
+		// in another one.
+		l.Label = labels[i].Resolve(clientmodels.DefaultFallbackLanguage)
 		if l.Label == "" {
 			l.Label = l.Attributes[0].Type.Name()
 		}
@@ -94,6 +98,10 @@ func convertDisjunctions(disjunctions []LegacyLabeledDisjunction) (
 		for _, attr := range dis.Attributes {
 			condiscon[i] = append(condiscon[i], AttributeCon{{Type: attr.Type, Value: attr.Value}})
 		}
+		// Legacy labels are untranslated; this en/nl shape is part of the
+		// converted request's wire format (pinned by TestSessionRequests), so
+		// it is not widened to other languages. Readers resolve it through the
+		// fallback chain, which lands on "en" for any other locale.
 		labels[i] = TranslatedString{"en": dis.Label, "nl": dis.Label}
 	}
 

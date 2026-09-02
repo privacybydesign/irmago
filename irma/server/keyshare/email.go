@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/irma/server"
 )
@@ -64,9 +65,13 @@ func ParseEmailTemplates(files, subjects map[string]string, defaultLanguage stri
 	return templates, nil
 }
 
+// TranslateString picks the entry of strings for the user's language: the exact
+// tag, then its base language (so a wallet reporting "fr-BE" still gets the "fr"
+// text), then the configured default language. Only the last step is logged: an
+// operator who configured "fr" should not see a warning for every Belgian French
+// user.
 func (conf EmailConfiguration) TranslateString(strings map[string]string, lang string) string {
-	s, ok := strings[lang]
-	if ok {
+	if s, ok := clientmodels.PickLanguage(strings, lang); ok {
 		return s
 	}
 	server.Logger.WithField("lang", common.SanitizeForLog(lang)).
@@ -74,9 +79,10 @@ func (conf EmailConfiguration) TranslateString(strings map[string]string, lang s
 	return strings[conf.DefaultLanguage]
 }
 
+// translateTemplate picks the template for the user's language with the same
+// chain as TranslateString.
 func (conf EmailConfiguration) translateTemplate(templates map[string]*template.Template, lang string) *template.Template {
-	t, ok := templates[lang]
-	if ok {
+	if t, ok := clientmodels.PickLanguage(templates, lang); ok {
 		return t
 	}
 	server.Logger.WithField("lang", common.SanitizeForLog(lang)).

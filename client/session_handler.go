@@ -343,11 +343,8 @@ func createDisclosureChoicesOverview(
 								Type: clientmodels.AttributeType_String,
 							}
 							if attr.Value != nil {
-								if v, ok := attr.Value["en"]; ok {
-									requestedValue.String = &v
-								} else if v, ok := attr.Value[""]; ok {
-									requestedValue.String = &v
-								}
+								v := attr.Value.Resolve(locale)
+								requestedValue.String = &v
 							}
 							choiceTemplates[id].Attributes[i].RequestedValue = requestedValue
 							break
@@ -380,11 +377,8 @@ func createDisclosureChoicesOverview(
 					requestedValue := &clientmodels.AttributeValue{
 						Type: clientmodels.AttributeType_String,
 					}
-					if v, ok := attr.Value["en"]; ok {
-						requestedValue.String = &v
-					} else if v, ok := attr.Value[""]; ok {
-						requestedValue.String = &v
-					}
+					v := attr.Value.Resolve(locale)
+					requestedValue.String = &v
 					val.RequestedValue = requestedValue
 				}
 

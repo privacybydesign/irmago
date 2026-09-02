@@ -170,3 +170,33 @@ func TestParseEmailAddressRejectsHeaderInjection(t *testing.T) {
 	require.NotContains(t, parsed.Address, "\r")
 	require.NotContains(t, parsed.Address, "\n")
 }
+
+// TestTranslateString_FallsBackByBaseLanguage pins the chain a user's language
+// is matched against the configured templates: a wallet reporting "fr-BE" gets
+// the French text, an unconfigured language the default.
+func TestTranslateString_FallsBackByBaseLanguage(t *testing.T) {
+	conf := EmailConfiguration{DefaultLanguage: "nl"}
+	strings := map[string]string{"en": "English", "nl": "Nederlands", "fr": "Français", "de": "Deutsch"}
+
+	require.Equal(t, "Français", conf.TranslateString(strings, "fr"))
+	require.Equal(t, "Français", conf.TranslateString(strings, "fr-BE"))
+	require.Equal(t, "Deutsch", conf.TranslateString(strings, "de-AT"))
+	require.Equal(t, "Nederlands", conf.TranslateString(strings, "pt"), "unknown language falls back to the configured default, not to English")
+}
+
+func TestTranslateTemplate_FallsBackByBaseLanguage(t *testing.T) {
+	testdataPath := test.FindTestdataFolder(t)
+	conf := EmailConfiguration{DefaultLanguage: "en"}
+	templ, err := ParseEmailTemplates(
+		map[string]string{
+			"en": filepath.Join(testdataPath, "emailtemplate.html"),
+			"fr": filepath.Join(testdataPath, "emailtemplate.html"),
+		},
+		map[string]string{"en": "subject", "fr": "sujet"},
+		conf.DefaultLanguage,
+	)
+	require.NoError(t, err)
+
+	require.Same(t, templ["fr"], conf.translateTemplate(templ, "fr-CA"))
+	require.Same(t, templ["en"], conf.translateTemplate(templ, "de"), "configured default")
+}
