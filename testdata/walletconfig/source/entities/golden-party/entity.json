@@ -1,0 +1,12 @@
+{
+  "name": { "en": "Golden Party", "nl": "Gouden Partij" },
+  "roles": ["issuer", "verifier"],
+  "trust_level": "high",
+  "logo": { "url": "https://assets.golden.example/party.png", "file": "party.png" },
+  "handles": [
+    { "type": "did", "did": "did:web:party.golden.example" }
+  ],
+  "constraints": {
+    "issuance": { "allowed_credentials": ["https://golden.example/vct/email"] }
+  }
+}

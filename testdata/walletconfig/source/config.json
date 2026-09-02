@@ -1,0 +1,11 @@
+{
+  "id": "yivi-golden",
+  "environment": "golden",
+  "version": 1,
+  "next_update_days": 30,
+  "grace_period_days": 7,
+  "minimum_app_build": 100,
+  "policy": {
+    "minimum_trust_level": { "issuance": "low", "disclosure": "medium" }
+  }
+}

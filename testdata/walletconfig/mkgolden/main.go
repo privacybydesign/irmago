@@ -1,5 +1,7 @@
-// Command mkgolden regenerates testdata/walletconfig/golden: a signed wallet
-// config, the certificates that verify it, and a readable copy of its payload.
+// Command mkgolden regenerates testdata/walletconfig/golden — a signed wallet
+// config, the certificates that verify it, and a readable copy of its payload —
+// and testdata/walletconfig/source, the curation directory `yivi eudi config
+// build` compiles into that same payload.
 //
 //	go run ./testdata/walletconfig/mkgolden
 //
@@ -66,6 +68,7 @@ func main() {
 			Issuance:   clientmodels.TrustLevel_Low,
 			Disclosure: clientmodels.TrustLevel_Medium,
 		}},
+		// In entity-id order, which is how `config build` orders a curation directory.
 		TrustedEntities: []walletconfig.TrustedEntity{
 			{
 				ID:         "golden-issuer-ca",
@@ -80,6 +83,20 @@ func main() {
 				}},
 			},
 			{
+				ID:         "golden-party",
+				Name:       clientmodels.TranslatedString{"en": "Golden Party", "nl": "Gouden Partij"},
+				Logo:       &walletconfig.Logo{URL: "https://assets.golden.example/party.png", Digest: "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="},
+				Roles:      []walletconfig.Role{walletconfig.RoleIssuer, walletconfig.RoleVerifier},
+				TrustLevel: clientmodels.TrustLevel_High,
+				Handles: []walletconfig.Handle{{
+					Type: walletconfig.HandleTypeDID,
+					DID:  "did:web:party.golden.example",
+				}},
+				Constraints: &walletconfig.Constraints{
+					Issuance: &walletconfig.IssuanceConstraint{AllowedCredentials: []string{"https://golden.example/vct/email"}},
+				},
+			},
+			{
 				ID:         "golden-verifier",
 				Name:       clientmodels.TranslatedString{"en": "Golden Verifier"},
 				Roles:      []walletconfig.Role{walletconfig.RoleVerifier},
@@ -92,20 +109,6 @@ func main() {
 					Disclosure: &walletconfig.DisclosureConstraint{AllowedQueries: []walletconfig.AllowedQuery{
 						{Credential: "https://golden.example/vct/email", Attributes: []string{"email"}},
 					}},
-				},
-			},
-			{
-				ID:         "golden-party",
-				Name:       clientmodels.TranslatedString{"en": "Golden Party", "nl": "Gouden Partij"},
-				Logo:       &walletconfig.Logo{URL: "https://assets.golden.example/party.png", Digest: "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="},
-				Roles:      []walletconfig.Role{walletconfig.RoleIssuer, walletconfig.RoleVerifier},
-				TrustLevel: clientmodels.TrustLevel_High,
-				Handles: []walletconfig.Handle{{
-					Type: walletconfig.HandleTypeDID,
-					DID:  "did:web:party.golden.example",
-				}},
-				Constraints: &walletconfig.Constraints{
-					Issuance: &walletconfig.IssuanceConstraint{AllowedCredentials: []string{"https://golden.example/vct/email"}},
 				},
 			},
 		},
@@ -131,6 +134,86 @@ func main() {
 	write("intermediate.crt", pemOf(intermediate))
 	write("signer.crt", pemOf(signer))
 	fmt.Printf("wrote %s\n", out)
+
+	writeSource(filepath.Join("testdata", "walletconfig", "source"), issuerRoot, issuerCA, verifier)
+}
+
+// writeSource writes the curation directory that builds the golden payload: the
+// worked example an operator copies, and the fixture the CLI tests compile.
+func writeSource(dir string, issuerRoot, issuerCA, verifier *x509.Certificate) {
+	entities := filepath.Join(dir, "entities")
+	for _, sub := range []string{"golden-issuer-ca", "golden-verifier", "golden-party"} {
+		if err := os.MkdirAll(filepath.Join(entities, sub), 0o755); err != nil {
+			log.Fatal(err)
+		}
+	}
+	write := func(name string, data []byte) {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			log.Fatal(err)
+		}
+	}
+	write("config.json", []byte(`{
+  "id": "yivi-golden",
+  "environment": "golden",
+  "version": 1,
+  "next_update_days": 30,
+  "grace_period_days": 7,
+  "minimum_app_build": 100,
+  "policy": {
+    "minimum_trust_level": { "issuance": "low", "disclosure": "medium" }
+  }
+}
+`))
+	write("entities/golden-issuer-ca/entity.json", []byte(`{
+  "name": { "en": "Golden Issuers", "nl": "Gouden Uitgevers" },
+  "roles": ["issuer"],
+  "trust_level": "high",
+  "handles": [
+    {
+      "type": "x509_ca",
+      "root_certificate": "root.crt",
+      "intermediates": ["issuing-ca.crt"],
+      "crl_distribution_points": ["https://crl.golden.example/root.crl"]
+    }
+  ]
+}
+`))
+	write("entities/golden-issuer-ca/root.crt", pemOf(issuerRoot))
+	write("entities/golden-issuer-ca/issuing-ca.crt", pemOf(issuerCA))
+	write("entities/golden-verifier/entity.json", []byte(`{
+  "name": { "en": "Golden Verifier" },
+  "roles": ["verifier"],
+  "trust_level": "medium",
+  "handles": [
+    { "type": "x509_cert", "certificate": "verifier.crt" }
+  ],
+  "constraints": {
+    "disclosure": {
+      "allowed_queries": [
+        { "credential": "https://golden.example/vct/email", "attributes": ["email"] }
+      ]
+    }
+  }
+}
+`))
+	write("entities/golden-verifier/verifier.crt", pemOf(verifier))
+	write("entities/golden-party/entity.json", []byte(`{
+  "name": { "en": "Golden Party", "nl": "Gouden Partij" },
+  "roles": ["issuer", "verifier"],
+  "trust_level": "high",
+  "logo": { "url": "https://assets.golden.example/party.png", "file": "party.png" },
+  "handles": [
+    { "type": "did", "did": "did:web:party.golden.example" }
+  ],
+  "constraints": {
+    "issuance": { "allowed_credentials": ["https://golden.example/vct/email"] }
+  }
+}
+`))
+	// The golden payload's logo digest is the SHA-256 of the empty string, so the
+	// example's logo file is empty: `build` computes the digest from it.
+	write("entities/golden-party/party.png", []byte{})
+	fmt.Printf("wrote %s\n", dir)
 }
 
 func ca(commonName string, parent *x509.Certificate, parentKey *ecdsa.PrivateKey, years int) (*ecdsa.PrivateKey, *x509.Certificate) {

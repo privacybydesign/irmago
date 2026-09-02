@@ -27,43 +27,15 @@
       "handles": [
         {
           "type": "x509_ca",
-          "root_certificate": "MIIBszCCAVmgAwIBAgIJAKQ+cGCOblvbMAoGCCqGSM49BAMCMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwIBcNMjYwOTAxMDAwMDAwWhgPMjA1NjA5MDEwMDAwMDBaMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATSiFeYAfdm+WoXLuH3wE6AVE/WZucfHPQ/zFT9PrEymciO41QCVFXUJgkkWghFaBYbwDtllPwj0KCbJbaceky/o0IwQDAOBgNVHQ8BAf8EBAMCAQYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUCSNmruyhnBEbLrFWUrUWHMjp4D8wCgYIKoZIzj0EAwIDSAAwRQIhANGfKKrBMSRw2HnUARSzKot2+h/TqX7bMhvFfcCZGsmdAiA8pyoNHa8TFx2k4I0Pr8lTuG4w5inksE9Oe3/Fadh5Jw==",
+          "root_certificate": "MIIBszCCAVmgAwIBAgIJAKZ3yvq7V6rZMAoGCCqGSM49BAMCMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwIBcNMjYwOTAxMDAwMDAwWhgPMjA1NjA5MDEwMDAwMDBaMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAS1xahBsKGW5GZfCvSKFxvKLkW9+5pg5w/XtvkQDKmUPuGFcPVDsMkyZ5OYtinl+RNHitFgttSTcyar+MFMiPYho0IwQDAOBgNVHQ8BAf8EBAMCAQYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUJYAjzhf399A7bi0brrZpbM91VOEwCgYIKoZIzj0EAwIDSAAwRQIhAO+i5oRt+EffPtgq6bTrGgg4EK8rbdxpxNc1RmaDaTr1AiAsEkBKCr8amJx9ABhHe4ITHZpsqVUVGaFw7jni+TMsbQ==",
           "intermediates": [
-            "MIIBzTCCAXOgAwIBAgIJAKF7Jm4I6CYzMAoGCCqGSM49BAMCMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwHhcNMjYwOTAxMDAwMDAwWhcNNDYwOTAxMDAwMDAwWjA3MQswCQYDVQQGEwJOTDENMAsGA1UEChMEWWl2aTEZMBcGA1UEAxMQR29sZGVuIElzc3VlciBDQTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABIEv2tk09dnP24EHUmVhraRroRDB6V74odLyj80t6RERgeDyrOyOi/Fx4E3eWLaL4gA2tDngYCoxAkfTrLssiUejYzBhMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBSgKSuoBKy9hBEkYBeKKNy+AHGRVDAfBgNVHSMEGDAWgBQJI2au7KGcERsusVZStRYcyOngPzAKBggqhkjOPQQDAgNIADBFAiBugSSkWvxr5eT1HyQI6EEGqsYSLxAlsHWJu+mBTfW40QIhANj2vasV4urONZNf5jqm06poWGQNNn8SugRQmKjuV71d"
+            "MIIBzjCCAXOgAwIBAgIJAK8/o/BFL574MAoGCCqGSM49BAMCMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwHhcNMjYwOTAxMDAwMDAwWhcNNDYwOTAxMDAwMDAwWjA3MQswCQYDVQQGEwJOTDENMAsGA1UEChMEWWl2aTEZMBcGA1UEAxMQR29sZGVuIElzc3VlciBDQTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABNc/dkVQbrhAIZSy3WoTDLwX0h/DjAZtJHr/OlqCdJOnxoMB/mxAq2MFJ7ViyeBJNMu6B0aysrpl/2X/im2fBo2jYzBhMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBT6w2IHFSyj3tKUtE+ppYi5UZt3JjAfBgNVHSMEGDAWgBQlgCPOF/f30DtuLRuutmlsz3VU4TAKBggqhkjOPQQDAgNJADBGAiEAhsZGi8UMkSHX6z3796txwITU4Pi48YBT5IvsiwlPEl8CIQDKqXn1CB24sApAwtCor2pfCRNSY264XXF5HSZy+fi++A=="
           ],
           "crl_distribution_points": [
             "https://crl.golden.example/root.crl"
           ]
         }
       ]
-    },
-    {
-      "id": "golden-verifier",
-      "name": {
-        "en": "Golden Verifier"
-      },
-      "roles": [
-        "verifier"
-      ],
-      "trust_level": "medium",
-      "handles": [
-        {
-          "type": "x509_cert",
-          "certificate": "MIIB8TCCAZegAwIBAgIIabdmjju/3yIwCgYIKoZIzj0EAwIwNzELMAkGA1UEBhMCTkwxDTALBgNVBAoTBFlpdmkxGTAXBgNVBAMTEEdvbGRlbiBJc3N1ZXIgQ0EwHhcNMjYwOTAxMDAwMDAwWhcNMzYwOTAxMDAwMDAwWjA+MQswCQYDVQQGEwJOTDENMAsGA1UEChMEWWl2aTEgMB4GA1UEAxMXdmVyaWZpZXIuZ29sZGVuLmV4YW1wbGUwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARey6oX3QXrOknmLzAGt31ib7dzSRdEsZ+KITdIQ+YL23rzEpxfNqLWdp7k/4C1VuNPp7eRQAcugcMX8h3/Zvt4o4GFMIGCMA4GA1UdDwEB/wQEAwIHgDAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBTwuGf8yIkCpXmzIsUVA8L0HktMtjAfBgNVHSMEGDAWgBSgKSuoBKy9hBEkYBeKKNy+AHGRVDAiBgNVHREEGzAZghd2ZXJpZmllci5nb2xkZW4uZXhhbXBsZTAKBggqhkjOPQQDAgNIADBFAiBXFlFog9nDkIGUPhgN+Dc2+VDEAZQF5DZ9MZ1h1hjv8QIhAJ1BmrIK8sMIvo+mJvtE9lxXFE110VI7JRVGCpG8k0aQ"
-        }
-      ],
-      "constraints": {
-        "disclosure": {
-          "allowed_queries": [
-            {
-              "credential": "https://golden.example/vct/email",
-              "attributes": [
-                "email"
-              ]
-            }
-          ]
-        }
-      }
     },
     {
       "id": "golden-party",
@@ -90,6 +62,34 @@
         "issuance": {
           "allowed_credentials": [
             "https://golden.example/vct/email"
+          ]
+        }
+      }
+    },
+    {
+      "id": "golden-verifier",
+      "name": {
+        "en": "Golden Verifier"
+      },
+      "roles": [
+        "verifier"
+      ],
+      "trust_level": "medium",
+      "handles": [
+        {
+          "type": "x509_cert",
+          "certificate": "MIIB8DCCAZegAwIBAgIIAodk2VCKwqswCgYIKoZIzj0EAwIwNzELMAkGA1UEBhMCTkwxDTALBgNVBAoTBFlpdmkxGTAXBgNVBAMTEEdvbGRlbiBJc3N1ZXIgQ0EwHhcNMjYwOTAxMDAwMDAwWhcNMzYwOTAxMDAwMDAwWjA+MQswCQYDVQQGEwJOTDENMAsGA1UEChMEWWl2aTEgMB4GA1UEAxMXdmVyaWZpZXIuZ29sZGVuLmV4YW1wbGUwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASbj4DKHMmh71NsIqIqoaRzGzRyggrHRAY2iE0eU2pQGJphuKvpd54sDfvQqW+mMsO9Cgz1STbj1stnacIjdfwNo4GFMIGCMA4GA1UdDwEB/wQEAwIHgDAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBTfgKp3y6OpxVO2VJlII3TZ5vV1HjAfBgNVHSMEGDAWgBT6w2IHFSyj3tKUtE+ppYi5UZt3JjAiBgNVHREEGzAZghd2ZXJpZmllci5nb2xkZW4uZXhhbXBsZTAKBggqhkjOPQQDAgNHADBEAiBTU4fkoSxjDgHCDa1e47hSmkn4LqCTwi0w7w3BgGUkOwIgYeWeHAzdXN0/Y5Elh5nknX4EcMgZ+/gPWl81h+J7Zb8="
+        }
+      ],
+      "constraints": {
+        "disclosure": {
+          "allowed_queries": [
+            {
+              "credential": "https://golden.example/vct/email",
+              "attributes": [
+                "email"
+              ]
+            }
           ]
         }
       }

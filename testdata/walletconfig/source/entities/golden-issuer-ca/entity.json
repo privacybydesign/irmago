@@ -1,0 +1,13 @@
+{
+  "name": { "en": "Golden Issuers", "nl": "Gouden Uitgevers" },
+  "roles": ["issuer"],
+  "trust_level": "high",
+  "handles": [
+    {
+      "type": "x509_ca",
+      "root_certificate": "root.crt",
+      "intermediates": ["issuing-ca.crt"],
+      "crl_distribution_points": ["https://crl.golden.example/root.crl"]
+    }
+  ]
+}

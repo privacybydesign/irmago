@@ -93,7 +93,15 @@ func TestGolden_VerifiesAndParses(t *testing.T) {
 	require.Equal(t, []string{"https://crl.golden.example/root.crl"}, ca.Handles[0].CRLDistributionPoints)
 	require.Nil(t, ca.Constraints)
 
-	verifier := config.TrustedEntities[1]
+	party := config.TrustedEntities[1]
+	require.Equal(t, "golden-party", party.ID)
+	require.Equal(t, []Role{RoleIssuer, RoleVerifier}, party.Roles)
+	require.Equal(t, "https://assets.golden.example/party.png", party.Logo.URL)
+	require.Equal(t, HandleTypeDID, party.Handles[0].Type)
+	require.Equal(t, "did:web:party.golden.example", party.Handles[0].DID)
+	require.Equal(t, []string{"https://golden.example/vct/email"}, party.Constraints.Issuance.AllowedCredentials)
+
+	verifier := config.TrustedEntities[2]
 	require.Equal(t, "golden-verifier", verifier.ID)
 	require.Equal(t, []Role{RoleVerifier}, verifier.Roles)
 	require.Equal(t, clientmodels.TrustLevel_Medium, verifier.TrustLevel)
@@ -103,14 +111,6 @@ func TestGolden_VerifiesAndParses(t *testing.T) {
 	require.Equal(t, []AllowedQuery{{Credential: "https://golden.example/vct/email", Attributes: []string{"email"}}},
 		verifier.Constraints.Disclosure.AllowedQueries)
 	require.Nil(t, verifier.Constraints.Issuance)
-
-	party := config.TrustedEntities[2]
-	require.Equal(t, "golden-party", party.ID)
-	require.Equal(t, []Role{RoleIssuer, RoleVerifier}, party.Roles)
-	require.Equal(t, "https://assets.golden.example/party.png", party.Logo.URL)
-	require.Equal(t, HandleTypeDID, party.Handles[0].Type)
-	require.Equal(t, "did:web:party.golden.example", party.Handles[0].DID)
-	require.Equal(t, []string{"https://golden.example/vct/email"}, party.Constraints.Issuance.AllowedCredentials)
 
 	require.Equal(t, "yivi-golden-config-signer", verified.Signer.Subject.CommonName)
 }

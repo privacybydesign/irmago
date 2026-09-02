@@ -1,0 +1,15 @@
+{
+  "name": { "en": "Golden Verifier" },
+  "roles": ["verifier"],
+  "trust_level": "medium",
+  "handles": [
+    { "type": "x509_cert", "certificate": "verifier.crt" }
+  ],
+  "constraints": {
+    "disclosure": {
+      "allowed_queries": [
+        { "credential": "https://golden.example/vct/email", "attributes": ["email"] }
+      ]
+    }
+  }
+}
