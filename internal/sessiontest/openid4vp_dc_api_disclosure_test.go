@@ -70,6 +70,11 @@ func testSessionHandlerForOpenID4VPOverDcApi(t *testing.T) {
 		"the dismisser cancels the session",
 		testDcApiDismisserCancelsSession,
 	)
+
+	runEudiSessionTest(t,
+		"scheme data names and constrains an anchored verifier",
+		testDcApiSchemeDataNamesAndConstrainsVerifier,
+	)
 }
 
 // testDcApiUnsignedDisclosure runs the happy path: an unsigned request with

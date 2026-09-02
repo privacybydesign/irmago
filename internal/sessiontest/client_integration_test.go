@@ -19,6 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/walletconfig"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -1246,14 +1247,52 @@ func createClientWithCustomIssuerTrustChain(
 }
 
 func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	return newTestClient(t, testClientOptions{IssuerChain: issuerChain, Locale: locale})
+}
+
+// testClientOptions is what a test decides about the wallet it builds. Every
+// zero value takes the default the other tests run with.
+type testClientOptions struct {
+	// IssuerChain is a PEM chain installed as an issuer anchor; nil installs the
+	// staging test issuer certificate.
+	IssuerChain []byte
+	Locale      string
+
+	// StoragePath reuses an existing wallet's storage, so a second wallet can be
+	// built over the first one's data: a restart. Empty builds a fresh one.
+	StoragePath string
+
+	// Environments are the wallet config environments the wallet is built with;
+	// nil takes the Yivi environments. Both "production" and "staging" must be
+	// present, since developer mode switches between them.
+	Environments []walletconfig.Environment
+	// AppBuild is the build the wallet reports for the minimum app build gate.
+	AppBuild int64
+	// WalletConfigRefreshInterval overrides the refresh throttle; tests that
+	// publish and refetch set it to something tiny.
+	WalletConfigRefreshInterval time.Duration
+
+	// ProductionMode leaves developer mode off, so the wallet stays in the
+	// production environment. Off by default: the other tests run in developer
+	// mode, which is the staging environment.
+	ProductionMode bool
+}
+
+func newTestClient(t *testing.T, opts testClientOptions) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
 	path := test.FindTestdataFolder(t)
-	storageFolder := test.CreateTestStorage(t)
-	storagePath := filepath.Join(storageFolder, "client")
+	storagePath := opts.StoragePath
+	if storagePath == "" {
+		storagePath = filepath.Join(test.CreateTestStorage(t), "client")
+	}
 	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
 	eudiAppDataPath := filepath.Join(storagePath, "eudi")
+	locale := opts.Locale
+	if locale == "" {
+		locale = "en"
+	}
 
 	// Copy files to storage folder
 	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
@@ -1266,8 +1305,8 @@ func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client
 	issuerCertsPath := filepath.Join(storagePath, "eudi", "issuers", "certificates")
 	require.NoError(t, common.EnsureDirectoryExists(issuerCertsPath))
 
-	if issuerChain != nil {
-		encIssuer, err := encMiddleware.Encrypt(issuerChain)
+	if opts.IssuerChain != nil {
+		encIssuer, err := encMiddleware.Encrypt(opts.IssuerChain)
 		require.NoError(t, err)
 		require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "integrationtest-chain.pem"), encIssuer))
 	} else {
@@ -1288,18 +1327,21 @@ func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
 	client, err := client.New(client.Config{
-		StoragePath:           storagePath,
-		IrmaConfigurationPath: irmaConfigurationPath,
-		EudiAppDataPath:       eudiAppDataPath,
-		Handler:               clientHandler,
-		SessionHandler:        sessionHandler,
-		Signer:                test.NewSigner(t),
-		AesKey:                aesKey,
-		Locale:                locale,
+		StoragePath:                 storagePath,
+		IrmaConfigurationPath:       irmaConfigurationPath,
+		EudiAppDataPath:             eudiAppDataPath,
+		Handler:                     clientHandler,
+		SessionHandler:              sessionHandler,
+		Signer:                      test.NewSigner(t),
+		AesKey:                      aesKey,
+		Locale:                      locale,
+		Environments:                opts.Environments,
+		AppBuild:                    opts.AppBuild,
+		WalletConfigRefreshInterval: opts.WalletConfigRefreshInterval,
 	})
 	require.NoError(t, err)
 
-	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
+	client.SetPreferences(clientsettings.Preferences{DeveloperMode: !opts.ProductionMode})
 	return client, clientHandler, sessionHandler
 }
 

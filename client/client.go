@@ -107,6 +107,11 @@ type Config struct {
 	// app build: below it, OpenID4VC sessions are refused with an "update
 	// required" error. Zero disables the gate.
 	AppBuild int64
+
+	// WalletConfigRefreshInterval is how long a fresh wallet config is left alone
+	// before RefreshWalletConfig fetches again. Zero takes the default of an
+	// hour; a staging build may want less.
+	WalletConfigRefreshInterval time.Duration
 }
 
 func New(cfg Config) (*Client, error) {
@@ -183,11 +188,12 @@ func New(cfg Config) (*Client, error) {
 	// path. Production to begin with; the persisted developer mode preference
 	// switches it to staging below, before the trust models are built.
 	walletConfig, err := walletconfig.NewManager(walletconfig.Options{
-		Environments: environments,
-		Active:       walletconfig.EnvironmentProduction,
-		Store:        db.NewWalletConfigStore(eudiStorage.Db()),
-		HTTPClient:   common.HTTPClient,
-		Logger:       eudi.Logger,
+		Environments:    environments,
+		Active:          walletconfig.EnvironmentProduction,
+		Store:           db.NewWalletConfigStore(eudiStorage.Db()),
+		HTTPClient:      common.HTTPClient,
+		Logger:          eudi.Logger,
+		RefreshInterval: cfg.WalletConfigRefreshInterval,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("wallet configuration: %w", err)
