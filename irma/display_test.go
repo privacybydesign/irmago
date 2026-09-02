@@ -44,3 +44,19 @@ func TestAttributeType_ResolveTexts_BundlesNameAndDescription(t *testing.T) {
 	assert.Equal(t, "Geboortedatum", *displayName)
 	assert.Nil(t, description, "bundled text must not mix languages")
 }
+
+// TestTranslatedString_Resolve pins that scheme text indexed through Resolve
+// follows the shared fallback chain for any language, so French and German
+// users see their translation when present and English otherwise — never an
+// empty string because a caller indexed the map with a literal "en".
+func TestTranslatedString_Resolve(t *testing.T) {
+	ts := TranslatedString{"en": "Email address", "nl": "E-mailadres", "fr": "Adresse e-mail", "de": "E-Mail-Adresse"}
+
+	assert.Equal(t, "Adresse e-mail", ts.Resolve("fr"))
+	assert.Equal(t, "Adresse e-mail", ts.Resolve("fr-BE"))
+	assert.Equal(t, "E-Mail-Adresse", ts.Resolve("de-CH"))
+	assert.Equal(t, "Email address", ts.Resolve("pt"), "untranslated language falls back to English")
+	assert.Equal(t, "Email address", ts.Resolve(""))
+
+	assert.Equal(t, "", TranslatedString(nil).Resolve("fr"))
+}

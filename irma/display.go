@@ -10,6 +10,14 @@ import "github.com/privacybydesign/irmago/common/clientmodels"
 // language is a product decision; keeping it in one place is what stops the
 // two paths from drifting apart.
 
+// Resolve returns the translation for the given locale following the fallback
+// chain of clientmodels.BundleLanguage: exact locale → base language → English
+// → raw ("") value → lowest remaining key. Use it instead of indexing the map
+// with a literal language, which silently returns "" for every other language.
+func (ts TranslatedString) Resolve(locale string) string {
+	return clientmodels.Resolve(clientmodels.TranslatedString(ts), locale)
+}
+
 // ResolveTexts resolves a credential type's name and category as one text
 // bundle: a single language for both fields, so a card never shows a Dutch
 // name above an English category. The issue URL is resolved independently —

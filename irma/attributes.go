@@ -10,6 +10,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 )
 
 const (
@@ -144,17 +145,11 @@ func (al *AttributeList) Strings() []TranslatedString {
 	return al.strings
 }
 
-// NewTranslatedString returns a TranslatedString containing the specified string for each supported language,
-// or nil when attr is nil.
+// NewTranslatedString wraps an untranslated value (an attribute value) in a
+// TranslatedString, or returns nil when attr is nil. See
+// clientmodels.NewTranslatedString for the shape and why it is what it is.
 func NewTranslatedString(attr *string) TranslatedString {
-	if attr == nil {
-		return nil
-	}
-	return map[string]string{
-		"":   *attr, // raw value
-		"en": *attr,
-		"nl": *attr,
-	}
+	return TranslatedString(clientmodels.NewTranslatedString(attr))
 }
 
 func decodeRandomBlind(attr *big.Int) *string {

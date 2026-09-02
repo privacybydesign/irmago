@@ -762,7 +762,7 @@ func (conf *Configuration) validateTranslations(file string, o any, langs []stri
 		if field.Type() == reflect.TypeFor[*TranslatedString]() {
 			tmp := field.Interface().(*TranslatedString)
 			if tmp == nil {
-				return
+				continue // optional text the scheme did not provide
 			}
 			val = *tmp
 		} else {

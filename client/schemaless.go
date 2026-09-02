@@ -155,10 +155,7 @@ func createCredentialDescriptor(
 					Type: clientmodels.AttributeType_String,
 				}
 				if at.Value != nil {
-					s := at.Value["en"]
-					if s == "" {
-						s = at.Value[""]
-					}
+					s := at.Value.Resolve(locale)
 					requestedValue.String = &s
 				}
 				dn, _ := a.ResolveTexts(locale)
@@ -304,7 +301,7 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 					ClaimPath:   []any{at.ID},
 					DisplayName: dn,
 					Description: description,
-					Value:       buildAttributeValue(at.DisplayHint, &attrValue),
+					Value:       buildAttributeValue(at.DisplayHint, &attrValue, locale),
 				})
 			}
 
@@ -417,17 +414,17 @@ func displayHintToAttributeType(s string) clientmodels.AttributeType {
 }
 
 // buildAttributeValue creates an AttributeValue with the value in the correct field
-// based on the attribute's display hint.
-func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString) *clientmodels.AttributeValue {
+// based on the attribute's display hint. Attribute values are untranslated today
+// (see irma.NewTranslatedString), but they are resolved through the locale
+// fallback chain like every other TranslatedString so a translated value, should
+// a scheme ever carry one, shows up in the user's language.
+func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString, locale string) *clientmodels.AttributeValue {
 	attrType := displayHintToAttributeType(displayHint)
 	val := &clientmodels.AttributeValue{Type: attrType}
 	if rawValue == nil {
 		return val
 	}
-	s := (*rawValue)["en"]
-	if s == "" {
-		s = (*rawValue)[""]
-	}
+	s := rawValue.Resolve(locale)
 	switch attrType {
 	case clientmodels.AttributeType_Base64Image:
 		val.Base64Image = &s

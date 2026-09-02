@@ -5,6 +5,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- User-facing text can be translated into any language, with French and German joining English and Dutch as the languages the project ships: `clientmodels.SupportedLanguages` is the one place that names them. The resolution chain (exact locale → base language → English → raw value) already accepted any BCP 47 tag, so a scheme, SD-JWT VC type metadata or keyshare email template translated into a new language needs no code change; the list drives the coverage report and documentation. See `docs/translations.md` for what has to be translated where.
+- `irma scheme translations [--lang fr,de] [--summary] [<path>]` reports how completely a scheme or `irma_configuration` folder is translated: per requested language a translated/total count, and the list of every scheme, issuer, credential type, attribute, requestor and issue wizard text that lacks it. Without `--lang` it checks the languages the schemes declare; with `--lang` it produces the to-do list for a language a scheme does not declare yet. Backed by `irma.Configuration.TranslationCoverage`.
+- `irma.TranslatedString.Resolve(locale)` resolves scheme text through the shared fallback chain, and `clientmodels.PickLanguage` matches a locale against language-keyed maps of arbitrary values such as parsed templates (exact tag, then base language); `clientmodels.IsSupportedLanguage` accepts a base language or a regional locale of one.
+- The `test` scheme in `testdata` carries French and German translations on the scheme itself and on the `email` credential type, as a worked example and as a fixture for locale tests.
+
+### Changed
+- Keyshare and MyIRMA server emails, subjects and URLs are picked for the user's language by exact tag, then base language, then `default_language`. A wallet reporting `fr-BE` now receives the configured `fr` template instead of the default one; the configured default still has the last word, and only the fallback to it is logged as a warning.
+- The requested attribute values and legacy request labels that were read from a `TranslatedString` with a literal `"en"` key are now resolved through the fallback chain with the wallet's locale, and the client's attribute-value builder takes the locale as well. Attribute values are untranslated so this changes nothing today; it removes the last places where a translation in any other language would have been ignored.
+
+### Fixed
+- Scheme translation validation stopped checking a credential type's remaining text fields as soon as it met an optional field the scheme left out (a nil `IssueURL` skipped `Category` and the FAQ texts). The absent field is now skipped and the rest are still checked.
 
 ## [1.3.1] - 2026-09-01
 ### Added

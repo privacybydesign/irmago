@@ -5,10 +5,14 @@
 	<Name>
 		<en>Test Scheme Manager</en>
 		<nl>Test scheme manager</nl>
+		<fr>Gestionnaire de schéma de test</fr>
+		<de>Test-Schema-Manager</de>
 	</Name>
 	<Description>
 		<en>A test scheme manager with a scheme manager.</en>
 		<nl>Een test-scheme manager met een keyshare server.</nl>
+		<fr>Un gestionnaire de schéma de test avec un serveur keyshare.</fr>
+		<de>Ein Test-Schema-Manager mit einem Keyshare-Server.</de>
 	</Description>
 	<KeyshareServer>http://localhost:8080</KeyshareServer>
 	<KeyshareWebsite>http://localhost:8081</KeyshareWebsite>

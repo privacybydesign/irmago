@@ -9,8 +9,6 @@ import (
 	"strings"
 )
 
-const DefaultFallbackLanguage = "en"
-
 // TranslatedString is a map from language code to translated text.
 type TranslatedString map[string]string
 
@@ -316,15 +314,23 @@ type SelectableCredentialInstance struct {
 	IssueURL *string `json:"issue_url"`
 }
 
-// NewTranslatedString returns a TranslatedString containing the specified string for each supported language,
-// or nil when attr is nil.
+// NewTranslatedString wraps an untranslated value — an attribute value, a
+// hostname — in a TranslatedString, or returns nil when value is nil.
+//
+// The value is stored under the raw ("") key, which is where the fallback chain
+// of BundleLanguage finds it for any locale. The "en" and "nl" aliases are kept
+// only because they are part of the wire format of disclosed attributes and
+// consumers have read them since before the fallback chain existed. They are
+// deliberately not extended to every entry of SupportedLanguages: a value such
+// as a base64 photo would then be sent once per language, and resolution does
+// not need them — Resolve(NewTranslatedString(v), "fr") already yields v.
 func NewTranslatedString(value *string) TranslatedString {
 	if value == nil {
 		return nil
 	}
 	return map[string]string{
-		"":   *value, // raw value
-		"en": *value,
-		"nl": *value,
+		"":   *value, // raw value; what the fallback chain lands on for any locale
+		"en": *value, // legacy wire-format alias
+		"nl": *value, // legacy wire-format alias
 	}
 }

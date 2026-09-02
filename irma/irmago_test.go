@@ -1719,3 +1719,54 @@ func TestEmptyConSatisfyDoesNotSwallowDisclosure(t *testing.T) {
 		require.Equal(t, "456", *attrs[0].RawValue)
 	})
 }
+
+// TestTranslationCoverage_FrenchAndGerman uses the test scheme, whose email
+// credential type is translated into French and German while the rest is
+// English/Dutch only, to pin the report the `irma scheme translations` command
+// prints: what is translated counts, what is not is listed, and a nil optional
+// text is not a missing translation.
+func TestTranslationCoverage_FrenchAndGerman(t *testing.T) {
+	conf := parseConfiguration(t)
+	testScheme := conf.SchemeManagers[NewSchemeManagerIdentifier("test")]
+	email := conf.CredentialTypes[NewCredentialTypeIdentifier("test.test.email")]
+
+	// The fixtures resolve for a French and a German wallet.
+	require.Equal(t, "Gestionnaire de schéma de test", testScheme.Name.Resolve("fr-BE"))
+	require.Equal(t, "Test-Schema-Manager", testScheme.Name.Resolve("de"))
+	name, _, _ := email.ResolveTexts("fr")
+	require.Equal(t, "Demo Adresse e-mail", name)
+	displayName, description := email.AttributeTypes[0].ResolveTexts("de-CH")
+	require.Equal(t, "E-Mail-Adresse", *displayName)
+	require.Equal(t, "Ihre verifizierte E-Mail-Adresse", *description)
+
+	report := conf.TranslationCoverage([]string{"fr", "de"})
+	require.Equal(t, []string{"fr", "de"}, report.Languages)
+
+	byKey := map[string]TranslationEntry{}
+	for _, e := range report.Entries {
+		byKey[e.Object+"/"+e.Field] = e
+	}
+	require.Empty(t, byKey["Scheme test/Name"].Missing)
+	require.Empty(t, byKey["Credential type test.test.email/Name"].Missing)
+	require.Empty(t, byKey["Attribute email of credential type test.test.email/Description"].Missing)
+	require.Equal(t, []string{"fr", "de"}, byKey["Credential type test.test.email/IssueURL"].Missing)
+	require.Equal(t, []string{"fr", "de"}, byKey["Credential type test.test.mijnirma/Name"].Missing)
+	require.Equal(t, []string{"fr", "de"}, byKey["Scheme irma-demo/Name"].Missing)
+	require.NotContains(t, byKey, "Credential type test.test.email/Category", "an absent optional text is not a translation to do")
+
+	frTranslated, total := report.Translated("fr")
+	deTranslated, _ := report.Translated("de")
+	require.Equal(t, 6, frTranslated, "scheme name+description, credential name+description, attribute name+description")
+	require.Equal(t, frTranslated, deTranslated)
+	require.Greater(t, total, frTranslated)
+	require.Len(t, report.Incomplete(), total-frTranslated)
+
+	// Without explicit languages the report covers what the schemes declare
+	// (irma-demo and test-requestors declare en and nl), which is complete
+	// apart from the test scheme's empty issue URLs.
+	declared := conf.TranslationCoverage(nil)
+	require.Equal(t, []string{"en", "nl"}, declared.Languages)
+	for _, e := range declared.Incomplete() {
+		require.Equal(t, "IssueURL", e.Field, "%s", e.Object)
+	}
+}
