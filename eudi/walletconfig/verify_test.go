@@ -200,6 +200,18 @@ func TestVerify_RejectsAConfigForAnotherEnvironment(t *testing.T) {
 	require.ErrorContains(t, err, `for environment "production", expected "staging"`)
 }
 
+// The config's id is the store key, so a config filed under another id — the
+// same environment's root signing two configs — is refused for this
+// environment.
+func TestVerify_RejectsAConfigWithAnotherID(t *testing.T) {
+	signer := NewTestSigner(t)
+	config := NewTestConfig("test", 1, time.Now())
+	config.ID = "some-other-config"
+
+	_, err := Verify(signer.Sign(t, config), signer.Environment("test", testConfigURL), time.Now())
+	require.ErrorContains(t, err, `config has id "some-other-config", expected "test-test"`)
+}
+
 func TestVerify_RejectsAnUnsupportedSchemaMajor(t *testing.T) {
 	signer := NewTestSigner(t)
 	config := NewTestConfig("test", 1, time.Now())

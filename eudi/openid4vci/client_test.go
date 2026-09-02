@@ -24,6 +24,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
+	"github.com/privacybydesign/irmago/eudi/walletconfig"
 	"github.com/privacybydesign/irmago/internal/common"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -71,8 +72,18 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 		s.FileSystem(),
 		services.NewRevocationService(nil, credStore),
 		nil,
+		nil,
 	)
-	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService, services.NewHolderBindingKeyService(conf.Storage.Db()), nil)
+	walletConfig, err := walletconfig.NewManager(walletconfig.Options{
+		Environments: walletconfig.YiviEnvironments(),
+		Active:       walletconfig.EnvironmentStaging,
+	})
+	require.NoError(t, err)
+	conf.WalletConfig = walletConfig
+	require.NoError(t, conf.Reload())
+	trustService := services.NewTrustService(walletConfig, conf, credStore, 0)
+
+	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService, services.NewHolderBindingKeyService(conf.Storage.Db()), nil, trustService)
 	require.NoError(t, err)
 	client.SetAllowInsecureHttp(true)
 

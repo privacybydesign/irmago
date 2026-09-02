@@ -62,8 +62,12 @@ type TrustedParty struct {
 	Image *Image `json:"image,omitempty"`
 	// The trust chain for this party (if any)
 	Parent *TrustedParty `json:"parent"`
-	// Whether this party is verified by the scheme manager
-	Verified bool `json:"verified"`
+	// How strongly the party is vouched for. An IRMA issuer is always high (it is
+	// registered in the scheme), an IRMA verifier is high when it is in the
+	// requestor scheme and low otherwise. An OpenID4VC party carries the level the
+	// trust ladder assigned it in the active environment; absent (unevaluated)
+	// while nothing has been evaluated about it yet, which is not "low".
+	TrustLevel TrustLevel `json:"trust_level,omitempty"`
 }
 
 type Image struct {
@@ -73,8 +77,20 @@ type Image struct {
 	MimeType *string `json:"mime_type,omitempty"`
 }
 
+// NewImage wraps image bytes as a base64-encoded Image. Nil for no data.
+func NewImage(data []byte, mimeType string) *Image {
+	if len(data) == 0 {
+		return nil
+	}
+	image := &Image{Base64: base64.StdEncoding.EncodeToString(data)}
+	if mimeType != "" {
+		image.MimeType = &mimeType
+	}
+	return image
+}
+
 // ImageFromFile reads an image file from disk and returns it as a base64-encoded Image.
-// Returns nil if the path is empty or the file cannot be read.
+// Returns nil if the path is empty, the file cannot be read, or it is empty.
 func ImageFromFile(path string) *Image {
 	if path == "" {
 		return nil
@@ -83,7 +99,8 @@ func ImageFromFile(path string) *Image {
 	if err != nil {
 		return nil
 	}
-	return &Image{Base64: base64.StdEncoding.EncodeToString(data)}
+	// The MIME type is not read off the file: callers render these by data alone.
+	return NewImage(data, "")
 }
 
 // AttributeType indicates the type of an attribute value.
@@ -240,6 +257,11 @@ type Credential struct {
 	Revoked bool `json:"revoked"`
 	// Whether or not revocation is supported for this credential.
 	RevocationSupported bool `json:"revocation_supported"`
+	// Whether the issuer of this credential falls short of the issuance minimum of
+	// the trust policy in the active environment. Such a credential stays stored
+	// and visible, but is excluded from disclosure until the issuer is trusted
+	// again — after an environment switch back, or a config that lists it.
+	IssuerNotTrusted bool `json:"issuer_not_trusted"`
 	// URL at which this credential can be issued (if any), resolved to the current locale.
 	IssueURL *string `json:"issue_url"`
 }

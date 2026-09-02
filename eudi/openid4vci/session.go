@@ -26,6 +26,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/trust"
 	"gorm.io/datatypes"
 )
 
@@ -64,6 +65,10 @@ type session struct {
 	// session keeps resolving text and logos with it even when the app
 	// changes language mid-flow.
 	locale string
+
+	// trustView is pinned at flow start, like the locale: a config refresh landing
+	// mid-flow must not change what this session decides about the issuer.
+	trustView trust.View
 
 	redirectUri string
 
@@ -137,10 +142,27 @@ func (s *session) perform() {
 	if err != nil {
 		eudi.Logger.Infof("error obtaining credentials: %v", err)
 		s.handler.Failure(&clientmodels.SessionError{
+			ErrorType:    eudi.SessionErrorType(err),
 			WrappedError: err.Error(),
 		})
 		return
 	}
+
+	// The credentials are in hand, which is the first moment the wallet holds the
+	// certificate the issuer signed with or the DID it signed under: rank the
+	// issuer, apply the policy and the listed constraint, and compose the party
+	// again so the user is asked to trust what was verified rather than what the
+	// metadata claimed at offer time.
+	verdict := s.issuerVerdict(fetched...)
+	if err := s.applyIssuancePolicy(verdict, fetched); err != nil {
+		for _, fc := range fetched {
+			fc.cleanupKeys()
+		}
+		handleTrustFailure(s.handler, err)
+		return
+	}
+	s.requestorInfo = composeIssuerParty(s.credentialIssuerMetadata, s.locale, &verdict,
+		s.storage.FileSystem().Issuers().LogoManager(), s.httpClient)
 
 	// Resolve SD-JWT VC type metadata using each verified JWT's actual `vct`
 	// claim. Catches issuers whose well-known document advertises a non-URL
@@ -208,6 +230,73 @@ func (s *session) perform() {
 	s.handler.Success("openid4vci session completed", offeredCredentials)
 }
 
+// issuerVerdict ranks the issuer of the given credentials against the pinned
+// trust view. Called with the whole fetch it ranks the party behind the session;
+// called with one credential it ranks that credential's issuer.
+func (s *session) issuerVerdict(fetched ...*fetchedCredential) trust.Verdict {
+	if s.trustView == nil {
+		return trust.Verdict{Level: clientmodels.TrustLevel_Low}
+	}
+	return s.trustView.Issuer(issuerEvidence(fetched...))
+}
+
+// issuerEvidence is what the fetched credentials say about who issued them: the
+// x5c certificate they verified under, and the DID they were signed under. One
+// issuer serves one offer, so credentials that disagree on either yield no
+// evidence of that kind — the wallet cannot name a single party for them.
+func issuerEvidence(fetched ...*fetchedCredential) trust.Evidence {
+	var evidence trust.Evidence
+	first := true
+	for _, fc := range fetched {
+		for _, vc := range fc.verifiedSdJwtVcs {
+			did := ""
+			if strings.HasPrefix(vc.IssuerIdentifier, "did:") {
+				did = vc.IssuerIdentifier
+			}
+			if first {
+				evidence = trust.Evidence{Certificate: vc.IssuerCertificate, DID: did}
+				first = false
+				continue
+			}
+			if evidence.Certificate != nil && (vc.IssuerCertificate == nil || !evidence.Certificate.Equal(vc.IssuerCertificate)) {
+				evidence.Certificate = nil
+			}
+			if evidence.DID != did {
+				evidence.DID = ""
+			}
+		}
+	}
+	return evidence
+}
+
+// applyIssuancePolicy refuses the issuance when the issuer's level is below the
+// policy minimum, or when the wallet config lists what the issuer may issue and
+// a fetched credential is not among it. A listed constraint replaces whatever the
+// issuer's certificate says; without one the issuer is unconstrained here (the
+// certificate's own authorization is not enforced on issuance yet, see
+// sdjwtvc.SdJwtVcVerificationContext.VerifyVerifiableCredentialTypeInRequestorInfo).
+func (s *session) applyIssuancePolicy(verdict trust.Verdict, fetched []*fetchedCredential) error {
+	if s.trustView == nil {
+		return nil
+	}
+	if err := trust.CheckMinimum(s.trustView.Policy(), trust.SessionIssuance, verdict.Level); err != nil {
+		return err
+	}
+	constraint := verdict.IssuanceConstraint()
+	if constraint == nil {
+		return nil
+	}
+	for _, fc := range fetched {
+		for _, vc := range fc.verifiedSdJwtVcs {
+			vct := vc.IssuerSignedJwtPayload.VerifiableCredentialType
+			if !slices.Contains(constraint.AllowedCredentials, vct) {
+				return eudi.PartyValidationFailed(fmt.Errorf("the issuer is not listed as allowed to issue %q", vct))
+			}
+		}
+	}
+	return nil
+}
+
 // fetchedCredential holds the result of fetching and verifying credentials
 // for a single credential configuration, before they are stored.
 type fetchedCredential struct {
@@ -249,7 +338,9 @@ func (s *session) obtainCredentials(accessToken string) ([]*fetchedCredential, e
 			for _, prev := range result {
 				prev.cleanupKeys()
 			}
-			return nil, fmt.Errorf("could not obtain credential %q: %v", credentialConfigurationId, err)
+			// Wrapped, not flattened: perform reads the identity gate marker off
+			// this error, and %v would strip it.
+			return nil, fmt.Errorf("could not obtain credential %q: %w", credentialConfigurationId, err)
 		}
 		result = append(result, fc)
 	}
@@ -454,13 +545,18 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			name = credentialId
 		}
 
+		// Ranked per credential rather than copied from the session header: one
+		// offer's credentials need not share a signing key.
+		issuerLevel := s.issuerVerdict(fc).Level
+
 		cred := clientmodels.Credential{
 			CredentialId: credentialId,
 			Name:         name,
 			Issuer: clientmodels.TrustedParty{
-				Id:    s.credentialIssuerMetadata.CredentialIssuer,
-				Name:  issuerName,
-				Image: issuerImage,
+				Id:         s.credentialIssuerMetadata.CredentialIssuer,
+				Name:       issuerName,
+				Image:      issuerImage,
+				TrustLevel: issuerLevel,
 			},
 			Image:                 image,
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},
@@ -831,7 +927,9 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	for i, cred := range credentialResponse.Credentials {
 		verifiedSdJwt, err := s.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
 		if err != nil {
-			return nil, fmt.Errorf("failed to verify credential: %v", err)
+			// The issuer's identity gate. Marked so the session reports a rejected
+			// party rather than a generic failure.
+			return nil, eudi.PartyValidationFailed(fmt.Errorf("failed to verify credential: %v", err))
 		}
 		verifiedSdJwtVcs[i] = verifiedSdJwt
 	}

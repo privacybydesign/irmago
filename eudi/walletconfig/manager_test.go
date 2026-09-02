@@ -65,7 +65,7 @@ func (w *world) bundle(t *testing.T, config *Config) {
 func (w *world) stored(t *testing.T, config *Config) []byte {
 	t.Helper()
 	raw := w.signer.Sign(t, config)
-	require.NoError(t, w.store.Put(w.name, raw))
+	require.NoError(t, w.store.Put(config.ID, raw))
 	return raw
 }
 
@@ -110,6 +110,12 @@ func TestNewManager_RejectsAMisconfiguredWorld(t *testing.T) {
 		{"empty name", func(o *Options) { o.Environments[0].Name = "" }, "Name is empty"},
 		{"duplicate name", func(o *Options) { o.Environments = append(o.Environments, o.Environments[0]) }, "used by another environment"},
 		{"missing root", func(o *Options) { o.Environments[0].SigningRoot = nil }, "SigningRoot is nil"},
+		{"missing config id", func(o *Options) { o.Environments[0].ConfigID = "" }, "ConfigID is empty"},
+		{"shared config id", func(o *Options) {
+			other := o.Environments[0]
+			other.Name = "other"
+			o.Environments = append(o.Environments, other)
+		}, "is used by another environment"},
 		{"relative URL", func(o *Options) { o.Environments[0].ConfigURL = "/wallet-config/v1/" }, "not an absolute URL"},
 		{"empty URL", func(o *Options) { o.Environments[0].ConfigURL = "" }, "not an absolute URL"},
 	}
@@ -144,7 +150,7 @@ func TestManager_LoadsTheBundledConfigOnFirstRunAndPersistsIt(t *testing.T) {
 	require.Equal(t, uint64(1), snapshot.Config.Version)
 	require.Equal(t, Fresh, snapshot.Freshness)
 
-	stored, ok := w.store.Get("test")
+	stored, ok := w.store.Get(w.env.ConfigID)
 	require.True(t, ok, "the bundled config becomes the stored rollback floor")
 	bundled, err := os.ReadFile(w.env.BundledConfigPath)
 	require.NoError(t, err)
@@ -167,7 +173,7 @@ func TestManager_PrefersTheNewerOfBundledAndStored(t *testing.T) {
 		m := w.manager(t)
 
 		require.Equal(t, uint64(2), m.Snapshot().Config.Version)
-		got, _ := w.store.Get("test")
+		got, _ := w.store.Get(w.env.ConfigID)
 		require.Equal(t, storedRaw, got, "the store is left alone")
 	})
 	t.Run("bundled is newer", func(t *testing.T) {
@@ -177,7 +183,7 @@ func TestManager_PrefersTheNewerOfBundledAndStored(t *testing.T) {
 		m := w.manager(t)
 
 		require.Equal(t, uint64(3), m.Snapshot().Config.Version)
-		got, _ := w.store.Get("test")
+		got, _ := w.store.Get(w.env.ConfigID)
 		bundled, _ := os.ReadFile(w.env.BundledConfigPath)
 		require.Equal(t, bundled, got, "an app update that ships a newer config raises the floor")
 	})
@@ -188,14 +194,14 @@ func TestManager_PrefersTheNewerOfBundledAndStored(t *testing.T) {
 func TestManager_DropsAStoredConfigThatNoLongerVerifies(t *testing.T) {
 	t.Run("falls back to the bundled config", func(t *testing.T) {
 		w := newWorld(t, "test")
-		require.NoError(t, w.store.Put("test", NewTestSigner(t).Sign(t, w.config(5))))
+		require.NoError(t, w.store.Put(w.env.ConfigID, NewTestSigner(t).Sign(t, w.config(5))))
 		w.bundle(t, w.config(1))
 		m := w.manager(t)
 		require.Equal(t, uint64(1), m.Snapshot().Config.Version)
 	})
 	t.Run("or starts empty", func(t *testing.T) {
 		w := newWorld(t, "test")
-		require.NoError(t, w.store.Put("test", NewTestSigner(t).Sign(t, w.config(5))))
+		require.NoError(t, w.store.Put(w.env.ConfigID, NewTestSigner(t).Sign(t, w.config(5))))
 		m := w.manager(t)
 		require.Nil(t, m.Snapshot().Config)
 	})
@@ -227,7 +233,7 @@ func TestManager_Refresh_AdoptsANewerVersion(t *testing.T) {
 	require.Equal(t, uint64(2), m.Snapshot().Config.Version)
 	require.Len(t, m.Snapshot().Config.TrustedEntities, 2)
 
-	stored, _ := w.store.Get("test")
+	stored, _ := w.store.Get(w.env.ConfigID)
 	require.Equal(t, published, stored)
 }
 
@@ -253,7 +259,7 @@ func TestManager_Refresh_RefusesARollback(t *testing.T) {
 	require.ErrorContains(t, err, "rolls back the held version 2")
 	require.False(t, changed)
 	require.Equal(t, uint64(2), m.Snapshot().Config.Version)
-	stored, _ := w.store.Get("test")
+	stored, _ := w.store.Get(w.env.ConfigID)
 	require.Equal(t, held, stored)
 }
 
@@ -284,7 +290,7 @@ func TestManager_Refresh_AdoptsAReSigningOfTheSameVersionSilently(t *testing.T) 
 	require.NoError(t, err)
 	require.False(t, changed)
 	require.True(t, m.Snapshot().Config.IssuedAt.Equal(w.clock.Now()), "the later issue is held")
-	stored, _ := w.store.Get("test")
+	stored, _ := w.store.Get(w.env.ConfigID)
 	require.Equal(t, reissued, stored)
 }
 
@@ -585,7 +591,7 @@ func TestManager_SwitchEnvironment_LoadsThatEnvironmentsConfig(t *testing.T) {
 // as staging's — which only a tampered store could produce — anchors nothing.
 func TestManager_SwitchEnvironment_NeverMixesRoots(t *testing.T) {
 	production, staging, m := twoWorlds(t)
-	require.NoError(t, staging.store.Put("staging", production.signer.Sign(t, staging.config(21))))
+	require.NoError(t, staging.store.Put(staging.env.ConfigID, production.signer.Sign(t, staging.config(21))))
 
 	require.NoError(t, m.SwitchEnvironment("staging"))
 	require.Equal(t, "staging", m.Snapshot().Environment.Name)
@@ -637,7 +643,7 @@ func TestManager_Refresh_DiscardsAConfigFetchedForAnEnvironmentSwitchedAway(t *t
 	// Rebuild with production pointed at the hanging server.
 	production.env.ConfigURL = hanging.URL
 	m, err := NewManager(Options{
-		Environments: []Environment{production.env, {Name: "staging", ConfigURL: "https://unused.example/", SigningRoot: production.signer.Root}},
+		Environments: []Environment{production.env, {Name: "staging", ConfigID: TestConfigID("staging"), ConfigURL: "https://unused.example/", SigningRoot: production.signer.Root}},
 		Active:       "production",
 		Store:        production.store,
 		Now:          production.clock.Now,

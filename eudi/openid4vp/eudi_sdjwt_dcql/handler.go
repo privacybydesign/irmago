@@ -54,6 +54,14 @@ type RevocationChecker interface {
 	IsRevoked(instance *models.IssuedCredentialInstance) bool
 }
 
+// IssuerTrustChecker ranks the issuer of a stored credential in the active
+// environment: its trust level, and whether it meets the issuance minimum of
+// the policy in force. A credential whose issuer does not is not offered for
+// disclosure (see services.TrustService).
+type IssuerTrustChecker interface {
+	IssuerStanding(batch *models.CredentialBatch) (clientmodels.TrustLevel, bool)
+}
+
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
 // credentials stored in the eudi storage (SQLite).
 type SdJwtVcDcqlHandler struct {
@@ -67,6 +75,10 @@ type SdJwtVcDcqlHandler struct {
 	// revocation determines a candidate's Revoked flag. Nil disables the check
 	// (candidates are then never flagged revoked).
 	revocation RevocationChecker
+
+	// issuerTrust ranks each candidate's issuer and excludes the ones below the
+	// issuance policy. Nil disables the check (candidates are then unranked).
+	issuerTrust IssuerTrustChecker
 }
 
 // NewSdJwtVcDcqlHandler creates a new handler. vctFetcher and issuerFetcher are
@@ -86,6 +98,7 @@ func NewSdJwtVcDcqlHandler(
 	keyBinder sdjwt.KeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
 	revocation RevocationChecker,
+	issuerTrust IssuerTrustChecker,
 ) *SdJwtVcDcqlHandler {
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
@@ -95,6 +108,7 @@ func NewSdJwtVcDcqlHandler(
 		issuerFetcher:   issuerFetcher,
 		currentLocale:   currentLocale,
 		revocation:      revocation,
+		issuerTrust:     issuerTrust,
 	}
 }
 
@@ -148,6 +162,18 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			continue
 		}
 
+		// A credential whose issuer falls short of the issuance policy in the
+		// active environment stays in the wallet but is not offered: the wallet
+		// would not accept it today, so it does not disclose it either.
+		var issuerLevel clientmodels.TrustLevel
+		if h.issuerTrust != nil {
+			level, meetsPolicy := h.issuerTrust.IssuerStanding(batch)
+			if !meetsPolicy {
+				continue
+			}
+			issuerLevel = level
+		}
+
 		instance, err := h.credentialStore.GetUnusedInstance(batch.ID)
 		if err != nil {
 			continue
@@ -163,11 +189,14 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 
 		image := h.credentialImage(batch, locale)
 
+		issuer := h.issuerTrustedParty(batch, locale)
+		issuer.TrustLevel = issuerLevel
+
 		candidate := clientmodels.SelectableCredentialInstance{
 			CredentialId:                batch.VerifiableCredentialType,
 			Hash:                        batch.Hash,
 			Name:                        credentialDisplayName(batch, locale),
-			Issuer:                      h.issuerTrustedParty(batch, locale),
+			Issuer:                      issuer,
 			Format:                      clientmodels.Format_SdJwtVc,
 			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
 			Attributes:                  attributes,

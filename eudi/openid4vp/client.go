@@ -1,7 +1,7 @@
 package openid4vp
 
 import (
-	"encoding/base64"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +13,11 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/scheme"
+	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/eudi/trust"
+	"github.com/privacybydesign/irmago/eudi/walletconfig"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -49,6 +54,15 @@ type Client struct {
 	dcqlHandler       *dcql.DcqlHandler
 	verifierValidator VerifierValidator
 	currentLocale     *clientmodels.CurrentLocale
+
+	// trustEvaluator ranks the verifier a session talks to; each session pins one
+	// view from it. Nil ranks every verifier low under the default policy, which
+	// is what a client assembled without one does.
+	trustEvaluator trust.Evaluator
+
+	// queryValidatorFactory builds the check that a request stays within the
+	// verifier's authorization. Nil takes the default scheme validator.
+	queryValidatorFactory QueryValidatorFactory
 
 	// Sessions currently performing, each on its own goroutine. Sessions may
 	// overlap: a second disclosure can arrive while one is parked awaiting
@@ -94,19 +108,51 @@ func (client *Client) deregister(session *openid4vpSession) {
 	delete(client.sessions, session)
 }
 
-// NewClient creates a new OpenID4VP client.
+// NewClient creates a new OpenID4VP client. trustEvaluator must not be nil:
+// every session pins a trust view from it to rank the verifier it talks to and
+// to apply the policy in force.
 func NewClient(
 	eudiConf *eudi.Configuration,
 	handlers []dcql.DcqlCredentialQueryHandler,
 	verifierValidator VerifierValidator,
 	currentLocale *clientmodels.CurrentLocale,
+	trustEvaluator trust.Evaluator,
 ) (*Client, error) {
+	// The session path dereferences it without a guard, so a nil one would rank
+	// nobody in a released wallet. Fail here instead, where the app can see it.
+	if trustEvaluator == nil {
+		return nil, fmt.Errorf("trustEvaluator cannot be nil")
+	}
 	return &Client{
 		Configuration:     eudiConf,
 		dcqlHandler:       dcql.NewDcqlHandler(handlers),
 		verifierValidator: verifierValidator,
 		currentLocale:     currentLocale,
+		trustEvaluator:    trustEvaluator,
 	}, nil
+}
+
+// trustView pins the state one session evaluates against. A client built without
+// an evaluator gets a view that anchors nothing and applies the default policy,
+// so a party ranks low rather than the client panicking.
+func (client *Client) trustView() trust.View {
+	if client.trustEvaluator == nil {
+		return trust.NewView(walletconfig.Snapshot{}, nil, nil, 0)
+	}
+	return client.trustEvaluator.Snapshot()
+}
+
+// handleVerificationFailure ends the session with the code that fits what went
+// wrong: a rejection by the identity gate tells the app the verifier itself was
+// not trustworthy, a policy refusal that its trust level fell short, and
+// anything else is a generic failure. Both entry points report through it.
+func handleVerificationFailure(handler Handler, err error) {
+	message := fmt.Sprintf("openid4vp: %v", err)
+	eudi.Logger.Errorf("%s", message)
+	handler.Failure(&clientmodels.SessionError{
+		ErrorType:    eudi.SessionErrorType(err),
+		WrappedError: message,
+	})
 }
 
 // NewSession starts a new OpenID4VP session from the given URL and returns a
@@ -147,6 +193,11 @@ func handleFailure(handler Handler, message string, fmtArgs ...any) {
 func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSession) {
 	go func() {
 		handler := session.handler
+		if client.trustView().AppUpdateRequired() {
+			handleVerificationFailure(handler, trust.ErrAppUpdateRequired)
+			return
+		}
+
 		parsedUrl, err := url.Parse(fullUrl)
 
 		if err != nil {
@@ -182,7 +233,7 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 
 		request, requestor, err := client.verifySignedAuthorizationRequest(string(authRequestJwt))
 		if err != nil {
-			handleFailure(handler, "openid4vp: %v", err)
+			handleVerificationFailure(handler, err)
 			return
 		}
 
@@ -213,9 +264,14 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 func (client *Client) handleDcApiSessionAsync(request *DcApiRequest, session *openid4vpSession) {
 	go func() {
 		handler := session.handler
+		if client.trustView().AppUpdateRequired() {
+			handleVerificationFailure(handler, trust.ErrAppUpdateRequired)
+			return
+		}
+
 		authRequest, requestor, err := client.parseDcApiRequest(request)
 		if err != nil {
-			handleFailure(handler, "openid4vp: %v", err)
+			handleVerificationFailure(handler, err)
 			return
 		}
 
@@ -231,48 +287,152 @@ func (client *Client) handleDcApiSessionAsync(request *DcApiRequest, session *op
 	}()
 }
 
-// verifySignedAuthorizationRequest verifies a signed authorization request JWT
-// against the configured trust models, caches the verifier logo, and builds the
-// requestor to show to the user.
+// verifySignedAuthorizationRequest runs a signed authorization request JWT past
+// the identity gate, ranks the verifier behind it on the trust ladder, applies
+// the policy and the verifier's authorization, and builds the party to show to
+// the user. Both entry points compose through it. A gate rejection comes back
+// marked as a party validation failure, a policy refusal as a trust level below
+// the minimum, so the caller can report each with its own code.
 func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
 	*AuthorizationRequest,
 	*clientmodels.TrustedParty,
 	error,
 ) {
-	request, endEntityCert, requestorSchemeData, err := client.verifierValidator.
-		ParseAndVerifyAuthorizationRequest(authRequestJwt)
-
+	request, verified, err := client.verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to verify authorization request: %v", err)
+		// The wallet does not know who it is talking to, and the app has to be
+		// able to say so rather than show a generic error.
+		return nil, nil, eudi.PartyValidationFailed(fmt.Errorf("failed to verify authorization request: %v", err))
 	}
 
-	// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
-	if endEntityCert != nil && requestorSchemeData.Organization.Logo != nil {
-		err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().Save(
-			endEntityCert.SerialNumber.String(),
-			requestorSchemeData.Organization.Logo.Data,
-			requestorSchemeData.Organization.Logo.MimeType,
-		)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to store verifier logo: %v", err)
+	// One pinned view for the whole session, so a config refresh landing
+	// mid-session cannot change what it decided about the verifier.
+	view := client.trustView()
+	verdict := view.Verifier(trust.Evidence{Certificate: verified.Certificate, DID: verified.DID})
+
+	if err := trust.CheckMinimum(view.Policy(), trust.SessionDisclosure, verdict.Level); err != nil {
+		return nil, nil, err
+	}
+
+	// A request exceeding the verifier's authorization fails at any rung.
+	if err := client.enforceQueryAuthorization(verdict, verified, request); err != nil {
+		return nil, nil, eudi.PartyValidationFailed(fmt.Errorf("failed to verify queried credentials: %v", err))
+	}
+
+	return request, client.composeRequestor(verdict, verified), nil
+}
+
+// enforceQueryAuthorization checks the DCQL query against what the verifier may
+// ask for. Precedence: a constraint the wallet config lists for the verifier
+// replaces whatever its certificate says; without one, the authorization in the
+// Yivi scheme extension of an anchored certificate applies; a verifier with
+// neither is unconstrained (the trust level policy still applies). The contents
+// of an unanchored certificate are the verifier's own word and authorize nothing.
+func (client *Client) enforceQueryAuthorization(verdict trust.Verdict, verified *VerifiedRequestor, request *AuthorizationRequest) error {
+	var relyingParty *scheme.RelyingParty
+	switch {
+	case verdict.DisclosureConstraint() != nil:
+		relyingParty = relyingPartyFromConstraint(verdict.DisclosureConstraint())
+	case verdict.Anchored && verified.SchemeData != nil:
+		relyingParty = &verified.SchemeData.RelyingParty
+	default:
+		return nil
+	}
+
+	factory := client.queryValidatorFactory
+	if factory == nil {
+		factory = &DefaultQueryValidatorFactory{}
+	}
+	return factory.CreateQueryValidator(relyingParty).ValidateCredentialQueries(dcqlQueryToCredentialQueryInfos(request.DcqlQuery))
+}
+
+// relyingPartyFromConstraint expresses a listed disclosure constraint in the
+// scheme's authorization terms, so one validator serves both sources. A query
+// without attributes allows any attribute of the credential.
+func relyingPartyFromConstraint(constraint *walletconfig.DisclosureConstraint) *scheme.RelyingParty {
+	relyingParty := &scheme.RelyingParty{}
+	for _, query := range constraint.AllowedQueries {
+		attributes := query.Attributes
+		if len(attributes) == 0 {
+			attributes = []string{"*"}
+		}
+		relyingParty.AuthorizedQueryableAttributeSets = append(relyingParty.AuthorizedQueryableAttributeSets,
+			scheme.AuthorizedAttributeSet{Credential: query.Credential, Attributes: attributes})
+	}
+	return relyingParty
+}
+
+// composeRequestor reduces what the wallet knows about the verifier to the party
+// the app renders, in display precedence: the curated entry in the wallet config
+// first, what an anchored certificate attests second, what the verifier says
+// about itself last. A logo is only ever taken from a source beyond the verifier
+// — the curated entry or an anchored certificate — because a logo is the whole
+// of an impersonation: at low no such source exists, so low renders the
+// self-asserted name, the identifier, and no logo.
+func (client *Client) composeRequestor(verdict trust.Verdict, verified *VerifiedRequestor) *clientmodels.TrustedParty {
+	locale := client.currentLocale.Get()
+	party := &clientmodels.TrustedParty{TrustLevel: verdict.Level}
+
+	// A party is known by the most stable identifier in its own protocol: a DID
+	// party by its DID, a certificate party by the serial number, the one
+	// identity document it cannot have written itself.
+	switch {
+	case verified.DID != "":
+		party.Id = verified.DID
+	case verified.Certificate != nil:
+		party.Id = verified.Certificate.SerialNumber.String()
+	}
+
+	var attestedName string
+	var attestedLogo *scheme.Logo
+	if verdict.Anchored && verified.Certificate != nil {
+		if verified.SchemeData != nil {
+			attestedName = clientmodels.Resolve(clientmodels.TranslatedString(verified.SchemeData.Organization.LegalName), locale)
+			attestedLogo = verified.SchemeData.Organization.Logo
+		}
+		if attestedName == "" {
+			attestedName = verified.Certificate.Subject.CommonName
 		}
 	}
 
-	requestor := &clientmodels.TrustedParty{
-		Name:     clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), client.currentLocale.Get()),
-		Verified: endEntityCert != nil,
-	}
-	if endEntityCert != nil {
-		requestor.Id = endEntityCert.SerialNumber.String()
+	var curatedName string
+	if verdict.Entity != nil {
+		curatedName = clientmodels.Resolve(verdict.Entity.Name, locale)
 	}
 
-	if requestorSchemeData.Organization.Logo != nil && len(requestorSchemeData.Organization.Logo.Data) > 0 {
-		requestor.Image = &clientmodels.Image{
-			Base64: base64.StdEncoding.EncodeToString(requestorSchemeData.Organization.Logo.Data),
+	switch {
+	case curatedName != "":
+		party.Name = curatedName
+	case attestedName != "":
+		party.Name = attestedName
+	default:
+		party.Name = verified.SelfAssertedName
+	}
+
+	if verdict.Entity != nil && verdict.Entity.Logo != nil {
+		party.Image = services.LoadCuratedLogo(context.Background(), client.verifierLogoManager(), common.HTTPClient, verdict.Entity.Logo)
+	}
+	if party.Image == nil && attestedLogo != nil && len(attestedLogo.Data) > 0 {
+		party.Image = clientmodels.NewImage(attestedLogo.Data, attestedLogo.MimeType)
+		// Cached under the serial number, so the activity log can show the logo of
+		// a verifier it only knows by certificate (see Configuration.ResolveVerifierLogo).
+		if logoManager := client.verifierLogoManager(); logoManager != nil {
+			if err := logoManager.Save(verified.Certificate.SerialNumber.String(), attestedLogo.Data, attestedLogo.MimeType); err != nil {
+				eudi.Logger.Warnf("openid4vp: failed to store verifier logo: %v", err)
+			}
 		}
 	}
 
-	return request, requestor, nil
+	return party
+}
+
+// verifierLogoManager is the wallet's verifier logo cache, or nil when the client
+// was built without storage, which leaves a party without its logo.
+func (client *Client) verifierLogoManager() filesystem.LogoManager {
+	if client.Configuration == nil || client.Configuration.Storage == nil {
+		return nil
+	}
+	return client.Configuration.Storage.FileSystem().Verifiers().LogoManager()
 }
 
 func (client *Client) handleAuthorizationRequest(

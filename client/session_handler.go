@@ -160,17 +160,24 @@ func (m *sessionManager) NewSession(id int) *session {
 	return s
 }
 
+// requestorInfoToTrustedParty is the IRMA verifier as the app sees it. A verifier
+// in the requestor scheme is one Yivi vouches for: high. One that is not is
+// identified only by what it says about itself: low.
 func requestorInfoToTrustedParty(info *irma.RequestorInfo, locale string) clientmodels.TrustedParty {
 	var image *clientmodels.Image
 	if info.LogoPath != nil {
 		image = clientmodels.ImageFromFile(*info.LogoPath)
 	}
+	trustLevel := clientmodels.TrustLevel_High
+	if info.Unverified {
+		trustLevel = clientmodels.TrustLevel_Low
+	}
 	return clientmodels.TrustedParty{
-		Id:       info.ID.String(),
-		Name:     clientmodels.Resolve(clientmodels.TranslatedString(info.Name), locale),
-		Image:    image,
-		Parent:   nil,
-		Verified: !info.Unverified,
+		Id:         info.ID.String(),
+		Name:       clientmodels.Resolve(clientmodels.TranslatedString(info.Name), locale),
+		Image:      image,
+		Parent:     nil,
+		TrustLevel: trustLevel,
 	}
 }
 

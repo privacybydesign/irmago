@@ -114,6 +114,23 @@ type AuthorizationCodeFlowRequest struct {
 	AuthorizationParameters map[string][]string // url.Values
 }
 
+// Error types a session may end with beyond the generic failure, so the app can
+// show the right screen rather than "something went wrong".
+const (
+	// ErrorType_PartyValidationFailed: the identity gate rejected the party the
+	// wallet was talking to — a broken, expired or revoked certificate, an invalid
+	// request signature, an unresolvable DID. The request is not trustworthy and
+	// nothing was shared. A party that merely fails to be vouched for is not this:
+	// that is a low trust level, and the session proceeds.
+	ErrorType_PartyValidationFailed = "party_validation_failed"
+	// ErrorType_TrustLevelBelowMinimum: the party is who it says, but its trust
+	// level is below the minimum the policy sets for this kind of session.
+	ErrorType_TrustLevelBelowMinimum = "trust_level_below_minimum"
+	// ErrorType_AppUpdateRequired: the wallet configuration requires a newer app
+	// build than this one; OpenID4VC sessions are refused until the app updates.
+	ErrorType_AppUpdateRequired = "app_update_required"
+)
+
 // SessionError is a frontend-friendly representation of a session error.
 type SessionError struct {
 	ErrorType    string       `json:"error_type"`

@@ -77,11 +77,11 @@ func testDcApiDisclosureToEudiVerifier(
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
 
-	// The request is signed with the verifier's access certificate, so unlike an
-	// unsigned request this one names the verifier from the certificate and is shown
-	// as verified.
+	// The request is signed with the verifier's access certificate under the
+	// installed test CA, so unlike an unsigned request this one names the verifier
+	// from the certificate and ranks high.
 	require.Equal(t, "Yivi B.V.", session.Requestor.Name)
-	require.True(t, session.Requestor.Verified)
+	require.Equal(t, clientmodels.TrustLevel_High, session.Requestor.TrustLevel)
 
 	grantDcApiDisclosure(t, c, 2, session)
 

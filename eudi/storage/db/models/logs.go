@@ -40,10 +40,16 @@ type EudiLogCredential struct {
 	Formats datatypes.JSON `gorm:"type:json"`
 
 	// JSON-encoded TranslatedString for display name and issuer name.
-	Name           datatypes.JSON `gorm:"type:json"`
-	IssuerName     datatypes.JSON `gorm:"type:json"`
-	IssuerId       string
+	Name       datatypes.JSON `gorm:"type:json"`
+	IssuerName datatypes.JSON `gorm:"type:json"`
+	IssuerId   string
+	// IssuerVerified is no longer written: TrustLevel replaced the boolean.
+	// Kept so existing rows keep their column; a row without IssuerTrustLevel
+	// reads as an unevaluated issuer.
 	IssuerVerified bool
+	// IssuerTrustLevel is the clientmodels.TrustLevel the issuer had when the
+	// log entry was written, as its wire value ("" for unevaluated).
+	IssuerTrustLevel string
 
 	// JSON-encoded []clientmodels.Attribute — full attribute list with paths,
 	// display names, and values. Stored as a blob since logs are write-once.

@@ -35,7 +35,7 @@ func TestTrustModel(t *testing.T) {
 	t.Run("Reload reads multiple chains (valid root + 1 valid sub-CA + 1 revoked sub-CA), should only add the valid chain", testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain)
 	t.Run("Reload reads multiple chains (1 valid + 1 expired root, both with sub-CAs), should add both root certs but only one sub-CA", testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa)
 	t.Run("Reload reads chain (valid root + expired sub-CA), should only add root cert", testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert)
-	t.Run("Reload reads invalid certificate chain (root + CA in reversed order), not add any certificates to the pools", testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates)
+	t.Run("Reload reads certificate chain (root + CA in reversed order), anchors the CA alone", testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates)
 
 	// Certificate removal tests
 	t.Run("RemoveCertificate removes installed chain and Reload drops it from the pools", testRemoveCertificateRemovesInstalledChainAndReloadDropsItFromThePools)
@@ -73,9 +73,9 @@ func testReloadReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
 	err := tm.Reload()
 	require.NoError(t, err)
 
-	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
-	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 0)
-	require.Len(t, tm.revocationLists, 0)
+	require.Len(t, tm.state().trustedRootCertificates.Subjects(), 1)
+	require.Len(t, tm.state().trustedIntermediateCertificates.Subjects(), 0)
+	require.Len(t, tm.state().revocationLists, 0)
 }
 
 func testReloadReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t *testing.T) {
@@ -93,9 +93,9 @@ func testReloadReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t *testing
 	err := tm.Reload()
 	require.NoError(t, err)
 
-	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
-	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 1)
-	require.Len(t, tm.revocationLists, 1)
+	require.Len(t, tm.state().trustedRootCertificates.Subjects(), 1)
+	require.Len(t, tm.state().trustedIntermediateCertificates.Subjects(), 1)
+	require.Len(t, tm.state().revocationLists, 1)
 }
 
 func testReloadReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully(t *testing.T) {
@@ -114,9 +114,9 @@ func testReloadReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully(t *t
 	err := tm.Reload()
 	require.NoError(t, err)
 
-	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
-	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 2)
-	require.Len(t, tm.revocationLists, 1)
+	require.Len(t, tm.state().trustedRootCertificates.Subjects(), 1)
+	require.Len(t, tm.state().trustedIntermediateCertificates.Subjects(), 2)
+	require.Len(t, tm.state().revocationLists, 1)
 }
 
 func testReloadReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *testing.T) {
@@ -139,9 +139,9 @@ func testReloadReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *
 	err := tm.Reload()
 	require.NoError(t, err)
 
-	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
-	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 2)
-	require.Len(t, tm.revocationLists, 2)
+	require.Len(t, tm.state().trustedRootCertificates.Subjects(), 1)
+	require.Len(t, tm.state().trustedIntermediateCertificates.Subjects(), 2)
+	require.Len(t, tm.state().revocationLists, 2)
 }
 
 func testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain(t *testing.T) {
@@ -165,8 +165,8 @@ func testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAdd
 	require.NoError(t, err)
 
 	// The revoked sub-CA should not be added to the pools
-	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
-	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 1)
+	require.Len(t, tm.state().trustedRootCertificates.Subjects(), 1)
+	require.Len(t, tm.state().trustedIntermediateCertificates.Subjects(), 1)
 }
 
 func testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa(t *testing.T) {
@@ -187,8 +187,8 @@ func testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBoth
 	require.NoError(t, err)
 
 	// The expired root (+intermediates) should not be added to the pools
-	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
-	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 1)
+	require.Len(t, tm.state().trustedRootCertificates.Subjects(), 1)
+	require.Len(t, tm.state().trustedIntermediateCertificates.Subjects(), 1)
 }
 
 func testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testing.T) {
@@ -206,11 +206,11 @@ func testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testin
 	require.NoError(t, err)
 
 	// Only the root cert should be added to the pools
-	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
-	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 0)
+	require.Len(t, tm.state().trustedRootCertificates.Subjects(), 1)
+	require.Len(t, tm.state().trustedIntermediateCertificates.Subjects(), 0)
 
 	// The expired sub-CA cert should not be added to the pools
-	require.NotContains(t, tm.trustedIntermediateCertificates.Subjects(), caCerts[0].Subject.ToRDNSequence().String())
+	require.NotContains(t, tm.state().trustedIntermediateCertificates.Subjects(), caCerts[0].Subject.ToRDNSequence().String())
 }
 
 func testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t *testing.T) {
@@ -218,8 +218,8 @@ func testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t 
 
 	// Create a root cert and a CA cert, but write them in reversed order.
 	// The on-disk convention is leaf-to-root, so writing root-to-leaf here
-	// makes the chain unparseable: addTrustAnchors will treat the leaf as
-	// the root and reject it (not self-signed).
+	// makes addTrustAnchors treat the CA as the anchor and the root as an
+	// intermediate under it.
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
 
@@ -230,9 +230,11 @@ func testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t 
 	err := tm.Reload()
 	require.NoError(t, err)
 
-	// No certificates should be added to the pools
-	require.Len(t, tm.trustedRootCertificates.Subjects(), 0)
-	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 0)
+	// The CA anchors on its own — an anchor need not be self-signed — but the
+	// root does not chain to it, so it is not an intermediate under it.
+	require.Len(t, tm.state().trustedRootCertificates.Subjects(), 1)
+	require.Contains(t, tm.state().trustedRootCertificates.Subjects(), caCerts[0].RawSubject)
+	require.Len(t, tm.state().trustedIntermediateCertificates.Subjects(), 0)
 }
 
 func testSyncCertificateRevocationListsDoesNothingGivenNoCertificateChains(t *testing.T) {
@@ -267,8 +269,8 @@ func testSyncCertificateRevocationListsDownloadsFileForNonCachedCrlSuccessfully(
 	crl = caCrls[0]
 
 	tm.httpClient = ts.Client()
-	tm.revocationListsDistributionPoints = []string{crlDistpoint}
-	tm.allCerts = append(tm.allCerts, rootCert)
+	tm.replaceState(func(s *trustState) { s.revocationListsDistributionPoints = []string{crlDistpoint} })
+	tm.replaceState(func(s *trustState) { s.allCerts = append(s.allCerts, rootCert) })
 
 	// Act
 	tm.syncCertificateRevocationLists()
@@ -298,8 +300,8 @@ func testSyncCertificateRevocationListsDownloadsFileForCachedCrlWithInvalidConte
 	crl = caCrls[0]
 
 	tm.httpClient = ts.Client()
-	tm.revocationListsDistributionPoints = []string{crlDistpoint}
-	tm.allCerts = append(tm.allCerts, rootCert)
+	tm.replaceState(func(s *trustState) { s.revocationListsDistributionPoints = []string{crlDistpoint} })
+	tm.replaceState(func(s *trustState) { s.allCerts = append(s.allCerts, rootCert) })
 
 	// Save a valid CRL through the manager (so the file lands at the correct hashed path
 	// and is encrypted), then overwrite it with garbage to simulate corruption.
@@ -335,10 +337,10 @@ func testSyncCertificateRevocationListsRemovesCrlGivenNoAuthorityCertificatePres
 	_, _, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT CERT 1"), 2, testdata.PkiOption_None, &crlDistpoint)
 
 	tm.httpClient = ts.Client()
-	tm.revocationListsDistributionPoints = []string{crlDistpoint}
+	tm.replaceState(func(s *trustState) { s.revocationListsDistributionPoints = []string{crlDistpoint} })
 
 	// Store a valid CRL file
-	tm.allCerts = []*x509.Certificate{caCerts[0]}
+	tm.replaceState(func(s *trustState) { s.allCerts = []*x509.Certificate{caCerts[0]} })
 	require.NoError(t, tm.storageContainer.CertificateRevocationListManager().Save(caCrls[0], crlDistpoint))
 
 	// Make sure a 'wrong' CRL is returned, so it will not find the authoritive certificate
@@ -361,8 +363,7 @@ func testSyncCertificateRevocationListsReadsCachedCrlAndDoesNotNeedToUpdate(t *t
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
 
-	tm.allCerts = append(tm.allCerts, rootCert)
-	tm.allCerts = append(tm.allCerts, caCerts...)
+	tm.replaceState(func(s *trustState) { s.allCerts = append(append(s.allCerts, rootCert), caCerts...) })
 
 	mgr := tm.storageContainer.CertificateRevocationListManager()
 	require.NoError(t, mgr.Save(caCrls[0], yiviCrlDistPoint))
@@ -421,8 +422,8 @@ func testSyncCertificateRevocationListsReadsCrlFileAndUpdatesGivenCrlNextUpdateI
 	require.NoError(t, mgr.Save(oldCrl, crlDistPoint))
 
 	tm.httpClient = ts.Client()
-	tm.revocationListsDistributionPoints = []string{crlDistPoint}
-	tm.allCerts = append(tm.allCerts, rootCert)
+	tm.replaceState(func(s *trustState) { s.revocationListsDistributionPoints = []string{crlDistPoint} })
+	tm.replaceState(func(s *trustState) { s.allCerts = append(s.allCerts, rootCert) })
 
 	// Act
 	tm.syncCertificateRevocationLists()
@@ -450,7 +451,7 @@ func testDownloadVerifyAndCacheCrlDownloadsSavesAndVerifiesSuccessfully(t *testi
 	}))
 	defer ts.Close()
 
-	tm.allCerts = append(tm.allCerts, rootCert)
+	tm.replaceState(func(s *trustState) { s.allCerts = append(s.allCerts, rootCert) })
 	tm.httpClient = ts.Client()
 
 	crlDownloadUrl := fmt.Sprintf("%s/crl.crl", ts.URL)
@@ -542,7 +543,7 @@ func testRemoveCertificateRemovesInstalledChainAndReloadDropsItFromThePools(t *t
 	installCertChain(t, tm, caCerts[1], rootCert)
 
 	require.NoError(t, tm.Reload())
-	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 2)
+	require.Len(t, tm.state().trustedIntermediateCertificates.Subjects(), 2)
 
 	// Remove the first chain by its leaf's thumbprint
 	require.NoError(t, tm.RemoveCertificate(fmt.Sprintf("%x", caCerts[0].Signature)))
@@ -555,8 +556,8 @@ func testRemoveCertificateRemovesInstalledChainAndReloadDropsItFromThePools(t *t
 	// After a reload the removed chain is gone from the in-memory pools too
 	tm.clear()
 	require.NoError(t, tm.Reload())
-	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
-	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 1)
+	require.Len(t, tm.state().trustedRootCertificates.Subjects(), 1)
+	require.Len(t, tm.state().trustedIntermediateCertificates.Subjects(), 1)
 
 	// Removing it again fails, as it is no longer installed
 	require.ErrorContains(t, tm.RemoveCertificate(fmt.Sprintf("%x", caCerts[0].Signature)), "no certificate found")

@@ -30,6 +30,13 @@ type VerifiedSdJwtVc struct {
 
 	KeyBindingJwt *sdjwt.KeyBindingJwtPayload
 
+	// IssuerCertificate is the x5c end-entity certificate the issuer signature
+	// verified under, or nil for an issuer identified by DID. It is the evidence
+	// the trust ladder ranks an x5c issuer by; whether it chains to an anchor is
+	// the ladder's question when AcceptUnanchoredIssuers is set, and already
+	// settled otherwise.
+	IssuerCertificate *x509.Certificate
+
 	rawSdJwtVc SdJwtVc
 }
 
@@ -77,6 +84,14 @@ type SdJwtVcVerificationContext struct {
 	// ExpectedAudience is the audience from the OpenID4VP authorization request that the KB-JWT aud
 	// must match.
 	ExpectedAudience string
+
+	// AcceptUnanchoredIssuers makes the certificate check an identity gate rather
+	// than a trust decision: an x5c issuer certificate must be within its validity
+	// window and not revoked, but need not chain to an anchor. The wallet's
+	// OpenID4VCI path sets it, and ranks the issuer on the trust ladder afterwards
+	// (an unanchored issuer is low, not refused). Off by default, so the verifier
+	// side and the SD-JWT-over-IRMA path keep requiring an anchored issuer.
+	AcceptUnanchoredIssuers bool
 }
 
 func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationContext {
@@ -166,12 +181,10 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 	}
 	rawSdJwtVc := SdJwtVc(rawSdJwtVcSdJwt)
 
-	issuerIdentifier, issuerSignedJwtPayload, requestorInfo, decodedDisclosures, processedSdJwtPayload, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
+	issuerIdentifier, issuerSignedJwtPayload, issuerCertificate, decodedDisclosures, processedSdJwtPayload, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
 	if err != nil {
 		return nil, err
 	}
-	// ignore
-	_ = requestorInfo
 
 	kbJwtPayload, err := keyBindingProcessor.ProcessAndVerifyKeyBindingJwt(rawKbJwt, rawSdJwtVc, issuerSignedJwtPayload)
 	if err != nil {
@@ -202,24 +215,25 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 		IssuerSignedJwtPayload: *issuerSignedJwtPayload,
 		Disclosures:            decodedDisclosures,
 		KeyBindingJwt:          kbJwtPayload,
+		IssuerCertificate:      issuerCertificate,
 		rawSdJwtVc:             rawSdJwtVc,
 		ProcessedSdJwtPayload:  *processedSdJwtPayload,
 	}, nil
 }
 
 // parseAndVerifyIssuerSignedJwt parses and verifies the issuer signed JWT of an SD-JWT VC, including signature verification, time field validation, and disclosure processing.
-// It returns the issuer string, signed payload, requestor info, decoded disclosures, processed SD-JWT payload, and any error encountered.
+// It returns the issuer string, signed payload, the x5c issuer certificate (nil for a DID issuer), decoded disclosures, processed SD-JWT payload, and any error encountered.
 func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerSignedJwt, disclosures []sdjwt.EncodedDisclosure) (
 	string,
 	*IssuerSignedJwtPayload,
-	*scheme.AttestationProviderRequestor,
+	*x509.Certificate,
 	[]sdjwt.DisclosureContent,
 	*sdjwt.ProcessedPayload,
 	error,
 ) {
 	issuerIdentifier := ""
 
-	token, cert, requestorInfo, err := v.decodeJwtAndVerifyFromX5cHeader([]byte(signedJwt))
+	token, cert, err := v.decodeJwtAndVerifyFromX5cHeader([]byte(signedJwt))
 	if err != nil {
 		return issuerIdentifier, nil, nil, nil, nil, err
 	}
@@ -348,7 +362,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 		decodedDisclosuresValues[i] = *discPtr
 	}
 
-	return issuerIdentifier, payload, requestorInfo, decodedDisclosuresValues, &processedSdJwtPayload, nil
+	return issuerIdentifier, payload, cert, decodedDisclosuresValues, &processedSdJwtPayload, nil
 }
 
 func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *IssuerSignedJwtPayload) error {
@@ -432,11 +446,13 @@ func parseStatusClaim(token jwt.Token) (*statuslist.StatusClaim, error) {
 	return &statuslist.StatusClaim{StatusList: &statuslist.Reference{Index: idx, URI: uri}}, nil
 }
 
-// Decode the JWT into a token, verify the signature with the X.509 certificate in the header and verify the certificate is trusted (both against root/intermediate certs and CRLs).
-// Function returns the token, certificate and the requestor info read from the certificate.
+// Decode the JWT into a token, verify the signature with the X.509 certificate
+// in the header, and gate the certificate: within its validity window, not
+// revoked, and — unless the context accepts unanchored issuers — chaining to a
+// trust anchor. Returns the token and the x5c certificate (nil for a DID issuer).
 func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 	signedJwt []byte,
-) (jwt.Token, *x509.Certificate, *scheme.AttestationProviderRequestor, error) {
+) (jwt.Token, *x509.Certificate, error) {
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{SdJwtVcTyp, SdJwtVcTyp_Legacy}, v.allowInsecureDidWeb)
 
 	// Create a context for the verification where we can retrieve the requestor info back
@@ -447,32 +463,59 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 		jwt.WithVerify(true),
 	)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
+		return nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
 	}
 
-	// If the key provider used was a X509KeyProvider, we can get the certificate and verify it against the trusted roots/intermediates and CRLs.
-	if x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider); ok {
-		cert := x509KeyProvider.GetCert()
-		err = eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to verify certificate: %v", err)
-		}
+	// If the key provider used was a X509KeyProvider, we can get the certificate and gate it.
+	x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider)
+	if !ok {
+		return token, nil, nil
+	}
+	cert := x509KeyProvider.GetCert()
+	if err := v.gateIssuerCertificate(cert); err != nil {
+		return nil, nil, err
+	}
+	return token, cert, nil
+}
 
-		// Verify the SD-JWT against the credentials the issuer is authorized to issue
-		// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
-		// until we can issue SD-JWT VCs that fit our scheme
-		if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
-			requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert)
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
-			}
-			return token, cert, requestorInfo, nil
-		}
+// gateIssuerCertificate is the identity gate for an x5c issuer certificate.
+//
+// With AcceptUnanchoredIssuers the gate is internal validity: the certificate
+// must be inside its validity window and not revoked, and whether an anchor
+// stands behind it is left to the trust ladder. Revocation stays a gate because
+// it is the CA withdrawing a certificate, an act of distrust rather than the
+// absence of trust an untraceable chain shows.
+//
+// Without it the certificate must also chain to an anchor, with the
+// digitalSignature key usage: what the verifier side and the SD-JWT-over-IRMA
+// path require, and what reading an issuance authorization off the certificate
+// presupposes.
+func (v *sdJwtVcProcessor) gateIssuerCertificate(cert *x509.Certificate) error {
+	x509Context := v.verificationContext.X509VerificationContext
 
-		return token, cert, nil, nil
+	if v.verificationContext.AcceptUnanchoredIssuers {
+		if err := eudi_jwt.CheckCertificateValidAt(x509Context, cert, ClockSkewInSeconds*time.Second, "issuer certificate"); err != nil {
+			return err
+		}
+		if err := eudi_jwt.CheckCertificateNotRevoked(x509Context, cert); err != nil {
+			return fmt.Errorf("issuer certificate is refused: %w", err)
+		}
+		return nil
 	}
 
-	return token, nil, nil, nil
+	if err := eudi_jwt.VerifyCertificate(x509Context, cert, nil); err != nil {
+		return fmt.Errorf("failed to verify certificate: %v", err)
+	}
+
+	// Verify the SD-JWT against the credentials the issuer is authorized to issue
+	// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
+	// until we can issue SD-JWT VCs that fit our scheme
+	if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
+		if _, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert); err != nil {
+			return fmt.Errorf("failed to get requestor info from certificate: %v", err)
+		}
+	}
+	return nil
 }
 
 func CheckKeyBindingConfirmationUniqueness(verifiedSdJwtVcs []*VerifiedSdJwtVc) error {

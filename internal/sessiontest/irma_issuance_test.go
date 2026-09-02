@@ -124,7 +124,7 @@ func testIssuanceTrustedPartyLogoPaths(
 	for _, cred := range session.OfferedCredentials {
 		require.NotNil(t, cred.Issuer.Image, "issuer Image for %s should not be nil", cred.CredentialId)
 		require.NotEmpty(t, cred.Issuer.Image.Base64, "issuer Image for %s should have base64 data", cred.CredentialId)
-		require.True(t, cred.Issuer.Verified, "issuer for %s should be verified", cred.CredentialId)
+		require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "issuer for %s should be verified", cred.CredentialId)
 	}
 }
 
@@ -410,7 +410,7 @@ func testTrustedPartyLogoPathsInLogs(
 
 	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	for _, ownedCred := range choice.Credentials {
-		require.True(t, ownedCred.Issuer.Verified,
+		require.Equal(t, clientmodels.TrustLevel_High, ownedCred.Issuer.TrustLevel,
 			"owned disclosure credential %s should have a verified issuer", ownedCred.CredentialId)
 	}
 
@@ -451,7 +451,7 @@ func testTrustedPartyLogoPathsInLogs(
 		"issued credential's issuer image should not be nil")
 	require.NotEmpty(t, issuedCred.Issuer.Image.Base64,
 		"issued credential's issuer image should have base64 data")
-	require.True(t, issuedCred.Issuer.Verified,
+	require.Equal(t, clientmodels.TrustLevel_High, issuedCred.Issuer.TrustLevel,
 		"issued credential's issuer should be verified")
 
 	// The credential issuer's image should be set and verified in the disclosure log
@@ -461,7 +461,7 @@ func testTrustedPartyLogoPathsInLogs(
 		"disclosed credential's issuer image should not be nil")
 	require.NotEmpty(t, disclosedCred.Issuer.Image.Base64,
 		"disclosed credential's issuer image should have base64 data")
-	require.True(t, disclosedCred.Issuer.Verified,
+	require.Equal(t, clientmodels.TrustLevel_High, disclosedCred.Issuer.TrustLevel,
 		"disclosed credential's issuer should be verified")
 }
 

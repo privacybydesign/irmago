@@ -237,7 +237,16 @@ func createClientWithStorageAndSigner(
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, aesKey, "en")
+	c, err := client.New(client.Config{
+		StoragePath:           storagePath,
+		IrmaConfigurationPath: irmaConfigurationPath,
+		EudiAppDataPath:       eudiAppDataPath,
+		Handler:               clientHandler,
+		SessionHandler:        sessionHandler,
+		Signer:                signer,
+		AesKey:                aesKey,
+		Locale:                "en",
+	})
 	require.NoError(t, err)
 
 	return c, clientHandler, sessionHandler

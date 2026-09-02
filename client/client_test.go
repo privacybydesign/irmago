@@ -7,6 +7,7 @@ import (
 
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/walletconfig"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testhelpers"
 	"github.com/stretchr/testify/require"
@@ -22,7 +23,15 @@ func TestInstantiateNewEmptyClient(t *testing.T) {
 	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
 	eudiAppDataPath := filepath.Join(storagePath, "eudi")
 
-	client, err := New(storagePath, irmaConfigurationPath, eudiAppDataPath, &testhelpers.TestClientHandler{}, nil, test.NewSigner(t), aesKey, "en")
+	client, err := New(Config{
+		StoragePath:           storagePath,
+		IrmaConfigurationPath: irmaConfigurationPath,
+		EudiAppDataPath:       eudiAppDataPath,
+		Handler:               &testhelpers.TestClientHandler{},
+		Signer:                test.NewSigner(t),
+		AesKey:                aesKey,
+		Locale:                "en",
+	})
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -43,7 +52,15 @@ func TestInstantiateClientWithExistingIrmaStorage(t *testing.T) {
 	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
 	eudiAppDataPath := filepath.Join(storagePath, "eudi")
 
-	client, err := New(storagePath, irmaConfigurationPath, eudiAppDataPath, &testhelpers.TestClientHandler{}, nil, test.NewSigner(t), aesKey, "en")
+	client, err := New(Config{
+		StoragePath:           storagePath,
+		IrmaConfigurationPath: irmaConfigurationPath,
+		EudiAppDataPath:       eudiAppDataPath,
+		Handler:               &testhelpers.TestClientHandler{},
+		Signer:                test.NewSigner(t),
+		AesKey:                aesKey,
+		Locale:                "en",
+	})
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -114,16 +131,24 @@ func newClientOnFreshStorage(t *testing.T) func() *Client {
 	eudiAppDataPath := filepath.Join(storagePath, "eudi")
 
 	return func() *Client {
-		c, err := New(storagePath, irmaConfigurationPath, eudiAppDataPath, &testhelpers.TestClientHandler{}, nil, test.NewSigner(t), aesKey, "en")
+		c, err := New(Config{
+			StoragePath:           storagePath,
+			IrmaConfigurationPath: irmaConfigurationPath,
+			EudiAppDataPath:       eudiAppDataPath,
+			Handler:               &testhelpers.TestClientHandler{},
+			Signer:                test.NewSigner(t),
+			AesKey:                aesKey,
+			Locale:                "en",
+		})
 		require.NoError(t, err)
 		return c
 	}
 }
 
 // issuerRoots returns the issuer trust anchors the client validates against.
-// Configuration.Reload builds this pool, and reads the staging preference while
-// doing so, so unlike the developer mode flags it can only hold the staging
-// anchors if the preference was applied before that Reload ran.
+// Configuration.Reload builds this pool from the active wallet config
+// environment, so unlike the developer mode flags it can only hold the staging
+// anchors if the environment was switched before that Reload ran.
 func issuerRoots(client *Client) *x509.CertPool {
 	return client.openid4vpClient.Configuration.Issuers.GetVerificationOptionsTemplate().Roots
 }
@@ -142,7 +167,14 @@ func requireDeveloperModeApplied(t *testing.T, client *Client, applied bool) {
 	conf := client.openid4vpClient.Configuration
 	require.Equal(t, expectedMode, conf.Issuers.GetCertificateVerificationMode())
 	require.Equal(t, expectedMode, conf.Verifiers.GetCertificateVerificationMode())
-	require.Equal(t, applied, conf.UsesStagingTrustAnchors())
+
+	// Developer mode is the environment switch: staging while on, production
+	// otherwise.
+	expectedEnvironment := walletconfig.EnvironmentProduction
+	if applied {
+		expectedEnvironment = walletconfig.EnvironmentStaging
+	}
+	require.Equal(t, expectedEnvironment, client.WalletConfigEnvironment())
 
 	require.Equal(t, applied, client.didValidator.AllowsInsecureDidWeb())
 

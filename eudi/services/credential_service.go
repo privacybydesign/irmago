@@ -19,6 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/eudi/trust"
 	"gorm.io/datatypes"
 )
 
@@ -49,14 +50,20 @@ type credentialService struct {
 	// currentLocale is read on every call, not snapshotted, so a SetLocale in
 	// between two list calls is reflected without rebuilding the service.
 	currentLocale *clientmodels.CurrentLocale
+	// trust ranks each credential's issuer for the list view, against one view
+	// pinned per call. Nil leaves issuers unranked.
+	trust *TrustService
 }
 
+// NewCredentialService builds the credential service. trust may be nil, in which
+// case the credential list carries no issuer trust levels.
 func NewCredentialService(
 	credentialStore db.CredentialStore,
 	holderBindingKeyStore db.HolderBindingKeyStore,
 	fileStorage filesystem.FileSystemStorage,
 	revocation *RevocationService,
 	currentLocale *clientmodels.CurrentLocale,
+	trust *TrustService,
 ) CredentialService {
 	return &credentialService{
 		credentialStore:       credentialStore,
@@ -64,6 +71,7 @@ func NewCredentialService(
 		fileStorage:           fileStorage,
 		revocation:            revocation,
 		currentLocale:         currentLocale,
+		trust:                 trust,
 	}
 }
 
@@ -86,9 +94,22 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 
 	locale := s.currentLocale.Get()
 
+	// One pinned trust view for the whole list, so every credential is ranked
+	// against the same state of the world.
+	var trustView trust.View
+	if s.trust != nil {
+		trustView = s.trust.Snapshot()
+	}
+
 	// Convert storage models to client models
 	clientModels := make([]*clientmodels.Credential, len(m))
 	for i, batch := range m {
+		var issuerLevel clientmodels.TrustLevel
+		issuerMeetsPolicy := true
+		if trustView != nil {
+			issuerLevel, issuerMeetsPolicy = s.trust.IssuerStandingIn(trustView, batch)
+		}
+
 		var processedSdJwtPayload *sdjwt.ProcessedPayload
 		if err := json.Unmarshal(batch.ProcessedSdJwtPayload, &processedSdJwtPayload); err != nil {
 			processedSdJwtPayload = nil // fallback to nil if unmarshalling fails
@@ -137,12 +158,12 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			Image:        credentialImage,
 			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
-				Id:       batch.CredentialIssuerIdentifier,
-				Name:     issuerName,
-				Image:    issuerImage,
-				Url:      nil,
-				Parent:   nil,
-				Verified: false,
+				Id:         batch.CredentialIssuerIdentifier,
+				Name:       issuerName,
+				Image:      issuerImage,
+				Url:        nil,
+				Parent:     nil,
+				TrustLevel: issuerLevel,
 			},
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,
@@ -153,6 +174,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			IssuanceDate:                 iat,
 			Revoked:                      revoked[batch.Hash],
 			RevocationSupported:          revocable[batch.Hash],
+			IssuerNotTrusted:             !issuerMeetsPolicy,
 			IssueURL:                     nil, // TODO: add issue URL to storage model so this can be filled in here
 		}
 	}

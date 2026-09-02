@@ -39,7 +39,7 @@ type Verified struct {
 //     nothing an issuer or verifier CA issued can sign a config — with the
 //     digitalSignature key usage on the leaf;
 //  3. the signature holds under the leaf's key;
-//  4. the payload is a valid [Config] declaring env's name.
+//  4. the payload is a valid [Config] declaring env's name and config id.
 //
 // The config's own time bounds are not checked: an expired config is still a
 // genuine one, and the [Manager] reports its freshness separately so a fetch
@@ -102,6 +102,9 @@ func Verify(raw []byte, env Environment, now time.Time) (*Verified, error) {
 	}
 	if config.Environment != env.Name {
 		return nil, fmt.Errorf("config is for environment %q, expected %q", config.Environment, env.Name)
+	}
+	if config.ID != env.ConfigID {
+		return nil, fmt.Errorf("config has id %q, expected %q", config.ID, env.ConfigID)
 	}
 
 	return &Verified{Config: &config, Raw: slices.Clone(raw), Signer: leaf}, nil

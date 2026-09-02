@@ -55,6 +55,7 @@ func goldenEnvironment(t *testing.T) Environment {
 	require.Len(t, chain, 1)
 	return Environment{
 		Name:              "golden",
+		ConfigID:          "yivi-golden",
 		ConfigURL:         "https://config.golden.example/wallet-config/v1/",
 		SigningRoot:       chain[0],
 		BundledConfigPath: filepath.Join(goldenDir(), "config.jws"),
@@ -153,7 +154,7 @@ func TestGolden_LoadsAsABundledConfig(t *testing.T) {
 	require.Equal(t, uint64(1), snapshot.Config.Version)
 	require.Equal(t, Fresh, snapshot.Freshness)
 
-	persisted, ok := store.Get("golden")
+	persisted, ok := store.Get("yivi-golden")
 	require.True(t, ok)
 	require.Equal(t, goldenRaw(t), persisted)
 }

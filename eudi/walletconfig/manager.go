@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/sirupsen/logrus"
 )
 
@@ -79,10 +80,40 @@ type Manager struct {
 // Snapshot is what a session evaluates against: the active environment and the
 // config held for it, pinned at one moment. Config is nil when the wallet holds
 // none that verifies; consumers must treat it as read-only.
+//
+// The environment's built-in entities are always in force; the config's are
+// subject to its Freshness. Consumers read both.
 type Snapshot struct {
 	Environment Environment
 	Config      *Config
 	Freshness   Freshness
+}
+
+// Policy is the policy in force: the held config's, or DefaultPolicy when none
+// is held.
+func (s Snapshot) Policy() Policy {
+	if s.Config == nil {
+		return DefaultPolicy()
+	}
+	return s.Config.Policy
+}
+
+// MinimumAppBuild is the held config's minimum app build, or zero (no minimum)
+// when none is held.
+func (s Snapshot) MinimumAppBuild() int64 {
+	if s.Config == nil {
+		return 0
+	}
+	return s.Config.MinimumAppBuild
+}
+
+// DefaultPolicy is what applies without a config: the first shipped policy,
+// which blocks nobody and lets the ladder drive warnings only.
+func DefaultPolicy() Policy {
+	return Policy{MinimumTrustLevel: MinimumTrustLevel{
+		Issuance:   clientmodels.TrustLevel_Low,
+		Disclosure: clientmodels.TrustLevel_Low,
+	}}
 }
 
 // NewManager validates opts and loads the active environment's config from what
@@ -179,7 +210,9 @@ func (m *Manager) refresh(ctx context.Context, force bool) (bool, error) {
 
 	m.mu.Lock()
 	env := m.active
-	if !force && !m.dueLocked() {
+	// An unpublished environment has nothing to fetch: it runs on its built-in
+	// entities, and there is nothing to be out of date about.
+	if !env.IsPublished() || (!force && !m.dueLocked()) {
 		m.mu.Unlock()
 		return false, nil
 	}
@@ -240,6 +273,9 @@ func (m *Manager) SwitchEnvironment(name string) error {
 // is newer. Both are verified against env's root exactly as a download is; one
 // that no longer verifies is dropped. Called with m.mu held.
 func (m *Manager) loadLocked(env Environment) {
+	if !env.IsPublished() {
+		return
+	}
 	var bundled, stored *Verified
 
 	if env.BundledConfigPath != "" {
@@ -253,9 +289,9 @@ func (m *Manager) loadLocked(env Environment) {
 		}
 	}
 
-	if raw, ok := m.store.Get(env.Name); ok {
+	if raw, ok := m.store.Get(env.ConfigID); ok {
 		if verified, err := Verify(raw, env, m.now()); err != nil {
-			m.logger.Warnf("walletconfig: the stored config for %q no longer verifies, dropping it: %v", env.Name, err)
+			m.logger.Warnf("walletconfig: the stored config %q for %q no longer verifies, dropping it: %v", env.ConfigID, env.Name, err)
 		} else {
 			stored = verified
 		}
@@ -301,7 +337,8 @@ func (m *Manager) installLocked(env Environment, verified *Verified, persist boo
 	}
 
 	if persist {
-		if err := m.store.Put(env.Name, verified.Raw); err != nil {
+		// Filed under the config's own id, which Verify made equal to env.ConfigID.
+		if err := m.store.Put(verified.Config.ID, verified.Raw); err != nil {
 			// The config is good; only persisting it failed. Use it for this run.
 			m.logger.Warnf("walletconfig: persisting the config for %q: %v", env.Name, err)
 		}

@@ -583,7 +583,7 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		require.Equal(t, "irma-demo.MijnOverheid.fullName", credential.CredentialId)
 		require.Equal(t, "Demo Name", credential.Name)
 		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name)
-		require.True(t, credential.Issuer.Verified, "issuer should be verified")
+		require.Equal(t, clientmodels.TrustLevel_High, credential.Issuer.TrustLevel, "an IRMA issuer is high")
 
 		requireAttrsInOrder(t, credential.Attributes,
 			expectedAttr{
@@ -714,7 +714,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	defer c.Close()
 
 	revocationListUpdateInterval := 3 * time.Second
-	c.InitJobs(revocationListUpdateInterval, 0) // status refresh disabled: not under test here
+	c.InitJobs(revocationListUpdateInterval, 0, 0) // status and wallet config refresh disabled: not under test here
 
 	// Give the client some time to init and download the current CRL
 	time.Sleep(4 * time.Second)
@@ -772,7 +772,7 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInf
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "an issuer under an installed CA or in the scheme is high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -839,7 +839,7 @@ func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "an issuer under an installed CA or in the scheme is high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -861,7 +861,7 @@ func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "an issuer under an installed CA or in the scheme is high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -924,7 +924,7 @@ func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "an issuer under an installed CA or in the scheme is high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -958,7 +958,7 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "an issuer under an installed CA or in the scheme is high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -1287,7 +1287,16 @@ func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	client, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey, locale)
+	client, err := client.New(client.Config{
+		StoragePath:           storagePath,
+		IrmaConfigurationPath: irmaConfigurationPath,
+		EudiAppDataPath:       eudiAppDataPath,
+		Handler:               clientHandler,
+		SessionHandler:        sessionHandler,
+		Signer:                test.NewSigner(t),
+		AesKey:                aesKey,
+		Locale:                locale,
+	})
 	require.NoError(t, err)
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})

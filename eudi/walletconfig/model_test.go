@@ -51,6 +51,7 @@ func TestConfig_Validate_RejectsEachMalformedField(t *testing.T) {
 		{"schema_version malformed", func(c *Config) { c.SchemaVersion = "1" }, "major.minor"},
 		{"schema_version non-numeric", func(c *Config) { c.SchemaVersion = "one.zero" }, "no integer major"},
 		{"schema major unsupported", func(c *Config) { c.SchemaVersion = "2.0" }, "major 2 is not supported"},
+		{"id missing", func(c *Config) { c.ID = "" }, "id is required"},
 		{"environment missing", func(c *Config) { c.Environment = "" }, "environment is required"},
 		{"version zero", func(c *Config) { c.Version = 0 }, "version must be at least 1"},
 		{"issued_at missing", func(c *Config) { c.IssuedAt = UnixTime{} }, "issued_at is required"},

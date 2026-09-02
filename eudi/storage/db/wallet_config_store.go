@@ -9,7 +9,7 @@ import (
 )
 
 // WalletConfigStore persists signed wallet configs in the wallet_config_documents
-// table, one per environment. It satisfies walletconfig.Store structurally, which
+// table, one per config id. It satisfies walletconfig.Store structurally, which
 // is how the wallet hands it to the config manager; naming that interface here
 // would make this package depend on the eudi packages.
 type WalletConfigStore struct {
@@ -23,28 +23,28 @@ func NewWalletConfigStore(db *gorm.DB) *WalletConfigStore {
 // Get implements walletconfig.Store. Any read failure reads as a miss: the caller
 // falls back to its bundled config or a fetch, and the interface has nowhere to
 // report an error to.
-func (s *WalletConfigStore) Get(environment string) ([]byte, bool) {
-	if environment == "" {
+func (s *WalletConfigStore) Get(configID string) ([]byte, bool) {
+	if configID == "" {
 		return nil, false
 	}
 	var row models.WalletConfigDocument
-	if err := s.db.First(&row, "environment = ?", environment).Error; err != nil {
+	if err := s.db.First(&row, "config_id = ?", configID).Error; err != nil {
 		return nil, false
 	}
 	return row.RawJws, true
 }
 
-// Put implements walletconfig.Store, replacing whatever the environment held.
-func (s *WalletConfigStore) Put(environment string, rawJws []byte) error {
-	if environment == "" {
-		return fmt.Errorf("wallet_config_documents: empty environment")
+// Put implements walletconfig.Store, replacing whatever the config id held.
+func (s *WalletConfigStore) Put(configID string, rawJws []byte) error {
+	if configID == "" {
+		return fmt.Errorf("wallet_config_documents: empty config id")
 	}
 	if len(rawJws) == 0 {
 		return fmt.Errorf("wallet_config_documents: empty document")
 	}
 	return s.db.Save(&models.WalletConfigDocument{
-		Environment: environment,
-		RawJws:      rawJws,
-		FetchedAt:   time.Now(),
+		ConfigID:  configID,
+		RawJws:    rawJws,
+		FetchedAt: time.Now(),
 	}).Error
 }

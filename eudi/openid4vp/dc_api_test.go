@@ -4,7 +4,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,7 +16,6 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,16 +38,13 @@ type mockVerifierValidator struct {
 
 func (v *mockVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (
 	*AuthorizationRequest,
-	*x509.Certificate,
-	*scheme.RelyingPartyRequestor,
+	*VerifiedRequestor,
 	error,
 ) {
 	if v.err != nil {
-		return nil, nil, nil, v.err
+		return nil, nil, v.err
 	}
-	requestor := &scheme.RelyingPartyRequestor{}
-	requestor.Organization.LegalName = map[string]string{"en": "Verifier Example"}
-	return v.request, nil, requestor, nil
+	return v.request, &VerifiedRequestor{DID: "did:web:verifier.example.com", SelfAssertedName: "Verifier Example"}, nil
 }
 
 // mockDcqlHandler answers a single DCQL credential query with one owned
@@ -203,7 +198,7 @@ func TestParseDcApiRequest_Unsigned_Succeeds(t *testing.T) {
 	// An unsigned request is not backed by any trust framework, so the verifier is
 	// shown by its origin and never as verified.
 	require.Equal(t, testOrigin, requestor.Name)
-	require.False(t, requestor.Verified)
+	require.Equal(t, clientmodels.TrustLevel_Low, requestor.TrustLevel)
 }
 
 // Nothing authenticates client_metadata in an unsigned request, so client_name
@@ -222,7 +217,7 @@ func TestParseDcApiRequest_Unsigned_IgnoresClientName(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "https://phishing.example.net", requestor.Name)
-	require.False(t, requestor.Verified)
+	require.Equal(t, clientmodels.TrustLevel_Low, requestor.TrustLevel)
 }
 
 // client_metadata itself must survive, because the jwks it carries is what a

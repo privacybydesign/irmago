@@ -1,12 +1,126 @@
-package eudi
+package walletconfig
 
-// Production trust anchors
+import (
+	"crypto/x509"
+	"fmt"
+	"sync"
+
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/utils"
+)
+
+// The Yivi environments as this build knows them.
+//
+// Transitional. Until the Yivi Wallet Config CA exists and signs the first
+// configs, neither environment is published: there is no URL to fetch from and
+// no root to verify against, and the trusted entities are the ones compiled in
+// below — the anchors that used to be PEM constants in eudi/trustanchors.go,
+// expressed in the config's own entity model. At cutover the signed configs
+// carry these entities, ConfigURL and SigningRoot are filled in, and the
+// built-in entities are deleted.
+
 const (
-	Production_Yivi_RootCertificateRevocationListDistributionPoint       = "https://ca.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=AKPlCD/saQ9CmdXzNQpPgmO%2BHQM"
-	Production_Yivi_IssuerCaCertificateRevocationListDistributionPoint   = "https://ca.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=TNFX2bhlb1JXido8TZQr1Wqlcb8"
-	Production_Yivi_VerifierCaCertificateRevocationListDistributionPoint = "https://ca.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=kP7IIn8hVVbRGQECuKyMxPkQM8k"
+	// EnvironmentProduction and EnvironmentStaging are the names of the two Yivi
+	// environments: what a config's `environment` field says, and what a Store
+	// files a config under.
+	EnvironmentProduction = "production"
+	EnvironmentStaging    = "staging"
+)
 
-	Production_Yivi_IssuerTrustAnchor = `
+// YiviEnvironments is every environment a Yivi wallet build can live in:
+// production and staging, in that order.
+var YiviEnvironments = sync.OnceValue(func() []Environment {
+	return []Environment{yiviProduction(), yiviStaging()}
+})
+
+func yiviProduction() Environment {
+	return Environment{
+		Name: EnvironmentProduction,
+		BuiltinEntities: []TrustedEntity{
+			yiviCA("yivi-issuers", RoleIssuer, productionYiviIssuerChainPEM, productionYiviRootCRL, productionYiviIssuerCACRL),
+			yiviCA("yivi-verifiers", RoleVerifier, productionYiviVerifierChainPEM, productionYiviRootCRL, productionYiviVerifierCACRL),
+			// The Ver.iD root signs both issuer and verifier certificates.
+			thirdPartyCA("verid", "Ver.iD", productionVerIDRootPEM),
+		},
+	}
+}
+
+func yiviStaging() Environment {
+	return Environment{
+		Name: EnvironmentStaging,
+		BuiltinEntities: []TrustedEntity{
+			yiviCA("yivi-staging-issuers", RoleIssuer, stagingYiviIssuerChainPEM, stagingYiviRootCRL, stagingYiviIssuerCACRL),
+			yiviCA("yivi-staging-verifiers", RoleVerifier, stagingYiviVerifierChainPEM, stagingYiviRootCRL, stagingYiviVerifierCACRL),
+			// The Ver.iD development root signs both issuer and verifier certificates.
+			thirdPartyCA("verid-dev", "Ver.iD (development)", developmentVerIDRootPEM),
+		},
+	}
+}
+
+// yiviCA is one of Yivi's own CAs: a chain of the issuing CA and the root it
+// hangs under, anchored at the root with the issuing CA as intermediate. Yivi
+// vouches for what it certifies itself, so the level is high.
+func yiviCA(id string, role Role, chainPEM string, crlDistributionPoints ...string) TrustedEntity {
+	chain := mustParseChain(id, chainPEM)
+	root, intermediates := chain[len(chain)-1], chain[:len(chain)-1]
+	// The PEM lists the chain leaf-to-root; the handle wants intermediates from
+	// the root downwards.
+	for i, j := 0, len(intermediates)-1; i < j; i, j = i+1, j-1 {
+		intermediates[i], intermediates[j] = intermediates[j], intermediates[i]
+	}
+	handle := Handle{
+		Type:                  HandleTypeX509CA,
+		RootCertificate:       &Certificate{Certificate: root},
+		CRLDistributionPoints: crlDistributionPoints,
+	}
+	for _, intermediate := range intermediates {
+		handle.Intermediates = append(handle.Intermediates, Certificate{Certificate: intermediate})
+	}
+	return TrustedEntity{
+		ID:         id,
+		Name:       clientmodels.TranslatedString{"en": "Yivi", "nl": "Yivi"},
+		Roles:      []Role{role},
+		TrustLevel: clientmodels.TrustLevel_High,
+		Handles:    []Handle{handle},
+	}
+}
+
+// thirdPartyCA is a root Yivi anchors for both roles. High, as before this code
+// existed: these roots were pinned next to Yivi's own.
+func thirdPartyCA(id, name, rootPEM string) TrustedEntity {
+	chain := mustParseChain(id, rootPEM)
+	return TrustedEntity{
+		ID:         id,
+		Name:       clientmodels.TranslatedString{"en": name, "nl": name},
+		Roles:      []Role{RoleIssuer, RoleVerifier},
+		TrustLevel: clientmodels.TrustLevel_High,
+		Handles: []Handle{{
+			Type:            HandleTypeX509CA,
+			RootCertificate: &Certificate{Certificate: chain[len(chain)-1]},
+		}},
+	}
+}
+
+// mustParseChain parses a compiled-in PEM chain. The constants below are part of
+// the build, so a failure here is a build defect and panics at first use rather
+// than anchoring nothing in silence.
+func mustParseChain(id, pemChain string) []*x509.Certificate {
+	chain, err := utils.ParsePemCertificateChain([]byte(pemChain))
+	if err != nil {
+		panic(fmt.Sprintf("walletconfig: built-in entity %q: %v", id, err))
+	}
+	if len(chain) == 0 {
+		panic(fmt.Sprintf("walletconfig: built-in entity %q: no certificate in PEM", id))
+	}
+	return chain
+}
+
+// Production trust anchors.
+const (
+	productionYiviRootCRL        = "https://ca.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=AKPlCD/saQ9CmdXzNQpPgmO%2BHQM"
+	productionYiviIssuerCACRL    = "https://ca.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=TNFX2bhlb1JXido8TZQr1Wqlcb8"
+	productionYiviVerifierCACRL  = "https://ca.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=kP7IIn8hVVbRGQECuKyMxPkQM8k"
+	productionYiviIssuerChainPEM = `
 Subject: CN=Yivi Attestation Providers CA,O=Yivi,C=NL
 Issuer: CN=Yivi Requestors Root CA,O=Yivi,C=NL
 -----BEGIN CERTIFICATE-----
@@ -38,8 +152,7 @@ Si3+IDl+vIXsGmEwWgSitfB2x1wCIQDOxRpQEqIf+E6VIPR0erh7TRw7Zez04M8n
 lzAIUfg4LA==
 -----END CERTIFICATE-----
 `
-
-	Production_Yivi_VerifierTrustAnchor = `
+	productionYiviVerifierChainPEM = `
 Subject: CN=Yivi Relying Parties CA,O=Yivi,C=NL
 Issuer: CN=Yivi Requestors Root CA,O=Yivi,C=NL
 -----BEGIN CERTIFICATE-----
@@ -71,9 +184,7 @@ Si3+IDl+vIXsGmEwWgSitfB2x1wCIQDOxRpQEqIf+E6VIPR0erh7TRw7Zez04M8n
 lzAIUfg4LA==
 -----END CERTIFICATE-----
 `
-	// The Ver.iD root signs both issuer and verifier certificates, so it is
-	// added to both trust models.
-	Production_VerID_TrustAnchor = `
+	productionVerIDRootPEM = `
 Subject: CN=Ver.iD Root CA,OU=Development team,O=Subst.id B.V.,postalCode=1013 AM,street=Koivistokade 3,L=Amsterdam,ST=Noord-Holland,C=NL
 Issuer: CN=Ver.iD Root CA,OU=Development team,O=Subst.id B.V.,postalCode=1013 AM,street=Koivistokade 3,L=Amsterdam,ST=Noord-Holland,C=NL
 -----BEGIN CERTIFICATE-----
@@ -98,15 +209,12 @@ iOCWv27pguzW
 `
 )
 
-// ------------------------------------------------------------------------------
-
-// Staging/development trust anchors, only trusted when developer mode is enabled
+// Staging and development trust anchors, in force in the staging environment only.
 const (
-	Staging_Yivi_RootCertificateRevocationListDistributionPoint       = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=kFCOt8NLhJ8g0WqMAnl%2BvoN2RuY"
-	Staging_Yivi_IssuerCaCertificateRevocationListDistributionPoint   = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=NGSB30tAE2E/Z/j4V%2B%2BTTTS5Ay0"
-	Staging_Yivi_VerifierCaCertificateRevocationListDistributionPoint = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=gVrSxh0lO5cdqAS18OiZ/oui5h4"
-
-	Staging_Yivi_IssuerTrustAnchor = `
+	stagingYiviRootCRL        = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=kFCOt8NLhJ8g0WqMAnl%2BvoN2RuY"
+	stagingYiviIssuerCACRL    = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=NGSB30tAE2E/Z/j4V%2B%2BTTTS5Ay0"
+	stagingYiviVerifierCACRL  = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=gVrSxh0lO5cdqAS18OiZ/oui5h4"
+	stagingYiviIssuerChainPEM = `
 Subject: CN=Yivi Staging Attestation Providers CA,O=Yivi,C=NL
 Issuer: CN=Yivi Staging Requestors Root CA,O=Yivi,C=NL
 -----BEGIN CERTIFICATE-----
@@ -141,8 +249,7 @@ MEQCIDCSNbPoyhDZ5A3SWupsyPj/tDF4xNoHYnE0WFIs2pz8AiA9mhXswiJPFbVR
 9dYSupOhXkuQRk8CgJuN++OnESd8uw==
 -----END CERTIFICATE-----
 `
-
-	Staging_Yivi_VerifierTrustAnchor = `
+	stagingYiviVerifierChainPEM = `
 Subject: CN=Yivi Staging Relying Parties CA,O=Yivi,C=NL
 Issuer: CN=Yivi Staging Requestors Root CA,O=Yivi,C=NL
 -----BEGIN CERTIFICATE-----
@@ -176,9 +283,7 @@ MEQCIDCSNbPoyhDZ5A3SWupsyPj/tDF4xNoHYnE0WFIs2pz8AiA9mhXswiJPFbVR
 9dYSupOhXkuQRk8CgJuN++OnESd8uw==
 -----END CERTIFICATE-----
 `
-	// The Ver.iD development root signs both issuer and verifier certificates,
-	// so it is added to both trust models.
-	Development_VerID_TrustAnchor = `
+	developmentVerIDRootPEM = `
 Subject: CN=Ver.iD Dev Root CA,OU=Development team,O=Subst.id B.V.,postalCode=1013 AM,street=Koivistokade 3,L=Amsterdam,ST=Noord-Holland,C=NL
 Issuer: CN=Ver.iD Dev Root CA,OU=Development team,O=Subst.id B.V.,postalCode=1013 AM,street=Koivistokade 3,L=Amsterdam,ST=Noord-Holland,C=NL
 -----BEGIN CERTIFICATE-----

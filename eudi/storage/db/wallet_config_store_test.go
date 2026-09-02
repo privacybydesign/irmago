@@ -34,29 +34,29 @@ func Test_WalletConfigStore_Get_Miss_ReturnsFalse(t *testing.T) {
 	require.False(t, ok)
 }
 
-func Test_WalletConfigStore_Put_ReplacesTheEnvironmentsDocument(t *testing.T) {
+func Test_WalletConfigStore_Put_ReplacesTheConfigsDocument(t *testing.T) {
 	store := newTestWalletConfigStore(t)
-	require.NoError(t, store.Put("production", []byte("v1")))
-	require.NoError(t, store.Put("production", []byte("v2")))
+	require.NoError(t, store.Put("yivi-prod", []byte("v1")))
+	require.NoError(t, store.Put("yivi-prod", []byte("v2")))
 
-	raw, ok := store.Get("production")
+	raw, ok := store.Get("yivi-prod")
 	require.True(t, ok)
 	require.Equal(t, []byte("v2"), raw)
 }
 
-func Test_WalletConfigStore_KeepsEnvironmentsApart(t *testing.T) {
+func Test_WalletConfigStore_KeepsConfigIdsApart(t *testing.T) {
 	store := newTestWalletConfigStore(t)
-	require.NoError(t, store.Put("production", []byte("prod")))
-	require.NoError(t, store.Put("staging", []byte("stag")))
+	require.NoError(t, store.Put("yivi-prod", []byte("prod")))
+	require.NoError(t, store.Put("yivi-staging", []byte("stag")))
 
-	raw, _ := store.Get("production")
+	raw, _ := store.Get("yivi-prod")
 	require.Equal(t, []byte("prod"), raw)
-	raw, _ = store.Get("staging")
+	raw, _ = store.Get("yivi-staging")
 	require.Equal(t, []byte("stag"), raw)
 }
 
 func Test_WalletConfigStore_Put_RejectsEmptyKeyOrDocument(t *testing.T) {
 	store := newTestWalletConfigStore(t)
-	require.ErrorContains(t, store.Put("", []byte("x")), "empty environment")
+	require.ErrorContains(t, store.Put("", []byte("x")), "empty config id")
 	require.ErrorContains(t, store.Put("production", nil), "empty document")
 }

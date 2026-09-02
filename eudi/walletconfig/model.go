@@ -32,8 +32,10 @@ type Config struct {
 	// SchemaVersion is `major.minor`. The major must be SupportedSchemaMajor.
 	SchemaVersion string `json:"schema_version"`
 
-	// ID names the config for humans and logs. Nothing is keyed on it.
-	ID string `json:"id,omitempty"`
+	// ID identifies the config: what a Store files it under, and what the
+	// environment's ConfigID must equal. One environment publishes one config,
+	// so in practice one id per environment.
+	ID string `json:"id"`
 
 	// Environment must equal the name of the environment whose root verified the
 	// signature: belt and braces on top of the per-environment root.
@@ -329,6 +331,9 @@ func (c *Config) Validate() error {
 	} else if major != SupportedSchemaMajor {
 		fail("schema_version %q: major %d is not supported, this client reads major %d",
 			c.SchemaVersion, major, SupportedSchemaMajor)
+	}
+	if c.ID == "" {
+		fail("id is required")
 	}
 	if c.Environment == "" {
 		fail("environment is required")

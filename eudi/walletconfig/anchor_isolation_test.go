@@ -72,7 +72,7 @@ func TestAnchorIsolation_AConfigSignedByACredentialIssuerIsRefused(t *testing.T)
 	server.SetBody(forged)
 	env.ConfigURL = server.URL
 	store := NewMemoryStore()
-	require.NoError(t, store.Put("test", configSigner.Sign(t, onboarding)))
+	require.NoError(t, store.Put(env.ConfigID, configSigner.Sign(t, onboarding)))
 	m, err := NewManager(Options{Environments: []Environment{env}, Active: "test", Store: store, HTTPClient: server.Client()})
 	require.NoError(t, err)
 

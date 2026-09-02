@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/trust"
 )
 
 // Protocol identifiers for OpenID4VP over the W3C Digital Credentials API,
@@ -77,6 +78,11 @@ func (client *Client) parseDcApiRequest(request *DcApiRequest) (*AuthorizationRe
 	case DcApiProtocolUnsigned:
 		parsed, err := parseUnsignedDcApiRequest(request.Data)
 		if err != nil {
+			return nil, nil, err
+		}
+		// Nobody vouches for an origin: an unsigned request ranks low, and a policy
+		// that asks for more refuses it.
+		if err := trust.CheckMinimum(client.trustView().Policy(), trust.SessionDisclosure, clientmodels.TrustLevel_Low); err != nil {
 			return nil, nil, err
 		}
 		authRequest = parsed
@@ -210,9 +216,9 @@ func originHostPort(u *url.URL) string {
 }
 
 // unsignedDcApiRequestor builds the requestor to show for an unsigned request.
-// There is no trust framework backing an unsigned request, so the verifier is
-// never presented as verified: all the wallet knows is the origin the platform
-// authenticated.
+// There is no trust framework backing an unsigned request, so the verifier ranks
+// low and is never presented as verified: all the wallet knows is the origin the
+// platform authenticated.
 //
 // client_metadata is deliberately not consulted for the display name. Nothing
 // authenticates it in an unsigned request, for the same reason client_id and
@@ -233,7 +239,7 @@ func unsignedDcApiRequestor(origin string) *clientmodels.TrustedParty {
 	return &clientmodels.TrustedParty{
 		// client_name is a single string and an origin is not localized, so there
 		// is nothing for the current locale to resolve here.
-		Name:     displayName,
-		Verified: false,
+		Name:       displayName,
+		TrustLevel: clientmodels.TrustLevel_Low,
 	}
 }

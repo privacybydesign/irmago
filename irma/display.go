@@ -34,19 +34,20 @@ func (at *AttributeType) ResolveTexts(locale string) (displayName *string, descr
 }
 
 // ToTrustedParty builds a TrustedParty for an issuer, including its logo and
-// the scheme manager as parent. Each party resolves its own text bundle.
+// the scheme manager as parent. Each party resolves its own text bundle. An
+// IRMA issuer is registered in its scheme, which is Yivi vouching for it: high.
 func (issuer *Issuer) ToTrustedParty(conf *Configuration, locale string) clientmodels.TrustedParty {
 	scheme := conf.SchemeManagers[issuer.SchemeManagerIdentifier()]
 	parent := clientmodels.TrustedParty{
-		Id:       scheme.Identifier().String(),
-		Name:     clientmodels.Resolve(clientmodels.TranslatedString(scheme.Name), locale),
-		Verified: scheme.Status == SchemeManagerStatusValid,
+		Id:         scheme.Identifier().String(),
+		Name:       clientmodels.Resolve(clientmodels.TranslatedString(scheme.Name), locale),
+		TrustLevel: clientmodels.TrustLevel_High,
 	}
 	return clientmodels.TrustedParty{
-		Id:       issuer.Identifier().String(),
-		Name:     clientmodels.Resolve(clientmodels.TranslatedString(issuer.Name), locale),
-		Image:    clientmodels.ImageFromFile(issuer.Logo(conf)),
-		Verified: scheme.Status == SchemeManagerStatusValid,
-		Parent:   &parent,
+		Id:         issuer.Identifier().String(),
+		Name:       clientmodels.Resolve(clientmodels.TranslatedString(issuer.Name), locale),
+		Image:      clientmodels.ImageFromFile(issuer.Logo(conf)),
+		TrustLevel: clientmodels.TrustLevel_High,
+		Parent:     &parent,
 	}
 }

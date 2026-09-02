@@ -29,6 +29,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
+	"github.com/privacybydesign/irmago/eudi/walletconfig"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
@@ -51,6 +52,10 @@ type Client struct {
 	sessionManager    sessionManager
 	credentialService services.CredentialService
 	revocationService *services.RevocationService
+	// trustService is the single home for trust: it holds the wallet config
+	// for the active environment, ranks parties, and keeps the trust models in
+	// step with it.
+	trustService *services.TrustService
 
 	// handler is how the wallet wakes the app when what it has already rendered
 	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
@@ -69,31 +74,61 @@ type Client struct {
 	//Preferences      clientsettings.Preferences
 }
 
-func New(
-	storagePath string,
-	irmaConfigurationPath string,
-	eudiAppDataPath string,
-	handler ClientHandler,
-	sessionHandler clientmodels.SessionHandler,
-	signer irmaclient.Signer,
-	aesKey [32]byte,
-	locale string,
-) (*Client, error) {
+// Config is everything a wallet needs to exist. Named rather than positional
+// because three of the paths are plain strings, and transposing two would build a
+// wallet that looks fine and stores its data in the wrong place. Every zero value
+// takes the documented default.
+type Config struct {
+	// StoragePath and IrmaConfigurationPath must exist; EudiAppDataPath is created.
+	StoragePath           string
+	IrmaConfigurationPath string
+	EudiAppDataPath       string
+
+	// Handler is how the wallet wakes the app when what it rendered went stale.
+	// Required: background jobs call it without a nil guard.
+	Handler        ClientHandler
+	SessionHandler clientmodels.SessionHandler
+	Signer         irmaclient.Signer
+	AesKey         [32]byte
+
+	Locale string
+
+	// Environments are the worlds this build can live in: production and staging,
+	// each with its config URL, signing root, bundled config and built-in trusted
+	// entities. Empty takes walletconfig.YiviEnvironments. The wallet runs in
+	// production, and in staging while developer mode is on; both names must be
+	// present for the switch to work.
+	Environments []walletconfig.Environment
+
+	// AppBuild is the build number of the app, for the wallet config's minimum
+	// app build: below it, OpenID4VC sessions are refused with an "update
+	// required" error. Zero disables the gate.
+	AppBuild int64
+}
+
+func New(cfg Config) (*Client, error) {
 	// Required: the wallet calls it from background jobs and from IrmaClient
 	// without a nil guard, so a nil one would panic on a goroutine no caller
 	// can recover from. Fail here instead, where the app can see it.
-	if handler == nil {
+	if cfg.Handler == nil {
 		return nil, fmt.Errorf("handler is required")
 	}
-	if err := common.AssertPathExists(storagePath); err != nil {
+	if err := common.AssertPathExists(cfg.StoragePath); err != nil {
 		return nil, err
 	}
-	if err := common.AssertPathExists(irmaConfigurationPath); err != nil {
+	if err := common.AssertPathExists(cfg.IrmaConfigurationPath); err != nil {
 		return nil, err
 	}
-	if err := common.EnsureDirectoryExists(eudiAppDataPath); err != nil {
+	if err := common.EnsureDirectoryExists(cfg.EudiAppDataPath); err != nil {
 		return nil, err
 	}
+	environments := cfg.Environments
+	if len(environments) == 0 {
+		environments = walletconfig.YiviEnvironments()
+	}
+
+	storagePath, irmaConfigurationPath, eudiAppDataPath := cfg.StoragePath, cfg.IrmaConfigurationPath, cfg.EudiAppDataPath
+	handler, sessionHandler, signer, aesKey, locale := cfg.Handler, cfg.SessionHandler, cfg.Signer, cfg.AesKey, cfg.Locale
 
 	// Load IRMA + EUDI configuration
 	irmaConf, err := irma.NewConfiguration(
@@ -139,6 +174,24 @@ func New(
 	credStore := db.NewCredentialStore(eudiStorage.Db())
 	hbkStore := db.NewHolderBindingKeyStore(eudiStorage.Db())
 
+	// The wallet config: the source of the trust anchors and of who is vouched
+	// for. Loaded from what the wallet already has — the bundled copy or the
+	// persisted one — and refreshed by a background job; never on a session's
+	// path. Production to begin with; the persisted developer mode preference
+	// switches it to staging below, before the trust models are built.
+	walletConfig, err := walletconfig.NewManager(walletconfig.Options{
+		Environments: environments,
+		Active:       walletconfig.EnvironmentProduction,
+		Store:        db.NewWalletConfigStore(eudiStorage.Db()),
+		HTTPClient:   common.HTTPClient,
+		Logger:       eudi.Logger,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("wallet configuration: %w", err)
+	}
+	eudiConf.WalletConfig = walletConfig
+	trustService := services.NewTrustService(walletConfig, eudiConf, credStore, cfg.AppBuild)
+
 	// Token Status List checker + the single revocation service built on it.
 	// The checker is also shared with the holder-side verifier
 	// (sdJwtVcVerificationContext below). The revocation service is the one home
@@ -151,10 +204,12 @@ func New(
 	}, statusListCache)
 	revocationService := services.NewRevocationService(statusChecker, credStore)
 
-	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale)
+	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale, trustService)
 
-	// Verifier verification checks if the verifier is trusted
-	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
+	// The verifier's identity gate: signature, validity window, revocation and
+	// client_id binding. Whether the verifier is trusted is the trust service's
+	// question, asked by the OpenID4VP client once the gate has passed.
+	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers)
 	didValidator := openid4vp.NewDidVerifierValidator(false)
 	verifierValidator := openid4vp.NewCompositeVerifierValidator(x509Validator, didValidator)
 	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(s)
@@ -171,10 +226,11 @@ func New(
 		sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
 		currentLocale,
 		revocationService,
+		trustService,
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
 
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator, currentLocale)
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator, currentLocale, trustService)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -197,9 +253,14 @@ func New(
 	// with it already enabled never passes through SetPreferences. Apply the
 	// same relaxations here, or a restart silently returns the wallet to
 	// production-strict behaviour. The configuration half goes before the
-	// Reload below: that is what validates the stored chains.
+	// Reload below: that is what validates the stored chains. The environment
+	// was already chosen from the same preference when the wallet config was
+	// built above.
 	developerMode := irmaClient.Preferences.DeveloperMode
 	setDeveloperModeOnConfiguration(eudiConf, developerMode)
+	if err := walletConfig.SwitchEnvironment(environmentFor(developerMode)); err != nil {
+		return nil, fmt.Errorf("wallet configuration: %w", err)
+	}
 
 	if err := openid4vpClient.Configuration.Reload(); err != nil {
 		return nil, fmt.Errorf("reloading eudi configuration failed: %v", err)
@@ -211,13 +272,18 @@ func New(
 	}
 	scheduler.Start()
 
-	// Fow now, create a new SD-JWT verification context, which skips the VCT check against the requestor info
+	// The OpenID4VCI verification context: the issuer certificate is gated on
+	// validity and revocation only, and whether an anchor stands behind it is the
+	// trust ladder's question — an unanchored issuer ranks low rather than being
+	// refused (the uniform ladder). The VCT check against the requestor info is
+	// skipped here as before.
 	sdJwtVcVerificationContextOpenID4VCI := sdjwtvc.SdJwtVcVerificationContext{
 		X509VerificationContext: &eudiConf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),
 		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: false,
-		StatusChecker: statusChecker,
+		StatusChecker:           statusChecker,
+		AcceptUnanchoredIssuers: true,
 	}
 
 	// Initiate the OpenID4VCI client
@@ -228,6 +294,7 @@ func New(
 		credentialService,
 		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
 		currentLocale,
+		trustService,
 	)
 
 	if err != nil {
@@ -256,6 +323,7 @@ func New(
 		currentLocale:     currentLocale,
 		credentialService: credentialService,
 		revocationService: revocationService,
+		trustService:      trustService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,
@@ -698,20 +766,29 @@ func mergeLogsByTime(a, b []clientmodels.LogInfo, max int) []clientmodels.LogInf
 	return merged
 }
 
+// environmentFor is the wallet config environment the developer mode preference
+// selects: staging while it is on, production otherwise. The switch is complete
+// — anchors of the two are never mixed.
+func environmentFor(developerMode bool) string {
+	if developerMode {
+		return walletconfig.EnvironmentStaging
+	}
+	return walletconfig.EnvironmentProduction
+}
+
 // setDeveloperModeOnConfiguration brings the certificate checks in line with
 // the developer mode preference. It is separate from setDeveloperModeOnClients
 // because New has to call the two at different points: these settings must be
 // in place before Configuration.Reload validates the stored chains, while the
 // OpenID4VCI client the other half needs is only constructed after that reload.
 //
-// The trust anchors themselves only follow on the next Reload.
+// The trust anchors themselves follow the environment, switched separately.
 func setDeveloperModeOnConfiguration(conf *eudi.Configuration, enabled bool) {
 	mode := eudi.StrictCertificateVerification
 	if enabled {
 		mode = eudi.DeveloperModeCertificateVerification
 	}
 	conf.SetCertificateVerificationMode(mode)
-	conf.SetUseStagingTrustAnchors(enabled)
 }
 
 // setDeveloperModeOnClients brings the transport checks in line with the
@@ -741,27 +818,64 @@ func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
 		return
 	}
 
-	// Reload rebuilds both trust models from the anchors the new setting
-	// selects: switching developer mode on adds the staging chains, switching
-	// it off drops them again.
-	if err := client.openid4vpClient.Configuration.Reload(); err != nil {
-		common.Logger.Warnf("error while reloading eudi config: %v", err)
+	// Developer mode is the environment switch: staging while on, production
+	// otherwise. The switch swaps the whole environment — anchors, listed parties,
+	// policy — and rebuilds both trust models from it, so nothing of the previous
+	// environment stays trusted. The stored credentials are not touched: each is
+	// re-evaluated against the active environment when listed.
+	if err := client.trustService.SwitchEnvironment(environmentFor(prefs.DeveloperMode)); err != nil {
+		common.Logger.Warnf("error while switching wallet config environment: %v", err)
 	}
-	// Only the staging anchors bring distribution points whose CRLs the wallet
-	// has not downloaded yet, so this is needed on the way in, not on the way
-	// out: the production CRLs were already on disk for the Reload above.
-	if prefs.DeveloperMode {
-		if err := client.openid4vpClient.Configuration.UpdateCertificateRevocationLists(); err != nil {
-			common.Logger.Warnf("error while updating CRLs: %v", err)
+	// The other environment brings distribution points whose CRLs the wallet may
+	// not have downloaded yet.
+	if err := client.openid4vpClient.Configuration.UpdateCertificateRevocationLists(); err != nil {
+		common.Logger.Warnf("error while updating CRLs: %v", err)
+	}
+	// What the wallet has for the new environment may be old: fetch, off the
+	// caller's goroutine so the toggle does not wait on the network.
+	go func() {
+		if err := client.RefreshWalletConfig(context.Background()); err != nil {
+			common.Logger.Warnf("refreshing wallet config after environment switch failed: %v", err)
 		}
+	}()
+	// The credentials the app shows carry trust levels from the previous
+	// environment.
+	client.handler.CredentialsChanged()
+}
+
+// RefreshWalletConfig fetches the active environment's wallet config when it is
+// due — the wallet holds none, the held one is past its next_update, or an hour
+// has passed since the last attempt — and rebuilds the trust models when it
+// changed. This is the only path that fetches a config, so a session is never
+// delayed by a download. A failing fetch leaves the held config in force; the
+// returned error is for the caller's log.
+//
+// A config that came back saying something different about who is trusted
+// signals ClientHandler.CredentialsChanged on the calling goroutine, since the
+// app is showing trust levels that are now out of date.
+//
+// InitJobs runs this on a schedule; the app also calls it when it comes to the
+// foreground.
+func (client *Client) RefreshWalletConfig(ctx context.Context) error {
+	changed, err := client.trustService.Refresh(ctx)
+	if changed {
+		client.handler.CredentialsChanged()
 	}
+	return err
+}
+
+// WalletConfigEnvironment is the name of the active wallet config environment.
+func (client *Client) WalletConfigEnvironment() string {
+	return client.trustService.Environment().Name
 }
 
 func (client *Client) GetPreferences() clientsettings.Preferences {
 	return client.irmaClient.Preferences
 }
 
-func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInterval time.Duration) {
+// InitJobs starts the background jobs: the CRL update, the credential status
+// sweep and the wallet config refresh. A non-positive interval skips its job.
+func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInterval, walletConfigRefreshInterval time.Duration) {
 	// Future TODO: add Context so we can check for cancellation of the job ?
 	_, err := client.scheduler.NewJob(
 		gocron.DurationJob(eudiCrlUpdateInterval),
@@ -773,24 +887,38 @@ func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInte
 		common.Logger.Warnf("failed to create new cron job for updating CRLs: %v", err)
 	}
 
-	// Periodically re-fetch referenced Token Status Lists and update one
+	// The fail-soft background sweeps. Both skip a non-positive interval, log
+	// their failures and carry on, and wake the app themselves when something
+	// changed — so they are wired from one table rather than written out twice.
+	//
+	// The status sweep re-fetches referenced Token Status Lists and updates one
 	// representative instance's LastKnownStatus per credential batch (a batch is
-	// revoked all at once, so one entry stands in for the whole batch). Skipped
-	// when the interval is non-positive. The sweep is fail-soft: per-URI errors
-	// are logged inside RefreshStatuses and the previous status is kept. A sweep
-	// that finds a status change signals the app through RefreshStatuses.
-	if statusTokenListRefreshInterval > 0 {
-		_, err = client.scheduler.NewJob(
-			gocron.DurationJob(statusTokenListRefreshInterval),
+	// revoked all at once, so one entry stands in for the whole batch). The wallet
+	// config sweep is where the wallet learns that a party was delisted; it fetches
+	// at most once an hour while the held config is fresh, and eagerly once it is
+	// past its next_update.
+	sweeps := []struct {
+		every time.Duration
+		what  string
+		run   func(context.Context) error
+	}{
+		{statusTokenListRefreshInterval, "credential statuses", client.RefreshStatuses},
+		{walletConfigRefreshInterval, "wallet config", client.RefreshWalletConfig},
+	}
+	for _, sweep := range sweeps {
+		if sweep.every <= 0 {
+			continue
+		}
+		if _, err := client.scheduler.NewJob(
+			gocron.DurationJob(sweep.every),
 			gocron.NewTask(func() {
-				if err := client.RefreshStatuses(context.Background()); err != nil {
-					common.Logger.Warnf("scheduled status refresh failed: %v", err)
+				if err := sweep.run(context.Background()); err != nil {
+					common.Logger.Warnf("scheduled %s refresh failed: %v", sweep.what, err)
 				}
 			}),
 			gocron.WithStartAt(gocron.WithStartImmediately()),
-		)
-		if err != nil {
-			common.Logger.Warnf("failed to create new cron job for refreshing credential statuses: %v", err)
+		); err != nil {
+			common.Logger.Warnf("failed to create new cron job for refreshing %s: %v", sweep.what, err)
 		}
 	}
 }

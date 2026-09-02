@@ -64,9 +64,15 @@ func (s *TestSigner) Chain() []*x509.Certificate {
 	return []*x509.Certificate{s.Cert, s.Intermediate}
 }
 
-// Environment describes a world anchored on this signer's root.
+// Environment describes a world anchored on this signer's root, expecting the
+// config NewTestConfig builds for name.
 func (s *TestSigner) Environment(name, configURL string) Environment {
-	return Environment{Name: name, ConfigURL: configURL, SigningRoot: s.Root}
+	return Environment{Name: name, ConfigID: TestConfigID(name), ConfigURL: configURL, SigningRoot: s.Root}
+}
+
+// TestConfigID is the id NewTestConfig gives the config for an environment.
+func TestConfigID(environment string) string {
+	return "test-" + environment
 }
 
 // Sign signs through Sign, the path the publisher takes, so a positive fixture
@@ -146,6 +152,17 @@ func (s *TestSigner) SignWith(t *testing.T, payload []byte, overrides SignOverri
 	return signed
 }
 
+// TestChainHeader is an `x5c` header value carrying the certificates, for tests
+// in other packages that sign JWTs by hand.
+func TestChainHeader(t *testing.T, chain ...*x509.Certificate) *cert.Chain {
+	t.Helper()
+	x5c := &cert.Chain{}
+	for _, certificate := range chain {
+		require.NoError(t, x5c.Add([]byte(base64.StdEncoding.EncodeToString(certificate.Raw))))
+	}
+	return x5c
+}
+
 // NewTestCA issues a CA certificate under parent, or a self-signed root when
 // parent is nil. Valid from an hour ago for two years.
 func NewTestCA(t *testing.T, commonName string, parent *x509.Certificate, parentKey *ecdsa.PrivateKey) (*ecdsa.PrivateKey, *x509.Certificate) {
@@ -220,7 +237,7 @@ func randomBytes(t *testing.T, n int) []byte {
 func NewTestConfig(environment string, version uint64, now time.Time) *Config {
 	return &Config{
 		SchemaVersion:   "1.0",
-		ID:              "test-" + environment,
+		ID:              TestConfigID(environment),
 		Environment:     environment,
 		Version:         version,
 		IssuedAt:        NewUnixTime(now),
