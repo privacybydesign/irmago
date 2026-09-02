@@ -88,6 +88,12 @@ func (a *openid4vciSessionAdapter) RequestPermission(
 ) {
 	a.session.State.OfferedCredentials = offeredCredentials
 	a.session.State.Status = clientmodels.Status_RequestPermission
+	// The party is composed again once the credentials are in hand, ranked and
+	// named from what was verified rather than from the metadata the earlier
+	// steps showed: that is the one the user is asked to trust.
+	if requestorInfo != nil {
+		a.session.State.Requestor = *requestorInfo
+	}
 	a.session.openid4vciPermissionHandler = callback
 	a.session.dispatchState()
 }

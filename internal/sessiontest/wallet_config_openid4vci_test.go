@@ -67,8 +67,8 @@ func testOpenID4VCIUnlistedIssuerRanksLow(t *testing.T) {
 	require.NoError(t, err)
 	stored := findCredentialByName(t, credentials, "Test Credential (SD-JWT)")
 	require.NotNil(t, stored)
-	require.Equal(t, veramoIssuerDID, stored.Issuer.Id)
-	require.Equal(t, clientmodels.TrustLevel_Low, stored.Issuer.TrustLevel)
+	require.Equal(t, preAuthIssuerURL, stored.Issuer.Id, "the issuer is identified by its metadata URL")
+	require.Equal(t, clientmodels.TrustLevel_Low, stored.Issuer.TrustLevel, "and ranked by the DID it signed under")
 	require.False(t, stored.IssuerNotTrusted, "the default policy admits low")
 }
 
