@@ -79,6 +79,11 @@ const (
 const (
 	ReadTimeout  = 2 * time.Second
 	WriteTimeout = 2 * ReadTimeout
+
+	// DefaultMaxNextSessionTimeout is the default upper bound in seconds on
+	// Configuration.MaxNextSessionTimeout. Kept below the 20 second deadline the IRMA app
+	// applies to a request of its own (responseDeadline in transport.go)
+	DefaultMaxNextSessionTimeout = 15
 )
 
 var PostSizeLimit int64 = 10 << 20 // 10 MB
@@ -513,19 +518,25 @@ func TimeoutMiddleware(except []string, timeout time.Duration) func(http.Handler
 				}
 			}
 
-			// We set the timeout as deadline in the request's context such that the next handler
-			// can abort its actions and return an appropriate error response. If the next handler does
-			// not return a response within 200 milliseconds after the deadline expires, then we assume
-			// it froze and invoke the http.TimeoutHandler, which will send a 503 Service Unavailable.
-			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				ctx, cancel := context.WithTimeout(r.Context(), timeout)
-				defer cancel()
-				next.ServeHTTP(w, r.WithContext(ctx))
-			})
-
-			http.TimeoutHandler(nextHandler, timeout+200*time.Millisecond, "").ServeHTTP(w, r)
+			TimeoutHandler(next, timeout).ServeHTTP(w, r)
 		})
 	}
+}
+
+// TimeoutHandler bounds next to the given timeout.
+//
+// We set the timeout as deadline in the request's context such that the next handler
+// can abort its actions and return an appropriate error response. If the next handler does
+// not return a response within 200 milliseconds after the deadline expires, then we assume
+// it froze and invoke the http.TimeoutHandler, which will send a 503 Service Unavailable.
+func TimeoutHandler(next http.Handler, timeout time.Duration) http.Handler {
+	withDeadline := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+
+	return http.TimeoutHandler(withDeadline, timeout+200*time.Millisecond, "")
 }
 
 // LogMiddleware is middleware for logging HTTP requests and responses.
