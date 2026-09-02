@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "id": "yivi-golden",
+  "environment": "golden",
+  "version": 1,
+  "issued_at": 1788350400,
+  "next_update": 1790942400,
+  "grace_period_secs": 604800,
+  "minimum_app_build": 100,
+  "policy": {
+    "minimum_trust_level": {
+      "issuance": "low",
+      "disclosure": "medium"
+    }
+  },
+  "trusted_entities": [
+    {
+      "id": "golden-issuer-ca",
+      "name": {
+        "en": "Golden Issuers",
+        "nl": "Gouden Uitgevers"
+      },
+      "roles": [
+        "issuer"
+      ],
+      "trust_level": "high",
+      "handles": [
+        {
+          "type": "x509_ca",
+          "root_certificate": "MIIBszCCAVmgAwIBAgIJAKQ+cGCOblvbMAoGCCqGSM49BAMCMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwIBcNMjYwOTAxMDAwMDAwWhgPMjA1NjA5MDEwMDAwMDBaMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATSiFeYAfdm+WoXLuH3wE6AVE/WZucfHPQ/zFT9PrEymciO41QCVFXUJgkkWghFaBYbwDtllPwj0KCbJbaceky/o0IwQDAOBgNVHQ8BAf8EBAMCAQYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUCSNmruyhnBEbLrFWUrUWHMjp4D8wCgYIKoZIzj0EAwIDSAAwRQIhANGfKKrBMSRw2HnUARSzKot2+h/TqX7bMhvFfcCZGsmdAiA8pyoNHa8TFx2k4I0Pr8lTuG4w5inksE9Oe3/Fadh5Jw==",
+          "intermediates": [
+            "MIIBzTCCAXOgAwIBAgIJAKF7Jm4I6CYzMAoGCCqGSM49BAMCMDwxCzAJBgNVBAYTAk5MMQ0wCwYDVQQKEwRZaXZpMR4wHAYDVQQDExVHb2xkZW4gSXNzdWVyIFJvb3QgQ0EwHhcNMjYwOTAxMDAwMDAwWhcNNDYwOTAxMDAwMDAwWjA3MQswCQYDVQQGEwJOTDENMAsGA1UEChMEWWl2aTEZMBcGA1UEAxMQR29sZGVuIElzc3VlciBDQTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABIEv2tk09dnP24EHUmVhraRroRDB6V74odLyj80t6RERgeDyrOyOi/Fx4E3eWLaL4gA2tDngYCoxAkfTrLssiUejYzBhMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBSgKSuoBKy9hBEkYBeKKNy+AHGRVDAfBgNVHSMEGDAWgBQJI2au7KGcERsusVZStRYcyOngPzAKBggqhkjOPQQDAgNIADBFAiBugSSkWvxr5eT1HyQI6EEGqsYSLxAlsHWJu+mBTfW40QIhANj2vasV4urONZNf5jqm06poWGQNNn8SugRQmKjuV71d"
+          ],
+          "crl_distribution_points": [
+            "https://crl.golden.example/root.crl"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "golden-verifier",
+      "name": {
+        "en": "Golden Verifier"
+      },
+      "roles": [
+        "verifier"
+      ],
+      "trust_level": "medium",
+      "handles": [
+        {
+          "type": "x509_cert",
+          "certificate": "MIIB8TCCAZegAwIBAgIIabdmjju/3yIwCgYIKoZIzj0EAwIwNzELMAkGA1UEBhMCTkwxDTALBgNVBAoTBFlpdmkxGTAXBgNVBAMTEEdvbGRlbiBJc3N1ZXIgQ0EwHhcNMjYwOTAxMDAwMDAwWhcNMzYwOTAxMDAwMDAwWjA+MQswCQYDVQQGEwJOTDENMAsGA1UEChMEWWl2aTEgMB4GA1UEAxMXdmVyaWZpZXIuZ29sZGVuLmV4YW1wbGUwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARey6oX3QXrOknmLzAGt31ib7dzSRdEsZ+KITdIQ+YL23rzEpxfNqLWdp7k/4C1VuNPp7eRQAcugcMX8h3/Zvt4o4GFMIGCMA4GA1UdDwEB/wQEAwIHgDAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBTwuGf8yIkCpXmzIsUVA8L0HktMtjAfBgNVHSMEGDAWgBSgKSuoBKy9hBEkYBeKKNy+AHGRVDAiBgNVHREEGzAZghd2ZXJpZmllci5nb2xkZW4uZXhhbXBsZTAKBggqhkjOPQQDAgNIADBFAiBXFlFog9nDkIGUPhgN+Dc2+VDEAZQF5DZ9MZ1h1hjv8QIhAJ1BmrIK8sMIvo+mJvtE9lxXFE110VI7JRVGCpG8k0aQ"
+        }
+      ],
+      "constraints": {
+        "disclosure": {
+          "allowed_queries": [
+            {
+              "credential": "https://golden.example/vct/email",
+              "attributes": [
+                "email"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "golden-party",
+      "name": {
+        "en": "Golden Party",
+        "nl": "Gouden Partij"
+      },
+      "logo": {
+        "url": "https://assets.golden.example/party.png",
+        "digest": "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
+      },
+      "roles": [
+        "issuer",
+        "verifier"
+      ],
+      "trust_level": "high",
+      "handles": [
+        {
+          "type": "did",
+          "did": "did:web:party.golden.example"
+        }
+      ],
+      "constraints": {
+        "issuance": {
+          "allowed_credentials": [
+            "https://golden.example/vct/email"
+          ]
+        }
+      }
+    }
+  ]
+}

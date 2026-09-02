@@ -14,6 +14,43 @@ const DefaultFallbackLanguage = "en"
 // TranslatedString is a map from language code to translated text.
 type TranslatedString map[string]string
 
+// TrustLevel is how strongly a party is vouched for: the three rungs of the trust
+// ladder, plus the absence of any evaluation.
+//
+// Never a judgement about the party's identity — that is a separate gate which
+// fails the session outright — and by itself it never blocks a session: policy
+// decides what to do with a rung.
+type TrustLevel string
+
+const (
+	// The zero value: nothing was evaluated, which is distinct from the verdict
+	// "nobody vouches". Omitted from JSON, so the app sees an absent field.
+	TrustLevel_Unevaluated TrustLevel = ""
+	// Low: identity checks out, nobody vouches — a bare DID, or a certificate no
+	// anchor stands behind.
+	TrustLevel_Low TrustLevel = "low"
+	// Medium: somebody besides Yivi vouches — an anchored third-party CA.
+	TrustLevel_Medium TrustLevel = "medium"
+	// High: Yivi itself vouches.
+	TrustLevel_High TrustLevel = "high"
+)
+
+// IsVouchedFor reports whether somebody beyond the party itself vouches for it:
+// the one rule behind every "trusted" marker the wallet shows.
+func (l TrustLevel) IsVouchedFor() bool {
+	return l == TrustLevel_Medium || l == TrustLevel_High
+}
+
+// IsRung reports whether l is one of the three rungs of the ladder. The
+// unevaluated zero value is not a rung, and neither is any other string.
+func (l TrustLevel) IsRung() bool {
+	switch l {
+	case TrustLevel_Low, TrustLevel_Medium, TrustLevel_High:
+		return true
+	}
+	return false
+}
+
 // TrustedParty represents an issuer, verifier, or scheme manager.
 type TrustedParty struct {
 	Id string `json:"id"`
