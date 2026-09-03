@@ -1302,7 +1302,7 @@ func (m *mockCredentialStore) GetCredentialBatchList() ([]*models.CredentialBatc
 	return m.batchListResult, m.batchListErr
 }
 
-func (m *mockCredentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, error) {
+func (m *mockCredentialStore) GetBatchByHashAndFormat(hash string, format models.CredentialFormat) (*models.CredentialBatch, error) {
 	return nil, db.ErrNotFound
 }
 
@@ -1322,7 +1322,7 @@ func (m *mockCredentialStore) DeleteBatch(batchID datatypes.UUID) error {
 	return nil
 }
 
-func (m *mockCredentialStore) DeleteBatchByHash(hash string) error {
+func (m *mockCredentialStore) DeleteBatchByHashAndFormat(hash string, format models.CredentialFormat) error {
 	return nil
 }
 

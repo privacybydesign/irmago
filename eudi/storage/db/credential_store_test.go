@@ -206,10 +206,36 @@ func TestStoreBatch_EmptyInstances(t *testing.T) {
 func TestStoreBatch_UniqueHashConstraint(t *testing.T) {
 	store := newTestCredentialStore(t)
 
+	// The uniqueness key is (hash, format): a second batch with the same hash
+	// AND the same format collides.
 	require.NoError(t, store.StoreBatch(newBatch("hash-duplicate")))
 
 	err := store.StoreBatch(newBatch("hash-duplicate"))
 	require.Error(t, err)
+}
+
+func TestStoreBatch_SameHashDifferentFormatCoexist(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	// One logical credential held under two securing formats shares a content
+	// hash but must be stored as two distinct batches.
+	sdJwtVcBatch := newBatch("hash-shared")
+	sdJwtVcBatch.Format = models.CredentialFormatSdJwtVc
+	require.NoError(t, store.StoreBatch(sdJwtVcBatch))
+
+	vcdmBatch := newBatch("hash-shared")
+	vcdmBatch.Format = models.CredentialFormatSdJwtVcdm
+	require.NoError(t, store.StoreBatch(vcdmBatch))
+
+	// Each is retrievable by its own (hash, format), and they are distinct rows.
+	gotSdJwtVc, err := store.GetBatchByHashAndFormat("hash-shared", models.CredentialFormatSdJwtVc)
+	require.NoError(t, err)
+	assert.Equal(t, sdJwtVcBatch.ID, gotSdJwtVc.ID)
+
+	gotVcdm, err := store.GetBatchByHashAndFormat("hash-shared", models.CredentialFormatSdJwtVcdm)
+	require.NoError(t, err)
+	assert.Equal(t, vcdmBatch.ID, gotVcdm.ID)
+	assert.NotEqual(t, gotSdJwtVc.ID, gotVcdm.ID)
 }
 
 func TestStoreBatch_PersistsStatusListColumns(t *testing.T) {
@@ -334,31 +360,42 @@ func TestGetCredentialBatchList_ContainsIssuerAndCredentialMetadataDisplays(t *t
 	assert.Greater(t, len(got.CredentialMetadata.Claims[0].Display), 0)
 }
 
-// --- GetBatchByHash ---
+// --- GetBatchByHashAndFormat ---
 
-func TestGetBatchByHash_Found(t *testing.T) {
+func TestGetBatchByHashAndFormat_Found(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch := newBatch("hash-get-by-hash")
 	require.NoError(t, store.StoreBatch(batch))
 
-	got, err := store.GetBatchByHash("hash-get-by-hash")
+	got, err := store.GetBatchByHashAndFormat("hash-get-by-hash", models.CredentialFormatSdJwtVc)
 	require.NoError(t, err)
 	assert.Equal(t, batch.ID, got.ID)
 	assert.Equal(t, "hash-get-by-hash", got.Hash)
 }
 
-func TestGetBatchByHash_NotFound(t *testing.T) {
+func TestGetBatchByHashAndFormat_NotFound(t *testing.T) {
 	store := newTestCredentialStore(t)
 
-	_, err := store.GetBatchByHash("nonexistent-hash")
+	_, err := store.GetBatchByHashAndFormat("nonexistent-hash", models.CredentialFormatSdJwtVc)
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-func TestGetBatchByHash_EmptyHash(t *testing.T) {
+func TestGetBatchByHashAndFormat_WrongFormatNotFound(t *testing.T) {
 	store := newTestCredentialStore(t)
 
-	_, err := store.GetBatchByHash("")
+	batch := newBatch("hash-format-mismatch") // stored under dc+sd-jwt
+	require.NoError(t, store.StoreBatch(batch))
+
+	// The same hash under a different format is a different credential.
+	_, err := store.GetBatchByHashAndFormat("hash-format-mismatch", models.CredentialFormatSdJwtVcdm)
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestGetBatchByHashAndFormat_EmptyHash(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	_, err := store.GetBatchByHashAndFormat("", models.CredentialFormatSdJwtVc)
 	require.Error(t, err)
 }
 
@@ -496,28 +533,28 @@ func TestMarkInstanceUsed_AlreadyUsed_ReturnsNotFound(t *testing.T) {
 
 // --- DeleteBatch ---
 
-// --- DeleteBatchByHash ---
+// --- DeleteBatchByHashAndFormat ---
 
-func TestDeleteBatchByHash_Success(t *testing.T) {
+func TestDeleteBatchByHashAndFormat_Success(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch := newBatch("hash-delete-by-hash")
 	require.NoError(t, store.StoreBatch(batch))
 
-	require.NoError(t, store.DeleteBatchByHash("hash-delete-by-hash"))
+	require.NoError(t, store.DeleteBatchByHashAndFormat("hash-delete-by-hash", models.CredentialFormatSdJwtVc))
 
-	_, err := store.GetBatchByHash("hash-delete-by-hash")
+	_, err := store.GetBatchByHashAndFormat("hash-delete-by-hash", models.CredentialFormatSdJwtVc)
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-func TestDeleteBatchByHash_NotFound(t *testing.T) {
+func TestDeleteBatchByHashAndFormat_NotFound(t *testing.T) {
 	store := newTestCredentialStore(t)
 
-	err := store.DeleteBatchByHash("nonexistent-hash")
+	err := store.DeleteBatchByHashAndFormat("nonexistent-hash", models.CredentialFormatSdJwtVc)
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-func TestDeleteBatchByHash_CascadeDeletesInstances(t *testing.T) {
+func TestDeleteBatchByHashAndFormat_CascadeDeletesInstances(t *testing.T) {
 	store := newTestCredentialStore(t)
 	db := store.(*credentialStore).db
 
@@ -529,7 +566,7 @@ func TestDeleteBatchByHash_CascadeDeletesInstances(t *testing.T) {
 	db.Model(&models.IssuedCredentialInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countBefore)
 	assert.Equal(t, int64(3), countBefore)
 
-	require.NoError(t, store.DeleteBatchByHash("hash-cascade-delete"))
+	require.NoError(t, store.DeleteBatchByHashAndFormat("hash-cascade-delete", models.CredentialFormatSdJwtVc))
 
 	// Verify all instances are gone after deletion.
 	var countAfter int64
@@ -537,7 +574,7 @@ func TestDeleteBatchByHash_CascadeDeletesInstances(t *testing.T) {
 	assert.Equal(t, int64(0), countAfter)
 }
 
-func TestDeleteBatchByHash_CascadeDeletesHolderBindingKeys(t *testing.T) {
+func TestDeleteBatchByHashAndFormat_CascadeDeletesHolderBindingKeys(t *testing.T) {
 	store := newTestCredentialStore(t)
 	db := store.(*credentialStore).db
 
@@ -561,7 +598,7 @@ func TestDeleteBatchByHash_CascadeDeletesHolderBindingKeys(t *testing.T) {
 	assert.Equal(t, int64(2), ecdsaCountBefore)
 
 	// Delete the batch.
-	require.NoError(t, store.DeleteBatchByHash("hash-cascade-delete-keys"))
+	require.NoError(t, store.DeleteBatchByHashAndFormat("hash-cascade-delete-keys", models.CredentialFormatSdJwtVc))
 
 	// Verify keys are gone.
 	var keyCountAfter int64
@@ -574,10 +611,10 @@ func TestDeleteBatchByHash_CascadeDeletesHolderBindingKeys(t *testing.T) {
 	assert.Equal(t, int64(0), ecdsaCountAfter)
 }
 
-func TestDeleteBatchByHash_EmptyHash(t *testing.T) {
+func TestDeleteBatchByHashAndFormat_EmptyHash(t *testing.T) {
 	store := newTestCredentialStore(t)
 
-	err := store.DeleteBatchByHash("")
+	err := store.DeleteBatchByHashAndFormat("", models.CredentialFormatSdJwtVc)
 	require.Error(t, err)
 }
 
@@ -605,6 +642,6 @@ func TestDeleteBatch_Success(t *testing.T) {
 
 	require.NoError(t, store.DeleteBatch(batch.ID))
 
-	_, err := store.GetBatchByHash("hash-delete-success")
+	_, err := store.GetBatchByHashAndFormat("hash-delete-success", models.CredentialFormatSdJwtVc)
 	require.ErrorIs(t, err, ErrNotFound)
 }

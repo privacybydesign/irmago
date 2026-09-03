@@ -64,6 +64,18 @@ func newDBLogger() logger.Interface {
 }
 
 func autoMigrateHolderModels(db *gorm.DB) error {
+	// The single-column (hash) unique index was replaced by a composite
+	// (hash, format) unique index so one logical credential can be held under
+	// multiple securing formats. AutoMigrate creates the new index but never
+	// drops the superseded one, so remove the legacy single-column index
+	// explicitly; without this, hash-alone uniqueness would still be enforced on
+	// databases created before this change.
+	if db.Migrator().HasIndex(&models.CredentialBatch{}, "idx_credential_batches_hash") {
+		if err := db.Migrator().DropIndex(&models.CredentialBatch{}, "idx_credential_batches_hash"); err != nil {
+			return fmt.Errorf("drop legacy hash unique index: %w", err)
+		}
+	}
+
 	// Dependency order (parents before children): a referenced table must exist
 	// before the table whose foreign key points at it. SQLite tolerates any order,
 	// but Postgres (and any FK-enforcing driver) rejects a CREATE TABLE whose
@@ -85,6 +97,7 @@ func autoMigrateHolderModels(db *gorm.DB) error {
 	); err != nil {
 		return fmt.Errorf("auto-migrate database failed: %w", err)
 	}
+
 	return nil
 }
 

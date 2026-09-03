@@ -109,7 +109,7 @@ You can verify the installation by running:
 
     Installing SQLCipher for Windows can be done in 2 steps:
     - Install MSYS2 via https://github.com/msys2/msys2-installer/, make sure the install path is `C:\msys64\`
-    - Add the path `C:\msys64\user\bin` to your PATH environment variable
+    - Add the path `C:\msys64\usr\bin` to your PATH environment variable
     - Install SQLCipher using `pacman`:  `pacman -S mingw-w64-x86_64-sqlcipher`
     - Verify installation by running `sqlcipher` in a new CMD/PowerShell windows
 

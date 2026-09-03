@@ -88,9 +88,10 @@ func (s *credentialService) VerifyAndStoreIssuedVcdmCredentials(
 		return fmt.Errorf("failed to compute credential hash: %w", err)
 	}
 
-	// If a batch with this hash already exists, delete it so the new issuance
-	// replaces it (e.g. with updated timestamps or a fresh holder binding key).
-	if err := s.deleteExistingBatchByHash(hash); err != nil {
+	// If a batch with this (hash, format) already exists, delete it so the new
+	// issuance replaces it (e.g. with updated timestamps or a fresh holder
+	// binding key).
+	if err := s.deleteExistingBatch(hash, models.CredentialFormatSdJwtVcdm); err != nil {
 		return err
 	}
 

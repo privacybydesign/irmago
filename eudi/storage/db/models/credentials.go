@@ -44,13 +44,20 @@ type CredentialBatch struct {
 	// VerifiableCredentialType is the vct claim from the issued SD-JWT VC.
 	VerifiableCredentialType string
 
-	// Format is the credential format identifier (e.g. "dc+sd-jwt").
-	Format CredentialFormat
+	// Format is the credential format identifier (e.g. "dc+sd-jwt"). It is part
+	// of the (hash, format) uniqueness key: one logical credential may be held
+	// under multiple securing formats (e.g. "vc+sd-jwt" and "vc+jwt") that share
+	// a content hash but must coexist as distinct batches.
+	Format CredentialFormat `gorm:"uniqueIndex:idx_credential_batches_hash_format,priority:2"`
 
 	// Hash is a deterministic hash over the credential type and its sorted disclosed attributes.
 	// Computed with the same algorithm as irmaclient.CreateHashForSdJwtVc so that the EUDI
 	// storage remains compatible with the IRMA client's deduplication logic.
-	Hash string `gorm:"uniqueIndex"`
+	//
+	// Hash is securing-agnostic — the same logical credential secured two ways
+	// produces the same hash — so the uniqueness and dedup key is (hash, format),
+	// not hash alone (see the composite index shared with Format above).
+	Hash string `gorm:"uniqueIndex:idx_credential_batches_hash_format,priority:1"`
 
 	// ProcessedSdJwtPayload is the JSON-encoded payload of the SD-JWT after processing/verifying the issuer-signed JWT.
 	ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`

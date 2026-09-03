@@ -614,7 +614,7 @@ func TestPrepareDisclosure_BatchOfOne_RemainsUsableAfterDisclosure(t *testing.T)
 	assert.NotEmpty(t, result2.QueryResponses[0].Credentials)
 
 	// RemainingCount must still be 1.
-	reloaded, err := store.GetBatchByHash("hash-batch1")
+	reloaded, err := store.GetBatchByHashAndFormat("hash-batch1", models.CredentialFormatSdJwtVc)
 	require.NoError(t, err)
 	assert.Equal(t, uint(1), reloaded.RemainingCount)
 }
@@ -644,7 +644,7 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	_, err := h.PrepareDisclosure(selections, "nonce1", "client1")
 	require.NoError(t, err)
 
-	reloaded, err := store.GetBatchByHash("hash-batch2")
+	reloaded, err := store.GetBatchByHashAndFormat("hash-batch2", models.CredentialFormatSdJwtVc)
 	require.NoError(t, err)
 	assert.Equal(t, uint(1), reloaded.RemainingCount)
 
@@ -652,7 +652,7 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	_, err = h.PrepareDisclosure(selections, "nonce2", "client2")
 	require.NoError(t, err)
 
-	reloaded, err = store.GetBatchByHash("hash-batch2")
+	reloaded, err = store.GetBatchByHashAndFormat("hash-batch2", models.CredentialFormatSdJwtVc)
 	require.NoError(t, err)
 	assert.Equal(t, uint(0), reloaded.RemainingCount)
 

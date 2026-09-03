@@ -40,9 +40,11 @@ type CredentialStore interface {
 	// GetCredentialBatchList returns a list of all stored credential batches with preloaded batch metadata, but without preloading instances.
 	GetCredentialBatchList() ([]*models.CredentialBatch, error)
 
-	// GetBatchByHash retrieves a CredentialBatch (without preloading instances) by its
-	// deterministic hash. Returns ErrNotFound if no matching batch exists.
-	GetBatchByHash(hash string) (*models.CredentialBatch, error)
+	// GetBatchByHashAndFormat retrieves a CredentialBatch (without preloading instances)
+	// by its (hash, format) natural key. Hash alone is ambiguous because one logical
+	// credential may be stored under multiple securing formats that share a content
+	// hash. Returns ErrNotFound if no matching batch exists.
+	GetBatchByHashAndFormat(hash string, format models.CredentialFormat) (*models.CredentialBatch, error)
 
 	// GetBatchesByVCT returns all CredentialBatches whose VerifiableCredentialType matches
 	// the given vct string. Does not preload instances.
@@ -60,9 +62,10 @@ type CredentialStore interface {
 	// DeleteBatch deletes a CredentialBatch and all its instances (via CASCADE).
 	DeleteBatch(batchID datatypes.UUID) error
 
-	// DeleteBatchByHash looks up a CredentialBatch by its deterministic hash and deletes it
-	// along with all its instances (via CASCADE). Returns ErrNotFound if no batch exists with that hash.
-	DeleteBatchByHash(hash string) error
+	// DeleteBatchByHashAndFormat looks up a CredentialBatch by its (hash, format) natural
+	// key and deletes it along with all its instances (via CASCADE). Returns ErrNotFound
+	// if no batch exists with that (hash, format).
+	DeleteBatchByHashAndFormat(hash string, format models.CredentialFormat) error
 
 	// ListInstancesWithStatusReference returns every IssuedCredentialInstance
 	// with a (status_list.uri, status_list.idx) pair, along with the status the
@@ -115,13 +118,16 @@ func (s *credentialStore) StoreBatch(batch *models.CredentialBatch) error {
 	return s.db.Create(batch).Error
 }
 
-func (s *credentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, error) {
+func (s *credentialStore) GetBatchByHashAndFormat(hash string, format models.CredentialFormat) (*models.CredentialBatch, error) {
 	if hash == "" {
 		return nil, fmt.Errorf("hash is required")
 	}
+	if format == "" {
+		return nil, fmt.Errorf("format is required")
+	}
 
 	var batch models.CredentialBatch
-	err := s.db.First(&batch, "hash = ?", hash).Error
+	err := s.db.First(&batch, "hash = ? AND format = ?", hash, format).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
@@ -195,8 +201,8 @@ func (s *credentialStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 		Error
 }
 
-func (s *credentialStore) DeleteBatchByHash(hash string) error {
-	batch, err := s.GetBatchByHash(hash)
+func (s *credentialStore) DeleteBatchByHashAndFormat(hash string, format models.CredentialFormat) error {
+	batch, err := s.GetBatchByHashAndFormat(hash, format)
 	if err != nil {
 		return err
 	}

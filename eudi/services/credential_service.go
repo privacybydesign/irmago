@@ -47,9 +47,11 @@ type CredentialService interface {
 		publicKeyIdentifiers []models.PublicHolderBindingKey,
 	) error
 
-	// DeleteByHash deletes a stored CredentialBatch by its deterministic hash.
-	// Returns ErrNotFound if no batch exists with that hash.
-	DeleteByHash(hash string) error
+	// DeleteByHashAndFormat deletes a stored CredentialBatch by its (hash, format)
+	// natural key. The pair is required because one logical credential may be held
+	// under multiple securing formats, so hash alone is ambiguous. Returns
+	// ErrNotFound if no batch exists with that (hash, format).
+	DeleteByHashAndFormat(hash string, format clientmodels.CredentialFormat) error
 }
 
 type credentialService struct {
@@ -80,8 +82,8 @@ func NewCredentialService(
 	}
 }
 
-func (s *credentialService) DeleteByHash(hash string) error {
-	return s.credentialStore.DeleteBatchByHash(hash)
+func (s *credentialService) DeleteByHashAndFormat(hash string, format clientmodels.CredentialFormat) error {
+	return s.credentialStore.DeleteBatchByHashAndFormat(hash, models.CredentialFormat(format))
 }
 
 func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credential, error) {
@@ -240,17 +242,18 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	// Use the first credential as the source of truth for batch-level metadata.
 	first := verifiedSdJwtVcs[0]
 
-	hash, processedPayload, err := s.computeHashAndDeleteExisting(first)
+	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
+	format := models.CredentialFormat(credentialConfiguration.Format)
+
+	hash, processedPayload, err := s.computeHashAndDeleteExisting(first, format)
 	if err != nil {
 		return err
 	}
 
-	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
-
 	batch := &models.CredentialBatch{
 		IssuerIdentifier:           first.IssuerIdentifier,
 		VerifiableCredentialType:   first.IssuerSignedJwtPayload.VerifiableCredentialType,
-		Format:                     models.CredentialFormat(credentialConfiguration.Format),
+		Format:                     format,
 		Hash:                       hash,
 		ProcessedSdJwtPayload:      datatypes.JSON(processedPayload),
 		CredentialIssuerIdentifier: issuerMetadata.CredentialIssuer,
@@ -282,7 +285,7 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	return nil
 }
 
-func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJwtVc) (string, []byte, error) {
+func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJwtVc, format models.CredentialFormat) (string, []byte, error) {
 	processedPayload, err := json.Marshal(vc.ProcessedSdJwtPayload)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
@@ -293,19 +296,22 @@ func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJ
 		return "", nil, fmt.Errorf("failed to compute credential hash: %w", err)
 	}
 
-	// If a batch with this hash already exists, delete it so the new issuance
-	// replaces it (e.g. with updated timestamps or a fresh holder binding key).
-	if err := s.deleteExistingBatchByHash(hash); err != nil {
+	// If a batch with this (hash, format) already exists, delete it so the new
+	// issuance replaces it (e.g. with updated timestamps or a fresh holder
+	// binding key).
+	if err := s.deleteExistingBatch(hash, format); err != nil {
 		return "", nil, err
 	}
 
 	return hash, processedPayload, nil
 }
 
-// deleteExistingBatchByHash deletes a stored batch with the given hash, if
-// any, so a re-issuance of the same logical credential replaces it.
-func (s *credentialService) deleteExistingBatchByHash(hash string) error {
-	if existing, err := s.credentialStore.GetBatchByHash(hash); err == nil {
+// deleteExistingBatch deletes a stored batch with the given (hash, format), if
+// any, so a re-issuance of the same logical credential replaces it. The format
+// is part of the key: a same-hash batch under a different securing format is a
+// distinct credential and must not be deleted here.
+func (s *credentialService) deleteExistingBatch(hash string, format models.CredentialFormat) error {
+	if existing, err := s.credentialStore.GetBatchByHashAndFormat(hash, format); err == nil {
 		if err := s.credentialStore.DeleteBatch(existing.ID); err != nil {
 			return fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
 		}

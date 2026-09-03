@@ -556,8 +556,8 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 			}
 		}
 
-		for _, hash := range eudiHashes {
-			if err := client.credentialService.DeleteByHash(hash); err != nil {
+		for format, hash := range eudiHashes {
+			if err := client.credentialService.DeleteByHashAndFormat(hash, format); err != nil {
 				return fmt.Errorf("error while deleting eudi credential: %v", err)
 			}
 		}
