@@ -13,8 +13,7 @@ import (
 // CredentialStatusInstance is an instance's status_list reference.
 // BatchID lets callers select a single representative instance per batch, and
 // LastKnownStatus lets them tell a status change from a re-confirmation without
-// a second read. In the three-layer model BatchID is the owning FormatBinding's
-// ID (which the read projection also exposes as CredentialBatch.ID).
+// a second read.
 type CredentialStatusInstance struct {
 	InstanceID      datatypes.UUID
 	BatchID         datatypes.UUID
@@ -23,7 +22,7 @@ type CredentialStatusInstance struct {
 	LastKnownStatus uint8
 }
 
-// BatchInstanceStatus pairs a credential's deterministic hash with one of its
+// BatchInstanceStatus pairs a batch's deterministic hash with one of its
 // instances' last-known Token Status List status. Only instances that carry
 // a status_list reference are reported.
 type BatchInstanceStatus struct {
@@ -32,56 +31,37 @@ type BatchInstanceStatus struct {
 }
 
 // CredentialStore is the public interface for inserting and retrieving issued credentials.
-//
-// Storage is the three-layer model (#685): a LogicalCredential owner groups one
-// FormatBinding per securing format, each owning its IssuedCredentialInstances.
-// The read methods return the flat CredentialBatch shape as a *projection* of a
-// FormatBinding (one batch per binding), so the credential-list, DCQL and status
-// consumers keep their existing shape; CredentialBatch is no longer a stored
-// table on the write path.
 type CredentialStore interface {
-	// StoreFormatBinding upserts the three-layer model: it finds or creates the
-	// LogicalCredential identified by `identity` (the #686 grouping key), replaces
-	// any existing FormatBinding for the same (logical credential, format) —
-	// cascading away that binding's old instances and display children — and
-	// inserts `binding` with its instances and display, all in one transaction.
-	// binding.Instances must be non-empty. Re-issuing a credential in a format it
-	// already has replaces that one binding while leaving the logical credential
-	// and its other formats intact.
-	StoreFormatBinding(identity, issuerURL string, binding *models.FormatBinding) error
+	// StoreBatch inserts a CredentialBatch and all its IssuedCredentialInstances atomically.
+	// batch.Instances must be non-empty. GORM sets each instance's BatchID automatically
+	// before running the instance's BeforeCreate hook.
+	StoreBatch(batch *models.CredentialBatch) error
 
-	// GetCredentialBatchList returns every stored credential as a flat-shaped
-	// projection of its FormatBinding, with display metadata preloaded but without
-	// instances.
+	// GetCredentialBatchList returns a list of all stored credential batches with preloaded batch metadata, but without preloading instances.
 	GetCredentialBatchList() ([]*models.CredentialBatch, error)
 
-	// GetBatchByHash retrieves a credential (projected from its FormatBinding) by
-	// its deterministic hash. Returns ErrNotFound if no match exists.
+	// GetBatchByHash retrieves a CredentialBatch (without preloading instances) by its
+	// deterministic hash. Returns ErrNotFound if no matching batch exists.
 	GetBatchByHash(hash string) (*models.CredentialBatch, error)
 
-	// GetBatchesByVCT returns every credential whose per-format type label matches
-	// the given vct string, projected from its FormatBinding. Does not preload
-	// instances.
+	// GetBatchesByVCT returns all CredentialBatches whose VerifiableCredentialType matches
+	// the given vct string. Does not preload instances.
 	GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error)
 
-	// GetUnusedInstance returns one not-yet-used IssuedCredentialInstance of the
-	// given FormatBinding (addressed by the projected CredentialBatch.ID). Returns
-	// ErrNotFound if all instances are used.
+	// GetUnusedInstance returns one IssuedCredentialInstance from the given batch that has
+	// not yet been marked as used. Returns ErrNotFound if all instances are used.
 	GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error)
 
-	// MarkInstanceUsed sets Used = true on the given instance and decrements
-	// RemainingCount on its owning FormatBinding. Both updates run in the same
-	// statement group; callers should wrap the call in a UnitOfWork.Do transaction
-	// to keep them atomic.
+	// MarkInstanceUsed sets Used = true on the given instance and decrements RemainingCount
+	// on its parent batch. Both updates run in the same statement group; callers should wrap
+	// the call in a UnitOfWork.Do transaction to keep them atomic.
 	MarkInstanceUsed(instanceID datatypes.UUID) error
 
-	// DeleteBatch deletes a FormatBinding and all its instances (via CASCADE),
-	// addressed by the projected CredentialBatch.ID, and removes the owning
-	// LogicalCredential when that was its last format.
+	// DeleteBatch deletes a CredentialBatch and all its instances (via CASCADE).
 	DeleteBatch(batchID datatypes.UUID) error
 
-	// DeleteBatchByHash looks up a FormatBinding by its deterministic hash and
-	// deletes it (see DeleteBatch). Returns ErrNotFound if no match exists.
+	// DeleteBatchByHash looks up a CredentialBatch by its deterministic hash and deletes it
+	// along with all its instances (via CASCADE). Returns ErrNotFound if no batch exists with that hash.
 	DeleteBatchByHash(hash string) error
 
 	// ListInstancesWithStatusReference returns every IssuedCredentialInstance
@@ -89,7 +69,7 @@ type CredentialStore interface {
 	// wallet last recorded for it.
 	ListInstancesWithStatusReference() ([]CredentialStatusInstance, error)
 
-	// ListStatusReferencedInstanceStatuses returns the (credential hash,
+	// ListStatusReferencedInstanceStatuses returns the (batch hash,
 	// last_known_status) pair for every instance carrying a Token Status List
 	// reference. Used to surface per-credential revocation in the credential
 	// list without loading full instances.
@@ -111,91 +91,28 @@ func NewCredentialStore(db *gorm.DB) CredentialStore {
 	}
 }
 
-// projectBinding maps a three-layer FormatBinding (with its LogicalCredential and
-// display children loaded) back to the flat CredentialBatch shape the read
-// consumers and the wallet client still expect. The projection is read-only: its
-// ID is the binding's ID, so instance lookups (GetUnusedInstance) and use-marking
-// (MarkInstanceUsed) address the binding; Hash stays the per-credential id.
-func projectBinding(fb *models.FormatBinding) *models.CredentialBatch {
-	batch := &models.CredentialBatch{
-		ID:                         fb.ID,
-		VerifiableCredentialType:   fb.TypeLabel,
-		Format:                     fb.Format,
-		Hash:                       fb.Hash,
-		CredentialIssuerIdentifier: fb.CredentialIssuerIdentifier,
-		ProcessedSdJwtPayload:      fb.ProcessedPayload,
-		IssuedAt:                   fb.IssuedAt,
-		ExpiresAt:                  fb.ExpiresAt,
-		NotBefore:                  fb.NotBefore,
-		BatchSize:                  fb.BatchSize,
-		RemainingCount:             fb.RemainingCount,
-		IssuerDisplay:              fb.IssuerDisplay,
-		CredentialMetadata:         fb.CredentialMetadata,
-	}
-	if fb.LogicalCredential != nil {
-		batch.IssuerIdentifier = fb.LogicalCredential.IssuerURL
-	}
-	return batch
-}
-
 func (s *credentialStore) GetCredentialBatchList() ([]*models.CredentialBatch, error) {
-	var bindings []*models.FormatBinding
+	var batches []*models.CredentialBatch
 	err := s.db.
-		Preload("LogicalCredential").
+		Model(&models.CredentialBatch{}).
 		Preload("IssuerDisplay").
 		Preload("CredentialMetadata").
 		Preload("CredentialMetadata.Display").
 		Preload("CredentialMetadata.Claims").
 		Preload("CredentialMetadata.Claims.Display").
-		Find(&bindings).Error
-	if err != nil {
-		return nil, err
-	}
-
-	batches := make([]*models.CredentialBatch, len(bindings))
-	for i, fb := range bindings {
-		batches[i] = projectBinding(fb)
-	}
-	return batches, nil
+		Find(&batches).Error
+	return batches, err
 }
 
-func (s *credentialStore) StoreFormatBinding(identity, issuerURL string, binding *models.FormatBinding) error {
-	if binding == nil {
-		return fmt.Errorf("binding is nil")
+func (s *credentialStore) StoreBatch(batch *models.CredentialBatch) error {
+	if batch == nil {
+		return fmt.Errorf("batch is nil")
 	}
-	if identity == "" {
-		return fmt.Errorf("identity is required")
-	}
-	if len(binding.Instances) == 0 {
-		return fmt.Errorf("binding must contain at least one credential instance")
+	if len(batch.Instances) == 0 {
+		return fmt.Errorf("batch must contain at least one credential instance")
 	}
 
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		// Find or create the owning logical credential by its grouping identity.
-		var logical models.LogicalCredential
-		err := tx.Where("identity = ?", identity).First(&logical).Error
-		switch {
-		case errors.Is(err, gorm.ErrRecordNotFound):
-			logical = models.LogicalCredential{Identity: identity, IssuerURL: issuerURL}
-			if err := tx.Create(&logical).Error; err != nil {
-				return err
-			}
-		case err != nil:
-			return err
-		}
-
-		// Replace any existing binding for this (logical credential, format); its
-		// instances and display children cascade away (PRAGMA foreign_keys=ON).
-		if err := tx.
-			Where("logical_credential_id = ? AND format = ?", logical.ID, binding.Format).
-			Delete(&models.FormatBinding{}).Error; err != nil {
-			return err
-		}
-
-		binding.LogicalCredentialID = logical.ID
-		binding.LogicalCredential = nil // FK is set; don't upsert the owner again
-		return tx.Create(binding).Error
-	})
+	return s.db.Create(batch).Error
 }
 
 func (s *credentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, error) {
@@ -203,8 +120,8 @@ func (s *credentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, 
 		return nil, fmt.Errorf("hash is required")
 	}
 
-	var fb models.FormatBinding
-	err := s.db.Preload("LogicalCredential").First(&fb, "hash = ?", hash).Error
+	var batch models.CredentialBatch
+	err := s.db.First(&batch, "hash = ?", hash).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
@@ -212,7 +129,7 @@ func (s *credentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, 
 		return nil, err
 	}
 
-	return projectBinding(&fb), nil
+	return &batch, nil
 }
 
 func (s *credentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error) {
@@ -220,21 +137,16 @@ func (s *credentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch
 		return nil, fmt.Errorf("vct is required")
 	}
 
-	var bindings []*models.FormatBinding
+	var batches []*models.CredentialBatch
 	err := s.db.
-		Preload("LogicalCredential").
 		Preload("CredentialMetadata").
 		Preload("CredentialMetadata.Display").
-		Where("type_label = ?", vct).
-		Find(&bindings).Error
+		Where("verifiable_credential_type = ?", vct).
+		Find(&batches).Error
 	if err != nil {
 		return nil, err
 	}
 
-	batches := make([]*models.CredentialBatch, len(bindings))
-	for i, fb := range bindings {
-		batches[i] = projectBinding(fb)
-	}
 	return batches, nil
 }
 
@@ -245,7 +157,7 @@ func (s *credentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.Iss
 
 	var instance models.IssuedCredentialInstance
 	err := s.db.
-		Where("format_binding_id = ? AND used = ?", batchID, false).
+		Where("credential_batch_id = ? AND used = ?", batchID, false).
 		First(&instance).
 		Error
 	if err != nil {
@@ -274,25 +186,21 @@ func (s *credentialStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 		return ErrNotFound
 	}
 
-	// Decrement RemainingCount on the owning FormatBinding, guarded by a floor of
-	// zero. This runs as a separate statement; wrap both calls in a UnitOfWork.Do
+	// Decrement RemainingCount on the parent batch, guarded by a floor of zero.
+	// This runs as a separate statement; wrap both calls in a UnitOfWork.Do
 	// transaction to keep them atomic.
-	return s.db.Model(&models.FormatBinding{}).
-		Where("id = (SELECT format_binding_id FROM issued_credential_instances WHERE id = ?) AND remaining_count > 0", instanceID).
+	return s.db.Model(&models.CredentialBatch{}).
+		Where("id = (SELECT credential_batch_id FROM issued_credential_instances WHERE id = ?) AND remaining_count > 0", instanceID).
 		UpdateColumn("remaining_count", gorm.Expr("remaining_count - 1")).
 		Error
 }
 
 func (s *credentialStore) DeleteBatchByHash(hash string) error {
-	var fb models.FormatBinding
-	err := s.db.First(&fb, "hash = ?", hash).Error
+	batch, err := s.GetBatchByHash(hash)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrNotFound
-		}
 		return err
 	}
-	return s.DeleteBatch(fb.ID)
+	return s.DeleteBatch(batch.ID)
 }
 
 func (s *credentialStore) DeleteBatch(batchID datatypes.UUID) error {
@@ -300,33 +208,15 @@ func (s *credentialStore) DeleteBatch(batchID datatypes.UUID) error {
 		return fmt.Errorf("batchID is required")
 	}
 
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		var fb models.FormatBinding
-		if err := tx.First(&fb, "id = ?", batchID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrNotFound
-			}
-			return err
-		}
-		logicalID := fb.LogicalCredentialID
+	res := s.db.Delete(&models.CredentialBatch{}, "id = ?", batchID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
 
-		// Delete the binding; its instances and display cascade (foreign_keys=ON).
-		if err := tx.Delete(&models.FormatBinding{}, "id = ?", batchID).Error; err != nil {
-			return err
-		}
-
-		// Drop the owning logical credential if this was its last format.
-		var remaining int64
-		if err := tx.Model(&models.FormatBinding{}).
-			Where("logical_credential_id = ?", logicalID).
-			Count(&remaining).Error; err != nil {
-			return err
-		}
-		if remaining == 0 {
-			return tx.Delete(&models.LogicalCredential{}, "id = ?", logicalID).Error
-		}
-		return nil
-	})
+	return nil
 }
 
 func (s *credentialStore) ListInstancesWithStatusReference() ([]CredentialStatusInstance, error) {
@@ -334,7 +224,7 @@ func (s *credentialStore) ListInstancesWithStatusReference() ([]CredentialStatus
 	err := s.db.
 		Model(&models.IssuedCredentialInstance{}).
 		Select("id AS instance_id, " +
-			"format_binding_id AS batch_id, " +
+			"credential_batch_id AS batch_id, " +
 			"status_list_uri AS status_list_uri, " +
 			"status_list_idx AS status_list_idx, " +
 			"last_known_status AS last_known_status").
@@ -347,9 +237,9 @@ func (s *credentialStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanc
 	var out []BatchInstanceStatus
 	err := s.db.
 		Model(&models.IssuedCredentialInstance{}).
-		Select("format_bindings.hash AS hash, " +
+		Select("credential_batches.hash AS hash, " +
 			"issued_credential_instances.last_known_status AS last_known_status").
-		Joins("JOIN format_bindings ON format_bindings.id = issued_credential_instances.format_binding_id").
+		Joins("JOIN credential_batches ON credential_batches.id = issued_credential_instances.credential_batch_id").
 		Where("issued_credential_instances.status_list_uri IS NOT NULL").
 		Scan(&out).Error
 	return out, err

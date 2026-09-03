@@ -88,23 +88,21 @@ func (s *credentialService) VerifyAndStoreIssuedVcdmCredentials(
 		return fmt.Errorf("failed to compute credential hash: %w", err)
 	}
 
-	// The logical grouping identity (#686) is computed from the same stored
-	// payload the migration reads, so a credential re-issued later lands the same
-	// identity as its migrated copy. StoreFormatBinding replaces any existing
-	// binding for this (identity, format), so no explicit delete is needed.
-	identity, err := LogicalIdentityFromProcessedPayload(models.CredentialFormatSdJwtVcdm, issuerID, processedPayload)
-	if err != nil {
-		return fmt.Errorf("failed to compute logical credential identity: %w", err)
+	// If a batch with this hash already exists, delete it so the new issuance
+	// replaces it (e.g. with updated timestamps or a fresh holder binding key).
+	if err := s.deleteExistingBatchByHash(hash); err != nil {
+		return err
 	}
 
 	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
 
-	binding := &models.FormatBinding{
+	batch := &models.CredentialBatch{
+		IssuerIdentifier:           issuerID,
+		VerifiableCredentialType:   typeIdentity,
 		Format:                     models.CredentialFormatSdJwtVcdm,
-		TypeLabel:                  typeIdentity,
 		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(processedPayload),
 		CredentialIssuerIdentifier: issuerID,
-		ProcessedPayload:           datatypes.JSON(processedPayload),
 		IssuerDisplay:              slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
 		CredentialMetadata:         convertCredentialMetadata(credentialConfiguration),
 		BatchSize:                  uint(len(verified)),
@@ -114,25 +112,25 @@ func (s *credentialService) VerifyAndStoreIssuedVcdmCredentials(
 
 	issuedAt, expiresAt, notBefore := VcdmIssuanceValidity(first)
 	if issuedAt != nil {
-		binding.IssuedAt = datatypes.NullTime{V: time.Unix(*issuedAt, 0), Valid: true}
+		batch.IssuedAt = datatypes.NullTime{V: time.Unix(*issuedAt, 0), Valid: true}
 	} else {
-		// Neither a JWT iat nor a document validFrom is present; record the
-		// receipt time so the wallet still has an issuance timestamp to display.
-		binding.IssuedAt = datatypes.NullTime{V: time.Now(), Valid: true}
+		// Neither a JWT iat nor a document validFrom is present; the batch
+		// model requires an issuance timestamp, so record the receipt time.
+		batch.IssuedAt = datatypes.NullTime{V: time.Now(), Valid: true}
 	}
 	if expiresAt != nil {
-		binding.ExpiresAt = datatypes.NullTime{V: time.Unix(*expiresAt, 0), Valid: true}
+		batch.ExpiresAt = datatypes.NullTime{V: time.Unix(*expiresAt, 0), Valid: true}
 	}
 	if notBefore != nil {
-		binding.NotBefore = datatypes.NullTime{V: time.Unix(*notBefore, 0), Valid: true}
+		batch.NotBefore = datatypes.NullTime{V: time.Unix(*notBefore, 0), Valid: true}
 	}
 
-	if err := s.credentialStore.StoreFormatBinding(identity, issuerID, binding); err != nil {
+	if err := s.credentialStore.StoreBatch(batch); err != nil {
 		return err
 	}
 
 	if requireCryptographicKeyBinding {
-		s.linkHolderBindingKeys(matchedKeyIDs, binding.Instances)
+		s.linkHolderBindingKeys(matchedKeyIDs, batch.Instances)
 	}
 
 	return nil

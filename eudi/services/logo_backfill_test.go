@@ -51,7 +51,7 @@ func requireNoFurtherSweep(t *testing.T, ch chan int) {
 // for both the issuer and the credential, served from baseURL.
 func storeBackfillBatch(t *testing.T, s *backfillTestStorage, baseURL string) {
 	t.Helper()
-	require.NoError(t, storeAsBinding(t, db.NewCredentialStore(s.Db()), backfillBatch(baseURL)))
+	require.NoError(t, db.NewCredentialStore(s.Db()).StoreBatch(backfillBatch(baseURL)))
 }
 
 // backfillBatch builds the batch storeBackfillBatch persists, so a test that
@@ -140,7 +140,7 @@ func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
 			batch.CredentialMetadata.Display[i].LogoURI = shared
 		}
 	}
-	require.NoError(t, storeAsBinding(t, db.NewCredentialStore(s.Db()), batch))
+	require.NoError(t, db.NewCredentialStore(s.Db()).StoreBatch(batch))
 
 	added := backfillLogos(context.Background(), s, server.Client(), "nl")
 

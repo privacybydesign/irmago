@@ -140,13 +140,6 @@ func New(
 	credStore := db.NewCredentialStore(eudiStorage.Db())
 	hbkStore := db.NewHolderBindingKeyStore(eudiStorage.Db())
 
-	// #685: migrate any legacy flat CredentialBatch rows into the three-layer
-	// model before the credential list is read. No-op on fresh installs and after
-	// the first successful run.
-	if _, err := services.MigrateFlatBatchesToThreeLayer(eudiStorage.Db()); err != nil {
-		return nil, fmt.Errorf("failed to migrate credential storage to the three-layer model: %v", err)
-	}
-
 	// Token Status List checker + the single revocation service built on it.
 	// The checker is also shared with the holder-side verifier
 	// (sdJwtVcVerificationContext below). The revocation service is the one home
