@@ -910,13 +910,13 @@ func TestClaimDisplayNameDerivesUnadvertisedAgeOver(t *testing.T) {
 			name:    "unadvertised threshold is derived",
 			batch:   batchWithClaims(published),
 			element: "age_over_35",
-			want:    strptr("Age Over 35"),
+			want:    new("Age Over 35"),
 		},
 		{
 			name:    "published text wins",
 			batch:   batchWithClaims(published),
 			element: "age_over_18",
-			want:    strptr("Older than 18"),
+			want:    new("Older than 18"),
 		},
 		{
 			name: "published bare-element text wins",
@@ -925,13 +925,13 @@ func TestClaimDisplayNameDerivesUnadvertisedAgeOver(t *testing.T) {
 				Display: en("Older than 18"),
 			}),
 			element: "age_over_18",
-			want:    strptr("Older than 18"),
+			want:    new("Older than 18"),
 		},
 		{
 			name:    "derived even with no metadata at all",
 			batch:   &models.CredentialBatch{VerifiableCredentialType: testDocType},
 			element: "age_over_18",
-			want:    strptr("Age Over 18"),
+			want:    new("Age Over 18"),
 		},
 		{
 			// The derived name covers age_over_NN only, but the consent screen
@@ -942,7 +942,7 @@ func TestClaimDisplayNameDerivesUnadvertisedAgeOver(t *testing.T) {
 			name:    "an element nothing names falls back to its identifier",
 			batch:   batchWithClaims(published),
 			element: "issuing_country",
-			want:    strptr("issuing_country"),
+			want:    new("issuing_country"),
 		},
 		{
 			// The case that motivated the fallback: an element the issuer signed
@@ -950,7 +950,7 @@ func TestClaimDisplayNameDerivesUnadvertisedAgeOver(t *testing.T) {
 			name:    "an element the issuer never declared is still named",
 			batch:   batchWithClaims(published),
 			element: "email",
-			want:    strptr("email"),
+			want:    new("email"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -965,4 +965,5 @@ func TestClaimDisplayNameDerivesUnadvertisedAgeOver(t *testing.T) {
 	}
 }
 
-func strptr(s string) *string { return &s }
+//go:fix inline
+func strptr(s string) *string { return new(s) }
