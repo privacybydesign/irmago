@@ -97,10 +97,26 @@ func testOpenID4VP_MdocAv_TwoQueriesInOneRequest(t *testing.T) {
 	issueAvMdocWithElementsViaPythonIssuer(t, c, 1, sessionHandler, avElementsBoth())
 	remainingBefore := avMdocInstancesRemaining(t, c)
 
-	dcql := newDcql(
-		avQuery(avQueryIdAgeOver18, avClaim(avMandatoryElement)),
-		avQuery(avQueryIdAgeOver21, avClaim(avSecondElement)),
-	)
+	dcql := `{
+		"credentials": [
+			{
+				"id": "age18",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_18"] }
+				]
+			},
+			{
+				"id": "age21",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_21"] }
+				]
+			}
+		]
+	}`
 	testSession, requestJwt := startMdocDcqlSession(t, c, 2, sessionHandler, dcql)
 
 	session := testSession.ClientSession
@@ -162,11 +178,29 @@ func testOpenID4VP_MdocAv_CredentialSetChoice(t *testing.T) {
 
 	issueAvMdocWithElementsViaPythonIssuer(t, c, 1, sessionHandler, avElementsBoth())
 
-	dcql := newDcqlWithCredentialSets(
-		credentialSetChoice(avQueryIdAgeOver18, avQueryIdAgeOver21),
-		avQuery(avQueryIdAgeOver18, avClaim(avMandatoryElement)),
-		avQuery(avQueryIdAgeOver21, avClaim(avSecondElement)),
-	)
+	dcql := `{
+		"credentials": [
+			{
+				"id": "age18",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_18"] }
+				]
+			},
+			{
+				"id": "age21",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_21"] }
+				]
+			}
+		],
+		"credential_sets": [
+			{ "options": [["age18"], ["age21"]] }
+		]
+	}`
 	testSession, requestJwt := startMdocDcqlSession(t, c, 2, sessionHandler, dcql)
 
 	session := testSession.ClientSession
@@ -222,10 +256,21 @@ func testOpenID4VP_MdocAv_OptionalCredentialSet(t *testing.T) {
 
 	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 
-	dcql := newDcqlWithCredentialSets(
-		optionalCredentialSet(avQueryIdDefault),
-		avQuery(avQueryIdDefault, avClaim(avMandatoryElement)),
-	)
+	dcql := `{
+		"credentials": [
+			{
+				"id": "age",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_18"] }
+				]
+			}
+		],
+		"credential_sets": [
+			{ "options": [["age"]], "required": false }
+		]
+	}`
 	testSession, requestJwt := startMdocDcqlSession(t, c, 2, sessionHandler, dcql)
 
 	session := testSession.ClientSession
@@ -265,14 +310,21 @@ func testOpenID4VP_MdocAv_ClaimSets(t *testing.T) {
 
 	issueAvMdocWithElementsViaPythonIssuer(t, c, 1, sessionHandler, avElementsBoth())
 
-	query := avQuery(
-		avQueryIdDefault,
-		withClaimId(avClaim(avMandatoryElement), "a"),
-		withClaimId(avClaim(avSecondElement), "b"),
-	)
-	query["claim_sets"] = [][]string{{"b"}, {"a"}}
-
-	testSession, requestJwt := startMdocDcqlSession(t, c, 2, sessionHandler, newDcql(query))
+	dcql := `{
+		"credentials": [
+			{
+				"id": "age",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "id": "a", "path": ["eu.europa.ec.av.1", "age_over_18"] },
+					{ "id": "b", "path": ["eu.europa.ec.av.1", "age_over_21"] }
+				],
+				"claim_sets": [["b"], ["a"]]
+			}
+		]
+	}`
+	testSession, requestJwt := startMdocDcqlSession(t, c, 2, sessionHandler, dcql)
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -321,7 +373,7 @@ func testOpenID4VP_MdocAv_TwoCandidates(t *testing.T) {
 	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 	issueAvMdocWithElementsViaPythonIssuer(t, c, 2, sessionHandler, avElementsBoth())
 
-	testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, avSingleElementDcql())
+	testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, avSingleElementDcql)
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -357,7 +409,7 @@ func testOpenID4VP_MdocAv_TwoCandidates(t *testing.T) {
 	requireDeviceAuthVerifies(t, presented, avSessionTranscript(t, requestJwt))
 
 	// Ask again: the picked option is one instance shorter, the other untouched.
-	again, _ := startMdocDcqlSession(t, c, 4, sessionHandler, avSingleElementDcql())
+	again, _ := startMdocDcqlSession(t, c, 4, sessionHandler, avSingleElementDcql)
 	requireSessionState(
 		t,
 		again.ClientSession,
@@ -403,10 +455,20 @@ func testOpenID4VP_MdocAv_MultiplePresentations(t *testing.T) {
 	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 	issueAvMdocWithElementsViaPythonIssuer(t, c, 2, sessionHandler, avElementsBoth())
 
-	query := avQuery(avQueryIdDefault, avClaim(avMandatoryElement))
-	query["multiple"] = true
-
-	testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, newDcql(query))
+	dcql := `{
+		"credentials": [
+			{
+				"id": "age",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_18"] }
+				],
+				"multiple": true
+			}
+		]
+	}`
+	testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, dcql)
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -463,11 +525,20 @@ func testOpenID4VP_MdocAv_IntentToRetain(t *testing.T) {
 
 	issueAvMdocWithElementsViaPythonIssuer(t, c, 1, sessionHandler, avElementsBoth())
 
-	retainedClaim := avClaim(avMandatoryElement)
-	retainedClaim["intent_to_retain"] = true
-
-	query := avQuery(avQueryIdDefault, retainedClaim, avClaim(avSecondElement))
-	testSession, _ := startMdocDcqlSession(t, c, 2, sessionHandler, newDcql(query))
+	dcql := `{
+		"credentials": [
+			{
+				"id": "age",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_18"], "intent_to_retain": true },
+					{ "path": ["eu.europa.ec.av.1", "age_over_21"] }
+				]
+			}
+		]
+	}`
+	testSession, _ := startMdocDcqlSession(t, c, 2, sessionHandler, dcql)
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -514,64 +585,20 @@ func avElementsBoth() map[string]bool {
 	}
 }
 
-// avClaim is one DCQL claim for an element of the age credential.
-func avClaim(element string) map[string]any {
-	return map[string]any{
-		"path": []string{avDocType, element},
-	}
-}
-
-func withClaimId(claim map[string]any, id string) map[string]any {
-	claim["id"] = id
-	return claim
-}
-
-// avQuery is one mso_mdoc credential query for the age credential.
-func avQuery(id string, claims ...map[string]any) map[string]any {
-	return map[string]any{
-		"id":     id,
-		"format": string(clientmodels.Format_MsoMdoc),
-		"meta":   map[string]any{"doctype_value": avDocType},
-		"claims": claims,
-	}
-}
-
-func newDcql(credentials ...map[string]any) map[string]any {
-	return map[string]any{
-		"credentials": credentials,
-	}
-}
-
-func newDcqlWithCredentialSets(
-	credentialSets []map[string]any,
-	credentials ...map[string]any,
-) map[string]any {
-	dcql := newDcql(credentials...)
-	dcql["credential_sets"] = credentialSets
-	return dcql
-}
-
-func credentialSetChoice(queryIds ...string) []map[string]any {
-	options := make([][]string, 0, len(queryIds))
-	for _, queryId := range queryIds {
-		options = append(options, []string{queryId})
-	}
-	return []map[string]any{
-		{"options": options},
-	}
-}
-
-func optionalCredentialSet(queryId string) []map[string]any {
-	return []map[string]any{
-		{"options": [][]string{{queryId}}, "required": false},
-	}
-}
-
-// avSingleElementDcql is the request the AV suite's happy path uses, as a
-// dcql_query: one query for age_over_18 under the default id.
-func avSingleElementDcql() map[string]any {
-	return newDcql(avQuery(avQueryIdDefault, avClaim(avMandatoryElement)))
-}
+// avSingleElementDcql is the request the AV suite's happy path uses: one query
+// for age_over_18 under the default id.
+const avSingleElementDcql = `{
+	"credentials": [
+		{
+			"id": "age",
+			"format": "mso_mdoc",
+			"meta": { "doctype_value": "eu.europa.ec.av.1" },
+			"claims": [
+				{ "path": ["eu.europa.ec.av.1", "age_over_18"] }
+			]
+		}
+	]
+}`
 
 // ----------------------------------------------------------------------------
 // Expectations
@@ -646,7 +673,7 @@ func startMdocDcqlSession(
 	c *client.Client,
 	sessionId int,
 	sessionHandler *MockSessionHandler,
-	dcql map[string]any,
+	dcql string,
 ) (openID4VPTestSession, string) {
 	t.Helper()
 

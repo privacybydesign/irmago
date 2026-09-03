@@ -763,9 +763,15 @@ func createAvMdocSessionRequest(
 	mutate func(request map[string]any),
 ) string {
 	t.Helper()
-	return createAvMdocSessionRequestWithDcql(t, map[string]any{
-		"credentials": []map[string]any{credential},
-	}, mutate)
+
+	credentialJSON, err := json.Marshal(credential)
+	require.NoError(t, err)
+
+	return createAvMdocSessionRequestWithDcql(
+		t,
+		`{"credentials": [`+string(credentialJSON)+`]}`,
+		mutate,
+	)
 }
 
 // createAvMdocSessionRequestWithDcql is the same with the whole dcql_query
@@ -773,7 +779,7 @@ func createAvMdocSessionRequest(
 // which the single-credential shape above cannot express.
 func createAvMdocSessionRequestWithDcql(
 	t *testing.T,
-	dcqlQuery map[string]any,
+	dcqlQuery string,
 	mutate func(request map[string]any),
 ) string {
 	t.Helper()
@@ -782,7 +788,7 @@ func createAvMdocSessionRequestWithDcql(
 
 	request := map[string]any{
 		"type":       "vp_token",
-		"dcql_query": dcqlQuery,
+		"dcql_query": json.RawMessage(dcqlQuery),
 		"nonce":      "nonce",
 		"jar_mode":   "by_reference",
 		// The client fetches the request object with a GET and sends no

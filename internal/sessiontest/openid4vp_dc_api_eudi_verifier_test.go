@@ -78,7 +78,7 @@ func testDcApiMdocDisclosureToEudiVerifier(t *testing.T) {
 
 	verifierSession, err := StartDcApiTestSessionAtEudiVerifier(
 		testdata.OpenID4VP_DcApi_Host,
-		createDcApiSessionRequestWithDcql(t, dcApiVerifierOrigin, avSingleElementDcql(), readEudiPidIssuerPyCA(t)),
+		createDcApiSessionRequestWithDcql(t, dcApiVerifierOrigin, avSingleElementDcql, readEudiPidIssuerPyCA(t)),
 	)
 	require.NoError(t, err)
 	requireSignedForOrigin(t, verifierSession.Request, dcApiVerifierOrigin)
@@ -228,16 +228,23 @@ func requireSignedForOrigin(t *testing.T, requestJwt, origin string) {
 // at the EUDI verifier, querying for the email credential on behalf of the given origin.
 func createDcApiEmailAuthRequestRequest(t *testing.T, origin string) string {
 	t.Helper()
-	return createDcApiSessionRequestWithDcql(t, origin, map[string]any{
-		"credentials": []any{map[string]any{
-			"id":     dcApiVerifierQueryId,
-			"format": "dc+sd-jwt",
-			"meta": map[string]any{
-				"vct_values": []string{"test.test.email"},
-			},
-			"claims": []any{map[string]any{"path": []string{"email"}}},
-		}},
-	}, testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	return createDcApiSessionRequestWithDcql(
+		t,
+		origin,
+		`{
+			"credentials": [
+				{
+					"id": "email_credential",
+					"format": "dc+sd-jwt",
+					"meta": { "vct_values": ["test.test.email"] },
+					"claims": [
+						{ "path": ["email"] }
+					]
+				}
+			]
+		}`,
+		testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes,
+	)
 }
 
 // createDcApiSessionRequestWithDcql builds the request that starts a DC API
@@ -247,7 +254,7 @@ func createDcApiEmailAuthRequestRequest(t *testing.T, origin string) string {
 func createDcApiSessionRequestWithDcql(
 	t *testing.T,
 	origin string,
-	dcql map[string]any,
+	dcql string,
 	issuerChain []byte,
 ) string {
 	t.Helper()
@@ -255,7 +262,7 @@ func createDcApiSessionRequestWithDcql(
 		"nonce":           dcApiVerifierNonce,
 		"origin":          origin,
 		"intended_use_id": eudiVerifierIntendedUseId,
-		"dcql_query":      dcql,
+		"dcql_query":      json.RawMessage(dcql),
 		"issuer_chain":    string(issuerChain),
 	})
 	require.NoError(t, err)

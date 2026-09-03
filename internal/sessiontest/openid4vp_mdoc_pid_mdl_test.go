@@ -152,7 +152,19 @@ func testOpenID4VP_PidMdoc_Names(t *testing.T) {
 
 	issuePidAndMdlMdocs(t, c, sessionHandler)
 
-	dcql := newDcql(pidQuery(pidClaim("family_name"), pidClaim("given_name")))
+	dcql := `{
+		"credentials": [
+			{
+				"id": "pid",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.eudi.pid.1", "family_name"] },
+					{ "path": ["eu.europa.ec.eudi.pid.1", "given_name"] }
+				]
+			}
+		]
+	}`
 	testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, dcql)
 
 	session := testSession.ClientSession
@@ -214,9 +226,19 @@ func testOpenID4VP_PidMdoc_IntegerValueConstraint(t *testing.T) {
 
 			issuePidAndMdlMdocs(t, c, sessionHandler)
 
-			claim := pidClaim("sex")
-			claim["values"] = []any{pidSex}
-			testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, newDcql(pidQuery(claim)))
+			dcql := `{
+				"credentials": [
+					{
+						"id": "pid",
+						"format": "mso_mdoc",
+						"meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
+						"claims": [
+							{ "path": ["eu.europa.ec.eudi.pid.1", "sex"], "values": [2] }
+						]
+					}
+				]
+			}`
+			testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, dcql)
 
 			session := testSession.ClientSession
 			requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -267,9 +289,19 @@ func testOpenID4VP_PidMdoc_IntegerValueConstraint(t *testing.T) {
 
 			issuePidAndMdlMdocs(t, c, sessionHandler)
 
-			claim := pidClaim("sex")
-			claim["values"] = []any{pidSex + 1}
-			testSession, _ := startMdocDcqlSession(t, c, 3, sessionHandler, newDcql(pidQuery(claim)))
+			dcql := `{
+				"credentials": [
+					{
+						"id": "pid",
+						"format": "mso_mdoc",
+						"meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
+						"claims": [
+							{ "path": ["eu.europa.ec.eudi.pid.1", "sex"], "values": [3] }
+						]
+					}
+				]
+			}`
+			testSession, _ := startMdocDcqlSession(t, c, 3, sessionHandler, dcql)
 
 			session := testSession.ClientSession
 			if session.Status != clientmodels.Status_Error {
@@ -302,7 +334,26 @@ func testOpenID4VP_PidMdlMdoc_Dates(t *testing.T) {
 
 	issuePidAndMdlMdocs(t, c, sessionHandler)
 
-	dcql := newDcql(pidQuery(pidClaim("birth_date")), mdlQuery(mdlClaim("expiry_date")))
+	dcql := `{
+		"credentials": [
+			{
+				"id": "pid",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.eudi.pid.1", "birth_date"] }
+				]
+			},
+			{
+				"id": "mdl",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "org.iso.18013.5.1.mDL" },
+				"claims": [
+					{ "path": ["org.iso.18013.5.1", "expiry_date"] }
+				]
+			}
+		]
+	}`
 	testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, dcql)
 
 	session := testSession.ClientSession
@@ -365,10 +416,27 @@ func testOpenID4VP_PidMdlMdoc_StructuredValues(t *testing.T) {
 
 	issuePidAndMdlMdocs(t, c, sessionHandler)
 
-	dcql := newDcql(
-		pidQuery(pidClaim("place_of_birth"), pidClaim("nationality")),
-		mdlQuery(mdlClaim("driving_privileges")),
-	)
+	dcql := `{
+		"credentials": [
+			{
+				"id": "pid",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.eudi.pid.1", "place_of_birth"] },
+					{ "path": ["eu.europa.ec.eudi.pid.1", "nationality"] }
+				]
+			},
+			{
+				"id": "mdl",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "org.iso.18013.5.1.mDL" },
+				"claims": [
+					{ "path": ["org.iso.18013.5.1", "driving_privileges"] }
+				]
+			}
+		]
+	}`
 	testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, dcql)
 
 	session := testSession.ClientSession
@@ -443,7 +511,19 @@ func testOpenID4VP_Mdl_LicenceNumberAndPortrait(t *testing.T) {
 
 	issuePidAndMdlMdocs(t, c, sessionHandler)
 
-	dcql := newDcql(mdlQuery(mdlClaim("document_number"), mdlClaim("portrait")))
+	dcql := `{
+		"credentials": [
+			{
+				"id": "mdl",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "org.iso.18013.5.1.mDL" },
+				"claims": [
+					{ "path": ["org.iso.18013.5.1", "document_number"] },
+					{ "path": ["org.iso.18013.5.1", "portrait"] }
+				]
+			}
+		]
+	}`
 	testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, dcql)
 
 	attrs := []expectedAttr{
@@ -503,7 +583,26 @@ func testOpenID4VP_PidMdlMdoc_TwoDocTypes(t *testing.T) {
 
 	issuePidAndMdlMdocs(t, c, sessionHandler)
 
-	dcql := newDcql(pidQuery(pidClaim("given_name")), mdlQuery(mdlClaim("document_number")))
+	dcql := `{
+		"credentials": [
+			{
+				"id": "pid",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.eudi.pid.1", "given_name"] }
+				]
+			},
+			{
+				"id": "mdl",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "org.iso.18013.5.1.mDL" },
+				"claims": [
+					{ "path": ["org.iso.18013.5.1", "document_number"] }
+				]
+			}
+		]
+	}`
 	testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, dcql)
 
 	givenNameAttr := pidMdocAttr("given_name", "Given Name(s)", strVal(samplePidUserData().GivenName))
@@ -557,11 +656,29 @@ func testOpenID4VP_PidMdlMdoc_CredentialSetChoice(t *testing.T) {
 
 	issuePidAndMdlMdocs(t, c, sessionHandler)
 
-	dcql := newDcqlWithCredentialSets(
-		credentialSetChoice(pidMdocQueryId, mdlQueryId),
-		pidQuery(pidClaim("given_name")),
-		mdlQuery(mdlClaim("document_number")),
-	)
+	dcql := `{
+		"credentials": [
+			{
+				"id": "pid",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.eudi.pid.1", "given_name"] }
+				]
+			},
+			{
+				"id": "mdl",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "org.iso.18013.5.1.mDL" },
+				"claims": [
+					{ "path": ["org.iso.18013.5.1", "document_number"] }
+				]
+			}
+		],
+		"credential_sets": [
+			{ "options": [["pid"], ["mdl"]] }
+		]
+	}`
 	testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, dcql)
 
 	givenNameAttr := pidMdocAttr("given_name", "Given Name(s)", strVal(samplePidUserData().GivenName))
@@ -730,41 +847,6 @@ func issueMdocViaPythonIssuer(
 		t.Fatalf("issuance of %s errored after permission: %+v", credentialConfigId, session.Error)
 	}
 	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_Success)
-}
-
-// ----------------------------------------------------------------------------
-// Queries
-// ----------------------------------------------------------------------------
-
-func mdocClaim(namespace, element string) map[string]any {
-	return map[string]any{
-		"path": []string{namespace, element},
-	}
-}
-
-func mdocQuery(id, docType string, claims ...map[string]any) map[string]any {
-	return map[string]any{
-		"id":     id,
-		"format": string(clientmodels.Format_MsoMdoc),
-		"meta":   map[string]any{"doctype_value": docType},
-		"claims": claims,
-	}
-}
-
-func pidClaim(element string) map[string]any {
-	return mdocClaim(pidMdocNamespace, element)
-}
-
-func mdlClaim(element string) map[string]any {
-	return mdocClaim(mdlNamespace, element)
-}
-
-func pidQuery(claims ...map[string]any) map[string]any {
-	return mdocQuery(pidMdocQueryId, pidMdocDocType, claims...)
-}
-
-func mdlQuery(claims ...map[string]any) map[string]any {
-	return mdocQuery(mdlQueryId, mdlDocType, claims...)
 }
 
 // ----------------------------------------------------------------------------

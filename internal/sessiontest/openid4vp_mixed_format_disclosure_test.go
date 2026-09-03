@@ -68,7 +68,7 @@ func runMixedFormatDisclosure(t *testing.T, verifierHost string) {
 		3,
 		sessionHandler,
 		verifierHost,
-		createAvMdocSessionRequestWithDcql(t, mixedDcql(), nil),
+		createAvMdocSessionRequestWithDcql(t, mixedDcql, nil),
 	)
 
 	session := testSession.ClientSession
@@ -109,7 +109,7 @@ func testOpenID4VP_MixedFormat_CredentialSetChoice(t *testing.T) {
 
 	issuePidAndAvMdoc(t, c, sessionHandler)
 
-	dcql := mixedDcqlWithCredentialSets(credentialSetChoice(mixedPidQueryId, mixedAgeQueryId))
+	dcql := mixedDcqlAsChoice
 	testSession, requestJwt := startMdocAvSessionCapturingRequest(
 		t,
 		c,
@@ -165,7 +165,7 @@ func testOpenID4VP_MixedFormat_OverDcApi(t *testing.T) {
 
 	verifierSession, err := StartDcApiTestSessionAtEudiVerifier(
 		testdata.OpenID4VP_DcApi_Host,
-		createDcApiSessionRequestWithDcql(t, dcApiVerifierOrigin, mixedDcql(), readEudiPidIssuerPyCA(t)),
+		createDcApiSessionRequestWithDcql(t, dcApiVerifierOrigin, mixedDcql, readEudiPidIssuerPyCA(t)),
 	)
 	require.NoError(t, err)
 	requireSignedForOrigin(t, verifierSession.Request, dcApiVerifierOrigin)
@@ -229,30 +229,55 @@ func issuePidAndAvMdoc(t *testing.T, c *client.Client, sessionHandler *MockSessi
 }
 
 // mixedDcql asks for the PID's names as SD-JWT and the age credential's
-// age_over_18 as mdoc.
-func mixedDcql() map[string]any {
-	return newDcql(mixedPidQuery(), mixedAgeQuery())
-}
-
-func mixedDcqlWithCredentialSets(credentialSets []map[string]any) map[string]any {
-	return newDcqlWithCredentialSets(credentialSets, mixedPidQuery(), mixedAgeQuery())
-}
-
-func mixedPidQuery() map[string]any {
-	return map[string]any{
-		"id":     mixedPidQueryId,
-		"format": string(clientmodels.Format_SdJwtVc),
-		"meta":   map[string]any{"vct_values": []string{eudiPidIssuerPyVct}},
-		"claims": []map[string]any{
-			{"path": []string{"given_name"}},
-			{"path": []string{"family_name"}},
+// age_over_18 as mdoc, both required.
+const mixedDcql = `{
+	"credentials": [
+		{
+			"id": "pid",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["urn:eudi:pid:1"] },
+			"claims": [
+				{ "path": ["given_name"] },
+				{ "path": ["family_name"] }
+			]
 		},
-	}
-}
+		{
+			"id": "age",
+			"format": "mso_mdoc",
+			"meta": { "doctype_value": "eu.europa.ec.av.1" },
+			"claims": [
+				{ "path": ["eu.europa.ec.av.1", "age_over_18"] }
+			]
+		}
+	]
+}`
 
-func mixedAgeQuery() map[string]any {
-	return avQuery(mixedAgeQueryId, avClaim(avMandatoryElement))
-}
+// mixedDcqlAsChoice is the same two queries behind a credential_sets entry, so
+// the user picks a format rather than handing over both.
+const mixedDcqlAsChoice = `{
+	"credentials": [
+		{
+			"id": "pid",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["urn:eudi:pid:1"] },
+			"claims": [
+				{ "path": ["given_name"] },
+				{ "path": ["family_name"] }
+			]
+		},
+		{
+			"id": "age",
+			"format": "mso_mdoc",
+			"meta": { "doctype_value": "eu.europa.ec.av.1" },
+			"claims": [
+				{ "path": ["eu.europa.ec.av.1", "age_over_18"] }
+			]
+		}
+	],
+	"credential_sets": [
+		{ "options": [["pid"], ["age"]] }
+	]
+}`
 
 // pidPlanCredential is the PID as the permission screen shows it for the names
 // query. Attributes follow the issuer's metadata order, not the query's.

@@ -121,8 +121,19 @@ func testDcApiMdocMultiplePresentations(t *testing.T) {
 	session := startDcApiSession(t, c, 3, sessionHandler, &openid4vp.DcApiRequest{
 		Protocol: openid4vp.DcApiProtocolUnsigned,
 		Origin:   dcApiOrigin,
-		Data: unsignedDcApiMdocDataWithQuery(t, string(openid4vp.ResponseMode_DcApi), nil,
-			func(query map[string]any) { query["multiple"] = true }),
+		Data: unsignedDcApiRequestData(t, string(openid4vp.ResponseMode_DcApi), `{
+			"credentials": [
+				{
+					"id": "av_credential",
+					"format": "mso_mdoc",
+					"meta": { "doctype_value": "eu.europa.ec.av.1" },
+					"claims": [
+						{ "path": ["eu.europa.ec.av.1", "age_over_18"] }
+					],
+					"multiple": true
+				}
+			]
+		}`, nil),
 	})
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -171,10 +182,26 @@ func testDcApiMdocTwoQueries(t *testing.T) {
 	issueAvMdocWithElementsViaPythonIssuer(t, c, 1, sessionHandler, avElementsBoth())
 	remainingBefore := avMdocInstancesRemaining(t, c)
 
-	dcql := newDcql(
-		avQuery(avQueryIdAgeOver18, avClaim(avMandatoryElement)),
-		avQuery(avQueryIdAgeOver21, avClaim(avSecondElement)),
-	)
+	dcql := `{
+		"credentials": [
+			{
+				"id": "age18",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_18"] }
+				]
+			},
+			{
+				"id": "age21",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_21"] }
+				]
+			}
+		]
+	}`
 	session := startDcApiSession(t, c, 2, sessionHandler, &openid4vp.DcApiRequest{
 		Protocol: openid4vp.DcApiProtocolUnsigned,
 		Origin:   dcApiOrigin,
@@ -225,10 +252,21 @@ func testDcApiMdocSkippedOptionalSet(t *testing.T) {
 	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 	remainingBefore := avMdocInstancesRemaining(t, c)
 
-	dcql := newDcqlWithCredentialSets(
-		optionalCredentialSet(avQueryIdDefault),
-		avQuery(avQueryIdDefault, avClaim(avMandatoryElement)),
-	)
+	dcql := `{
+		"credentials": [
+			{
+				"id": "age",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_18"] }
+				]
+			}
+		],
+		"credential_sets": [
+			{ "options": [["age"]], "required": false }
+		]
+	}`
 	session := startDcApiSession(t, c, 2, sessionHandler, &openid4vp.DcApiRequest{
 		Protocol: openid4vp.DcApiProtocolUnsigned,
 		Origin:   dcApiOrigin,
@@ -349,34 +387,18 @@ func testDcApiMdocEncryptedDisclosure(t *testing.T) {
 // querying for the AV mdoc's age_over_18 element.
 func unsignedDcApiMdocData(t *testing.T, responseMode string, clientMetadata map[string]any) json.RawMessage {
 	t.Helper()
-	return unsignedDcApiMdocDataWithQuery(t, responseMode, clientMetadata, nil)
-}
-
-// unsignedDcApiMdocDataWithQuery is the same with a hook to change the credential
-// query, for the subtests about DCQL flags on it.
-func unsignedDcApiMdocDataWithQuery(
-	t *testing.T,
-	responseMode string,
-	clientMetadata map[string]any,
-	mutateQuery func(query map[string]any),
-) json.RawMessage {
-	t.Helper()
-	query := map[string]any{
-		"id":     dcApiMdocQueryId,
-		"format": "mso_mdoc",
-		"meta": map[string]any{
-			"doctype_value": avDocType,
-		},
-		"claims": []any{map[string]any{
-			"path": []string{avDocType, "age_over_18"},
-		}},
-	}
-	if mutateQuery != nil {
-		mutateQuery(query)
-	}
-	return unsignedDcApiRequestData(t, responseMode, map[string]any{
-		"credentials": []any{query},
-	}, clientMetadata)
+	return unsignedDcApiRequestData(t, responseMode, `{
+		"credentials": [
+			{
+				"id": "av_credential",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_18"] }
+				]
+			}
+		]
+	}`, clientMetadata)
 }
 
 // unsignedDcApiRequestData builds the `data` member of an unsigned DC API request
@@ -384,7 +406,7 @@ func unsignedDcApiMdocDataWithQuery(
 func unsignedDcApiRequestData(
 	t *testing.T,
 	responseMode string,
-	dcql map[string]any,
+	dcql string,
 	clientMetadata map[string]any,
 ) json.RawMessage {
 	t.Helper()
@@ -392,7 +414,7 @@ func unsignedDcApiRequestData(
 		"response_type": "vp_token",
 		"response_mode": responseMode,
 		"nonce":         dcApiNonce,
-		"dcql_query":    dcql,
+		"dcql_query":    json.RawMessage(dcql),
 	}
 	if clientMetadata != nil {
 		request["client_metadata"] = clientMetadata
