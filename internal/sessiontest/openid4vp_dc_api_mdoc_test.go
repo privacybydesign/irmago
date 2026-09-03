@@ -171,7 +171,7 @@ func testDcApiMdocTwoQueries(t *testing.T) {
 	issueAvMdocWithElementsViaPythonIssuer(t, c, 1, sessionHandler, avElementsBoth())
 	remainingBefore := avMdocInstancesRemaining(t, c)
 
-	dcql := avDcql(
+	dcql := newDcql(
 		avQuery(avQueryIdAgeOver18, avClaim(avMandatoryElement)),
 		avQuery(avQueryIdAgeOver21, avClaim(avSecondElement)),
 	)
@@ -225,8 +225,8 @@ func testDcApiMdocSkippedOptionalSet(t *testing.T) {
 	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 	remainingBefore := avMdocInstancesRemaining(t, c)
 
-	dcql := avDcqlWithCredentialSets(
-		avOptionalCredentialSet(avQueryIdDefault),
+	dcql := newDcqlWithCredentialSets(
+		optionalCredentialSet(avQueryIdDefault),
 		avQuery(avQueryIdDefault, avClaim(avMandatoryElement)),
 	)
 	session := startDcApiSession(t, c, 2, sessionHandler, &openid4vp.DcApiRequest{

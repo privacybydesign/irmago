@@ -45,20 +45,34 @@ const (
 )
 
 func testSessionHandlerForOpenID4VPWithMdocAvDcqlShapes(t *testing.T) {
-	t.Run("two mdoc queries in one request are answered with two presentations",
-		testOpenID4VP_MdocAv_TwoQueriesInOneRequest)
-	t.Run("a credential_sets choice between two queries presents only the chosen one",
-		testOpenID4VP_MdocAv_CredentialSetChoice)
-	t.Run("an optional credential set is marked optional and can be granted",
-		testOpenID4VP_MdocAv_OptionalCredentialSet)
-	t.Run("claim_sets discloses the first satisfiable set only",
-		testOpenID4VP_MdocAv_ClaimSets)
-	t.Run("two matching credentials are offered as two candidates",
-		testOpenID4VP_MdocAv_TwoCandidates)
-	t.Run("multiple lets the user present both candidates for one query",
-		testOpenID4VP_MdocAv_MultiplePresentations)
-	t.Run("intent_to_retain reaches the permission screen and the log",
-		testOpenID4VP_MdocAv_IntentToRetain)
+	t.Run(
+		"two mdoc queries in one request are answered with two presentations",
+		testOpenID4VP_MdocAv_TwoQueriesInOneRequest,
+	)
+	t.Run(
+		"a credential_sets choice between two queries presents only the chosen one",
+		testOpenID4VP_MdocAv_CredentialSetChoice,
+	)
+	t.Run(
+		"an optional credential set is marked optional and can be granted",
+		testOpenID4VP_MdocAv_OptionalCredentialSet,
+	)
+	t.Run(
+		"claim_sets discloses the first satisfiable set only",
+		testOpenID4VP_MdocAv_ClaimSets,
+	)
+	t.Run(
+		"two matching credentials are offered as two candidates",
+		testOpenID4VP_MdocAv_TwoCandidates,
+	)
+	t.Run(
+		"multiple lets the user present both candidates for one query",
+		testOpenID4VP_MdocAv_MultiplePresentations,
+	)
+	t.Run(
+		"intent_to_retain reaches the permission screen and the log",
+		testOpenID4VP_MdocAv_IntentToRetain,
+	)
 }
 
 // testOpenID4VP_MdocAv_TwoQueriesInOneRequest asks for two elements of the age
@@ -83,20 +97,24 @@ func testOpenID4VP_MdocAv_TwoQueriesInOneRequest(t *testing.T) {
 	issueAvMdocWithElementsViaPythonIssuer(t, c, 1, sessionHandler, avElementsBoth())
 	remainingBefore := avMdocInstancesRemaining(t, c)
 
-	dcql := avDcql(
+	dcql := newDcql(
 		avQuery(avQueryIdAgeOver18, avClaim(avMandatoryElement)),
 		avQuery(avQueryIdAgeOver21, avClaim(avSecondElement)),
 	)
-	testSession, requestJwt := startAvShapeSession(t, c, 2, sessionHandler, dcql)
+	testSession, requestJwt := startMdocDcqlSession(t, c, 2, sessionHandler, dcql)
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
-		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver18())}},
-			{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver21())}},
+	requireDisclosurePlan(
+		t,
+		session.DisclosurePlan,
+		expectedDisclosurePlan{
+			Choices: []expectedPickOneChoice{
+				{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver18())}},
+				{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver21())}},
+			},
 		},
-	})
+	)
 
 	approvedRequestor := session.Requestor
 	grantFirstOwnedOptions(t, c, 2, session)
@@ -113,8 +131,12 @@ func testOpenID4VP_MdocAv_TwoQueriesInOneRequest(t *testing.T) {
 	presented21 := requireSingleDeviceResponse(t, walletResponse, avQueryIdAgeOver21)
 	requireDeviceAuthVerifiesElements(t, presented21, transcript, map[string]any{avSecondElement: true})
 
-	require.Equal(t, remainingBefore-2, avMdocInstancesRemaining(t, c),
-		"two presentations must spend two instances")
+	require.Equal(
+		t,
+		remainingBefore-2,
+		avMdocInstancesRemaining(t, c),
+		"two presentations must spend two instances",
+	)
 
 	disclosureLog := requireSingleDisclosureLog(t, c)
 	requireLogVerifier(t, disclosureLog, approvedRequestor)
@@ -140,23 +162,27 @@ func testOpenID4VP_MdocAv_CredentialSetChoice(t *testing.T) {
 
 	issueAvMdocWithElementsViaPythonIssuer(t, c, 1, sessionHandler, avElementsBoth())
 
-	dcql := avDcqlWithCredentialSets(
-		avCredentialSetChoice(avQueryIdAgeOver18, avQueryIdAgeOver21),
+	dcql := newDcqlWithCredentialSets(
+		credentialSetChoice(avQueryIdAgeOver18, avQueryIdAgeOver21),
 		avQuery(avQueryIdAgeOver18, avClaim(avMandatoryElement)),
 		avQuery(avQueryIdAgeOver21, avClaim(avSecondElement)),
 	)
-	testSession, requestJwt := startAvShapeSession(t, c, 2, sessionHandler, dcql)
+	testSession, requestJwt := startMdocDcqlSession(t, c, 2, sessionHandler, dcql)
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
-		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				avPlanCredential(avAttrAgeOver18()),
-				avPlanCredential(avAttrAgeOver21()),
-			}},
+	requireDisclosurePlan(
+		t,
+		session.DisclosurePlan,
+		expectedDisclosurePlan{
+			Choices: []expectedPickOneChoice{
+				{Owned: []expectedPlanCredential{
+					avPlanCredential(avAttrAgeOver18()),
+					avPlanCredential(avAttrAgeOver21()),
+				}},
+			},
 		},
-	})
+	)
 
 	approvedRequestor := session.Requestor
 	chosen := ownedOptionWithAttr(t, session.DisclosurePlan.DisclosureChoicesOverview[0], avSecondElement)
@@ -196,19 +222,23 @@ func testOpenID4VP_MdocAv_OptionalCredentialSet(t *testing.T) {
 
 	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 
-	dcql := avDcqlWithCredentialSets(
-		avOptionalCredentialSet(avQueryIdDefault),
+	dcql := newDcqlWithCredentialSets(
+		optionalCredentialSet(avQueryIdDefault),
 		avQuery(avQueryIdDefault, avClaim(avMandatoryElement)),
 	)
-	testSession, requestJwt := startAvShapeSession(t, c, 2, sessionHandler, dcql)
+	testSession, requestJwt := startMdocDcqlSession(t, c, 2, sessionHandler, dcql)
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
-		Choices: []expectedPickOneChoice{
-			{Optional: true, Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver18())}},
+	requireDisclosurePlan(
+		t,
+		session.DisclosurePlan,
+		expectedDisclosurePlan{
+			Choices: []expectedPickOneChoice{
+				{Optional: true, Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver18())}},
+			},
 		},
-	})
+	)
 
 	grantFirstOwnedOptions(t, c, 2, session)
 
@@ -235,21 +265,26 @@ func testOpenID4VP_MdocAv_ClaimSets(t *testing.T) {
 
 	issueAvMdocWithElementsViaPythonIssuer(t, c, 1, sessionHandler, avElementsBoth())
 
-	query := avQuery(avQueryIdDefault,
+	query := avQuery(
+		avQueryIdDefault,
 		withClaimId(avClaim(avMandatoryElement), "a"),
 		withClaimId(avClaim(avSecondElement), "b"),
 	)
 	query["claim_sets"] = [][]string{{"b"}, {"a"}}
 
-	testSession, requestJwt := startAvShapeSession(t, c, 2, sessionHandler, avDcql(query))
+	testSession, requestJwt := startMdocDcqlSession(t, c, 2, sessionHandler, newDcql(query))
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
-		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver21())}},
+	requireDisclosurePlan(
+		t,
+		session.DisclosurePlan,
+		expectedDisclosurePlan{
+			Choices: []expectedPickOneChoice{
+				{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver21())}},
+			},
 		},
-	})
+	)
 
 	grantFirstOwnedOptions(t, c, 2, session)
 
@@ -286,18 +321,22 @@ func testOpenID4VP_MdocAv_TwoCandidates(t *testing.T) {
 	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
 	issueAvMdocWithElementsViaPythonIssuer(t, c, 2, sessionHandler, avElementsBoth())
 
-	testSession, requestJwt := startAvShapeSession(t, c, 3, sessionHandler, avSingleElementDcql())
+	testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, avSingleElementDcql())
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
-		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				avPlanCredential(avAttrAgeOver18()),
-				avPlanCredential(avAttrAgeOver18()),
-			}},
+	requireDisclosurePlan(
+		t,
+		session.DisclosurePlan,
+		expectedDisclosurePlan{
+			Choices: []expectedPickOneChoice{
+				{Owned: []expectedPlanCredential{
+					avPlanCredential(avAttrAgeOver18()),
+					avPlanCredential(avAttrAgeOver18()),
+				}},
+			},
 		},
-	})
+	)
 
 	options := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
 	first, second := options[0].Credentials[0], options[1].Credentials[0]
@@ -318,7 +357,7 @@ func testOpenID4VP_MdocAv_TwoCandidates(t *testing.T) {
 	requireDeviceAuthVerifies(t, presented, avSessionTranscript(t, requestJwt))
 
 	// Ask again: the picked option is one instance shorter, the other untouched.
-	again, _ := startAvShapeSession(t, c, 4, sessionHandler, avSingleElementDcql())
+	again, _ := startMdocDcqlSession(t, c, 4, sessionHandler, avSingleElementDcql())
 	requireSessionState(
 		t,
 		again.ClientSession,
@@ -333,10 +372,18 @@ func testOpenID4VP_MdocAv_TwoCandidates(t *testing.T) {
 		remainingAfter[cred.Hash] = *cred.BatchInstanceCountRemaining
 	}
 
-	require.Equal(t, remainingBefore[first.Hash], remainingAfter[first.Hash],
-		"the option the user did not pick must not be spent")
-	require.Equal(t, remainingBefore[second.Hash]-1, remainingAfter[second.Hash],
-		"the picked option must be one instance shorter")
+	require.Equal(
+		t,
+		remainingBefore[first.Hash],
+		remainingAfter[first.Hash],
+		"the option the user did not pick must not be spent",
+	)
+	require.Equal(
+		t,
+		remainingBefore[second.Hash]-1,
+		remainingAfter[second.Hash],
+		"the picked option must be one instance shorter",
+	)
 
 	disclosureLog := requireSingleDisclosureLog(t, c)
 	require.Len(t, disclosureLog.Credentials, 1)
@@ -359,18 +406,22 @@ func testOpenID4VP_MdocAv_MultiplePresentations(t *testing.T) {
 	query := avQuery(avQueryIdDefault, avClaim(avMandatoryElement))
 	query["multiple"] = true
 
-	testSession, requestJwt := startAvShapeSession(t, c, 3, sessionHandler, avDcql(query))
+	testSession, requestJwt := startMdocDcqlSession(t, c, 3, sessionHandler, newDcql(query))
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
-		Choices: []expectedPickOneChoice{
-			{Multiple: true, Owned: []expectedPlanCredential{
-				avPlanCredential(avAttrAgeOver18()),
-				avPlanCredential(avAttrAgeOver18()),
-			}},
+	requireDisclosurePlan(
+		t,
+		session.DisclosurePlan,
+		expectedDisclosurePlan{
+			Choices: []expectedPickOneChoice{
+				{Multiple: true, Owned: []expectedPlanCredential{
+					avPlanCredential(avAttrAgeOver18()),
+					avPlanCredential(avAttrAgeOver18()),
+				}},
+			},
 		},
-	})
+	)
 
 	// Both bundles in one selection: that is what the multiple flag permits.
 	grantAllOwnedOptions(t, c, 3, session.DisclosurePlan.DisclosureChoicesOverview[0])
@@ -387,10 +438,12 @@ func testOpenID4VP_MdocAv_MultiplePresentations(t *testing.T) {
 		requireDeviceAuthVerifies(t, presentation, transcript)
 	}
 
-	require.NotEqual(t,
+	require.NotEqual(
+		t,
 		issuerAuthOf(t, presentations[0].Documents[0]),
 		issuerAuthOf(t, presentations[1].Documents[0]),
-		"two presentations must come from two attestations")
+		"two presentations must come from two attestations",
+	)
 
 	disclosureLog := requireSingleDisclosureLog(t, c)
 	require.Len(t, disclosureLog.Credentials, 2, "both presented credentials are logged")
@@ -414,7 +467,7 @@ func testOpenID4VP_MdocAv_IntentToRetain(t *testing.T) {
 	retainedClaim["intent_to_retain"] = true
 
 	query := avQuery(avQueryIdDefault, retainedClaim, avClaim(avSecondElement))
-	testSession, _ := startAvShapeSession(t, c, 2, sessionHandler, avDcql(query))
+	testSession, _ := startMdocDcqlSession(t, c, 2, sessionHandler, newDcql(query))
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -424,11 +477,15 @@ func testOpenID4VP_MdocAv_IntentToRetain(t *testing.T) {
 	notRetainedAttr := avAttrAgeOver21()
 	notRetainedAttr.IntentToRetain = new(false)
 
-	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
-		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{avPlanCredential(retainedAttr, notRetainedAttr)}},
+	requireDisclosurePlan(
+		t,
+		session.DisclosurePlan,
+		expectedDisclosurePlan{
+			Choices: []expectedPickOneChoice{
+				{Owned: []expectedPlanCredential{avPlanCredential(retainedAttr, notRetainedAttr)}},
+			},
 		},
-	})
+	)
 
 	grantFirstOwnedOptions(t, c, 2, session)
 
@@ -479,22 +536,22 @@ func avQuery(id string, claims ...map[string]any) map[string]any {
 	}
 }
 
-func avDcql(credentials ...map[string]any) map[string]any {
+func newDcql(credentials ...map[string]any) map[string]any {
 	return map[string]any{
 		"credentials": credentials,
 	}
 }
 
-func avDcqlWithCredentialSets(
+func newDcqlWithCredentialSets(
 	credentialSets []map[string]any,
 	credentials ...map[string]any,
 ) map[string]any {
-	dcql := avDcql(credentials...)
+	dcql := newDcql(credentials...)
 	dcql["credential_sets"] = credentialSets
 	return dcql
 }
 
-func avCredentialSetChoice(queryIds ...string) []map[string]any {
+func credentialSetChoice(queryIds ...string) []map[string]any {
 	options := make([][]string, 0, len(queryIds))
 	for _, queryId := range queryIds {
 		options = append(options, []string{queryId})
@@ -504,7 +561,7 @@ func avCredentialSetChoice(queryIds ...string) []map[string]any {
 	}
 }
 
-func avOptionalCredentialSet(queryId string) []map[string]any {
+func optionalCredentialSet(queryId string) []map[string]any {
 	return []map[string]any{
 		{"options": [][]string{{queryId}}, "required": false},
 	}
@@ -513,7 +570,7 @@ func avOptionalCredentialSet(queryId string) []map[string]any {
 // avSingleElementDcql is the request the AV suite's happy path uses, as a
 // dcql_query: one query for age_over_18 under the default id.
 func avSingleElementDcql() map[string]any {
-	return avDcql(avQuery(avQueryIdDefault, avClaim(avMandatoryElement)))
+	return newDcql(avQuery(avQueryIdDefault, avClaim(avMandatoryElement)))
 }
 
 // ----------------------------------------------------------------------------
@@ -581,10 +638,10 @@ func avLogCredential(attrs ...expectedAttr) expectedLogCredential {
 // Session helpers
 // ----------------------------------------------------------------------------
 
-// startAvShapeSession starts the given dcql_query at the direct_post.jwt verifier
+// startMdocDcqlSession starts the given dcql_query at the direct_post.jwt verifier
 // and hands the request to the wallet, capturing the request object so the
 // transcript can be rebuilt.
-func startAvShapeSession(
+func startMdocDcqlSession(
 	t *testing.T,
 	c *client.Client,
 	sessionId int,
@@ -691,8 +748,12 @@ func requireLogVerifier(
 	require.NotNil(t, disclosureLog.Verifier)
 	require.Equal(t, approved.Id, disclosureLog.Verifier.Id)
 	require.Equal(t, approved.Name, disclosureLog.Verifier.Name)
-	require.Equal(t, approved.Verified, disclosureLog.Verifier.Verified,
-		"the log must record the verifier the way the permission screen showed it")
+	require.Equal(
+		t,
+		approved.Verified,
+		disclosureLog.Verifier.Verified,
+		"the log must record the verifier the way the permission screen showed it",
+	)
 }
 
 // ----------------------------------------------------------------------------

@@ -41,6 +41,43 @@
 				]
 			},
 			{
+				"credential": "eu.europa.ec.eudi.pid.1",
+				"attributes": [
+					"family_name",
+					"given_name",
+					"birth_date",
+					"place_of_birth",
+					"nationality",
+					"sex",
+					"resident_city",
+					"issuance_date",
+					"expiry_date",
+					"issuing_authority",
+					"issuing_country",
+					"document_number",
+					"portrait"
+				]
+			},
+			{
+				"credential": "org.iso.18013.5.1.mDL",
+				"attributes": [
+					"family_name",
+					"given_name",
+					"birth_date",
+					"issue_date",
+					"expiry_date",
+					"issuing_country",
+					"issuing_authority",
+					"document_number",
+					"portrait",
+					"driving_privileges",
+					"un_distinguishing_sign",
+					"sex",
+					"nationality",
+					"resident_city"
+				]
+			},
+			{
 				"credential": "eu.europa.ec.av.1",
 				"attributes": [
 					"age_over_0",

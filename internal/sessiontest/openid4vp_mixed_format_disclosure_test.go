@@ -34,14 +34,22 @@ const (
 )
 
 func testSessionHandlerForOpenID4VPWithMixedFormats(t *testing.T) {
-	t.Run("a pid sd-jwt and an age mdoc are disclosed in one session over direct_post.jwt",
-		func(t *testing.T) { runMixedFormatDisclosure(t, testdata.OpenID4VP_DirectPostJwt_Host) })
-	t.Run("a pid sd-jwt and an age mdoc are disclosed in one session over direct_post",
-		func(t *testing.T) { runMixedFormatDisclosure(t, testdata.OpenID4VP_DirectPost_Host) })
-	t.Run("a credential_sets choice across formats presents only the chosen format",
-		testOpenID4VP_MixedFormat_CredentialSetChoice)
-	t.Run("a pid sd-jwt and an age mdoc are disclosed in one dc api session",
-		testOpenID4VP_MixedFormat_OverDcApi)
+	t.Run(
+		"a pid sd-jwt and an age mdoc are disclosed in one session over direct_post.jwt",
+		func(t *testing.T) { runMixedFormatDisclosure(t, testdata.OpenID4VP_DirectPostJwt_Host) },
+	)
+	t.Run(
+		"a pid sd-jwt and an age mdoc are disclosed in one session over direct_post",
+		func(t *testing.T) { runMixedFormatDisclosure(t, testdata.OpenID4VP_DirectPost_Host) },
+	)
+	t.Run(
+		"a credential_sets choice across formats presents only the chosen format",
+		testOpenID4VP_MixedFormat_CredentialSetChoice,
+	)
+	t.Run(
+		"a pid sd-jwt and an age mdoc are disclosed in one dc api session",
+		testOpenID4VP_MixedFormat_OverDcApi,
+	)
 }
 
 // runMixedFormatDisclosure is the happy path: both queries required, both owned,
@@ -65,12 +73,16 @@ func runMixedFormatDisclosure(t *testing.T, verifierHost string) {
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
-		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{pidPlanCredential()}},
-			{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver18())}},
+	requireDisclosurePlan(
+		t,
+		session.DisclosurePlan,
+		expectedDisclosurePlan{
+			Choices: []expectedPickOneChoice{
+				{Owned: []expectedPlanCredential{pidPlanCredential()}},
+				{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver18())}},
+			},
 		},
-	})
+	)
 
 	approvedRequestor := session.Requestor
 	grantFirstOwnedOptions(t, c, 3, session)
@@ -97,7 +109,7 @@ func testOpenID4VP_MixedFormat_CredentialSetChoice(t *testing.T) {
 
 	issuePidAndAvMdoc(t, c, sessionHandler)
 
-	dcql := mixedDcqlWithCredentialSets(avCredentialSetChoice(mixedPidQueryId, mixedAgeQueryId))
+	dcql := mixedDcqlWithCredentialSets(credentialSetChoice(mixedPidQueryId, mixedAgeQueryId))
 	testSession, requestJwt := startMdocAvSessionCapturingRequest(
 		t,
 		c,
@@ -109,14 +121,18 @@ func testOpenID4VP_MixedFormat_CredentialSetChoice(t *testing.T) {
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
-		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				pidPlanCredential(),
-				avPlanCredential(avAttrAgeOver18()),
-			}},
+	requireDisclosurePlan(
+		t,
+		session.DisclosurePlan,
+		expectedDisclosurePlan{
+			Choices: []expectedPickOneChoice{
+				{Owned: []expectedPlanCredential{
+					pidPlanCredential(),
+					avPlanCredential(avAttrAgeOver18()),
+				}},
+			},
 		},
-	})
+	)
 
 	approvedRequestor := session.Requestor
 	chosen := ownedOptionWithCredentialId(t, session.DisclosurePlan.DisclosureChoicesOverview[0], avDocType)
@@ -154,19 +170,29 @@ func testOpenID4VP_MixedFormat_OverDcApi(t *testing.T) {
 	require.NoError(t, err)
 	requireSignedForOrigin(t, verifierSession.Request, dcApiVerifierOrigin)
 
-	session := startDcApiSession(t, c, 3, sessionHandler, &openid4vp.DcApiRequest{
-		Protocol: openid4vp.DcApiProtocolSigned,
-		Origin:   dcApiVerifierOrigin,
-		Data:     signedDcApiData(t, verifierSession.Request),
-	})
+	session := startDcApiSession(
+		t,
+		c,
+		3,
+		sessionHandler,
+		&openid4vp.DcApiRequest{
+			Protocol: openid4vp.DcApiProtocolSigned,
+			Origin:   dcApiVerifierOrigin,
+			Data:     signedDcApiData(t, verifierSession.Request),
+		},
+	)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.True(t, session.Requestor.Verified)
-	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
-		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{pidPlanCredential()}},
-			{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver18())}},
+	requireDisclosurePlan(
+		t,
+		session.DisclosurePlan,
+		expectedDisclosurePlan{
+			Choices: []expectedPickOneChoice{
+				{Owned: []expectedPlanCredential{pidPlanCredential()}},
+				{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver18())}},
+			},
 		},
-	})
+	)
 
 	approvedRequestor := session.Requestor
 	grantFirstOwnedOptions(t, c, 3, session)
@@ -181,8 +207,11 @@ func testOpenID4VP_MixedFormat_OverDcApi(t *testing.T) {
 	requirePidPresented(t, walletResponse)
 
 	presented := requireSingleDeviceResponse(t, walletResponse, mixedAgeQueryId)
-	requireDeviceAuthVerifies(t, presented,
-		dcApiTranscriptFromSignedRequest(t, verifierSession.Request, dcApiVerifierOrigin))
+	requireDeviceAuthVerifies(
+		t,
+		presented,
+		dcApiTranscriptFromSignedRequest(t, verifierSession.Request, dcApiVerifierOrigin),
+	)
 
 	requireMixedDisclosureLog(t, c, approvedRequestor)
 }
@@ -202,11 +231,11 @@ func issuePidAndAvMdoc(t *testing.T, c *client.Client, sessionHandler *MockSessi
 // mixedDcql asks for the PID's names as SD-JWT and the age credential's
 // age_over_18 as mdoc.
 func mixedDcql() map[string]any {
-	return avDcql(mixedPidQuery(), mixedAgeQuery())
+	return newDcql(mixedPidQuery(), mixedAgeQuery())
 }
 
 func mixedDcqlWithCredentialSets(credentialSets []map[string]any) map[string]any {
-	return avDcqlWithCredentialSets(credentialSets, mixedPidQuery(), mixedAgeQuery())
+	return newDcqlWithCredentialSets(credentialSets, mixedPidQuery(), mixedAgeQuery())
 }
 
 func mixedPidQuery() map[string]any {
@@ -258,10 +287,15 @@ func requirePidPresented(t *testing.T, walletResponse map[string]any) {
 
 	data := samplePidUserData()
 	disclosed := extractDisclosedClaims(t, presentations[0])
-	require.Equal(t, map[string]string{
-		"given_name":  data.GivenName,
-		"family_name": data.FamilyName,
-	}, disclosed, "the PID presentation must disclose the two requested names and nothing else")
+	require.Equal(
+		t,
+		map[string]string{
+			"given_name":  data.GivenName,
+			"family_name": data.FamilyName,
+		},
+		disclosed,
+		"the PID presentation must disclose the two requested names and nothing else",
+	)
 }
 
 // requireMixedDisclosureLog checks one log entry records both credentials, each
@@ -274,14 +308,19 @@ func requireMixedDisclosureLog(t *testing.T, c *client.Client, approvedRequestor
 	require.Len(t, disclosureLog.Credentials, 2, "one log credential per presented credential")
 
 	loggedPid := findLogCredential(t, disclosureLog.Credentials, eudiPidIssuerPyVct)
-	requireLogCredential(t, loggedPid, expectedLogCredential{
-		CredentialId:   eudiPidIssuerPyVct,
-		Formats:        []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
-		Name:           new(eudiPidIssuerPyDisplayNameEN),
-		IssuerName:     new(avIssuerDisplayName),
-		IssuerVerified: new(true),
-		Attributes:     pidNameAttrs(),
-	}, "pid entry")
+	requireLogCredential(
+		t,
+		loggedPid,
+		expectedLogCredential{
+			CredentialId:   eudiPidIssuerPyVct,
+			Formats:        []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
+			Name:           new(eudiPidIssuerPyDisplayNameEN),
+			IssuerName:     new(avIssuerDisplayName),
+			IssuerVerified: new(true),
+			Attributes:     pidNameAttrs(),
+		},
+		"pid entry",
+	)
 
 	loggedAge := findLogCredential(t, disclosureLog.Credentials, avDocType)
 	requireLogCredential(t, loggedAge, avLogCredential(avAttrAgeOver18()), "age entry")
