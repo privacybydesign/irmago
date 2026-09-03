@@ -1277,22 +1277,13 @@ func runMdocAvDisclosure(t *testing.T, verifierHost string) {
 	//
 	// The claim path stays the two-component [namespace, elementIdentifier] form
 	// mdoc matching requires; a label never replaces it.
+	//
+	// avPlanCredential also pins what the screen shows beside name and attributes:
+	// the issuer as verified, the format, the card image, the validity dates, and
+	// the revocation state.
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{
-				Owned: []expectedPlanCredential{{
-					CredentialId: avDocType,
-					Name:         avCredentialDisplayName,
-					IssuerName:   avIssuerDisplayName,
-					Attributes: []expectedAttr{
-						{
-							Path:        []any{avDocType, "age_over_18"},
-							DisplayName: new(avAgeOver18DisplayName),
-							Value:       boolVal(true),
-						},
-					},
-				}},
-			},
+			{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver18())}},
 		},
 	})
 
@@ -1385,33 +1376,27 @@ func requireMdocAvDisclosureLog(t *testing.T, c *client.Client, approvedRequesto
 		"the disclosure log must record the verifier the same way the permission screen showed it")
 
 	require.Len(t, disclosureLog.DisclosureLog.Credentials, 1)
-	logged := disclosureLog.DisclosureLog.Credentials[0]
-	require.Equal(t, avDocType, logged.CredentialId)
-	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc}, logged.Formats,
-		"the disclosure log must file the entry under mso_mdoc, which is what every format-keyed read depends on")
-	// The same name the permission screen showed, asserted through the constant the
-	// disclosure plan above uses so the two cannot drift apart. This is the case
-	// where a read-time re-resolution against live credential metadata could
-	// overwrite the snapshot with an empty string, which is why it is the resolved
-	// display name that is pinned here and not the docType.
+
+	// The entry is filed under mso_mdoc, which every format-keyed read depends
+	// on, and carries the same name the permission screen showed, through the
+	// constant the plan uses so the two cannot drift apart. This is the case where
+	// a read-time re-resolution against live credential metadata could overwrite
+	// the snapshot with an empty string, which is why it is the resolved display
+	// name that is pinned and not the docType. (This asserted the raw docType
+	// until the seeded fixture was removed, "because the AV profile publishes no
+	// display metadata". The profile does not, but the issuer does.)
 	//
-	// This asserted the raw docType until the seeded fixture was removed, "because
-	// the AV profile publishes no display metadata". The profile does not, but the
-	// issuer does, and the credential is issued by the issuer.
-	require.Equal(t, avCredentialDisplayName, logged.Name)
-
 	// The disclosed claim keeps its qualified path, with the value resolved from
-	// the batch's namespaced claim map, and carries the label the issuer published
-	// for it — a label never replaces the path.
-	requireAttrsInOrder(t, logged.Attributes, expectedAttr{
-		Path:        []any{avDocType, "age_over_18"},
-		DisplayName: new(avAgeOver18DisplayName),
-		Value:       boolVal(true),
-	})
-
-	// The batch timestamps come along; they are what dates the entry in the UI.
-	require.NotNil(t, logged.IssuanceDate, "disclosure log should carry the issuance date")
-	require.NotNil(t, logged.ExpiryDate, "disclosure log should carry the expiry date")
+	// the batch's namespaced claim map, and the label the issuer published for
+	// it. The issuer is recorded as the screen showed it, verified flag included,
+	// with its card image. The batch timestamps are what date the entry in the
+	// UI, so they must be the ones the credential list reports for the same
+	// credential rather than merely present.
+	stored := credentialListEntry(t, c, avDocType)
+	expected := avLogCredential(avAttrAgeOver18())
+	expected.IssuanceDate = stored.IssuanceDate
+	expected.ExpiryDate = stored.ExpiryDate
+	requireLogCredential(t, disclosureLog.DisclosureLog.Credentials[0], expected, "mdoc disclosure entry")
 }
 
 // startMdocAvSessionCapturingRequest starts a verifier session and hands the
@@ -1658,6 +1643,21 @@ func requireDeviceAuthVerifies(
 	transcript stdmdoc.SessionTranscript,
 ) {
 	t.Helper()
+	requireDeviceAuthVerifiesElements(t, response, transcript, map[string]any{"age_over_18": true})
+}
+
+// requireDeviceAuthVerifiesElements is the same for a presentation that
+// discloses a different set of age elements, as the DCQL shape subtests do. The
+// verified attributes must be exactly the expected ones: a presentation that
+// verifies but carries an element the user did not select is a disclosure the
+// user never approved.
+func requireDeviceAuthVerifiesElements(
+	t *testing.T,
+	response stdmdoc.DeviceResponse,
+	transcript stdmdoc.SessionTranscript,
+	expectedElements map[string]any,
+) {
+	t.Helper()
 
 	verifier := stdmdoc.NewVerifier([]*x509.Certificate{eudiPidIssuerPyCACert(t)})
 	results, err := verifier.VerifyDeviceResponse(response, avDocType, avDocType, transcript)
@@ -1668,7 +1668,8 @@ func requireDeviceAuthVerifies(
 	require.True(t, result.Valid, "presented mdoc did not verify: %s", result.Error)
 	require.True(t, result.DeviceAuthValid,
 		"deviceAuth did not verify against the rebuilt session transcript: %s", result.Error)
-	require.Equal(t, true, result.Attributes["age_over_18"])
+	require.Equal(t, expectedElements, result.Attributes,
+		"the verified presentation must carry exactly the selected elements")
 }
 
 // requireMdocVerifierResult fetches the wallet response from the verifier and

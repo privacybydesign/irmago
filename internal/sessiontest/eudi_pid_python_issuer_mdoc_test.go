@@ -580,14 +580,51 @@ func issueAvMdocViaPythonIssuer(
 // createPidOfferViaPythonIssuer uses, naming the mdoc configuration instead.
 func createAvMdocOfferViaPythonIssuer(t *testing.T) pidOfferResponse {
 	t.Helper()
+	return createAvMdocOfferWithElementsViaPythonIssuer(t, map[string]bool{avMandatoryElement: true})
+}
 
-	offerJSON := createAvMdocOfferJsonViaPythonIssuer(t, eudiPidIssuerPyAvCredentialConfigID)
+// createAvMdocOfferWithElementsViaPythonIssuer mints an offer for an age
+// credential carrying exactly the given age_over_NN elements.
+//
+// The container runs a patched populate_pdata that mints any threshold named in
+// the offer (see the eudi_pid_issuer_py service in docker-compose.yml), so a test
+// can shape the credential it needs: two batches that differ in their elements
+// are two distinct credentials to the wallet, where two identical ones would
+// collapse into one by hash.
+func createAvMdocOfferWithElementsViaPythonIssuer(t *testing.T, elements map[string]bool) pidOfferResponse {
+	t.Helper()
+
+	offerJSON := createAvMdocOfferJsonWithElementsViaPythonIssuer(
+		t,
+		eudiPidIssuerPyAvCredentialConfigID,
+		elements,
+	)
 
 	txCode := extractTxCodeValue(t, offerJSON)
 	require.NotEmpty(t, txCode,
 		"Python issuer offer must embed grants.<pre-authorized_code>.tx_code.value")
 
 	return pidOfferResponse{URI: offerUriFromJson(t, offerJSON), TxCode: txCode}
+}
+
+// issueAvMdocWithElementsViaPythonIssuer is issueAvMdocViaPythonIssuer for a
+// credential carrying the given age_over_NN elements.
+func issueAvMdocWithElementsViaPythonIssuer(
+	t *testing.T,
+	c *client.Client,
+	sessionId int,
+	sessionHandler *MockSessionHandler,
+	elements map[string]bool,
+) {
+	t.Helper()
+
+	session := redeemAvMdocOffer(t, c, sessionId, sessionHandler,
+		createAvMdocOfferWithElementsViaPythonIssuer(t, elements))
+
+	grantPermission(t, c, session.Id)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_Success)
 }
 
 // createAvMdocOfferJsonViaPythonIssuer returns the offer as the issuer minted it,
@@ -599,14 +636,32 @@ func createAvMdocOfferViaPythonIssuer(t *testing.T) pidOfferResponse {
 // the other has to edit the JSON.
 func createAvMdocOfferJsonViaPythonIssuer(t *testing.T, credentialConfigID string) map[string]any {
 	t.Helper()
+	return createAvMdocOfferJsonWithElementsViaPythonIssuer(
+		t,
+		credentialConfigID,
+		map[string]bool{avMandatoryElement: true},
+	)
+}
+
+// createAvMdocOfferJsonWithElementsViaPythonIssuer is the same for a chosen set
+// of age_over_NN elements.
+func createAvMdocOfferJsonWithElementsViaPythonIssuer(
+	t *testing.T,
+	credentialConfigID string,
+	elements map[string]bool,
+) map[string]any {
+	t.Helper()
+
+	data := make(map[string]any, len(elements))
+	for element, value := range elements {
+		data[element] = value
+	}
 
 	status, body := postAvMdocOfferRequest(t, map[string]any{
 		"credentials": []map[string]any{
 			{
 				"credential_configuration_id": credentialConfigID,
-				"data": map[string]any{
-					avMandatoryElement: true,
-				},
+				"data":                        data,
 			},
 		},
 	})
@@ -708,16 +763,28 @@ func createAvMdocSessionRequest(
 	mutate func(request map[string]any),
 ) string {
 	t.Helper()
+	return createAvMdocSessionRequestWithDcql(t, map[string]any{
+		"credentials": []map[string]any{credential},
+	}, mutate)
+}
+
+// createAvMdocSessionRequestWithDcql is the same with the whole dcql_query
+// supplied, for the subtests about credential_sets and several queries at once,
+// which the single-credential shape above cannot express.
+func createAvMdocSessionRequestWithDcql(
+	t *testing.T,
+	dcqlQuery map[string]any,
+	mutate func(request map[string]any),
+) string {
+	t.Helper()
 
 	caPEM := readEudiPidIssuerPyCA(t)
 
 	request := map[string]any{
-		"type": "vp_token",
-		"dcql_query": map[string]any{
-			"credentials": []map[string]any{credential},
-		},
-		"nonce":    "nonce",
-		"jar_mode": "by_reference",
+		"type":       "vp_token",
+		"dcql_query": dcqlQuery,
+		"nonce":      "nonce",
+		"jar_mode":   "by_reference",
 		// The client fetches the request object with a GET and sends no
 		// wallet_nonce, and the verifier enforces the method the transaction was
 		// started with. Every transaction must also name an intended use or carry

@@ -6,6 +6,7 @@ import (
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/testdata"
 
@@ -47,6 +48,75 @@ func testSessionHandlerForOpenID4VPOverDcApiWithEudiVerifier(t *testing.T) {
 		"a request the verifier signed for another origin is rejected",
 		testDcApiRejectsRequestSignedForAnotherOrigin,
 	)
+
+	// Not under runEudiSessionTest: the wallet has to trust the reference issuer's
+	// CA, which the IRMA-backed wallet that runner builds does not.
+	t.Run("an mdoc presented over the dc api is accepted by the verifier",
+		testDcApiMdocDisclosureToEudiVerifier)
+}
+
+// testDcApiMdocDisclosureToEudiVerifier is the first time an mdoc crosses the DC
+// API to a verifier this repository did not write.
+//
+// The three mdoc DC API subtests in openid4vp_dc_api_mdoc_test.go verify the
+// DeviceResponse in-process, against a transcript the test derives from the same
+// formula the wallet uses. A shared misreading of the handover would pass all of
+// them. Here the reference verifier signs the request, forces dc_api.jwt, decrypts
+// the response and validates the presentation, so its acceptance is independent
+// evidence. The DeviceAuth is still re-verified here, since the container is not
+// known to check it, against a transcript built from the nonce and encryption key
+// in the request it signed.
+//
+// Also the first DC API session whose permission screen and activity log are read
+// at all: the redirect flow asserts both in every happy path, the DC API tests
+// asserted the response only.
+func testDcApiMdocDisclosureToEudiVerifier(t *testing.T) {
+	c, sessionHandler := createPidIssuerTestClient(t)
+	defer c.Close()
+
+	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
+
+	verifierSession, err := StartDcApiTestSessionAtEudiVerifier(
+		testdata.OpenID4VP_DcApi_Host,
+		createDcApiSessionRequestWithDcql(t, dcApiVerifierOrigin, avSingleElementDcql(), readEudiPidIssuerPyCA(t)),
+	)
+	require.NoError(t, err)
+	requireSignedForOrigin(t, verifierSession.Request, dcApiVerifierOrigin)
+
+	session := startDcApiSession(t, c, 2, sessionHandler, &openid4vp.DcApiRequest{
+		Protocol: openid4vp.DcApiProtocolSigned,
+		Origin:   dcApiVerifierOrigin,
+		Data:     signedDcApiData(t, verifierSession.Request),
+	})
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
+	require.Equal(t, "Yivi B.V.", session.Requestor.Name)
+	require.True(t, session.Requestor.Verified)
+
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver18())}},
+		},
+	})
+
+	approvedRequestor := session.Requestor
+	grantDcApiDisclosure(t, c, 2, session)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+	require.NotEmpty(t, session.DcApiResponse, "the wallet must return a DC API response")
+
+	require.NoError(t, PostDcApiWalletResponseToEudiVerifier(verifierSession, session.DcApiResponse))
+
+	walletResponse := requireVerifierAccepted(t, verifierSession.EudiVerifierSession)
+	presented := requireSingleDeviceResponse(t, walletResponse, avQueryIdDefault)
+	requireDeviceAuthVerifies(t, presented,
+		dcApiTranscriptFromSignedRequest(t, verifierSession.Request, dcApiVerifierOrigin))
+
+	disclosureLog := requireSingleDisclosureLog(t, c)
+	requireLogVerifier(t, disclosureLog, approvedRequestor)
+	require.Len(t, disclosureLog.Credentials, 1)
+	requireLogCredential(t, disclosureLog.Credentials[0], avLogCredential(avAttrAgeOver18()), "dc api entry")
 }
 
 // testDcApiDisclosureToEudiVerifier runs the whole flow: the verifier starts a DC API
@@ -158,24 +228,57 @@ func requireSignedForOrigin(t *testing.T, requestJwt, origin string) {
 // at the EUDI verifier, querying for the email credential on behalf of the given origin.
 func createDcApiEmailAuthRequestRequest(t *testing.T, origin string) string {
 	t.Helper()
+	return createDcApiSessionRequestWithDcql(t, origin, map[string]any{
+		"credentials": []any{map[string]any{
+			"id":     dcApiVerifierQueryId,
+			"format": "dc+sd-jwt",
+			"meta": map[string]any{
+				"vct_values": []string{"test.test.email"},
+			},
+			"claims": []any{map[string]any{"path": []string{"email"}}},
+		}},
+	}, testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+}
+
+// createDcApiSessionRequestWithDcql builds the request that starts a DC API
+// transaction at the EUDI verifier for any dcql_query, on behalf of the given
+// origin. issuerChain is the CA the verifier validates the presentation against,
+// the same way the request_uri-based tests hand it over.
+func createDcApiSessionRequestWithDcql(
+	t *testing.T,
+	origin string,
+	dcql map[string]any,
+	issuerChain []byte,
+) string {
+	t.Helper()
 	request, err := json.Marshal(map[string]any{
 		"nonce":           dcApiVerifierNonce,
 		"origin":          origin,
 		"intended_use_id": eudiVerifierIntendedUseId,
-		"dcql_query": map[string]any{
-			"credentials": []any{map[string]any{
-				"id":     dcApiVerifierQueryId,
-				"format": "dc+sd-jwt",
-				"meta": map[string]any{
-					"vct_values": []string{"test.test.email"},
-				},
-				"claims": []any{map[string]any{"path": []string{"email"}}},
-			}},
-		},
-		// The verifier needs the issuer certificate to validate the presentation it
-		// gets back, the same way the request_uri-based tests hand it over.
-		"issuer_chain": string(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+		"dcql_query":      dcql,
+		"issuer_chain":    string(issuerChain),
 	})
 	require.NoError(t, err)
 	return string(request)
+}
+
+// dcApiTranscriptFromSignedRequest rebuilds the DC API session transcript from a
+// request the verifier signed: the nonce it chose and the thumbprint of the key it
+// asked the response to be encrypted to. The DC API endpoints of the reference
+// verifier always run dc_api.jwt, so the thumbprint slot is never null here.
+func dcApiTranscriptFromSignedRequest(t *testing.T, requestJwt, origin string) stdmdoc.SessionTranscript {
+	t.Helper()
+
+	claims := decodeJwtClaims(t, requestJwt)
+	nonce, ok := claims["nonce"].(string)
+	require.True(t, ok, "the signed request must carry a nonce")
+	require.Equal(t, "dc_api.jwt", claims["response_mode"],
+		"the reference verifier serves the DC API under dc_api.jwt only")
+
+	clientMetadata, ok := claims["client_metadata"].(map[string]any)
+	require.True(t, ok, "an encrypted response mode must publish client_metadata")
+	jwks, err := json.Marshal(clientMetadata["jwks"])
+	require.NoError(t, err)
+
+	return dcApiSessionTranscript(t, origin, nonce, responseEncryptionKeyThumbprint(t, jwks))
 }

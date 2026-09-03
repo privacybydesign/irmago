@@ -23,7 +23,7 @@
             "name":"Proof of Age",
             "locale":"en",
             "logo":{
-               "uri":"https://examplestate.com/public/pid.png",
+               "uri":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
                "alt_text":"A square figure of a Proof of Age"
             }
          }

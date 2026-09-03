@@ -46,6 +46,12 @@ func testSessionHandlerForOpenID4VPOverDcApiWithMdoc(t *testing.T) {
 		testDcApiMdocRejectsUrlFlowHandover)
 	t.Run("an encrypted dc api response signs the key it is encrypted to",
 		testDcApiMdocEncryptedDisclosure)
+	t.Run("multiple lets the user present two mdocs over the dc api",
+		testDcApiMdocMultiplePresentations)
+	t.Run("two mdoc queries over the dc api are answered with two presentations",
+		testDcApiMdocTwoQueries)
+	t.Run("a skipped optional credential set over the dc api yields an empty vp_token",
+		testDcApiMdocSkippedOptionalSet)
 }
 
 // seedDcApiMdocWallet returns a wallet holding a genuinely issued age credential.
@@ -87,6 +93,169 @@ func testDcApiMdocDisclosure(t *testing.T) {
 
 	response := requireDcApiDeviceResponse(t, session.DcApiResponse)
 	requireDeviceAuthVerifies(t, response, dcApiSessionTranscript(t, dcApiOrigin, dcApiNonce, nil))
+
+	// A DC API session leaves the same activity log a link-invoked one does. The
+	// verifier is filed under the one fact the platform authenticated, its origin,
+	// and as unverified, matching the permission screen.
+	disclosureLog := requireSingleDisclosureLog(t, c)
+	require.Equal(t, clientmodels.Protocol_OpenID4VP, disclosureLog.Protocol)
+	require.NotNil(t, disclosureLog.Verifier)
+	require.Equal(t, dcApiOrigin, disclosureLog.Verifier.Name)
+	require.False(t, disclosureLog.Verifier.Verified)
+	require.Len(t, disclosureLog.Credentials, 1)
+	requireLogCredential(t, disclosureLog.Credentials[0], avLogCredential(avAttrAgeOver18()), "dc api entry")
+}
+
+// testDcApiMdocMultiplePresentations sets the DCQL multiple flag on a query two
+// age credentials answer, and the user hands over both through the platform.
+//
+// The plaintext response carries two DeviceResponses under the one query id,
+// each signed over the same DC API handover, from two different attestations.
+func testDcApiMdocMultiplePresentations(t *testing.T) {
+	c, sessionHandler := createPidIssuerTestClient(t)
+	defer c.Close()
+
+	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
+	issueAvMdocWithElementsViaPythonIssuer(t, c, 2, sessionHandler, avElementsBoth())
+
+	session := startDcApiSession(t, c, 3, sessionHandler, &openid4vp.DcApiRequest{
+		Protocol: openid4vp.DcApiProtocolUnsigned,
+		Origin:   dcApiOrigin,
+		Data: unsignedDcApiMdocDataWithQuery(t, string(openid4vp.ResponseMode_DcApi), nil,
+			func(query map[string]any) { query["multiple"] = true }),
+	})
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.True(t, pickOne.Multiple, "the plan must carry the multiple flag")
+	require.Len(t, pickOne.OwnedOptions, 2, "both credentials should be offered")
+
+	grantAllOwnedOptions(t, c, 3, pickOne)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	vpToken := requireVpTokenFromResponse(t, session.DcApiResponse)
+	presentations := vpToken[dcApiMdocQueryId]
+	require.Len(t, presentations, 2, "one presentation per selected credential")
+
+	transcript := dcApiSessionTranscript(t, dcApiOrigin, dcApiNonce, nil)
+	responses := make([]stdmdoc.DeviceResponse, 0, 2)
+	for _, presentation := range presentations {
+		response := decodeDcApiDeviceResponse(t, presentation)
+		requireDeviceAuthVerifies(t, response, transcript)
+		responses = append(responses, response)
+	}
+	require.NotEqual(t,
+		issuerAuthOf(t, responses[0].Documents[0]),
+		issuerAuthOf(t, responses[1].Documents[0]),
+		"two presentations must come from two attestations")
+
+	disclosureLog := requireSingleDisclosureLog(t, c)
+	require.Len(t, disclosureLog.Credentials, 2, "both presented credentials are logged")
+}
+
+// testDcApiMdocTwoQueries asks for two elements of one age credential as two
+// credential queries, through the platform.
+//
+// The response object must key one DeviceResponse under each query id, each
+// disclosing only its own element and each signed over the same DC API handover.
+// Read here in the clear because the reference verifier refuses this shape over
+// the redirect flow with RequiredCredentialSetNotSatisfied after validating both
+// documents (see openid4vp_mdoc_av_dcql_shapes_test.go), so what the wallet
+// actually produces can only be pinned where nothing sits between it and the test.
+func testDcApiMdocTwoQueries(t *testing.T) {
+	c, sessionHandler := createPidIssuerTestClient(t)
+	defer c.Close()
+
+	issueAvMdocWithElementsViaPythonIssuer(t, c, 1, sessionHandler, avElementsBoth())
+	remainingBefore := avMdocInstancesRemaining(t, c)
+
+	dcql := avDcql(
+		avQuery(avQueryIdAgeOver18, avClaim(avMandatoryElement)),
+		avQuery(avQueryIdAgeOver21, avClaim(avSecondElement)),
+	)
+	session := startDcApiSession(t, c, 2, sessionHandler, &openid4vp.DcApiRequest{
+		Protocol: openid4vp.DcApiProtocolUnsigned,
+		Origin:   dcApiOrigin,
+		Data:     unsignedDcApiRequestData(t, string(openid4vp.ResponseMode_DcApi), dcql, nil),
+	})
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver18())}},
+			{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver21())}},
+		},
+	})
+
+	grantFirstOwnedOptions(t, c, 2, session)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	vpToken := requireVpTokenFromResponse(t, session.DcApiResponse)
+	require.Len(t, vpToken, 2, "one vp_token entry per query, got keys %v", vpTokenKeys(vpToken))
+
+	transcript := dcApiSessionTranscript(t, dcApiOrigin, dcApiNonce, nil)
+
+	presented18 := decodeDcApiDeviceResponse(t, requireSinglePresentation(t, vpToken, avQueryIdAgeOver18))
+	requireDeviceAuthVerifiesElements(t, presented18, transcript, map[string]any{avMandatoryElement: true})
+
+	presented21 := decodeDcApiDeviceResponse(t, requireSinglePresentation(t, vpToken, avQueryIdAgeOver21))
+	requireDeviceAuthVerifiesElements(t, presented21, transcript, map[string]any{avSecondElement: true})
+
+	require.Equal(t, remainingBefore-2, avMdocInstancesRemaining(t, c),
+		"two presentations must spend two instances")
+
+	disclosureLog := requireSingleDisclosureLog(t, c)
+	require.Len(t, disclosureLog.Credentials, 2, "one log credential per presentation")
+}
+
+// testDcApiMdocSkippedOptionalSet marks the only query optional and has the user
+// share nothing.
+//
+// The session completes, the response object carries an empty vp_token, no
+// instance is spent, and the log records a session with this verifier in which
+// nothing was disclosed. Over the redirect flow the reference verifier answers an
+// empty vp_token with a 500 (a failed requirement in its response handling), which
+// is why the wallet's side of this shape is pinned here rather than there.
+func testDcApiMdocSkippedOptionalSet(t *testing.T) {
+	c, sessionHandler := createPidIssuerTestClient(t)
+	defer c.Close()
+
+	issueAvMdocViaPythonIssuer(t, c, 1, sessionHandler)
+	remainingBefore := avMdocInstancesRemaining(t, c)
+
+	dcql := avDcqlWithCredentialSets(
+		avOptionalCredentialSet(avQueryIdDefault),
+		avQuery(avQueryIdDefault, avClaim(avMandatoryElement)),
+	)
+	session := startDcApiSession(t, c, 2, sessionHandler, &openid4vp.DcApiRequest{
+		Protocol: openid4vp.DcApiProtocolUnsigned,
+		Origin:   dcApiOrigin,
+		Data:     unsignedDcApiRequestData(t, string(openid4vp.ResponseMode_DcApi), dcql, nil),
+	})
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	require.True(t, session.DisclosurePlan.DisclosureChoicesOverview[0].Optional,
+		"the only choice must be marked optional")
+
+	grantPermission(t, c, 2, clientmodels.DisclosureDisconSelection{})
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+	require.NotEmpty(t, session.DcApiResponse, "the wallet must still return a DC API response")
+
+	var parsed struct {
+		VpToken map[string][]string `json:"vp_token"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(session.DcApiResponse), &parsed))
+	require.Empty(t, parsed.VpToken, "nothing was shared, so the vp_token carries no presentation")
+
+	require.Equal(t, remainingBefore, avMdocInstancesRemaining(t, c),
+		"skipping an optional set must not spend an instance")
+
+	disclosureLog := requireSingleDisclosureLog(t, c)
+	require.Equal(t, dcApiOrigin, disclosureLog.Verifier.Name)
+	require.Empty(t, disclosureLog.Credentials,
+		"a skipped optional set is a session with this verifier in which nothing was disclosed")
 }
 
 // testDcApiMdocRejectsUrlFlowHandover is the negative half. Without it the test
@@ -180,22 +349,50 @@ func testDcApiMdocEncryptedDisclosure(t *testing.T) {
 // querying for the AV mdoc's age_over_18 element.
 func unsignedDcApiMdocData(t *testing.T, responseMode string, clientMetadata map[string]any) json.RawMessage {
 	t.Helper()
+	return unsignedDcApiMdocDataWithQuery(t, responseMode, clientMetadata, nil)
+}
+
+// unsignedDcApiMdocDataWithQuery is the same with a hook to change the credential
+// query, for the subtests about DCQL flags on it.
+func unsignedDcApiMdocDataWithQuery(
+	t *testing.T,
+	responseMode string,
+	clientMetadata map[string]any,
+	mutateQuery func(query map[string]any),
+) json.RawMessage {
+	t.Helper()
+	query := map[string]any{
+		"id":     dcApiMdocQueryId,
+		"format": "mso_mdoc",
+		"meta": map[string]any{
+			"doctype_value": avDocType,
+		},
+		"claims": []any{map[string]any{
+			"path": []string{avDocType, "age_over_18"},
+		}},
+	}
+	if mutateQuery != nil {
+		mutateQuery(query)
+	}
+	return unsignedDcApiRequestData(t, responseMode, map[string]any{
+		"credentials": []any{query},
+	}, clientMetadata)
+}
+
+// unsignedDcApiRequestData builds the `data` member of an unsigned DC API request
+// for any dcql_query.
+func unsignedDcApiRequestData(
+	t *testing.T,
+	responseMode string,
+	dcql map[string]any,
+	clientMetadata map[string]any,
+) json.RawMessage {
+	t.Helper()
 	request := map[string]any{
 		"response_type": "vp_token",
 		"response_mode": responseMode,
 		"nonce":         dcApiNonce,
-		"dcql_query": map[string]any{
-			"credentials": []any{map[string]any{
-				"id":     dcApiMdocQueryId,
-				"format": "mso_mdoc",
-				"meta": map[string]any{
-					"doctype_value": avDocType,
-				},
-				"claims": []any{map[string]any{
-					"path": []string{avDocType, "age_over_18"},
-				}},
-			}},
-		},
+		"dcql_query":    dcql,
 	}
 	if clientMetadata != nil {
 		request["client_metadata"] = clientMetadata
@@ -210,8 +407,13 @@ func unsignedDcApiMdocData(t *testing.T, responseMode string, clientMetadata map
 // compact JWS the SD-JWT helpers expect.
 func requireDcApiDeviceResponse(t *testing.T, dcApiResponse string) stdmdoc.DeviceResponse {
 	t.Helper()
+	return decodeDcApiDeviceResponse(t,
+		requireSinglePresentation(t, requireVpTokenFromResponse(t, dcApiResponse), dcApiMdocQueryId))
+}
 
-	presentation := requireSinglePresentation(t, requireVpTokenFromResponse(t, dcApiResponse), dcApiMdocQueryId)
+// decodeDcApiDeviceResponse decodes one mso_mdoc vp_token entry.
+func decodeDcApiDeviceResponse(t *testing.T, presentation string) stdmdoc.DeviceResponse {
+	t.Helper()
 
 	encoded, err := base64.RawURLEncoding.DecodeString(presentation)
 	require.NoError(t, err, "an mso_mdoc vp_token entry is base64url-encoded CBOR")
