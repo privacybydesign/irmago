@@ -16,12 +16,13 @@
 
 * **IRMA** — the original issuance and disclosure protocol based on Idemix attribute-based credentials.
 * **OpenID4VCI** ([OpenID for Verifiable Credential Issuance](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)) — credential issuance supporting both the Pre-Authorized Code flow (with optional transaction code) and the Authorization Code flow with Pushed Authorization Requests (PAR), in-app browser authorization and PKCE. Implemented in `eudi/openid4vci`.
-* **OpenID4VP** ([OpenID for Verifiable Presentations](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)) — credential presentation supporting the `direct_post` and `direct_post.jwt` response modes and credential selection via [DCQL](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l) (Digital Credentials Query Language), including credential sets and optional cryptographic holder binding. Implemented in `eudi/openid4vp`.
+* **OpenID4VP** ([OpenID for Verifiable Presentations](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)) — credential presentation over both transports the specification defines: a URL-invoked session (`direct_post` and `direct_post.jwt` response modes) and a request delivered by the platform through the [W3C Digital Credentials API](https://www.w3.org/TR/digital-credentials/) (`dc_api` and `dc_api.jwt`, signed or unsigned, with the caller origin authenticated by the platform). Credential selection uses [DCQL](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l) (Digital Credentials Query Language), including credential sets and optional cryptographic holder binding. Implemented in `eudi/openid4vp`.
 
 ### Supported credential formats
 
 * **IRMA / Idemix** (`idemix`) — the classic IRMA credential format.
 * **SD-JWT VC** (`dc+sd-jwt`) — [Selective Disclosure JWT Verifiable Credentials](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/), with selectively disclosable nested and array claims, batch issuance over OpenID4VCI and presentation over OpenID4VP. Implemented in `eudi/credentials/sdjwtvc`.
+* **mdoc / mDL** (`mso_mdoc`) — [ISO/IEC 18013-5](https://www.iso.org/standard/69084.html) mobile documents, as profiled by the EU Age Verification Blueprint (docType `eu.europa.ec.av.1`), with selective disclosure of individual namespace elements, single-use attestations issued in batches, and `deviceAuth` signed over the OpenID4VP session transcript for holder binding. Issued over OpenID4VCI and presented over OpenID4VP on either transport. Implemented in `eudi/credentials/mdoc`, with the presentation handler in `eudi/openid4vp/mdoc_dcql`.
 
 ### Cryptographic agility
 
@@ -169,6 +170,18 @@ When the databases and MailHog are running, the tests can be run using:
 
 * The option `./...` makes sure all tests are run. You can also limit the number of tests by only running the tests from a single directory or even from a single file, for example only running all tests in the directory `./internal/sessiontest`. When you only want to execute one single test, for example the `TestDisclosureSession` test, you can do this by adding the option `-run TestDisclosureSession`.
 * The option `-p 1` is necessary to prevent parallel execution of tests. Most tests use file manipulation and therefore tests can interfere.
+
+### Trusting the test TLS certificate
+
+Some EUDI tests reach the veramo issuer and the EUDI Python PID issuer through the
+`tls_proxy` service over HTTPS on ports 8443–8445. Their certificate is the self-signed
+`testdata/configurations/certs/localhost.crt`, so a `go test` run on the host must trust
+it: that directory's README gives the Linux command, and on macOS or Windows it has to go
+into the platform's own trust store. Without it these tests fail on
+`tls: failed to verify certificate: x509: certificate signed by unknown authority`
+rather than being skipped; the whole `TestSessionHandler/openid4vp/sdjwtvc` group goes red
+this way. Running the tests in Docker (`docker-compose run test`, below) needs no setup:
+that service installs the certificate into its own trust store before running.
 
 ### Running without Docker
 

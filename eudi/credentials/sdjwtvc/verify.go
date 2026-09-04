@@ -59,6 +59,18 @@ type SdJwtVcVerificationContext struct {
 	// Used to verify both JWT components of an SD-JWT VC (issuer signed jwt and kbjwt).
 	JwtVerifier sdjwt.JwtVerifier
 
+	// VerifyVerifiableCredentialTypeInRequestorInfo does not currently do what
+	// its name says. The VCT-against-requestor check it is named for is
+	// commented out (see the TODO in ProcessAndVerifySdJwtVc, pending SD-JWT VCs
+	// that fit the scheme), and the requestorInfo it produces is discarded.
+	//
+	// What it still does, and what callers are really selecting, is require the
+	// issuer's certificate to carry parseable Yivi attestation-provider
+	// requestor info: when set, decodeJwtAndVerifyFromX5cHeader extracts it and
+	// fails verification if it cannot. That is why the IRMA path sets it and the
+	// OpenID4VCI path does not — a third-party issuer's certificate carries no
+	// such extension. Re-enabling the real check should make this comment
+	// unnecessary rather than need updating.
 	VerifyVerifiableCredentialTypeInRequestorInfo bool
 
 	// ExpectedNonce is the nonce from the OpenID4VP authorization request that the KB-JWT nonce

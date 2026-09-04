@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func newTestCredentialStore(t *testing.T) CredentialStore {
+func newTestCredentialStore(t *testing.T) SdJwtVcStore {
 	t.Helper()
 
 	db, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("super-secret-key-123"))}, &gorm.Config{})
@@ -29,17 +29,17 @@ func newTestCredentialStore(t *testing.T) CredentialStore {
 		&models.CredentialDisplay{},
 		&models.CredentialClaim{},
 		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
+		&models.SdJwtVcBatch{},
+		&models.SdJwtVcBatchInstance{},
 	)
 	require.NoError(t, err)
 
-	return &credentialStore{db: db}
+	return &sdJwtVcStore{db: db}
 }
 
-func newBatch(hash string) *models.CredentialBatch {
+func newBatch(hash string) *models.SdJwtVcBatch {
 	iss := "https://issuer.example.com"
-	return &models.CredentialBatch{
+	return &models.SdJwtVcBatch{
 		IssuerIdentifier:           iss,
 		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -97,19 +97,19 @@ func newBatch(hash string) *models.CredentialBatch {
 				},
 			},
 		},
-		Instances: []models.IssuedCredentialInstance{
+		Instances: []models.SdJwtVcBatchInstance{
 			{RawCredential: []byte("raw-credential-token")},
 		},
 	}
 }
 
-func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBatch {
-	instances := make([]models.IssuedCredentialInstance, instanceCount)
+func newBatchWithInstances(hash string, instanceCount int) *models.SdJwtVcBatch {
+	instances := make([]models.SdJwtVcBatchInstance, instanceCount)
 	iss := "https://issuer.example.com"
 	for i := range instances {
-		instances[i] = models.IssuedCredentialInstance{RawCredential: []byte("raw-credential-token")}
+		instances[i] = models.SdJwtVcBatchInstance{RawCredential: []byte("raw-credential-token")}
 	}
-	return &models.CredentialBatch{
+	return &models.SdJwtVcBatch{
 		IssuerIdentifier:           iss,
 		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -133,11 +133,11 @@ func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBat
 	}
 }
 
-func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.CredentialBatch {
-	instances := make([]models.IssuedCredentialInstance, instanceCount)
+func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.SdJwtVcBatch {
+	instances := make([]models.SdJwtVcBatchInstance, instanceCount)
 	iss := "https://issuer.example.com"
 	for i := range instances {
-		instances[i] = models.IssuedCredentialInstance{
+		instances[i] = models.SdJwtVcBatchInstance{
 			RawCredential: []byte("raw-credential-token"),
 			HolderBindingKey: &models.HolderBindingKey{
 				Algorithm:           models.KeyAlgorithmECDSA,
@@ -147,7 +147,7 @@ func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.Creden
 			},
 		}
 	}
-	return &models.CredentialBatch{
+	return &models.SdJwtVcBatch{
 		IssuerIdentifier:           iss,
 		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -362,54 +362,6 @@ func TestGetBatchByHash_EmptyHash(t *testing.T) {
 	require.Error(t, err)
 }
 
-// --- GetBatchesByVCT ---
-
-func TestGetBatchesByVCT_Found(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	require.NoError(t, store.StoreBatch(newBatch("hash-vct-1")))
-	require.NoError(t, store.StoreBatch(newBatch("hash-vct-2")))
-
-	batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
-	require.NoError(t, err)
-	assert.Len(t, batches, 2)
-}
-
-func TestGetBatchesByVCT_NoMatch(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	require.NoError(t, store.StoreBatch(newBatch("hash-vct-nomatch")))
-
-	batches, err := store.GetBatchesByVCT("https://vct.example.com/OtherCredential")
-	require.NoError(t, err)
-	assert.Empty(t, batches)
-}
-
-func TestGetBatchesByVCT_EmptyVCT(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	_, err := store.GetBatchesByVCT("")
-	require.Error(t, err)
-}
-
-func TestGetBatchesByVCT_FiltersCorrectly(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	batch1 := newBatch("hash-filter-1")
-	batch2 := newBatch("hash-filter-2")
-	batch2.VerifiableCredentialType = "https://vct.example.com/OtherCredential"
-
-	require.NoError(t, store.StoreBatch(batch1))
-	require.NoError(t, store.StoreBatch(batch2))
-
-	batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
-	require.NoError(t, err)
-	require.Len(t, batches, 1)
-	assert.Equal(t, batch1.Hash, batches[0].Hash)
-}
-
-// --- GetUnusedInstance ---
-
 func TestGetUnusedInstance_ZeroBatchID(t *testing.T) {
 	store := newTestCredentialStore(t)
 
@@ -435,6 +387,19 @@ func TestGetUnusedInstance_ReturnsUnusedInstance(t *testing.T) {
 	assert.False(t, instance.Used)
 }
 
+func TestGetUnusedInstance_PreloadsHolderBindingKey(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	batch := newBatchWithInstancesAndKeys("hash-unused-instance-key", 1)
+	require.NoError(t, store.StoreBatch(batch))
+
+	instance, err := store.GetUnusedInstance(batch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, instance.HolderBindingKey)
+	require.NotNil(t, instance.HolderBindingKey.ECDSA)
+	assert.Equal(t, "P-256", instance.HolderBindingKey.ECDSA.CurveName)
+}
+
 // --- MarkInstanceUsed ---
 
 func TestMarkInstanceUsed_NilInstanceID(t *testing.T) {
@@ -453,7 +418,7 @@ func TestMarkInstanceUsed_NotFound(t *testing.T) {
 
 func TestMarkInstanceUsed_SetsUsedTrue(t *testing.T) {
 	store := newTestCredentialStore(t)
-	db := store.(*credentialStore).db
+	db := store.(*sdJwtVcStore).db
 
 	batch := newBatch("hash-mark-used")
 	require.NoError(t, store.StoreBatch(batch))
@@ -461,14 +426,14 @@ func TestMarkInstanceUsed_SetsUsedTrue(t *testing.T) {
 	instanceID := batch.Instances[0].ID
 	require.NoError(t, store.MarkInstanceUsed(instanceID))
 
-	var instance models.IssuedCredentialInstance
+	var instance models.SdJwtVcBatchInstance
 	require.NoError(t, db.First(&instance, "id = ?", instanceID).Error)
 	assert.True(t, instance.Used)
 }
 
 func TestMarkInstanceUsed_DecrementsRemainingCount(t *testing.T) {
 	store := newTestCredentialStore(t)
-	db := store.(*credentialStore).db
+	db := store.(*sdJwtVcStore).db
 
 	batch := newBatchWithInstances("hash-decrement", 2)
 	require.NoError(t, store.StoreBatch(batch))
@@ -476,7 +441,7 @@ func TestMarkInstanceUsed_DecrementsRemainingCount(t *testing.T) {
 	instanceID := batch.Instances[0].ID
 	require.NoError(t, store.MarkInstanceUsed(instanceID))
 
-	var updated models.CredentialBatch
+	var updated models.SdJwtVcBatch
 	require.NoError(t, db.First(&updated, batch.ID).Error)
 	assert.Equal(t, uint(1), updated.RemainingCount)
 }
@@ -519,27 +484,27 @@ func TestDeleteBatchByHash_NotFound(t *testing.T) {
 
 func TestDeleteBatchByHash_CascadeDeletesInstances(t *testing.T) {
 	store := newTestCredentialStore(t)
-	db := store.(*credentialStore).db
+	db := store.(*sdJwtVcStore).db
 
 	batch := newBatchWithInstances("hash-cascade-delete", 3)
 	require.NoError(t, store.StoreBatch(batch))
 
 	// Verify instances exist before deletion.
 	var countBefore int64
-	db.Model(&models.IssuedCredentialInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countBefore)
+	db.Model(&models.SdJwtVcBatchInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countBefore)
 	assert.Equal(t, int64(3), countBefore)
 
 	require.NoError(t, store.DeleteBatchByHash("hash-cascade-delete"))
 
 	// Verify all instances are gone after deletion.
 	var countAfter int64
-	db.Model(&models.IssuedCredentialInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countAfter)
+	db.Model(&models.SdJwtVcBatchInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countAfter)
 	assert.Equal(t, int64(0), countAfter)
 }
 
 func TestDeleteBatchByHash_CascadeDeletesHolderBindingKeys(t *testing.T) {
 	store := newTestCredentialStore(t)
-	db := store.(*credentialStore).db
+	db := store.(*sdJwtVcStore).db
 
 	batch := newBatchWithInstancesAndKeys("hash-cascade-delete-keys", 2)
 	require.NoError(t, store.StoreBatch(batch))
@@ -607,4 +572,41 @@ func TestDeleteBatch_Success(t *testing.T) {
 
 	_, err := store.GetBatchByHash("hash-delete-success")
 	require.ErrorIs(t, err, ErrNotFound)
+}
+
+// TestBatchLookupsPreloadDisplayMetadata pins that every batch lookup a display
+// or log path can reach eager-loads the same associations. A missing preload
+// does not fail — it silently yields empty display metadata, which is how
+// mdoc_dcql ended up rendering permission screens with a blank issuer name and
+// unnamed attributes while the SD-JWT handler (which uses the fully-preloaded
+// GetCredentialBatchList) looked fine.
+func TestBatchLookupsPreloadDisplayMetadata(t *testing.T) {
+	assertPreloaded := func(t *testing.T, batch *models.SdJwtVcBatch) {
+		t.Helper()
+		require.NotNil(t, batch)
+		assert.NotEmpty(t, batch.IssuerDisplay, "IssuerDisplay must be preloaded (issuer name/logo)")
+		require.NotNil(t, batch.CredentialMetadata, "CredentialMetadata must be preloaded")
+		assert.NotEmpty(t, batch.CredentialMetadata.Display, "credential display entries must be preloaded")
+		require.NotEmpty(t, batch.CredentialMetadata.Claims, "claims must be preloaded (claim display names)")
+		assert.NotEmpty(t, batch.CredentialMetadata.Claims[0].Display, "each claim's display entries must be preloaded")
+	}
+
+	t.Run("GetCredentialBatchList", func(t *testing.T) {
+		store := newTestCredentialStore(t)
+		require.NoError(t, store.StoreBatch(newBatch("hash-preload-list")))
+
+		batches, err := store.GetCredentialBatchList()
+		require.NoError(t, err)
+		require.Len(t, batches, 1)
+		assertPreloaded(t, batches[0])
+	})
+
+	t.Run("GetBatchByHash", func(t *testing.T) {
+		store := newTestCredentialStore(t)
+		require.NoError(t, store.StoreBatch(newBatch("hash-preload-byhash")))
+
+		batch, err := store.GetBatchByHash("hash-preload-byhash")
+		require.NoError(t, err)
+		assertPreloaded(t, batch)
+	})
 }

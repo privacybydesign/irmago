@@ -23,6 +23,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -30,9 +31,17 @@ import (
 func main() {
 	addr := envOr("LISTEN_ADDR", "0.0.0.0:9090")
 	externalURL := envOr("EXTERNAL_URL", "http://localhost:9090")
+	// Endpoints the issuer calls server-to-server need a URL that resolves from
+	// inside its container, which "localhost" does not: docker's extra_hosts
+	// appends a second localhost entry to /etc/hosts and the resolver takes the
+	// built-in 127.0.0.1 one first, so the issuer ends up talking to itself.
+	// Defaults to the external URL, which is correct when the consumer runs on
+	// the host (as the wallet in these tests does).
+	internalURL := envOr("INTERNAL_URL", externalURL)
 
 	server := &authorizationServer{
 		externalURL: externalURL,
+		internalURL: internalURL,
 		authCodes:   make(map[string]codeEntry),
 		tokens:      make(map[string]tokenEntry),
 	}
@@ -44,6 +53,7 @@ func main() {
 	mux.HandleFunc("/authorize", server.handleAuthorize)
 	mux.HandleFunc("/token", server.handleToken)
 	mux.HandleFunc("/introspect", server.handleIntrospect)
+	mux.HandleFunc("/userinfo", server.handleUserInfo)
 
 	log.Printf("mock authorization server: listening on %s (external URL: %s)", addr, externalURL)
 	log.Fatal(http.ListenAndServe(addr, mux))
@@ -64,6 +74,8 @@ type tokenEntry struct {
 
 type authorizationServer struct {
 	externalURL string
+	// internalURL serves the endpoints the issuer calls itself; see main.
+	internalURL string
 
 	mu        sync.Mutex
 	authCodes map[string]codeEntry
@@ -76,13 +88,21 @@ type authorizationServer struct {
 
 func (s *authorizationServer) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"issuer":                               s.externalURL,
-		"authorization_endpoint":               s.externalURL + "/authorize",
-		"token_endpoint":                       s.externalURL + "/token",
-		"jwks_uri":                             s.externalURL + "/jwks",
-		"authorization_introspection_endpoint": s.externalURL + "/introspect",
-		"response_types_supported":             []string{"code"},
-		"grant_types_supported":                []string{"authorization_code"},
+		"issuer":                 s.externalURL,
+		"authorization_endpoint": s.externalURL + "/authorize",
+		"token_endpoint":         s.externalURL + "/token",
+		// Fetched by the issuer, not the wallet, so these carry the internal URL.
+		"jwks_uri":                             s.internalURL + "/jwks",
+		"authorization_introspection_endpoint": s.internalURL + "/introspect",
+		// The veramo-agent resolves this from the discovery document and calls it
+		// during the authorization code flow. Without it the agent has no URL to
+		// fetch and the credential request fails with a bare "invalid_request",
+		// its log naming the cause only as "retrieving the user info endpoint
+		// undefined". /introspect already returns the same claims inline, but the
+		// agent does not read them from there.
+		"userinfo_endpoint":        s.externalURL + "/userinfo",
+		"response_types_supported": []string{"code"},
+		"grant_types_supported":    []string{"authorization_code"},
 	})
 }
 
@@ -169,6 +189,38 @@ func (s *authorizationServer) handleIntrospect(w http.ResponseWriter, r *http.Re
 			"issuer_state": entry.issuerState,
 			"active":       true,
 		},
+	})
+}
+
+// handleUserInfo answers the OpenID Connect UserInfo request the veramo-agent
+// makes while exchanging an authorization code. The token is accepted from the
+// Authorization header or, for tolerance, from an access_token parameter; an
+// unknown token gets 401 rather than empty claims, so a broken token exchange
+// fails here instead of silently issuing a credential about nobody.
+func (s *authorizationServer) handleUserInfo(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if token == "" {
+		r.ParseForm()
+		token = r.FormValue("access_token")
+	}
+
+	s.mu.Lock()
+	_, ok := s.tokens[token]
+	s.mu.Unlock()
+
+	if !ok || token == "" {
+		log.Printf("/userinfo unknown token")
+		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{"error": "invalid_token"})
+		return
+	}
+
+	log.Printf("/userinfo token=%s", token[:16])
+
+	// The same subject /introspect reports, so a consumer reading either source
+	// sees one user rather than two.
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"sub":   "test-user",
+		"email": "test@example.com",
 	})
 }
 

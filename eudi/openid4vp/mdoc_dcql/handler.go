@@ -1,0 +1,637 @@
+// Package mdoc_dcql implements a DcqlCredentialQueryHandler for mso_mdoc
+// credentials stored in the wallet's mdoc tables (issued via OpenID4VCI),
+// mirroring eudi_sdjwt_dcql for the mdoc format. It reads models.MdocBatch
+// through db.MdocStore and nothing of the SD-JWT storage.
+package mdoc_dcql
+
+import (
+	"crypto/ecdsa"
+	"encoding/base64"
+	"fmt"
+	"time"
+
+	"github.com/fxamacker/cbor/v2"
+
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+)
+
+// DeviceKeyBinder resolves the device key an mdoc presentation must be signed
+// with, given the device public key the credential's own MSO is bound to -- the
+// same key the verifier will check the resulting signature against.
+//
+// It exists so the device private key does not have to reach this package, and
+// need not exist in this process at all. The wallet's default implementation
+// (services.NewMdocDeviceKeyBinder) reads the stored PKCS#8 key, which is
+// software all the way down; an implementation backed by a WSCA/HSM or by
+// StrongBox / TrustZone / the Secure Enclave returns a mdoc.Holder built on a
+// platform key handle instead (mdoc.NewHolderFromSigner), and nothing here
+// changes. This mirrors sdjwt.KeyBinder, which eudi_sdjwt_dcql is handed for the
+// same reason -- and which is why that handler never touches key material either.
+type DeviceKeyBinder interface {
+	HolderForDeviceKey(deviceKey *ecdsa.PublicKey) (stdmdoc.Holder, error)
+}
+
+// MdocDcqlHandler implements dcql.DcqlCredentialQueryHandler for mso_mdoc
+// credentials stored in the eudi storage (SQLite).
+type MdocDcqlHandler struct {
+	storage       storage.Storage
+	store         db.MdocStore
+	deviceKeys    DeviceKeyBinder
+	currentLocale *clientmodels.CurrentLocale
+}
+
+// NewMdocDcqlHandler creates a new handler.
+//
+// deviceKeys signs the DeviceAuthentication of every presentation this handler
+// prepares. Pass services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(
+// eudiStorage.Db())) for the default software, storage-backed signer, or a
+// hardware-backed implementation to keep the device private key out of process.
+func NewMdocDcqlHandler(
+	eudiStorage storage.Storage,
+	currentLocale *clientmodels.CurrentLocale,
+	deviceKeys DeviceKeyBinder,
+) *MdocDcqlHandler {
+	return &MdocDcqlHandler{
+		storage:       eudiStorage,
+		store:         db.NewMdocStore(eudiStorage.Db()),
+		deviceKeys:    deviceKeys,
+		currentLocale: currentLocale,
+	}
+}
+
+var _ dcql.DcqlCredentialQueryHandler = (*MdocDcqlHandler)(nil)
+
+// CanHandleCredentialQuery returns true for any query requesting the
+// "mso_mdoc" format -- this package's only responsibility is that one
+// format, unlike eudi_sdjwt_dcql/irma_sdjwt_dcql which split SD-JWT-VC
+// between two stores by vct shape.
+func (h *MdocDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
+	return query.Format == string(clientmodels.Format_MsoMdoc)
+}
+
+func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQueryResult, error) {
+	result := &dcql.CredentialQueryResult{}
+
+	docType := ""
+	if query.Meta != nil {
+		docType = query.Meta.DocTypeValue
+	}
+	if docType == "" {
+		return nil, fmt.Errorf("mso_mdoc credential query %q has no doctype_value", query.Id)
+	}
+
+	// An absent claims member is refused for mso_mdoc, where eudi_sdjwt_dcql
+	// treats it as "no selectively disclosable claims requested" and still
+	// matches the credential.
+	//
+	// That reading is sound for SD-JWT VC, which has an always-disclosed payload
+	// left to present. mso_mdoc has none: every element lives in
+	// IssuerSigned.NameSpaces and is selectively disclosed, so carrying the same
+	// reading here builds a device-signed DeviceResponse over an empty namespaces
+	// map -- a valid issuer and device signature over no elements at all, offered
+	// to the user beforehand as a credential with an empty attribute list. Both
+	// halves are silent: nothing errors, and the verifier receives a well-formed
+	// response it can only reject.
+	//
+	// Refusing matches the Multipaz reference, which treats claims as mandatory
+	// when parsing a DCQL query (DcqlQuery.kt reads c["claims"]!!). Neither
+	// implementation reads an absent claims member as "disclose everything", so
+	// the choice here is between refusing and disclosing nothing.
+	if len(query.Claims) == 0 {
+		return nil, fmt.Errorf(
+			"mso_mdoc credential query %q requests no claims; an mdoc presentation has no always-disclosed payload, so it must name the elements to disclose",
+			query.Id)
+	}
+
+	// Every claim path is checked before any matching, so a malformed query is
+	// reported as malformed. Left to matching, it comes back as "no candidates",
+	// which the verifier cannot tell apart from a wallet that simply does not
+	// hold the credential -- the one answer that makes a query bug look like a
+	// user's empty wallet.
+	for _, claim := range query.Claims {
+		if _, _, err := mdocPathParts(claim.Path); err != nil {
+			return nil, fmt.Errorf("mso_mdoc credential query %q: %w", query.Id, err)
+		}
+	}
+
+	batches, err := h.store.GetBatchesByDocType(docType)
+	if err != nil {
+		return nil, err
+	}
+
+	locale := h.currentLocale.Get()
+	now := time.Now()
+	hasExhaustedBatch := false
+	for _, batch := range batches {
+		if !services.MdocBatchIsValid(batch, now) {
+			continue
+		}
+		if batch.BatchSize > 1 && batch.RemainingCount == 0 {
+			hasExhaustedBatch = true
+			continue
+		}
+
+		claims := selectClaims(query, batch.Namespaces)
+		if claims == nil {
+			continue
+		}
+
+		signedAt := batch.SignedAt.Unix()
+		candidate := clientmodels.SelectableCredentialInstance{
+			CredentialId:                batch.DocType,
+			Hash:                        batch.Hash,
+			Name:                        credentialDisplayName(batch, locale),
+			Issuer:                      h.issuerTrustedParty(batch, locale),
+			Format:                      clientmodels.Format_MsoMdoc,
+			DisplayIsFallback:           services.MdocDisplayIsFallback(batch, locale),
+			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
+			Attributes:                  buildAttributes(batch, claims, locale),
+			ExpiryDate:                  batchExpiryUnix(batch),
+			IssuanceDate:                &signedAt,
+			Image:                       h.credentialImage(batch, locale),
+		}
+
+		result.OwnedCandidates = append(result.OwnedCandidates, &candidate)
+	}
+
+	if hasExhaustedBatch && len(result.OwnedCandidates) == 0 {
+		return nil, fmt.Errorf("all credential instances for doctype %q are exhausted", docType)
+	}
+
+	// When nothing is owned, emit a URL-less descriptor from the query itself so the
+	// user sees what's being requested. Unlike eudi_sdjwt_dcql there's no standardized
+	// online discovery document for an mdoc doctype to enrich this with, so it's built
+	// purely from the DCQL query's own claim paths.
+	if len(result.OwnedCandidates) == 0 {
+		result.ObtainableDescriptors = append(result.ObtainableDescriptors, unobtainableDescriptor(docType, query))
+	}
+
+	return result, nil
+}
+
+// PrepareDisclosure builds a device-signed presentation per selection. The audience is the
+// value the presentation is bound to, which for a URL-invoked session is the verifier's
+// client identifier -- the value the OpenID4VP session transcript signs over.
+func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
+	result := &dcql.PreparedDisclosure{}
+
+	for _, sel := range selections {
+		batch, err := h.store.GetBatchByHash(sel.CredentialHash)
+		if err != nil {
+			return nil, fmt.Errorf("batch not found for hash %s: %w", sel.CredentialHash, err)
+		}
+
+		instance, err := h.store.GetUnusedInstance(batch.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
+		}
+
+		var doc stdmdoc.MDoc
+		if err := stdmdoc.Unmarshal(instance.IssuerSigned, &doc); err != nil {
+			return nil, fmt.Errorf("decode stored mdoc: %w", err)
+		}
+
+		disclosed, err := selectiveDiscloseByPaths(&doc, sel.ClaimPaths)
+		if err != nil {
+			return nil, fmt.Errorf("selective disclosure: %w", err)
+		}
+
+		// Which key must sign is asked of the credential, not of the key record
+		// joined to it: the MSO's deviceKeyInfo is what the issuer bound this
+		// credential to and what the verifier checks the device signature
+		// against, so a signer resolved from it is the only one that can produce
+		// a presentation that verifies. The private half stays behind the binder,
+		// which is what allows it to live in hardware -- see DeviceKeyBinder.
+		deviceKey, err := stdmdoc.DeviceKeyFromIssuerAuth(doc.IssuerSigned.IssuerAuth)
+		if err != nil {
+			return nil, fmt.Errorf("read device key of stored mdoc instance %s: %w", instance.ID, err)
+		}
+
+		holder, err := h.deviceKeys.HolderForDeviceKey(deviceKey)
+		if err != nil {
+			return nil, fmt.Errorf("no device key available to sign for credential instance %s: %w", instance.ID, err)
+		}
+
+		// Which handover deviceAuth signs is decided by the transport the request
+		// arrived on, never by inspecting the values: the DC API's origin-prefixed
+		// audience and empty response_uri are indistinguishable here from an
+		// ordinary unencrypted URL session, and picking the wrong variant produces
+		// a response that transmits and decrypts fine and fails only at the
+		// verifier's signature check, with nothing naming the cause.
+		transcript, err := h.sessionTranscript(sel, nonce, audience)
+		if err != nil {
+			return nil, fmt.Errorf("build session transcript: %w", err)
+		}
+
+		deviceAuthBytes, err := holder.SignDeviceAuth(batch.DocType, transcript)
+		if err != nil {
+			return nil, fmt.Errorf("sign device auth: %w", err)
+		}
+
+		presented, err := stdmdoc.AttachDeviceSigned(disclosed, deviceAuthBytes)
+		if err != nil {
+			return nil, fmt.Errorf("attach device signed: %w", err)
+		}
+
+		deviceResponse := stdmdoc.NewDeviceResponse(*presented)
+		encoded, err := cbor.Marshal(deviceResponse)
+		if err != nil {
+			return nil, fmt.Errorf("marshal device response: %w", err)
+		}
+
+		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
+			QueryId:     sel.QueryId,
+			Credentials: []string{base64.RawURLEncoding.EncodeToString(encoded)},
+		})
+
+		// Everything that can fail for this selection happens before the instance is
+		// burned: a failure after MarkInstanceUsed would consume a single-use instance
+		// on a disclosure that then returned an error and never reached the verifier,
+		// and the credential would silently lose a use. eudi_sdjwt_dcql has nothing
+		// fallible after its own MarkInstanceUsed for the same reason.
+		//
+		// Only mark the instance as used when the original batch had multiple instances.
+		// A batch of 1 keeps its single instance reusable, mirroring eudi_sdjwt_dcql.
+		if batch.BatchSize > 1 {
+			if err := h.store.MarkInstanceUsed(instance.ID); err != nil {
+				return nil, fmt.Errorf("failed to mark instance as used: %w", err)
+			}
+		}
+
+		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths, sel.Claims))
+	}
+
+	return result, nil
+}
+
+// sessionTranscript picks the handover variant the transport requires and
+// builds the SessionTranscript deviceAuth signs over.
+//
+// The DC API binds the response to the origin the platform authenticated rather
+// than to a client identifier, so the audience arrives origin-prefixed and is
+// not what the handover signs; sel.Origin carries the bare value. An empty one
+// means the transport was reported without the origin that authenticates it,
+// which cannot produce a verifiable signature, so it fails here rather than
+// silently signing over "".
+func (h *MdocDcqlHandler) sessionTranscript(sel dcql.DisclosureSelection, nonce, audience string) (stdmdoc.SessionTranscript, error) {
+	if !sel.OverDcApi {
+		return newOpenID4VPSessionTranscript(audience, nonce, sel.ResponseUri, sel.ResponseEncryptionKeyThumbprint)
+	}
+	if sel.Origin == "" {
+		return stdmdoc.SessionTranscript{}, fmt.Errorf(
+			"a digital credentials api session must carry the origin the platform authenticated")
+	}
+	return newDcApiSessionTranscript(sel.Origin, nonce, sel.ResponseEncryptionKeyThumbprint)
+}
+
+// ---------------------------------------------------------------------------
+// Claim matching
+// ---------------------------------------------------------------------------
+
+// mdocPathParts splits a DCQL claim path into its mandatory [namespace,
+// elementIdentifier] components. mso_mdoc claim paths are always exactly two
+// string components deep -- ISO 18013-5 has no nested claims, unlike SD-JWT.
+func mdocPathParts(path []any) (namespace, elementIdentifier string, err error) {
+	if len(path) != 2 {
+		return "", "", fmt.Errorf(
+			"mso_mdoc claim path must be exactly [namespace, elementIdentifier], got %d component(s): %v",
+			len(path), path)
+	}
+	ns, ok := path[0].(string)
+	if !ok {
+		return "", "", fmt.Errorf("mso_mdoc claim path namespace must be a string, got %T: %v", path[0], path)
+	}
+	el, ok := path[1].(string)
+	if !ok {
+		return "", "", fmt.Errorf("mso_mdoc claim path element identifier must be a string, got %T: %v", path[1], path)
+	}
+	return ns, el, nil
+}
+
+// selectClaims determines which claims to use for matching, mirroring
+// eudi_sdjwt_dcql.selectClaims. When claim_sets is present, tries each set in
+// order and returns the claims from the first fully satisfiable set. Without
+// claim_sets, all claims must match. Returns nil if the credential doesn't
+// satisfy the query.
+func selectClaims(query dcql.CredentialQuery, resolved map[string]map[string]any) []dcql.Claim {
+	// Unreachable through FindCandidates, which refuses a claim-less mso_mdoc
+	// query outright (see the comment there). Kept as a no-match rather than
+	// dropped so a future caller cannot reach the empty-disclosure behaviour by
+	// bypassing that check.
+	if len(query.Claims) == 0 {
+		return nil
+	}
+
+	if len(query.ClaimSets) == 0 {
+		for _, claim := range query.Claims {
+			if !claimMatches(claim, resolved) {
+				return nil
+			}
+		}
+		return query.Claims
+	}
+
+	claimById := make(map[string]dcql.Claim, len(query.Claims))
+	for _, claim := range query.Claims {
+		if claim.Id != "" {
+			claimById[claim.Id] = claim
+		}
+	}
+
+	for _, set := range query.ClaimSets {
+		var matched []dcql.Claim
+		allFound := true
+		for _, id := range set {
+			claim, ok := claimById[id]
+			if !ok || !claimMatches(claim, resolved) {
+				allFound = false
+				break
+			}
+			matched = append(matched, claim)
+		}
+		if allFound {
+			return matched
+		}
+	}
+
+	return nil
+}
+
+func claimMatches(claim dcql.Claim, resolved map[string]map[string]any) bool {
+	namespace, elementIdentifier, err := mdocPathParts(claim.Path)
+	if err != nil {
+		return false
+	}
+	nsMap, ok := resolved[namespace]
+	if !ok {
+		return false
+	}
+	val, ok := nsMap[elementIdentifier]
+	if !ok {
+		return false
+	}
+	if len(claim.Values) == 0 {
+		return true
+	}
+	for _, want := range claim.Values {
+		if dcql.ClaimValuesEqual(val, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// ---------------------------------------------------------------------------
+// Selective disclosure
+// ---------------------------------------------------------------------------
+
+// selectiveDiscloseByPaths reveals exactly the elements named by claimPaths,
+// grouping by namespace since mdoc.SelectiveDisclose only reveals within a
+// single namespace at a time, then merging the per-namespace results into one
+// MDoc. The AV Blueprint profile only ever has a single namespace, but this
+// stays correct for any doctype with more.
+//
+// A path is read for its [namespace, elementIdentifier] prefix. The plan the
+// user consented to lists a structured element as one row per leaf, each with
+// the full path it was reached by, and the app echoes those paths back; they
+// all name the same element, and an mdoc discloses an element whole -- there
+// is no finer unit -- so the prefix is what is revealed and the element is
+// revealed once. A path with no such prefix is refused rather than skipped:
+// skipping would build a DeviceResponse disclosing one element fewer than the
+// plan the user consented to, and nothing downstream can tell that apart from
+// a verifier asking for less.
+func selectiveDiscloseByPaths(doc *stdmdoc.MDoc, claimPaths [][]any) (*stdmdoc.MDoc, error) {
+	revealByNamespace := make(map[string][]string)
+	seen := make(map[services.MdocElementRef]struct{}, len(claimPaths))
+	var namespaceOrder []string
+	for _, path := range claimPaths {
+		ref, ok := services.MdocElementRefFromPath(path)
+		if !ok {
+			return nil, fmt.Errorf(
+				"mso_mdoc claim path must start with [namespace, elementIdentifier], got %d component(s): %v",
+				len(path), path)
+		}
+		if _, dup := seen[ref]; dup {
+			continue
+		}
+		seen[ref] = struct{}{}
+		if _, known := revealByNamespace[ref.Namespace]; !known {
+			namespaceOrder = append(namespaceOrder, ref.Namespace)
+		}
+		revealByNamespace[ref.Namespace] = append(revealByNamespace[ref.Namespace], ref.Element)
+	}
+
+	merged := *doc
+	merged.IssuerSigned.NameSpaces = make(map[string][]stdmdoc.Tag24Item, len(namespaceOrder))
+	for _, namespace := range namespaceOrder {
+		disclosed, err := stdmdoc.SelectiveDisclose(doc, namespace, revealByNamespace[namespace])
+		if err != nil {
+			return nil, err
+		}
+		merged.IssuerSigned.NameSpaces[namespace] = disclosed.IssuerSigned.NameSpaces[namespace]
+	}
+	return &merged, nil
+}
+
+// ---------------------------------------------------------------------------
+// Display / attribute helpers
+// ---------------------------------------------------------------------------
+
+// buildAttributes builds the disclosure-plan attribute preview for a batch: the
+// rows the credential list shows for exactly the requested elements, so a
+// structured element (a place of birth, driving privileges) unfolds into the
+// same rows on the permission screen as on the card, and a portrait is a picture
+// in both places (services.BuildMdocAttributesForElements). Each row is then
+// stamped with what the request said about its element.
+func buildAttributes(batch *models.MdocBatch, claims []dcql.Claim, locale string) []clientmodels.Attribute {
+	refs := make([]services.MdocElementRef, 0, len(claims))
+	seen := make(map[services.MdocElementRef]struct{}, len(claims))
+	for _, claim := range claims {
+		ref, ok := services.MdocElementRefFromPath(claim.Path)
+		if !ok {
+			continue
+		}
+		if _, dup := seen[ref]; dup {
+			continue
+		}
+		seen[ref] = struct{}{}
+		refs = append(refs, ref)
+	}
+
+	attrs := services.BuildMdocAttributesForElements(batch, refs, locale)
+	return stampRequestFacts(attrs, claims, true)
+}
+
+// stampRequestFacts writes onto each row what the verifier's claims said about
+// the element the row belongs to. Every row of a structured element gets the
+// same facts, since the element is disclosed, and retained, whole.
+//
+// intent_to_retain is always set, never omitted when false: the consent screen
+// has to be able to tell "the verifier said it will not retain this" from "this
+// format cannot say", and only mso_mdoc can say it at all.
+//
+// The requested value is stamped only where asked (withRequested): on the
+// permission screen a candidate exists because its value satisfied the
+// constraint, so the value it holds is the requested one, as eudi_sdjwt_dcql
+// records it. A section header has no value to stamp.
+func stampRequestFacts(attrs []clientmodels.Attribute, claims []dcql.Claim, withRequested bool) []clientmodels.Attribute {
+	claimByRef := make(map[services.MdocElementRef]dcql.Claim, len(claims))
+	for _, claim := range claims {
+		ref, ok := services.MdocElementRefFromPath(claim.Path)
+		if !ok {
+			continue
+		}
+		if _, dup := claimByRef[ref]; !dup {
+			claimByRef[ref] = claim
+		}
+	}
+	for i := range attrs {
+		ref, ok := services.MdocElementRefFromPath(attrs[i].ClaimPath)
+		if !ok {
+			continue
+		}
+		claim, ok := claimByRef[ref]
+		if !ok {
+			continue
+		}
+		intentToRetain := claim.IntentToRetain
+		attrs[i].IntentToRetain = &intentToRetain
+		if withRequested && len(claim.Values) > 0 && attrs[i].Value != nil {
+			attrs[i].RequestedValue = attrs[i].Value
+		}
+	}
+	return attrs
+}
+
+// unobtainableDescriptor builds a CredentialDescriptor for a doctype the
+// wallet has never seen, purely from the DCQL query's own claim paths (see
+// FindCandidates' file comment on why there's no metadata fetch here).
+//
+// Each attribute carries a name and, when the query constrains the element's
+// value, the value the verifier requires: the IRMA and SD-JWT descriptors carry
+// both, and the app renders them on the missing-credential card so the user
+// can see why nothing in the wallet qualifies. Without them the card would
+// show a bare element identifier and no required value.
+func unobtainableDescriptor(docType string, query dcql.CredentialQuery) *clientmodels.CredentialDescriptor {
+	attrs := make([]clientmodels.Attribute, 0, len(query.Claims))
+	for _, claim := range query.Claims {
+		namespace, elementIdentifier, err := mdocPathParts(claim.Path)
+		if err != nil {
+			continue
+		}
+		attr := clientmodels.Attribute{
+			ClaimPath:   []any{namespace, elementIdentifier},
+			DisplayName: unobtainableClaimName(elementIdentifier),
+		}
+		// Only the first of several acceptable values is shown, as for the other
+		// formats.
+		if len(claim.Values) > 0 {
+			attr.RequestedValue = clientmodels.NewAttributeValue(claim.Values[0])
+		}
+		attrs = append(attrs, attr)
+	}
+	return &clientmodels.CredentialDescriptor{
+		CredentialId: docType,
+		Attributes:   attrs,
+	}
+}
+
+// unobtainableClaimName names an element of a document the wallet has never
+// held, where there is no issuer metadata to consult: the derived name where
+// the identifier has one (age_over_NN), else the identifier itself.
+func unobtainableClaimName(elementIdentifier string) *string {
+	if name, ok := services.DerivedMdocClaimName(elementIdentifier); ok {
+		return &name
+	}
+	return &elementIdentifier
+}
+
+// credentialImage loads the credential logo that resolves for the locale
+// from the batch's display metadata, mirroring eudi_sdjwt_dcql's identical
+// helper.
+func (h *MdocDcqlHandler) credentialImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
+	cm := services.MdocCredentialMetadata(batch)
+	if cm == nil {
+		return nil
+	}
+	logoManager := h.storage.FileSystem().Credentials().LogoManager()
+	return services.LoadResolvedLogo(logoManager, services.MdocCredentialLogoURIsByLanguage(cm.Display), locale)
+}
+
+// issuerTrustedParty builds a TrustedParty from the stored issuer display
+// metadata, mirroring eudi_sdjwt_dcql's identical helper.
+func (h *MdocDcqlHandler) issuerTrustedParty(batch *models.MdocBatch, locale string) clientmodels.TrustedParty {
+	return clientmodels.TrustedParty{
+		Id:       batch.CredentialIssuer,
+		Name:     clientmodels.Resolve(services.MdocIssuerNamesByLanguage(services.MdocIssuerDisplays(batch)), locale),
+		Image:    h.issuerImage(batch, locale),
+		Verified: batch.IssuerVerified,
+	}
+}
+
+// issuerImage loads the issuer logo that resolves for the locale from the
+// batch's issuer display metadata, mirroring eudi_sdjwt_dcql's identical
+// helper.
+func (h *MdocDcqlHandler) issuerImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
+	logoManager := h.storage.FileSystem().Issuers().LogoManager()
+	return services.LoadResolvedLogo(logoManager, services.MdocIssuerLogoURIsByLanguage(services.MdocIssuerDisplays(batch)), locale)
+}
+
+// credentialDisplayName resolves a credential's display name from its stored
+// metadata, falling back to the docType when there is no display metadata.
+func credentialDisplayName(batch *models.MdocBatch, locale string) string {
+	if cm := services.MdocCredentialMetadata(batch); cm != nil {
+		if ts := services.MdocCredentialNamesByLanguage(cm.Display); len(ts) > 0 {
+			return clientmodels.Resolve(ts, locale)
+		}
+	}
+	return batch.DocType
+}
+
+// batchInstanceCountRemaining returns nil for a batch of one (a reusable
+// credential with no count to spend down) and the remaining count otherwise.
+func batchInstanceCountRemaining(batch *models.MdocBatch) *uint {
+	if batch.BatchSize <= 1 {
+		return nil
+	}
+	return &batch.RemainingCount
+}
+
+// batchExpiryUnix is the MSO's validUntil as a unix timestamp. Always set: the
+// MSO validity window is mandatory.
+func batchExpiryUnix(batch *models.MdocBatch) *int64 {
+	x := batch.ValidUntil.Unix()
+	return &x
+}
+
+// buildLogCredential records what left the wallet, as the same rows the
+// permission screen showed for it. The paths are the ones the app echoed back
+// from that screen, which for a structured element are one per leaf; they are
+// reduced to the elements they name, since that is the unit disclosed.
+//
+// The verifier's intent to retain is recorded with each row, as the screen
+// showed it: a log that forgets it leaves the user unable to see later what
+// they agreed to.
+func (h *MdocDcqlHandler) buildLogCredential(batch *models.MdocBatch, claimPaths [][]any, claims []dcql.Claim) clientmodels.LogCredential {
+	locale := h.currentLocale.Get()
+	attrs := services.BuildMdocAttributesForElements(batch, services.UniqueMdocElementRefs(claimPaths), locale)
+	attrs = stampRequestFacts(attrs, claims, false)
+
+	signedAt := batch.SignedAt.Unix()
+	return clientmodels.LogCredential{
+		CredentialId: batch.DocType,
+		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc},
+		Name:         credentialDisplayName(batch, locale),
+		Image:        h.credentialImage(batch, locale),
+		Issuer:       h.issuerTrustedParty(batch, locale),
+		Attributes:   attrs,
+		ExpiryDate:   batchExpiryUnix(batch),
+		IssuanceDate: &signedAt,
+	}
+}

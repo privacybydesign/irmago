@@ -67,7 +67,7 @@ func (h *spyHandler) DeliverDcApiResponse(_ string) {}
 func (h *spyHandler) RequestVerificationPermission(
 	_ *clientmodels.DisclosurePlan,
 	_ *clientmodels.TrustedParty,
-	_ map[string]string,
+	_ []dcql.ChoiceQueryIds,
 	callback PermissionHandler,
 ) {
 	h.requests.Add(1)

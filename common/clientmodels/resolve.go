@@ -96,6 +96,40 @@ func Resolve(ts TranslatedString, locale string) string {
 	return ts[BundleLanguage(locale, ts)]
 }
 
+// IsFallbackLanguage reports whether text resolved from resolvedLanguage is in a
+// different language than locale asked for — that is, whether the fallback chain
+// in BundleLanguage had to move off the requested language.
+//
+// It exists so the frontend can tell "this is the issuer's label in your
+// language" from "this is the issuer's label in some other language, because
+// yours was not published", which the resolved text alone cannot say: the chain
+// falls back to English rather than to an empty string, so a Dutch wallet is
+// handed real English text with nothing marking it. A client that ships its own
+// labels for known credential types uses this to know when substituting one is
+// an improvement rather than an override of what the issuer published.
+//
+// Compared by base language on purpose: a wallet asking for "nl-NL" against
+// metadata published under "nl" got what it asked for, and reporting that as a
+// fallback would have every regional locale substituting over correct text. An
+// empty resolvedLanguage means nothing was published in any language, which is a
+// fallback by definition — there is no issuer text at all.
+func IsFallbackLanguage(locale, resolvedLanguage string) bool {
+	if resolvedLanguage == "" {
+		return true
+	}
+	if locale == resolvedLanguage {
+		return false
+	}
+	requested, okRequested := BaseLanguage(locale)
+	resolved, okResolved := BaseLanguage(resolvedLanguage)
+	if !okRequested || !okResolved {
+		// An unparseable tag on either side cannot be compared by language, so
+		// fall back to the exact comparison already made above.
+		return true
+	}
+	return requested != resolved
+}
+
 // ResolvePtr resolves a standalone TranslatedString into an optional (*string)
 // DTO field, yielding nil when no translation is available at all. Use this for
 // fields that are not displayed text — a URL, for instance — so they resolve

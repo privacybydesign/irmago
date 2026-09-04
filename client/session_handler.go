@@ -10,6 +10,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
@@ -26,7 +27,7 @@ type session struct {
 	preAuthorizedCodeHandler    openid4vci.TokenPermissionHandler
 	openid4vciPermissionHandler openid4vci.PermissionHandler
 	openid4vpPermissionHandler  openid4vp.PermissionHandler
-	openid4vpHashToQueryId      map[string]string // credential hash → DCQL query ID
+	openid4vpQueryIds           []dcql.ChoiceQueryIds // per plan pick-one: credential hash → DCQL query id
 	// Hashes of credentials that already existed when the disclosure plan was first created.
 	// Used to exclude pre-existing credentials from WrongCredentialIssued detection.
 	preExistingCredentialHashes map[string]struct{}
@@ -230,6 +231,11 @@ func findCredential(credentials []*clientmodels.Credential, hash string) *client
 					Revoked:                     c.Revoked,
 					RevocationSupported:         c.RevocationSupported,
 					IssueURL:                    c.IssueURL,
+					// Carried over with the text it describes. Dropping it here would
+					// have the same credential report its display language one way in
+					// the wallet list and another on the permission screen, which is
+					// the disagreement the flag exists to prevent.
+					DisplayIsFallback: c.DisplayIsFallback,
 				}
 			}
 		}
@@ -733,7 +739,7 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 		payload := userInteraction.Payload.(clientmodels.SessionPermissionInteractionPayload)
 		if session.openid4vpPermissionHandler != nil {
 			// OpenID4VP flow: convert UI selections to DisclosureSelections
-			selections := disclosureChoicesToOpenID4VPSelections(payload.DisclosureChoices, session.openid4vpHashToQueryId)
+			selections := disclosureChoicesToOpenID4VPSelections(payload.DisclosureChoices, session.openid4vpQueryIds)
 			session.openid4vpPermissionHandler(payload.Granted, selections)
 		} else if session.openid4vciPermissionHandler != nil {
 			// OpenID4VCI flow: no disclosure choices needed

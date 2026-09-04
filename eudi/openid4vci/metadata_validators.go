@@ -12,6 +12,7 @@ import (
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/internal/arrays"
+	cose "github.com/veraison/go-cose"
 	"golang.org/x/text/language"
 )
 
@@ -181,23 +182,20 @@ func (v *CredentialConfigurationValidator) Verify(c *metadata.CredentialConfigur
 func (v *CredentialConfigurationValidator) ValidateAndGetSupportedFeatures(c *metadata.CredentialConfiguration) (*sessionCredentialRequestPreferences, error) {
 	s := &sessionCredentialRequestPreferences{}
 
-	// We only support SD-JWT VC, for now
-	if c.Format != metadata.CredentialFormatIdentifier_SdJwtVc && c.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy {
+	// We only support SD-JWT VC and mso_mdoc, for now
+	if c.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
+		c.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy &&
+		c.Format != metadata.CredentialFormatIdentifier_MsoMdoc {
 		return nil, fmt.Errorf("unsupported credential format %q", c.Format)
 	}
 
-	// Validate at least one credential signing algorithms is supported (which should be string values for SD-JWTs)
-	// TODO: when we support ISO mDoc, we need to validate the COSE algorithm identifiers
-	credentialSigningAlgValuesStrings := arrays.ConvertTo(c.CredentialSigningAlgValuesSupported, func(v any) (string, bool) {
-		str, ok := v.(string)
-		return str, ok
-	})
-	if len(c.CredentialSigningAlgValuesSupported) != 0 {
-		// Check if we support the credential signing algorithm(s) in the credential configuration
-		_, err := getSupportedCredentialSigningAlgorithm(credentialSigningAlgValuesStrings)
-		if err != nil {
-			return nil, err
-		}
+	// Validate at least one advertised credential signing algorithm is supported.
+	// Delegated because the check is format-dependent: mso_mdoc advertises COSE
+	// algorithm identifiers as integers and dc+sd-jwt advertises JWS algorithm
+	// names as strings, so reading every format as strings made an mdoc
+	// configuration look as though it advertised nothing at all.
+	if err := validateCredentialSigningAlgValues(c); err != nil {
+		return nil, err
 	}
 
 	// We support JWK, did:key and did:jwk as cryptographic binding method, for now
@@ -277,8 +275,19 @@ func (v *W3CDILDFormatVerifier) Verify(credentialConfiguration *metadata.Credent
 	return nil
 }
 
-// Verify returns nil for now, as we don't support mDoc Credentials, so just return nil and accept any metadata that we get
+// Verify checks the mso_mdoc format-specific issuer metadata.
+//
+// doctype is REQUIRED for mso_mdoc by OpenID4VCI's credential format profile,
+// exactly as vct is for dc+sd-jwt above, and it is the only value the wallet can
+// hold an issued credential against: the docType inside the MSO is signed, but
+// signed by whoever signed it, so on its own it says only "this is what the
+// issuer chose to send", never "this is what I asked for". Rejecting a
+// configuration without it is what makes that comparison possible at all — see
+// the check in session.obtainCredential.
 func (v *MdocFormatVerifier) Verify(credentialConfiguration *metadata.CredentialConfiguration) error {
+	if credentialConfiguration.Doctype == "" {
+		return fmt.Errorf("missing 'doctype' field for mso_mdoc credential format")
+	}
 	return nil
 }
 
@@ -440,9 +449,150 @@ func isValidCSSColorLevel3(s string) bool {
 		rgb.MatchString(s) || rgba.MatchString(s) || hsl.MatchString(s) || hsla.MatchString(s)
 }
 
+// mdocAllowedSigningAlgorithms lists the COSE algorithm identifiers (RFC 9053)
+// that ISO/IEC 18013-5 permits for the MSO signature over issuerAuth: ES256,
+// ES384, ES512 and EdDSA. An mso_mdoc configuration advertising nothing from
+// this set — only RS256 (-257), PS256 (-37), a MAC or encryption identifier —
+// is not describing a document any 18013-5 verifier could accept, so it is
+// reported as malformed metadata rather than as merely unsupported here.
+var mdocAllowedSigningAlgorithms = []int64{
+	int64(cose.AlgorithmES256), // -7
+	int64(cose.AlgorithmEdDSA), // -8, Ed25519/Ed448
+	int64(cose.AlgorithmES384), // -35
+	int64(cose.AlgorithmES512), // -36
+}
+
+// mdocVerifiableSigningAlgorithms is the subset of mdocAllowedSigningAlgorithms
+// that this wallet can check today. It is this list, not the wider one above,
+// that decides whether an offer is accepted — see
+// validateMdocCredentialSigningAlgValues.
+//
+// The three ECDSA algorithms are here because eudi/credentials/mdoc now reads
+// `alg` from the COSE protected header and builds its verifier for whatever it
+// finds, gated on the same four identifiers 18013-5 permits (see
+// mdocSignatureAlgorithms there). Until that landed this list held ES256 alone,
+// and an issuer advertising ES384 was turned away at metadata validation before
+// a single credential was fetched — a refusal the wallet no longer has any
+// reason to make.
+//
+// EdDSA is deliberately still absent, and this is the one place the two lists
+// are allowed to disagree. The MSO signature would verify: the document signer's
+// key comes from its X.509 certificate, which can perfectly well be Ed25519. The
+// device key cannot — mdoc.ecdsaPublicKeyFromCOSE returns *ecdsa.PublicKey, so
+// an OKP deviceKeyInfo is refused, and the credential would be fetched, stored
+// and then fail at first presentation. Refusing the offer is the honest answer
+// until DeviceKey widens to crypto.PublicKey.
+var mdocVerifiableSigningAlgorithms = []int64{
+	int64(cose.AlgorithmES256), // -7
+	int64(cose.AlgorithmES384), // -35
+	int64(cose.AlgorithmES512), // -36
+}
+
+// validateCredentialSigningAlgValues checks that at least one advertised
+// credential signing algorithm is legal for the credential's format.
+//
+// OID4VCI's format annexes make this parameter REQUIRED and non-empty, but they
+// type its elements per format: mso_mdoc advertises COSE algorithm identifiers
+// as integers (-7 for ES256, RFC 9053), while dc+sd-jwt advertises JWS
+// algorithm names as strings ("ES256"). Reading every format as strings made an
+// mdoc configuration look as though it advertised no algorithm at all, so mdoc
+// issuance was refused here before the first network call — including from the
+// EUDI reference issuer, whose every mdoc configuration advertises exactly [-7].
+//
+// For mso_mdoc the gate is the set this wallet can actually verify, which is
+// what "supported features" means here. Admitting a spec-legal algorithm we
+// cannot check would not make such a credential obtainable — it would only move
+// the failure to the MSO signature check, after the user has consented and the
+// pre-authorized code has been spent, and report it as an opaque invalid
+// signature. The wider ISO 18013-5 set is still consulted, to say which kind of
+// wrong an offer is: beyond this wallet, or beyond the standard.
+//
+// An absent or empty array stays acceptable, as it was before: the spec
+// requires the parameter, but treating a lax issuer's omission as fatal would
+// reject credentials this wallet can verify perfectly well.
+func validateCredentialSigningAlgValues(c *metadata.CredentialConfiguration) error {
+	if len(c.CredentialSigningAlgValuesSupported) == 0 {
+		return nil
+	}
+
+	if c.Format == metadata.CredentialFormatIdentifier_MsoMdoc {
+		return validateMdocCredentialSigningAlgValues(c.CredentialSigningAlgValuesSupported)
+	}
+
+	credentialSigningAlgValuesStrings := arrays.ConvertTo(c.CredentialSigningAlgValuesSupported, func(v any) (string, bool) {
+		str, ok := v.(string)
+		return str, ok
+	})
+	if _, err := getSupportedCredentialSigningAlgorithm(credentialSigningAlgValuesStrings); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateMdocCredentialSigningAlgValues requires at least one advertised value
+// to be an algorithm this wallet can verify, and distinguishes the two ways an
+// offer can fail that: advertising only algorithms ISO 18013-5 permits but we
+// have yet to implement, which is our gap to close, and advertising nothing
+// 18013-5 permits for an MSO at all, which is a defect in the issuer's metadata.
+// Values that are not COSE algorithm identifiers to begin with — a JWS name like
+// "ES256", a non-integral number — count as neither, so a configuration made up
+// entirely of them is reported as the latter.
+func validateMdocCredentialSigningAlgValues(advertised []any) error {
+	var allowed []int64
+	for _, raw := range advertised {
+		if alg, ok := toCoseAlgorithmIdentifier(raw); ok && slices.Contains(mdocAllowedSigningAlgorithms, alg) {
+			allowed = append(allowed, alg)
+		}
+	}
+
+	if len(allowed) == 0 {
+		return fmt.Errorf(
+			"no allowed signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and ISO 18013-5 permits only %v, got %v",
+			mdocAllowedSigningAlgorithms, advertised,
+		)
+	}
+
+	if !slices.ContainsFunc(allowed, func(alg int64) bool {
+		return slices.Contains(mdocVerifiableSigningAlgorithms, alg)
+	}) {
+		return fmt.Errorf(
+			"no supported signing algorithms in 'credential_signing_alg_values_supported': %v is permitted by ISO 18013-5 but this wallet verifies only %v",
+			allowed, mdocVerifiableSigningAlgorithms,
+		)
+	}
+	return nil
+}
+
+// toCoseAlgorithmIdentifier reads one advertised mso_mdoc signing algorithm as a
+// COSE algorithm identifier. float64 is the shape that actually arrives from a
+// fetched metadata document, since encoding/json decodes every JSON number into
+// `any` as float64; the integer cases cover values constructed in Go. A
+// non-integral number is not an identifier and is reported as unusable rather
+// than silently truncated.
+func toCoseAlgorithmIdentifier(v any) (int64, bool) {
+	switch n := v.(type) {
+	case float64:
+		i := int64(n)
+		if float64(i) != n {
+			return 0, false
+		}
+		return i, true
+	case int:
+		return int64(n), true
+	case int64:
+		return n, true
+	default:
+		return 0, false
+	}
+}
+
 // getSupportedCredentialSigningAlgorithm returns the first algorithm from the input list whose
 // signatures we can actually verify, so that we do not request a credential we would then have to
 // reject. The accepted set is shared with JWT verification; see eudi_jwt.SupportedSignatureAlgorithms.
+//
+// This is the dc+sd-jwt half only. mso_mdoc advertises COSE algorithm
+// identifiers rather than JWS names and is checked by
+// validateMdocCredentialSigningAlgValues instead.
 func getSupportedCredentialSigningAlgorithm(input []string) (*jwa.SignatureAlgorithm, error) {
 	for _, x := range input {
 		if alg, found := eudi_jwt.LookupSupportedSignatureAlgorithm(x); found {

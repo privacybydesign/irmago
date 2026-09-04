@@ -38,9 +38,11 @@ type session struct {
 	httpClient               *http.Client
 	handler                  Handler
 	storage                  storage.Storage
-	credentialService        services.CredentialService
 	holderVerifier           *sdjwtvc.HolderVerificationProcessor
-	holderKeyBinder          HolderKeyBinder
+
+	// formats is the per-format registry: parser, key binder and store per
+	// credential format, looked up by the credential configuration's format.
+	formats services.CredentialFormats
 
 	// vctResolver provides cached raw bytes of fetched SD-JWT VC type
 	// metadata documents so the post-issuance integrity check (verifyVctIntegrity)
@@ -79,6 +81,52 @@ type openid4vciSessionIssuerSettings struct {
 	useCredentialRequestEncryption        bool
 	credentialRequestContentEncryptionAlg *jwa.ContentEncryptionAlgorithm
 	credentialRequestEncryptionKey        *jwk.Key
+}
+
+// maxBatchInstances bounds how many instances of one credential this wallet will
+// ask for in a single issuance, whatever the issuer's ceiling is.
+//
+// Thirty, following the EU Age Verification Blueprint: "It is recommended that
+// each batch consist of thirty (30) attestations." A recommendation rather than a
+// requirement — unlike the accompanying "An Age Verification App SHALL use a
+// Proof of Age attestation only once and then remove it from the batch", which is
+// what makes a batch necessary in the first place. Paired with the profile's
+// three-month maximum validity, thirty is about one presentation every three
+// days.
+//
+// It has to be the wallet's number rather than the issuer's, because the cost is
+// the wallet's: every instance is a keypair generated and stored on the device,
+// and once issuance mints in hardware, a Secure Enclave or StrongBox operation
+// each. The EUDI reference issuer advertises 100, which is its ceiling and not a
+// demand; taking it literally meant a hundred enclave keygens in one issuance,
+// and an issuer advertising an implausible ceiling could ask for arbitrarily many
+// — a denial of service at issuance from a party the wallet trusts for credential
+// content and not for arithmetic.
+//
+// Raising it does not buy more privacy. The batch defeats collusion between
+// relying parties, and it does that per presentation rather than per batch; a
+// bigger batch only means refilling less often, which the issuer sees either way.
+// What the number has to cover is the presentations expected before the next
+// renewal.
+const maxBatchInstances uint = 30
+
+// batchInstancesToRequest decides how many instances to ask for, given what the
+// issuer's metadata advertises.
+//
+// batch_size is the issuer's *maximum* — the largest `proofs` array it will
+// accept in a Credential Request — and not an instruction to fill it. Requesting
+// fewer is ordinary, which is what makes taking the minimum both safe and
+// correct; treating the advertised value as the count meant always minting the
+// most any issuer would allow.
+//
+// A zero or one advertised value yields one instance, matching the non-batch
+// case. Metadata validation already refuses batch_size <= 1 outright, so that is
+// belt-and-braces rather than a second policy.
+func batchInstancesToRequest(advertised uint) uint {
+	if advertised < 1 {
+		return 1
+	}
+	return min(advertised, maxBatchInstances)
 }
 
 // sessionCredentialRequestPreferences contains wallet-based preferences related to the credential that will be requested
@@ -212,21 +260,37 @@ func (s *session) perform() {
 // for a single credential configuration, before they are stored.
 type fetchedCredential struct {
 	credentialConfigurationId      string
-	verifiedSdJwtVcs               []*sdjwtvc.VerifiedSdJwtVc
+	parsedCredentials              []*services.ParsedCredential
 	requireCryptographicKeyBinding bool
 	publicKeyIdentifiers           []models.PublicHolderBindingKey
-	keyBindingService              HolderKeyBinder
+	// support is the format bundle the credentials were obtained with: its Keys
+	// minted publicKeyIdentifiers and roll them back, its Store persists them.
+	support services.CredentialFormatSupport
+}
+
+// sdJwtVcsOf extracts the SdJwtVc field from every parsed credential that
+// has one set, skipping formats (e.g. mso_mdoc) that don't. Used by the
+// VCT-specific code paths (enrichMetadataFromFetchedVct, verifyVctIntegrity)
+// that have no equivalent concept for other formats.
+func sdJwtVcsOf(parsed []*services.ParsedCredential) []*sdjwtvc.VerifiedSdJwtVc {
+	result := make([]*sdjwtvc.VerifiedSdJwtVc, 0, len(parsed))
+	for _, p := range parsed {
+		if p.SdJwtVc != nil {
+			result = append(result, p.SdJwtVc)
+		}
+	}
+	return result
 }
 
 func (fc *fetchedCredential) cleanupKeys() {
-	if !fc.requireCryptographicKeyBinding || len(fc.publicKeyIdentifiers) == 0 || fc.keyBindingService == nil {
+	if !fc.requireCryptographicKeyBinding || len(fc.publicKeyIdentifiers) == 0 || fc.support.Keys == nil {
 		return
 	}
 	keyIds := make([]datatypes.UUID, len(fc.publicKeyIdentifiers))
 	for i, key := range fc.publicKeyIdentifiers {
 		keyIds[i] = key.ID
 	}
-	if err := fc.keyBindingService.RemoveKeys(keyIds); err != nil {
+	if err := fc.support.Keys.RemoveKeys(keyIds); err != nil {
 		eudi.Logger.Warnf("failed to remove holder binding keys: %v", err)
 	}
 }
@@ -280,16 +344,17 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 	}
 	logoManager := s.storage.FileSystem().Credentials().LogoManager()
 	for _, fc := range fetched {
-		if len(fc.verifiedSdJwtVcs) == 0 {
+		sdJwtVcs := sdJwtVcsOf(fc.parsedCredentials)
+		if len(sdJwtVcs) == 0 {
 			continue
 		}
-		vctURL := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload.VerifiableCredentialType
+		vctURL := sdJwtVcs[0].IssuerSignedJwtPayload.VerifiableCredentialType
 		// Within a single credential configuration, every issued VC must
 		// declare the same vct. Heterogeneous vcts in one batch would mean
 		// we resolve only [0]'s metadata, then verifyVctIntegrity later
 		// fails for [1..n] with a confusing "no type metadata was fetched"
 		// — better to reject the whole session up front.
-		for i, vc := range fc.verifiedSdJwtVcs[1:] {
+		for i, vc := range sdJwtVcs[1:] {
 			if vc.IssuerSignedJwtPayload.VerifiableCredentialType != vctURL {
 				return fmt.Errorf(
 					"credential %q batch is heterogeneous: vc[0].vct=%q vs vc[%d].vct=%q",
@@ -341,7 +406,7 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 		return nil
 	}
 	for _, fc := range fetched {
-		for _, vc := range fc.verifiedSdJwtVcs {
+		for _, vc := range sdJwtVcsOf(fc.parsedCredentials) {
 			integrity, present, err := sdjwtvc.LookupVctIntegrityClaim(vc.ProcessedSdJwtPayload)
 			if err != nil {
 				return fmt.Errorf("vct#integrity on credential %q: %w", fc.credentialConfigurationId, err)
@@ -363,8 +428,8 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 
 func (s *session) storeCredentials(fetched []*fetchedCredential) error {
 	for _, fc := range fetched {
-		err := s.credentialService.VerifyAndStoreIssuedCredentials(
-			fc.verifiedSdJwtVcs,
+		err := fc.support.Store.Store(
+			fc.parsedCredentials,
 			fc.credentialConfigurationId,
 			*s.credentialIssuerMetadata,
 			fc.requireCryptographicKeyBinding,
@@ -382,12 +447,11 @@ func (s *session) storeCredentials(fetched []*fetchedCredential) error {
 // by combining issuer metadata (display names, claim paths) with actual attribute
 // values from the fetched and verified SD-JWT VCs.
 func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clientmodels.Credential {
-	batch := s.credentialIssuerMetadata.BatchCredentialIssuance
 	result := make([]*clientmodels.Credential, 0, len(fetched))
 
 	for _, fc := range fetched {
 		config, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId]
-		if !ok {
+		if !ok || len(fc.parsedCredentials) == 0 {
 			continue
 		}
 
@@ -403,13 +467,25 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		}
 
 		// Use the first credential in the batch as source of attribute values.
-		var payload sdjwt.ProcessedPayload
-		if len(fc.verifiedSdJwtVcs) > 0 {
-			payload = fc.verifiedSdJwtVcs[0].ProcessedSdJwtPayload
+		first := fc.parsedCredentials[0]
+		var attrs []clientmodels.Attribute
+		switch {
+		case first.SdJwtVc != nil:
+			attrs = buildAttributesWithValues(claims, first.SdJwtVc.ProcessedSdJwtPayload, s.locale)
+		case first.Mdoc != nil:
+			attrs = services.BuildMdocAttributesFromResolvedClaims(claims, first.Mdoc.Namespaces, s.locale)
 		}
 
 		displays := metadata.ToTranslateableList(credentialDisplay)
-		name := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), s.locale)
+		names := metadata.ConvertDisplayToTranslatedString(displays)
+		name := clientmodels.Resolve(names, s.locale)
+		// Whether the offer screen is showing the user text in a language they did
+		// not ask for. Computed from the same map the name resolves from, so the
+		// answer describes the text actually on screen; the equivalent for a stored
+		// credential is services.CredentialDisplayIsFallback, which this cannot use
+		// because there is no batch yet — the offer is what the user accepts to
+		// create one.
+		displayIsFallback := clientmodels.IsFallbackLanguage(s.locale, clientmodels.BundleLanguage(s.locale, names))
 
 		issuerDisplays := metadata.ToTranslateableList(s.credentialIssuerMetadata.Display)
 		issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
@@ -422,30 +498,50 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		issuerImage := services.LoadResolvedLogo(issuerLogoManager,
 			metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale)
 
-		attrs := buildAttributesWithValues(claims, payload, s.locale)
-
+		// How many instances were actually obtained, not how many the issuer said it
+		// would allow.
+		//
+		// This read the advertised batch_credential_issuance.batch_size, which is the
+		// issuer's *ceiling* — the largest `proofs` array it will accept — and not
+		// what this wallet asked for. batchInstancesToRequest caps a request at
+		// maxBatchInstances, so against the EUDI reference issuer the permission
+		// screen promised 100 instances and the credential list showed 30 the moment
+		// it was stored, since storage records len(parsedCredentials). Reported on a
+		// phone on 2026-08-26.
+		//
+		// Counting the fetched credentials is the same expression storage uses, so
+		// the two cannot drift apart again.
+		//
+		// Left nil for a single instance, matching services.batchInstanceCountsRemaining,
+		// which returns nil when BatchSize <= 1 because one instance is a reusable
+		// credential with no count to spend down. Setting it unconditionally traded
+		// one offer-versus-list disagreement for another: the screen would say 1
+		// where the list says nil, and it broke the assertion that pins that rule
+		// (openid4vci/sdjwtvc/pre-authorized/batch size 1 has nil remaining count).
+		// The two conditions line up exactly, since storage records BatchSize as this
+		// same len(parsedCredentials).
+		instances := uint(len(fc.parsedCredentials))
 		var batchSize *uint
-		if batch != nil {
-			n := batch.BatchSize
-			batchSize = &n
+		if instances > 1 {
+			batchSize = &instances
 		}
 
-		var issuanceDate, expiryDate *int64
-		if len(fc.verifiedSdJwtVcs) > 0 {
-			jwt := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload
-			issuanceDate = jwt.IssuedAt
-			expiryDate = jwt.Expiry
-		}
+		issuanceDate, expiryDate := first.IssuedAt, first.ExpiresAt
 
-		// The issued JWT's vct claim is authoritative for the credential id —
-		// it is what was signed and what the stored batch is keyed by. The
-		// issuer's well-known document may carry a placeholder (e.g. veramo's
-		// "unknown"), which would leave the issuance log pointing at nothing.
+		// The issued credential is authoritative for the credential id — it is
+		// what was signed and what the stored batch is keyed by. Both format
+		// parsers populate ParsedCredential.VerifiableCredentialType with it:
+		// the vct claim for dc+sd-jwt, the docType out of the signed MSO for
+		// mso_mdoc.
+		//
+		// The issuer's well-known document is only a fallback, and a weak one.
+		// For dc+sd-jwt it may carry a placeholder (e.g. veramo's "unknown"),
+		// and an mso_mdoc configuration has no vct field at all to carry —
+		// which is why reading it there yielded an empty id, leaving both the
+		// permission dialog and the issuance log naming nothing.
 		credentialId := config.VerifiableCredentialType
-		if len(fc.verifiedSdJwtVcs) > 0 {
-			if vct := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload.VerifiableCredentialType; vct != "" {
-				credentialId = vct
-			}
+		if first.VerifiableCredentialType != "" {
+			credentialId = first.VerifiableCredentialType
 		}
 
 		// Never offer a nameless credential: fall back to the credential id (the
@@ -455,17 +551,23 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		}
 
 		cred := clientmodels.Credential{
-			CredentialId: credentialId,
-			Name:         name,
+			CredentialId:      credentialId,
+			Name:              name,
+			DisplayIsFallback: displayIsFallback,
 			Issuer: clientmodels.TrustedParty{
 				Id:    s.credentialIssuerMetadata.CredentialIssuer,
 				Name:  issuerName,
 				Image: issuerImage,
+				// These credentials have been fetched and verified — an issuer whose
+				// signature or chain did not check out fails the session before this
+				// is built — so the issuance log records an authenticated issuer
+				// rather than leaving the flag at its zero value.
+				Verified: true,
 			},
 			Image:                 image,
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},
 			BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
-				clientmodels.Format_SdJwtVc: batchSize,
+				clientmodels.CredentialFormat(first.Format): batchSize,
 			},
 			Attributes:   attrs,
 			IssuanceDate: issuanceDate,
@@ -677,13 +779,19 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		CredentialConfigurationId: &credentialConfigurationId,
 	}
 
+	// Everything format-specific about this credential — how its keys are
+	// minted, how it is verified, where it is stored — comes from one registry
+	// entry, so the three cannot be wired for different formats.
+	support, ok := s.formats[models.CredentialFormat(credentialConfig.Format)]
+	if !ok {
+		return nil, fmt.Errorf("no credential format registered for format %q", credentialConfig.Format)
+	}
+
 	var publicKeyIdentifiers []models.PublicHolderBindingKey
-	// The holder key binder (software or WSCA-backed) is injected via NewClient.
-	keyBindingService := s.holderKeyBinder
 	if requireCryptographicKeyBinding {
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
-			num = s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize
+			num = batchInstancesToRequest(s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize)
 		}
 
 		// The issuer should be equal to the client ID registered with the authorization server
@@ -694,7 +802,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		var proofs []string
 		var err error
 
-		publicKeyIdentifiers, proofs, err = keyBindingService.CreateKeyPairsWithProofs(num, proofBuilder)
+		publicKeyIdentifiers, proofs, err = support.Keys.CreateKeyPairsWithProofs(num, proofBuilder)
 		if err != nil {
 			return nil, fmt.Errorf("could not create key pairs: %v", err)
 		}
@@ -827,27 +935,144 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		return nil, fmt.Errorf("invalid credential response: %v", err)
 	}
 
-	verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(credentialResponse.Credentials))
+	parser := support.Parser
+	parsedCredentials := make([]*services.ParsedCredential, len(credentialResponse.Credentials))
 	for i, cred := range credentialResponse.Credentials {
-		verifiedSdJwt, err := s.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
+		parsed, err := parser.ParseAndVerify(cred.Credential, s.credentialIssuerMetadata.CredentialIssuer, requireCryptographicKeyBinding)
 		if err != nil {
 			return nil, fmt.Errorf("failed to verify credential: %v", err)
 		}
-		verifiedSdJwtVcs[i] = verifiedSdJwt
+		if err := requireMdocDocTypeMatchesMetadata(&credentialConfig, parsed); err != nil {
+			return nil, fmt.Errorf("credential %d of configuration %q: %v", i+1, credentialConfigurationId, err)
+		}
+		if err := requireMandatoryMdocElements(&credentialConfig, parsed); err != nil {
+			return nil, fmt.Errorf("credential %d of configuration %q: %v", i+1, credentialConfigurationId, err)
+		}
+		parsedCredentials[i] = parsed
 	}
 
-	err = sdjwtvc.CheckKeyBindingConfirmationUniqueness(verifiedSdJwtVcs)
+	err = parser.CheckBatchUniqueness(parsedCredentials)
 	if err != nil {
 		return nil, fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
 	}
 
 	return &fetchedCredential{
 		credentialConfigurationId:      credentialConfigurationId,
-		verifiedSdJwtVcs:               verifiedSdJwtVcs,
+		parsedCredentials:              parsedCredentials,
 		requireCryptographicKeyBinding: requireCryptographicKeyBinding,
 		publicKeyIdentifiers:           publicKeyIdentifiers,
-		keyBindingService:              keyBindingService,
+		support:                        support,
 	}, nil
+}
+
+// requireMdocDocTypeMatchesMetadata binds what the issuer signed to what it
+// advertised, refusing an mdoc whose MSO docType is not the doctype its
+// credential configuration declares.
+//
+// The MSO's docType is signed, but by the issuer — so on its own it says only
+// "this is what I chose to send", never "this is what you asked for". Nothing
+// else in the issuance path compares the two: the parser is selected by format
+// alone, so an issuer answering a request for one docType with another was
+// stored under the docType it sent, and DCQL doctype_value matching and
+// relying-party authorization then key off that. The EKU check upstream
+// establishes that the signer may sign mdocs at all; it is docType-agnostic by
+// design (one document signer serves every docType an issuer mints), so it
+// cannot express this.
+//
+// Guarded on the format because obtainCredential is shared: Doctype is empty
+// for dc+sd-jwt, whose own cross-instance vct consistency check lives in
+// storeCredentials.
+//
+// Not reachable through the EUDI reference issuer, which derives both values
+// from one field — mdocFormatter is called with
+// doctype=credential_metadata["doctype"], the same field the metadata document
+// advertises, so the two cannot disagree there however the configuration is
+// edited. Measured against the container on 2026-08-31. Build the mismatch with
+// mdoc.Issuer.Issue, as the tests here do.
+func requireMdocDocTypeMatchesMetadata(config *metadata.CredentialConfiguration, parsed *services.ParsedCredential) error {
+	if models.CredentialFormat(config.Format) != models.CredentialFormatMsoMdoc {
+		return nil
+	}
+	if parsed.VerifiableCredentialType != config.Doctype {
+		return fmt.Errorf(
+			"was issued with docType %q but the issuer's metadata declares doctype %q",
+			parsed.VerifiableCredentialType, config.Doctype,
+		)
+	}
+	return nil
+}
+
+// requireMandatoryMdocElements refuses an mdoc that omits an element the
+// issuer's own metadata marks mandatory.
+//
+// OpenID4VCI lets a credential configuration mark a claim `mandatory`, and the
+// AV profile uses it: eu.europa.ec.av.1 marks age_over_18 mandatory and every
+// other age_over_NN optional. Until now the wallet parsed that field, merged it
+// across VCT and VCI metadata and stored it on the batch, but never checked it —
+// so an issuer could advertise age_over_18 as mandatory and mint a credential
+// without it, and the wallet would store an age-verification attestation that
+// verifies nobody's age.
+//
+// Keyed on the metadata rather than on the docType on purpose. Reading
+// "docType == eu.europa.ec.av.1 therefore age_over_18" would be the first
+// docType-specific rule in a package that is deliberately general mso_mdoc, and
+// it would cover exactly one profile. The issuer already states which elements
+// it considers mandatory; taking it at its word covers PID, mDL and every
+// docType nobody has minted yet, and says the same thing for AV.
+//
+// Silent for issuers that publish no mandatory claims: the field defaults to
+// false (see CredentialConfigurationValidator), so this rejects nothing an
+// issuer did not first promise.
+func requireMandatoryMdocElements(config *metadata.CredentialConfiguration, parsed *services.ParsedCredential) error {
+	if models.CredentialFormat(config.Format) != models.CredentialFormatMsoMdoc ||
+		config.CredentialMetadata == nil {
+		return nil
+	}
+
+	var mandatory []string
+	for _, claim := range config.CredentialMetadata.Claims {
+		if claim.Mandatory == nil || !*claim.Mandatory {
+			continue
+		}
+		// Only two-component [namespace, elementIdentifier] paths address an
+		// mdoc element. A one-component path is the namespace-less form some
+		// issuers publish; it names an element but not where it lives, so it
+		// cannot be checked against the payload's namespace map without
+		// guessing, and guessing wrong would reject a valid credential.
+		if len(claim.Path) != 2 {
+			continue
+		}
+		namespace, nsOk := claim.Path[0].(string)
+		element, elOk := claim.Path[1].(string)
+		if !nsOk || !elOk {
+			continue
+		}
+		mandatory = append(mandatory, namespace+"/"+element)
+	}
+	if len(mandatory) == 0 {
+		return nil
+	}
+
+	if parsed.Mdoc == nil {
+		return fmt.Errorf("could not read the issued mdoc's elements to check the mandatory ones: the credential was not parsed as an mdoc")
+	}
+	resolved := parsed.Mdoc.Namespaces
+
+	var missing []string
+	for _, path := range mandatory {
+		namespace, element, _ := strings.Cut(path, "/")
+		if _, ok := resolved[namespace][element]; !ok {
+			missing = append(missing, path)
+		}
+	}
+	if len(missing) > 0 {
+		slices.Sort(missing)
+		return fmt.Errorf(
+			"the issuer's metadata marks %s mandatory for docType %q, but the credential it signed does not contain %s",
+			strings.Join(mandatory, ", "), config.Doctype, strings.Join(missing, ", "),
+		)
+	}
+	return nil
 }
 
 // requestNonce requests a fresh nonce from the issuer's nonce endpoint

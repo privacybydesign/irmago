@@ -108,6 +108,10 @@ type ResolvedBatchDisplay struct {
 	IssuerName     string
 	IssuerId       string
 
+	// DisplayIsFallback reports that the text above came from a language other
+	// than the one asked for. See CredentialDisplayIsFallback.
+	DisplayIsFallback bool
+
 	// IssuerNames backs the activity log's issuer-identity check, which has to
 	// compare a log entry's snapshot name against every language the batch
 	// carries.
@@ -126,13 +130,32 @@ type ResolvedBatchDisplay struct {
 	ClaimOrder map[string]int
 }
 
+// CredentialDisplayIsFallback reports whether a batch's stored display metadata
+// has nothing in the language asked for, so its text resolves from another one.
+//
+// Read off the credential's own display entries: an issuer publishing a locale
+// publishes it for the credential, its claims and itself together, and the
+// credential name is the entry that always exists when any do. The frontend needs
+// one answer per credential, not one per string, since it substitutes a label set
+// rather than individual words.
+//
+// True when there is no display metadata at all: there is then no issuer text in
+// any language, which is the strongest case for a client using its own.
+func CredentialDisplayIsFallback(batch *models.SdJwtVcBatch, locale string) bool {
+	if batch.CredentialMetadata == nil {
+		return true
+	}
+	names := CredentialNamesByLanguage(batch.CredentialMetadata.Display)
+	return clientmodels.IsFallbackLanguage(locale, clientmodels.BundleLanguage(locale, names))
+}
+
 // ResolveBatchDisplay resolves everything a batch's display metadata says, for
 // one locale, in one pass. It reports only what the metadata actually says:
 // CredentialName is "" when the batch carries no resolvable credential name, so
 // that callers can tell "no live name" apart from a real one — the activity log
 // relies on this to keep its persisted snapshot. The credential list applies
 // its own fallback label at its call site.
-func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedBatchDisplay {
+func ResolveBatchDisplay(batch *models.SdJwtVcBatch, locale string) ResolvedBatchDisplay {
 	d := ResolvedBatchDisplay{
 		IssuerId:    batch.CredentialIssuerIdentifier,
 		IssuerNames: IssuerNamesByLanguage(batch.IssuerDisplay),
@@ -140,6 +163,8 @@ func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedB
 		ClaimOrder:  map[string]int{},
 	}
 	d.IssuerName = clientmodels.Resolve(d.IssuerNames, locale)
+
+	d.DisplayIsFallback = CredentialDisplayIsFallback(batch, locale)
 
 	if batch.CredentialMetadata == nil {
 		return d

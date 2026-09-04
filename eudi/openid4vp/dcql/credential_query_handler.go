@@ -19,8 +19,75 @@ type DisclosureSelection struct {
 	CredentialHash string
 	// The claim paths the user chose to disclose (e.g., [["given_name"], ["address", "street"]])
 	ClaimPaths [][]any
+	// The claims of the credential query this selection answers, as the verifier
+	// wrote them. Carried so a format can record per-claim facts of the request
+	// (mso_mdoc's intent_to_retain) in its log entry alongside what was
+	// disclosed; the paths above say what left the wallet, these say what the
+	// verifier said about it.
+	Claims []Claim
 	// Whether the verifier requires a cryptographic holder binding proof for this credential.
 	RequireHolderBinding bool
+	// The verifier's response_uri from the Authorization Request. Only used by formats whose
+	// holder-binding proof is bound to the OpenID4VP session transcript (e.g. mso_mdoc's
+	// deviceAuth, which signs over [audience, nonce, responseUri]) -- SD-JWT's key-binding JWT
+	// only needs nonce/audience and ignores this field.
+	ResponseUri string
+
+	// ResponseEncryptionKeyThumbprint is the SHA-256 JWK thumbprint of the
+	// verifier's response encryption key, or nil when the response is not
+	// encrypted. It occupies the third slot of the OpenID4VP handover the
+	// session transcript hashes, so an mdoc's deviceAuth signature only verifies
+	// if the wallet and the verifier agree on this value -- which in turn means
+	// the response must be encrypted to the very key thumbprinted here, not
+	// merely to some key the verifier published. Ignored by SD-JWT, like
+	// ResponseUri above.
+	ResponseEncryptionKeyThumbprint []byte
+
+	// OverDcApi reports that the request arrived through the Digital Credentials
+	// API rather than a URL. OpenID4VP defines a separate handover for that
+	// transport, so a transcript-bound format cannot treat the two alike; see
+	// ResponseBinding.OverDcApi.
+	OverDcApi bool
+
+	// Origin is the caller origin the platform authenticated, set only when
+	// OverDcApi is true. It is the bare origin the DC API handover signs over,
+	// which is why it travels separately from the audience -- the audience
+	// carries the same origin behind an "origin:" prefix.
+	Origin string
+}
+
+// ResponseBinding carries the transport-level values that a format whose
+// holder-binding proof is bound to the session transcript must sign over. They
+// travel together because they are decided together, before any disclosure is
+// prepared: the response encryption key in particular has to be chosen while the
+// device signature is still ahead of us. Formats whose proof is not
+// transcript-bound (every SD-JWT one) ignore all of it.
+type ResponseBinding struct {
+	// ResponseUri is the verifier's response_uri from the Authorization Request.
+	ResponseUri string
+	// EncryptionKeyThumbprint is the SHA-256 JWK thumbprint of the key the
+	// response is encrypted to, nil when it travels unencrypted.
+	EncryptionKeyThumbprint []byte
+
+	// OverDcApi reports that the request arrived through the Digital Credentials
+	// API rather than a URL.
+	//
+	// It is part of the binding because the transport picks the handover a
+	// transcript-bound format signs over, and the two are not interchangeable:
+	// the URL flow hashes [clientId, nonce, thumbprint, responseUri] under
+	// "OpenID4VPHandover", the DC API hashes [origin, nonce, thumbprint] under
+	// "OpenID4VPDCAPIHandover". Without this the DC API values -- an
+	// origin-prefixed audience and an empty ResponseUri, since the response never
+	// travels to one -- are indistinguishable from an ordinary URL session that
+	// happens to be unencrypted, and a format would sign the wrong handover
+	// without anything failing until the verifier checks the signature.
+	OverDcApi bool
+
+	// Origin is the caller origin the platform authenticated, set only when
+	// OverDcApi is true. The DC API handover signs the bare origin, while the
+	// audience carries it behind an "origin:" prefix, so passing it here keeps
+	// formats from having to strip that prefix back off.
+	Origin string
 }
 
 // PreparedDisclosure contains the VP token response data and log information

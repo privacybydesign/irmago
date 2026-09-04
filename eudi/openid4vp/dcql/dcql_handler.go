@@ -23,15 +23,72 @@ func NewDcqlHandler(handlers []DcqlCredentialQueryHandler) *DcqlHandler {
 type DcqlResult struct {
 	// Per-query results keyed by credential query ID.
 	QueryResults map[string]*CredentialQueryResult
-	// Maps credential hashes to their DCQL query IDs.
-	HashToQueryId map[string]string
+}
+
+// CandidateQuery names the DCQL credential query that one owned candidate of a
+// pick-one answers, alongside the claim paths that candidate would disclose.
+type CandidateQuery struct {
+	// Hash identifies the stored credential the candidate presents.
+	Hash string
+	// QueryId is the credential query this candidate came from.
+	QueryId string
+	// PathKeys are the clientmodels.ClaimPathKey values of the attributes this
+	// candidate discloses, which is what tells two candidates of the same
+	// credential apart.
+	PathKeys map[string]struct{}
+}
+
+// ChoiceQueryIds lists, in the order of one pick-one's owned options, which
+// query each candidate answers.
+//
+// A list per pick-one, rather than one map for the whole request, because a
+// credential hash does not identify a query. One credential can answer several
+// queries — a verifier asking for age_over_18 and age_over_21 in two queries is
+// answered twice by one age credential — and a single hash-keyed map collapsed
+// those onto whichever query was seen last. Every presentation then went back
+// under that one query id, the other query went unanswered, and the verifier
+// rejected the response as not satisfying its request.
+//
+// Within one pick-one the hash can be ambiguous too: a credential_sets choice
+// whose options are both satisfied by the same credential offers it twice, once
+// per option, and the two differ only in the element they would reveal. That is
+// why a candidate carries its claim paths.
+type ChoiceQueryIds []CandidateQuery
+
+// QueryIdFor resolves which query a selected credential answers: the candidate
+// with this hash whose disclosed paths cover the ones selected. Falls back to
+// the first candidate with the hash, and to "" when the choice holds none —
+// which PrepareDisclosure reports as an unknown query rather than guessing.
+func (c ChoiceQueryIds) QueryIdFor(hash string, selectedPaths [][]any) string {
+	fallback := ""
+	for _, candidate := range c {
+		if candidate.Hash != hash {
+			continue
+		}
+		if fallback == "" {
+			fallback = candidate.QueryId
+		}
+		if candidate.covers(selectedPaths) {
+			return candidate.QueryId
+		}
+	}
+	return fallback
+}
+
+// covers reports whether this candidate would disclose every selected path.
+func (c CandidateQuery) covers(paths [][]any) bool {
+	for _, path := range paths {
+		if _, ok := c.PathKeys[clientmodels.ClaimPathKey(path)]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // FindCandidates processes a complete DCQL query by delegating each credential query
-// to the handler matching its format. Returns per-query results and a hash-to-queryId mapping.
+// to the handler matching its format. Returns the per-query results.
 func (h *DcqlHandler) FindCandidates(query DcqlQuery) (*DcqlResult, error) {
 	queryResults := make(map[string]*CredentialQueryResult, len(query.Credentials))
-	hashToQueryId := make(map[string]string)
 
 	for _, credQuery := range query.Credentials {
 		handlers := h.findHandlersForQuery(credQuery)
@@ -50,29 +107,28 @@ func (h *DcqlHandler) FindCandidates(query DcqlQuery) (*DcqlResult, error) {
 		}
 
 		queryResults[credQuery.Id] = merged
-
-		for _, owned := range merged.OwnedCandidates {
-			if owned.Hash != "" {
-				hashToQueryId[owned.Hash] = credQuery.Id
-			}
-		}
 	}
 
-	return &DcqlResult{
-		QueryResults:  queryResults,
-		HashToQueryId: hashToQueryId,
-	}, nil
+	return &DcqlResult{QueryResults: queryResults}, nil
 }
 
 // BuildDisclosurePlan builds a DisclosurePlan from the DCQL query and candidate results.
 // previousPlan is used to track issuance-during-disclosure state across refreshes.
 // preExistingHashes tracks which credentials existed at session start.
+//
+// The second return value runs parallel to the plan's DisclosureChoicesOverview,
+// one entry per pick-one, naming the query each of that pick-one's candidates
+// answers. It is built here rather than in FindCandidates because this is what
+// decides how queries map onto pick-ones, and the two arrangements differ: one
+// pick-one per credential query without credential_sets, one per credential set
+// with them — and a set merges the candidates of several queries into a single
+// pick-one.
 func (h *DcqlHandler) BuildDisclosurePlan(
 	query DcqlQuery,
 	result *DcqlResult,
 	previousPlan *clientmodels.DisclosurePlan,
 	preExistingHashes map[string]struct{},
-) (*clientmodels.DisclosurePlan, error) {
+) (*clientmodels.DisclosurePlan, []ChoiceQueryIds, error) {
 	if query.CredentialSets != nil {
 		return buildPlanFromCredentialSets(result.QueryResults, query.CredentialSets, previousPlan, preExistingHashes)
 	}
@@ -86,6 +142,7 @@ func (h *DcqlHandler) PrepareDisclosure(
 	selections []DisclosureSelection,
 	nonce string,
 	audience string,
+	binding ResponseBinding,
 ) (*PreparedDisclosure, error) {
 	// Build a map from queryId -> CredentialQuery
 	queryById := make(map[string]CredentialQuery, len(query.Credentials))
@@ -103,6 +160,13 @@ func (h *DcqlHandler) PrepareDisclosure(
 		}
 		// Propagate the holder binding requirement from the credential query.
 		sel.RequireHolderBinding = credQuery.NeedsHolderBinding()
+		sel.Claims = credQuery.Claims
+		// Propagate the transport binding -- only formats whose holder-binding
+		// proof is bound to the session transcript (e.g. mso_mdoc) read these.
+		sel.ResponseUri = binding.ResponseUri
+		sel.ResponseEncryptionKeyThumbprint = binding.EncryptionKeyThumbprint
+		sel.OverDcApi = binding.OverDcApi
+		sel.Origin = binding.Origin
 
 		handlers := h.findHandlersForQuery(credQuery)
 		if len(handlers) == 0 {

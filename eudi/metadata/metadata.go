@@ -66,13 +66,14 @@ type Proofs map[ProofTypeIdentifier][]any
 type CredentialConfiguration struct {
 	Format                               CredentialFormatIdentifier          `json:"format"`
 	Scope                                *string                             `json:"scope,omitempty"`
-	CredentialSigningAlgValuesSupported  []any                               `json:"credential_signing_alg_values_supported,omitempty"` // Can be string values for SD-JWTs, or numeric COSE algorithm identifiers for ISO mDoc
+	CredentialSigningAlgValuesSupported  []any                               `json:"credential_signing_alg_values_supported,omitempty"` // Element type is format-specific per OID4VCI: JWS algorithm names as strings ("ES256") for dc+sd-jwt, COSE algorithm identifiers as integers (-7) for mso_mdoc
 	CryptographicBindingMethodsSupported []proofs.CryptographicBindingMethod `json:"cryptographic_binding_methods_supported,omitempty"`
 	ProofTypesSupported                  map[ProofTypeIdentifier]ProofType   `json:"proof_types_supported,omitempty"`
 	CredentialMetadata                   *CredentialMetadata                 `json:"credential_metadata,omitempty"`
 
 	// The following fields are present/absent, depending on the credential format
 	VerifiableCredentialType string                   `json:"vct,omitempty"`                   // SD-JWT VC
+	Doctype                  string                   `json:"doctype,omitempty"`               // mso_mdoc
 	CredentialDefinition     *W3CCredentialDefinition `json:"credential_definition,omitempty"` // W3C VC Signed as JWT, no JSON-LD
 }
 

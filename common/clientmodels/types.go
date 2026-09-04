@@ -25,7 +25,23 @@ type TrustedParty struct {
 	Image *Image `json:"image,omitempty"`
 	// The trust chain for this party (if any)
 	Parent *TrustedParty `json:"parent"`
-	// Whether this party is verified by the scheme manager
+	// Whether this party was authenticated, which means something different for
+	// each kind of party and is never a scheme-manager assertion:
+	//
+	//   - a verifier: its authorization request was signed by an end-entity
+	//     certificate that chained to a trusted relying-party root, or, over the
+	//     Digital Credentials API, false — an unsigned request carries no
+	//     certificate to authenticate.
+	//   - a credential's issuer: the credential's signature and certificate chain
+	//     verified against a trust anchor before it was stored.
+	//   - an issuer built from OpenID4VCI metadata: false. That document is
+	//     fetched over TLS and unsigned, so nothing binds its name and logo to the
+	//     document signer the credentials are checked against, and saying
+	//     "verified" would vouch for branding that was never authenticated.
+	//
+	// It records what was true at the time, and is stored rather than re-derived
+	// for anything historical: the certificate that authenticated a past session
+	// is not something the wallet keeps.
 	Verified bool `json:"verified"`
 }
 
@@ -132,6 +148,16 @@ type Attribute struct {
 
 	// The value that a verifier requested for this attribute (if any).
 	RequestedValue *AttributeValue `json:"requested_value,omitempty"`
+
+	// IntentToRetain reports whether the verifier declared it will retain this
+	// value beyond the transaction (the OpenID4VP mso_mdoc claims parameter of
+	// the same name).
+	//
+	// Set on every mso_mdoc attribute and nil on every other format, rather than
+	// set only when true: a declared "will not be retained" is worth showing, and
+	// a format with no such concept must not be rendered as though the verifier
+	// had declared anything. The distinction is only available through a pointer.
+	IntentToRetain *bool `json:"intent_to_retain,omitempty"`
 }
 
 // ClaimPathKey produces a deterministic string key from a claim path for use
@@ -185,6 +211,21 @@ type Credential struct {
 	Image *Image `json:"image,omitempty"`
 	// The display name for this credential, resolved to the current locale.
 	Name string `json:"name"`
+
+	// Whether Name and the attribute display names fell back to a language other
+	// than the one asked for, because the issuer published none for it. The
+	// resolved text alone cannot say: the fallback chain lands on English rather
+	// than on an empty string, so a Dutch wallet is handed real English text with
+	// nothing marking it. A client that ships its own labels for credential types
+	// it knows uses this to substitute one only where the issuer left a gap,
+	// rather than overriding what the issuer did publish. Always true when the
+	// issuer published no display metadata at all.
+	//
+	// Set for EUDI credentials, whose text comes from issuer metadata. False for
+	// IRMA credentials: their text comes from the Yivi scheme, which carries every
+	// language it supports, so a client has nothing to substitute and no gap to
+	// fill.
+	DisplayIsFallback bool `json:"display_is_fallback"`
 	// All information about the credential issuer.
 	Issuer TrustedParty `json:"issuer"`
 	// The IDs for all instances of this credential in all different formats.
@@ -291,6 +332,21 @@ type SelectableCredentialInstance struct {
 	Image *Image `json:"image,omitempty"`
 	// The display name for this credential, resolved to the current locale.
 	Name string `json:"name"`
+
+	// Whether Name and the attribute display names fell back to a language other
+	// than the one asked for, because the issuer published none for it. The
+	// resolved text alone cannot say: the fallback chain lands on English rather
+	// than on an empty string, so a Dutch wallet is handed real English text with
+	// nothing marking it. A client that ships its own labels for credential types
+	// it knows uses this to substitute one only where the issuer left a gap,
+	// rather than overriding what the issuer did publish. Always true when the
+	// issuer published no display metadata at all.
+	//
+	// Set for EUDI credentials, whose text comes from issuer metadata. False for
+	// IRMA credentials: their text comes from the Yivi scheme, which carries every
+	// language it supports, so a client has nothing to substitute and no gap to
+	// fill.
+	DisplayIsFallback bool `json:"display_is_fallback"`
 	// All information about the credential issuer.
 	Issuer TrustedParty `json:"issuer"`
 	// The credential format for this instance.

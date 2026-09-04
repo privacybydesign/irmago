@@ -34,7 +34,7 @@ func (s *testStorage) RemoveAll() error                         { return nil }
 
 var _ storage.Storage = (*testStorage)(nil)
 
-func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.CredentialStore) {
+func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.SdJwtVcStore) {
 	t.Helper()
 	d, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("test-key-123"))}, &gorm.Config{})
 	require.NoError(t, err)
@@ -48,13 +48,13 @@ func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.CredentialStore) {
 		&models.CredentialDisplay{},
 		&models.CredentialClaim{},
 		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
+		&models.SdJwtVcBatch{},
+		&models.SdJwtVcBatchInstance{},
 	))
 
 	fs := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	ts := &testStorage{db: d, fs: fs}
-	credStore := db.NewCredentialStore(ts.Db())
+	credStore := db.NewSdJwtVcStore(ts.Db())
 	handler := &SdJwtVcDcqlHandler{
 		storage:         ts,
 		credentialStore: credStore,
@@ -63,10 +63,10 @@ func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.CredentialStore) {
 	return handler, credStore
 }
 
-func newTestBatch(hash, vct string, payload map[string]any) *models.CredentialBatch {
+func newTestBatch(hash, vct string, payload map[string]any) *models.SdJwtVcBatch {
 	payloadJSON, _ := json.Marshal(payload)
 	iss := "https://issuer.example.com"
-	return &models.CredentialBatch{
+	return &models.SdJwtVcBatch{
 		IssuerIdentifier:           iss,
 		VerifiableCredentialType:   vct,
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -76,7 +76,7 @@ func newTestBatch(hash, vct string, payload map[string]any) *models.CredentialBa
 		BatchSize:                  1,
 		RemainingCount:             1,
 		CredentialIssuerIdentifier: iss,
-		Instances: []models.IssuedCredentialInstance{
+		Instances: []models.SdJwtVcBatchInstance{
 			{RawCredential: []byte("fake-raw-credential")},
 		},
 	}
@@ -162,7 +162,7 @@ func TestFindCandidates_ValidCredentialIncluded(t *testing.T) {
 // Status List machinery (that lives with services.RevocationService).
 type stubRevocation struct{ revoked bool }
 
-func (s stubRevocation) IsRevoked(*models.IssuedCredentialInstance) bool { return s.revoked }
+func (s stubRevocation) IsRevoked(*models.SdJwtVcBatchInstance) bool { return s.revoked }
 
 // TestFindCandidates_RevokedSurfaced pins the IRMA-parity contract: a revoked
 // SD-JWT VC is NOT dropped or refused during planning. It still appears as an
@@ -590,7 +590,7 @@ func TestPrepareDisclosure_BatchOfOne_RemainsUsableAfterDisclosure(t *testing.T)
 	})
 	batch.BatchSize = 1
 	batch.RemainingCount = 1
-	batch.Instances = []models.IssuedCredentialInstance{
+	batch.Instances = []models.SdJwtVcBatchInstance{
 		{RawCredential: []byte(validTestSdJwtVc)},
 	}
 	require.NoError(t, store.StoreBatch(batch))
@@ -628,7 +628,7 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	})
 	batch.BatchSize = 2
 	batch.RemainingCount = 2
-	batch.Instances = []models.IssuedCredentialInstance{
+	batch.Instances = []models.SdJwtVcBatchInstance{
 		{RawCredential: []byte(validTestSdJwtVc)},
 		{RawCredential: []byte(validTestSdJwtVc)},
 	}

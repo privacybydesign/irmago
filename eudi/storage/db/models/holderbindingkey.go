@@ -21,12 +21,14 @@ const (
 	KeyAlgorithmRSA   KeyAlgorithm = "rsa"
 )
 
-// HolderBindingKey is the base/common record used for all key types.
+// HolderBindingKey is an SD-JWT VC holder binding key: the key pair a
+// credential's cnf claim binds it to.
 type HolderBindingKey struct {
 	ID datatypes.UUID `gorm:"primaryKey"`
 
-	// FK back to the owning credential instance (Has One from IssuedCredentialInstance).
-	// Nil when the key has not yet been bound to a credential instance.
+	// FK back to the owning SdJwtVcBatchInstance (Has One from there). Nil when
+	// the key has not yet been bound to a credential instance. SD-JWT VC only:
+	// mdoc device keys live in MdocDeviceKey.
 	IssuedCredentialInstanceID *datatypes.UUID
 
 	Algorithm KeyAlgorithm `gorm:"type:text;not null;index"`
