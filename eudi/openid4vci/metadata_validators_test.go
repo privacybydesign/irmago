@@ -10,6 +10,7 @@ import (
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1375,9 +1376,10 @@ func TestRequireMandatoryMdocElements(t *testing.T) {
 	}
 	credentialWith := func(t *testing.T, elements map[string]any) *services.ParsedCredential {
 		t.Helper()
-		raw, err := json.Marshal(map[string]map[string]any{"eu.europa.ec.av.1": elements})
-		require.NoError(t, err)
-		return &services.ParsedCredential{ResolvedClaims: raw}
+		return &services.ParsedCredential{Mdoc: &services.ParsedMdoc{
+			DocType:    "eu.europa.ec.av.1",
+			Namespaces: models.MdocNamespaces{"eu.europa.ec.av.1": elements},
+		}}
 	}
 
 	t.Run("an AV credential without age_over_18 is refused", func(t *testing.T) {
@@ -1438,9 +1440,10 @@ func TestRequireMandatoryMdocElements(t *testing.T) {
 				},
 			},
 		}
-		raw, err := json.Marshal(map[string]map[string]any{"nl.yivi.email.1": {"domain": "example.com"}})
-		require.NoError(t, err)
-		err = requireMandatoryMdocElements(config, &services.ParsedCredential{ResolvedClaims: raw})
+		err := requireMandatoryMdocElements(config, &services.ParsedCredential{Mdoc: &services.ParsedMdoc{
+			DocType:    "nl.yivi.email.1",
+			Namespaces: models.MdocNamespaces{"nl.yivi.email.1": {"domain": "example.com"}},
+		}})
 		require.Error(t, err, "the check reads the metadata, so it covers any docType")
 		require.Contains(t, err.Error(), "email")
 	})

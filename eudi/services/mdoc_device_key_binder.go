@@ -9,8 +9,8 @@ import (
 )
 
 // mdocDeviceKeyBinder resolves the device key an mdoc presentation is signed
-// with from the stored holder binding keys, satisfying the DeviceKeyBinder
-// interface mdoc_dcql declares. It is the software counterpart of
+// with from the stored device keys, satisfying the DeviceKeyBinder interface
+// mdoc_dcql declares. It is the software counterpart of
 // sdjwt.DefaultKeyBinder: the device private key lives in this process, read
 // from storage on demand.
 //
@@ -22,20 +22,21 @@ import (
 // above this type would change; the handler is handed a DeviceKeyBinder and
 // never sees key material either way.
 type mdocDeviceKeyBinder struct {
-	store db.HolderBindingKeyStore
+	store db.MdocDeviceKeyStore
 }
 
 // NewMdocDeviceKeyBinder creates the storage-backed device key binder to hand to
 // mdoc_dcql.NewMdocDcqlHandler.
-func NewMdocDeviceKeyBinder(store db.HolderBindingKeyStore) *mdocDeviceKeyBinder {
+func NewMdocDeviceKeyBinder(store db.MdocDeviceKeyStore) *mdocDeviceKeyBinder {
 	return &mdocDeviceKeyBinder{store: store}
 }
 
 // HolderForDeviceKey looks the device key up by the JWK thumbprint of its public
-// half, which is the identity mdocCredentialFormatParser recorded for it at
-// issuance (see ParsedCredential.HolderBindingKeyThumbprint). Deriving it here
-// with the same jwkThumbprintFromECDSAPublicKey the parser used is deliberate:
-// the write and the read cannot drift into computing the thumbprint differently.
+// half, which is the identity MdocKeyService stored it under at mint time and
+// mdocCredentialFormatParser recorded for the credential at issuance (see
+// ParsedMdoc.DeviceKeyThumbprint). All three derive it with
+// jwkThumbprintFromECDSAPublicKey, so the write and the reads cannot drift into
+// computing the thumbprint differently.
 func (b *mdocDeviceKeyBinder) HolderForDeviceKey(deviceKey *ecdsa.PublicKey) (mdoc.Holder, error) {
 	if deviceKey == nil {
 		return nil, fmt.Errorf("credential names no device key to sign with")
@@ -52,7 +53,7 @@ func (b *mdocDeviceKeyBinder) HolderForDeviceKey(deviceKey *ecdsa.PublicKey) (md
 		// credential bound to a key it has no private half for, which is a
 		// credential it can never present rather than a presentation that went
 		// wrong once.
-		return nil, fmt.Errorf("no holder binding key stored for device key thumbprint %s: %w", thumbprint, err)
+		return nil, fmt.Errorf("no device key stored for thumbprint %s: %w", thumbprint, err)
 	}
 
 	privateKey, err := decodePKCS8PrivateKey(stored.PrivateKey)

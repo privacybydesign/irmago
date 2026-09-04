@@ -4,7 +4,6 @@ import (
 	"crypto"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -51,9 +50,14 @@ func (p *mdocCredentialFormatParser) ParseAndVerify(raw, credentialIssuer string
 	// picture and a birth date as a date. See NormalizeMdocClaimValues.
 	NormalizeMdocClaimValues(resolved)
 
-	resolvedClaimsBytes, err := json.Marshal(resolved)
+	// Then give the values the shapes they will have when read back from the
+	// database, so the offer screen (which reads this map) and the credential list
+	// (which reads the stored column) cannot disagree: a CBOR integer arrives as
+	// uint64, which the attribute converter does not know, and comes back from
+	// JSON as float64, which it does. See JSONShapedMdocNamespaces.
+	namespaces, err := JSONShapedMdocNamespaces(resolved)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal resolved mdoc claims: %w", err)
+		return nil, fmt.Errorf("failed to normalise mdoc element values: %w", err)
 	}
 
 	// Store the issuer-signed structure only — DeviceSigned is attached
@@ -63,48 +67,48 @@ func (p *mdocCredentialFormatParser) ParseAndVerify(raw, credentialIssuer string
 		return nil, fmt.Errorf("failed to re-encode mdoc for storage: %w", err)
 	}
 
-	parsed := &ParsedCredential{
-		Format: models.CredentialFormatMsoMdoc,
+	parsedMdoc := &ParsedMdoc{
 		// result.DocType, not m.DocType: the verifier reports the docType from the
 		// signed MSO, while m.DocType is the document envelope's own copy, which no
 		// signature covers. The two are now required to be equal for verification to
 		// succeed at all, so this is belt-and-braces — but this value becomes the
 		// credential's type, which DCQL doctype_value matching and relying-party
 		// authorization key off, so it should visibly come from the signed side.
-		VerifiableCredentialType: result.DocType,
-		IssuerIdentifier:         credentialIssuer,
-		ResolvedClaims:           resolvedClaimsBytes,
-		RawCredentialBytes:       rawBytes,
-		IssuedAt:                 unixPtrIfNotZero(result.ValidityInfo.Signed),
-		ExpiresAt:                unixPtrIfNotZero(result.ValidityInfo.ValidUntil),
-		NotBefore:                unixPtrIfNotZero(result.ValidityInfo.ValidFrom),
+		DocType:      result.DocType,
+		Namespaces:   namespaces,
+		ValidityInfo: result.ValidityInfo,
 	}
-
 	if result.DeviceKey != nil {
 		thumbprint, err := jwkThumbprintFromECDSAPublicKey(result.DeviceKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute device key thumbprint: %w", err)
 		}
-		parsed.HolderBindingKeyThumbprint = &thumbprint
-		// The key itself as well as its thumbprint: a DID-bound stored key has no
-		// thumbprint to match against, and the DID forms are derived from the key.
-		// See ParsedCredential.HolderBindingKeyPublicKey.
-		parsed.HolderBindingKeyPublicKey = result.DeviceKey
+		parsedMdoc.DeviceKey = result.DeviceKey
+		parsedMdoc.DeviceKeyThumbprint = thumbprint
 	}
 
-	return parsed, nil
+	return &ParsedCredential{
+		Format:                   models.CredentialFormatMsoMdoc,
+		VerifiableCredentialType: result.DocType,
+		IssuerIdentifier:         credentialIssuer,
+		RawCredentialBytes:       rawBytes,
+		IssuedAt:                 unixPtrIfNotZero(result.ValidityInfo.Signed),
+		ExpiresAt:                unixPtrIfNotZero(result.ValidityInfo.ValidUntil),
+		NotBefore:                unixPtrIfNotZero(result.ValidityInfo.ValidFrom),
+		Mdoc:                     parsedMdoc,
+	}, nil
 }
 
 func (p *mdocCredentialFormatParser) CheckBatchUniqueness(batch []*ParsedCredential) error {
 	seen := make(map[string]bool, len(batch))
 	for i, pc := range batch {
-		if pc.HolderBindingKeyThumbprint == nil {
+		if pc.Mdoc == nil || pc.Mdoc.DeviceKeyThumbprint == "" {
 			continue
 		}
-		if seen[*pc.HolderBindingKeyThumbprint] {
+		if seen[pc.Mdoc.DeviceKeyThumbprint] {
 			return fmt.Errorf("credential %d reuses a device key already used earlier in this batch", i)
 		}
-		seen[*pc.HolderBindingKeyThumbprint] = true
+		seen[pc.Mdoc.DeviceKeyThumbprint] = true
 	}
 	return nil
 }

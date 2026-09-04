@@ -29,6 +29,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -50,7 +51,7 @@ type Client struct {
 	didValidator      *openid4vp.DidVerifierValidator
 	scheduler         gocron.Scheduler
 	sessionManager    sessionManager
-	credentialService services.CredentialService
+	credentialFormats services.CredentialFormats
 	revocationService *services.RevocationService
 
 	// handler is how the wallet wakes the app when what it has already rendered
@@ -137,8 +138,7 @@ func New(
 	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(s)
 	irmaKeyBinder := sdjwt.NewDefaultKeyBinder(keyBindingStorage)
 
-	credStore := db.NewCredentialStore(eudiStorage.Db())
-	hbkStore := db.NewHolderBindingKeyStore(eudiStorage.Db())
+	credStore := db.NewSdJwtVcStore(eudiStorage.Db())
 
 	// Token Status List checker + the single revocation service built on it.
 	// The checker is also shared with the holder-side verifier
@@ -151,8 +151,6 @@ func New(
 		Clock:       eudi_jwt.NewSystemClock(),
 	}, statusListCache)
 	revocationService := services.NewRevocationService(statusChecker, credStore)
-
-	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale)
 
 	// Rewrite any credential hash still computed without the issuer. Runs before
 	// the wallet can be asked about its credentials, because a stale hash makes a
@@ -193,7 +191,7 @@ func New(
 	// stored. Replacing it with a StrongBox / Secure Enclave implementation is the
 	// one change needed to keep mdoc device keys out of this process.
 	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, currentLocale,
-		services.NewMdocDeviceKeyBinder(hbkStore))
+		services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(eudiStorage.Db())))
 
 	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler, mdocDcqlHandler}, verifierValidator, currentLocale)
 	if err != nil {
@@ -241,16 +239,17 @@ func New(
 		StatusChecker: statusChecker,
 	}
 
-	// Initiate the OpenID4VCI client. It derives its own per-format credential
-	// parsers from eudiConf and holderVerifier, so there is nothing to register
-	// here when a new credential format is added.
+	// The per-format registry: how each credential format is verified, which
+	// keys it is bound to, and where it is stored. Derived in one place
+	// (services.NewCredentialFormats), so adding a format is one entry there and
+	// nothing to register here.
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI)
+	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, currentLocale)
 	openid4vciClient, err := openid4vci.NewClient(
 		common.HTTPClient,
 		eudiConf,
 		holderVerifier,
-		credentialService,
-		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
+		credentialFormats,
 		currentLocale,
 	)
 
@@ -278,7 +277,7 @@ func New(
 		scheduler:         scheduler,
 		handler:           handler,
 		currentLocale:     currentLocale,
-		credentialService: credentialService,
+		credentialFormats: credentialFormats,
 		revocationService: revocationService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
@@ -546,7 +545,7 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 	// deletion necessary — is exactly what can make that read fail. A failed or
 	// empty log must never block the deletion itself.
 	if len(eudiHashes) > 0 {
-		allEudiCreds, err := client.credentialService.GetCredentialMetadataList()
+		allEudiCreds, err := client.listEudiCredentials()
 		if err != nil {
 			irma.Logger.Warnf("could not read eudi credentials for removal log; deleting without it: %v", err)
 			allEudiCreds = nil
@@ -574,8 +573,12 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 			}
 		}
 
-		for _, hash := range eudiHashes {
-			if err := client.credentialService.DeleteByHash(hash); err != nil {
+		for format, hash := range eudiHashes {
+			support, ok := client.credentialFormats[models.CredentialFormat(format)]
+			if !ok {
+				return fmt.Errorf("error while deleting eudi credential: no storage for format %q", format)
+			}
+			if err := support.Store.DeleteByHash(hash); err != nil {
 				return fmt.Errorf("error while deleting eudi credential: %v", err)
 			}
 		}

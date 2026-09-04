@@ -14,12 +14,10 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
-	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/services"
-	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
 // SdJwtVcStorageClient is the interface that the openid4vci client requires for
@@ -29,18 +27,15 @@ type SdJwtVcStorageClient interface {
 }
 
 type Client struct {
-	Configuration           *eudi.Configuration
-	httpClient              *http.Client
-	currentSession          *session
-	holderVerifier          *sdjwtvc.HolderVerificationProcessor
-	credentialFormatParsers services.CredentialFormatParsers
+	Configuration  *eudi.Configuration
+	httpClient     *http.Client
+	currentSession *session
+	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
-	credentialService services.CredentialService
-
-	// holderKeyBinder creates the holder binding keys and OpenID4VCI proofs of
-	// possession during issuance. It is a required dependency (software or
-	// WSCA-backed); see NewClient.
-	holderKeyBinder HolderKeyBinder
+	// formats is the per-format registry: how each credential format is
+	// verified, which keys it is bound to, and where it is stored. Sessions look
+	// their format up here by the credential configuration's format identifier.
+	formats services.CredentialFormats
 
 	// currentLocale drives which translations are resolved into DTOs and
 	// which logo is downloaded during issuance. Sessions snapshot it at flow
@@ -51,63 +46,34 @@ type Client struct {
 	allowInsecureHttp bool
 }
 
-// NewClient builds an OpenID4VCI client. holderKeyBinder is required: pass
-// services.NewHolderBindingKeyService(config.Storage.Db()) for the default
-// software, storage-backed binder, or a WSCA-backed implementation to keep the
-// holder private key out of this process.
+// NewClient builds an OpenID4VCI client over the given per-format registry.
+// Build the registry with services.NewCredentialFormats, which derives every
+// supported format in one place; a registry missing a format fails that
+// format's issuance at runtime, so an empty one is refused here.
 func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
-	credentialService services.CredentialService,
-	holderKeyBinder HolderKeyBinder,
+	formats services.CredentialFormats,
 	currentLocale *clientmodels.CurrentLocale,
 ) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
 	}
-	if holderKeyBinder == nil {
-		return nil, fmt.Errorf("holderKeyBinder cannot be nil")
+	if len(formats) == 0 {
+		return nil, fmt.Errorf("no credential formats registered")
+	}
+	for format, support := range formats {
+		if support.Parser == nil || support.Keys == nil || support.Store == nil {
+			return nil, fmt.Errorf("credential format %q is registered incompletely", format)
+		}
 	}
 	return &Client{
-		httpClient:              httpClient,
-		Configuration:           config,
-		holderVerifier:          holderVerifier,
-		credentialService:       credentialService,
-		credentialFormatParsers: newCredentialFormatParsers(config, holderVerifier),
-		holderKeyBinder:         holderKeyBinder,
-		currentLocale:           currentLocale,
+		httpClient:     httpClient,
+		Configuration:  config,
+		holderVerifier: holderVerifier,
+		formats:        formats,
+		currentLocale:  currentLocale,
 	}, nil
-}
-
-// newCredentialFormatParsers builds the per-format parser registry used to
-// verify freshly issued credentials.
-//
-// It is derived here rather than passed in: both inputs are already arguments
-// of NewClient, so a caller-supplied registry could only ever repeat what this
-// function computes — while making it possible to forget one, or to wire a
-// registry inconsistent with the config the rest of the client uses. That is
-// not hypothetical: the parameter was silently dropped twice while merging,
-// each time disabling format dispatch with no compile error at the call site.
-//
-// mso_mdoc's IACA trust anchors are taken from the same issuer trust model that
-// backs SD-JWT x5c validation. That assumes one shared PKI, which holds for the
-// current setup but is a deliberate simplification, not a general truth.
-//
-// The model is passed as a live lookup, not as the pool it currently holds: the
-// trust models are rebuilt whenever developer mode is toggled, and this client
-// outlives that. Capturing the pool made the wallet reject staging-issued mdocs
-// until a restart, and — the direction that actually matters — keep accepting
-// them after developer mode was switched back off.
-func newCredentialFormatParsers(
-	config *eudi.Configuration,
-	holderVerifier *sdjwtvc.HolderVerificationProcessor,
-) services.CredentialFormatParsers {
-	return services.CredentialFormatParsers{
-		models.CredentialFormatSdJwtVc: services.NewSdJwtVcCredentialFormatParser(holderVerifier),
-		models.CredentialFormatMsoMdoc: services.NewMdocCredentialFormatParser(
-			mdoc.NewVerifierFromTrustSource(&config.Issuers),
-		),
-	}
 }
 
 // SetAllowInsecureHttp selects whether plain-HTTP credential issuers, VCT URLs
@@ -215,10 +181,8 @@ func (client *Client) handleCredentialOffer(
 		handler:                    handler,
 		httpClient:                 client.httpClient,
 		holderVerifier:             client.holderVerifier,
-		holderKeyBinder:            client.holderKeyBinder,
 		storage:                    client.Configuration.Storage,
-		credentialService:          client.credentialService,
-		credentialFormatParsers:    client.credentialFormatParsers,
+		formats:                    client.formats,
 		vctResolver:                vctResolver,
 		allowInsecureHttp:          client.allowInsecureHttp,
 		originalCredentialMetadata: originalCredentialMetadata,

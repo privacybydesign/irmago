@@ -1,7 +1,6 @@
 package services
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -29,11 +28,6 @@ func (p *sdJwtVcCredentialFormatParser) ParseAndVerify(raw, _ string, _ bool) (*
 		return nil, fmt.Errorf("failed to verify credential: %v", err)
 	}
 
-	resolvedClaims, err := json.Marshal(verified.ProcessedSdJwtPayload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
-	}
-
 	jwtPayload := verified.IssuerSignedJwtPayload
 	return &ParsedCredential{
 		Format:                   models.CredentialFormatSdJwtVc,
@@ -44,7 +38,6 @@ func (p *sdJwtVcCredentialFormatParser) ParseAndVerify(raw, _ string, _ bool) (*
 		// Reading the claim directly would store an empty issuer for a credential
 		// that has a perfectly good verified identity.
 		IssuerIdentifier:   verified.IssuerIdentifier,
-		ResolvedClaims:     resolvedClaims,
 		RawCredentialBytes: []byte(verified.GetRawSdJwtVc()),
 		IssuedAt:           jwtPayload.IssuedAt,
 		ExpiresAt:          jwtPayload.Expiry,

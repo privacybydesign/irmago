@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func newTestCredentialStore(t *testing.T) CredentialStore {
+func newTestCredentialStore(t *testing.T) SdJwtVcStore {
 	t.Helper()
 
 	db, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("super-secret-key-123"))}, &gorm.Config{})
@@ -29,17 +29,17 @@ func newTestCredentialStore(t *testing.T) CredentialStore {
 		&models.CredentialDisplay{},
 		&models.CredentialClaim{},
 		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
+		&models.SdJwtVcBatch{},
+		&models.SdJwtVcBatchInstance{},
 	)
 	require.NoError(t, err)
 
-	return &credentialStore{db: db}
+	return &sdJwtVcStore{db: db}
 }
 
-func newBatch(hash string) *models.CredentialBatch {
+func newBatch(hash string) *models.SdJwtVcBatch {
 	iss := "https://issuer.example.com"
-	return &models.CredentialBatch{
+	return &models.SdJwtVcBatch{
 		IssuerIdentifier:           iss,
 		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -97,19 +97,19 @@ func newBatch(hash string) *models.CredentialBatch {
 				},
 			},
 		},
-		Instances: []models.IssuedCredentialInstance{
+		Instances: []models.SdJwtVcBatchInstance{
 			{RawCredential: []byte("raw-credential-token")},
 		},
 	}
 }
 
-func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBatch {
-	instances := make([]models.IssuedCredentialInstance, instanceCount)
+func newBatchWithInstances(hash string, instanceCount int) *models.SdJwtVcBatch {
+	instances := make([]models.SdJwtVcBatchInstance, instanceCount)
 	iss := "https://issuer.example.com"
 	for i := range instances {
-		instances[i] = models.IssuedCredentialInstance{RawCredential: []byte("raw-credential-token")}
+		instances[i] = models.SdJwtVcBatchInstance{RawCredential: []byte("raw-credential-token")}
 	}
-	return &models.CredentialBatch{
+	return &models.SdJwtVcBatch{
 		IssuerIdentifier:           iss,
 		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -133,11 +133,11 @@ func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBat
 	}
 }
 
-func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.CredentialBatch {
-	instances := make([]models.IssuedCredentialInstance, instanceCount)
+func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.SdJwtVcBatch {
+	instances := make([]models.SdJwtVcBatchInstance, instanceCount)
 	iss := "https://issuer.example.com"
 	for i := range instances {
-		instances[i] = models.IssuedCredentialInstance{
+		instances[i] = models.SdJwtVcBatchInstance{
 			RawCredential: []byte("raw-credential-token"),
 			HolderBindingKey: &models.HolderBindingKey{
 				Algorithm:           models.KeyAlgorithmECDSA,
@@ -147,7 +147,7 @@ func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.Creden
 			},
 		}
 	}
-	return &models.CredentialBatch{
+	return &models.SdJwtVcBatch{
 		IssuerIdentifier:           iss,
 		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -362,105 +362,6 @@ func TestGetBatchByHash_EmptyHash(t *testing.T) {
 	require.Error(t, err)
 }
 
-// --- GetBatchesByDocType ---
-
-func TestGetBatchesByDocType_MultipleMatches(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	for _, hash := range []string{"hash-doctype-multi-1", "hash-doctype-multi-2"} {
-		batch := newBatch(hash)
-		batch.Format = models.CredentialFormatMsoMdoc
-		batch.VerifiableCredentialType = "eu.europa.ec.av.1"
-		require.NoError(t, store.StoreBatch(batch))
-	}
-
-	batches, err := store.GetBatchesByDocType("eu.europa.ec.av.1")
-	require.NoError(t, err)
-	assert.Len(t, batches, 2)
-}
-
-func TestGetBatchesByDocType_NoMatch(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	batch := newBatch("hash-doctype-nomatch")
-	batch.Format = models.CredentialFormatMsoMdoc
-	batch.VerifiableCredentialType = "eu.europa.ec.av.1"
-	require.NoError(t, store.StoreBatch(batch))
-
-	batches, err := store.GetBatchesByDocType("eu.europa.ec.pid.1")
-	require.NoError(t, err)
-	assert.Empty(t, batches)
-}
-
-// One shared table serves every credential format, distinguished only by the Format column,
-// so GetBatchesByDocType has to filter on both.
-func TestGetBatchesByDocType_Found(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	mdocBatch := newBatch("hash-doctype-1")
-	mdocBatch.Format = models.CredentialFormatMsoMdoc
-	mdocBatch.VerifiableCredentialType = "eu.europa.ec.av.1"
-	require.NoError(t, store.StoreBatch(mdocBatch))
-
-	batches, err := store.GetBatchesByDocType("eu.europa.ec.av.1")
-	require.NoError(t, err)
-	require.Len(t, batches, 1)
-	assert.Equal(t, "hash-doctype-1", batches[0].Hash)
-}
-
-// A docType is only meaningful for mso_mdoc. Without the format filter this returned the
-// SD-JWT batch too, and the mdoc DCQL handler -- which never re-checks the format -- went on
-// to read an SD-JWT payload as a namespace map.
-func TestGetBatchesByDocType_ExcludesOtherFormatsWithTheSameTypeString(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	const shared = "eu.europa.ec.av.1"
-
-	mdocBatch := newBatch("hash-doctype-mdoc")
-	mdocBatch.Format = models.CredentialFormatMsoMdoc
-	mdocBatch.VerifiableCredentialType = shared
-	require.NoError(t, store.StoreBatch(mdocBatch))
-
-	sdJwtBatch := newBatch("hash-doctype-sdjwt")
-	sdJwtBatch.Format = models.CredentialFormatSdJwtVc
-	sdJwtBatch.VerifiableCredentialType = shared
-	require.NoError(t, store.StoreBatch(sdJwtBatch))
-
-	batches, err := store.GetBatchesByDocType(shared)
-	require.NoError(t, err)
-	require.Len(t, batches, 1)
-	assert.Equal(t, "hash-doctype-mdoc", batches[0].Hash)
-	assert.Equal(t, models.CredentialFormatMsoMdoc, batches[0].Format)
-}
-
-func TestGetBatchesByDocType_EmptyDocType(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	_, err := store.GetBatchesByDocType("")
-	require.Error(t, err)
-}
-
-func TestGetBatchesByDocType_FiltersCorrectly(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	batch1 := newBatch("hash-filter-1")
-	batch1.Format = models.CredentialFormatMsoMdoc
-	batch1.VerifiableCredentialType = "eu.europa.ec.av.1"
-	batch2 := newBatch("hash-filter-2")
-	batch2.Format = models.CredentialFormatMsoMdoc
-	batch2.VerifiableCredentialType = "eu.europa.ec.pid.1"
-
-	require.NoError(t, store.StoreBatch(batch1))
-	require.NoError(t, store.StoreBatch(batch2))
-
-	batches, err := store.GetBatchesByDocType("eu.europa.ec.av.1")
-	require.NoError(t, err)
-	require.Len(t, batches, 1)
-	assert.Equal(t, batch1.Hash, batches[0].Hash)
-}
-
-// --- GetUnusedInstance ---
-
 func TestGetUnusedInstance_ZeroBatchID(t *testing.T) {
 	store := newTestCredentialStore(t)
 
@@ -517,7 +418,7 @@ func TestMarkInstanceUsed_NotFound(t *testing.T) {
 
 func TestMarkInstanceUsed_SetsUsedTrue(t *testing.T) {
 	store := newTestCredentialStore(t)
-	db := store.(*credentialStore).db
+	db := store.(*sdJwtVcStore).db
 
 	batch := newBatch("hash-mark-used")
 	require.NoError(t, store.StoreBatch(batch))
@@ -525,14 +426,14 @@ func TestMarkInstanceUsed_SetsUsedTrue(t *testing.T) {
 	instanceID := batch.Instances[0].ID
 	require.NoError(t, store.MarkInstanceUsed(instanceID))
 
-	var instance models.IssuedCredentialInstance
+	var instance models.SdJwtVcBatchInstance
 	require.NoError(t, db.First(&instance, "id = ?", instanceID).Error)
 	assert.True(t, instance.Used)
 }
 
 func TestMarkInstanceUsed_DecrementsRemainingCount(t *testing.T) {
 	store := newTestCredentialStore(t)
-	db := store.(*credentialStore).db
+	db := store.(*sdJwtVcStore).db
 
 	batch := newBatchWithInstances("hash-decrement", 2)
 	require.NoError(t, store.StoreBatch(batch))
@@ -540,7 +441,7 @@ func TestMarkInstanceUsed_DecrementsRemainingCount(t *testing.T) {
 	instanceID := batch.Instances[0].ID
 	require.NoError(t, store.MarkInstanceUsed(instanceID))
 
-	var updated models.CredentialBatch
+	var updated models.SdJwtVcBatch
 	require.NoError(t, db.First(&updated, batch.ID).Error)
 	assert.Equal(t, uint(1), updated.RemainingCount)
 }
@@ -583,27 +484,27 @@ func TestDeleteBatchByHash_NotFound(t *testing.T) {
 
 func TestDeleteBatchByHash_CascadeDeletesInstances(t *testing.T) {
 	store := newTestCredentialStore(t)
-	db := store.(*credentialStore).db
+	db := store.(*sdJwtVcStore).db
 
 	batch := newBatchWithInstances("hash-cascade-delete", 3)
 	require.NoError(t, store.StoreBatch(batch))
 
 	// Verify instances exist before deletion.
 	var countBefore int64
-	db.Model(&models.IssuedCredentialInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countBefore)
+	db.Model(&models.SdJwtVcBatchInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countBefore)
 	assert.Equal(t, int64(3), countBefore)
 
 	require.NoError(t, store.DeleteBatchByHash("hash-cascade-delete"))
 
 	// Verify all instances are gone after deletion.
 	var countAfter int64
-	db.Model(&models.IssuedCredentialInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countAfter)
+	db.Model(&models.SdJwtVcBatchInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countAfter)
 	assert.Equal(t, int64(0), countAfter)
 }
 
 func TestDeleteBatchByHash_CascadeDeletesHolderBindingKeys(t *testing.T) {
 	store := newTestCredentialStore(t)
-	db := store.(*credentialStore).db
+	db := store.(*sdJwtVcStore).db
 
 	batch := newBatchWithInstancesAndKeys("hash-cascade-delete-keys", 2)
 	require.NoError(t, store.StoreBatch(batch))
@@ -680,7 +581,7 @@ func TestDeleteBatch_Success(t *testing.T) {
 // unnamed attributes while the SD-JWT handler (which uses the fully-preloaded
 // GetCredentialBatchList) looked fine.
 func TestBatchLookupsPreloadDisplayMetadata(t *testing.T) {
-	assertPreloaded := func(t *testing.T, batch *models.CredentialBatch) {
+	assertPreloaded := func(t *testing.T, batch *models.SdJwtVcBatch) {
 		t.Helper()
 		require.NotNil(t, batch)
 		assert.NotEmpty(t, batch.IssuerDisplay, "IssuerDisplay must be preloaded (issuer name/logo)")
@@ -707,18 +608,5 @@ func TestBatchLookupsPreloadDisplayMetadata(t *testing.T) {
 		batch, err := store.GetBatchByHash("hash-preload-byhash")
 		require.NoError(t, err)
 		assertPreloaded(t, batch)
-	})
-
-	t.Run("GetBatchesByDocType", func(t *testing.T) {
-		store := newTestCredentialStore(t)
-		mdocBatch := newBatch("hash-preload-bydoctype")
-		mdocBatch.Format = models.CredentialFormatMsoMdoc
-		mdocBatch.VerifiableCredentialType = "eu.europa.ec.av.1"
-		require.NoError(t, store.StoreBatch(mdocBatch))
-
-		batches, err := store.GetBatchesByDocType("eu.europa.ec.av.1")
-		require.NoError(t, err)
-		require.Len(t, batches, 1)
-		assertPreloaded(t, batches[0])
 	})
 }

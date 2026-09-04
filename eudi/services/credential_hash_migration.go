@@ -9,7 +9,7 @@ import (
 )
 
 // MigrateCredentialHashes recomputes the deduplication hash of every stored
-// credential batch, rewriting the rows whose hash was computed before the issuer
+// SD-JWT VC batch, rewriting the rows whose hash was computed before the issuer
 // became part of it.
 //
 // Without this, a wallet that already holds credentials would stop recognising
@@ -30,7 +30,7 @@ import (
 // one, so it can only tell apart batches the old one conflated — and the old one
 // conflated none, since Hash is a unique index and two colliding rows could
 // never both have existed.
-func MigrateCredentialHashes(store db.CredentialStore) error {
+func MigrateCredentialHashes(store db.SdJwtVcStore) error {
 	batches, err := store.GetCredentialBatchList()
 	if err != nil {
 		return fmt.Errorf("credential hash migration: failed to list batches: %w", err)
@@ -62,14 +62,15 @@ func MigrateCredentialHashes(store db.CredentialStore) error {
 	return nil
 }
 
-// recomputeBatchHash computes what a stored batch's hash would be today, using
-// the same per-format functions issuance uses. Kept next to the migration rather
-// than in credential_service.go so the format switch cannot fall out of step
-// with computeHashAndDeleteExisting without one of them failing to compile.
-func recomputeBatchHash(batch *models.CredentialBatch) (string, error) {
+// recomputeBatchHash computes what a stored batch's hash would be today, with
+// the same function issuance uses. Kept next to the migration rather than in the
+// SD-JWT service so the two cannot fall out of step without one of them failing
+// to compile.
+//
+// SD-JWT VC only: no mdoc batch was ever stored under the old hash, since mdoc
+// storage arrived after the issuer became part of the hash.
+func recomputeBatchHash(batch *models.SdJwtVcBatch) (string, error) {
 	switch batch.Format {
-	case models.CredentialFormatMsoMdoc:
-		return hashGeneric(batch.VerifiableCredentialType, batch.IssuerIdentifier, batch.ProcessedSdJwtPayload)
 	case models.CredentialFormatSdJwtVc:
 		return hashForSdJwtVc(batch.VerifiableCredentialType, batch.IssuerIdentifier, batch.ProcessedSdJwtPayload)
 	default:

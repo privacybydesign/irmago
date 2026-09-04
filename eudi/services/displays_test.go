@@ -1,8 +1,6 @@
 package services
 
 import (
-	"encoding/json"
-	"strconv"
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -77,71 +75,23 @@ func TestLoadResolvedLogo_NoLogosCached_ReturnsNil(t *testing.T) {
 // mdoc claim-path aliasing
 // ---------------------------------------------------------------------------
 
-// mdocBatch builds an mso_mdoc batch carrying one namespace with two elements,
-// whose claim metadata uses the given paths.
-func mdocBatch(claimPaths ...[]any) *models.CredentialBatch {
-	claims := make([]models.CredentialClaim, 0, len(claimPaths))
-	for i, path := range claimPaths {
-		encoded, _ := json.Marshal(path)
-		claims = append(claims, models.CredentialClaim{
-			Path:    datatypes.JSON(encoded),
-			Display: []models.ClaimDisplay{{Name: "Label " + strconv.Itoa(i), Locale: nullStr("en")}},
-		})
+// SD-JWT paths are namespace-free by nature, so a one-component path is already
+// the real path and is indexed as published; nothing rewrites it.
+func TestResolveBatchDisplay_KeepsOneComponentPaths(t *testing.T) {
+	batch := &models.SdJwtVcBatch{
+		Format:                   models.CredentialFormatSdJwtVc,
+		VerifiableCredentialType: "https://vct.example/x",
+		ProcessedSdJwtPayload:    datatypes.JSON(`{"age_over_18":true}`),
+		CredentialMetadata: &models.CredentialMetadata{Claims: []models.CredentialClaim{{
+			Path:    datatypes.JSON(`["age_over_18"]`),
+			Display: []models.ClaimDisplay{{Name: "Label 0", Locale: nullStr("en")}},
+		}}},
 	}
-	return &models.CredentialBatch{
-		Format:                   models.CredentialFormatMsoMdoc,
-		VerifiableCredentialType: "eu.europa.ec.av.1",
-		ProcessedSdJwtPayload: datatypes.JSON(
-			`{"eu.europa.ec.av.1":{"age_over_18":true,"age_over_21":true}}`),
-		CredentialMetadata: &models.CredentialMetadata{Claims: claims},
-	}
-}
-
-// An issuer that publishes a bare element identifier still gets its labels
-// rendered: OpenID4VCI's mso_mdoc profile specifies no display metadata, so the
-// one-component form is not a bug the wallet can refuse to work around, and
-// without the alias the credential list shows unlabelled rows for a credential
-// whose disclosure screen labels them.
-func TestResolveBatchDisplay_AliasesMdocBareElementPaths(t *testing.T) {
-	d := ResolveBatchDisplay(mdocBatch([]any{"age_over_18"}, []any{"age_over_21"}), "en")
-
-	require.Equal(t, "Label 0", d.ClaimNames[clientmodels.ClaimPathKey([]any{"eu.europa.ec.av.1", "age_over_18"})])
-	require.Equal(t, "Label 1", d.ClaimNames[clientmodels.ClaimPathKey([]any{"eu.europa.ec.av.1", "age_over_21"})])
-
-	// Issuer order carries over too, so the list shows the elements in the order
-	// the metadata declares rather than alphabetically.
-	require.Equal(t, 0, d.ClaimOrder[clientmodels.ClaimPathKey([]any{"eu.europa.ec.av.1", "age_over_18"})])
-	require.Equal(t, 1, d.ClaimOrder[clientmodels.ClaimPathKey([]any{"eu.europa.ec.av.1", "age_over_21"})])
-}
-
-// A correctly published two-component path must win, so an issuer that publishes
-// both forms is never labelled from the wrong one.
-func TestResolveBatchDisplay_ExactMdocPathBeatsBareElementAlias(t *testing.T) {
-	batch := mdocBatch([]any{"eu.europa.ec.av.1", "age_over_18"}, []any{"age_over_18"})
-
-	d := ResolveBatchDisplay(batch, "en")
-
-	require.Equal(t, "Label 0", d.ClaimNames[clientmodels.ClaimPathKey([]any{"eu.europa.ec.av.1", "age_over_18"})])
-}
-
-// The alias is only for elements the credential carries: metadata may describe
-// claims from namespaces this batch never received.
-func TestResolveBatchDisplay_DoesNotAliasElementsTheCredentialLacks(t *testing.T) {
-	d := ResolveBatchDisplay(mdocBatch([]any{"age_over_65"}), "en")
-
-	require.NotContains(t, d.ClaimNames, clientmodels.ClaimPathKey([]any{"eu.europa.ec.av.1", "age_over_65"}))
-}
-
-// SD-JWT paths are namespace-free by nature, so a one-component path there is
-// already the real path and must not be rewritten into a two-component one.
-func TestResolveBatchDisplay_LeavesSdJwtPathsAlone(t *testing.T) {
-	batch := mdocBatch([]any{"age_over_18"})
-	batch.Format = models.CredentialFormatSdJwtVc
 
 	d := ResolveBatchDisplay(batch, "en")
 
 	require.Equal(t, "Label 0", d.ClaimNames[clientmodels.ClaimPathKey([]any{"age_over_18"})])
-	require.NotContains(t, d.ClaimNames, clientmodels.ClaimPathKey([]any{"eu.europa.ec.av.1", "age_over_18"}))
+	require.Len(t, d.ClaimNames, 1)
 }
 
 // CredentialDisplayIsFallback is the signal the frontend needs to know whether
@@ -149,9 +99,13 @@ func TestResolveBatchDisplay_LeavesSdJwtPathsAlone(t *testing.T) {
 // or overriding what the issuer published. The resolved text cannot say: the
 // fallback chain lands on English rather than on nothing.
 func TestCredentialDisplayIsFallback(t *testing.T) {
-	batch := mdocBatch([]any{"eu.europa.ec.av.1", "age_over_18"})
-	batch.CredentialMetadata.Display = []models.CredentialDisplay{
-		{Name: "Proof of Age", Locale: nullStr("en")},
+	batch := &models.SdJwtVcBatch{
+		Format:                   models.CredentialFormatSdJwtVc,
+		VerifiableCredentialType: "https://vct.example/x",
+		ProcessedSdJwtPayload:    datatypes.JSON(`{"age_over_18":true}`),
+		CredentialMetadata: &models.CredentialMetadata{
+			Display: []models.CredentialDisplay{{Name: "Proof of Age", Locale: nullStr("en")}},
+		},
 	}
 
 	t.Run("the requested language was published", func(t *testing.T) {
@@ -169,8 +123,7 @@ func TestCredentialDisplayIsFallback(t *testing.T) {
 	})
 
 	t.Run("no display metadata at all", func(t *testing.T) {
-		bare := mdocBatch([]any{"eu.europa.ec.av.1", "age_over_18"})
-		bare.CredentialMetadata = nil
+		bare := &models.SdJwtVcBatch{Format: models.CredentialFormatSdJwtVc, ProcessedSdJwtPayload: datatypes.JSON(`{}`)}
 		require.True(t, CredentialDisplayIsFallback(bare, "en"))
 	})
 
@@ -178,8 +131,7 @@ func TestCredentialDisplayIsFallback(t *testing.T) {
 		require.True(t, ResolveBatchDisplay(batch, "nl").DisplayIsFallback)
 		require.False(t, ResolveBatchDisplay(batch, "en").DisplayIsFallback)
 		// Set even on the early return, where there is no name to resolve at all.
-		bare := mdocBatch([]any{"eu.europa.ec.av.1", "age_over_18"})
-		bare.CredentialMetadata = nil
+		bare := &models.SdJwtVcBatch{Format: models.CredentialFormatSdJwtVc, ProcessedSdJwtPayload: datatypes.JSON(`{}`)}
 		require.True(t, ResolveBatchDisplay(bare, "en").DisplayIsFallback)
 	})
 }

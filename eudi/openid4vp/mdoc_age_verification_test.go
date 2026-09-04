@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/mdoc_dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -311,26 +312,20 @@ func testMdocAv_BareClaimPath_StillResolvesLabel(t *testing.T) {
 // row is stored first and would be reached earlier by the scan.
 func testMdocAv_ExactClaimPath_WinsOverBarePath(t *testing.T) {
 	eudiStorage := newTestEudiStorage(t)
-	storeIssuedAvMdoc(t, eudiStorage, func(batch *models.CredentialBatch) {
-		batch.CredentialMetadata = &models.CredentialMetadata{
-			Display: []models.CredentialDisplay{
-				{Name: "Proof of Age", Locale: datatypes.NullString{V: "en", Valid: true}},
-			},
-			Claims: []models.CredentialClaim{
+	storeIssuedAvMdoc(t, eudiStorage, func(batch *models.MdocBatch) {
+		setAvCredentialMetadata(t, batch, &metadata.CredentialMetadata{
+			Display: metadata.CredentialDisplays{{Display: avDisplay("Proof of Age", "en")}},
+			Claims: []metadata.ClaimsDescription{
 				{
-					Path: datatypes.JSON(`["age_over_18"]`),
-					Display: []models.ClaimDisplay{
-						{Name: "Bare path label", Locale: datatypes.NullString{V: "en", Valid: true}},
-					},
+					Path:    metadata.ClaimsPathPointer{"age_over_18"},
+					Display: []metadata.Display{avDisplay("Bare path label", "en")},
 				},
 				{
-					Path: datatypes.JSON(`["` + avDocType + `", "age_over_18"]`),
-					Display: []models.ClaimDisplay{
-						{Name: "Over 18", Locale: datatypes.NullString{V: "en", Valid: true}},
-					},
+					Path:    metadata.ClaimsPathPointer{avDocType, "age_over_18"},
+					Display: []metadata.Display{avDisplay("Over 18", "en")},
 				},
 			},
-		}
+		})
 	})
 
 	handler := newAvMdocHandler(t, eudiStorage)
@@ -465,18 +460,17 @@ func testMdocAv_AcceptsAnyAdvertisedThreshold(t *testing.T) {
 	storeIssuedAvMdocWithElements(t,
 		eudiStorage,
 		map[string]any{"age_over_18": true, "age_over_39": true},
-		func(batch *models.CredentialBatch) {
+		func(batch *models.MdocBatch) {
 			withAvDisplayMetadata(batch)
 			// The issuer advertises the unusual threshold alongside the mandatory
 			// one, which is the case this is about: nothing may treat a claim as
 			// unknown for being outside a set irmago never had.
-			batch.CredentialMetadata.Claims = append(batch.CredentialMetadata.Claims,
-				models.CredentialClaim{
-					Path: datatypes.JSON(`["` + avDocType + `", "age_over_39"]`),
-					Display: []models.ClaimDisplay{
-						{Name: "Over 39", Locale: datatypes.NullString{V: "en", Valid: true}},
-					},
-				})
+			cm := services.MdocCredentialMetadata(batch)
+			cm.Claims = append(cm.Claims, metadata.ClaimsDescription{
+				Path:    metadata.ClaimsPathPointer{avDocType, "age_over_39"},
+				Display: []metadata.Display{avDisplay("Over 39", "en")},
+			})
+			setAvCredentialMetadata(t, batch, cm)
 		})
 
 	handler := newAvMdocHandler(t, eudiStorage)
@@ -514,7 +508,7 @@ func testMdocAv_AcceptsAnyAdvertisedThreshold(t *testing.T) {
 // Any decorate functions run on the batch just before it is stored, so a subtest
 // can attach the display metadata issuance would have received from the issuer's
 // credential configuration.
-func storeIssuedAvMdoc(t *testing.T, eudiStorage storage.Storage, decorate ...func(*models.CredentialBatch)) {
+func storeIssuedAvMdoc(t *testing.T, eudiStorage storage.Storage, decorate ...func(*models.MdocBatch)) {
 	t.Helper()
 
 	storeIssuedAvMdocWithElements(t, eudiStorage, map[string]any{"age_over_18": true}, decorate...)
@@ -528,7 +522,7 @@ func storeIssuedAvMdocWithElements(
 	t *testing.T,
 	eudiStorage storage.Storage,
 	elements map[string]any,
-	decorate ...func(*models.CredentialBatch),
+	decorate ...func(*models.MdocBatch),
 ) {
 	t.Helper()
 
@@ -544,35 +538,43 @@ func storeIssuedAvMdocWithElements(
 	rawCredential, err := cbor.Marshal(issued)
 	require.NoError(t, err)
 
-	// The namespace -> elementIdentifier -> value shape mdoc_dcql reads, which is
-	// what the mso_mdoc format parser caches at issuance.
-	resolvedClaims, err := json.Marshal(map[string]map[string]any{
-		avDocType: elements,
-	})
-	require.NoError(t, err)
-
 	now := time.Now()
-	batch := &models.CredentialBatch{
-		IssuerIdentifier:           "https://av-issuer.example.com",
-		CredentialIssuerIdentifier: "https://av-issuer.example.com",
-		VerifiableCredentialType:   avDocType,
-		Format:                     models.CredentialFormatMsoMdoc,
-		Hash:                       "av-test-batch-hash",
-		ProcessedSdJwtPayload:      datatypes.JSON(resolvedClaims),
-		IssuedAt:                   datatypes.NullTime{V: now.Add(-time.Hour), Valid: true},
-		ExpiresAt:                  datatypes.NullTime{V: now.Add(24 * time.Hour), Valid: true},
-		BatchSize:                  1,
-		RemainingCount:             1,
-		Instances: []models.IssuedCredentialInstance{
-			{RawCredential: rawCredential},
-		},
+	batch := &models.MdocBatch{
+		DocType:          avDocType,
+		CredentialIssuer: "https://av-issuer.example.com",
+		Hash:             "av-test-batch-hash",
+		// The namespace -> elementIdentifier -> value shape mdoc_dcql reads, which is
+		// what the mso_mdoc format parser caches at issuance.
+		Namespaces:     models.MdocNamespaces{avDocType: elements},
+		SignedAt:       now.Add(-time.Hour),
+		ValidFrom:      now.Add(-time.Hour),
+		ValidUntil:     now.Add(24 * time.Hour),
+		BatchSize:      1,
+		RemainingCount: 1,
+		IssuerVerified: true,
+		Instances:      []models.MdocBatchInstance{{IssuerSigned: rawCredential}},
 	}
 
 	for _, d := range decorate {
 		d(batch)
 	}
 
-	require.NoError(t, db.NewCredentialStore(eudiStorage.Db()).StoreBatch(batch))
+	require.NoError(t, db.NewMdocStore(eudiStorage.Db()).StoreBatch(batch))
+}
+
+// avDisplay is one published display entry.
+func avDisplay(name, locale string) metadata.Display {
+	return metadata.Display{Name: name, Locale: &locale}
+}
+
+// setAvCredentialMetadata writes the credential metadata an issuer publishes
+// into the batch the way issuance snapshots it: as the OpenID4VCI JSON, decoded
+// again when rendered.
+func setAvCredentialMetadata(t *testing.T, batch *models.MdocBatch, cm *metadata.CredentialMetadata) {
+	t.Helper()
+	encoded, err := json.Marshal(cm)
+	require.NoError(t, err)
+	batch.CredentialMetadata = datatypes.JSON(encoded)
 }
 
 // withAvDisplayMetadata attaches the display metadata an AV issuer publishes for
@@ -590,9 +592,12 @@ func storeIssuedAvMdocWithElements(
 // withAvBareClaimPathMetadata is withAvDisplayMetadata with the claim path an
 // issuer publishes when it omits the namespace, which is the only difference
 // between the two.
-func withAvBareClaimPathMetadata(batch *models.CredentialBatch) {
+func withAvBareClaimPathMetadata(batch *models.MdocBatch) {
 	withAvDisplayMetadata(batch)
-	batch.CredentialMetadata.Claims[0].Path = datatypes.JSON(`["age_over_18"]`)
+	cm := services.MdocCredentialMetadata(batch)
+	cm.Claims[0].Path = metadata.ClaimsPathPointer{"age_over_18"}
+	encoded, _ := json.Marshal(cm)
+	batch.CredentialMetadata = datatypes.JSON(encoded)
 }
 
 // withAvDisplayMetadataInTwoLocales publishes every displayed string in both
@@ -603,45 +608,36 @@ func withAvBareClaimPathMetadata(batch *models.CredentialBatch) {
 // `en` — so an integration test against that container has no second translation
 // to resolve and cannot prove translation at all. Proving it needs metadata a
 // test controls.
-func withAvDisplayMetadataInTwoLocales(batch *models.CredentialBatch) {
-	batch.IssuerDisplay = []models.IssuerMetadataDisplay{
-		{Name: "Yivi Age Issuer", Locale: datatypes.NullString{V: "en", Valid: true}},
-		{Name: "Yivi Leeftijdsuitgever", Locale: datatypes.NullString{V: "nl", Valid: true}},
-	}
-	batch.CredentialMetadata = &models.CredentialMetadata{
-		Display: []models.CredentialDisplay{
-			{Name: "Proof of Age", Locale: datatypes.NullString{V: "en", Valid: true}},
-			{Name: "Leeftijdsbewijs", Locale: datatypes.NullString{V: "nl", Valid: true}},
+func withAvDisplayMetadataInTwoLocales(batch *models.MdocBatch) {
+	issuer, _ := json.Marshal(metadata.CredentialIssuerDisplays{
+		{Display: avDisplay("Yivi Age Issuer", "en")},
+		{Display: avDisplay("Yivi Leeftijdsuitgever", "nl")},
+	})
+	batch.IssuerDisplay = datatypes.JSON(issuer)
+	cm, _ := json.Marshal(&metadata.CredentialMetadata{
+		Display: metadata.CredentialDisplays{
+			{Display: avDisplay("Proof of Age", "en")},
+			{Display: avDisplay("Leeftijdsbewijs", "nl")},
 		},
-		Claims: []models.CredentialClaim{
-			{
-				Path: datatypes.JSON(`["` + avDocType + `", "age_over_18"]`),
-				Display: []models.ClaimDisplay{
-					{Name: "Over 18", Locale: datatypes.NullString{V: "en", Valid: true}},
-					{Name: "Ouder dan 18", Locale: datatypes.NullString{V: "nl", Valid: true}},
-				},
-			},
-		},
-	}
+		Claims: []metadata.ClaimsDescription{{
+			Path:    metadata.ClaimsPathPointer{avDocType, "age_over_18"},
+			Display: []metadata.Display{avDisplay("Over 18", "en"), avDisplay("Ouder dan 18", "nl")},
+		}},
+	})
+	batch.CredentialMetadata = datatypes.JSON(cm)
 }
 
-func withAvDisplayMetadata(batch *models.CredentialBatch) {
-	batch.IssuerDisplay = []models.IssuerMetadataDisplay{
-		{Name: "Yivi Age Issuer", Locale: datatypes.NullString{V: "en", Valid: true}},
-	}
-	batch.CredentialMetadata = &models.CredentialMetadata{
-		Display: []models.CredentialDisplay{
-			{Name: "Proof of Age", Locale: datatypes.NullString{V: "en", Valid: true}},
-		},
-		Claims: []models.CredentialClaim{
-			{
-				Path: datatypes.JSON(`["` + avDocType + `", "age_over_18"]`),
-				Display: []models.ClaimDisplay{
-					{Name: "Over 18", Locale: datatypes.NullString{V: "en", Valid: true}},
-				},
-			},
-		},
-	}
+func withAvDisplayMetadata(batch *models.MdocBatch) {
+	issuer, _ := json.Marshal(metadata.CredentialIssuerDisplays{{Display: avDisplay("Yivi Age Issuer", "en")}})
+	batch.IssuerDisplay = datatypes.JSON(issuer)
+	cm, _ := json.Marshal(&metadata.CredentialMetadata{
+		Display: metadata.CredentialDisplays{{Display: avDisplay("Proof of Age", "en")}},
+		Claims: []metadata.ClaimsDescription{{
+			Path:    metadata.ClaimsPathPointer{avDocType, "age_over_18"},
+			Display: []metadata.Display{avDisplay("Over 18", "en")},
+		}},
+	})
+	batch.CredentialMetadata = datatypes.JSON(cm)
 }
 
 // newTestEudiStorage opens an in-memory eudi storage with the holder schema
@@ -664,7 +660,7 @@ func newAvMdocHandlerForLocale(t *testing.T, eudiStorage storage.Storage, locale
 	return mdoc_dcql.NewMdocDcqlHandler(
 		eudiStorage,
 		clientmodels.NewCurrentLocale(locale),
-		services.NewMdocDeviceKeyBinder(db.NewHolderBindingKeyStore(eudiStorage.Db())),
+		services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(eudiStorage.Db())),
 	)
 }
 

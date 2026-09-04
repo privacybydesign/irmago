@@ -67,15 +67,15 @@ func TestCredentialHash_ClaimsStillMatter(t *testing.T) {
 func TestMigrateCredentialHashes_RewritesIssuerlessHash(t *testing.T) {
 	batchID := datatypes.NewUUIDv4()
 	// A row as an older wallet wrote it: the hash covered type and claims only.
-	stale := &models.CredentialBatch{
+	stale := &models.SdJwtVcBatch{
 		ID:                       batchID,
-		Format:                   models.CredentialFormatMsoMdoc,
+		Format:                   models.CredentialFormatSdJwtVc,
 		VerifiableCredentialType: testHashType,
 		IssuerIdentifier:         "https://issuer.state.example",
 		ProcessedSdJwtPayload:    datatypes.JSON(testHashClaims),
 		Hash:                     "an-old-style-hash-without-the-issuer",
 	}
-	store := &mockCredentialStore{batchListResult: []*models.CredentialBatch{stale}}
+	store := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{stale}}
 
 	require.NoError(t, MigrateCredentialHashes(store))
 
@@ -90,15 +90,15 @@ func TestMigrateCredentialHashes_RewritesIssuerlessHash(t *testing.T) {
 // Idempotence matters because this runs on every startup: a wallet already on the
 // current scheme must be left alone rather than rewritten to the same value.
 func TestMigrateCredentialHashes_LeavesCurrentHashesAlone(t *testing.T) {
-	current := &models.CredentialBatch{
+	current := &models.SdJwtVcBatch{
 		ID:                       datatypes.NewUUIDv4(),
-		Format:                   models.CredentialFormatMsoMdoc,
+		Format:                   models.CredentialFormatSdJwtVc,
 		VerifiableCredentialType: testHashType,
 		IssuerIdentifier:         "https://issuer.state.example",
 		ProcessedSdJwtPayload:    datatypes.JSON(testHashClaims),
 		Hash:                     credentialHash(testHashType, "https://issuer.state.example", []byte(testHashClaims)),
 	}
-	store := &mockCredentialStore{batchListResult: []*models.CredentialBatch{current}}
+	store := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{current}}
 
 	require.NoError(t, MigrateCredentialHashes(store))
 	require.Empty(t, store.updatedHashes)
@@ -108,22 +108,22 @@ func TestMigrateCredentialHashes_LeavesCurrentHashesAlone(t *testing.T) {
 // so one bad row cannot stop a wallet from starting. An empty Format is the real
 // case: batches were once stored with it unset.
 func TestMigrateCredentialHashes_SkipsUnhashableBatchAndContinues(t *testing.T) {
-	unhashable := &models.CredentialBatch{
+	unhashable := &models.SdJwtVcBatch{
 		ID:                       datatypes.NewUUIDv4(),
 		Format:                   "",
 		VerifiableCredentialType: testHashType,
 		ProcessedSdJwtPayload:    datatypes.JSON(testHashClaims),
 		Hash:                     "left-alone",
 	}
-	good := &models.CredentialBatch{
+	good := &models.SdJwtVcBatch{
 		ID:                       datatypes.NewUUIDv4(),
-		Format:                   models.CredentialFormatMsoMdoc,
+		Format:                   models.CredentialFormatSdJwtVc,
 		VerifiableCredentialType: testHashType,
 		IssuerIdentifier:         "https://issuer.state.example",
 		ProcessedSdJwtPayload:    datatypes.JSON(testHashClaims),
 		Hash:                     "stale",
 	}
-	store := &mockCredentialStore{batchListResult: []*models.CredentialBatch{unhashable, good}}
+	store := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{unhashable, good}}
 
 	require.NoError(t, MigrateCredentialHashes(store))
 
@@ -136,7 +136,7 @@ func TestMigrateCredentialHashes_SdJwtVcUsesTheSdJwtFunction(t *testing.T) {
 	// hash the same as one without — proving the migration picked the right
 	// function for the format rather than hashing the raw payload.
 	withStandardClaims := datatypes.JSON(`{"given_name":"Alice","iss":"https://issuer.state.example","iat":1700000000}`)
-	batch := &models.CredentialBatch{
+	batch := &models.SdJwtVcBatch{
 		ID:                       datatypes.NewUUIDv4(),
 		Format:                   models.CredentialFormatSdJwtVc,
 		VerifiableCredentialType: "https://vct.example.com/Cred",
@@ -144,7 +144,7 @@ func TestMigrateCredentialHashes_SdJwtVcUsesTheSdJwtFunction(t *testing.T) {
 		ProcessedSdJwtPayload:    withStandardClaims,
 		Hash:                     "stale",
 	}
-	store := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	store := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 
 	require.NoError(t, MigrateCredentialHashes(store))
 	require.Len(t, store.updatedHashes, 1)

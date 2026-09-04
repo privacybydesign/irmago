@@ -137,35 +137,6 @@ func decodeCoseSign1(data []byte) (*cose.Sign1Message, error) {
 	return &msg, nil
 }
 
-// bypassDocumentSignerEKU makes checkDocumentSignerEKU accept any document
-// signer regardless of its extended key usage.
-//
-// DO NOT COMMIT. Re-applied 2026-08-31 for a staging demo, after being stripped
-// for the commit that precedes it.
-//
-// Staging's document signer is the service's own identity certificate -- a
-// hostname CN, issued from a TLS profile -- so it carries clientAuth and no mdoc
-// document-signer usage, and issuance stops here with "document signer
-// certificate is not authorized to sign mdocs". The fix is an EJBCA profile
-// change at the Yivi CA (add 1.0.18013.5.1.2), which has not landed.
-//
-// Unlike the first time this switch existed, it is not answering a question:
-// bypassing it already proved the EKU is the *only* remaining staging blocker,
-// since everything behind it -- the MSO signature, the docType binding, the
-// namespace digests, deviceKeyInfo, batch uniqueness -- passes against the real
-// staging issuer. This is purely to make the demo possible while the certificate
-// is wrong.
-//
-// A bool switch rather than an early `return nil`, so `go vet` does not flag the
-// rest of the function as unreachable.
-//
-// Strip before committing. Leaving it in ships a wallet that accepts an MSO
-// signed by any certificate beneath the root, a relying party's included -- it
-// removes the one check that makes chaining to the root mean "authorized to
-// issue", because a single document signer serves every docType and the chain
-// alone cannot say which role a certificate was issued for.
-var bypassDocumentSignerEKU = true
-
 // checkDocumentSignerEKU rejects a leaf certificate that is not authorized to
 // sign mdocs.
 //
@@ -186,12 +157,6 @@ var bypassDocumentSignerEKU = true
 // rejected is a certificate that does enumerate its permitted usages and does
 // not include this one.
 func checkDocumentSignerEKU(cert *x509.Certificate) error {
-	if bypassDocumentSignerEKU {
-		fmt.Printf("DO NOT COMMIT: mdoc document signer EKU check BYPASSED for %q (its EKU: %s)\n",
-			cert.Subject.String(), extKeyUsagesOf(cert))
-		return nil
-	}
-
 	if len(cert.ExtKeyUsage) == 0 && len(cert.UnknownExtKeyUsage) == 0 {
 		return nil
 	}

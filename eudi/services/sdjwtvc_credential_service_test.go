@@ -6,7 +6,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -38,11 +37,11 @@ func TestMain(m *testing.M) {
 // ========== GetCredentialMetadataList ==========
 
 func TestGetCredentialMetadataList_EmptyStore(t *testing.T) {
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	assert.Empty(t, result)
@@ -53,18 +52,18 @@ func TestGetCredentialMetadataList_StoreError(t *testing.T) {
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	_, err := svc.GetCredentialMetadataList()
+	_, err := svc.List()
 
 	require.Error(t, err)
 }
 
 func TestGetCredentialMetadataList_ReturnsSingleCredential(t *testing.T) {
 	batch := newStorageBatch()
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	require.Len(t, result, 1)
@@ -88,12 +87,12 @@ func TestGetCredentialMetadataList_SurfacesRevocation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockCredentialStore{
-				batchListResult: []*models.CredentialBatch{newStorageBatch()},
+				batchListResult: []*models.SdJwtVcBatch{newStorageBatch()},
 				statusRefs:      tt.statusRefs,
 			}
 			svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
 
-			result, err := svc.GetCredentialMetadataList()
+			result, err := svc.List()
 
 			require.NoError(t, err)
 			require.Len(t, result, 1)
@@ -105,11 +104,11 @@ func TestGetCredentialMetadataList_SurfacesRevocation(t *testing.T) {
 
 func TestGetCredentialMetadataList_MapsCredentialId(t *testing.T) {
 	batch := newStorageBatch()
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	assert.Equal(t, batch.VerifiableCredentialType, result[0].CredentialId)
@@ -117,11 +116,11 @@ func TestGetCredentialMetadataList_MapsCredentialId(t *testing.T) {
 
 func TestGetCredentialMetadataList_MapsHash(t *testing.T) {
 	batch := newStorageBatch()
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	assert.Equal(t, batch.Hash, result[0].Hash)
@@ -129,11 +128,11 @@ func TestGetCredentialMetadataList_MapsHash(t *testing.T) {
 
 func TestGetCredentialMetadataList_MapsIssuerDisplay(t *testing.T) {
 	batch := newStorageBatch()
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	assert.Equal(t, batch.CredentialIssuerIdentifier, result[0].Issuer.Id)
@@ -142,11 +141,11 @@ func TestGetCredentialMetadataList_MapsIssuerDisplay(t *testing.T) {
 
 func TestGetCredentialMetadataList_MapsCredentialDisplay(t *testing.T) {
 	batch := newStorageBatch()
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	assert.Equal(t, "My Credential", result[0].Name)
@@ -155,11 +154,11 @@ func TestGetCredentialMetadataList_MapsCredentialDisplay(t *testing.T) {
 func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 	batch := newStorageBatch()
 	batch.ProcessedSdJwtPayload = datatypes.JSON(`{"family_name":"Smith","sub":"user123"}`)
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	require.Len(t, result[0].Attributes, 1)
@@ -190,11 +189,11 @@ func TestGetCredentialMetadataList_PayloadDrivesAttributes(t *testing.T) {
 			},
 		},
 	}
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	require.Len(t, result, 1)
@@ -261,11 +260,11 @@ func TestGetCredentialMetadataList_PayloadDrivesAttributes(t *testing.T) {
 
 func TestGetCredentialMetadataList_MapsIssuanceAndExpiry(t *testing.T) {
 	batch := newStorageBatch()
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	assert.Equal(t, batch.IssuedAt.V.Unix(), *result[0].IssuanceDate)
@@ -275,11 +274,11 @@ func TestGetCredentialMetadataList_MapsIssuanceAndExpiry(t *testing.T) {
 
 func TestGetCredentialMetadataList_MapsRemainingCount(t *testing.T) {
 	batch := newStorageBatch()
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	require.Len(t, result, 1)
@@ -303,11 +302,11 @@ func TestGetCredentialMetadataList_MapsRemainingCount(t *testing.T) {
 func TestGetCredentialMetadataList_NilCredentialMetadata(t *testing.T) {
 	batch := newStorageBatch()
 	batch.CredentialMetadata = nil
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	require.Len(t, result, 1)
@@ -326,11 +325,11 @@ func TestGetCredentialMetadataList_NilCredentialMetadata(t *testing.T) {
 func TestGetCredentialMetadataList_CredentialMetadataWithoutDisplay(t *testing.T) {
 	batch := newStorageBatch()
 	batch.CredentialMetadata.Display = nil
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	require.Len(t, result, 1)
@@ -347,11 +346,11 @@ func TestGetCredentialMetadataList_IssuerDisplayWithoutLocale_ResultsInDefaultLo
 	batch.IssuerDisplay = []models.IssuerMetadataDisplay{
 		{Name: "No Locale Issuer", Locale: datatypes.NullString{Valid: false}},
 	}
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	assert.Equal(t, "No Locale Issuer", result[0].Issuer.Name)
@@ -371,11 +370,11 @@ func TestGetCredentialMetadataList_IssuerDisplayRegionalLocale_KeyedByBaseLangua
 	batch.IssuerDisplay = []models.IssuerMetadataDisplay{
 		{Name: "Example Issuer", Locale: datatypes.NullString{V: "en-US", Valid: true}},
 	}
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	assert.Equal(t, "Example Issuer", result[0].Issuer.Name,
@@ -387,11 +386,11 @@ func TestGetCredentialMetadataList_MultipleCredentials(t *testing.T) {
 	batch2 := newStorageBatch()
 	batch2.Hash = "testhash2"
 	batch2.VerifiableCredentialType = "https://vct.example.com/OtherCredential"
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch1, batch2}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch1, batch2}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	assert.Len(t, result, 2)
@@ -413,10 +412,10 @@ func TestGetCredentialMetadataList_CredentialLogoOnNonFirstDisplay(t *testing.T)
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	require.NoError(t, fileStorageMock.Credentials().LogoManager().Save(logoURL, []byte("PNGDATA"), "image/png"))
 
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	require.Len(t, result, 1)
@@ -436,67 +435,16 @@ func TestGetCredentialMetadataList_IssuerLogoOnNonFirstDisplay(t *testing.T) {
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	require.NoError(t, fileStorageMock.Issuers().LogoManager().Save(logoURL, []byte("ISSUERPNG"), "image/png"))
 
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	result, err := svc.GetCredentialMetadataList()
+	result, err := svc.List()
 
 	require.NoError(t, err)
 	require.NotNil(t, result[0].Issuer.Image, "issuer logo must resolve even when it's not on the first display entry")
 }
 
 // ========== missingDisplayMetadataReason ==========
-
-func TestMissingDisplayMetadataReason(t *testing.T) {
-	display := metadata.CredentialDisplays{{Name: "Age Verification"}}
-	claims := []metadata.ClaimsDescription{{Path: metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_18"}}}
-
-	t.Run("configuration absent names the configuration id", func(t *testing.T) {
-		reason := missingDisplayMetadataReason("av-config", metadata.CredentialConfiguration{}, false)
-
-		require.Contains(t, reason, "av-config")
-		require.Contains(t, reason, "advertises no credential configuration")
-	})
-
-	t.Run("configuration with no display metadata in either placement", func(t *testing.T) {
-		// Reaching this case now means the issuer published nothing. Until
-		// CredentialConfiguration.UnmarshalJSON normalised the pre-v1.0 placement, it
-		// also caught an issuer emitting display/claims directly on the configuration,
-		// and the message said so; that reading is no longer possible, so the message
-		// must not send anyone looking for a draft mismatch that is handled.
-		reason := missingDisplayMetadataReason("av-config", metadata.CredentialConfiguration{
-			Format: metadata.CredentialFormatIdentifier_MsoMdoc,
-		}, true)
-
-		require.Contains(t, reason, "no display metadata")
-		require.NotContains(t, reason, "which is not read")
-	})
-
-	t.Run("credential_metadata without display entries", func(t *testing.T) {
-		reason := missingDisplayMetadataReason("av-config", metadata.CredentialConfiguration{
-			CredentialMetadata: &metadata.CredentialMetadata{Claims: claims},
-		}, true)
-
-		require.Contains(t, reason, "no display entries")
-	})
-
-	t.Run("display without claims costs the attribute labels only", func(t *testing.T) {
-		reason := missingDisplayMetadataReason("av-config", metadata.CredentialConfiguration{
-			CredentialMetadata: &metadata.CredentialMetadata{Display: display},
-		}, true)
-
-		require.Contains(t, reason, "no claims")
-		require.Contains(t, reason, "without labels")
-	})
-
-	t.Run("complete display metadata reports nothing", func(t *testing.T) {
-		reason := missingDisplayMetadataReason("av-config", metadata.CredentialConfiguration{
-			CredentialMetadata: &metadata.CredentialMetadata{Display: display, Claims: claims},
-		}, true)
-
-		require.Empty(t, reason)
-	})
-}
 
 // ========== VerifyAndStoreIssuedCredentials ==========
 
@@ -505,7 +453,7 @@ func TestVerifyAndStoreIssuedCredentials_EmptySlice(t *testing.T) {
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		nil,
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -523,7 +471,7 @@ func TestVerifyAndStoreIssuedCredentials_KeyBindingMismatch(t *testing.T) {
 	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -540,7 +488,7 @@ func TestVerifyAndStoreIssuedCredentials_KeyBindingMismatch_TooManyKeys(t *testi
 	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -560,7 +508,7 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_CallsStoreBatch(t *testing
 	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -579,7 +527,7 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_CallsStoreBatch(t *testing
 // 	keyID := datatypes.NewUUIDv4()
 // 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-// 	err := svc.VerifyAndStoreIssuedCredentials(
+// 	err := svc.Store(
 // 		wrapSdJwtVcs(vc),
 // 		"config-id",
 // 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -599,7 +547,7 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_NilHolderBindingKeyID(t *t
 	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -619,7 +567,7 @@ func TestVerifyAndStoreIssuedCredentials_BatchSize(t *testing.T) {
 	vc1 := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 	vc2 := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc1, vc2),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -647,7 +595,7 @@ func newVc() *sdjwtvc.VerifiedSdJwtVc {
 func storeBatch(t *testing.T, mock *mockCredentialStore, vcs ...*sdjwtvc.VerifiedSdJwtVc) error {
 	t.Helper()
 	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
-	return svc.VerifyAndStoreIssuedCredentials(
+	return svc.Store(
 		wrapSdJwtVcs(vcs...), "config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false, nil,
@@ -699,7 +647,7 @@ func TestVerifyAndStoreIssuedCredentials_SetsIssuerMetadata(t *testing.T) {
 	issuer := "https://issuer.example.com"
 	vc := newVerifiedVc("https://vct.example.com/Cred", issuer, time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -720,7 +668,7 @@ func TestVerifyAndStoreIssuedCredentials_SetsVCT(t *testing.T) {
 	vct := "https://vct.example.com/Cred"
 	vc := newVerifiedVc(vct, "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -738,7 +686,7 @@ func TestVerifyAndStoreIssuedCredentials_SetsFormat(t *testing.T) {
 	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -757,7 +705,7 @@ func TestVerifyAndStoreIssuedCredentials_ExpirySet(t *testing.T) {
 	expiry := time.Now().Add(24 * time.Hour).Unix()
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), expiry, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -776,7 +724,7 @@ func TestVerifyAndStoreIssuedCredentials_ExpiryZero_NilExpiresAt(t *testing.T) {
 	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -796,7 +744,7 @@ func TestVerifyAndStoreIssuedCredentials_NotBeforeSet(t *testing.T) {
 	nbf := time.Now().Add(-1 * time.Hour).Unix()
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, nbf)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -815,7 +763,7 @@ func TestVerifyAndStoreIssuedCredentials_NotBeforeZero_NilNotBefore(t *testing.T
 	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -835,7 +783,7 @@ func TestVerifyAndStoreIssuedCredentials_StoreError_Propagated(t *testing.T) {
 	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -852,7 +800,7 @@ func TestVerifyAndStoreIssuedCredentials_FullMetadata_ClaimsConverted(t *testing
 	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"full-config",
 		newFullIssuerMetadata("full-config"),
@@ -878,7 +826,7 @@ func TestVerifyAndStoreIssuedCredentials_NilCredentialMetadata_StoredWithEmptyCl
 	// metadata config with nil CredentialMetadata
 	m := newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		m,
@@ -900,11 +848,11 @@ func TestVerifyAndStoreIssuedCredentials_HashIsDeterministic(t *testing.T) {
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 	m := newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc)
 
-	_ = svc.VerifyAndStoreIssuedCredentials(
+	_ = svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id", m, false, nil,
 	)
-	_ = svc.VerifyAndStoreIssuedCredentials(
+	_ = svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id", m, false, nil,
 	)
@@ -928,7 +876,7 @@ func TestVerifyAndStore_SeedsStatusReference(t *testing.T) {
 		StatusList: &statuslist.Reference{URI: "https://issuer.example.com/sl/1", Index: 42},
 	}
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -955,7 +903,7 @@ func TestVerifyAndStore_NoStatusReference_LeavesStatusFieldsNil(t *testing.T) {
 
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -1257,14 +1205,14 @@ func TestVerifyAndStore_LinksHolderBindingKeyByThumbprint(t *testing.T) {
 	credStore := &mockCredentialStore{}
 	keyStore := &mockHolderBindingKeyStore{}
 	fileStorage := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	svc := &credentialService{credentialStore: credStore, holderBindingKeyStore: keyStore, fileStorage: fileStorage, currentLocale: clientmodels.NewCurrentLocale("en")}
+	svc := &sdJwtVcCredentialService{sdJwtVcDisplaySource: newSdJwtVcDisplaySource(credStore), holderBindingKeyStore: keyStore, fileStorage: fileStorage, currentLocale: clientmodels.NewCurrentLocale("en")}
 
 	pubKey, thumbprint := generateTestJwk(t)
 	keyID := datatypes.NewUUIDv4()
 
 	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwt.CnfField{Jwk: &pubKey})
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -1281,14 +1229,14 @@ func TestVerifyAndStore_LinksHolderBindingKeyByDidUrl(t *testing.T) {
 	credStore := &mockCredentialStore{}
 	keyStore := &mockHolderBindingKeyStore{}
 	fileStorage := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	svc := &credentialService{credentialStore: credStore, holderBindingKeyStore: keyStore, fileStorage: fileStorage, currentLocale: clientmodels.NewCurrentLocale("en")}
+	svc := &sdJwtVcCredentialService{sdJwtVcDisplaySource: newSdJwtVcDisplaySource(credStore), holderBindingKeyStore: keyStore, fileStorage: fileStorage, currentLocale: clientmodels.NewCurrentLocale("en")}
 
 	didUrl := "did:jwk:eyJrdHkiOiJFQyJ9#0"
 	keyID := datatypes.NewUUIDv4()
 
 	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwt.CnfField{Kid: &didUrl})
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -1313,7 +1261,7 @@ func TestVerifyAndStore_UnknownCnfKey_ReturnsError(t *testing.T) {
 
 	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwt.CnfField{Jwk: &unknownPubKey})
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -1336,7 +1284,7 @@ func TestVerifyAndStore_MissingCnfClaim_ReturnsError(t *testing.T) {
 	keyID := datatypes.NewUUIDv4()
 	thumbprint := "some-thumbprint"
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -1353,11 +1301,11 @@ func TestVerifyAndStore_NoKeyBinding_DoesNotLink(t *testing.T) {
 	credStore := &mockCredentialStore{}
 	keyStore := &mockHolderBindingKeyStore{}
 	fileStorage := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	svc := &credentialService{credentialStore: credStore, holderBindingKeyStore: keyStore, fileStorage: fileStorage, currentLocale: clientmodels.NewCurrentLocale("en")}
+	svc := &sdJwtVcCredentialService{sdJwtVcDisplaySource: newSdJwtVcDisplaySource(credStore), holderBindingKeyStore: keyStore, fileStorage: fileStorage, currentLocale: clientmodels.NewCurrentLocale("en")}
 
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
-	err := svc.VerifyAndStoreIssuedCredentials(
+	err := svc.Store(
 		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
@@ -1369,11 +1317,11 @@ func TestVerifyAndStore_NoKeyBinding_DoesNotLink(t *testing.T) {
 	assert.Empty(t, keyStore.linkedKeys)
 }
 
-// --- mock CredentialStore ---
+// --- mock SdJwtVcStore ---
 
 type mockCredentialStore struct {
-	storedBatches   []*models.CredentialBatch
-	batchListResult []*models.CredentialBatch
+	storedBatches   []*models.SdJwtVcBatch
+	batchListResult []*models.SdJwtVcBatch
 	storeBatchErr   error
 	batchListErr    error
 	statusRefs      []db.BatchInstanceStatus
@@ -1388,7 +1336,7 @@ type updatedHash struct {
 	hash    string
 }
 
-func (m *mockCredentialStore) StoreBatch(batch *models.CredentialBatch) error {
+func (m *mockCredentialStore) StoreBatch(batch *models.SdJwtVcBatch) error {
 	if m.storeBatchErr != nil {
 		return m.storeBatchErr
 	}
@@ -1396,19 +1344,15 @@ func (m *mockCredentialStore) StoreBatch(batch *models.CredentialBatch) error {
 	return nil
 }
 
-func (m *mockCredentialStore) GetCredentialBatchList() ([]*models.CredentialBatch, error) {
+func (m *mockCredentialStore) GetCredentialBatchList() ([]*models.SdJwtVcBatch, error) {
 	return m.batchListResult, m.batchListErr
 }
 
-func (m *mockCredentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, error) {
+func (m *mockCredentialStore) GetBatchByHash(hash string) (*models.SdJwtVcBatch, error) {
 	return nil, db.ErrNotFound
 }
 
-func (m *mockCredentialStore) GetBatchesByDocType(docType string) ([]*models.CredentialBatch, error) {
-	return nil, nil
-}
-
-func (m *mockCredentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error) {
+func (m *mockCredentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.SdJwtVcBatchInstance, error) {
 	return nil, db.ErrNotFound
 }
 
@@ -1474,9 +1418,9 @@ func (m *mockHolderBindingKeyStore) DeleteAll() error                      { ret
 
 // --- helpers ---
 
-func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesystem.FileSystemStorage) *credentialService {
-	return &credentialService{
-		credentialStore:       storeMock,
+func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesystem.FileSystemStorage) *sdJwtVcCredentialService {
+	return &sdJwtVcCredentialService{
+		sdJwtVcDisplaySource:  newSdJwtVcDisplaySource(storeMock),
 		holderBindingKeyStore: &mockHolderBindingKeyStore{},
 		fileStorage:           fileStorageMock,
 		currentLocale:         clientmodels.NewCurrentLocale("en"),
@@ -1508,10 +1452,6 @@ func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwt
 // already-constructed *sdjwtvc.VerifiedSdJwtVc fixture without going
 // through a real signed JWT.
 func wrapSdJwtVc(vc *sdjwtvc.VerifiedSdJwtVc) *ParsedCredential {
-	resolvedClaims, err := json.Marshal(vc.ProcessedSdJwtPayload)
-	if err != nil {
-		panic(fmt.Sprintf("wrapSdJwtVc: failed to marshal test fixture payload: %v", err))
-	}
 	jwtPayload := vc.IssuerSignedJwtPayload
 	return &ParsedCredential{
 		Format:                   models.CredentialFormatSdJwtVc,
@@ -1520,7 +1460,6 @@ func wrapSdJwtVc(vc *sdjwtvc.VerifiedSdJwtVc) *ParsedCredential {
 		// *string, and the verifier resolves the identity from the x5c end-entity
 		// certificate when it is absent. Mirrors the real parser.
 		IssuerIdentifier:   vc.IssuerIdentifier,
-		ResolvedClaims:     resolvedClaims,
 		RawCredentialBytes: []byte(vc.GetRawSdJwtVc()),
 		IssuedAt:           jwtPayload.IssuedAt,
 		ExpiresAt:          jwtPayload.Expiry,
@@ -1579,13 +1518,13 @@ func newFullIssuerMetadata(configID string) metadata.CredentialIssuerMetadata {
 	}
 }
 
-// newStorageBatch builds a models.CredentialBatch suitable for GetCredentialBatchList results.
-func newStorageBatch() *models.CredentialBatch {
+// newStorageBatch builds a models.SdJwtVcBatch suitable for GetCredentialBatchList results.
+func newStorageBatch() *models.SdJwtVcBatch {
 	now := time.Now().UTC().Truncate(time.Second)
 	exp := now.Add(24 * time.Hour)
 	iss := "https://issuer.example.com"
 	remaining := uint(1)
-	return &models.CredentialBatch{
+	return &models.SdJwtVcBatch{
 		IssuerIdentifier:           iss,
 		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -1613,299 +1552,8 @@ func newStorageBatch() *models.CredentialBatch {
 				},
 			},
 		},
-		Instances: []models.IssuedCredentialInstance{
+		Instances: []models.SdJwtVcBatchInstance{
 			{RawCredential: []byte("raw-token")},
 		},
 	}
-}
-
-// ========== BuildMdocAttributesFromResolvedClaims ==========
-
-func TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames(t *testing.T) {
-	claims := []metadata.ClaimsDescription{
-		{
-			Path: metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_18"},
-			Display: []metadata.Display{
-				{Name: "Age Over 18", Locale: new(string)},
-			},
-		},
-		{
-			Path: metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_21"},
-			Display: []metadata.Display{
-				// No locale set -- must fall back to DefaultFallbackLanguage,
-				// not an empty-string key.
-				{Name: "Age Over 21"},
-			},
-		},
-	}
-	*claims[0].Display[0].Locale = "en"
-
-	resolved := map[string]map[string]any{
-		"eu.europa.ec.av.1": {
-			"age_over_21": false,
-			"age_over_18": true,
-		},
-	}
-
-	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "en")
-
-	require.Len(t, attrs, 2)
-
-	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
-	require.NotNil(t, attrs[0].DisplayName)
-	assert.Equal(t, "Age Over 18", *attrs[0].DisplayName)
-	require.NotNil(t, attrs[0].Value)
-
-	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_21"}, attrs[1].ClaimPath)
-	require.NotNil(t, attrs[1].DisplayName)
-	// No locale was set on this claim's display entry, so it was stored under
-	// DefaultFallbackLanguage -- resolving for "en" (which equals the fallback
-	// here) must still find it, not silently come back empty.
-	assert.Equal(t, "Age Over 21", *attrs[1].DisplayName)
-}
-
-func TestBuildMdocAttributesFromResolvedClaims_NoMetadataStillEmitsValues(t *testing.T) {
-	resolved := map[string]map[string]any{
-		"eu.europa.ec.av.1": {
-			"age_over_18": true,
-			// Not an age_over_NN, so nothing derives a name for it: the value
-			// still travels, unlabelled, exactly as before.
-			"issuing_country": "NL",
-		},
-	}
-
-	attrs := BuildMdocAttributesFromResolvedClaims(nil, resolved, "en")
-
-	require.Len(t, attrs, 2)
-
-	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
-	require.NotNil(t, attrs[0].Value)
-	// Derived from the element identifier, since no metadata named it.
-	require.NotNil(t, attrs[0].DisplayName)
-	assert.Equal(t, "Age Over 18", *attrs[0].DisplayName)
-
-	require.Equal(t, []any{"eu.europa.ec.av.1", "issuing_country"}, attrs[1].ClaimPath)
-	require.NotNil(t, attrs[1].Value)
-	assert.Nil(t, attrs[1].DisplayName)
-}
-
-// A threshold the issuer never advertised is the case the derived name exists
-// for: the EU reference issuer publishes thirteen age_over_NN claims and mints
-// whatever it is asked for, so this arrives with a value and no metadata entry.
-func TestBuildMdocAttributesFromResolvedClaims_DerivesUnadvertisedAgeOver(t *testing.T) {
-	en := "en"
-	claims := []metadata.ClaimsDescription{{
-		Path:    metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_18"},
-		Display: []metadata.Display{{Name: "Age Over 18", Locale: &en}},
-	}}
-	resolved := map[string]map[string]any{
-		"eu.europa.ec.av.1": {
-			"age_over_18": true,
-			"age_over_35": true,
-		},
-	}
-
-	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "en")
-
-	require.Len(t, attrs, 2)
-
-	// Published metadata, unchanged.
-	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
-	require.NotNil(t, attrs[0].DisplayName)
-	assert.Equal(t, "Age Over 18", *attrs[0].DisplayName)
-
-	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_35"}, attrs[1].ClaimPath)
-	require.NotNil(t, attrs[1].DisplayName)
-	assert.Equal(t, "Age Over 35", *attrs[1].DisplayName)
-}
-
-// An issuer's own text wins over a derived name even when it is published under
-// the namespace-less path shape, and even when it is in another language: the
-// derived name is English only, so overriding a published nl label with it would
-// make a Dutch wallet read worse, not better.
-func TestBuildMdocAttributesFromResolvedClaims_PublishedBareElementNameWins(t *testing.T) {
-	nl := "nl"
-	claims := []metadata.ClaimsDescription{{
-		Path:    metadata.ClaimsPathPointer{"age_over_18"},
-		Display: []metadata.Display{{Name: "Ouder dan 18", Locale: &nl}},
-	}}
-	resolved := map[string]map[string]any{
-		"eu.europa.ec.av.1": {"age_over_18": true},
-	}
-
-	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "nl")
-
-	require.Len(t, attrs, 1)
-	assert.Nil(t, attrs[0].DisplayName, "a bare-element publication is not overridden by the derived English name")
-}
-
-func TestDerivedMdocClaimName(t *testing.T) {
-	for _, tc := range []struct {
-		element string
-		want    string
-		ok      bool
-	}{
-		{element: "age_over_18", want: "Age Over 18", ok: true},
-		{element: "age_over_9", want: "Age Over 9", ok: true},
-		// NN is two digits, so 99 is the ceiling and 100 is past it.
-		{element: "age_over_99", want: "Age Over 99", ok: true},
-		{element: "age_over_00", want: "Age Over 00", ok: true},
-		{element: "age_over_100", ok: false},
-		{element: "age_over_120", ok: false},
-		{element: "age_over_1234", ok: false},
-		{element: "age_over_", ok: false},
-		{element: "age_over_18a", ok: false},
-		{element: "age_in_years", ok: false},
-		{element: "issuing_country", ok: false},
-		{element: "", ok: false},
-	} {
-		t.Run(tc.element, func(t *testing.T) {
-			got, ok := DerivedMdocClaimName(tc.element)
-			assert.Equal(t, tc.ok, ok)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
-// ========== GetCredentialMetadataList — mso_mdoc ==========
-
-// An mdoc reaches the credential list through the same flatten path as an
-// SD-JWT, since its resolved claims are a degenerate two-level case of the same
-// structure. What differs is where the display names come from: an issuer may
-// publish claim paths without the namespace, and until those are aliased the
-// list renders unlabelled rows for a credential whose disclosure screen labels
-// them correctly.
-func TestGetCredentialMetadataList_MdocLabelsBareElementClaims(t *testing.T) {
-	batch := newStorageBatch()
-	batch.Format = models.CredentialFormatMsoMdoc
-	batch.VerifiableCredentialType = "eu.europa.ec.av.1"
-	batch.ProcessedSdJwtPayload = datatypes.JSON(
-		`{"eu.europa.ec.av.1":{"age_over_18":true,"age_over_21":true}}`)
-	batch.CredentialMetadata.Claims = []models.CredentialClaim{
-		{
-			Path:    datatypes.JSON(`["age_over_18"]`),
-			Display: []models.ClaimDisplay{{Name: "Older than 18", Locale: datatypes.NullString{V: "en", Valid: true}}},
-		},
-		{
-			Path:    datatypes.JSON(`["eu.europa.ec.av.1","age_over_21"]`),
-			Display: []models.ClaimDisplay{{Name: "Older than 21", Locale: datatypes.NullString{V: "en", Valid: true}}},
-		},
-	}
-
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
-
-	result, err := svc.GetCredentialMetadataList()
-	require.NoError(t, err)
-	require.Len(t, result, 1)
-
-	// Both elements are listed at their real mdoc claim path -- [namespace,
-	// elementIdentifier] -- and both carry a label, whichever form the issuer
-	// published.
-	labels := map[string]string{}
-	for _, attr := range result[0].Attributes {
-		require.Len(t, attr.ClaimPath, 2, "an mdoc attribute path is [namespace, elementIdentifier]")
-		require.Equal(t, "eu.europa.ec.av.1", attr.ClaimPath[0])
-		require.NotNil(t, attr.DisplayName, "attribute %v renders without a label", attr.ClaimPath)
-		labels[attr.ClaimPath[1].(string)] = *attr.DisplayName
-	}
-	assert.Equal(t, map[string]string{
-		"age_over_18": "Older than 18",
-		"age_over_21": "Older than 21",
-	}, labels)
-}
-
-// The credential list must label a threshold the issuer never advertised the
-// same way the disclosure screen does, and must not disturb the ones it did.
-// The two views disagreeing about one claim is the bug aliasMdocBareElementPaths
-// was written for; the derived name is on the same footing.
-func TestGetCredentialMetadataList_MdocLabelsUnadvertisedAgeOver(t *testing.T) {
-	batch := newStorageBatch()
-	batch.Format = models.CredentialFormatMsoMdoc
-	batch.VerifiableCredentialType = "eu.europa.ec.av.1"
-	batch.ProcessedSdJwtPayload = datatypes.JSON(
-		`{"eu.europa.ec.av.1":{"age_over_18":true,"age_over_35":true,"issuing_country":"NL"}}`)
-	batch.CredentialMetadata.Claims = []models.CredentialClaim{
-		{
-			Path:    datatypes.JSON(`["eu.europa.ec.av.1","age_over_18"]`),
-			Display: []models.ClaimDisplay{{Name: "Older than 18", Locale: datatypes.NullString{V: "en", Valid: true}}},
-		},
-	}
-
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
-
-	result, err := svc.GetCredentialMetadataList()
-	require.NoError(t, err)
-	require.Len(t, result, 1)
-
-	labels := map[string]*string{}
-	for _, attr := range result[0].Attributes {
-		require.Len(t, attr.ClaimPath, 2, "an mdoc attribute path is [namespace, elementIdentifier]")
-		labels[attr.ClaimPath[1].(string)] = attr.DisplayName
-	}
-
-	require.NotNil(t, labels["age_over_18"])
-	assert.Equal(t, "Older than 18", *labels["age_over_18"], "published text is not displaced by the derived name")
-	require.NotNil(t, labels["age_over_35"], "an unadvertised threshold must still be labelled")
-	assert.Equal(t, "Age Over 35", *labels["age_over_35"])
-
-	// The derived name covers age_over_NN only, but no attribute may reach the
-	// app nameless: an element the issuer signed without declaring is stored and
-	// is disclosable, so leaving it without a label is what lets it sit in the
-	// credential unseen. It falls back to its own identifier.
-	require.NotNil(t, labels["issuing_country"],
-		"an element no metadata names must not render without a label")
-	assert.Equal(t, "issuing_country", *labels["issuing_country"])
-}
-
-// TestGetCredentialMetadataList_MdocNamesUndeclaredElement is the case that
-// motivated the fallback: an element the issuer signed into the namespace but
-// never declared in its metadata at all.
-//
-// Nothing upstream rejects it — the docType binding in session.obtainCredential
-// compares docTypes, not elements, and the document signer's EKU is
-// docType-agnostic — so it is stored and disclosable through DCQL. Without a
-// name it reached the app as an Attribute with a nil DisplayName, and whether
-// that renders as a blank row or as nothing at all was the app's decision. The
-// holder has to be able to see everything their credential actually contains.
-func TestGetCredentialMetadataList_MdocNamesUndeclaredElement(t *testing.T) {
-	batch := newStorageBatch()
-	batch.Format = models.CredentialFormatMsoMdoc
-	batch.VerifiableCredentialType = "eu.europa.ec.av.1"
-	batch.ProcessedSdJwtPayload = datatypes.JSON(
-		`{"eu.europa.ec.av.1":{"age_over_18":true,"email":"holder@example.com"}}`)
-	batch.CredentialMetadata.Claims = []models.CredentialClaim{
-		{
-			Path:    datatypes.JSON(`["eu.europa.ec.av.1","age_over_18"]`),
-			Display: []models.ClaimDisplay{{Name: "Older than 18", Locale: datatypes.NullString{V: "en", Valid: true}}},
-		},
-	}
-
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
-
-	result, err := svc.GetCredentialMetadataList()
-	require.NoError(t, err)
-	require.Len(t, result, 1)
-
-	labels := map[string]*string{}
-	values := map[string]bool{}
-	for _, attr := range result[0].Attributes {
-		require.Len(t, attr.ClaimPath, 2, "an mdoc attribute path is [namespace, elementIdentifier]")
-		el := attr.ClaimPath[1].(string)
-		labels[el] = attr.DisplayName
-		values[el] = attr.Value != nil
-	}
-
-	require.Contains(t, labels, "email",
-		"an undeclared element is stored and disclosable, so it has to appear in the credential list")
-	require.NotNil(t, labels["email"], "an undeclared element must not render without a label")
-	assert.Equal(t, "email", *labels["email"],
-		"with nothing to name it, an element is named after itself rather than left blank")
-	assert.True(t, values["email"], "the value has to be shown alongside the label, not just the path")
-
-	require.NotNil(t, labels["age_over_18"])
-	assert.Equal(t, "Older than 18", *labels["age_over_18"],
-		"published text is never displaced by the fallback")
 }

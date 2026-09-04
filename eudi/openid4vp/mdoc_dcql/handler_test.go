@@ -13,7 +13,6 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/datatypes"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
@@ -528,7 +527,7 @@ func TestSelectiveDiscloseByPathsRevealsOnlyNamedElements(t *testing.T) {
 type testEnv struct {
 	handler  *MdocDcqlHandler
 	verifier *stdmdoc.Verifier
-	store    db.CredentialStore
+	store    db.MdocStore
 	hash     string
 
 	// eudiStorage and deviceKeys are what withDeviceKeyBinder needs: the storage
@@ -577,7 +576,8 @@ func newTestEnvWithExpiry(t *testing.T, batchSize uint, expiresAt *time.Time) *t
 	verifier := stdmdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	parser := services.NewMdocCredentialFormatParser(verifier)
 
-	var instances []models.IssuedCredentialInstance
+	var instances []models.MdocBatchInstance
+	var deviceKeyRows []models.MdocDeviceKey
 	var first *services.ParsedCredential
 	var deviceKeys []*ecdsa.PrivateKey
 	for range batchSize {
@@ -604,46 +604,56 @@ func newTestEnvWithExpiry(t *testing.T, batchSize uint, expiresAt *time.Time) *t
 		require.NoError(t, err)
 		require.Equal(t, models.CredentialFormatMsoMdoc, parsed.Format)
 		require.Equal(t, testDocType, parsed.VerifiableCredentialType)
-		require.NotNil(t, parsed.HolderBindingKeyThumbprint)
+		require.NotNil(t, parsed.Mdoc)
+		require.NotEmpty(t, parsed.Mdoc.DeviceKeyThumbprint)
 		if first == nil {
 			first = parsed
 		}
 
-		instances = append(instances, models.IssuedCredentialInstance{
-			RawCredential: parsed.RawCredentialBytes,
-			HolderBindingKey: &models.HolderBindingKey{
-				Algorithm:           models.KeyAlgorithmECDSA,
-				PublicKeyThumbprint: datatypes.NullString{V: *parsed.HolderBindingKeyThumbprint, Valid: true},
-				PrivateKey:          holderKeyPKCS8,
-				ECDSA:               &models.ECDSAKeyMetadata{CurveName: "P-256"},
-			},
+		instances = append(instances, models.MdocBatchInstance{IssuerSigned: parsed.RawCredentialBytes})
+		deviceKeyRows = append(deviceKeyRows, models.MdocDeviceKey{
+			PublicKeyThumbprint: parsed.Mdoc.DeviceKeyThumbprint,
+			PrivateKey:          holderKeyPKCS8,
+			Curve:               "P-256",
 		})
 	}
 
 	eudiStorage := newTestStorage(t)
-	store := db.NewCredentialStore(eudiStorage.Db())
+	store := db.NewMdocStore(eudiStorage.Db())
+	keyStore := db.NewMdocDeviceKeyStore(eudiStorage.Db())
+
+	// The batch validity is the credential's own, unless the test overrides the
+	// expiry: the one state a real issuer will not hand out on request.
+	validUntil := first.Mdoc.ValidityInfo.ValidUntil
+	if expiresAt != nil {
+		validUntil = *expiresAt
+	}
 
 	const hash = "test-mdoc-batch-hash"
-	require.NoError(t, store.StoreBatch(&models.CredentialBatch{
-		IssuerIdentifier:           first.IssuerIdentifier,
-		VerifiableCredentialType:   first.VerifiableCredentialType,
-		Format:                     first.Format,
-		Hash:                       hash,
-		ProcessedSdJwtPayload:      datatypes.JSON(first.ResolvedClaims),
-		IssuedAt:                   nullTimeFromUnix(first.IssuedAt),
-		ExpiresAt:                  storedExpiry(first, expiresAt),
-		NotBefore:                  nullTimeFromUnix(first.NotBefore),
-		BatchSize:                  batchSize,
-		RemainingCount:             batchSize,
-		CredentialIssuerIdentifier: testIssuerURL,
-		Instances:                  instances,
-	}))
+	batch := &models.MdocBatch{
+		DocType:          first.Mdoc.DocType,
+		CredentialIssuer: testIssuerURL,
+		Hash:             hash,
+		Namespaces:       first.Mdoc.Namespaces,
+		SignedAt:         first.Mdoc.ValidityInfo.Signed,
+		ValidFrom:        first.Mdoc.ValidityInfo.ValidFrom,
+		ValidUntil:       validUntil,
+		BatchSize:        batchSize,
+		RemainingCount:   batchSize,
+		IssuerVerified:   true,
+		Instances:        instances,
+	}
+	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, keyStore.StoreKeys(deviceKeyRows))
+	for i := range deviceKeyRows {
+		require.NoError(t, keyStore.LinkToInstance(deviceKeyRows[i].ID, batch.Instances[i].ID))
+	}
 
 	return &testEnv{
 		// The production binder, wired as client.New wires it, so every test that
 		// does not substitute one is covering the real path.
 		handler: NewMdocDcqlHandler(eudiStorage, clientmodels.NewCurrentLocale("en"),
-			services.NewMdocDeviceKeyBinder(db.NewHolderBindingKeyStore(eudiStorage.Db()))),
+			services.NewMdocDeviceKeyBinder(keyStore)),
 		verifier:    verifier,
 		store:       store,
 		hash:        hash,
@@ -824,15 +834,6 @@ func disclosedElements(t *testing.T, items []stdmdoc.Tag24Item) []string {
 	return names
 }
 
-// storedExpiry is the batch expiry to store: the one the credential carries, or
-// the override a test asked for.
-func storedExpiry(parsed *services.ParsedCredential, override *time.Time) datatypes.NullTime {
-	if override != nil {
-		return datatypes.NullTime{V: *override, Valid: true}
-	}
-	return nullTimeFromUnix(parsed.ExpiresAt)
-}
-
 func newTestStorage(t *testing.T) storage.Storage {
 	t.Helper()
 
@@ -846,13 +847,6 @@ func newTestStorage(t *testing.T) storage.Storage {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 	return s
-}
-
-func nullTimeFromUnix(unix *int64) datatypes.NullTime {
-	if unix == nil {
-		return datatypes.NullTime{}
-	}
-	return datatypes.NullTime{V: time.Unix(*unix, 0).UTC(), Valid: true}
 }
 
 // TestFindCandidatesSkipsExpiredBatch pins that a credential whose validity

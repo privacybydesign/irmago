@@ -27,19 +27,19 @@ func TestBatchStillUsable(t *testing.T) {
 		name string
 		// batch as stored; refuse reports whether an identical re-issuance is
 		// rejected rather than allowed to replace it.
-		batch  models.CredentialBatch
+		batch  models.SdJwtVcBatch
 		refuse bool
 		reason string
 	}{
 		{
 			name:   "a batch with instances left and no expiry is still usable",
-			batch:  models.CredentialBatch{BatchSize: 100, RemainingCount: 100},
+			batch:  models.SdJwtVcBatch{BatchSize: 100, RemainingCount: 100},
 			refuse: true,
 			reason: "still has 100 of 100 instances unused",
 		},
 		{
 			name:   "a partly spent batch is still usable",
-			batch:  models.CredentialBatch{BatchSize: 100, RemainingCount: 1},
+			batch:  models.SdJwtVcBatch{BatchSize: 100, RemainingCount: 1},
 			refuse: true,
 			reason: "still has 1 of 100 instances unused",
 		},
@@ -47,14 +47,14 @@ func TestBatchStillUsable(t *testing.T) {
 			// The top-up case. Refusing here is what would leave a wallet
 			// permanently unable to present.
 			name:   "a spent batch may be replaced",
-			batch:  models.CredentialBatch{BatchSize: 100, RemainingCount: 0},
+			batch:  models.SdJwtVcBatch{BatchSize: 100, RemainingCount: 0},
 			refuse: false,
 		},
 		{
 			// The renewal case: attributes never change, so the hash matches and
 			// only the expiry distinguishes this from a duplicate.
 			name: "an expired batch may be replaced even with instances left",
-			batch: models.CredentialBatch{
+			batch: models.SdJwtVcBatch{
 				BatchSize: 100, RemainingCount: 100,
 				ExpiresAt: nullTime(now.Add(-time.Hour)),
 			},
@@ -62,7 +62,7 @@ func TestBatchStillUsable(t *testing.T) {
 		},
 		{
 			name: "a batch not yet valid may be replaced",
-			batch: models.CredentialBatch{
+			batch: models.SdJwtVcBatch{
 				BatchSize: 100, RemainingCount: 100,
 				NotBefore: nullTime(now.Add(time.Hour)),
 			},
@@ -70,7 +70,7 @@ func TestBatchStillUsable(t *testing.T) {
 		},
 		{
 			name: "a batch expiring in the future is still usable",
-			batch: models.CredentialBatch{
+			batch: models.SdJwtVcBatch{
 				BatchSize: 100, RemainingCount: 100,
 				ExpiresAt: nullTime(now.Add(time.Hour)),
 			},
@@ -87,12 +87,12 @@ func TestBatchStillUsable(t *testing.T) {
 			// ordinary SD-JWT re-issuance working: an issuer that advertises no
 			// batch_credential_issuance produces exactly this shape.
 			name:   "a batch of one is always replaceable, however fresh",
-			batch:  models.CredentialBatch{BatchSize: 1, RemainingCount: 1},
+			batch:  models.SdJwtVcBatch{BatchSize: 1, RemainingCount: 1},
 			refuse: false,
 		},
 		{
 			name:   "a batch of one with no remaining count is replaceable too",
-			batch:  models.CredentialBatch{BatchSize: 1, RemainingCount: 0},
+			batch:  models.SdJwtVcBatch{BatchSize: 1, RemainingCount: 0},
 			refuse: false,
 		},
 		{
@@ -100,7 +100,7 @@ func TestBatchStillUsable(t *testing.T) {
 			// for the same reason: BatchSize decides this before expiry is
 			// consulted at all.
 			name: "a batch of one expiring in the future is still replaceable",
-			batch: models.CredentialBatch{
+			batch: models.SdJwtVcBatch{
 				BatchSize: 1, RemainingCount: 1,
 				ExpiresAt: nullTime(now.Add(time.Hour)),
 			},
@@ -108,7 +108,7 @@ func TestBatchStillUsable(t *testing.T) {
 		},
 		{
 			name: "an expired batch of one may be replaced",
-			batch: models.CredentialBatch{
+			batch: models.SdJwtVcBatch{
 				BatchSize: 1, RemainingCount: 0,
 				ExpiresAt: nullTime(now.Add(-time.Hour)),
 			},
@@ -119,7 +119,7 @@ func TestBatchStillUsable(t *testing.T) {
 			// boundary the BatchSize <= 1 guard sits on, so it is worth pinning
 			// that protection starts here rather than one higher.
 			name:   "a batch of two is protected",
-			batch:  models.CredentialBatch{BatchSize: 2, RemainingCount: 2},
+			batch:  models.SdJwtVcBatch{BatchSize: 2, RemainingCount: 2},
 			refuse: true,
 			reason: "still has 2 of 2 instances unused",
 		},
@@ -127,7 +127,7 @@ func TestBatchStillUsable(t *testing.T) {
 			// dcql.IsBatchValid treats a zero timestamp as unset rather than as
 			// 1970, so a batch carrying one must not read as expired.
 			name: "an epoch expiry counts as no expiry",
-			batch: models.CredentialBatch{
+			batch: models.SdJwtVcBatch{
 				BatchSize: 100, RemainingCount: 100,
 				ExpiresAt: nullTime(time.Unix(0, 0)),
 			},

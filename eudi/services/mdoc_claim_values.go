@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -9,11 +10,12 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
 // The resolved element values of an mdoc are cached as JSON for display and
-// matching (models.CredentialBatch.ProcessedSdJwtPayload). JSON has fewer types
+// matching (models.MdocBatch.Namespaces). JSON has fewer types
 // than CBOR, and encoding/json flattens the difference silently: a byte string
 // becomes a base64 text indistinguishable from any other string, and a tagged
 // date becomes an object with a Number and a Content. Both used to reach the
@@ -50,6 +52,26 @@ func NormalizeMdocClaimValues(resolved map[string]map[string]any) {
 			elements[element] = normalizeMdocClaimValue(value)
 		}
 	}
+}
+
+// JSONShapedMdocNamespaces returns the normalized element values in the shapes
+// they take after a trip through JSON: numbers as float64, arrays as []any,
+// maps as map[string]any. That is what models.MdocBatch.Namespaces reads back
+// from its JSON column, so producing it once at parse time guarantees every
+// reader of an mdoc's values — the offer screen from the parsed credential, the
+// credential list and the DCQL handler from the stored batch — sees the same
+// Go types and renders them the same way. Without it a CBOR integer reached the
+// offer screen as uint64 and the list as float64, and the two disagreed.
+func JSONShapedMdocNamespaces(resolved map[string]map[string]any) (models.MdocNamespaces, error) {
+	encoded, err := json.Marshal(resolved)
+	if err != nil {
+		return nil, err
+	}
+	var shaped models.MdocNamespaces
+	if err := json.Unmarshal(encoded, &shaped); err != nil {
+		return nil, err
+	}
+	return shaped, nil
 }
 
 func normalizeMdocClaimValue(value any) any {
@@ -214,17 +236,10 @@ func MdocElementRefFromPath(path []any) (MdocElementRef, bool) {
 //
 // Elements the credential does not carry are skipped; the caller has already
 // established which ones match.
-func BuildMdocAttributesForElements(
-	batch *models.CredentialBatch,
-	resolved map[string]map[string]any,
-	elements []MdocElementRef,
-	locale string,
-) []clientmodels.Attribute {
-	display := ResolveBatchDisplay(batch, locale)
-
+func BuildMdocAttributesForElements(batch *models.MdocBatch, elements []MdocElementRef, locale string) []clientmodels.Attribute {
 	topLevel := map[string]any{}
 	for _, ref := range elements {
-		nsMap, ok := resolved[ref.Namespace]
+		nsMap, ok := batch.Namespaces[ref.Namespace]
 		if !ok {
 			continue
 		}
@@ -239,7 +254,24 @@ func BuildMdocAttributesForElements(
 		}
 		sub[ref.Element] = value
 	}
+	return buildMdocAttributes(topLevel, ResolveMdocDisplay(batch, locale))
+}
 
+// BuildMdocAttributes builds the attribute rows for every element of a stored
+// mdoc, in the credential's own order: what the credential list shows.
+func BuildMdocAttributes(batch *models.MdocBatch, locale string) []clientmodels.Attribute {
+	topLevel := make(map[string]any, len(batch.Namespaces))
+	for namespace, elements := range batch.Namespaces {
+		sub := make(map[string]any, len(elements))
+		for element, value := range elements {
+			sub[element] = value
+		}
+		topLevel[namespace] = sub
+	}
+	return buildMdocAttributes(topLevel, ResolveMdocDisplay(batch, locale))
+}
+
+func buildMdocAttributes(topLevel map[string]any, display ResolvedBatchDisplay) []clientmodels.Attribute {
 	attrs := []clientmodels.Attribute{}
 	for _, namespace := range sortObjectKeys(topLevel, []any{}, display.ClaimOrder) {
 		attrs = FlattenClaimValue(attrs, []any{namespace}, topLevel[namespace], display.ClaimNames, display.ClaimOrder)
@@ -264,4 +296,68 @@ func UniqueMdocElementRefs(paths [][]any) []MdocElementRef {
 		refs = append(refs, ref)
 	}
 	return refs
+}
+
+// BuildMdocAttributesFromResolvedClaims builds an attribute list directly
+// from a resolved mso_mdoc claims map (namespace -> elementIdentifier ->
+// value), for the permission-dialog display at issuance time. mso_mdoc's
+// resolved claims are just a two-level nested map -- a degenerate case of
+// the same arbitrary-depth structure FlattenClaimValue/sortObjectKeys
+// already walk for dc+sd-jwt -- so this reuses them directly rather than
+// re-implementing sort/flatten from scratch.
+func BuildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, resolved map[string]map[string]any, locale string) []clientmodels.Attribute {
+	displayLookup := map[string]string{}
+	metadataOrder := map[string]int{}
+	for i, c := range claims {
+		key := clientmodels.ClaimPathKey(c.Path)
+		metadataOrder[key] = i
+		if len(c.Display) == 0 {
+			continue
+		}
+		// Falls back to clientmodels.DefaultFallbackLanguage when a display
+		// entry carries no locale -- the same convention every other
+		// display-name conversion in this package uses. Resolved to a single
+		// string for the caller's locale, matching FlattenClaimValue's lookup.
+		display := clientmodels.TranslatedString{}
+		for _, d := range c.Display {
+			entryLocale := clientmodels.DefaultFallbackLanguage
+			if d.Locale != nil {
+				if base, ok := metadata.TryGetBaseLanguageFromLocale(*d.Locale); ok {
+					entryLocale = base
+				}
+			}
+			display[entryLocale] = d.Name
+		}
+		displayLookup[key] = clientmodels.Resolve(display, locale)
+	}
+
+	// Elements the metadata named no usable text for fall back to a name derived
+	// from the element identifier; see DerivedMdocClaimName. Both key shapes are
+	// checked before deriving, because an issuer may publish an mdoc claim under
+	// the bare [element] path rather than [namespace, element], and its own text
+	// — in whatever language — outranks anything derived here.
+	for namespace, elements := range resolved {
+		for element := range elements {
+			name, ok := DerivedMdocClaimName(element)
+			if !ok {
+				continue
+			}
+			key := clientmodels.ClaimPathKey([]any{namespace, element})
+			if displayLookup[key] != "" || displayLookup[clientmodels.ClaimPathKey([]any{element})] != "" {
+				continue
+			}
+			displayLookup[key] = name
+		}
+	}
+
+	topLevel := make(map[string]any, len(resolved))
+	for namespace, elements := range resolved {
+		topLevel[namespace] = elements
+	}
+
+	attrs := []clientmodels.Attribute{}
+	for _, namespace := range sortObjectKeys(topLevel, []any{}, metadataOrder) {
+		attrs = FlattenClaimValue(attrs, []any{namespace}, topLevel[namespace], displayLookup, metadataOrder)
+	}
+	return PromoteMdocDataURIs(attrs)
 }

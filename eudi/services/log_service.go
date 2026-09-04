@@ -26,7 +26,7 @@ type EudiLogService interface {
 
 type eudiLogService struct {
 	store               db.EudiLogStore
-	credentialStore     db.CredentialStore
+	displaySources      []CredentialDisplaySource
 	credLogoManager     filesystem.LogoManager
 	issuerLogoManager   filesystem.LogoManager
 	verifierLogoManager filesystem.LogoManager
@@ -36,7 +36,7 @@ type eudiLogService struct {
 func NewEudiLogService(s storage.Storage, locale string) EudiLogService {
 	return &eudiLogService{
 		store:               db.NewEudiLogStore(s.Db()),
-		credentialStore:     db.NewCredentialStore(s.Db()),
+		displaySources:      NewCredentialDisplaySources(s.Db()),
 		credLogoManager:     s.FileSystem().Credentials().LogoManager(),
 		issuerLogoManager:   s.FileSystem().Issuers().LogoManager(),
 		verifierLogoManager: s.FileSystem().Verifiers().LogoManager(),
@@ -181,27 +181,17 @@ func (s *eudiLogService) entriesToLogInfos(entries []*models.EudiLogEntry) ([]cl
 // credential matters: a page of entries usually covers far fewer credential
 // types than it has rows.
 //
-// Best-effort: on a storage error the index is empty and every log falls back
-// to its snapshot. When several batches share a VCT, one carrying credential
-// metadata is preferred.
+// Every format contributes its own types (a vct, a docType); the union is keyed
+// by that type string. Best-effort: a format whose storage cannot be read
+// contributes nothing and its logs fall back to their snapshot.
 func (s *eudiLogService) liveDisplaysByVct() map[string]ResolvedBatchDisplay {
-	batches, err := s.credentialStore.GetCredentialBatchList()
-	if err != nil {
-		eudi.Logger.Warnf("failed to load credential batches for log text re-resolution: %v", err)
-		return map[string]ResolvedBatchDisplay{}
-	}
-
-	preferred := map[string]*models.CredentialBatch{}
-	for _, batch := range batches {
-		if existing, ok := preferred[batch.VerifiableCredentialType]; ok && existing.CredentialMetadata != nil {
-			continue
+	result := map[string]ResolvedBatchDisplay{}
+	for _, source := range s.displaySources {
+		for typ, display := range source.LiveDisplaysByType(s.locale) {
+			if _, taken := result[typ]; !taken {
+				result[typ] = display
+			}
 		}
-		preferred[batch.VerifiableCredentialType] = batch
-	}
-
-	result := make(map[string]ResolvedBatchDisplay, len(preferred))
-	for vct, batch := range preferred {
-		result[vct] = ResolveBatchDisplay(batch, s.locale)
 	}
 	return result
 }

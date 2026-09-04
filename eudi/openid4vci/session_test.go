@@ -200,8 +200,8 @@ func Test_openid4vciSession_obtainCredential_successResponses(t *testing.T) {
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(
 		sdjwtvc.CreateDefaultVerificationContext(chain),
 	)
-	sess.credentialFormatParsers = services.CredentialFormatParsers{
-		models.CredentialFormatSdJwtVc: services.NewSdJwtVcCredentialFormatParser(holderVerifier),
+	sess.formats = services.CredentialFormats{
+		models.CredentialFormatSdJwtVc: {Parser: services.NewSdJwtVcCredentialFormatParser(holderVerifier)},
 	}
 
 	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
@@ -244,6 +244,12 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	require.NoError(t, err)
 
 	session := &session{
+		// The SD-JWT VC format is registered so a test that never reaches the
+		// parser (an HTTP error, an encrypted request) still resolves its format;
+		// tests that parse a credential replace the parser with a real one.
+		formats: services.CredentialFormats{
+			models.CredentialFormatSdJwtVc: {Parser: services.NewSdJwtVcCredentialFormatParser(nil)},
+		},
 		storage: eudiStorage,
 		credentialOffer: &CredentialOffer{
 			CredentialConfigurationIds: []string{"credential-config-1"},
@@ -585,10 +591,10 @@ func Test_buildOfferedCredentials_CredentialIdComesFromTheIssuedCredential(t *te
 	const configId = "credential-config-1"
 
 	// The namespace -> elementIdentifier -> value shape the mdoc branch reads.
-	resolvedMdocClaims, err := json.Marshal(map[string]map[string]any{
-		"eu.europa.ec.av.1": {"age_over_18": true},
-	})
-	require.NoError(t, err)
+	resolvedMdocClaims := &services.ParsedMdoc{
+		DocType:    "eu.europa.ec.av.1",
+		Namespaces: models.MdocNamespaces{"eu.europa.ec.av.1": {"age_over_18": true}},
+	}
 
 	tests := []struct {
 		name       string
@@ -603,7 +609,7 @@ func Test_buildOfferedCredentials_CredentialIdComesFromTheIssuedCredential(t *te
 			parsed: &services.ParsedCredential{
 				Format:                   models.CredentialFormatMsoMdoc,
 				VerifiableCredentialType: "eu.europa.ec.av.1",
-				ResolvedClaims:           resolvedMdocClaims,
+				Mdoc:                     resolvedMdocClaims,
 			},
 			expectedId: "eu.europa.ec.av.1",
 		},
@@ -632,8 +638,8 @@ func Test_buildOfferedCredentials_CredentialIdComesFromTheIssuedCredential(t *te
 			name:      "the configuration is the fallback when the credential names nothing",
 			configVct: "https://issuer.example.com/vct/fallback",
 			parsed: &services.ParsedCredential{
-				Format:         models.CredentialFormatMsoMdoc,
-				ResolvedClaims: resolvedMdocClaims,
+				Format: models.CredentialFormatMsoMdoc,
+				Mdoc:   resolvedMdocClaims,
 			},
 			expectedId: "https://issuer.example.com/vct/fallback",
 		},
@@ -684,17 +690,15 @@ func Test_buildOfferedCredentials_CredentialIdComesFromTheIssuedCredential(t *te
 func Test_buildOfferedCredentials_ReportsInstancesObtainedNotAdvertisedCeiling(t *testing.T) {
 	const configId = "credential-config-1"
 
-	resolvedClaims, err := json.Marshal(map[string]map[string]any{
-		"eu.europa.ec.av.1": {"age_over_18": true},
-	})
-	require.NoError(t, err)
-
 	newInstance := func() *services.ParsedCredential {
 		return &services.ParsedCredential{
 			Format:                   models.CredentialFormatMsoMdoc,
 			VerifiableCredentialType: "eu.europa.ec.av.1",
 			IssuerIdentifier:         "https://issuer.example.com",
-			ResolvedClaims:           resolvedClaims,
+			Mdoc: &services.ParsedMdoc{
+				DocType:    "eu.europa.ec.av.1",
+				Namespaces: models.MdocNamespaces{"eu.europa.ec.av.1": {"age_over_18": true}},
+			},
 		}
 	}
 

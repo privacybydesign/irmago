@@ -2,14 +2,14 @@ package services
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/datatypes"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
@@ -186,11 +186,9 @@ func TestBuildMdocAttributesForElementsFlattensLikeTheCredentialList(t *testing.
 
 	// The batch carries the same claims the list reads, so derived names resolve
 	// exactly as they do there.
-	payload, err := json.Marshal(resolved)
-	require.NoError(t, err)
-	batch := &models.CredentialBatch{Format: models.CredentialFormatMsoMdoc, ProcessedSdJwtPayload: datatypes.JSON(payload)}
+	batch := &models.MdocBatch{Namespaces: models.MdocNamespaces(resolved)}
 
-	attrs := BuildMdocAttributesForElements(batch, resolved, []MdocElementRef{
+	attrs := BuildMdocAttributesForElements(batch, []MdocElementRef{
 		{Namespace: "eu.europa.ec.av.1", Element: "age_over_65"},
 		{Namespace: "eu.europa.ec.av.1", Element: "age_over_18"},
 		{Namespace: "org.iso.18013.5.1", Element: "portrait"},
@@ -228,4 +226,152 @@ func TestBuildMdocAttributesForElementsFlattensLikeTheCredentialList(t *testing.
 
 func strPtrValue(s string) *clientmodels.AttributeValue {
 	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &s}
+}
+
+// ========== BuildMdocAttributesFromResolvedClaims ==========
+
+func TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames(t *testing.T) {
+	claims := []metadata.ClaimsDescription{
+		{
+			Path: metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_18"},
+			Display: []metadata.Display{
+				{Name: "Age Over 18", Locale: new(string)},
+			},
+		},
+		{
+			Path: metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_21"},
+			Display: []metadata.Display{
+				// No locale set -- must fall back to DefaultFallbackLanguage,
+				// not an empty-string key.
+				{Name: "Age Over 21"},
+			},
+		},
+	}
+	*claims[0].Display[0].Locale = "en"
+
+	resolved := map[string]map[string]any{
+		"eu.europa.ec.av.1": {
+			"age_over_21": false,
+			"age_over_18": true,
+		},
+	}
+
+	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "en")
+
+	require.Len(t, attrs, 2)
+
+	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
+	require.NotNil(t, attrs[0].DisplayName)
+	assert.Equal(t, "Age Over 18", *attrs[0].DisplayName)
+	require.NotNil(t, attrs[0].Value)
+
+	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_21"}, attrs[1].ClaimPath)
+	require.NotNil(t, attrs[1].DisplayName)
+	// No locale was set on this claim's display entry, so it was stored under
+	// DefaultFallbackLanguage -- resolving for "en" (which equals the fallback
+	// here) must still find it, not silently come back empty.
+	assert.Equal(t, "Age Over 21", *attrs[1].DisplayName)
+}
+
+func TestBuildMdocAttributesFromResolvedClaims_NoMetadataStillEmitsValues(t *testing.T) {
+	resolved := map[string]map[string]any{
+		"eu.europa.ec.av.1": {
+			"age_over_18": true,
+			// Not an age_over_NN, so nothing derives a name for it: the value
+			// still travels, unlabelled, exactly as before.
+			"issuing_country": "NL",
+		},
+	}
+
+	attrs := BuildMdocAttributesFromResolvedClaims(nil, resolved, "en")
+
+	require.Len(t, attrs, 2)
+
+	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
+	require.NotNil(t, attrs[0].Value)
+	// Derived from the element identifier, since no metadata named it.
+	require.NotNil(t, attrs[0].DisplayName)
+	assert.Equal(t, "Age Over 18", *attrs[0].DisplayName)
+
+	require.Equal(t, []any{"eu.europa.ec.av.1", "issuing_country"}, attrs[1].ClaimPath)
+	require.NotNil(t, attrs[1].Value)
+	assert.Nil(t, attrs[1].DisplayName)
+}
+
+// A threshold the issuer never advertised is the case the derived name exists
+// for: the EU reference issuer publishes thirteen age_over_NN claims and mints
+// whatever it is asked for, so this arrives with a value and no metadata entry.
+func TestBuildMdocAttributesFromResolvedClaims_DerivesUnadvertisedAgeOver(t *testing.T) {
+	en := "en"
+	claims := []metadata.ClaimsDescription{{
+		Path:    metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_18"},
+		Display: []metadata.Display{{Name: "Age Over 18", Locale: &en}},
+	}}
+	resolved := map[string]map[string]any{
+		"eu.europa.ec.av.1": {
+			"age_over_18": true,
+			"age_over_35": true,
+		},
+	}
+
+	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "en")
+
+	require.Len(t, attrs, 2)
+
+	// Published metadata, unchanged.
+	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
+	require.NotNil(t, attrs[0].DisplayName)
+	assert.Equal(t, "Age Over 18", *attrs[0].DisplayName)
+
+	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_35"}, attrs[1].ClaimPath)
+	require.NotNil(t, attrs[1].DisplayName)
+	assert.Equal(t, "Age Over 35", *attrs[1].DisplayName)
+}
+
+// An issuer's own text wins over a derived name even when it is published under
+// the namespace-less path shape, and even when it is in another language: the
+// derived name is English only, so overriding a published nl label with it would
+// make a Dutch wallet read worse, not better.
+func TestBuildMdocAttributesFromResolvedClaims_PublishedBareElementNameWins(t *testing.T) {
+	nl := "nl"
+	claims := []metadata.ClaimsDescription{{
+		Path:    metadata.ClaimsPathPointer{"age_over_18"},
+		Display: []metadata.Display{{Name: "Ouder dan 18", Locale: &nl}},
+	}}
+	resolved := map[string]map[string]any{
+		"eu.europa.ec.av.1": {"age_over_18": true},
+	}
+
+	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "nl")
+
+	require.Len(t, attrs, 1)
+	assert.Nil(t, attrs[0].DisplayName, "a bare-element publication is not overridden by the derived English name")
+}
+
+func TestDerivedMdocClaimName(t *testing.T) {
+	for _, tc := range []struct {
+		element string
+		want    string
+		ok      bool
+	}{
+		{element: "age_over_18", want: "Age Over 18", ok: true},
+		{element: "age_over_9", want: "Age Over 9", ok: true},
+		// NN is two digits, so 99 is the ceiling and 100 is past it.
+		{element: "age_over_99", want: "Age Over 99", ok: true},
+		{element: "age_over_00", want: "Age Over 00", ok: true},
+		{element: "age_over_100", ok: false},
+		{element: "age_over_120", ok: false},
+		{element: "age_over_1234", ok: false},
+		{element: "age_over_", ok: false},
+		{element: "age_over_18a", ok: false},
+		{element: "age_in_years", ok: false},
+		{element: "issuing_country", ok: false},
+		{element: "", ok: false},
+	} {
+		t.Run(tc.element, func(t *testing.T) {
+			got, ok := DerivedMdocClaimName(tc.element)
+			assert.Equal(t, tc.ok, ok)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }

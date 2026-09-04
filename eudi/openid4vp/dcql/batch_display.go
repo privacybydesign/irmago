@@ -6,12 +6,12 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
-// The functions in this file operate purely on models.CredentialBatch's
-// already format-agnostic fields (validity window, batch size) — nothing
-// here is specific to any one credential format. They exist here, shared by
-// every DcqlCredentialQueryHandler implementation backed by this batch model
-// (currently eudi_sdjwt_dcql and mdoc_dcql), instead of being copy-pasted
-// into each handler.
+// The functions in this file read an SdJwtVcBatch's validity window and batch
+// counts for the SD-JWT DCQL handler and for the SD-JWT store's re-issuance
+// rule, which must agree on what "still presentable" means. They live here
+// rather than in eudi_sdjwt_dcql because services cannot import that package.
+// mso_mdoc has its own equivalents (services.MdocBatchIsValid and the helpers
+// in mdoc_dcql); the two formats share no batch model.
 //
 // Display-name/logo resolution (credential name, issuer name, claim names,
 // images) lives in eudi/services (ResolveBatchDisplay, LoadResolvedLogo,
@@ -24,7 +24,7 @@ import (
 // when the underlying credential states no expiry or not-before of its own
 // (an absent exp/nbf claim, an absent validityInfo bound) — storing 0 as the
 // timestamp.
-func IsBatchValid(batch *models.CredentialBatch, now time.Time) bool {
+func IsBatchValid(batch *models.SdJwtVcBatch, now time.Time) bool {
 	epoch := time.Unix(0, 0)
 	if batch.ExpiresAt.Valid && !batch.ExpiresAt.V.Equal(epoch) && now.After(batch.ExpiresAt.V) {
 		return false
@@ -37,7 +37,7 @@ func IsBatchValid(batch *models.CredentialBatch, now time.Time) bool {
 
 // BatchExpiryUnix returns the batch's expiry as a unix timestamp, or nil if
 // the batch does not expire.
-func BatchExpiryUnix(batch *models.CredentialBatch) *int64 {
+func BatchExpiryUnix(batch *models.SdJwtVcBatch) *int64 {
 	if batch.ExpiresAt.Valid {
 		x := batch.ExpiresAt.V.Unix()
 		return &x
@@ -48,7 +48,7 @@ func BatchExpiryUnix(batch *models.CredentialBatch) *int64 {
 // BatchInstanceCountRemaining returns nil for batch-of-1 credentials
 // (infinitely reusable) and a pointer to the remaining count for larger
 // batches.
-func BatchInstanceCountRemaining(batch *models.CredentialBatch) *uint {
+func BatchInstanceCountRemaining(batch *models.SdJwtVcBatch) *uint {
 	if batch.BatchSize <= 1 {
 		return nil
 	}

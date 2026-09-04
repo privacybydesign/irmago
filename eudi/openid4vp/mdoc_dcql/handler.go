@@ -1,12 +1,12 @@
 // Package mdoc_dcql implements a DcqlCredentialQueryHandler for mso_mdoc
-// credentials stored in the eudi SQLite storage (issued via OpenID4VCI),
-// mirroring eudi_sdjwt_dcql for the mdoc format.
+// credentials stored in the wallet's mdoc tables (issued via OpenID4VCI),
+// mirroring eudi_sdjwt_dcql for the mdoc format. It reads models.MdocBatch
+// through db.MdocStore and nothing of the SD-JWT storage.
 package mdoc_dcql
 
 import (
 	"crypto/ecdsa"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -40,16 +40,16 @@ type DeviceKeyBinder interface {
 // MdocDcqlHandler implements dcql.DcqlCredentialQueryHandler for mso_mdoc
 // credentials stored in the eudi storage (SQLite).
 type MdocDcqlHandler struct {
-	storage         storage.Storage
-	credentialStore db.CredentialStore
-	deviceKeys      DeviceKeyBinder
-	currentLocale   *clientmodels.CurrentLocale
+	storage       storage.Storage
+	store         db.MdocStore
+	deviceKeys    DeviceKeyBinder
+	currentLocale *clientmodels.CurrentLocale
 }
 
 // NewMdocDcqlHandler creates a new handler.
 //
 // deviceKeys signs the DeviceAuthentication of every presentation this handler
-// prepares. Pass services.NewMdocDeviceKeyBinder(db.NewHolderBindingKeyStore(
+// prepares. Pass services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(
 // eudiStorage.Db())) for the default software, storage-backed signer, or a
 // hardware-backed implementation to keep the device private key out of process.
 func NewMdocDcqlHandler(
@@ -58,10 +58,10 @@ func NewMdocDcqlHandler(
 	deviceKeys DeviceKeyBinder,
 ) *MdocDcqlHandler {
 	return &MdocDcqlHandler{
-		storage:         eudiStorage,
-		credentialStore: db.NewCredentialStore(eudiStorage.Db()),
-		deviceKeys:      deviceKeys,
-		currentLocale:   currentLocale,
+		storage:       eudiStorage,
+		store:         db.NewMdocStore(eudiStorage.Db()),
+		deviceKeys:    deviceKeys,
+		currentLocale: currentLocale,
 	}
 }
 
@@ -120,7 +120,7 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 		}
 	}
 
-	batches, err := h.credentialStore.GetBatchesByDocType(docType)
+	batches, err := h.store.GetBatchesByDocType(docType)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 	now := time.Now()
 	hasExhaustedBatch := false
 	for _, batch := range batches {
-		if !dcql.IsBatchValid(batch, now) {
+		if !services.MdocBatchIsValid(batch, now) {
 			continue
 		}
 		if batch.BatchSize > 1 && batch.RemainingCount == 0 {
@@ -137,31 +137,24 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 			continue
 		}
 
-		resolved, err := unmarshalResolvedClaims(batch)
-		if err != nil {
-			continue
-		}
-
-		claims := selectClaims(query, resolved)
+		claims := selectClaims(query, batch.Namespaces)
 		if claims == nil {
 			continue
 		}
 
+		signedAt := batch.SignedAt.Unix()
 		candidate := clientmodels.SelectableCredentialInstance{
-			CredentialId:                batch.VerifiableCredentialType,
+			CredentialId:                batch.DocType,
 			Hash:                        batch.Hash,
 			Name:                        credentialDisplayName(batch, locale),
 			Issuer:                      h.issuerTrustedParty(batch, locale),
 			Format:                      clientmodels.Format_MsoMdoc,
-			DisplayIsFallback:           services.CredentialDisplayIsFallback(batch, locale),
-			BatchInstanceCountRemaining: dcql.BatchInstanceCountRemaining(batch),
-			Attributes:                  buildAttributes(batch, claims, resolved, locale),
-			ExpiryDate:                  dcql.BatchExpiryUnix(batch),
+			DisplayIsFallback:           services.MdocDisplayIsFallback(batch, locale),
+			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
+			Attributes:                  buildAttributes(batch, claims, locale),
+			ExpiryDate:                  batchExpiryUnix(batch),
+			IssuanceDate:                &signedAt,
 			Image:                       h.credentialImage(batch, locale),
-		}
-		if batch.IssuedAt.Valid {
-			x := batch.IssuedAt.V.Unix()
-			candidate.IssuanceDate = &x
 		}
 
 		result.OwnedCandidates = append(result.OwnedCandidates, &candidate)
@@ -189,18 +182,18 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 	result := &dcql.PreparedDisclosure{}
 
 	for _, sel := range selections {
-		batch, err := h.credentialStore.GetBatchByHash(sel.CredentialHash)
+		batch, err := h.store.GetBatchByHash(sel.CredentialHash)
 		if err != nil {
 			return nil, fmt.Errorf("batch not found for hash %s: %w", sel.CredentialHash, err)
 		}
 
-		instance, err := h.credentialStore.GetUnusedInstance(batch.ID)
+		instance, err := h.store.GetUnusedInstance(batch.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
 		}
 
 		var doc stdmdoc.MDoc
-		if err := stdmdoc.Unmarshal(instance.RawCredential, &doc); err != nil {
+		if err := stdmdoc.Unmarshal(instance.IssuerSigned, &doc); err != nil {
 			return nil, fmt.Errorf("decode stored mdoc: %w", err)
 		}
 
@@ -236,7 +229,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 			return nil, fmt.Errorf("build session transcript: %w", err)
 		}
 
-		deviceAuthBytes, err := holder.SignDeviceAuth(batch.VerifiableCredentialType, transcript)
+		deviceAuthBytes, err := holder.SignDeviceAuth(batch.DocType, transcript)
 		if err != nil {
 			return nil, fmt.Errorf("sign device auth: %w", err)
 		}
@@ -258,25 +251,20 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 		})
 
 		// Everything that can fail for this selection happens before the instance is
-		// burned. Decoding the cached claims for the log entry is fallible, and doing
-		// it afterwards meant a failure here consumed a single-use instance on a
-		// disclosure that then returned an error and never reached the verifier —
-		// the credential silently loses a use. eudi_sdjwt_dcql has nothing fallible
-		// after its own MarkInstanceUsed for the same reason.
-		resolved, err := unmarshalResolvedClaims(batch)
-		if err != nil {
-			return nil, fmt.Errorf("decode resolved claims for log: %w", err)
-		}
-
+		// burned: a failure after MarkInstanceUsed would consume a single-use instance
+		// on a disclosure that then returned an error and never reached the verifier,
+		// and the credential would silently lose a use. eudi_sdjwt_dcql has nothing
+		// fallible after its own MarkInstanceUsed for the same reason.
+		//
 		// Only mark the instance as used when the original batch had multiple instances.
 		// A batch of 1 keeps its single instance reusable, mirroring eudi_sdjwt_dcql.
 		if batch.BatchSize > 1 {
-			if err := h.credentialStore.MarkInstanceUsed(instance.ID); err != nil {
+			if err := h.store.MarkInstanceUsed(instance.ID); err != nil {
 				return nil, fmt.Errorf("failed to mark instance as used: %w", err)
 			}
 		}
 
-		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths, sel.Claims, resolved))
+		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths, sel.Claims))
 	}
 
 	return result, nil
@@ -305,16 +293,6 @@ func (h *MdocDcqlHandler) sessionTranscript(sel dcql.DisclosureSelection, nonce,
 // ---------------------------------------------------------------------------
 // Claim matching
 // ---------------------------------------------------------------------------
-
-// unmarshalResolvedClaims decodes a batch's cached namespace -> elementIdentifier
-// -> value map.
-func unmarshalResolvedClaims(batch *models.CredentialBatch) (map[string]map[string]any, error) {
-	var resolved map[string]map[string]any
-	if err := json.Unmarshal(batch.ProcessedSdJwtPayload, &resolved); err != nil {
-		return nil, err
-	}
-	return resolved, nil
-}
 
 // mdocPathParts splits a DCQL claim path into its mandatory [namespace,
 // elementIdentifier] components. mso_mdoc claim paths are always exactly two
@@ -471,7 +449,7 @@ func selectiveDiscloseByPaths(doc *stdmdoc.MDoc, claimPaths [][]any) (*stdmdoc.M
 // same rows on the permission screen as on the card, and a portrait is a picture
 // in both places (services.BuildMdocAttributesForElements). Each row is then
 // stamped with what the request said about its element.
-func buildAttributes(batch *models.CredentialBatch, claims []dcql.Claim, resolved map[string]map[string]any, locale string) []clientmodels.Attribute {
+func buildAttributes(batch *models.MdocBatch, claims []dcql.Claim, locale string) []clientmodels.Attribute {
 	refs := make([]services.MdocElementRef, 0, len(claims))
 	seen := make(map[services.MdocElementRef]struct{}, len(claims))
 	for _, claim := range claims {
@@ -486,7 +464,7 @@ func buildAttributes(batch *models.CredentialBatch, claims []dcql.Claim, resolve
 		refs = append(refs, ref)
 	}
 
-	attrs := services.BuildMdocAttributesForElements(batch, resolved, refs, locale)
+	attrs := services.BuildMdocAttributesForElements(batch, refs, locale)
 	return stampRequestFacts(attrs, claims, true)
 }
 
@@ -577,20 +555,21 @@ func unobtainableClaimName(elementIdentifier string) *string {
 // credentialImage loads the credential logo that resolves for the locale
 // from the batch's display metadata, mirroring eudi_sdjwt_dcql's identical
 // helper.
-func (h *MdocDcqlHandler) credentialImage(batch *models.CredentialBatch, locale string) *clientmodels.Image {
-	if batch.CredentialMetadata == nil {
+func (h *MdocDcqlHandler) credentialImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
+	cm := services.MdocCredentialMetadata(batch)
+	if cm == nil {
 		return nil
 	}
 	logoManager := h.storage.FileSystem().Credentials().LogoManager()
-	return services.LoadResolvedLogo(logoManager, services.CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale)
+	return services.LoadResolvedLogo(logoManager, services.MdocCredentialLogoURIsByLanguage(cm.Display), locale)
 }
 
 // issuerTrustedParty builds a TrustedParty from the stored issuer display
 // metadata, mirroring eudi_sdjwt_dcql's identical helper.
-func (h *MdocDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, locale string) clientmodels.TrustedParty {
+func (h *MdocDcqlHandler) issuerTrustedParty(batch *models.MdocBatch, locale string) clientmodels.TrustedParty {
 	return clientmodels.TrustedParty{
-		Id:       batch.CredentialIssuerIdentifier,
-		Name:     clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
+		Id:       batch.CredentialIssuer,
+		Name:     clientmodels.Resolve(services.MdocIssuerNamesByLanguage(services.MdocIssuerDisplays(batch)), locale),
 		Image:    h.issuerImage(batch, locale),
 		Verified: batch.IssuerVerified,
 	}
@@ -599,20 +578,36 @@ func (h *MdocDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, loca
 // issuerImage loads the issuer logo that resolves for the locale from the
 // batch's issuer display metadata, mirroring eudi_sdjwt_dcql's identical
 // helper.
-func (h *MdocDcqlHandler) issuerImage(batch *models.CredentialBatch, locale string) *clientmodels.Image {
+func (h *MdocDcqlHandler) issuerImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
 	logoManager := h.storage.FileSystem().Issuers().LogoManager()
-	return services.LoadResolvedLogo(logoManager, services.IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale)
+	return services.LoadResolvedLogo(logoManager, services.MdocIssuerLogoURIsByLanguage(services.MdocIssuerDisplays(batch)), locale)
 }
 
 // credentialDisplayName resolves a credential's display name from its stored
 // metadata, falling back to the docType when there is no display metadata.
-func credentialDisplayName(batch *models.CredentialBatch, locale string) string {
-	if batch.CredentialMetadata != nil {
-		if ts := services.CredentialNamesByLanguage(batch.CredentialMetadata.Display); len(ts) > 0 {
+func credentialDisplayName(batch *models.MdocBatch, locale string) string {
+	if cm := services.MdocCredentialMetadata(batch); cm != nil {
+		if ts := services.MdocCredentialNamesByLanguage(cm.Display); len(ts) > 0 {
 			return clientmodels.Resolve(ts, locale)
 		}
 	}
-	return batch.VerifiableCredentialType
+	return batch.DocType
+}
+
+// batchInstanceCountRemaining returns nil for a batch of one (a reusable
+// credential with no count to spend down) and the remaining count otherwise.
+func batchInstanceCountRemaining(batch *models.MdocBatch) *uint {
+	if batch.BatchSize <= 1 {
+		return nil
+	}
+	return &batch.RemainingCount
+}
+
+// batchExpiryUnix is the MSO's validUntil as a unix timestamp. Always set: the
+// MSO validity window is mandatory.
+func batchExpiryUnix(batch *models.MdocBatch) *int64 {
+	x := batch.ValidUntil.Unix()
+	return &x
 }
 
 // buildLogCredential records what left the wallet, as the same rows the
@@ -623,23 +618,20 @@ func credentialDisplayName(batch *models.CredentialBatch, locale string) string 
 // The verifier's intent to retain is recorded with each row, as the screen
 // showed it: a log that forgets it leaves the user unable to see later what
 // they agreed to.
-func (h *MdocDcqlHandler) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any, claims []dcql.Claim, resolved map[string]map[string]any) clientmodels.LogCredential {
+func (h *MdocDcqlHandler) buildLogCredential(batch *models.MdocBatch, claimPaths [][]any, claims []dcql.Claim) clientmodels.LogCredential {
 	locale := h.currentLocale.Get()
-	attrs := services.BuildMdocAttributesForElements(batch, resolved, services.UniqueMdocElementRefs(claimPaths), locale)
+	attrs := services.BuildMdocAttributesForElements(batch, services.UniqueMdocElementRefs(claimPaths), locale)
 	attrs = stampRequestFacts(attrs, claims, false)
 
-	log := clientmodels.LogCredential{
-		CredentialId: batch.VerifiableCredentialType,
+	signedAt := batch.SignedAt.Unix()
+	return clientmodels.LogCredential{
+		CredentialId: batch.DocType,
 		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc},
 		Name:         credentialDisplayName(batch, locale),
 		Image:        h.credentialImage(batch, locale),
 		Issuer:       h.issuerTrustedParty(batch, locale),
 		Attributes:   attrs,
-		ExpiryDate:   dcql.BatchExpiryUnix(batch),
+		ExpiryDate:   batchExpiryUnix(batch),
+		IssuanceDate: &signedAt,
 	}
-	if batch.IssuedAt.Valid {
-		x := batch.IssuedAt.V.Unix()
-		log.IssuanceDate = &x
-	}
-	return log
 }

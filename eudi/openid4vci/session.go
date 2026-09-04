@@ -38,10 +38,11 @@ type session struct {
 	httpClient               *http.Client
 	handler                  Handler
 	storage                  storage.Storage
-	credentialService        services.CredentialService
-	credentialFormatParsers  services.CredentialFormatParsers
 	holderVerifier           *sdjwtvc.HolderVerificationProcessor
-	holderKeyBinder          HolderKeyBinder
+
+	// formats is the per-format registry: parser, key binder and store per
+	// credential format, looked up by the credential configuration's format.
+	formats services.CredentialFormats
 
 	// vctResolver provides cached raw bytes of fetched SD-JWT VC type
 	// metadata documents so the post-issuance integrity check (verifyVctIntegrity)
@@ -262,7 +263,9 @@ type fetchedCredential struct {
 	parsedCredentials              []*services.ParsedCredential
 	requireCryptographicKeyBinding bool
 	publicKeyIdentifiers           []models.PublicHolderBindingKey
-	keyBindingService              HolderKeyBinder
+	// support is the format bundle the credentials were obtained with: its Keys
+	// minted publicKeyIdentifiers and roll them back, its Store persists them.
+	support services.CredentialFormatSupport
 }
 
 // sdJwtVcsOf extracts the SdJwtVc field from every parsed credential that
@@ -280,14 +283,14 @@ func sdJwtVcsOf(parsed []*services.ParsedCredential) []*sdjwtvc.VerifiedSdJwtVc 
 }
 
 func (fc *fetchedCredential) cleanupKeys() {
-	if !fc.requireCryptographicKeyBinding || len(fc.publicKeyIdentifiers) == 0 || fc.keyBindingService == nil {
+	if !fc.requireCryptographicKeyBinding || len(fc.publicKeyIdentifiers) == 0 || fc.support.Keys == nil {
 		return
 	}
 	keyIds := make([]datatypes.UUID, len(fc.publicKeyIdentifiers))
 	for i, key := range fc.publicKeyIdentifiers {
 		keyIds[i] = key.ID
 	}
-	if err := fc.keyBindingService.RemoveKeys(keyIds); err != nil {
+	if err := fc.support.Keys.RemoveKeys(keyIds); err != nil {
 		eudi.Logger.Warnf("failed to remove holder binding keys: %v", err)
 	}
 }
@@ -425,7 +428,7 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 
 func (s *session) storeCredentials(fetched []*fetchedCredential) error {
 	for _, fc := range fetched {
-		err := s.credentialService.VerifyAndStoreIssuedCredentials(
+		err := fc.support.Store.Store(
 			fc.parsedCredentials,
 			fc.credentialConfigurationId,
 			*s.credentialIssuerMetadata,
@@ -466,15 +469,11 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		// Use the first credential in the batch as source of attribute values.
 		first := fc.parsedCredentials[0]
 		var attrs []clientmodels.Attribute
-		if first.SdJwtVc != nil {
+		switch {
+		case first.SdJwtVc != nil:
 			attrs = buildAttributesWithValues(claims, first.SdJwtVc.ProcessedSdJwtPayload, s.locale)
-		} else {
-			var resolved map[string]map[string]any
-			if err := json.Unmarshal(first.ResolvedClaims, &resolved); err != nil {
-				eudi.Logger.Warnf("failed to unmarshal resolved claims for %q: %v", fc.credentialConfigurationId, err)
-			} else {
-				attrs = services.BuildMdocAttributesFromResolvedClaims(claims, resolved, s.locale)
-			}
+		case first.Mdoc != nil:
+			attrs = services.BuildMdocAttributesFromResolvedClaims(claims, first.Mdoc.Namespaces, s.locale)
 		}
 
 		displays := metadata.ToTranslateableList(credentialDisplay)
@@ -780,9 +779,15 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		CredentialConfigurationId: &credentialConfigurationId,
 	}
 
+	// Everything format-specific about this credential — how its keys are
+	// minted, how it is verified, where it is stored — comes from one registry
+	// entry, so the three cannot be wired for different formats.
+	support, ok := s.formats[models.CredentialFormat(credentialConfig.Format)]
+	if !ok {
+		return nil, fmt.Errorf("no credential format registered for format %q", credentialConfig.Format)
+	}
+
 	var publicKeyIdentifiers []models.PublicHolderBindingKey
-	// The holder key binder (software or WSCA-backed) is injected via NewClient.
-	keyBindingService := s.holderKeyBinder
 	if requireCryptographicKeyBinding {
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
@@ -797,7 +802,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		var proofs []string
 		var err error
 
-		publicKeyIdentifiers, proofs, err = keyBindingService.CreateKeyPairsWithProofs(num, proofBuilder)
+		publicKeyIdentifiers, proofs, err = support.Keys.CreateKeyPairsWithProofs(num, proofBuilder)
 		if err != nil {
 			return nil, fmt.Errorf("could not create key pairs: %v", err)
 		}
@@ -930,11 +935,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		return nil, fmt.Errorf("invalid credential response: %v", err)
 	}
 
-	parser, ok := s.credentialFormatParsers[models.CredentialFormat(credentialConfig.Format)]
-	if !ok {
-		return nil, fmt.Errorf("no credential format parser registered for format %q", credentialConfig.Format)
-	}
-
+	parser := support.Parser
 	parsedCredentials := make([]*services.ParsedCredential, len(credentialResponse.Credentials))
 	for i, cred := range credentialResponse.Credentials {
 		parsed, err := parser.ParseAndVerify(cred.Credential, s.credentialIssuerMetadata.CredentialIssuer, requireCryptographicKeyBinding)
@@ -960,7 +961,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		parsedCredentials:              parsedCredentials,
 		requireCryptographicKeyBinding: requireCryptographicKeyBinding,
 		publicKeyIdentifiers:           publicKeyIdentifiers,
-		keyBindingService:              keyBindingService,
+		support:                        support,
 	}, nil
 }
 
@@ -1052,10 +1053,10 @@ func requireMandatoryMdocElements(config *metadata.CredentialConfiguration, pars
 		return nil
 	}
 
-	var resolved map[string]map[string]any
-	if err := json.Unmarshal(parsed.ResolvedClaims, &resolved); err != nil {
-		return fmt.Errorf("could not read the issued mdoc's elements to check the mandatory ones: %v", err)
+	if parsed.Mdoc == nil {
+		return fmt.Errorf("could not read the issued mdoc's elements to check the mandatory ones: the credential was not parsed as an mdoc")
 	}
+	resolved := parsed.Mdoc.Namespaces
 
 	var missing []string
 	for _, path := range mandatory {

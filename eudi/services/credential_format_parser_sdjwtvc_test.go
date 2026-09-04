@@ -55,12 +55,12 @@ func TestSdJwtVcCredentialFormatParser_ParseAndVerify(t *testing.T) {
 	require.Equal(t, models.CredentialFormatSdJwtVc, parsed.Format)
 	require.Equal(t, "test.credential.type", parsed.VerifiableCredentialType)
 	require.Equal(t, "https://openid4vc.staging.yivi.app", parsed.IssuerIdentifier)
-	require.NotEmpty(t, parsed.ResolvedClaims)
+	require.NotNil(t, parsed.SdJwtVc)
 	require.NotEmpty(t, parsed.RawCredentialBytes)
 	require.NotNil(t, parsed.IssuedAt)
 	require.NotNil(t, parsed.ExpiresAt)
 	require.NotNil(t, parsed.SdJwtVc)
-	require.Nil(t, parsed.HolderBindingKeyThumbprint)
+	require.Nil(t, parsed.Mdoc)
 }
 
 func TestSdJwtVcCredentialFormatParser_ParseAndVerify_InvalidCredential(t *testing.T) {

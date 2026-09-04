@@ -8,6 +8,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
@@ -46,12 +47,15 @@ func TestMdocCredentialFormatParser_ParseAndVerify(t *testing.T) {
 	require.Equal(t, models.CredentialFormatMsoMdoc, parsed.Format)
 	require.Equal(t, "eu.europa.ec.av.1", parsed.VerifiableCredentialType)
 	require.Equal(t, "https://test-issuer.example.com", parsed.IssuerIdentifier)
-	require.NotEmpty(t, parsed.ResolvedClaims)
+	require.NotNil(t, parsed.Mdoc)
+	require.NotEmpty(t, parsed.Mdoc.Namespaces)
+	require.Equal(t, "eu.europa.ec.av.1", parsed.Mdoc.DocType)
 	require.NotEmpty(t, parsed.RawCredentialBytes)
 	require.NotNil(t, parsed.IssuedAt)
 	require.NotNil(t, parsed.ExpiresAt)
 	require.NotNil(t, parsed.NotBefore)
-	require.NotNil(t, parsed.HolderBindingKeyThumbprint)
+	require.NotEmpty(t, parsed.Mdoc.DeviceKeyThumbprint)
+	require.NotNil(t, parsed.Mdoc.DeviceKey)
 	require.Nil(t, parsed.SdJwtVc)
 }
 
@@ -289,15 +293,47 @@ func TestMdocCredentialFormatParser_CheckBatchUniqueness(t *testing.T) {
 
 	thumbprint := "same-thumbprint"
 	err := parser.CheckBatchUniqueness([]*ParsedCredential{
-		{HolderBindingKeyThumbprint: &thumbprint},
-		{HolderBindingKeyThumbprint: &thumbprint},
+		{Mdoc: &ParsedMdoc{DeviceKeyThumbprint: thumbprint}},
+		{Mdoc: &ParsedMdoc{DeviceKeyThumbprint: thumbprint}},
 	})
 	require.Error(t, err)
 
 	other := "different-thumbprint"
 	err = parser.CheckBatchUniqueness([]*ParsedCredential{
-		{HolderBindingKeyThumbprint: &thumbprint},
-		{HolderBindingKeyThumbprint: &other},
+		{Mdoc: &ParsedMdoc{DeviceKeyThumbprint: thumbprint}},
+		{Mdoc: &ParsedMdoc{DeviceKeyThumbprint: other}},
 	})
 	require.NoError(t, err)
+}
+
+// A parsed mdoc's element values have the shapes they will have when read back
+// from the database, so the offer screen and the credential list agree. A CBOR
+// integer decodes as uint64, which clientmodels.NewAttributeValue does not know
+// and rendered as text on the offer screen; after the JSON shaping it is the
+// float64 the list also sees.
+func TestMdocCredentialFormatParser_NamespacesAreJSONShaped(t *testing.T) {
+	issuer, err := mdoc.NewIssuer()
+	require.NoError(t, err)
+	holder, err := mdoc.NewHolder()
+	require.NoError(t, err)
+	issued, err := issuer.Issue("eu.europa.ec.eudi.pid.1", "eu.europa.ec.eudi.pid.1", map[string]any{
+		"sex":            1,
+		"nationality":    []any{"NL", "BE"},
+		"place_of_birth": map[string]any{"country": "NL"},
+	}, holder.PublicKey())
+	require.NoError(t, err)
+	encoded, err := cbor.Marshal(issued)
+	require.NoError(t, err)
+
+	parser := NewMdocCredentialFormatParser(mdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()}))
+	parsed, err := parser.ParseAndVerify(base64.RawURLEncoding.EncodeToString(encoded), "https://issuer.example", true)
+	require.NoError(t, err)
+
+	elements := parsed.Mdoc.Namespaces["eu.europa.ec.eudi.pid.1"]
+	require.Equal(t, float64(1), elements["sex"], "a CBOR integer is the float64 JSON yields")
+	require.Equal(t, []any{"NL", "BE"}, elements["nationality"])
+	require.Equal(t, map[string]any{"country": "NL"}, elements["place_of_birth"])
+
+	value := clientmodels.NewAttributeValue(elements["sex"])
+	require.Equal(t, clientmodels.AttributeType_Int, value.Type, "the offer screen shows it as a number")
 }

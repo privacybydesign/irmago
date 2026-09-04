@@ -28,7 +28,7 @@ func newTestLogServiceWithLocale(t *testing.T, locale string) *eudiLogService {
 	return &eudiLogService{
 		locale:              locale,
 		store:               db.NewEudiLogStore(database),
-		credentialStore:     db.NewCredentialStore(database),
+		displaySources:      NewCredentialDisplaySources(database),
 		credLogoManager:     fs.Credentials().LogoManager(),
 		issuerLogoManager:   fs.Issuers().LogoManager(),
 		verifierLogoManager: fs.Verifiers().LogoManager(),
@@ -261,14 +261,22 @@ func newLiveBatch(t *testing.T, svc *eudiLogService, vct string, issuer string) 
 	storeLiveBatch(t, svc, liveBatch(vct, issuer))
 }
 
-func storeLiveBatch(t *testing.T, svc *eudiLogService, batch *models.CredentialBatch) {
+func storeLiveBatch(t *testing.T, svc *eudiLogService, batch *models.SdJwtVcBatch) {
 	t.Helper()
-	require.NoError(t, svc.credentialStore.StoreBatch(batch))
+	// The log service reads live credentials through format display sources;
+	// the SD-JWT one wraps the store these fixtures are written to.
+	for _, source := range svc.displaySources {
+		if sdjwt, ok := source.(sdJwtVcDisplaySource); ok {
+			require.NoError(t, sdjwt.store.StoreBatch(batch))
+			return
+		}
+	}
+	t.Fatal("the log service under test has no SD-JWT VC display source to seed")
 }
 
 // liveBatch is a stored batch with full display metadata in "en" and "nl".
-func liveBatch(vct string, issuer string) *models.CredentialBatch {
-	return &models.CredentialBatch{
+func liveBatch(vct string, issuer string) *models.SdJwtVcBatch {
+	return &models.SdJwtVcBatch{
 		IssuerIdentifier:           issuer,
 		VerifiableCredentialType:   vct,
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -297,7 +305,7 @@ func liveBatch(vct string, issuer string) *models.CredentialBatch {
 				},
 			},
 		},
-		Instances: []models.IssuedCredentialInstance{{RawCredential: []byte("raw")}},
+		Instances: []models.SdJwtVcBatchInstance{{RawCredential: []byte("raw")}},
 	}
 }
 
