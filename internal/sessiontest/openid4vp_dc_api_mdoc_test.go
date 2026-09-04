@@ -171,10 +171,10 @@ func testDcApiMdocMultiplePresentations(t *testing.T) {
 //
 // The response object must key one DeviceResponse under each query id, each
 // disclosing only its own element and each signed over the same DC API handover.
-// Read here in the clear because the reference verifier refuses this shape over
-// the redirect flow with RequiredCredentialSetNotSatisfied after validating both
-// documents (see openid4vp_mdoc_av_dcql_shapes_test.go), so what the wallet
-// actually produces can only be pinned where nothing sits between it and the test.
+// Read here in the clear, with nothing between the wallet and the test: this is
+// the shape that used to come back with both presentations under one query id
+// (see openid4vp_mdoc_av_dcql_shapes_test.go), which the redirect flow could only
+// report as a flat refusal from the verifier.
 func testDcApiMdocTwoQueries(t *testing.T) {
 	c, sessionHandler := createPidIssuerTestClient(t)
 	defer c.Close()

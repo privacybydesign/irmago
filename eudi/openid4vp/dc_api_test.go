@@ -121,7 +121,7 @@ func (h *testHandler) DeliverDcApiResponse(response string) {
 func (h *testHandler) RequestVerificationPermission(
 	_ *clientmodels.DisclosurePlan,
 	_ *clientmodels.TrustedParty,
-	_ map[string]string,
+	_ []dcql.ChoiceQueryIds,
 	callback PermissionHandler,
 ) {
 	if h.grant != nil {

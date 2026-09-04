@@ -448,7 +448,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			}
 		}
 
-		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths))
+		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, instance, sel.ClaimPaths))
 	}
 
 	return result, nil
@@ -674,17 +674,6 @@ func buildPairsFromLeaves(leafPaths [][]any, constrainedKeys map[string]struct{}
 	return pairs
 }
 
-// loadRawSdJwt fetches the raw issuer-signed SD-JWT bytes for a batch via the
-// credential store. Used by parseBatchAttributes to compute the post-disclosure
-// view and by other helpers that need to inspect the JWT structure.
-func loadRawSdJwt(batch *models.SdJwtVcBatch, credStore db.SdJwtVcStore) (sdjwtvc.SdJwtVc, error) {
-	instance, err := credStore.GetUnusedInstance(batch.ID)
-	if err != nil {
-		return "", fmt.Errorf("failed to load credential instance for batch %s: %w", batch.ID, err)
-	}
-	return sdjwtvc.SdJwtVc(instance.RawCredential), nil
-}
-
 // pathToFlatten describes one concrete claim path that should be emitted into
 // the disclosure-plan / log attribute list, along with its rendering context.
 type pathToFlatten struct {
@@ -870,7 +859,23 @@ func claimMatchesPath(path []any, values []any, payload *sdjwt.ProcessedPayload)
 	return false
 }
 
-func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.SdJwtVcBatch, claimPaths [][]any) clientmodels.LogCredential {
+// buildLogCredential records what left the wallet for one disclosed credential.
+//
+// It is handed the instance that was actually presented, not just its batch,
+// and two things depend on that. The post-disclosure view has to be computed
+// from the copy the verifier received. And revocation is per-instance: each
+// copy in a batch carries its own status list entry, so the batch cannot
+// answer whether the disclosed copy was revoked.
+//
+// Re-reading an instance here would give the wrong one anyway. PrepareDisclosure
+// has already marked this copy used by the time it calls this, so a fresh
+// GetUnusedInstance returns a sibling copy — or fails outright on the last copy
+// of a batch, which left the log with no attributes at all.
+func (h *SdJwtVcDcqlHandler) buildLogCredential(
+	batch *models.SdJwtVcBatch,
+	instance *models.SdJwtVcBatchInstance,
+	claimPaths [][]any,
+) clientmodels.LogCredential {
 	attrs := make([]clientmodels.Attribute, 0)
 
 	var resolved sdjwt.ProcessedPayload
@@ -882,11 +887,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.SdJwtVcBatch, clai
 	// log records exactly what was transmitted, including any sibling
 	// fields the issuer bundled into the same disclosure value as a
 	// requested leaf.
-	rawSdJwt, err := loadRawSdJwt(batch, h.credentialStore)
-	if err != nil {
-		eudi.Logger.Warnf("failed to load raw SD-JWT for log credential %q: %v", batch.VerifiableCredentialType, err)
-	}
-	view, err := sdjwt.PostDisclosureView(sdjwt.SdJwt(rawSdJwt), claimPaths)
+	view, err := sdjwt.PostDisclosureView(sdjwt.SdJwt(instance.RawCredential), claimPaths)
 	if err != nil {
 		eudi.Logger.Warnf("failed to compute post-disclosure view for log credential %q: %v", batch.VerifiableCredentialType, err)
 	}
@@ -907,6 +908,11 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.SdJwtVcBatch, clai
 		Issuer:       h.issuerTrustedParty(batch, locale),
 		Attributes:   attrs,
 		ExpiryDate:   dcql.BatchExpiryUnix(batch),
+		// Read off the disclosed instance, the same way FindCandidates reports
+		// them on the plan. A log that forgets them leaves the user unable to see
+		// later that what they shared was already revoked.
+		Revoked:             h.revocation != nil && h.revocation.IsRevoked(instance),
+		RevocationSupported: instance.StatusListURI != nil,
 	}
 
 	if batch.IssuedAt.Valid {

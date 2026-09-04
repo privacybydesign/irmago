@@ -84,12 +84,12 @@ func testSessionHandlerForOpenID4VPWithMdocAvDcqlShapes(t *testing.T) {
 // the credential twice, once per presentation, because that is what left the
 // wallet.
 //
-// The reference verifier refuses this session with RequiredCredentialSetNotSatisfied
-// after validating both documents. The DC API twin of this test in
-// openid4vp_dc_api_mdoc_test.go shows why: the wallet keys both presentations
-// under the second query id, because the plan maps a credential hash to one query
-// id (dcql.DcqlResult.HashToQueryId), so a credential that answers two queries can
-// only ever be attributed to the last one.
+// This is what a request-wide hash → query id map could not express. Both
+// presentations went back under the second query id, because the map was keyed
+// by credential hash and the second query overwrote the first; the verifier then
+// refused the session with RequiredCredentialSetNotSatisfied after validating
+// both documents. The query a candidate answers is now recorded per pick-one and
+// per candidate (dcql.ChoiceQueryIds).
 func testOpenID4VP_MdocAv_TwoQueriesInOneRequest(t *testing.T) {
 	c, sessionHandler := createPidIssuerTestClient(t)
 	defer c.Close()

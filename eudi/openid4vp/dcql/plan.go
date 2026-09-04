@@ -13,13 +13,14 @@ func buildPlanFromCredentialQueries(
 	queryResults map[string]*CredentialQueryResult,
 	previousPlan *clientmodels.DisclosurePlan,
 	preExistingHashes map[string]struct{},
-) (*clientmodels.DisclosurePlan, error) {
+) (*clientmodels.DisclosurePlan, []ChoiceQueryIds, error) {
 	pickOnes := make([]clientmodels.DisclosurePickOne, 0, len(queries))
+	queryIds := make([]ChoiceQueryIds, 0, len(queries))
 
 	for _, query := range queries {
 		result, ok := queryResults[query.Id]
 		if !ok {
-			return nil, fmt.Errorf("no result for credential query %q", query.Id)
+			return nil, nil, fmt.Errorf("no result for credential query %q", query.Id)
 		}
 
 		pickOnes = append(pickOnes, clientmodels.DisclosurePickOne{
@@ -28,11 +29,12 @@ func buildPlanFromCredentialQueries(
 			OwnedOptions:      wrapAsBundles(result.OwnedCandidates),
 			ObtainableOptions: result.ObtainableDescriptors,
 		})
+		queryIds = append(queryIds, choiceQueryIds(result.OwnedCandidates, query.Id))
 	}
 
-	return finalizePlan(&clientmodels.DisclosurePlan{
+	return withQueryIds(finalizePlan(&clientmodels.DisclosurePlan{
 		DisclosureChoicesOverview: pickOnes,
-	}, previousPlan, preExistingHashes), nil
+	}, previousPlan, preExistingHashes), queryIds)
 }
 
 // wrapAsBundles wraps each DCQL candidate as a single-credential
@@ -57,23 +59,25 @@ func buildPlanFromCredentialSets(
 	credentialSets []CredentialSetQuery,
 	previousPlan *clientmodels.DisclosurePlan,
 	preExistingHashes map[string]struct{},
-) (*clientmodels.DisclosurePlan, error) {
+) (*clientmodels.DisclosurePlan, []ChoiceQueryIds, error) {
 	pickOnes := make([]clientmodels.DisclosurePickOne, 0, len(credentialSets))
+	queryIds := make([]ChoiceQueryIds, 0, len(credentialSets))
 
 	for _, credentialSet := range credentialSets {
 		optional := credentialSet.Required != nil && !*credentialSet.Required
 
 		var allOwned []*clientmodels.SelectableCredentialInstance
 		var allObtainable []*clientmodels.CredentialDescriptor
+		var setQueryIds ChoiceQueryIds
 
 		for _, option := range credentialSet.Options {
 			if len(option) == 0 {
-				return nil, fmt.Errorf(
+				return nil, nil, fmt.Errorf(
 					"credential set `options` field has an empty inner option array",
 				)
 			}
 			if len(option) > 1 {
-				return nil, fmt.Errorf(
+				return nil, nil, fmt.Errorf(
 					"credential set `options` field has inner option array that consists of multiple credential queries, which is not supported at the moment",
 				)
 			}
@@ -81,11 +85,16 @@ func buildPlanFromCredentialSets(
 			queryId := option[0]
 			result, ok := queryResults[queryId]
 			if !ok {
-				return nil, fmt.Errorf("no result for credential query %q referenced in credential set", queryId)
+				return nil, nil, fmt.Errorf("no result for credential query %q referenced in credential set", queryId)
 			}
 
 			allOwned = append(allOwned, result.OwnedCandidates...)
 			allObtainable = append(allObtainable, result.ObtainableDescriptors...)
+			// A set merges several queries into one pick-one, so the query is
+			// recorded per candidate, in the same order the candidates are offered.
+			// Both options can be satisfied by one stored credential, which is then
+			// offered twice and told apart by the element each would reveal.
+			setQueryIds = append(setQueryIds, choiceQueryIds(result.OwnedCandidates, queryId)...)
 		}
 
 		pickOnes = append(pickOnes, clientmodels.DisclosurePickOne{
@@ -93,11 +102,45 @@ func buildPlanFromCredentialSets(
 			OwnedOptions:      wrapAsBundles(allOwned),
 			ObtainableOptions: allObtainable,
 		})
+		queryIds = append(queryIds, setQueryIds)
 	}
 
-	return finalizePlan(&clientmodels.DisclosurePlan{
+	return withQueryIds(finalizePlan(&clientmodels.DisclosurePlan{
 		DisclosureChoicesOverview: pickOnes,
-	}, previousPlan, preExistingHashes), nil
+	}, previousPlan, preExistingHashes), queryIds)
+}
+
+// choiceQueryIds records, for every candidate of one query, that it answers
+// that query and which paths it would disclose. Candidates keep the order they
+// are offered in, so the entries line up with the pick-one's owned options.
+func choiceQueryIds(candidates []*clientmodels.SelectableCredentialInstance, queryId string) ChoiceQueryIds {
+	ids := make(ChoiceQueryIds, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Hash == "" {
+			// Nothing the app can select, so nothing to resolve later.
+			continue
+		}
+		pathKeys := make(map[string]struct{}, len(candidate.Attributes))
+		for _, attr := range candidate.Attributes {
+			if attr.Value == nil {
+				continue // a section header is not a disclosed path
+			}
+			pathKeys[clientmodels.ClaimPathKey(attr.ClaimPath)] = struct{}{}
+		}
+		ids = append(ids, CandidateQuery{Hash: candidate.Hash, QueryId: queryId, PathKeys: pathKeys})
+	}
+	return ids
+}
+
+// withQueryIds keeps the per-choice query ids parallel to the plan's choices.
+// finalizePlan drops the choices while an issuance-during-disclosure step is
+// still outstanding; the ids go with them, so nothing can index into a list that
+// no longer matches what the user was shown.
+func withQueryIds(plan *clientmodels.DisclosurePlan, queryIds []ChoiceQueryIds) (*clientmodels.DisclosurePlan, []ChoiceQueryIds, error) {
+	if plan.DisclosureChoicesOverview == nil {
+		return plan, nil, nil
+	}
+	return plan, queryIds, nil
 }
 
 // finalizePlan handles the issuance-during-disclosure logic:
