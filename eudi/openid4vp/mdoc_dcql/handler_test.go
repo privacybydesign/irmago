@@ -309,7 +309,10 @@ func TestFindCandidatesWithClaimSetsRequiresEveryClaimInASet(t *testing.T) {
 	for _, attr := range result.OwnedCandidates[0].Attributes {
 		paths = append(paths, attr.ClaimPath)
 	}
-	assert.Equal(t, [][]any{
+	// Order-insensitive on purpose: the rows follow the credential's own order,
+	// as on its card, not the order the verifier wrote the claims in. What this
+	// test pins is the set.
+	assert.ElementsMatch(t, [][]any{
 		{testNamespace, "age_over_18"},
 		{testNamespace, "age_over_16"},
 	}, paths, "a partially satisfiable set must not be offered with its missing claim dropped")
@@ -465,7 +468,6 @@ func TestSelectiveDiscloseByPathsOmitsUnrequestedNamespace(t *testing.T) {
 func TestSelectiveDiscloseByPathsRefusesMalformedPath(t *testing.T) {
 	for name, path := range map[string][]any{
 		"one component":      {testNamespace},
-		"three components":   {testNamespace, "age_over_21", "extra"},
 		"non-string element": {secondNamespace, 0},
 		"empty":              {},
 	} {
@@ -482,6 +484,27 @@ func TestSelectiveDiscloseByPathsRefusesMalformedPath(t *testing.T) {
 				"a refused disclosure must not return a document, least of all a partial one")
 		})
 	}
+}
+
+// TestSelectiveDiscloseByPathsReadsTheElementOffALeafPath covers the paths the
+// app echoes back for a structured element: the permission screen lists such an
+// element as one row per leaf, each with the full path it was reached by, so a
+// selection carries [namespace, element, leaf] paths. They name the element,
+// which is disclosed whole and once, however many of its leaves were listed.
+func TestSelectiveDiscloseByPathsReadsTheElementOffALeafPath(t *testing.T) {
+	doc := newTwoNamespaceMdoc(t, secondNamespace)
+
+	disclosed, err := selectiveDiscloseByPaths(doc, [][]any{
+		{testNamespace, "age_over_21", "extra"},
+		{testNamespace, "age_over_21", "another"},
+		{testNamespace, "age_over_21"},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, disclosed.IssuerSigned.NameSpaces, 1)
+	assert.Equal(t, []string{"age_over_21"},
+		disclosedElements(t, disclosed.IssuerSigned.NameSpaces[testNamespace]),
+		"the element is revealed once, not once per leaf")
 }
 
 // TestSelectiveDiscloseByPathsRevealsOnlyNamedElements is the other half: with
@@ -878,92 +901,3 @@ func TestFindCandidatesOffersABatchInsideItsValidityWindow(t *testing.T) {
 	assert.Empty(t, result.ObtainableDescriptors,
 		"a credential the wallet owns must not also be advertised as obtainable")
 }
-
-// ========== claimDisplayName ==========
-
-// The disclosure screen labels an age_over_NN the issuer never advertised, so a
-// consent prompt for it does not read as a raw identifier. Published text always
-// wins, in either path shape, and nothing else is derived.
-func TestClaimDisplayNameDerivesUnadvertisedAgeOver(t *testing.T) {
-	batchWithClaims := func(claims ...models.CredentialClaim) *models.CredentialBatch {
-		return &models.CredentialBatch{
-			VerifiableCredentialType: testDocType,
-			CredentialMetadata:       &models.CredentialMetadata{Claims: claims},
-		}
-	}
-	en := func(name string) []models.ClaimDisplay {
-		return []models.ClaimDisplay{{Name: name, Locale: datatypes.NullString{V: "en", Valid: true}}}
-	}
-
-	published := models.CredentialClaim{
-		Path:    datatypes.JSON(`["` + testNamespace + `","age_over_18"]`),
-		Display: en("Older than 18"),
-	}
-
-	for _, tc := range []struct {
-		name    string
-		batch   *models.CredentialBatch
-		element string
-		want    *string
-	}{
-		{
-			name:    "unadvertised threshold is derived",
-			batch:   batchWithClaims(published),
-			element: "age_over_35",
-			want:    new("Age Over 35"),
-		},
-		{
-			name:    "published text wins",
-			batch:   batchWithClaims(published),
-			element: "age_over_18",
-			want:    new("Older than 18"),
-		},
-		{
-			name: "published bare-element text wins",
-			batch: batchWithClaims(models.CredentialClaim{
-				Path:    datatypes.JSON(`["age_over_18"]`),
-				Display: en("Older than 18"),
-			}),
-			element: "age_over_18",
-			want:    new("Older than 18"),
-		},
-		{
-			name:    "derived even with no metadata at all",
-			batch:   &models.CredentialBatch{VerifiableCredentialType: testDocType},
-			element: "age_over_18",
-			want:    new("Age Over 18"),
-		},
-		{
-			// The derived name covers age_over_NN only, but the consent screen
-			// and the activity log both render whatever this returns, so a nil
-			// name would ask for — or record as disclosed — an element with
-			// nothing on screen saying which one. It falls back to its own
-			// identifier, matching what the credential list does.
-			name:    "an element nothing names falls back to its identifier",
-			batch:   batchWithClaims(published),
-			element: "issuing_country",
-			want:    new("issuing_country"),
-		},
-		{
-			// The case that motivated the fallback: an element the issuer signed
-			// into the namespace but declared nowhere in its metadata.
-			name:    "an element the issuer never declared is still named",
-			batch:   batchWithClaims(published),
-			element: "email",
-			want:    new("email"),
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got := claimDisplayName(tc.batch, testNamespace, tc.element, "en")
-			if tc.want == nil {
-				assert.Nil(t, got)
-				return
-			}
-			require.NotNil(t, got)
-			assert.Equal(t, *tc.want, *got)
-		})
-	}
-}
-
-//go:fix inline
-func strptr(s string) *string { return new(s) }

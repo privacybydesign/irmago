@@ -9,7 +9,7 @@ import (
 )
 
 // Mirrors eudi_sdjwt_dcql's TestMain. Without it eudi.Logger is nil here, and
-// any test reaching a code path that logs -- claimDisplayName's bare-element
+// any test reaching a code path that logs -- the display resolver's bare-element
 // warning is the first one to -- panics inside logrus rather than failing.
 func TestMain(m *testing.M) {
 	if eudi.Logger == nil {

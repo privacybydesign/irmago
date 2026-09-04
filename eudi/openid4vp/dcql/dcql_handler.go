@@ -104,6 +104,7 @@ func (h *DcqlHandler) PrepareDisclosure(
 		}
 		// Propagate the holder binding requirement from the credential query.
 		sel.RequireHolderBinding = credQuery.NeedsHolderBinding()
+		sel.Claims = credQuery.Claims
 		// Propagate the transport binding -- only formats whose holder-binding
 		// proof is bound to the session transcript (e.g. mso_mdoc) read these.
 		sel.ResponseUri = binding.ResponseUri

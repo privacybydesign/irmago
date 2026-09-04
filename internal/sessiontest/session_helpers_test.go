@@ -337,6 +337,12 @@ func boolVal(b bool) *clientmodels.AttributeValue {
 	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Bool, Bool: &b}
 }
 
+// imgVal creates a base64 image AttributeValue, the shape a byte-string
+// element the wallet recognises as a picture takes.
+func imgVal(base64Png string) *clientmodels.AttributeValue {
+	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Base64Image, Base64Image: &base64Png}
+}
+
 // intVal creates an integer AttributeValue.
 func intVal(i int64) *clientmodels.AttributeValue {
 	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Int, Int: &i}

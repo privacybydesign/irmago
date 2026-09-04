@@ -19,6 +19,12 @@ type DisclosureSelection struct {
 	CredentialHash string
 	// The claim paths the user chose to disclose (e.g., [["given_name"], ["address", "street"]])
 	ClaimPaths [][]any
+	// The claims of the credential query this selection answers, as the verifier
+	// wrote them. Carried so a format can record per-claim facts of the request
+	// (mso_mdoc's intent_to_retain) in its log entry alongside what was
+	// disclosed; the paths above say what left the wallet, these say what the
+	// verifier said about it.
+	Claims []Claim
 	// Whether the verifier requires a cryptographic holder binding proof for this credential.
 	RequireHolderBinding bool
 	// The verifier's response_uri from the Authorization Request. Only used by formats whose

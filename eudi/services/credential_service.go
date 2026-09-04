@@ -119,6 +119,10 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		}
 
 		attrs := BuildAttributesFromPayload(processedSdJwtPayload, display.ClaimNames, display.ClaimOrder)
+		if batch.Format == models.CredentialFormatMsoMdoc {
+			// Byte-string elements were cached as typed data URIs; show images as images.
+			attrs = PromoteMdocDataURIs(attrs)
+		}
 
 		var iat, exp *int64
 		if batch.ExpiresAt.Valid {
@@ -812,7 +816,7 @@ func BuildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, 
 	for _, namespace := range sortObjectKeys(topLevel, []any{}, metadataOrder) {
 		attrs = FlattenClaimValue(attrs, []any{namespace}, topLevel[namespace], displayLookup, metadataOrder)
 	}
-	return attrs
+	return PromoteMdocDataURIs(attrs)
 }
 
 // BuildAttributesFromPayload walks the credential payload top-down and emits an

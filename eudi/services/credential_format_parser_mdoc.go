@@ -46,6 +46,11 @@ func (p *mdocCredentialFormatParser) ParseAndVerify(raw, credentialIssuer string
 		return nil, fmt.Errorf("mdoc has no usable deviceKeyInfo but cryptographic key binding was required")
 	}
 
+	// Keep what the CBOR types said across the JSON cache: byte strings become
+	// typed data URIs and tagged dates their text, so a portrait renders as a
+	// picture and a birth date as a date. See NormalizeMdocClaimValues.
+	NormalizeMdocClaimValues(resolved)
+
 	resolvedClaimsBytes, err := json.Marshal(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal resolved mdoc claims: %w", err)

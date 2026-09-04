@@ -13,7 +13,6 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -277,7 +276,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 			}
 		}
 
-		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths, resolved))
+		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths, sel.Claims, resolved))
 	}
 
 	return result, nil
@@ -414,29 +413,40 @@ func claimMatches(claim dcql.Claim, resolved map[string]map[string]any) bool {
 // Selective disclosure
 // ---------------------------------------------------------------------------
 
-// selectiveDiscloseByPaths reveals exactly the [namespace, elementIdentifier]
-// pairs in claimPaths, grouping by namespace since mdoc.SelectiveDisclose
-// only reveals within a single namespace at a time, then merging the
-// per-namespace results into one MDoc. The AV Blueprint profile only ever
-// has a single namespace, but this stays correct for any doctype with more.
+// selectiveDiscloseByPaths reveals exactly the elements named by claimPaths,
+// grouping by namespace since mdoc.SelectiveDisclose only reveals within a
+// single namespace at a time, then merging the per-namespace results into one
+// MDoc. The AV Blueprint profile only ever has a single namespace, but this
+// stays correct for any doctype with more.
+//
+// A path is read for its [namespace, elementIdentifier] prefix. The plan the
+// user consented to lists a structured element as one row per leaf, each with
+// the full path it was reached by, and the app echoes those paths back; they
+// all name the same element, and an mdoc discloses an element whole -- there
+// is no finer unit -- so the prefix is what is revealed and the element is
+// revealed once. A path with no such prefix is refused rather than skipped:
+// skipping would build a DeviceResponse disclosing one element fewer than the
+// plan the user consented to, and nothing downstream can tell that apart from
+// a verifier asking for less.
 func selectiveDiscloseByPaths(doc *stdmdoc.MDoc, claimPaths [][]any) (*stdmdoc.MDoc, error) {
 	revealByNamespace := make(map[string][]string)
+	seen := make(map[services.MdocElementRef]struct{}, len(claimPaths))
 	var namespaceOrder []string
 	for _, path := range claimPaths {
-		// Refused rather than skipped: skipping would build a DeviceResponse
-		// disclosing one element fewer than the plan the user consented to, and
-		// nothing downstream can tell that apart from a verifier asking for less.
-		// Unreachable via FindCandidates, which refuses such a query up front;
-		// this is the second half of that check, for callers that build paths
-		// themselves.
-		namespace, elementIdentifier, err := mdocPathParts(path)
-		if err != nil {
-			return nil, err
+		ref, ok := services.MdocElementRefFromPath(path)
+		if !ok {
+			return nil, fmt.Errorf(
+				"mso_mdoc claim path must start with [namespace, elementIdentifier], got %d component(s): %v",
+				len(path), path)
 		}
-		if _, seen := revealByNamespace[namespace]; !seen {
-			namespaceOrder = append(namespaceOrder, namespace)
+		if _, dup := seen[ref]; dup {
+			continue
 		}
-		revealByNamespace[namespace] = append(revealByNamespace[namespace], elementIdentifier)
+		seen[ref] = struct{}{}
+		if _, known := revealByNamespace[ref.Namespace]; !known {
+			namespaceOrder = append(namespaceOrder, ref.Namespace)
+		}
+		revealByNamespace[ref.Namespace] = append(revealByNamespace[ref.Namespace], ref.Element)
 	}
 
 	merged := *doc
@@ -455,46 +465,68 @@ func selectiveDiscloseByPaths(doc *stdmdoc.MDoc, claimPaths [][]any) (*stdmdoc.M
 // Display / attribute helpers
 // ---------------------------------------------------------------------------
 
-// buildAttributes builds the disclosure-plan attribute preview for a batch:
-// one Attribute per matched claim, flat (no nesting, no compound headers --
-// unlike SD-JWT, mso_mdoc claims are always exactly [namespace,
-// elementIdentifier], so there's nothing to walk or flatten).
+// buildAttributes builds the disclosure-plan attribute preview for a batch: the
+// rows the credential list shows for exactly the requested elements, so a
+// structured element (a place of birth, driving privileges) unfolds into the
+// same rows on the permission screen as on the card, and a portrait is a picture
+// in both places (services.BuildMdocAttributesForElements). Each row is then
+// stamped with what the request said about its element.
 func buildAttributes(batch *models.CredentialBatch, claims []dcql.Claim, resolved map[string]map[string]any, locale string) []clientmodels.Attribute {
-	attrs := make([]clientmodels.Attribute, 0, len(claims))
-	seen := make(map[string]struct{}, len(claims))
+	refs := make([]services.MdocElementRef, 0, len(claims))
+	seen := make(map[services.MdocElementRef]struct{}, len(claims))
 	for _, claim := range claims {
-		namespace, elementIdentifier, err := mdocPathParts(claim.Path)
-		if err != nil {
+		ref, ok := services.MdocElementRefFromPath(claim.Path)
+		if !ok {
 			continue
 		}
-		key := clientmodels.ClaimPathKey(claim.Path)
-		if _, dup := seen[key]; dup {
+		if _, dup := seen[ref]; dup {
 			continue
 		}
-		seen[key] = struct{}{}
+		seen[ref] = struct{}{}
+		refs = append(refs, ref)
+	}
 
-		var value *clientmodels.AttributeValue
-		if nsMap, ok := resolved[namespace]; ok {
-			value = clientmodels.NewAttributeValue(nsMap[elementIdentifier])
+	attrs := services.BuildMdocAttributesForElements(batch, resolved, refs, locale)
+	return stampRequestFacts(attrs, claims, true)
+}
+
+// stampRequestFacts writes onto each row what the verifier's claims said about
+// the element the row belongs to. Every row of a structured element gets the
+// same facts, since the element is disclosed, and retained, whole.
+//
+// intent_to_retain is always set, never omitted when false: the consent screen
+// has to be able to tell "the verifier said it will not retain this" from "this
+// format cannot say", and only mso_mdoc can say it at all.
+//
+// The requested value is stamped only where asked (withRequested): on the
+// permission screen a candidate exists because its value satisfied the
+// constraint, so the value it holds is the requested one, as eudi_sdjwt_dcql
+// records it. A section header has no value to stamp.
+func stampRequestFacts(attrs []clientmodels.Attribute, claims []dcql.Claim, withRequested bool) []clientmodels.Attribute {
+	claimByRef := make(map[services.MdocElementRef]dcql.Claim, len(claims))
+	for _, claim := range claims {
+		ref, ok := services.MdocElementRefFromPath(claim.Path)
+		if !ok {
+			continue
 		}
-
-		dn := claimDisplayName(batch, namespace, elementIdentifier, locale)
-
-		// Always set, never omitted when false: the consent screen has to be able
-		// to tell "the verifier said it will not retain this" from "this format
-		// cannot say", and only mso_mdoc can say it at all.
+		if _, dup := claimByRef[ref]; !dup {
+			claimByRef[ref] = claim
+		}
+	}
+	for i := range attrs {
+		ref, ok := services.MdocElementRefFromPath(attrs[i].ClaimPath)
+		if !ok {
+			continue
+		}
+		claim, ok := claimByRef[ref]
+		if !ok {
+			continue
+		}
 		intentToRetain := claim.IntentToRetain
-
-		attr := clientmodels.Attribute{
-			ClaimPath:      []any{namespace, elementIdentifier},
-			DisplayName:    dn,
-			Value:          value,
-			IntentToRetain: &intentToRetain,
+		attrs[i].IntentToRetain = &intentToRetain
+		if withRequested && len(claim.Values) > 0 && attrs[i].Value != nil {
+			attrs[i].RequestedValue = attrs[i].Value
 		}
-		if len(claim.Values) > 0 {
-			attr.RequestedValue = value
-		}
-		attrs = append(attrs, attr)
 	}
 	return attrs
 }
@@ -502,6 +534,12 @@ func buildAttributes(batch *models.CredentialBatch, claims []dcql.Claim, resolve
 // unobtainableDescriptor builds a CredentialDescriptor for a doctype the
 // wallet has never seen, purely from the DCQL query's own claim paths (see
 // FindCandidates' file comment on why there's no metadata fetch here).
+//
+// Each attribute carries a name and, when the query constrains the element's
+// value, the value the verifier requires: the IRMA and SD-JWT descriptors carry
+// both, and the app renders them on the missing-credential card so the user
+// can see why nothing in the wallet qualifies. Without them the card would
+// show a bare element identifier and no required value.
 func unobtainableDescriptor(docType string, query dcql.CredentialQuery) *clientmodels.CredentialDescriptor {
 	attrs := make([]clientmodels.Attribute, 0, len(query.Claims))
 	for _, claim := range query.Claims {
@@ -509,14 +547,31 @@ func unobtainableDescriptor(docType string, query dcql.CredentialQuery) *clientm
 		if err != nil {
 			continue
 		}
-		attrs = append(attrs, clientmodels.Attribute{
-			ClaimPath: []any{namespace, elementIdentifier},
-		})
+		attr := clientmodels.Attribute{
+			ClaimPath:   []any{namespace, elementIdentifier},
+			DisplayName: unobtainableClaimName(elementIdentifier),
+		}
+		// Only the first of several acceptable values is shown, as for the other
+		// formats.
+		if len(claim.Values) > 0 {
+			attr.RequestedValue = clientmodels.NewAttributeValue(claim.Values[0])
+		}
+		attrs = append(attrs, attr)
 	}
 	return &clientmodels.CredentialDescriptor{
 		CredentialId: docType,
 		Attributes:   attrs,
 	}
+}
+
+// unobtainableClaimName names an element of a document the wallet has never
+// held, where there is no issuer metadata to consult: the derived name where
+// the identifier has one (age_over_NN), else the identifier itself.
+func unobtainableClaimName(elementIdentifier string) *string {
+	if name, ok := services.DerivedMdocClaimName(elementIdentifier); ok {
+		return &name
+	}
+	return &elementIdentifier
 }
 
 // credentialImage loads the credential logo that resolves for the locale
@@ -560,142 +615,18 @@ func credentialDisplayName(batch *models.CredentialBatch, locale string) string 
 	return batch.VerifiableCredentialType
 }
 
-// claimDisplayName resolves a claim's display name from the stored credential
-// metadata. mdoc claim paths are always exactly [namespace, elementIdentifier],
-// so no wildcard handling is ever needed here, unlike eudi_sdjwt_dcql's
-// generic claimPathMatchesMetadataPath-based version.
+// buildLogCredential records what left the wallet, as the same rows the
+// permission screen showed for it. The paths are the ones the app echoed back
+// from that screen, which for a structured element are one per leaf; they are
+// reduced to the elements they name, since that is the unit disclosed.
 //
-// A bare [elementIdentifier] path is accepted as a fallback, because the stored
-// path is whatever the issuer published: convertCredentialMetadata writes
-// credential_metadata.claims[].path through verbatim, and the AV profile
-// specifies no display metadata at all, so nothing obliges an issuer to use the
-// two-component form. Without the fallback a one-component path matches nothing
-// and the attribute silently renders with no label — no error, no log, and the
-// credential's own name still resolving, which is a hard failure to attribute to
-// the issuer's metadata. The fallback only applies once the exact match has been
-// ruled out across every claim, so a correctly published path always wins.
-//
-// The credential list needs the same rule for the same reason and applies it
-// separately, in services.ResolveBatchDisplay (aliasMdocBareElementPaths): it
-// resolves names by claim-path key rather than per claim, so it cannot call this.
-// If the rule changes, change both — the two views disagreeing about one claim is
-// exactly the bug that motivated it.
-//
-// Once the metadata has nothing to say, the identifier itself is the last
-// resort: services.DerivedMdocClaimName names an age_over_NN the issuer never
-// advertised. The credential list gets that from addDerivedMdocClaimNames, on
-// the same "change both" footing as the rule above.
-func claimDisplayName(batch *models.CredentialBatch, namespace, elementIdentifier string, locale string) *string {
-	if dn := publishedClaimDisplayName(batch, namespace, elementIdentifier, locale); dn != nil {
-		return dn
-	}
-	if name, ok := services.DerivedMdocClaimName(elementIdentifier); ok {
-		return &name
-	}
-	// Nothing names this element, so name it after itself. The consent screen and
-	// the activity log both render whatever this returns, and a nil name leaves
-	// the row's identity to the app — an element the issuer never declared would
-	// then be asked for, or recorded as disclosed, with nothing on screen saying
-	// which one. The raw identifier is poor text but it names the right thing,
-	// and it matches what addDerivedMdocClaimNames does for the credential list.
-	return &elementIdentifier
-}
-
-// publishedClaimDisplayName is claimDisplayName restricted to what the issuer
-// actually published, yielding nil when its metadata names this claim nowhere.
-func publishedClaimDisplayName(batch *models.CredentialBatch, namespace, elementIdentifier string, locale string) *string {
-	if batch.CredentialMetadata == nil {
-		return nil
-	}
-
-	// Display rows of the first bare-element path matching this element, used
-	// only if no exact [namespace, elementIdentifier] path matches.
-	var fallbackDisplay []models.ClaimDisplay
-
-	for _, claim := range batch.CredentialMetadata.Claims {
-		if len(claim.Display) == 0 {
-			continue
-		}
-		var path []any
-		if err := json.Unmarshal(claim.Path, &path); err != nil {
-			continue
-		}
-
-		if ns, el, err := mdocPathParts(path); err == nil {
-			if ns == namespace && el == elementIdentifier {
-				return resolveClaimName(claim.Display, locale)
-			}
-			continue
-		}
-
-		if el, ok := bareElementPath(path); ok && el == elementIdentifier && fallbackDisplay == nil {
-			fallbackDisplay = claim.Display
-		}
-	}
-
-	if fallbackDisplay == nil {
-		return nil
-	}
-
-	// Worth a warning rather than a silent recovery: the label is only rendered
-	// because the wallet guessed the namespace the issuer left out, and the fix
-	// belongs in the issuer's metadata.
-	eudi.Logger.Warnf(
-		"credential %q labels claim %q with a one-component path [%q]; mdoc claim paths should be [%q, %q]",
-		batch.VerifiableCredentialType, elementIdentifier, elementIdentifier, namespace, elementIdentifier)
-
-	return resolveClaimName(fallbackDisplay, locale)
-}
-
-// bareElementPath reports the element identifier of a one-component claim path,
-// the shape an issuer publishes when it treats an mdoc element like a flat
-// SD-JWT claim name.
-func bareElementPath(path []any) (elementIdentifier string, ok bool) {
-	if len(path) != 1 {
-		return "", false
-	}
-	el, isString := path[0].(string)
-	if !isString {
-		return "", false
-	}
-	return el, true
-}
-
-// resolveClaimName resolves the locale-appropriate name out of a claim's display
-// rows, yielding nil when the rows carry no usable name.
-func resolveClaimName(display []models.ClaimDisplay, locale string) *string {
-	if ts := services.ClaimNamesByLanguage(display); len(ts) > 0 {
-		return clientmodels.ResolvePtr(ts, locale)
-	}
-	return nil
-}
-
-func (h *MdocDcqlHandler) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any, resolved map[string]map[string]any) clientmodels.LogCredential {
+// The verifier's intent to retain is recorded with each row, as the screen
+// showed it: a log that forgets it leaves the user unable to see later what
+// they agreed to.
+func (h *MdocDcqlHandler) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any, claims []dcql.Claim, resolved map[string]map[string]any) clientmodels.LogCredential {
 	locale := h.currentLocale.Get()
-	attrs := make([]clientmodels.Attribute, 0, len(claimPaths))
-	seen := make(map[string]struct{}, len(claimPaths))
-	for _, path := range claimPaths {
-		namespace, elementIdentifier, err := mdocPathParts(path)
-		if err != nil {
-			continue
-		}
-		key := clientmodels.ClaimPathKey(path)
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
-
-		var value *clientmodels.AttributeValue
-		if nsMap, ok := resolved[namespace]; ok {
-			value = clientmodels.NewAttributeValue(nsMap[elementIdentifier])
-		}
-		dn := claimDisplayName(batch, namespace, elementIdentifier, locale)
-		attrs = append(attrs, clientmodels.Attribute{
-			ClaimPath:   []any{namespace, elementIdentifier},
-			DisplayName: dn,
-			Value:       value,
-		})
-	}
+	attrs := services.BuildMdocAttributesForElements(batch, resolved, services.UniqueMdocElementRefs(claimPaths), locale)
+	attrs = stampRequestFacts(attrs, claims, false)
 
 	log := clientmodels.LogCredential{
 		CredentialId: batch.VerifiableCredentialType,

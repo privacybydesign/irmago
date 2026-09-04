@@ -502,9 +502,9 @@ func testOpenID4VP_PidMdlMdoc_StructuredValues(t *testing.T) {
 // and portrait.
 //
 // The portrait travels as a CBOR byte string, the issuer having decoded the
-// base64 the offer supplied. The wallet shows those bytes base64-encoded again,
-// so the screen and the log carry the text the offer started from, while the
-// verifier receives the image bytes themselves.
+// base64 the offer supplied. The wallet shows those bytes as an image: the
+// screen and the log carry a base64 image value holding the text the offer
+// started from, while the verifier receives the image bytes themselves.
 func testOpenID4VP_Mdl_LicenceNumberAndPortrait(t *testing.T) {
 	c, sessionHandler := createPidIssuerTestClient(t)
 	defer c.Close()
@@ -528,7 +528,7 @@ func testOpenID4VP_Mdl_LicenceNumberAndPortrait(t *testing.T) {
 
 	attrs := []expectedAttr{
 		mdlAttr("document_number", "Licence number", strVal(mdlLicenceNumber)),
-		mdlAttr("portrait", "Portrait", strVal(mdlPortrait)),
+		mdlAttr("portrait", "Portrait", imgVal(mdlPortrait)),
 	}
 
 	session := testSession.ClientSession

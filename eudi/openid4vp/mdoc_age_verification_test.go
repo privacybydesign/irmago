@@ -348,9 +348,10 @@ func testMdocAv_ExactClaimPath_WinsOverBarePath(t *testing.T) {
 }
 
 func testMdocAv_WithoutCredential_IsUnobtainable(t *testing.T) {
-	// Same query, empty wallet. This is the shape of the failure that reads as a
-	// display problem in the app -- the descriptor carries the raw docType and no
-	// issuer, because there is no stored credential to take either from.
+	// Same query, empty wallet. The descriptor carries the raw docType and no
+	// issuer, because there is no stored credential to take either from; the
+	// element itself is still named, from its identifier, so the
+	// missing-credential card can say what was asked for.
 	handler := newAvMdocHandler(t, newTestEudiStorage(t))
 
 	result, err := handler.FindCandidates(avCredentialQuery(t))
@@ -363,7 +364,9 @@ func testMdocAv_WithoutCredential_IsUnobtainable(t *testing.T) {
 	require.Equal(t, avDocType, descriptor.CredentialId, "the raw docType stands in for a display name")
 	require.Empty(t, descriptor.Name, "there is no display name to resolve without a stored credential")
 	require.Len(t, descriptor.Attributes, 1)
-	require.Nil(t, descriptor.Attributes[0].DisplayName)
+	require.NotNil(t, descriptor.Attributes[0].DisplayName, "the element is named even with no metadata to consult")
+	require.Equal(t, "Age Over 18", *descriptor.Attributes[0].DisplayName, "derived from the identifier")
+	require.Nil(t, descriptor.Attributes[0].RequestedValue, "the query constrains no value, so none is required")
 
 	// The issuer is left at its zero value rather than omitted, which is what an
 	// app renders as an unnamed party ("contact unknown"): there is no stored
