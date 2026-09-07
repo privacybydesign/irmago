@@ -30,6 +30,11 @@ type Meta struct {
 	// REQUIRED for SD-JWT-VC: An array of strings that specifies allowed values for the type of the requested Verifiable Credential.
 	// All elements in the array MUST be valid type identifiers as defined in [I-D.ietf-oauth-sd-jwt-vc]
 	VctValues []string `json:"vct_values,omitempty"`
+	// REQUIRED for W3C VCDM (OpenID4VP Appendix B.1.1): sets of `type` values. A
+	// credential matches when its JSON-LD `type` array is a superset of at least
+	// one of these sets — each inner array is a conjunction, the outer array a
+	// disjunction. Each inner value is a JSON-LD type term or IRI.
+	TypeValues [][]string `json:"type_values,omitempty"`
 }
 
 type CredentialQuery struct {
@@ -86,8 +91,9 @@ func (c CredentialQuery) NeedsHolderBinding() bool {
 // serialized credentials
 type QueryResponse struct {
 	// corresponds to a Credential.Id field
-	QueryId string
-	// the resulting serialized credential
+	QueryId          string
+	CredentialFormat string
+	// the resulting serialized credentials
 	Credentials []string
 }
 
@@ -141,6 +147,15 @@ func (c CredentialQuery) VctValues() []string {
 		return nil
 	}
 	return c.Meta.VctValues
+}
+
+// TypeValues returns the W3C VCDM `type_values` (OpenID4VP Appendix B.1.1), or
+// nil when `meta` is absent.
+func (c CredentialQuery) TypeValues() [][]string {
+	if c.Meta == nil {
+		return nil
+	}
+	return c.Meta.TypeValues
 }
 
 // ClaimPaths implements scheme.ValidatableCredentialQuery.

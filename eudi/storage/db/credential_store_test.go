@@ -41,7 +41,7 @@ func newBatch(hash string) *models.CredentialBatch {
 	iss := "https://issuer.example.com"
 	return &models.CredentialBatch{
 		IssuerIdentifier:           iss,
-		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
+		CredentialType:             "https://vct.example.com/MyCredential",
 		Format:                     models.CredentialFormatSdJwtVc,
 		Hash:                       hash,
 		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
@@ -111,7 +111,7 @@ func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBat
 	}
 	return &models.CredentialBatch{
 		IssuerIdentifier:           iss,
-		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
+		CredentialType:             "https://vct.example.com/MyCredential",
 		Format:                     models.CredentialFormatSdJwtVc,
 		Hash:                       hash,
 		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
@@ -149,7 +149,7 @@ func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.Creden
 	}
 	return &models.CredentialBatch{
 		IssuerIdentifier:           iss,
-		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
+		CredentialType:             "https://vct.example.com/MyCredential",
 		Format:                     models.CredentialFormatSdJwtVc,
 		Hash:                       hash,
 		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
@@ -336,7 +336,7 @@ func TestGetCredentialBatchList_ContainsBatchFields(t *testing.T) {
 
 	got := batches[0]
 	assert.Equal(t, batch.IssuerIdentifier, got.IssuerIdentifier)
-	assert.Equal(t, batch.VerifiableCredentialType, got.VerifiableCredentialType)
+	assert.Equal(t, batch.CredentialType, got.CredentialType)
 	assert.Equal(t, batch.Hash, got.Hash)
 	assert.Equal(t, batch.Format, got.Format)
 }
@@ -399,47 +399,47 @@ func TestGetBatchByHashAndFormat_EmptyHash(t *testing.T) {
 	require.Error(t, err)
 }
 
-// --- GetBatchesByVCT ---
+// --- GetBatchesByType ---
 
-func TestGetBatchesByVCT_Found(t *testing.T) {
+func TestGetBatchesByType_Found(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	require.NoError(t, store.StoreBatch(newBatch("hash-vct-1")))
 	require.NoError(t, store.StoreBatch(newBatch("hash-vct-2")))
 
-	batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
+	batches, err := store.GetBatchesByType("https://vct.example.com/MyCredential")
 	require.NoError(t, err)
 	assert.Len(t, batches, 2)
 }
 
-func TestGetBatchesByVCT_NoMatch(t *testing.T) {
+func TestGetBatchesByType_NoMatch(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	require.NoError(t, store.StoreBatch(newBatch("hash-vct-nomatch")))
 
-	batches, err := store.GetBatchesByVCT("https://vct.example.com/OtherCredential")
+	batches, err := store.GetBatchesByType("https://vct.example.com/OtherCredential")
 	require.NoError(t, err)
 	assert.Empty(t, batches)
 }
 
-func TestGetBatchesByVCT_EmptyVCT(t *testing.T) {
+func TestGetBatchesByType_EmptyVCT(t *testing.T) {
 	store := newTestCredentialStore(t)
 
-	_, err := store.GetBatchesByVCT("")
+	_, err := store.GetBatchesByType("")
 	require.Error(t, err)
 }
 
-func TestGetBatchesByVCT_FiltersCorrectly(t *testing.T) {
+func TestGetBatchesByType_FiltersCorrectly(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	batch1 := newBatch("hash-filter-1")
 	batch2 := newBatch("hash-filter-2")
-	batch2.VerifiableCredentialType = "https://vct.example.com/OtherCredential"
+	batch2.CredentialType = "https://vct.example.com/OtherCredential"
 
 	require.NoError(t, store.StoreBatch(batch1))
 	require.NoError(t, store.StoreBatch(batch2))
 
-	batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
+	batches, err := store.GetBatchesByType("https://vct.example.com/MyCredential")
 	require.NoError(t, err)
 	require.Len(t, batches, 1)
 	assert.Equal(t, batch1.Hash, batches[0].Hash)

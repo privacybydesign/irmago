@@ -192,10 +192,10 @@ func (s *eudiLogService) liveDisplaysByVct() map[string]ResolvedBatchDisplay {
 
 	preferred := map[string]*models.CredentialBatch{}
 	for _, batch := range batches {
-		if existing, ok := preferred[batch.VerifiableCredentialType]; ok && existing.CredentialMetadata != nil {
+		if existing, ok := preferred[batch.CredentialType]; ok && existing.CredentialMetadata != nil {
 			continue
 		}
-		preferred[batch.VerifiableCredentialType] = batch
+		preferred[batch.CredentialType] = batch
 	}
 
 	result := make(map[string]ResolvedBatchDisplay, len(preferred))

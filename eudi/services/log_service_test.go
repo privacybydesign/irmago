@@ -260,7 +260,7 @@ func newLiveBatch(t *testing.T, svc *eudiLogService, vct string, issuer string) 
 	t.Helper()
 	batch := &models.CredentialBatch{
 		IssuerIdentifier:           issuer,
-		VerifiableCredentialType:   vct,
+		CredentialType:             vct,
 		Format:                     models.CredentialFormatSdJwtVc,
 		Hash:                       "live-batch-hash",
 		ProcessedSdJwtPayload:      datatypes.JSON(`{"email":"a@b.com"}`),

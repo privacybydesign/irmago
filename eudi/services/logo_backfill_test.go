@@ -60,7 +60,7 @@ func backfillBatch(baseURL string) *models.CredentialBatch {
 	iss := "https://issuer.example.com"
 	return &models.CredentialBatch{
 		IssuerIdentifier:           iss,
-		VerifiableCredentialType:   "https://vct.example.com/Test",
+		CredentialType:             "https://vct.example.com/Test",
 		Format:                     models.CredentialFormatSdJwtVc,
 		Hash:                       "hash1",
 		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),

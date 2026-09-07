@@ -111,7 +111,7 @@ func TestGetCredentialMetadataList_MapsCredentialId(t *testing.T) {
 	result, err := svc.GetCredentialMetadataList()
 
 	require.NoError(t, err)
-	assert.Equal(t, batch.VerifiableCredentialType, result[0].CredentialId)
+	assert.Equal(t, batch.CredentialType, result[0].CredentialId)
 }
 
 func TestGetCredentialMetadataList_MapsHash(t *testing.T) {
@@ -354,7 +354,7 @@ func TestGetCredentialMetadataList_MultipleCredentials(t *testing.T) {
 	batch1 := newStorageBatch()
 	batch2 := newStorageBatch()
 	batch2.Hash = "testhash2"
-	batch2.VerifiableCredentialType = "https://vct.example.com/OtherCredential"
+	batch2.CredentialType = "https://vct.example.com/OtherCredential"
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch1, batch2}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
@@ -644,7 +644,7 @@ func TestVerifyAndStoreIssuedCredentials_SetsVCT(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	assert.Equal(t, vct, mock.storedBatches[0].VerifiableCredentialType)
+	assert.Equal(t, vct, mock.storedBatches[0].CredentialType)
 }
 
 func TestVerifyAndStoreIssuedCredentials_SetsFormat(t *testing.T) {
@@ -1306,7 +1306,7 @@ func (m *mockCredentialStore) GetBatchByHashAndFormat(hash string, format models
 	return nil, db.ErrNotFound
 }
 
-func (m *mockCredentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error) {
+func (m *mockCredentialStore) GetBatchesByType(typ string) ([]*models.CredentialBatch, error) {
 	return nil, nil
 }
 
@@ -1450,7 +1450,7 @@ func newStorageBatch() *models.CredentialBatch {
 	remaining := uint(1)
 	return &models.CredentialBatch{
 		IssuerIdentifier:           iss,
-		VerifiableCredentialType:   "https://vct.example.com/MyCredential",
+		CredentialType:             "https://vct.example.com/MyCredential",
 		Format:                     models.CredentialFormatSdJwtVc,
 		Hash:                       "testhash",
 		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),

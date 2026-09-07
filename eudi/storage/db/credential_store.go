@@ -46,9 +46,10 @@ type CredentialStore interface {
 	// hash. Returns ErrNotFound if no matching batch exists.
 	GetBatchByHashAndFormat(hash string, format models.CredentialFormat) (*models.CredentialBatch, error)
 
-	// GetBatchesByVCT returns all CredentialBatches whose VerifiableCredentialType matches
-	// the given vct string. Does not preload instances.
-	GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error)
+	// GetBatchesByType returns all CredentialBatches whose CredentialType matches
+	// the given type string. Does not preload instances.
+	// A type string should match the CredentialType field of the batches, i.e. `vct` for SD-JWT VC or `type` for W3C VCDM.
+	GetBatchesByType(typ string) ([]*models.CredentialBatch, error)
 
 	// GetUnusedInstance returns one IssuedCredentialInstance from the given batch that has
 	// not yet been marked as used. Returns ErrNotFound if all instances are used.
@@ -138,16 +139,16 @@ func (s *credentialStore) GetBatchByHashAndFormat(hash string, format models.Cre
 	return &batch, nil
 }
 
-func (s *credentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error) {
-	if vct == "" {
-		return nil, fmt.Errorf("vct is required")
+func (s *credentialStore) GetBatchesByType(typ string) ([]*models.CredentialBatch, error) {
+	if typ == "" {
+		return nil, fmt.Errorf("type is required")
 	}
 
 	var batches []*models.CredentialBatch
 	err := s.db.
 		Preload("CredentialMetadata").
 		Preload("CredentialMetadata.Display").
-		Where("verifiable_credential_type = ?", vct).
+		Where("verifiable_credential_type = ?", typ).
 		Find(&batches).Error
 	if err != nil {
 		return nil, err

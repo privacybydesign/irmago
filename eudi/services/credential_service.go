@@ -147,7 +147,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		}
 
 		clientModels[i] = &clientmodels.Credential{
-			CredentialId: batch.VerifiableCredentialType,
+			CredentialId: batch.CredentialType,
 			Hash:         batch.Hash,
 			Image:        credentialImage,
 			Name:         credentialName,
@@ -252,7 +252,7 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 
 	batch := &models.CredentialBatch{
 		IssuerIdentifier:           first.IssuerIdentifier,
-		VerifiableCredentialType:   first.IssuerSignedJwtPayload.VerifiableCredentialType,
+		CredentialType:             first.IssuerSignedJwtPayload.VerifiableCredentialType,
 		Format:                     format,
 		Hash:                       hash,
 		ProcessedSdJwtPayload:      datatypes.JSON(processedPayload),

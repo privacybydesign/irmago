@@ -99,7 +99,7 @@ func (s *credentialService) VerifyAndStoreIssuedVcdmCredentials(
 
 	batch := &models.CredentialBatch{
 		IssuerIdentifier:           issuerID,
-		VerifiableCredentialType:   typeIdentity,
+		CredentialType:             typeIdentity,
 		Format:                     models.CredentialFormatSdJwtVcdm,
 		Hash:                       hash,
 		ProcessedSdJwtPayload:      datatypes.JSON(processedPayload),

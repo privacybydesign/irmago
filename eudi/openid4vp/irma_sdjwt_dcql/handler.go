@@ -104,7 +104,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			return nil, fmt.Errorf("failed to remove instance of credential %s: %w", sel.CredentialHash, err)
 		}
 
-		sdjwtSelected, err := sdjwt.CreatePresentation(sdjwt.SdJwt(cred.SdJwtVc), sel.ClaimPaths)
+		sdjwtSelected, err := sdjwt.CreatePresentation(sdjwt.SdJwt(cred.SdJwtVc), sel.ClaimPaths, audience, nonce)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
@@ -119,8 +119,9 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 		}
 
 		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
-			QueryId:     sel.QueryId,
-			Credentials: []string{presentation},
+			QueryId:          sel.QueryId,
+			CredentialFormat: "dc+sd-jwt",
+			Credentials:      []string{presentation},
 		})
 
 		credLog := h.buildLogCredential(cred.Metadata, sel.ClaimPaths)

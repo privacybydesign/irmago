@@ -422,7 +422,7 @@ func (session *openid4vpSession) perform() error {
 		return nil
 	}
 
-	logMarshalled("selections:", permResp.selections)
+	//logMarshalled("selections:", permResp.selections)
 
 	// Group selections by format
 	queryResponses, credLogs, err := session.prepareDisclosures(permResp.selections)
@@ -431,19 +431,22 @@ func (session *openid4vpSession) perform() error {
 	}
 
 	responseConfig := authorizationResponseConfig{
-		State:          session.request.State,
-		QueryResponses: queryResponses,
-		ResponseUri:    session.request.ResponseUri,
-		ResponseType:   session.request.ResponseType,
-		ResponseMode:   session.request.ResponseMode,
+		state:          session.request.State,
+		queryResponses: queryResponses,
+		responseUri:    session.request.ResponseUri,
+		responseType:   session.request.ResponseType,
+		responseMode:   session.request.ResponseMode,
+
+		audience: session.audience,
+		nonce:    session.request.Nonce,
 	}
 
 	if session.request.ResponseMode == ResponseMode_DirectPostJwt || session.request.ResponseMode == ResponseMode_DcApiJwt {
 		if session.request.ClientMetadata == nil || session.request.ClientMetadata.Jwks == nil {
 			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", session.request.ResponseMode)
 		}
-		responseConfig.EncryptionKeys = &session.request.ClientMetadata.Jwks.Set
-		responseConfig.EncryptedResponseEncValuesSupported = session.request.ClientMetadata.EncryptedResponseEncValuesSupported
+		responseConfig.encryptionKeys = &session.request.ClientMetadata.Jwks.Set
+		responseConfig.encryptedResponseEncValuesSupported = session.request.ClientMetadata.EncryptedResponseEncValuesSupported
 	}
 
 	// Over the DC API the platform, not the wallet, transports the response back

@@ -87,7 +87,7 @@ func TestVerifyAndStoreIssuedVcdmCredentials_StoresBatch(t *testing.T) {
 	batch := mock.storedBatches[0]
 
 	assert.Equal(t, models.CredentialFormatSdJwtVcdm, batch.Format)
-	assert.Equal(t, vcdm.ContextV2+" "+vcdm.TypeVerifiableCredential+" ExampleCredential", batch.VerifiableCredentialType)
+	assert.Equal(t, vcdm.ContextV2+" "+vcdm.TypeVerifiableCredential+" ExampleCredential", batch.CredentialType)
 	assert.Equal(t, testVcdmIssuer, batch.IssuerIdentifier)
 	assert.Equal(t, testVcdmIssuer, batch.CredentialIssuerIdentifier)
 	assert.NotEmpty(t, batch.Hash)
@@ -159,7 +159,7 @@ func TestGetCredentialMetadataList_VcdmBatch_SubjectRootedAttributes(t *testing.
 	batch := &models.CredentialBatch{
 		ID:                         datatypes.NewUUIDv4(),
 		IssuerIdentifier:           testVcdmIssuer,
-		VerifiableCredentialType:   vcdm.ContextV2 + " " + vcdm.TypeVerifiableCredential + " ExampleCredential",
+		CredentialType:             vcdm.ContextV2 + " " + vcdm.TypeVerifiableCredential + " ExampleCredential",
 		Format:                     models.CredentialFormatSdJwtVcdm,
 		Hash:                       "vcdm-hash",
 		ProcessedSdJwtPayload:      datatypes.JSON(payload),
@@ -176,7 +176,7 @@ func TestGetCredentialMetadataList_VcdmBatch_SubjectRootedAttributes(t *testing.
 	require.Len(t, list, 1)
 
 	cred := list[0]
-	assert.Equal(t, batch.VerifiableCredentialType, cred.CredentialId)
+	assert.Equal(t, batch.CredentialType, cred.CredentialId)
 	assert.Equal(t, map[clientmodels.CredentialFormat]string{clientmodels.Format_SdJwtVcdm: "vcdm-hash"}, cred.CredentialInstanceIds)
 
 	// Attributes are the credentialSubject tree with document-rooted paths;

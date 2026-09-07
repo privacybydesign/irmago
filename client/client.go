@@ -23,7 +23,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwt_dcql"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwtvc_dcql"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_vcdm_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -164,18 +165,29 @@ func New(
 	// The fetchers describe credentials the wallet has never seen so the
 	// frontend can tell the user what is missing instead of stalling on a
 	// blank permission prompt.
-	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(
+	eudiKeyBinder := sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db()))
+	eudiSdJwtDcqlHandler := eudi_sdjwtvc_dcql.NewSdJwtVcDcqlHandler(
 		eudiStorage,
 		credStore,
 		typemetadata.NewDefaultVctFetcher(nil),
 		typemetadata.NewDefaultIssuerFetcher(nil),
-		sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
+		eudiKeyBinder,
+		currentLocale,
+		revocationService,
+	)
+	// The VCDM handler serves vc+sd-jwt queries (SD-JWT-secured W3C VCDM 2.0)
+	// while the SD-JWT VC handler above serves dc+sd-jwt. It shares the storage,
+	// key binder and revocation checker; the holder key was linked at receipt.
+	eudiVcdmDcqlHandler := eudi_vcdm_dcql.NewVcdmDcqlHandler(
+		eudiStorage,
+		credStore,
+		eudiKeyBinder,
 		currentLocale,
 		revocationService,
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
 
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator, currentLocale)
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler, eudiVcdmDcqlHandler}, verifierValidator, currentLocale)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}

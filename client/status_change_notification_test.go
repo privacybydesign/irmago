@@ -89,7 +89,7 @@ func seedStatusBearingBatch(t *testing.T, gdb *gorm.DB, hash, uri string, idx ui
 	require.NoError(t, gdb.Create(&models.CredentialBatch{
 		IssuerIdentifier:           iss,
 		CredentialIssuerIdentifier: iss,
-		VerifiableCredentialType:   "https://vct.example/x",
+		CredentialType:             "https://vct.example/x",
 		Format:                     models.CredentialFormatSdJwtVc,
 		Hash:                       hash,
 		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"u"}`),

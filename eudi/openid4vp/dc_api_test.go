@@ -76,8 +76,9 @@ func (h *mockDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 	h.preparedForNonce = nonce
 	return &dcql.PreparedDisclosure{
 		QueryResponses: []dcql.QueryResponse{{
-			QueryId:     selections[0].QueryId,
-			Credentials: []string{"presented~sd~jwt"},
+			QueryId:          selections[0].QueryId,
+			CredentialFormat: "dc+sd-jwt",
+			Credentials:      []string{"presented~sd~jwt"},
 		}},
 	}, nil
 }
@@ -498,12 +499,13 @@ func TestOriginAudience(t *testing.T) {
 
 func TestCreateDcApiResponse_DcApi(t *testing.T) {
 	response, err := createDcApiResponse(authorizationResponseConfig{
-		ResponseMode: ResponseMode_DcApi,
+		responseMode: ResponseMode_DcApi,
 		// state is not defined for the DC API; setting it here proves it is dropped.
-		State: "should-not-appear",
-		QueryResponses: []dcql.QueryResponse{{
-			QueryId:     testDcqlQueryId,
-			Credentials: []string{"presented~sd~jwt"},
+		state: "should-not-appear",
+		queryResponses: []dcql.QueryResponse{{
+			QueryId:          testDcqlQueryId,
+			CredentialFormat: "dc+sd-jwt",
+			Credentials:      []string{"presented~sd~jwt"},
 		}},
 	})
 
@@ -515,12 +517,13 @@ func TestCreateDcApiResponse_DcApiJwt(t *testing.T) {
 	privateKey, jwks := testEncryptionKeys(t)
 
 	response, err := createDcApiResponse(authorizationResponseConfig{
-		ResponseMode:   ResponseMode_DcApiJwt,
-		State:          "should-not-appear",
-		EncryptionKeys: &jwks,
-		QueryResponses: []dcql.QueryResponse{{
-			QueryId:     testDcqlQueryId,
-			Credentials: []string{"presented~sd~jwt"},
+		responseMode:   ResponseMode_DcApiJwt,
+		state:          "should-not-appear",
+		encryptionKeys: &jwks,
+		queryResponses: []dcql.QueryResponse{{
+			QueryId:          testDcqlQueryId,
+			CredentialFormat: "dc+sd-jwt",
+			Credentials:      []string{"presented~sd~jwt"},
 		}},
 	})
 	require.NoError(t, err)
@@ -546,12 +549,12 @@ func TestCreateDcApiResponse_DcApiJwt(t *testing.T) {
 }
 
 func TestCreateDcApiResponse_DcApiJwtWithoutEncryptionKey(t *testing.T) {
-	_, err := createDcApiResponse(authorizationResponseConfig{ResponseMode: ResponseMode_DcApiJwt})
+	_, err := createDcApiResponse(authorizationResponseConfig{responseMode: ResponseMode_DcApiJwt})
 	require.ErrorContains(t, err, "the encryption key is nil")
 }
 
 func TestCreateDcApiResponse_RejectsNonDcApiResponseMode(t *testing.T) {
-	_, err := createDcApiResponse(authorizationResponseConfig{ResponseMode: ResponseMode_DirectPost})
+	_, err := createDcApiResponse(authorizationResponseConfig{responseMode: ResponseMode_DirectPost})
 	require.ErrorContains(t, err, "is not a digital credentials api response mode")
 }
 
@@ -560,13 +563,14 @@ func TestCreateAuthorizationResponseHttpRequest_DirectPostJwtKeepsState(t *testi
 	privateKey, jwks := testEncryptionKeys(t)
 
 	request, err := createAuthorizationResponseHttpRequest(authorizationResponseConfig{
-		ResponseMode:   ResponseMode_DirectPostJwt,
-		ResponseUri:    "https://verifier.example.com/response",
-		State:          "the-state",
-		EncryptionKeys: &jwks,
-		QueryResponses: []dcql.QueryResponse{{
-			QueryId:     testDcqlQueryId,
-			Credentials: []string{"presented~sd~jwt"},
+		responseMode:   ResponseMode_DirectPostJwt,
+		responseUri:    "https://verifier.example.com/response",
+		state:          "the-state",
+		encryptionKeys: &jwks,
+		queryResponses: []dcql.QueryResponse{{
+			QueryId:          testDcqlQueryId,
+			CredentialFormat: "dc+sd-jwt",
+			Credentials:      []string{"presented~sd~jwt"},
 		}},
 	})
 	require.NoError(t, err)

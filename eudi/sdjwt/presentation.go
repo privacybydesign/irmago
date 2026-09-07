@@ -21,7 +21,7 @@ type indexedDisclosure struct {
 //
 // The returned SD-JWT has the same issuer-signed JWT but only the selected
 // disclosures appended.
-func CreatePresentation(fullSdJwt SdJwt, claimPaths [][]any) (SdJwt, error) {
+func CreatePresentation(fullSdJwt SdJwt, claimPaths [][]any, audience string, nonce string) (SdJwt, error) {
 	issuerSignedJwt, payload, byHash, err := decodeAndIndex(fullSdJwt)
 	if err != nil {
 		return "", err
@@ -37,6 +37,12 @@ func CreatePresentation(fullSdJwt SdJwt, claimPaths [][]any) (SdJwt, error) {
 	}
 
 	return Create(issuerSignedJwt, selected), nil
+
+	// Set the audience and nonce in the payload for the presentation.
+	// payload["aud"] = audience
+	// payload["nonce"] = nonce
+
+	//return CreateFromMap(payload, selected), nil
 }
 
 // PostDisclosureView returns the JSON value a verifier would see if a

@@ -41,8 +41,17 @@ type CredentialBatch struct {
 	// The column has been renamed from a previously called `CredentialIssuer` column and is now more in line with the specification naming conventions.
 	CredentialIssuerIdentifier string `gorm:"column:credential_issuer;not null"`
 
-	// VerifiableCredentialType is the vct claim from the issued SD-JWT VC.
-	VerifiableCredentialType string
+	// CredentialType is the credential's type identity. What it holds depends on
+	// the Format:
+	//   - dc+sd-jwt (SD-JWT VC): the `vct` claim, e.g.
+	//     "https://example.com/EmailCredential".
+	//   - vc+sd-jwt (W3C VCDM 2.0): the composite @context+type identity from
+	//     vcdm.Document.TypeIdentity — the credential's `@context` values and
+	//     `type` values, space-joined, e.g.
+	//     "https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential".
+	// The database column keeps its original name (verifiable_credential_type) so
+	// databases created before this rename migrate without a column change.
+	CredentialType string `gorm:"column:verifiable_credential_type"`
 
 	// Format is the credential format identifier (e.g. "dc+sd-jwt"). It is part
 	// of the (hash, format) uniqueness key: one logical credential may be held
@@ -105,8 +114,8 @@ func (b *CredentialBatch) normalizeChildren() {
 }
 
 func (b *CredentialBatch) validate() error {
-	if b.VerifiableCredentialType == "" {
-		return fmt.Errorf("verifiable_credential_type is required")
+	if b.CredentialType == "" {
+		return fmt.Errorf("credential_type is required")
 	}
 	if b.IssuerIdentifier == "" {
 		return fmt.Errorf("issuer_identifier is required")

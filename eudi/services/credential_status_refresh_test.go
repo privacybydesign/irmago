@@ -25,7 +25,7 @@ func seedBatch(t *testing.T, db *gorm.DB, hash, issuer string, instances []model
 	t.Helper()
 	batch := &models.CredentialBatch{
 		IssuerIdentifier:           issuer,
-		VerifiableCredentialType:   "https://vct.example/x",
+		CredentialType:             "https://vct.example/x",
 		Format:                     models.CredentialFormatSdJwtVc,
 		Hash:                       hash,
 		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"u"}`),
