@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"path"
@@ -285,6 +286,8 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 
 	credentialIssuerMetadataUrl := constructCredentialIssuerMetadataUrl(*parsedCredentialIssuerUri)
 
+	log.Printf("Retrieving metadata from %s", credentialIssuerMetadataUrl)
+
 	req, err := http.NewRequest("GET", credentialIssuerMetadataUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request for credential issuer metadata: %v", err)
@@ -413,7 +416,7 @@ func (client *Client) convertToCredentialInfoList(
 }
 
 func convertClaimsToAttributes(claims []metadata.ClaimsDescription, locale string) []clientmodels.Attribute {
-	var attrs []clientmodels.Attribute
+	attrs := []clientmodels.Attribute{}
 	for _, claim := range claims {
 		displays := metadata.ToTranslateableList(claim.Display)
 		displayName := clientmodels.ResolvePtr(metadata.ConvertDisplayToTranslatedString(displays), locale)

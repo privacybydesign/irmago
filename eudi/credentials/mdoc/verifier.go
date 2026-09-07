@@ -31,6 +31,7 @@ import (
 // crypto/x509 has no ExtKeyUsage enum member for it, so on a parsed
 // certificate it arrives in UnknownExtKeyUsage rather than ExtKeyUsage.
 var isoMdocDocumentSignerEKU = asn1.ObjectIdentifier{1, 0, 18013, 5, 1, 2}
+var isoMdocJsonWebSignatureEKU = asn1.ObjectIdentifier{1, 0, 18013, 5, 1, 3}
 
 // isoGenericMdocDocumentSignerEKU is ISO/IEC 23220-4's document signer usage:
 // 1.0.23220.4.1.2. 23220-4 profiles mdocs that are not mobile driving licences,
@@ -55,6 +56,7 @@ var isoGenericMdocDocumentSignerEKU = asn1.ObjectIdentifier{1, 0, 23220, 4, 1, 2
 // a leaf certificate is authorized to sign an MSO.
 var mdocDocumentSignerEKUs = []asn1.ObjectIdentifier{
 	isoMdocDocumentSignerEKU,
+	isoMdocJsonWebSignatureEKU,
 	isoGenericMdocDocumentSignerEKU,
 }
 
@@ -635,13 +637,14 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	// credential's own claimed validity window has expired (or not started
 	// yet), and ISO 18013-5 requires checking both. Uses the same v.currentTime()
 	// as the cert chain check, so tests can exercise this deterministically too.
+	// We add (or subtract) 5 seconds of leeway to account for minor clock skew.
 	now := v.currentTime()
-	if now.Before(mso.ValidityInfo.ValidFrom) {
+	if now.Before(mso.ValidityInfo.ValidFrom.Add(-5 * time.Second)) {
 		result.Error = fmt.Sprintf("credential not yet valid: validFrom=%s, now=%s",
 			mso.ValidityInfo.ValidFrom.Format(time.RFC3339), now.Format(time.RFC3339))
 		return nil, result
 	}
-	if now.After(mso.ValidityInfo.ValidUntil) {
+	if now.After(mso.ValidityInfo.ValidUntil.Add(5 * time.Second)) {
 		result.Error = fmt.Sprintf("credential expired: validUntil=%s, now=%s",
 			mso.ValidityInfo.ValidUntil.Format(time.RFC3339), now.Format(time.RFC3339))
 		return nil, result

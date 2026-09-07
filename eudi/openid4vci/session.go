@@ -460,7 +460,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		// attributes, rather than silently dropped from the permission screen
 		// while it is nonetheless fetched and stored.
 		var credentialDisplay metadata.CredentialDisplays
-		var claims []metadata.ClaimsDescription
+		claims := []metadata.ClaimsDescription{}
 		if config.CredentialMetadata != nil {
 			credentialDisplay = config.CredentialMetadata.Display
 			claims = config.CredentialMetadata.Claims
@@ -468,7 +468,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 
 		// Use the first credential in the batch as source of attribute values.
 		first := fc.parsedCredentials[0]
-		var attrs []clientmodels.Attribute
+		attrs := []clientmodels.Attribute{}
 		switch {
 		case first.SdJwtVc != nil:
 			attrs = buildAttributesWithValues(claims, first.SdJwtVc.ProcessedSdJwtPayload, s.locale)

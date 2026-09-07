@@ -302,7 +302,7 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 	metadata irmaclient.SdJwtVcBatchMetadata,
 	locale string,
 ) []clientmodels.Attribute {
-	var attributes []clientmodels.Attribute
+	attributes := []clientmodels.Attribute{}
 
 	// Build a lookup of attribute types by ID for efficient access
 	attrTypesByID := make(map[string]*irma.AttributeType, len(credType.AttributeTypes))

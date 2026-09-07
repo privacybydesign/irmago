@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
@@ -208,6 +209,8 @@ func (v *CredentialConfigurationValidator) ValidateAndGetSupportedFeatures(c *me
 			bindingMethod = proofs.CryptographicBindingMethod_DID_KEY
 		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_JWK) {
 			bindingMethod = proofs.CryptographicBindingMethod_DID_JWK
+		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_COSE) {
+			bindingMethod = proofs.CryptographicBindingMethod_COSE
 		} else {
 			return nil, fmt.Errorf("no supported cryptographic binding method found in 'cryptographic_binding_methods_supported'")
 		}
@@ -571,6 +574,12 @@ func validateMdocCredentialSigningAlgValues(advertised []any) error {
 // than silently truncated.
 func toCoseAlgorithmIdentifier(v any) (int64, bool) {
 	switch n := v.(type) {
+	case string:
+		i, err := strconv.Atoi(n)
+		if err != nil {
+			return 0, false
+		}
+		return int64(i), true
 	case float64:
 		i := int64(n)
 		if float64(i) != n {
