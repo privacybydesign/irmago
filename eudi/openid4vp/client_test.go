@@ -112,12 +112,16 @@ func TestNewSession_NonOKHttpStatus_ReportsFailure(t *testing.T) {
 	}
 }
 
-func TestNewSession_MissingRequestUri_ReportsFailure(t *testing.T) {
+// A link with no parameters at all names no request object and carries no
+// request parameters of its own, so there is nothing to act on. It used to be
+// refused for missing a request_uri; now that the parameters may be in the query
+// string instead, it is refused for carrying neither.
+func TestNewSession_EmptyUrl_ReportsFailure(t *testing.T) {
 	client := newTestClient()
 	handler := newSpyHandler()
 
 	client.NewSession("openid4vp://", handler)
 
 	err := handler.awaitFailure(t)
-	require.Contains(t, err.WrappedError, "request_uri")
+	require.Contains(t, err.WrappedError, "no client_id")
 }

@@ -188,60 +188,10 @@ func handleFailure(handler Handler, message string, fmtArgs ...any) {
 func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSession) {
 	go func() {
 		handler := session.handler
-		parsedUrl, err := url.Parse(fullUrl)
 
-		if err != nil {
-			handleFailure(handler, "openid4vp: failed to parse request: %v", err)
-			return
-		}
-
-		requestUri := parsedUrl.Query().Get("request_uri")
-		if requestUri == "" {
-			handleFailure(handler, "openid4vp: request missing required request_uri")
-			return
-		}
-
-		// The client_id the link carries is unauthenticated, so nothing downstream
-		// reads it — everything comes from the signed request object instead. It is
-		// still compared against the signed one, because RFC 9101 § 5.2.3 requires
-		// the two to match and a mismatch means the link and the request it points
-		// at disagree about who is asking. Ignoring that silently would let a
-		// tampered link pass unnoticed even though the wallet happens to act on the
-		// trustworthy half. An absent client_id is tolerated: the value is only
-		// useful for this comparison, and refusing a link that omits it would fail
-		// verifiers that are otherwise conformant.
-		linkClientId := parsedUrl.Query().Get("client_id")
-
-		eudi.Logger.Infof("starting openid4vp session: %v", requestUri)
-		response, err := common.HTTPClient.Get(requestUri)
-		if err != nil {
-			handleFailure(handler, "openid4vp: failed to get authorization request: %v", err)
-			return
-		}
-
-		defer response.Body.Close()
-
-		if response.StatusCode != http.StatusOK {
-			handleFailure(handler, "openid4vp: authorization request returned HTTP %d", response.StatusCode)
-			return
-		}
-
-		authRequestJwt, err := io.ReadAll(response.Body)
-		if err != nil {
-			handleFailure(handler, "openid4vp: failed to read authorization request body: %v", err)
-			return
-		}
-
-		request, requestor, err := client.verifySignedAuthorizationRequest(string(authRequestJwt))
+		request, requestor, err := client.parseUrlInvokedRequest(fullUrl)
 		if err != nil {
 			handleFailure(handler, "openid4vp: %v", err)
-			return
-		}
-
-		if linkClientId != "" && linkClientId != request.ClientId {
-			handleFailure(handler,
-				"openid4vp: the link names client_id %q but the signed request names %q",
-				linkClientId, request.ClientId)
 			return
 		}
 
@@ -265,6 +215,11 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			return
 		}
 
+		if err := validateRedirectResponseMode(request.ResponseMode); err != nil {
+			handleFailure(handler, "openid4vp: %v", err)
+			return
+		}
+
 		if err := client.checkRedirectResponseModeAllowed(request.ResponseMode); err != nil {
 			handleFailure(handler, "openid4vp: %v", err)
 			return
@@ -279,6 +234,119 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			handleFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
 		}
 	}()
+}
+
+// parseUrlInvokedRequest turns the URL the wallet was invoked with into an
+// authorization request plus the requestor to show for it.
+//
+// A link may carry its Authorization Request in three ways (OpenID4VP Section 5,
+// RFC 9101 Section 5.2): as a signed request object passed by value in
+// `request`, as one to fetch from `request_uri`, or as the request parameters
+// themselves in the query string. Neither `request` nor `request_uri` is
+// required, so the third form is a request like any other rather than a
+// malformed link, which is what the wallet used to make of it.
+//
+// The three forms are alternatives, not a fallback chain: a request object --
+// by value in `request`, or fetched from `request_uri` -- is verified and its
+// verifier authenticated, while a request whose parameters are in the query
+// string itself is unsigned, and every check that depends on a signature is
+// replaced by the far weaker binding validateUnsignedUrlRequest describes. Which
+// of the two happened is what the requestor's Verified flag reports to the user,
+// so the paths are kept apart here rather than merged into one parsed request.
+func (client *Client) parseUrlInvokedRequest(fullUrl string) (*AuthorizationRequest, *clientmodels.TrustedParty, error) {
+	parsedUrl, err := url.Parse(fullUrl)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse request: %v", err)
+	}
+	query := parsedUrl.Query()
+
+	requestObject := query.Get("request")
+	requestUri := query.Get("request_uri")
+
+	switch {
+	case requestObject != "" && requestUri != "":
+		// RFC 9101 Section 6.2 forbids sending both, and they can name different
+		// requests: honouring either one would mean acting on a request the
+		// verifier may not have meant, chosen by nothing but read order.
+		return nil, nil, fmt.Errorf("request and request_uri must not both be present")
+
+	case requestObject != "":
+		eudi.Logger.Info("starting openid4vp session from a request object in the url")
+		return client.verifyUrlRequestObject(requestObject, query)
+
+	case requestUri != "":
+		eudi.Logger.Infof("starting openid4vp session: %v", requestUri)
+		authRequestJwt, err := fetchRequestObject(requestUri)
+		if err != nil {
+			return nil, nil, err
+		}
+		return client.verifyUrlRequestObject(authRequestJwt, query)
+
+	default:
+		eudi.Logger.Info("starting openid4vp session from the request parameters in the url")
+		request, err := parseUnsignedUrlRequest(query)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := validateUnsignedUrlRequest(request); err != nil {
+			return nil, nil, fmt.Errorf("invalid unsigned authorization request: %v", err)
+		}
+		return request, unsignedUrlRequestor(request), nil
+	}
+}
+
+// fetchRequestObject retrieves the signed request object a request_uri points at.
+//
+// The GET is unconditional: request_uri_method is not honoured, so a verifier
+// asking for `post` is answered with a GET, which either works because the
+// endpoint accepts both or fails here rather than silently.
+func fetchRequestObject(requestUri string) (string, error) {
+	response, err := common.HTTPClient.Get(requestUri)
+	if err != nil {
+		return "", fmt.Errorf("failed to get authorization request: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("authorization request returned HTTP %d", response.StatusCode)
+	}
+
+	authRequestJwt, err := io.ReadAll(response.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read authorization request body: %v", err)
+	}
+	return string(authRequestJwt), nil
+}
+
+// verifyUrlRequestObject verifies a signed request object that arrived by value
+// or was fetched from a request_uri, and holds the link's own client_id to it.
+func (client *Client) verifyUrlRequestObject(authRequestJwt string, query url.Values) (
+	*AuthorizationRequest,
+	*clientmodels.TrustedParty,
+	error,
+) {
+	request, requestor, err := client.verifySignedAuthorizationRequest(authRequestJwt)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// The client_id the link carries is unauthenticated, so nothing downstream
+	// reads it -- everything comes from the signed request object instead. It is
+	// still compared against the signed one, because RFC 9101 Section 5.2.3
+	// requires the two to match and a mismatch means the link and the request it
+	// points at disagree about who is asking. Ignoring that silently would let a
+	// tampered link pass unnoticed even though the wallet happens to act on the
+	// trustworthy half. An absent client_id is tolerated: the value is only
+	// useful for this comparison, and refusing a link that omits it would fail
+	// verifiers that are otherwise conformant.
+	linkClientId := query.Get("client_id")
+	if linkClientId != "" && linkClientId != request.ClientId {
+		return nil, nil, fmt.Errorf(
+			"the link names client_id %q but the signed request names %q",
+			linkClientId, request.ClientId)
+	}
+
+	return request, requestor, nil
 }
 
 func (client *Client) handleDcApiSessionAsync(request *DcApiRequest, session *openid4vpSession) {

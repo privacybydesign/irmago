@@ -366,6 +366,34 @@ func validateRedirectAuthorizationRequest(request *AuthorizationRequest) error {
 	return nil
 }
 
+// validateRedirectResponseMode rejects the response modes a URL-invoked session
+// cannot answer in.
+//
+// direct_post and direct_post.jwt are the two this wallet transmits a response
+// for; the DC API modes are refused earlier, with an error saying so. Anything
+// else -- OAuth's own `fragment` and `query`, or an omitted response_mode, whose
+// default is `fragment` for a vp_token response -- used to reach the transport,
+// where the response builder recognised no mode, built no vp_token, and POSTed
+// an empty form to whatever response location the request carried. A verifier
+// received an empty response and the wallet reported the HTTP status, or with no
+// response location at all reported an unsupported protocol scheme, neither of
+// which names the actual problem. Nothing was disclosed either way, so this only
+// changes when and how the request is refused.
+func validateRedirectResponseMode(mode ResponseMode) error {
+	switch mode {
+	case ResponseMode_DirectPost, ResponseMode_DirectPostJwt:
+		return nil
+	}
+	if mode == "" {
+		return fmt.Errorf(
+			"request carries no response_mode: a URL-invoked session requires %s or %s",
+			ResponseMode_DirectPost, ResponseMode_DirectPostJwt)
+	}
+	return fmt.Errorf(
+		"response_mode %q is not supported for a URL-invoked session: only %s and %s are",
+		mode, ResponseMode_DirectPost, ResponseMode_DirectPostJwt)
+}
+
 // validateResponseUriBinding constrains where a response may be sent for the
 // x509_san_dns client identifier scheme.
 //

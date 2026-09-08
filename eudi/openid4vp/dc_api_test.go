@@ -94,6 +94,10 @@ type testHandler struct {
 	// grant answers the permission request with these selections. When nil, the
 	// permission request is left unanswered.
 	grant []dcql.DisclosureSelection
+
+	// requestorCh receives the party the client asked permission for, so a test
+	// can assert what the user would be shown about the verifier.
+	requestorCh chan *clientmodels.TrustedParty
 }
 
 func (h *testHandler) Failure(err *clientmodels.SessionError) {
@@ -120,10 +124,13 @@ func (h *testHandler) DeliverDcApiResponse(response string) {
 
 func (h *testHandler) RequestVerificationPermission(
 	_ *clientmodels.DisclosurePlan,
-	_ *clientmodels.TrustedParty,
+	requestor *clientmodels.TrustedParty,
 	_ []dcql.ChoiceQueryIds,
 	callback PermissionHandler,
 ) {
+	if h.requestorCh != nil {
+		h.requestorCh <- requestor
+	}
 	if h.grant != nil {
 		callback(true, h.grant)
 	}
