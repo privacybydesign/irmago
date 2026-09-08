@@ -85,8 +85,8 @@ func TestOpaqueSignerProducesVerifiableDeviceAuth(t *testing.T) {
 	}
 
 	transcript := SessionTranscript{
-		DeviceEngagementBytes: []byte("test-engagement"),
-		EReaderKeyBytes:       []byte("test-reader-key"),
+		DeviceEngagementBytes: testTag24("test-engagement"),
+		EReaderKeyBytes:       testTag24("test-reader-key"),
 		Handover:              "test-handover",
 	}
 

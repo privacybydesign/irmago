@@ -580,8 +580,8 @@ func TestDeviceAuthPayloadIsDetached(t *testing.T) {
 		t.Fatalf("NewHolder: %v", err)
 	}
 	transcript := SessionTranscript{
-		DeviceEngagementBytes: []byte("test-engagement"),
-		EReaderKeyBytes:       []byte("test-reader-key"),
+		DeviceEngagementBytes: testTag24("test-engagement"),
+		EReaderKeyBytes:       testTag24("test-reader-key"),
 		Handover:              "test-handover",
 	}
 	deviceAuthBytes, err := holder.SignDeviceAuth("eu.europa.ec.av.1", transcript)
@@ -614,8 +614,8 @@ func TestNewDeviceResponseSupportsMultipleDocuments(t *testing.T) {
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
 	transcript := SessionTranscript{
-		DeviceEngagementBytes: []byte("test-engagement"),
-		EReaderKeyBytes:       []byte("test-reader-key"),
+		DeviceEngagementBytes: testTag24("test-engagement"),
+		EReaderKeyBytes:       testTag24("test-reader-key"),
 		Handover:              "test-handover",
 	}
 

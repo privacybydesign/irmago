@@ -824,8 +824,8 @@ func TestDeviceAuthWrongSessionIsRejected(t *testing.T) {
 	// transcript than the one the verifier actually used. Simulates a
 	// replayed deviceAuth from an earlier/different session.
 	otherTranscript := SessionTranscript{
-		DeviceEngagementBytes: []byte("different-engagement"),
-		EReaderKeyBytes:       []byte("different-reader-key"),
+		DeviceEngagementBytes: testTag24("different-engagement"),
+		EReaderKeyBytes:       testTag24("different-reader-key"),
 		Handover:              "different-handover",
 	}
 	replayedDeviceAuth, err := holder.SignDeviceAuth(docType, otherTranscript)

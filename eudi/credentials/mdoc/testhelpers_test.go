@@ -3,6 +3,7 @@ package mdoc
 import (
 	"crypto/sha256"
 	"crypto/x509"
+	"fmt"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -11,6 +12,22 @@ import (
 // ============================================================
 // SHARED TEST HELPERS — used across multiple _test.go files
 // ============================================================
+
+// testTag24 builds a syntactically valid #6.24(bstr .cbor ...) item for the
+// leading SessionTranscript slots of ISO/IEC 18013-5 9.1.5.1, which hold the
+// complete tag-24 encoding rather than its contents.
+//
+// Panics instead of taking a *testing.T so it can be used inside the struct
+// literals these tests build their transcripts from. The wrapped value is
+// arbitrary: these tests care that holder and verifier agree on one transcript,
+// not what the engagement said.
+func testTag24(v any) cbor.RawMessage {
+	wrapped, err := tag24Wrap(v)
+	if err != nil {
+		panic(fmt.Sprintf("mdoc test: tag24Wrap(%v): %v", v, err))
+	}
+	return wrapped
+}
 
 // buildHappyPathMDoc runs the full issuer → holder pipeline once and
 // returns everything a verifier needs. Centralized here so every test
@@ -48,8 +65,8 @@ func buildHappyPathMDoc(t *testing.T) (*Issuer, *DefaultHolder, *Verifier, *MDoc
 	}
 
 	transcript := SessionTranscript{
-		DeviceEngagementBytes: []byte("test-engagement"),
-		EReaderKeyBytes:       []byte("test-reader-key"),
+		DeviceEngagementBytes: testTag24("test-engagement"),
+		EReaderKeyBytes:       testTag24("test-reader-key"),
 		Handover:              "test-handover",
 	}
 
