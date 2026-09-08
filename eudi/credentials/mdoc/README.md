@@ -115,12 +115,13 @@ monolithic test file:
 
 | File | Tests | What it checks |
 |---|---|---|
-| `mdoc_test.go` | `TestFullIssuanceFlow_ProducesValidMDoc` | Full issuer → holder → verifier round trip; also logs the real CBOR/COSE hex of the presented mdoc, `issuerAuth`, and `deviceAuth` for external inspection (e.g. via [cbor.me](https://cbor.me)) |
-| `mdoc_test.go` | `TestDeviceSignedOmittedWhenNilPresentWhenAttached` | `deviceSigned,omitempty` actually omits the key pre-presentation and includes it only after `AttachDeviceSigned` |
-| `crypto_test.go` | `TestCOSEKeyUsesIntegerMapKeys` | Decodes the real MSO bytes generically and asserts `deviceKey`'s map keys are actual CBOR integers — regression test for the `keyasint` struct-tag fix |
-| `crypto_test.go` | `TestTag24WrapUnwrapRoundTrip` | `tag24Unwrap` is the exact inverse of `tag24Wrap` — wrapped bytes carry a real CBOR tag 24, and the round-tripped value matches the original |
-| `crypto_test.go` | `TestTag24WrapWithModeUsesGivenEncMode` | `tag24WrapWithMode`'s inner payload is encoded with the `EncMode` actually passed in (using `tdateEncMode`'s RFC3339 tagging as the observable difference), not `cbor.Marshal`'s default mode |
-| `crypto_test.go` | `TestValidityInfoUsesRFC3339Tag` | Confirms `signed`/`validFrom`/`validUntil` are CBOR tag-0 RFC3339 strings, matching the AV Blueprint's own worked example, not a bare Unix epoch integer |
+| `verifier_test.go` | `TestFullIssuanceFlow_ProducesValidMDoc` | Full issuer → holder → verifier round trip; also logs the real CBOR/COSE hex of the presented mdoc, `issuerAuth`, and `deviceAuth` for external inspection (e.g. via [cbor.me](https://cbor.me)) |
+| `wireformat_test.go` | `TestDeviceSignedOmittedWhenNilPresentWhenAttached` | `deviceSigned,omitempty` actually omits the key pre-presentation and includes it only after `AttachDeviceSigned` |
+| `crypto_test.go` | `TestECDSAPublicKeyFromCOSERejectsOverWideCoordinate`, `…AcceptsValidKey` | A COSE key whose `x`/`y` is wider than its curve is refused by name rather than truncated into a different point; a well-formed one rebuilds |
+| `wireformat_test.go` | `TestCOSEKeyUsesIntegerMapKeys` | Decodes the real MSO bytes generically and asserts `deviceKey`'s map keys are actual CBOR integers — regression test for the `keyasint` struct-tag fix |
+| `wireformat_test.go` | `TestTag24WrapUnwrapRoundTrip` | `tag24Unwrap` is the exact inverse of `tag24Wrap` — wrapped bytes carry a real CBOR tag 24, and the round-tripped value matches the original |
+| `wireformat_test.go` | `TestTag24WrapWithModeUsesGivenEncMode` | `tag24WrapWithMode`'s inner payload is encoded with the `EncMode` actually passed in (using `tdateEncMode`'s RFC3339 tagging as the observable difference), not `cbor.Marshal`'s default mode |
+| `wireformat_test.go` | `TestValidityInfoUsesRFC3339Tag` | Confirms `signed`/`validFrom`/`validUntil` are CBOR tag-0 RFC3339 strings, matching the AV Blueprint's own worked example, not a bare Unix epoch integer |
 | `wireformat_test.go` | `TestDeviceAuthPayloadIsDetached` | Transmitted `deviceAuth` has `payload = null` (detached), matching the spec's `deviceSignature` example |
 | `holder_signer_test.go` | `TestOpaqueSignerProducesVerifiableDeviceAuth` | A device key reached only through `crypto.Signer` — no method returns the private half, as with a StrongBox / Secure Enclave key handle — produces a `deviceAuth` the verifier accepts, and is called exactly once with a 32-byte digest and nil `SignerOpts`, pinning the contract a hardware wrapper must honour |
 | `holder_signer_test.go` | `TestNewHolderFromSignerCurves` | P-256, P-384 and P-521 are accepted and each paired with the algorithm 9.1.3.6 fixes for it; a curve outside that table (P-224) is refused at construction, where the error can name the curve, rather than at signing time where it yields a wrong-width signature the verifier rejects for no stated reason |
@@ -153,25 +154,25 @@ monolithic test file:
 | `verifier_trustmodel_test.go` | `TestVerifierUsesPinnedIntermediates` | A three-level PKI (root → intermediate CA → DS) whose `x5chain` carries the document signer alone verifies when the intermediate comes from the trust model. This is the shape of every real deployment and of Yivi's staging PKI, and nothing else in this package covers it — every other test signs under a self-signed IACA one level shallower |
 | `verifier_trustmodel_test.go` | `TestVerifierRejectsUnbridgeableChain` | The same credential against `Roots` alone is refused, and the refusal carries the document signer's subject, issuer and serial — the bare x509 error cannot tell an unpinned CA from one a level deeper, and those are different defects with different owners |
 | `verifier_trustmodel_test.go` | `TestVerifierReadsAnchorsPerVerification` | Anchors appearing after construction take effect, and anchors dropped stop being honoured. The second direction is the one that matters: a wallet must not keep accepting staging-issued credentials after developer mode is switched back off |
-| `verifier_strictness_test.go` | `TestDuplicateCBORMapKeyIsRejected` | An `IssuerSignedItem` carrying two `elementValue` entries â byte-identical to what the MSO commits to, so the digest matches and the signature is untouched. Under fxamacker's default it decoded to whichever entry won and verified clean, which lets two implementations read the same signed bytes differently |
+| `verifier_strictness_test.go` | `TestDuplicateCBORMapKeyIsRejected` | An `IssuerSignedItem` carrying two `elementValue` entries — byte-identical to what the MSO commits to, so the digest matches and the signature is untouched. Under fxamacker's default it decoded to whichever entry won and verified clean, which lets two implementations read the same signed bytes differently |
 | `verifier_strictness_test.go` | `TestDuplicateElementIdentifierIsRejected` | Two genuinely signed items with the same identifier and different digestIDs. Every cryptographic check passes; only the structural rule catches it |
 | `verifier_strictness_test.go` | `TestMSOVersionMustBeMajorOne` | `1.0` and `1.1` accepted, `2.0`/`0.9`/empty refused by name |
 | `verifier_strictness_test.go` | `TestVerifyCoversEveryNamespacePresent` | A namespace the MSO does not cover is refused even when the caller asked about a different one |
 | `verifier_strictness_test.go` | `TestSelectiveDiscloseRefusesEmptyResult` | Disclosing nothing errors rather than emitting a namespace mapped to CBOR null |
-| `profile_test.go` | `TestClosedAttributeSetAppliesToAVOnly` | `nationality` under `eu.europa.ec.av.1` is refused and named; the same element under a general docType passes untouched. The twin is the point â a check that only ever runs against AV documents cannot show it stays off for the rest |
+| `profile_test.go` | `TestClosedAttributeSetAppliesToAVOnly` | `nationality` under `eu.europa.ec.av.1` is refused and named; the same element under a general docType passes untouched. The twin is the point — a check that only ever runs against AV documents cannot show it stays off for the rest |
 | `profile_test.go` | `TestGeneralProfileAllowsHolderAssertedClaims` | 9.1.3.4 both ways: authorized by namespace, authorized by element, no authorizations at all, authorized for a different element, and AV refusing regardless of what the issuer authorized |
 | `profile_test.go` | `TestKeyAuthorizationsRoundTripDoesNotChangeSignedBytes` | `DeviceKeyInfo` still encodes as a one-entry map. If the new optional fields ever started emitting, every issued credential's MSO digest would change |
 | `profile_test.go` | `TestRevokedDocumentSignerIsRefused` | Unrelated CRL does not reject; the signer's own revocation does and names the certificate; no CRLs is a no-op; options-only verifiers still skip revocation |
 | `agility_test.go` | `TestIssuerAuthAlgorithmAgility` | Complete credentials signed ES256/ES384/ES512 on their matching curves, each a real chain and a real signature |
 | `agility_test.go` | `TestDigestAlgorithmAgility` | SHA-256, SHA-384 and SHA-512 end to end; an identifier outside Table 21 refused by name |
-| `agility_test.go` | `TestDeviceKeyCurveAgility` | Coordinate widths asserted per curve â the assertion that would have caught the silent P-384 truncation â plus brainpool refused by identifier and an OKP key refused by name |
+| `agility_test.go` | `TestDeviceKeyCurveAgility` | Coordinate widths asserted per curve — the assertion that would have caught the silent P-384 truncation — plus brainpool refused by identifier and an OKP key refused by name |
 | `agility_test.go` | `TestDeviceAuthOnEveryCurve` | A device key on each curve signs a presentation the verifier accepts, algorithm resolved from the curve independently on both sides |
 | `wireformat_test.go` | `TestAttachDeviceSignedRoundTrips` | `AttachDeviceSigned` populates `MDoc.DeviceSigned` with the exact deviceAuth bytes passed in, and returns a copy — the original mdoc is left untouched |
 | `verifier_test.go` | `TestVerifyDeviceResponseSucceeds` | Full flow through the real `DeviceResponse` container (`AttachDeviceSigned` → `NewDeviceResponse` → `VerifyDeviceResponse`) produces the same result as calling `VerifyWithDeviceAuth` directly |
 | `verifier_test.go` | `TestVerifyDeviceResponseRejectsMissingDeviceSigned` | A document without `DeviceSigned` attached is rejected with a descriptive error, not a nil-dereference panic |
 | `wireformat_test.go` | `TestNewDeviceResponseSupportsMultipleDocuments` | A `DeviceResponse` bundling two distinct holders' documents from the same issuer verifies each document independently and correctly |
 | `wireformat_test.go` | `TestDeviceAuthSignatureEncodesInline` | `DeviceAuth.DeviceSignature` embeds as structured CBOR (`cbor.RawMessage`), not as an opaque re-encoded byte string |
-| `wireformat_test.go` | `TestWireIssuerAuthIsBareCoseSign1Array`, `TestWireIssuerSignedItemsAreTag24`, `TestWireDeviceSignedShape`, `TestWireRoundTripsThroughGenericCBOR`, `TestVerifierAcceptsTaggedCoseSign1` | Decodes a real `DeviceResponse` **generically** — into `any`, never this package's structs, since a round trip through the same types cannot detect a wrong shape — and asserts the ISO 18013-5 encoding at each position, plus that the frozen item bytes survive the round trip and the document still verifies |
+| `wireformat_test.go` | `TestWireIssuerAuthIsBareCoseSign1Array`, `TestWireIssuerSignedItemsAreTag24`, `TestWireDeviceSignedShape`, `TestWireRoundTripsThroughGenericCBOR` (with `TestVerifierAcceptsTaggedCoseSign1` in `verifier_test.go`) | Decodes a real `DeviceResponse` **generically** — into `any`, never this package's structs, since a round trip through the same types cannot detect a wrong shape — and asserts the ISO 18013-5 encoding at each position, plus that the frozen item bytes survive the round trip and the document still verifies |
 | `verifier_test.go` | `TestTamperedEnvelopeDocTypeIsRejectedByVerify`, `…AtIssuanceVerification`, `TestVerifierRequestedDocTypeMustMatchSignedMSO`, `TestSignedDocTypeIsReportedNotTheEnvelopeValue` | The unsigned envelope `docType` must equal the signed `MSO.docType`, at every entry point that reports or consumes one |
 
 `testhelpers_test.go` holds `buildHappyPathMDoc`, `keysOf`, and `unwrapTag24Generic` —
@@ -189,9 +190,9 @@ Tests for the protocol layers live with the code they cover, not here:
 |---|---|
 | `eudi/openid4vp/mdoc_dcql/sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptShape`, `…BindsAllInputs`, `…IntegratesWithDeviceAuth`, the same pair for `TestDcApiSessionTranscript…`, and `TestSessionTranscriptVariantsNeverCollide` — the byte-level handover formula, and that a `deviceAuth` signed over it verifies. `…CarriesEncryptionKeyThumbprint` covers the other axis: the third handover slot, which carries the response encryption key's thumbprint when the response is encrypted and CBOR null when it is not |
 | `eudi/services/credential_format_parser_mdoc_test.go` | `TestMdocCredentialFormatParser_ParseAndVerify` (+ `_UntrustedRootRejected`, `_InvalidBase64`) and `_CheckBatchUniqueness` — the issuance-side parse/verify path |
-| `eudi/services/credential_service_test.go` | `TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames`, `…_NoMetadataStillEmitsValues` — permission-dialog attribute building |
+| `eudi/services/mdoc_claim_values_test.go` | `TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames`, `…_NoMetadataStillEmitsValues` — permission-dialog attribute building |
 | `eudi/openid4vci/metadata_validators_test.go` | `mso_mdoc` accepted as a supported credential format, and `credential_signing_alg_values_supported` validated as COSE algorithm identifiers — ES256 (`-7`) required, an identifier ISO 18013-5 permits but this wallet cannot verify distinguished from one it does not permit at all |
-| `eudi/storage/db/credential_store_test.go` | `GetBatchesByDocType` against an `mso_mdoc` batch |
+| `eudi/storage/db/mdoc_store_test.go` | `TestMdocStore_GetBatchesByDocType` and the rest of the mdoc store, which owns `mso_mdoc` storage end to end since the per-format split |
 | `eudi/openid4vp/mdoc_age_verification_test.go` | `TestOpenID4VP_MdocAgeVerification` — the EU Age Verification profile (`eu.europa.ec.av.1`) across the two stages that decide a presentation and fail independently: whether the relying party is authorized to ask (its certificate's authorized sets, via the real `SchemeQueryValidator`) and whether the wallet can answer (a genuinely issued mdoc in storage, matched by `mdoc_dcql`). Also pins display-name resolution, including from the one-component claim path an issuer may publish |
 | `internal/sessiontest/openid4vp_mdoc_av_disclosure_test.go` | `TestSessionHandler/openid4vp/mdoc-av` — disclosure end to end against a real verifier (the EU reference `eudi-srv-web-verifier-endpoint` container), in both response modes: DCQL matching, the device-signed `DeviceResponse`, and the verifier accepting it, with the returned `vp_token` decoded from CBOR and its Tag-24 items unwrapped and `deviceAuth` verified against a transcript the test rebuilds from the captured request. One subtest runs the whole disclosure on a Dutch wallet against this `en`-only issuer, covering the disclosure side of locale fallback and the `display_is_fallback` flag a frontend keys its own labels off. The rest of the group — most of it — is refusals: requests the reference verifier would never send, each one thing away from the request the passing subtests accept, covering the signature and JOSE header, the certificate that authenticates the relying party, the DCQL query's shape and authorized set, the request's claims, what `request_uri` answers with, and where a response may be posted. A control subtest asserts that a re-signed but *unmodified* request is still accepted, which is what keeps every refusal attributable to its one mutation; the minting rig is `helper_mdoc_request_variants_test.go`. Two subtests deliberately assert an acceptance rather than a refusal — an `aud` naming another wallet, and a claim path whose namespace the credential does not carry — and say why in place |
 | `internal/sessiontest/eudi_pid_python_issuer_mdoc_test.go` | `TestSessionHandler/openid4vci/mdoc/eudi-pid-python` — issuance from the EU reference issuer, and the permission screen it produces: the credential's name, its issuer, and a label and value per claim, all resolved from the issuer's OpenID4VCI metadata (ISO 18013-5 defines no display concept, so there is no other source). One subtest runs the same offer on a Dutch wallet against this `en`-only issuer, pinning that an unpublished locale falls back rather than resolving to an empty name. The issuance refusals live here too: a wrong transaction code (which the wallet re-prompts for rather than failing, so the assertion is that nothing was stored), an offer naming a configuration the issuer does not publish, a pre-authorized code redeemed twice, a grant with no pre-authorized code, and an offer naming no configurations at all — that last one asserted against the container, behind a control offer, because it answers HTTP 500 both when refusing and when it has degraded |
@@ -277,9 +278,14 @@ own `NotBefore`/`NotAfter` (via the chain walk above), and the MSO's own
 MSO decode). A cert being valid does not imply the specific credential's claimed
 window is — both must hold.
 
-Both certs' `NotBefore` are backdated 5 minutes from issuance time — standard practice
-to absorb clock skew between issuer and verifier, and what makes it possible to test
-the MSO validity check in isolation from cert validity (see `TestNotYetValidMSOIsRejected`).
+Both certs' `NotBefore` are backdated 25 hours from issuance time by `NewIssuer` — far
+enough to absorb clock skew between issuer and verifier, and deliberately past the
+`ValidityInfo` coarsening boundary, since `Issue` truncates `signed` to midnight UTC and
+a certificate backdated by minutes is therefore issued *after* the `signed` timestamp of
+every credential it signs that same day (see the `NotBefore` comment in `issuer.go`, and
+"Open ISO/IEC 18013-5 conformance items" below). It is also what makes it possible to
+test the MSO validity check in isolation from cert validity (see
+`TestNotYetValidMSOIsRejected`).
 
 ### Deployment phases
 
@@ -310,8 +316,12 @@ binding (once, at issuance):        deviceKeyInfo says "this key belongs to this
 authentication (every presentation): deviceAuth proves "I am that key, right now"
 ```
 
-The real client generates and stores this device key the same way it does for SD-JWT
-holder-binding keys — via `eudi/services.HolderBindingKeyService.CreateKeyPairsWithProofs`.
+The real client generates this device key at issuance through the same
+`services.HolderKeyBinder` seam SD-JWT VC uses, but into its own table: the `mso_mdoc`
+implementation is `services.MdocKeyService.CreateKeyPairsWithProofs`, which stores each
+key as a `models.MdocDeviceKey` under the JWK thumbprint of its public half.
+(`HolderBindingKeyService` is the SD-JWT VC half; mdoc device keys stopped sharing that
+table when each format took over its own storage.)
 At presentation time `mdoc_dcql.PrepareDisclosure` does not load that key. It reads the
 device public key out of the credential's own MSO (`mdoc.DeviceKeyFromIssuerAuth`) and asks
 a `mdoc_dcql.DeviceKeyBinder` for a `Holder` that can sign with the matching private half.
@@ -345,12 +355,11 @@ returns `NewHolderFromSigner(platformKeyHandle)` is the whole change needed to s
 presentations in hardware. `devicekeybinder_test.go` presents with a signer that has no
 method returning its private key and the verifier accepts the result.
 
-What is *not* done is the issuance half. `HolderBindingKeyService` still generates an
-extractable software key, and `models.HolderBindingKey.PrivateKey` is `not null`, so a
-hardware wallet needs a key-generation path that stores a platform key handle in place of
-PKCS#8 bytes (`openid4vci.HolderKeyBinder` is the seam for that — its doc comment already
-describes the WSCA/HSM implementation) plus a migration making the private-key column
-optional. Until then the device key is generated in software; the presentation seam simply
+What is *not* done is the issuance half. `MdocKeyService` still generates an extractable
+software key, and `models.MdocDeviceKey.PrivateKey` is `not null`, so a hardware wallet
+needs a key-generation path that stores a platform key handle in place of PKCS#8 bytes
+(`services.HolderKeyBinder` is the seam for that — its doc comment already describes the
+WSCA/HSM implementation) plus a migration making the private-key column optional. Until then the device key is generated in software; the presentation seam simply
 no longer stands in the way.
 
 ---
@@ -425,8 +434,8 @@ same pinned image, which already advertised twelve — read the metadata rather 
 trusting this list, since a claim about a running container is only as good as the
 day it was checked.
 
-Nothing in the Blueprint enumerates the thresholds, but the reference issuer does
-enforce its own list. An earlier revision of this paragraph said it "mints an
+Nothing in the Blueprint enumerates the thresholds, and a *stock* reference issuer
+enforces its own list regardless. An earlier revision of this paragraph said it "mints an
 `age_over_NN` absent from the advertised set without complaint"; that was read off
 the offer endpoint answering HTTP 200, which it does. The credential comes back
 without the element. `populate_pdata` in `app/dynamic_func.py` builds the document
@@ -434,8 +443,17 @@ by walking the configuration's own mandatory, optional and issuer-filled claims
 and copying a value only `if attr in data`, so an element the offer names and the
 configuration does not is dropped before the MSO is signed — no error at the
 offer, none at the credential endpoint, and nothing in the issued document to say
-a value went missing. A fourteenth threshold means editing
+a value went missing. A fourteenth *advertised* threshold means editing
 `app/metadata_config/credentials_supported/age_verification_mdoc.json`.
+
+The local compose stack does not run a stock issuer: it bind-mounts a patched
+`populate_pdata` (`testdata/eudi-pid-issuer-py/patches/dynamic_func.py`) that lifts the
+filter for the age-verification namespace alone, so the container will mint any
+`age_over_NN` while its advertised metadata stays byte-identical to staging's. That is
+what makes it possible to test the wallet against an arbitrary threshold, which the
+profile permits and a stock image cannot produce. The mount and its reasoning are
+commented at the `eudi_pid_issuer_py` service in `docker-compose.yml`; staging serves its
+own copy and is unaffected.
 
 That is still that implementation's choice rather than a limit of the profile, and
 it says nothing about what this wallet accepts: irmago resolves and stores every
@@ -599,7 +617,7 @@ cryptographically random shuffle, not a sorted/deterministic order — see the c
 `shuffleIdentifiers` in `issuer.go` — so a disclosed claim's digestID reveals nothing
 about undisclosed claims' relative position. Only the *count* remains visible.)
 
-### Issuer-advertised `batch_size` is unbounded
+### Issuer-advertised `batch_size` is capped by the wallet, at 30
 
 Batch issuance is what buys unlinkability: because the issuer fixes each item's `random`
 salt before signing, the disclosed bytes of one credential instance are identical on
@@ -607,33 +625,46 @@ every presentation, so two verifiers shown the same instance can trivially corre
 them. One instance per presentation is the mitigation, and `RemainingCount` reaching
 zero is what the exhausted-batch path in `mdoc_dcql` reports.
 
-How many instances to mint is the *issuer's* policy — it knows its own unlinkability
-requirements and how often its users present — so the wallet honours the advertised
-`batch_credential_issuance.batch_size` rather than holding an opinion
-(`eudi/openid4vci/session.go`). That part is deliberate: a wallet hardcoding the AV
-Blueprint's recommended 30 would under-request from an issuer offering more, and refuse
-a conformant issuer offering fewer.
+`batch_credential_issuance.batch_size` is the issuer's *maximum* — the largest `proofs`
+array it will accept — and not an instruction to fill it, so the wallet asks for
+`min(advertised, maxBatchInstances)` with `maxBatchInstances = 30`
+(`eudi/openid4vci/session.go`). Thirty follows the AV Blueprint's recommendation, and
+paired with the profile's three-month maximum validity it is about one presentation every
+three days.
 
-**What is missing is an upper bound.** The only check is that the value exceeds 1
-(`eudi/openid4vci/metadata_validators.go`). An issuer advertising `batch_size: 100000`
-would have the wallet generate that many device keys and proof JWTs, on a phone, inside
-a session the user is waiting on — so a hostile or merely misconfigured issuer turns a
-metadata field into a client-side resource exhaustion. Neither OpenID4VCI nor the AV
-Blueprint states a ceiling, so a conformant implementation has to pick its own.
+The ceiling has to be the wallet's number rather than the issuer's, because the cost is
+the wallet's: every instance is a keypair generated and stored on the device, and once
+issuance mints in hardware, a Secure Enclave or StrongBox operation each. The EU
+reference Python issuer advertises **100** as its own default (not configured by us — it
+is absent from `testdata/eudi-pid-issuer-py/conf/config_issuer_backend.yaml`), which is
+its ceiling and not a demand; taking it literally meant a hundred enclave keygens in one
+issuance, and an issuer advertising an implausible ceiling could ask for arbitrarily
+many — a denial of service at issuance from a party the wallet trusts for credential
+content and not for arithmetic. Metadata validation separately refuses `batch_size <= 1`
+(`eudi/openid4vci/metadata_validators.go`).
 
-For calibration: the AV Blueprint recommends **30**; the EU reference Python issuer we
-test against advertises **100** as its own default (not configured by us — it is absent
-from `testdata/eudi-pid-issuer-py/conf/config_issuer_backend.yaml`). A cap somewhere
-above the latter, refusing anything larger with a clear error rather than silently
-truncating the batch, would close this without breaking either.
+Raising the cap would not buy more privacy: the batch defeats collusion between relying
+parties per *presentation* rather than per batch, so a bigger batch only means refilling
+less often. What the number has to cover is the presentations expected before the next
+renewal.
 
-### No verifier-side certificate / relying-party authentication
+### Relying-party authentication is real, but not this package's job
 
-Real deployments (e.g. Yivi's production trust model) also have a separate CA branch
-for relying parties (`Yivi Relying Parties CA` alongside `Yivi Attestation Providers
-CA`, both under one root), letting a verifier authenticate *itself* to the holder's
-wallet before requesting data. This program only models the issuer-side chain; there
-is no equivalent verifier-side cert or check.
+Yivi's trust model has a separate CA branch for relying parties (`Yivi Relying Parties
+CA` alongside `Yivi Attestation Providers CA`, both under one root — see
+`eudi/trustanchors.go`), letting a verifier authenticate *itself* to the wallet before
+requesting data. That half is implemented, just not here: the wallet holds a second
+trust model for it (`Configuration.Verifiers`, `eudi/eudiconfig.go`), the signed
+Authorization Request's `x5c` certificate is verified against it before anything is
+disclosed, and `eudi/scheme`'s `SchemeQueryValidator` then holds the request to the
+authorized attribute sets carried in that certificate's `2.1.123.1` extension — so a
+verifier can only ask for what its own certificate says it may.
+
+What this package models is the issuer-side chain alone. It never sees the verifier's
+certificate: by the time `mdoc_dcql` prepares a disclosure, the request has already been
+authenticated at the OpenID4VP layer. The two trust models are deliberately separate, so
+an issuer anchor cannot authenticate a relying party — pinned by
+`TestSessionHandler/openid4vp/mdoc-av/the_issuer.s_own_certificate_cannot_authenticate_a_verifier`.
 
 ### Issuer does not authenticate the wallet either (by design, not oversight)
 

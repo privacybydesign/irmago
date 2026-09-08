@@ -11,7 +11,7 @@
 | `issuer_cert_openid4vc_staging_yivi_app.pem` | self-signed certificate using `issuer_ec_priv.pem` and `openid4vc.staging.yivi.app` as the host name |
 | `issuer_ec_priv.pem` | test issuer ECDSA private key |
 | `issuer_ec_pub.jwk` | jwk formatted version of the test issuer ECDSA public key |
-| `issuer_ec_pub.pem` | test holder ECDSA private key |
+| `issuer_ec_pub.pem` | test issuer ECDSA public key |
 
 
 PEM formatted ECDSA keys were generated using the following commands:

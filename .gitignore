@@ -10,9 +10,9 @@ vendor/
 irma/irma
 .claude/settings.local.json
 
-# The activity-log dump mdoc-e2e's -logs flag writes, at the path its doc
-# comment suggests running it from the repository root with. It is one run's
-# output from one developer's wallet, not a fixture.
+# An activity-log dump left at the repository root. mdoc-e2e's -logs flag wrote
+# it before that program was removed; the rule stays because such a dump is one
+# run's output from one developer's wallet, not a fixture.
 /mdoc-logs.json
 
 # Editor settings are per-developer: the Go/gopls CGO_ENABLED and toolchain PATH

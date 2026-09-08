@@ -22,9 +22,9 @@ import (
 // verifier to: the issuance-time entry point, the presentation-time negative
 // cases, validity windows, the certificate's authorization to sign at all, the
 // binding between the envelope and the signed docType, and device
-// authentication. Encoding-level tests live in wireformat_test.go and
-// interop_vector_test.go instead, since those pin the wire shape rather than
-// verification behaviour.
+// authentication. Encoding-level tests live in wireformat_test.go instead —
+// including the cross-implementation vector at the end of it — since those pin
+// the wire shape rather than verification behaviour.
 //
 // Shared fixtures: buildHappyPathMDoc (testhelpers_test.go) issues, discloses
 // and device-signs one document; the helpers immediately below cover the two

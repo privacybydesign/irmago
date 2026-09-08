@@ -41,7 +41,7 @@ func newMdocBatch(hash string, instances int) *models.MdocBatch {
 		IssuerVerified: true,
 		IssuerDisplay:  datatypes.JSON(`[{"name":"Issuer","locale":"en"}]`),
 	}
-	for i := 0; i < instances; i++ {
+	for i := range instances {
 		b.Instances = append(b.Instances, models.MdocBatchInstance{
 			IssuerSigned: []byte{0xa2, byte(i)},
 		})

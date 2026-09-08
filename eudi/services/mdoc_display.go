@@ -236,7 +236,7 @@ var mdocAgeOverElement = regexp.MustCompile(`^age_over_([0-9]{1,2})$`)
 // anything nothing else names, so an unadvertised threshold renders either way —
 // "Age Over 91" with this, "age_over_91" without.
 //
-// Note for anyone reproducing the gap it covers: the EUDI reference issuer
+// Note for anyone reproducing the gap it covers: a *stock* EUDI reference issuer
 // cannot. Measured on 2026-08-31, it mints only the thirteen thresholds it
 // advertises (13, 15, 16, 18, 21, 23, 25, 27, 28, 40, 60, 65, 67) and silently
 // discards any other claim it is asked for, an email address included. That is
@@ -244,8 +244,12 @@ var mdocAgeOverElement = regexp.MustCompile(`^age_over_([0-9]{1,2})$`)
 // never declared violates nothing in either specification — so the wallet cannot
 // assume it. The realistic source is not a hostile issuer but metadata drift: an
 // element added to issuance code and not to credential_configurations_supported.
-// Build such a credential with mdoc.Issuer.Issue, which is format-generic, not
-// by asking the reference issuer for it.
+//
+// Two ways to build one: mdoc.Issuer.Issue, which is format-generic; or the local
+// compose stack, whose eudi_pid_issuer_py mounts a patched populate_pdata
+// (testdata/eudi-pid-issuer-py/patches/dynamic_func.py) that mints any age_over_NN
+// while leaving the advertised metadata at those thirteen — which is exactly this
+// gap, end to end. Only a stock image cannot produce it.
 //
 // English only, deliberately. This stands in for metadata the issuer did not
 // publish; it is not a translation table, and the wallet's localized labels

@@ -329,13 +329,16 @@ services:
       # edited.
       #
       # Its credential_metadata.claims is what decides which age_over_NN the
-      # issuer will mint. populate_pdata (app/dynamic_func.py) walks the claims
-      # declared here and copies a value out of the offer only where one is
-      # named, so an element the offer asks for and this file does not declare
-      # is discarded before the MSO is signed -- the offer still returns 200 and
-      # issuance still succeeds, just without that element. Add the claim here
-      # to mint it. The same file also carries the credential's display name,
-      # the "Proof of Age" the wallet shows as a card title.
+      # issuer *advertises*. On a stock image it also decides what may be
+      # minted: populate_pdata (app/dynamic_func.py) walks the claims declared
+      # here and copies a value out of the offer only where one is named, so an
+      # element the offer asks for and this file does not declare is discarded
+      # before the MSO is signed -- the offer still returns 200 and issuance
+      # still succeeds, just without that element. The patched dynamic_func.py
+      # mounted below lifts that for the age-verification namespace, so here the
+      # two came apart: this file governs what is advertised, the patch governs
+      # what can be minted. The same file also carries the credential's display
+      # name, the "Proof of Age" the wallet shows as a card title.
       #
       # app/__init__.py loads that directory with os.listdir at start-up, so
       # replacing the one file is enough -- no image fork -- but the container

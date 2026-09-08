@@ -63,8 +63,9 @@ The one-time code is printed alongside, **not carried in the offer link**. The
 reference issuer returns it inside the offer it hands back, which is a convenience
 of the fixture rather than the protocol -- OpenID4VCI's `tx_code` object has no
 `value` member, and a code shipped inside the link it protects protects nothing --
-so `localstack.CreateOffer` strips it before building the link. The wallet always
-prompts for it either way: `openid4vci.TransactionCode` carries only
+so `CreateOffer` (in mint-session's `localstack.go`) strips it before building the
+link. The wallet always prompts for it either way:
+`openid4vci.TransactionCode` carries only
 `input_mode`, `length` and `description`, and never read a value. Pass `-email` to
 have the code mailed instead of printed, which is how to demonstrate it arriving
 on a channel the link did not travel on; with the default `-smtp` that is the
@@ -100,20 +101,25 @@ go run ./yivi/cli/eudicli/mint-session -issue -mint age_over_42=true
 separate is what allows the offer and the query to disagree on purpose, which is
 what testing a refusal requires -- a single flag driving both would make every run
 agree with itself. `-issue` without `-mint` mints exactly
-`localstack.DefaultAVElements`.
+`DefaultAVElements`.
 
 Two boundaries are worth knowing before changing either.
 
-**`-mint` can only name elements the issuer advertises.** `-mint
-age_over_42=true` returns HTTP 200 and then mints a credential without it: the
-issuer builds the document by walking its *own* configured claims and copying a
-value only where the offer supplies one (`populate_pdata` in
-`app/dynamic_func.py`, `if attr in data`), so anything the configuration does not
-list is dropped before signing, with no error anywhere. An earlier revision of
-this paragraph said the opposite -- read as "the offer request was accepted",
-which it is. Only the thirteen `age_over_NN` in
-`app/metadata_config/credentials_supported/age_verification_mdoc.json` can be
-minted; adding another means adding it there.
+**`-mint` may name any `age_over_NN`, advertised or not.** The compose stack
+bind-mounts a patched `populate_pdata`
+(`testdata/eudi-pid-issuer-py/patches/dynamic_func.py`) over the image's
+`app/dynamic_func.py`, lifting that restriction for the age-verification
+namespace, because ISO 18013-5 and the AV profile both leave the set of
+thresholds open. Against a *stock* image the element would be dropped before
+signing: upstream walks its *own* configured claims and copies a value only where
+the offer supplies one (`if attr in data`), so `-mint age_over_42=true` returns
+HTTP 200, issuance succeeds, and the element is simply absent with no error
+anywhere. Any *other* undeclared element is still dropped that way. What is
+*advertised* deliberately stays at the upstream thirteen in
+`testdata/eudi-pid-issuer-py/metadata/age_verification_mdoc.json` -- the wallet
+renders one row per advertised claim on the offer screen -- so a threshold minted
+without being advertised carries no published label and is named "Age Over NN" by
+the wallet's own derived name.
 
 **Presenting one is a separate matter.** The relying party certificate's
 authorized set decides what may be requested, so an element can be advertised and
@@ -126,7 +132,7 @@ way to obtain a second identical credential -- it is the renewal path.
 
 ## What to expect
 
-The credential holds every threshold in `localstack.DefaultAVElements` — five as
+The credential holds every threshold in `DefaultAVElements` — five as
 of 2026-08-31, `age_over_18` plus four optional ones — and the query asks for one,
 so the permission screen shows a single attribute while the wallet holds all five.
 That is the point: `vptoken-decode` shows one disclosed element against the full

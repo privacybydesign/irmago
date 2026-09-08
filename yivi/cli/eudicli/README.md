@@ -76,7 +76,7 @@ Three flag pairs are easy to confuse, and the separation is deliberate:
 
 | Flag | Decides | Note |
 |---|---|---|
-| `-mint` | what the credential *holds* | empty mints `localstack.DefaultAVElements` |
+| `-mint` | what the credential *holds* | empty mints `DefaultAVElements` |
 | `-element` / `-value` | what the query *asks* | so the two can be made to disagree, which is what testing a refusal needs |
 | `-email` / `-mail-to` | where the one-time code goes | the code is never in the offer link |
 
@@ -87,7 +87,7 @@ inbox. `-mail-to` matters only once `-smtp` points at a relay that really
 delivers, with credentials from `SMTP_USERNAME` / `SMTP_PASSWORD`.
 
 `-show-query` prints the `dcql_query` as sent, from the same
-`localstack.DcqlQuery` that builds it. There is otherwise no way to read it: the
+`DcqlQuery` that builds it. There is otherwise no way to read it: the
 request object is single use, so fetching it to decode the query leaves nothing
 for the phone, and the verifier answers 400 until the wallet responds and keeps
 no record across a restart.

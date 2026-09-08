@@ -642,12 +642,39 @@ func TestCredentialConfiguration_ValidateAndGetSupportedFeatures(t *testing.T) {
 			config: metadata.CredentialConfiguration{
 				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
+				// A DID method the wallet does not resolve for holder binding, and
+				// one an issuer could plausibly advertise. Deliberately not
+				// cose_key: that is accepted now, so using it here made this case
+				// pass the binding-method check and fail further down on the proof
+				// type instead — asserting a message this case does not test.
 				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
-					proofs.CryptographicBindingMethod_COSE,
+					proofs.CryptographicBindingMethod("did:web"),
 				},
 			},
 			wantErr:     true,
 			expectedErr: `no supported cryptographic binding method found in 'cryptographic_binding_methods_supported'`,
+		},
+		{
+			// The positive half of the case above: cose_key is what an mso_mdoc
+			// issuer advertises, since an mdoc carries the device key as a COSE_Key
+			// in the MSO. Combined with the jwt proof type the holder key travels
+			// as a JWK anyway (see proofs.JwtProofBuilder), so this is accepted
+			// rather than deferred to a CWT proof this wallet does not build.
+			name: "mso_mdoc cose_key binding with a jwt proof is accepted",
+			config: metadata.CredentialConfiguration{
+				Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
+				Doctype: "eu.europa.ec.av.1",
+				Scope:   &scope,
+				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
+					proofs.CryptographicBindingMethod_COSE,
+				},
+				ProofTypesSupported: map[metadata.ProofTypeIdentifier]metadata.ProofType{
+					metadata.ProofTypeIdentifier_JWT: {
+						ProofSigningAlgValuesSupported: []string{"ES256"},
+					},
+				},
+			},
+			wantErr: false,
 		},
 		{
 			name: "cryptographic binding method present, no proof type supported present",

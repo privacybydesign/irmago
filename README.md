@@ -168,7 +168,7 @@ When the databases and MailHog are running, the tests can be run using:
 
     go test -p 1 ./...
 
-* The option `./...` makes sure all tests are run. You can also limit the number of tests by only running the tests from a single directory or even from a single file, for example only running all tests in the directory `./internal/sessiontest`. When you only want to execute one single test, for example the `TestDisclosureSession` test, you can do this by adding the option `-run TestDisclosureSession`.
+* The option `./...` makes sure all tests are run. You can also limit the number of tests by only running the tests from a single directory or even from a single file, for example only running all tests in the directory `./internal/sessiontest`. When you only want to execute one single test, for example the `TestManualDisclosureSession` test, you can do this by adding the option `-run TestManualDisclosureSession`.
 * The option `-p 1` is necessary to prevent parallel execution of tests. Most tests use file manipulation and therefore tests can interfere.
 
 ### Trusting the test TLS certificate
@@ -197,7 +197,7 @@ You can also run the tests fully in Docker using the command below. This is usef
 
 You can override the default command by specifying command line options for `go test` manually, for example:
 
-    docker-compose run test ./internal/sessiontest -run TestDisclosureSession
+    docker-compose run test ./internal/sessiontest -run TestManualDisclosureSession
 
 We always enforce the `-p 1` option to be used (as explained [above](#running-the-tests)).
 
