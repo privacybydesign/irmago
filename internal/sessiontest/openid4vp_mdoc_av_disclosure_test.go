@@ -818,14 +818,25 @@ func testOpenID4VP_MdocAv_DcApiResponseModeOnRedirectPath(t *testing.T) {
 // that treats an unknown mode as its default and posts a response somewhere the
 // request never specified.
 //
-// Refused when the wallet tries to answer rather than when it reads the request,
-// so the user is asked to approve a disclosure that then cannot be made. Nothing
-// is disclosed either way; the note is on requireMdocAvResponseRefused.
+// Refused while the request is being read, before the user is asked to approve
+// anything: validateRedirectResponseMode admits only direct_post and
+// direct_post.jwt on the redirect path. This subtest used to assert the refusal
+// landed after consent, which is where an unknown mode surfaced back when it
+// reached the response builder — a mode nothing recognised built no vp_token
+// and POSTed an empty form to whatever response location the request carried.
+// Nothing was disclosed then either, so what changed is only when and how the
+// request is refused.
+//
+// The reason is pinned because it is the point here: a refusal for a missing
+// response_uri, or as a DC API mode, would mean this check never ran and the
+// subtest would pass while covering nothing.
 func testOpenID4VP_MdocAv_UnknownResponseMode(t *testing.T) {
-	requireMdocAvResponseRefused(t, mdocAvRefusalCase{
+	requireMdocAvRefusal(t, mdocAvRefusalCase{
 		Mutate: func(hdr, claims map[string]any) {
 			claims["response_mode"] = "direct_post.unknown"
 		},
+		ErrorContains: `response_mode "direct_post.unknown" is not supported ` +
+			`for a URL-invoked session`,
 	})
 }
 

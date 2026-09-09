@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 
@@ -162,11 +163,11 @@ func splitMdocDataURI(s string) (mime, payload string, ok bool) {
 		return "", "", false
 	}
 	rest := s[len(mdocDataURIScheme):]
-	i := strings.Index(rest, mdocDataURIBase64)
-	if i < 0 {
+	before, after, ok := strings.Cut(rest, mdocDataURIBase64)
+	if !ok {
 		return "", "", false
 	}
-	return rest[:i], rest[i+len(mdocDataURIBase64):], true
+	return before, after, true
 }
 
 // PromoteMdocDataURIs rewrites, in place, the attribute values that carry a data
@@ -263,9 +264,7 @@ func BuildMdocAttributes(batch *models.MdocBatch, locale string) []clientmodels.
 	topLevel := make(map[string]any, len(batch.Namespaces))
 	for namespace, elements := range batch.Namespaces {
 		sub := make(map[string]any, len(elements))
-		for element, value := range elements {
-			sub[element] = value
-		}
+		maps.Copy(sub, elements)
 		topLevel[namespace] = sub
 	}
 	return buildMdocAttributes(topLevel, ResolveMdocDisplay(batch, locale))
