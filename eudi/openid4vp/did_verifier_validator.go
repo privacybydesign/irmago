@@ -6,12 +6,14 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
 	"github.com/privacybydesign/irmago/eudi/scheme"
+	"github.com/privacybydesign/irmago/internal/jose"
 )
 
 const (
@@ -49,32 +51,31 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 	error,
 ) {
 	// Pre-parse the claims to inspect client_id before signature verification
-	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
-	preToken, _, err := parser.ParseUnverified(requestJwt, &AuthorizationRequest{})
+	var preClaims AuthorizationRequest
+	preHeaders, err := jose.ParseUnverified(requestJwt, &preClaims)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to pre-parse auth request jwt: %v", err)
 	}
 
-	preClaims := preToken.Claims.(*AuthorizationRequest)
 	clientId := preClaims.ClientId
 
 	// Resolve the public key from the DID
-	pubKey, didString, err := v.resolvePublicKey(clientId, preToken.Header)
+	pubKey, didString, err := v.resolvePublicKey(clientId, preHeaders)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to resolve verifier public key: %v", err)
 	}
 
 	// Parse and verify the JWT with the resolved key
 	var authRequest AuthorizationRequest
-	_, err = jwt.ParseWithClaims(requestJwt, &authRequest, func(token *jwt.Token) (any, error) {
-		typ, ok := token.Header["typ"]
-		if !ok {
-			return nil, fmt.Errorf("auth request JWT needs 'typ' in header")
+	err = jose.Verify(requestJwt, &authRequest, func(headers jws.Headers) (jwa.SignatureAlgorithm, any, error) {
+		if err := authRequestTypeHeader(headers); err != nil {
+			return jwa.EmptySignatureAlgorithm(), nil, err
 		}
-		if typ != AuthRequestJwtTyp {
-			return nil, fmt.Errorf("auth request JWT typ should be %v but was %v", AuthRequestJwtTyp, typ)
+		alg, err := authRequestSignatureAlgorithm(headers)
+		if err != nil {
+			return jwa.EmptySignatureAlgorithm(), nil, err
 		}
-		return pubKey, nil
+		return alg, pubKey, nil
 	})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to verify auth request jwt: %v", err)
@@ -128,7 +129,7 @@ func didWebDomain(didStr string) (string, bool) {
 }
 
 // resolvePublicKey extracts the public key from the client_id DID.
-func (v *DidVerifierValidator) resolvePublicKey(clientId string, header map[string]any) (any, string, error) {
+func (v *DidVerifierValidator) resolvePublicKey(clientId string, headers jws.Headers) (any, string, error) {
 	switch {
 	case strings.HasPrefix(clientId, clientIdPrefixDidJwk):
 		didJwk := strings.TrimPrefix(clientId, "decentralized_identifier:")
@@ -136,7 +137,7 @@ func (v *DidVerifierValidator) resolvePublicKey(clientId string, header map[stri
 
 	case strings.HasPrefix(clientId, clientIdPrefixDidWeb):
 		didWeb := strings.TrimPrefix(clientId, "decentralized_identifier:")
-		return v.resolveDidWeb(didWeb, header)
+		return v.resolveDidWeb(didWeb, headers)
 
 	default:
 		return nil, "", fmt.Errorf("unsupported client_id scheme: %s", clientId)
@@ -159,13 +160,13 @@ func (v *DidVerifierValidator) resolveDidJwk(didJwk string) (any, string, error)
 }
 
 // resolveDidWeb resolves a did:web DID document and extracts the verification key.
-func (v *DidVerifierValidator) resolveDidWeb(didWeb string, header map[string]any) (any, string, error) {
+func (v *DidVerifierValidator) resolveDidWeb(didWeb string, headers jws.Headers) (any, string, error) {
 	doc, err := v.didWebResolver.Resolve(didWeb)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to resolve did:web document: %v", err)
 	}
 
-	key, err := findVerificationKey(doc, header)
+	key, err := findVerificationKey(doc, headers)
 	if err != nil {
 		return nil, "", err
 	}
@@ -175,13 +176,13 @@ func (v *DidVerifierValidator) resolveDidWeb(didWeb string, header map[string]an
 
 // findVerificationKey finds the appropriate verification key from a DID document,
 // matching by the kid header if present.
-func findVerificationKey(doc *did.Document, header map[string]any) (any, error) {
+func findVerificationKey(doc *did.Document, headers jws.Headers) (any, error) {
 	if len(doc.VerificationMethod) == 0 {
 		return nil, fmt.Errorf("DID document has no verification methods")
 	}
 
 	// If there's a kid header, find the matching verification method
-	kid, _ := header["kid"].(string)
+	kid, _ := headers.KeyID()
 
 	for _, vm := range doc.VerificationMethod {
 		if kid != "" && vm.ID != kid {

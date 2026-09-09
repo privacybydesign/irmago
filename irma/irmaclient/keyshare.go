@@ -12,9 +12,9 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/irma"
 )
 
@@ -172,9 +172,9 @@ func newKeyshareSession(
 }
 
 func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
-	parser := jwt.NewParser(jwt.WithoutClaimsValidation()) // We want to verify expiry on our own below so we can add leeway
-	claims := jwt.RegisteredClaims{}
-	_, err := parser.ParseWithClaims(kss.token, &claims, conf.KeyshareServerKeyFunc(kss.SchemeManagerIdentifier))
+	// We verify expiry on our own below so we can add leeway
+	claims := irma.RegisteredClaims{}
+	err := jose.VerifyWithoutClaimsValidation(kss.token, &claims, conf.KeyshareServerKeyFunc(kss.SchemeManagerIdentifier))
 	if err != nil {
 		irma.Logger.Info("Keyshare server token invalid")
 		irma.Logger.Debug("Token: ", kss.token)
@@ -183,7 +183,7 @@ func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
 
 	// Add a minute of leeway for possible clockdrift with the server,
 	// and for the rest of the protocol to take place with this token
-	if !claims.VerifyExpiresAt(time.Now().Add(1*time.Minute), true) {
+	if claims.ExpiresAt == nil || !claims.ExpiresAt.After(time.Now().Add(1*time.Minute)) {
 		irma.Logger.Info("Keyshare server token expires too soon")
 		irma.Logger.Debug("Token: ", kss.token)
 		return false
@@ -235,7 +235,7 @@ const challengeRequestJWTExpiry = 3 * time.Minute
 func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HTTPTransport, pin string) (*irma.KeysharePinStatus, error) {
 	keyname := challengeResponseKeyName(kss.SchemeManagerIdentifier)
 	authRequestJWT, err := SignerCreateJWT(signer, keyname, irma.KeyshareAuthRequestClaims{
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(challengeRequestJWTExpiry)),
+		ExpiresAt: irma.NewNumericDate(time.Now().Add(challengeRequestJWTExpiry)),
 		Username:  kss.Username,
 	})
 	if err != nil {
@@ -487,12 +487,11 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 			continue
 		}
 		claims := struct {
-			jwt.StandardClaims
+			irma.RegisteredClaims
 			ProofP *gabi.ProofP
 		}{}
-		parser := new(jwt.Parser)
-		parser.SkipClaimsValidation = true // no need to abort due to clock drift issues
-		if _, err := parser.ParseWithClaims(responses[managerID], &claims, ks.client.Configuration.KeyshareServerKeyFunc(managerID)); err != nil {
+		// Claims are not validated: no need to abort due to clock drift issues
+		if err := jose.VerifyWithoutClaimsValidation(responses[managerID], &claims, ks.client.Configuration.KeyshareServerKeyFunc(managerID)); err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}

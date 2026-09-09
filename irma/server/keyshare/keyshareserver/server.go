@@ -11,11 +11,13 @@ import (
 	"github.com/go-co-op/gocron"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/hashicorp/go-multierror"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/signed"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/irma"
 
 	"github.com/privacybydesign/irmago/internal/common"
@@ -522,7 +524,7 @@ func (s *Server) handleVerifyStart(w http.ResponseWriter, r *http.Request) {
 
 	claims := &irma.KeyshareAuthRequestClaims{}
 	// We need the username inside the JWT here. The JWT is verified later within startAuth().
-	_, _, err := jwt.NewParser().ParseUnverified(msg.AuthRequestJWT, claims)
+	_, err := jose.ParseUnverified(msg.AuthRequestJWT, claims)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Failed to parse challenge-response JWT")
 		keyshare.WriteError(w, err)
@@ -581,7 +583,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		}
 		claims := &irma.KeyshareAuthResponseClaims{}
 		// We need the username inside the JWT here. The JWT is verified later within verifyAuth().
-		_, _, err := jwt.NewParser().ParseUnverified(msg.AuthResponseJWT, claims)
+		_, err := jose.ParseUnverified(msg.AuthResponseJWT, claims)
 		if err != nil {
 			s.conf.Logger.WithField("error", err).Error("Failed to parse challenge-response JWT")
 			keyshare.WriteError(w, err)
@@ -685,7 +687,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 
 	claims := &irma.KeyshareChangePinClaims{}
 	// We need the username inside the JWT here. The JWT is verified later within updatePin().
-	_, _, err = jwt.NewParser().ParseUnverified(msg.ChangePinJWT, claims)
+	_, err = jose.ParseUnverified(msg.ChangePinJWT, claims)
 	if err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -797,10 +799,13 @@ func (s *Server) parseRegistrationMessage(msg irma.KeyshareEnrollment) (*irma.Ke
 		err    error
 		claims = &irma.KeyshareEnrollmentClaims{}
 	)
-	_, err = jwt.ParseWithClaims(msg.EnrollmentJWT, claims, func(token *jwt.Token) (any, error) {
+	err = jose.Verify(msg.EnrollmentJWT, claims, func(jws.Headers) (jwa.SignatureAlgorithm, any, error) {
 		// Similar to a CSR, the JWT contains in its body the public key with which it is signed.
 		pk, err = signed.UnmarshalPublicKey(claims.KeyshareEnrollmentData.PublicKey)
-		return pk, err
+		if err != nil {
+			return jwa.EmptySignatureAlgorithm(), nil, err
+		}
+		return jwa.ES256(), pk, nil
 	})
 	if err != nil {
 		return nil, nil, err

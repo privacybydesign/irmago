@@ -6,11 +6,12 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
+	"github.com/privacybydesign/irmago/internal/jose"
 )
 
 // ProofStatus is the status of the complete proof
@@ -454,19 +455,15 @@ func (e ExpiredError) Error() string {
 
 // ParseApiServerJwt verifies and parses a JWT as returned by an irma_api_server after a disclosure request into a key-value pair.
 func ParseApiServerJwt(inputJwt string, signingKey *rsa.PublicKey) (map[AttributeTypeIdentifier]*DisclosedAttribute, error) {
-	claims := struct {
-		jwt.StandardClaims
+	claims := &struct {
+		RegisteredClaims
 		Attributes map[AttributeTypeIdentifier]string `json:"attributes"`
 	}{}
-	_, err := jwt.ParseWithClaims(inputJwt, claims, func(token *jwt.Token) (any, error) {
-		return signingKey, nil
-	})
-	if err != nil {
-		if err, ok := err.(*jwt.ValidationError); ok && (err.Errors&jwt.ValidationErrorExpired) != 0 {
+	if err := jose.Verify(inputJwt, claims, jose.StaticKey(jwa.RS256(), signingKey)); err != nil {
+		if errors.Is(err, ErrTokenExpired) {
 			return nil, ExpiredError{err}
-		} else {
-			return nil, err
 		}
+		return nil, err
 	}
 
 	if claims.Subject != "disclosure_result" {

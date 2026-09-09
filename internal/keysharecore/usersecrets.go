@@ -10,7 +10,8 @@ import (
 
 	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/signed"
 )
@@ -127,12 +128,13 @@ func (s *unencryptedUserSecrets) UnmarshalCBOR(bytes []byte) error {
 	return nil
 }
 
-// publicKey returns the user's public key. For use in jwt.ParseWithClaims().
-func (s *unencryptedUserSecrets) publicKey(_ *jwt.Token) (any, error) {
+// keyFunc verifies with the user's own public key, which is how the keyshare protocol
+// authenticates the messages of an enrolled client.
+func (s *unencryptedUserSecrets) keyFunc(jws.Headers) (jwa.SignatureAlgorithm, any, error) {
 	if s.PublicKey == nil {
-		return nil, ErrKeyNotFound
+		return jwa.EmptySignatureAlgorithm(), nil, ErrKeyNotFound
 	}
-	return s.PublicKey, nil
+	return jwa.ES256(), s.PublicKey, nil
 }
 
 func (c *Core) encryptUserSecrets(secrets unencryptedUserSecrets) (UserSecrets, error) {

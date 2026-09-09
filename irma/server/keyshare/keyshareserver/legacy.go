@@ -7,8 +7,10 @@ import (
 	"net/http"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/privacybydesign/gabi/signed"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
@@ -28,9 +30,13 @@ func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request)
 		claims = &irma.KeyshareKeyRegistrationClaims{}
 		err    error
 	)
-	_, err = jwt.ParseWithClaims(msg.PublicKeyRegistrationJWT, claims, func(token *jwt.Token) (any, error) {
+	err = jose.Verify(msg.PublicKeyRegistrationJWT, claims, func(jws.Headers) (jwa.SignatureAlgorithm, any, error) {
+		// The JWT contains in its body the public key with which it is signed.
 		pk, err = signed.UnmarshalPublicKey(claims.PublicKey)
-		return pk, err
+		if err != nil {
+			return jwa.EmptySignatureAlgorithm(), nil, err
+		}
+		return jwa.ES256(), pk, nil
 	})
 	if err != nil {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())

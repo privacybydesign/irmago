@@ -15,7 +15,8 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/privacybydesign/irmago/internal/jose"
 )
 
 var (
@@ -34,6 +35,28 @@ var (
 // ChallengeJWTMaxExpiry is the maximum exp (expiry) that we allow JWTs to have with which calls to
 // GenerateChallenge() (i.e. /users/verify_start) are authenticated.
 const ChallengeJWTMaxExpiry = 6 * time.Minute
+
+// accessTokenClaims are the claims of the JWT that a client receives after a successful pin
+// check, and that authenticates its subsequent calls.
+type accessTokenClaims struct {
+	irma.RegisteredClaims
+	TokenID string `json:"token_id"`
+}
+
+// proofPClaims are the claims of the JWT in which the keyshare server returns its part of a
+// zero-knowledge proof.
+type proofPClaims struct {
+	irma.RegisteredClaims
+	ProofP *gabi.ProofP `json:"ProofP"`
+}
+
+// signJWT signs claims with the keyshare server's private key, naming that key in the "kid"
+// header so that clients and IRMA servers can find it among the scheme's public keys.
+func (c *Core) signJWT(claims any) (string, error) {
+	return jose.Sign(claims, jwa.RS256(), c.jwtPrivateKey, map[string]any{
+		"kid": strconv.Itoa(int(c.jwtPrivateKeyID)),
+	})
+}
 
 // NewUserSecrets generates a new keyshare secret, secured with the given pin.
 func (c *Core) NewUserSecrets(pin string, pk *ecdsa.PublicKey) (UserSecrets, error) {
@@ -86,15 +109,16 @@ func (c *Core) ValidateAuth(secrets UserSecrets, jwtt string) (string, error) {
 
 func (c *Core) authJWT(s *unencryptedUserSecrets) (string, error) {
 	t := time.Now()
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iss":      c.jwtIssuer,
-		"sub":      "auth_tok",
-		"iat":      t.Unix(),
-		"exp":      t.Add(time.Duration(c.jwtPinExpiry) * time.Second).Unix(),
-		"token_id": base64.StdEncoding.EncodeToString(s.ID),
-	})
-	token.Header["kid"] = strconv.Itoa(int(c.jwtPrivateKeyID))
-	return token.SignedString(c.jwtPrivateKey)
+	claims := accessTokenClaims{
+		RegisteredClaims: irma.RegisteredClaims{
+			Issuer:    c.jwtIssuer,
+			Subject:   "auth_tok",
+			IssuedAt:  irma.NewNumericDate(t),
+			ExpiresAt: irma.NewNumericDate(t.Add(time.Duration(c.jwtPinExpiry) * time.Second)),
+		},
+		TokenID: base64.StdEncoding.EncodeToString(s.ID),
+	}
+	return c.signJWT(claims)
 }
 
 func (c *Core) verifyChallengeResponse(s unencryptedUserSecrets, jwtt string) (string, error) {
@@ -104,7 +128,7 @@ func (c *Core) verifyChallengeResponse(s unencryptedUserSecrets, jwtt string) (s
 	}
 
 	claims := &irma.KeyshareAuthResponseClaims{}
-	if _, err := jwt.ParseWithClaims(jwtt, claims, s.publicKey); err != nil {
+	if err := jose.Verify(jwtt, claims, s.keyFunc); err != nil {
 		return "", err
 	}
 	if subtle.ConstantTimeCompare(challenge, claims.Challenge) != 1 {
@@ -130,7 +154,7 @@ func (c *Core) ChangePin(secrets UserSecrets, jwtt string) (UserSecrets, error) 
 	}
 
 	claims := &irma.KeyshareChangePinClaims{}
-	if _, err = jwt.ParseWithClaims(jwtt, claims, s.publicKey); err != nil {
+	if err = jose.Verify(jwtt, claims, s.keyFunc); err != nil {
 		return nil, err
 	}
 
@@ -157,32 +181,20 @@ func (c *Core) ChangePin(secrets UserSecrets, jwtt string) (UserSecrets, error) 
 // Note: Although this is an internal function, it is tested directly
 func (c *Core) verifyAccess(secrets UserSecrets, jwtToken string) (unencryptedUserSecrets, error) {
 	// Verify token validity
-	token, err := jwt.Parse(jwtToken, func(token *jwt.Token) (any, error) {
-		if token.Method != jwt.SigningMethodRS256 {
-			return nil, ErrInvalidJWT
-		}
-
-		return &c.jwtPrivateKey.PublicKey, nil
-	})
-	if err != nil {
+	claims := &accessTokenClaims{}
+	if err := jose.Verify(jwtToken, claims, jose.StaticKey(jwa.RS256(), &c.jwtPrivateKey.PublicKey)); err != nil {
 		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok || claims.Valid() != nil {
-		return unencryptedUserSecrets{}, ErrInvalidJWT
-	}
-	if !claims.VerifyExpiresAt(time.Now().Unix(), true) {
+	// An access token without an expiry would never stop working, so it is refused even though
+	// nothing about it has expired yet.
+	if claims.ExpiresAt == nil {
 		return unencryptedUserSecrets{}, ErrExpiredJWT
 	}
-	if _, present := claims["token_id"]; !present {
+	if claims.TokenID == "" {
 		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
-	tokenIDB64, ok := claims["token_id"].(string)
-	if !ok {
-		return unencryptedUserSecrets{}, ErrInvalidJWT
-	}
-	tokenID, err := base64.StdEncoding.DecodeString(tokenIDB64)
+	tokenID, err := base64.StdEncoding.DecodeString(claims.TokenID)
 	if err != nil {
 		return unencryptedUserSecrets{}, ErrInvalidJWT
 	}
@@ -296,14 +308,14 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 	}
 
 	// Generate response
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"ProofP": gabi.KeyshareResponseLegacy(s.KeyshareSecret, commit, challenge, key),
-		"iat":    time.Now().Unix(),
-		"sub":    "ProofP",
-		"iss":    c.jwtIssuer,
+	return c.signJWT(proofPClaims{
+		RegisteredClaims: irma.RegisteredClaims{
+			Issuer:   c.jwtIssuer,
+			Subject:  "ProofP",
+			IssuedAt: irma.NewNumericDate(time.Now()),
+		},
+		ProofP: gabi.KeyshareResponseLegacy(s.KeyshareSecret, commit, challenge, key),
 	})
-	token.Header["kid"] = strconv.Itoa(int(c.jwtPrivateKeyID))
-	return token.SignedString(c.jwtPrivateKey)
 }
 
 // GenerateResponseV2 generates the response of a zero-knowledge proof of the keyshare secret, for a given previous commit and response request.
@@ -359,14 +371,14 @@ func (c *Core) GenerateResponseV2(
 	}
 
 	// Generate response
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"ProofP": proofP,
-		"iat":    time.Now().Unix(),
-		"sub":    "ProofP",
-		"iss":    c.jwtIssuer,
+	return c.signJWT(proofPClaims{
+		RegisteredClaims: irma.RegisteredClaims{
+			Issuer:   c.jwtIssuer,
+			Subject:  "ProofP",
+			IssuedAt: irma.NewNumericDate(time.Now()),
+		},
+		ProofP: proofP,
 	})
-	token.Header["kid"] = strconv.Itoa(int(c.jwtPrivateKeyID))
-	return token.SignedString(c.jwtPrivateKey)
 }
 
 func (c *Core) GenerateChallenge(secrets UserSecrets, jwtt string) ([]byte, error) {
@@ -380,7 +392,7 @@ func (c *Core) GenerateChallenge(secrets UserSecrets, jwtt string) ([]byte, erro
 	}
 
 	claims := &irma.KeyshareAuthRequestClaims{}
-	if _, err = jwt.ParseWithClaims(jwtt, claims, s.publicKey); err != nil {
+	if err = jose.Verify(jwtt, claims, s.keyFunc); err != nil {
 		return nil, err
 	}
 	// Impose explicit maximum on JWT expiry; we don't want eternally valid JWTs.

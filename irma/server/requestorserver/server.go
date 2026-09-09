@@ -19,8 +19,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/privacybydesign/irmago/irma/server/irmaserver"
@@ -431,7 +432,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims := jwt.MapClaims{}
+	claims := map[string]any{}
 
 	// Fill standard claims
 	switch res.Type {
@@ -474,8 +475,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Sign the jwt and return it
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	resultJwt, err := token.SignedString(s.conf.JwtRSAPrivateKey)
+	resultJwt, err := jose.Sign(claims, jwa.RS256(), s.conf.JwtRSAPrivateKey, nil)
 	if err != nil {
 		s.conf.Logger.Error("Failed to sign session result JWT")
 		_ = server.LogError(err)

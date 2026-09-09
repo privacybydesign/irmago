@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 )
@@ -91,11 +93,11 @@ func (NilAuthenticator) Initialize(name string, requestor Requestor) error {
 func (hauth *HmacAuthenticator) AuthenticateSession(
 	headers http.Header, body []byte,
 ) (applies bool, request irma.RequestorRequest, requestor string, err *irma.RemoteError) {
-	return jwtAuthenticate(headers, body, jwt.SigningMethodHS256.Name, hauth.hmackeys, hauth.maxRequestAge)
+	return jwtAuthenticate(headers, body, jwa.HS256(), hauth.hmackeys, hauth.maxRequestAge)
 }
 
 func (hauth *HmacAuthenticator) AuthenticateRevocation(headers http.Header, body []byte) (bool, *irma.RevocationRequest, string, *irma.RemoteError) {
-	return jwtAutheticateRevocation(headers, body, jwt.SigningMethodHS256.Name, hauth.hmackeys, hauth.maxRequestAge)
+	return jwtAutheticateRevocation(headers, body, jwa.HS256(), hauth.hmackeys, hauth.maxRequestAge)
 }
 
 func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) error {
@@ -118,11 +120,11 @@ func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) err
 func (pkauth *PublicKeyAuthenticator) AuthenticateSession(
 	headers http.Header, body []byte,
 ) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
-	return jwtAuthenticate(headers, body, jwt.SigningMethodRS256.Name, pkauth.publickeys, pkauth.maxRequestAge)
+	return jwtAuthenticate(headers, body, jwa.RS256(), pkauth.publickeys, pkauth.maxRequestAge)
 }
 
 func (pkauth *PublicKeyAuthenticator) AuthenticateRevocation(headers http.Header, body []byte) (bool, *irma.RevocationRequest, string, *irma.RemoteError) {
-	return jwtAutheticateRevocation(headers, body, jwt.SigningMethodRS256.Name, pkauth.publickeys, pkauth.maxRequestAge)
+	return jwtAutheticateRevocation(headers, body, jwa.RS256(), pkauth.publickeys, pkauth.maxRequestAge)
 }
 
 func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requestor) error {
@@ -131,7 +133,7 @@ func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requesto
 		return fmt.Errorf("failed to read key of requestor %s: %w", name, err)
 	}
 
-	pk, err := jwt.ParseRSAPublicKeyFromPEM(bts)
+	pk, err := jose.ParseRSAPublicKeyFromPEM(bts)
 	if err != nil {
 		return err
 	}
@@ -186,34 +188,31 @@ func (pskauth *PresharedKeyAuthenticator) Initialize(name string, requestor Requ
 // Helper functions
 
 // Given an (unauthenticated) jwt, return the key against which it should be verified using the "kid" header
-func jwtKeyExtractor(publickeys map[string]any) func(token *jwt.Token) (any, error) {
-	return func(token *jwt.Token) (any, error) {
-		var ok bool
-		kid, ok := token.Header["kid"]
+func jwtKeyExtractor(alg jwa.SignatureAlgorithm, claims *irma.RegisteredClaims, publickeys map[string]any) jose.KeyFunc {
+	return func(headers jws.Headers) (jwa.SignatureAlgorithm, any, error) {
+		requestor, ok := headers.KeyID()
 		if !ok {
-			kid = token.Claims.(*jwt.StandardClaims).Issuer
+			requestor = claims.Issuer
 		}
-		requestor, ok := kid.(string)
-		if !ok {
-			return nil, errors.New("requestor name was not a string")
-		}
-		token.Claims.(*jwt.StandardClaims).Issuer = requestor
+		// The requestor is identified by the iss claim further on, so put there whatever name
+		// the key is about to be looked up by.
+		claims.Issuer = requestor
 		if pk, ok := publickeys[requestor]; ok {
-			return pk, nil
+			return alg, pk, nil
 		}
-		return nil, errors.Errorf("Unknown requestor: %s", requestor)
+		return jwa.EmptySignatureAlgorithm(), nil, errors.Errorf("Unknown requestor: %s", requestor)
 	}
 }
 
 // jwtAuthenticate is a helper function for JWT-based authenticators that verifies and parses JWTs.
 func jwtAuthenticate(
-	headers http.Header, body []byte, signatureAlg string, keys map[string]any, maxRequestAge int,
+	headers http.Header, body []byte, signatureAlg jwa.SignatureAlgorithm, keys map[string]any, maxRequestAge int,
 ) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
 	if !jwtApplies(headers, body, signatureAlg) {
 		return false, nil, "", nil
 	}
 
-	validatedJwt, claims, validationErr := jwtValidateClaims(body, keys, maxRequestAge)
+	validatedJwt, claims, validationErr := jwtValidateClaims(body, signatureAlg, keys, maxRequestAge)
 	if validationErr != nil {
 		return true, nil, "", validationErr
 	}
@@ -229,20 +228,20 @@ func jwtAuthenticate(
 }
 
 func jwtAutheticateRevocation(
-	headers http.Header, body []byte, signatureAlg string, keys map[string]any, maxRequestAge int,
+	headers http.Header, body []byte, signatureAlg jwa.SignatureAlgorithm, keys map[string]any, maxRequestAge int,
 ) (bool, *irma.RevocationRequest, string, *irma.RemoteError) {
 	if !jwtApplies(headers, body, signatureAlg) {
 		return false, nil, "", nil
 	}
 
-	validatedJwt, _, validationErr := jwtValidateClaims(body, keys, maxRequestAge)
+	validatedJwt, _, validationErr := jwtValidateClaims(body, signatureAlg, keys, maxRequestAge)
 	if validationErr != nil {
 		return true, nil, "", validationErr
 	}
 
 	// Read JWT contents
 	revocationJwt := &irma.RevocationJwt{}
-	if _, _, err := new(jwt.Parser).ParseUnverified(validatedJwt, revocationJwt); err != nil {
+	if _, err := jose.ParseUnverified(validatedJwt, revocationJwt); err != nil {
 		return true, nil, "", server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
 	if err := revocationJwt.Request.Validate(); err != nil {
@@ -252,27 +251,29 @@ func jwtAutheticateRevocation(
 }
 
 func jwtValidateClaims(
-	body []byte, keys map[string]any, maxRequestAge int,
-) (string, *jwt.StandardClaims, *irma.RemoteError) {
+	body []byte, signatureAlg jwa.SignatureAlgorithm, keys map[string]any, maxRequestAge int,
+) (string, *irma.RegisteredClaims, *irma.RemoteError) {
 	// Verify JWT signature. We do not yet store the JWT contents here, because we need to know the session type first
 	// before we can construct a struct instance of the appropriate type into which to unmarshal the JWT contents.
-	claims := &jwt.StandardClaims{}
+	claims := &irma.RegisteredClaims{}
 	requestorJwt := string(body)
-	_, err := jwt.ParseWithClaims(requestorJwt, claims, jwtKeyExtractor(keys))
-	if err != nil {
+	if err := jose.Verify(requestorJwt, claims, jwtKeyExtractor(signatureAlg, claims, keys)); err != nil {
 		return "", nil, server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
-	if time.Unix(claims.IssuedAt, 0).Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
+	if claims.IssuedAt == nil {
+		return "", nil, server.RemoteError(server.ErrorUnauthorized, "jwt has no iat claim")
+	}
+	if claims.IssuedAt.Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
 		return "", nil, server.RemoteError(server.ErrorUnauthorized, "jwt too old")
 	}
-	if !claims.VerifyIssuedAt(time.Now().Unix(), true) {
+	if claims.IssuedAt.After(time.Now()) {
 		return "", nil, server.RemoteError(server.ErrorUnauthorized, "jwt not yet valid")
 	}
 
 	return requestorJwt, claims, nil
 }
 
-func jwtApplies(headers http.Header, body []byte, signatureAlg string) bool {
+func jwtApplies(headers http.Header, body []byte, signatureAlg jwa.SignatureAlgorithm) bool {
 	// Read JWT and check its type
 	if headers.Get("Authorization") != "" || !strings.HasPrefix(headers.Get("Content-Type"), "text/plain") {
 		return false
@@ -280,11 +281,11 @@ func jwtApplies(headers http.Header, body []byte, signatureAlg string) bool {
 
 	// We need to establish the signature method with which the JWT was signed. We do this by just
 	// inspecting the JWT header here, before the signature is verified (which is done below). I suppose
-	// it would be more idiomatic to have the KeyFunc which is fed to jwt.ParseWithClaims() perform this
+	// it would be more idiomatic to have the KeyFunc which is fed to jose.Verify() perform this
 	// task, but then the KeyFunc would need access to all public keys here instead of the ones belonging
 	// to the signature algorithm we are expecting (specified by signatureAlg). Security-wise it makes no
 	// difference: either way the alg header is examined before the signature is verified.
-	alg, err := jwtSignatureAlg(string(body))
+	alg, err := jose.SignatureAlgorithm(string(body))
 	if err != nil || alg != signatureAlg {
 		// If err != nil, ie. we failed to determine the JWT signature algorithm, we assume that the
 		// request is not meant for this authenticator. So we don't return err
@@ -292,12 +293,4 @@ func jwtApplies(headers http.Header, body []byte, signatureAlg string) bool {
 	}
 
 	return true
-}
-
-func jwtSignatureAlg(j string) (string, error) {
-	token, _, err := new(jwt.Parser).ParseUnverified(j, &jwt.StandardClaims{})
-	if err != nil {
-		return "", err
-	}
-	return token.Method.Alg(), nil
 }

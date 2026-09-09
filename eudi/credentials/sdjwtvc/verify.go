@@ -9,7 +9,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
@@ -559,7 +558,7 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 	issuerSignedJwtPayload *IssuerSignedJwtPayload,
 	kbjwt sdjwt.KeyBindingJwt,
 ) (*sdjwt.KeyBindingJwtPayload, error) {
-	header, _, err := sdjwt.DecodeJwtWithoutCheckingSignature(string(kbjwt))
+	headers, _, err := sdjwt.DecodeJwtWithoutCheckingSignature(string(kbjwt))
 	if err != nil {
 		return nil, err
 	}
@@ -569,21 +568,15 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 		return nil, errors.New("issuer signed jwt is missing holder key (cnf) required to verify kbjwt signature")
 	}
 
-	var sigAlg jwa.SignatureAlgorithm
-	if alg, ok := header["alg"]; ok {
-		if algStr, ok := alg.(string); ok {
-			// The accepted set is shared with the rest of JWT verification; see
-			// eudi_jwt.SupportedSignatureAlgorithms.
-			s, found := eudi_jwt.LookupSupportedSignatureAlgorithm(algStr)
-			if !found {
-				return nil, fmt.Errorf("unsupported signing algorithm in kbjwt header: %s", algStr)
-			}
-			sigAlg = s
-		} else {
-			return nil, fmt.Errorf("unsupported signing algorithm in kbjwt header: %s", alg)
-		}
-	} else {
-		return nil, fmt.Errorf("key binding jwt header is expected to have 'alg' of 'ES256', but has %s (header: %v)", header["alg"], header)
+	alg, ok := headers.Algorithm()
+	if !ok {
+		return nil, fmt.Errorf("key binding jwt header is expected to have 'alg' of 'ES256', but has none")
+	}
+	// The accepted set is shared with the rest of JWT verification; see
+	// eudi_jwt.SupportedSignatureAlgorithms.
+	sigAlg, found := eudi_jwt.LookupSupportedSignatureAlgorithm(alg.String())
+	if !found {
+		return nil, fmt.Errorf("unsupported signing algorithm in kbjwt header: %s", alg)
 	}
 
 	holderKey := issuerSignedJwtPayload.Confirm.Jwk
@@ -593,12 +586,11 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 		return nil, fmt.Errorf("invalid kbjwt signature: %v (holder key: %v)", err, holderKey)
 	}
 
-	if typ := header["typ"]; typ != sdjwt.KbJwtTyp {
+	if typ, _ := headers.Type(); typ != sdjwt.KbJwtTyp {
 		return nil, fmt.Errorf(
-			"key binding jwt header is expected to have 'typ' of '%s', but has %s (header: %v)",
+			"key binding jwt header is expected to have 'typ' of '%s', but has %s",
 			sdjwt.KbJwtTyp,
 			typ,
-			header,
 		)
 	}
 
