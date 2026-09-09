@@ -1,10 +1,24 @@
-// Package jose signs and verifies JWTs whose claims are ordinary Go structs, on top of
-// github.com/lestrrat-go/jwx/v4.
+// Why this package exists, rather than the jwx jwt package.
 //
-// The jwx jwt package models a token as a set of dynamically typed claims. Most of the JWTs
-// in this repository instead have a fixed shape that is already described by a Go struct, so
-// this package treats the JWS payload as JSON to marshal that struct into and unmarshal it
-// out of, and leaves the JOSE part to jws.
+// The jwx jwt package models a token as a set of dynamically typed claims. The JWTs of the IRMA
+// protocol instead have a fixed shape that a Go type already describes, such as ServiceProviderJwt
+// or irma.KeyshareEnrollmentClaims. Routing those through jwt.Token would mean converting between
+// the struct and a dynamic token on every hop, and would give up the compiler's checking of claim
+// names and types on the way. So this package marshals the struct to JSON, hands that to jws as the
+// payload, and unmarshals it back on the way in.
+//
+// The EUDI packages do not use this package. Their tokens are dynamically shaped, so they build and
+// read a jwx jwt.Token directly, which is the right tool there. Both halves sit on the same jws
+// primitives, so a token produced by one verifies under the other.
+//
+// KeyFunc makes each caller name the signature algorithm it expects, rather than trusting the "alg"
+// of the token being verified. jwx already refuses an algorithm the key cannot support, so this is
+// not what stops algorithm substitution; it is what keeps a call site from silently accepting a
+// second algorithm its key happens to allow.
+
+// Package jose signs and verifies JWTs whose claims are ordinary Go structs, on top of
+// github.com/lestrrat-go/jwx/v4. It treats the JWS payload as JSON to marshal a claims struct into
+// and unmarshal it out of, and leaves the JOSE part to jws.
 package jose
 
 import (
@@ -79,6 +93,14 @@ func SignPayload(payload []byte, alg jwa.SignatureAlgorithm, key any, extraHeade
 // "x5c", is decoded into that type instead of being refused. A field whose value is nil is left
 // out, so that callers can fill the map in unconditionally.
 func Headers(fields map[string]any) (jws.Headers, error) {
+	// Why the JSON round trip, and why a map at all: jws.Headers.Set refuses a field that jwx
+	// models with a type of its own unless it is handed that type, and "x5c" wants a *cert.Chain
+	// where every caller here holds a []string. Marshalling the map and unmarshalling it into the
+	// header lets jwx do that decoding. This is the one conversion in the signing path beyond
+	// marshalling the payload itself, and it costs nothing at the 22 of 25 signing call sites that
+	// pass no header at all. Taking a jws.Headers here instead would remove it, at the price of
+	// reaching into eudi/utils.ConvertPemCertificateChainToX5cFormat and the sdjwt.JwtCreator
+	// interface, which both speak []string.
 	headers := jws.NewHeaders()
 	present := make(map[string]any, len(fields))
 	for name, value := range fields {

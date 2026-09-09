@@ -75,6 +75,15 @@ func (c *ClaimStrings) UnmarshalJSON(bts []byte) error {
 	return nil
 }
 
+// Why this type is declared here rather than taken from a library.
+//
+// The public claims structs of this package used to embed golang-jwt's RegisteredClaims, and jwx
+// offers no struct to embed in its place: its jwt.Token is an interface over dynamically typed
+// claims, which a struct cannot inherit a wire format from. The encoding here reproduces
+// golang-jwt's byte for byte, so that a client and a server of different irmago versions keep
+// understanding each other's tokens; TestRegisteredClaimsWireFormat pins it. Only the claims the
+// IRMA protocol actually sends are here, and adding one means adding it to that test too.
+
 // RegisteredClaims holds the JWT claims registered by RFC 7519 that the IRMA protocol uses.
 // Claims structs embed it to inherit both the wire format and the time claim checks that
 // ValidateClaims performs.

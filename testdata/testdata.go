@@ -149,6 +149,16 @@ func CreateTestAuthorizationRequestRequest(issuerCert []byte) string {
 	)
 }
 
+// Why Claims below is a map rather than a jwx jwt.Token, unlike the rest of the EUDI code, which
+// builds its tokens with jwt.NewBuilder.
+//
+// A jwt.Token would not remove a conversion, since both forms marshal the payload exactly once. It
+// also normalises "aud" to an array, while the openid4vp.AuthorizationRequest these tokens are
+// decoded into declares Audience as a plain string, so tokens built that way fail to decode with
+// "cannot unmarshal array into Go struct field .aud of type string". Nothing reads that field, so
+// widening it to accept both forms RFC 7519 allows would be a fix on its own terms rather than
+// something to change in passing here.
+
 // AuthorizationRequestToken holds the header and the claims of a test authorization request
 // JWT, so that a test can change either of them before the token is signed. Setting a header
 // field to nil leaves it out of the signed token.
