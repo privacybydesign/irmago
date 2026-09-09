@@ -246,15 +246,3 @@ func authRequestSignatureAlgorithm(headers jws.Headers) (jwa.SignatureAlgorithm,
 	}
 	return supported, nil
 }
-
-// authRequestTypeHeader checks that a JWT declares itself an authorization request.
-func authRequestTypeHeader(headers jws.Headers) error {
-	typ, ok := headers.Type()
-	if !ok {
-		return fmt.Errorf("auth request JWT needs 'typ' in header")
-	}
-	if typ != AuthRequestJwtTyp {
-		return fmt.Errorf("auth request JWT typ should be %v but was %v", AuthRequestJwtTyp, typ)
-	}
-	return nil
-}

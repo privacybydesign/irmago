@@ -3,7 +3,6 @@ package sdjwt
 import (
 	"crypto/ecdsa"
 	"encoding/json"
-	"fmt"
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"
@@ -25,10 +24,12 @@ func NewJwtCreator(privateKey *ecdsa.PrivateKey) JwtCreator {
 }
 
 func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]any, payload string) (string, error) {
-	// The payload is signed as given, so that the disclosure digests in it keep matching the
-	// JSON they were computed over.
-	if !json.Valid([]byte(payload)) {
-		return "", fmt.Errorf("sd-jwt payload is not valid JSON")
+	// Decoded only to reject a payload that is not a JSON object, as this has always done. The
+	// bytes signed below are the ones given, so that the disclosure digests in the payload keep
+	// matching the JSON they were computed over.
+	var claims map[string]any
+	if err := json.Unmarshal([]byte(payload), &claims); err != nil {
+		return "", err
 	}
 	return jose.SignPayload([]byte(payload), jwa.ES256(), c.privateKey, customHeaderFields)
 }

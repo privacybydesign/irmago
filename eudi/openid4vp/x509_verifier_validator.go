@@ -111,8 +111,12 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 func (v *RequestorCertificateStoreVerifierValidator) authorizeAuthRequestSigner(
 	headers jws.Headers, request *AuthorizationRequest,
 ) (jwa.SignatureAlgorithm, *x509.Certificate, error) {
-	if err := authRequestTypeHeader(headers); err != nil {
-		return jwa.EmptySignatureAlgorithm(), nil, err
+	typ, ok := headers.Type()
+	if !ok {
+		return jwa.EmptySignatureAlgorithm(), nil, errors.New("auth request JWT needs to contain 'typ' in header, but doesn't")
+	}
+	if typ != AuthRequestJwtTyp {
+		return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", AuthRequestJwtTyp, typ)
 	}
 	alg, err := authRequestSignatureAlgorithm(headers)
 	if err != nil {

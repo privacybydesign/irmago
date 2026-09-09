@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
@@ -568,9 +569,10 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 		return nil, errors.New("issuer signed jwt is missing holder key (cnf) required to verify kbjwt signature")
 	}
 
+	header := headerFields(headers)
 	alg, ok := headers.Algorithm()
 	if !ok {
-		return nil, fmt.Errorf("key binding jwt header is expected to have 'alg' of 'ES256', but has none")
+		return nil, fmt.Errorf("key binding jwt header is expected to have 'alg' of 'ES256', but has %s (header: %v)", header["alg"], header)
 	}
 	// The accepted set is shared with the rest of JWT verification; see
 	// eudi_jwt.SupportedSignatureAlgorithms.
@@ -588,9 +590,10 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 
 	if typ, _ := headers.Type(); typ != sdjwt.KbJwtTyp {
 		return nil, fmt.Errorf(
-			"key binding jwt header is expected to have 'typ' of '%s', but has %s",
+			"key binding jwt header is expected to have 'typ' of '%s', but has %s (header: %v)",
 			sdjwt.KbJwtTyp,
-			typ,
+			header["typ"],
+			header,
 		)
 	}
 
@@ -666,6 +669,18 @@ func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (
 }
 
 // ====== Utils ======
+
+// headerFields renders a protected header as the plain map these error messages have always
+// printed, so that a reader sees the header the way it arrived rather than jwx's typed view.
+func headerFields(headers jws.Headers) map[string]any {
+	keys := headers.Keys()
+	fields := make(map[string]any, len(keys))
+	for _, key := range keys {
+		value, _ := headers.Field(key)
+		fields[key] = value
+	}
+	return fields
+}
 
 func getOptional[T any](token jwt.Token, key string) T {
 	value, err := jwt.Get[T](token, key)

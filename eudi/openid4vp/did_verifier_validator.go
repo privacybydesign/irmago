@@ -68,8 +68,12 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 	// Parse and verify the JWT with the resolved key
 	var authRequest AuthorizationRequest
 	err = jose.Verify(requestJwt, &authRequest, func(headers jws.Headers, _ []byte) (jwa.SignatureAlgorithm, any, error) {
-		if err := authRequestTypeHeader(headers); err != nil {
-			return jwa.EmptySignatureAlgorithm(), nil, err
+		typ, ok := headers.Type()
+		if !ok {
+			return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("auth request JWT needs 'typ' in header")
+		}
+		if typ != AuthRequestJwtTyp {
+			return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("auth request JWT typ should be %v but was %v", AuthRequestJwtTyp, typ)
 		}
 		alg, err := authRequestSignatureAlgorithm(headers)
 		if err != nil {

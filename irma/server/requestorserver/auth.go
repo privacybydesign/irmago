@@ -268,13 +268,16 @@ func jwtValidateClaims(
 		return "", nil, server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
 	claims.Issuer = requestor
-	if claims.IssuedAt == nil {
-		return "", nil, server.RemoteError(server.ErrorUnauthorized, "jwt has no iat claim")
+
+	// A JWT without an iat is treated as one issued at the epoch, so it is refused as too old.
+	var issuedAt time.Time
+	if claims.IssuedAt != nil {
+		issuedAt = claims.IssuedAt.Time
 	}
-	if claims.IssuedAt.Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
+	if issuedAt.Add(time.Duration(maxRequestAge) * time.Second).Before(time.Now()) {
 		return "", nil, server.RemoteError(server.ErrorUnauthorized, "jwt too old")
 	}
-	if claims.IssuedAt.After(time.Now()) {
+	if issuedAt.After(time.Now()) {
 		return "", nil, server.RemoteError(server.ErrorUnauthorized, "jwt not yet valid")
 	}
 
