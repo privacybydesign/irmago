@@ -12,6 +12,7 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago/internal/jose"
@@ -171,20 +172,28 @@ func newKeyshareSession(
 	return ks, <-authenticated
 }
 
-func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
-	// We verify expiry on our own below so we can add leeway
-	claims := irma.RegisteredClaims{}
-	err := jose.VerifyWithoutClaimsValidation(kss.token, &claims, conf.KeyshareServerKeyFunc(kss.SchemeManagerIdentifier))
-	if err != nil {
-		irma.Logger.Info("Keyshare server token invalid")
-		irma.Logger.Debug("Token: ", kss.token)
-		return false
-	}
+// tokenLeeway is how far ahead of the present the keyshare server token is checked against. It
+// covers clockdrift with the server, and the rest of the protocol taking place with this token.
+const tokenLeeway = time.Minute
 
-	// Add a minute of leeway for possible clockdrift with the server,
-	// and for the rest of the protocol to take place with this token
-	if claims.ExpiresAt == nil || !claims.ExpiresAt.After(time.Now().Add(1*time.Minute)) {
-		irma.Logger.Info("Keyshare server token expires too soon")
+// clockAhead reports a time a fixed distance in the future, so that jwx answers "will this token
+// still be valid then" rather than "is it valid now".
+type clockAhead struct {
+	by time.Duration
+}
+
+func (c clockAhead) Now() time.Time { return time.Now().Add(c.by) }
+
+func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
+	claims := irma.RegisteredClaims{}
+	// A token without an expiry would never stop working, so one is required rather than merely
+	// checked when present.
+	err := jose.Verify(kss.token, &claims, conf.KeyshareServerKeyFunc(kss.SchemeManagerIdentifier),
+		jwt.WithClock(clockAhead{by: tokenLeeway}),
+		jwt.WithRequiredClaim(jwt.ExpirationKey),
+	)
+	if err != nil {
+		irma.Logger.Info("Keyshare server token invalid or expiring too soon")
 		irma.Logger.Debug("Token: ", kss.token)
 		return false
 	}
@@ -490,8 +499,8 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 			irma.RegisteredClaims
 			ProofP *gabi.ProofP
 		}{}
-		// Claims are not validated: no need to abort due to clock drift issues
-		if err := jose.VerifyWithoutClaimsValidation(responses[managerID], &claims, ks.client.Configuration.KeyshareServerKeyFunc(managerID)); err != nil {
+		// Time claims are not checked: no need to abort due to clock drift issues
+		if err := jose.Verify(responses[managerID], &claims, ks.client.Configuration.KeyshareServerKeyFunc(managerID), jwt.WithValidate(false)); err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
@@ -460,7 +461,7 @@ func ParseApiServerJwt(inputJwt string, signingKey *rsa.PublicKey) (map[Attribut
 		Attributes map[AttributeTypeIdentifier]string `json:"attributes"`
 	}{}
 	if err := jose.Verify(inputJwt, claims, jose.StaticKey(jwa.RS256(), signingKey)); err != nil {
-		if errors.Is(err, ErrTokenExpired) {
+		if errors.Is(err, jwt.TokenExpiredError{}) {
 			return nil, ExpiredError{err}
 		}
 		return nil, err

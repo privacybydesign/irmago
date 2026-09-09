@@ -67,7 +67,7 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 
 	// Parse and verify the JWT with the resolved key
 	var authRequest AuthorizationRequest
-	err = jose.Verify(requestJwt, &authRequest, func(headers jws.Headers) (jwa.SignatureAlgorithm, any, error) {
+	err = jose.Verify(requestJwt, &authRequest, func(headers jws.Headers, _ []byte) (jwa.SignatureAlgorithm, any, error) {
 		if err := authRequestTypeHeader(headers); err != nil {
 			return jwa.EmptySignatureAlgorithm(), nil, err
 		}

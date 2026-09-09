@@ -15,6 +15,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/stretchr/testify/require"
 )
@@ -23,26 +24,6 @@ type testClaims struct {
 	Issuer string `json:"iss,omitempty"`
 	Foo    string `json:"foo,omitempty"`
 }
-
-// expiringClaims implements jose.Validator, so that Verify checks it and
-// VerifyWithoutClaimsValidation does not.
-type expiringClaims struct {
-	testClaims
-	valid bool
-}
-
-func (c expiringClaims) ValidateClaims(time.Time) error {
-	if c.valid {
-		return nil
-	}
-	return errExpired
-}
-
-var errExpired = &expiredError{}
-
-type expiredError struct{}
-
-func (*expiredError) Error() string { return "expired" }
 
 func TestSignAndVerify(t *testing.T) {
 	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -126,22 +107,48 @@ func TestVerifyRejectsAlgorithmSubstitution(t *testing.T) {
 	require.Error(t, jose.Verify(token, &claims, jose.StaticKey(jwa.RS256(), &rsaKey.PublicKey)))
 }
 
-func TestVerifyValidatesClaims(t *testing.T) {
+// Verify leaves the checking of the registered time claims to jwx, and passes its options
+// through so a caller can turn that off or bend it.
+func TestVerifyValidatesTimeClaims(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
-	token, err := jose.Sign(testClaims{Foo: "bar"}, jwa.ES256(), key, nil)
+	expired, err := jose.Sign(map[string]any{
+		"foo": "bar",
+		"exp": time.Now().Add(-time.Minute).Unix(),
+	}, jwa.ES256(), key, nil)
 	require.NoError(t, err)
 
-	claims := expiringClaims{}
-	require.ErrorIs(t, jose.Verify(token, &claims, jose.StaticKey(jwa.ES256(), &key.PublicKey)), errExpired)
-	require.NoError(t, jose.VerifyWithoutClaimsValidation(token, &claims, jose.StaticKey(jwa.ES256(), &key.PublicKey)))
+	var claims testClaims
+	err = jose.Verify(expired, &claims, jose.StaticKey(jwa.ES256(), &key.PublicKey))
+	require.ErrorIs(t, err, jwt.TokenExpiredError{})
+
+	require.NoError(t, jose.Verify(expired, &claims, jose.StaticKey(jwa.ES256(), &key.PublicKey), jwt.WithValidate(false)))
 	require.Equal(t, "bar", claims.Foo)
+
+	require.NoError(t, jose.Verify(expired, &claims, jose.StaticKey(jwa.ES256(), &key.PublicKey),
+		jwt.WithAcceptableSkew(time.Hour)))
 }
 
-// The key function may be handed claims that are not verified yet, which is what lets a token
-// name the key it is signed with in its own body.
-func TestVerifyFillsClaimsBeforeCallingKeyFunc(t *testing.T) {
+// A single-valued "aud" is written back as the plain string it was on the wire, rather than as
+// the list jwx holds internally.
+func TestVerifyFlattensSingleAudience(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	token, err := jose.Sign(map[string]any{"aud": "https://verifier.example.com"}, jwa.ES256(), key, nil)
+	require.NoError(t, err)
+
+	var claims struct {
+		Audience string `json:"aud"`
+	}
+	require.NoError(t, jose.Verify(token, &claims, jose.StaticKey(jwa.ES256(), &key.PublicKey)))
+	require.Equal(t, "https://verifier.example.com", claims.Audience)
+}
+
+// The key function is handed the payload before it is verified, which is what lets a token name
+// the key it is signed with in its own body.
+func TestVerifyPassesPayloadToKeyFunc(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
@@ -150,8 +157,10 @@ func TestVerifyFillsClaimsBeforeCallingKeyFunc(t *testing.T) {
 
 	var claims testClaims
 	var issuerSeenByKeyFunc string
-	require.NoError(t, jose.Verify(token, &claims, func(jws.Headers) (jwa.SignatureAlgorithm, any, error) {
-		issuerSeenByKeyFunc = claims.Issuer
+	require.NoError(t, jose.Verify(token, &claims, func(_ jws.Headers, payload []byte) (jwa.SignatureAlgorithm, any, error) {
+		var unverified testClaims
+		require.NoError(t, json.Unmarshal(payload, &unverified))
+		issuerSeenByKeyFunc = unverified.Issuer
 		return jwa.ES256(), &key.PublicKey, nil
 	}))
 	require.Equal(t, "me", issuerSeenByKeyFunc)

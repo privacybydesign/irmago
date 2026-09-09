@@ -3,6 +3,7 @@ package keyshareserver
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -30,9 +31,14 @@ func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request)
 		claims = &irma.KeyshareKeyRegistrationClaims{}
 		err    error
 	)
-	err = jose.Verify(msg.PublicKeyRegistrationJWT, claims, func(jws.Headers) (jwa.SignatureAlgorithm, any, error) {
-		// The JWT contains in its body the public key with which it is signed.
-		pk, err = signed.UnmarshalPublicKey(claims.PublicKey)
+	err = jose.Verify(msg.PublicKeyRegistrationJWT, claims, func(_ jws.Headers, payload []byte) (jwa.SignatureAlgorithm, any, error) {
+		// The JWT contains in its body the public key with which it is signed, so the key has to
+		// be read out of the payload before the signature can be checked.
+		var unverified irma.KeyshareKeyRegistrationClaims
+		if err := json.Unmarshal(payload, &unverified); err != nil {
+			return jwa.EmptySignatureAlgorithm(), nil, err
+		}
+		pk, err = signed.UnmarshalPublicKey(unverified.PublicKey)
 		if err != nil {
 			return jwa.EmptySignatureAlgorithm(), nil, err
 		}

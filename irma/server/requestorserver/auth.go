@@ -1,6 +1,7 @@
 package requestorserver
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -187,20 +188,25 @@ func (pskauth *PresharedKeyAuthenticator) Initialize(name string, requestor Requ
 
 // Helper functions
 
-// Given an (unauthenticated) jwt, return the key against which it should be verified using the "kid" header
-func jwtKeyExtractor(alg jwa.SignatureAlgorithm, claims *irma.RegisteredClaims, publickeys map[string]any) jose.KeyFunc {
-	return func(headers jws.Headers) (jwa.SignatureAlgorithm, any, error) {
-		requestor, ok := headers.KeyID()
+// Given an (unauthenticated) jwt, return the key against which it should be verified using the
+// "kid" header, falling back to the "iss" claim. The name the key was found under is reported
+// through requestor, because that is what identifies the requestor further on, and it is not
+// always the "iss" the verified token ends up carrying.
+func jwtKeyExtractor(alg jwa.SignatureAlgorithm, requestor *string, publickeys map[string]any) jose.KeyFunc {
+	return func(headers jws.Headers, payload []byte) (jwa.SignatureAlgorithm, any, error) {
+		name, ok := headers.KeyID()
 		if !ok {
-			requestor = claims.Issuer
+			var unverified irma.RegisteredClaims
+			if err := json.Unmarshal(payload, &unverified); err != nil {
+				return jwa.EmptySignatureAlgorithm(), nil, err
+			}
+			name = unverified.Issuer
 		}
-		// The requestor is identified by the iss claim further on, so put there whatever name
-		// the key is about to be looked up by.
-		claims.Issuer = requestor
-		if pk, ok := publickeys[requestor]; ok {
+		*requestor = name
+		if pk, ok := publickeys[name]; ok {
 			return alg, pk, nil
 		}
-		return jwa.EmptySignatureAlgorithm(), nil, errors.Errorf("Unknown requestor: %s", requestor)
+		return jwa.EmptySignatureAlgorithm(), nil, errors.Errorf("Unknown requestor: %s", name)
 	}
 }
 
@@ -257,9 +263,11 @@ func jwtValidateClaims(
 	// before we can construct a struct instance of the appropriate type into which to unmarshal the JWT contents.
 	claims := &irma.RegisteredClaims{}
 	requestorJwt := string(body)
-	if err := jose.Verify(requestorJwt, claims, jwtKeyExtractor(signatureAlg, claims, keys)); err != nil {
+	var requestor string
+	if err := jose.Verify(requestorJwt, claims, jwtKeyExtractor(signatureAlg, &requestor, keys)); err != nil {
 		return "", nil, server.RemoteError(server.ErrorInvalidRequest, err.Error())
 	}
+	claims.Issuer = requestor
 	if claims.IssuedAt == nil {
 		return "", nil, server.RemoteError(server.ErrorUnauthorized, "jwt has no iat claim")
 	}

@@ -8,13 +8,6 @@ import (
 	"github.com/go-errors/errors"
 )
 
-// Errors returned by RegisteredClaims.ValidateClaims.
-var (
-	ErrTokenExpired          = errors.New("token is expired")
-	ErrTokenNotValidYet      = errors.New("token is not valid yet")
-	ErrTokenUsedBeforeIssued = errors.New("token used before issued")
-)
-
 // NumericDate is a JSON Web Token numeric date: a point in time encoded as the number of
 // seconds since the epoch (RFC 7519, section 2). Sub-second precision is dropped on encoding,
 // as the IRMA protocol has never used it.
@@ -79,14 +72,15 @@ func (c *ClaimStrings) UnmarshalJSON(bts []byte) error {
 //
 // The public claims structs of this package used to embed golang-jwt's RegisteredClaims, and jwx
 // offers no struct to embed in its place: its jwt.Token is an interface over dynamically typed
-// claims, which a struct cannot inherit a wire format from. The encoding here reproduces
+// claims, which a struct cannot inherit a wire format from. So this type carries the wire format
+// only; checking the time claims is jwx's job, in internal/jose. The encoding reproduces
 // golang-jwt's byte for byte, so that a client and a server of different irmago versions keep
 // understanding each other's tokens; TestRegisteredClaimsWireFormat pins it. Only the claims the
 // IRMA protocol actually sends are here, and adding one means adding it to that test too.
 
 // RegisteredClaims holds the JWT claims registered by RFC 7519 that the IRMA protocol uses.
-// Claims structs embed it to inherit both the wire format and the time claim checks that
-// ValidateClaims performs.
+// Claims structs embed it to inherit its wire format. The claims themselves are checked by jwx
+// during verification, not here.
 type RegisteredClaims struct {
 	Issuer    string       `json:"iss,omitempty"`
 	Subject   string       `json:"sub,omitempty"`
@@ -95,19 +89,4 @@ type RegisteredClaims struct {
 	NotBefore *NumericDate `json:"nbf,omitempty"`
 	IssuedAt  *NumericDate `json:"iat,omitempty"`
 	ID        string       `json:"jti,omitempty"`
-}
-
-// ValidateClaims checks the time claims that are present against now. Each of them is
-// optional; a claim that is absent is not a reason to reject the token.
-func (c RegisteredClaims) ValidateClaims(now time.Time) error {
-	if c.ExpiresAt != nil && !now.Before(c.ExpiresAt.Time) {
-		return ErrTokenExpired
-	}
-	if c.NotBefore != nil && now.Before(c.NotBefore.Time) {
-		return ErrTokenNotValidYet
-	}
-	if c.IssuedAt != nil && now.Before(c.IssuedAt.Time) {
-		return ErrTokenUsedBeforeIssued
-	}
-	return nil
 }

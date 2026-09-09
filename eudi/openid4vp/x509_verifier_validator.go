@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -45,8 +46,14 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	// the validator, so that concurrent calls do not overwrite each other's.
 	var leafCert *x509.Certificate
 	var authRequest AuthorizationRequest
-	err := jose.Verify(requestJwt, &authRequest, func(headers jws.Headers) (jwa.SignatureAlgorithm, any, error) {
-		alg, cert, err := v.authorizeAuthRequestSigner(headers, &authRequest)
+	err := jose.Verify(requestJwt, &authRequest, func(headers jws.Headers, payload []byte) (jwa.SignatureAlgorithm, any, error) {
+		// The client_id names the certificate the request must be signed with, so it has to be
+		// read out of the still unverified payload to find the key.
+		var unverified AuthorizationRequest
+		if err := json.Unmarshal(payload, &unverified); err != nil {
+			return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("failed to parse auth request claims: %v", err)
+		}
+		alg, cert, err := v.authorizeAuthRequestSigner(headers, &unverified)
 		if err != nil {
 			return jwa.EmptySignatureAlgorithm(), nil, err
 		}

@@ -61,7 +61,7 @@ func testParseAndVerifyAuthorizationRequestFailureEmptyX5cArray(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: failed to get end-entity certificate from x5c header: auth request token contains empty x5c array in the header")
+	require.Contains(t, err.Error(), "failed to get end-entity certificate from x5c header: auth request token contains empty x5c array in the header")
 }
 
 func testParseAndVerifyAuthorizationRequestSuccess(t *testing.T) {
@@ -108,7 +108,7 @@ func testParseAndVerifyAuthorizationRequestFailureForInvalidClientID(t *testing.
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: client_id expected to start with 'x509_san_dns:' or 'x509_hash:' but doesn't (invalid_client_id)")
+	require.Contains(t, err.Error(), "client_id expected to start with 'x509_san_dns:' or 'x509_hash:' but doesn't (invalid_client_id)")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureMissingX5C(t *testing.T) {
@@ -121,7 +121,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingX5C(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: failed to get end-entity certificate from x5c header: auth request token doesn't contain x5c field in the header")
+	require.Contains(t, err.Error(), "failed to get end-entity certificate from x5c header: auth request token doesn't contain x5c field in the header")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredX5C(t *testing.T) {
@@ -134,7 +134,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredX5C(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: failed to get end-entity certificate from x5c header: auth request token doesn't contain x5c field in the header")
+	require.Contains(t, err.Error(), "failed to get end-entity certificate from x5c header: auth request token doesn't contain x5c field in the header")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureRevokedX5C(t *testing.T) {
@@ -145,7 +145,7 @@ func testParseAndVerifyAuthorizationRequestFailureRevokedX5C(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: failed to verify relying party certificate: failed to verify x5c end-entity certificate against revocation lists: certificate is revoked by issuer CN=CA CERT 0,OU=Test Unit,O=Test Organization,C=NL in revocation list with number 1")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate against revocation lists: certificate is revoked by issuer CN=CA CERT 0,OU=Test Unit,O=Test Organization,C=NL in revocation list with number 1")
 }
 
 func testParseAndVerifyAuthorizationRequestMissingSchemeData_AssumesThirdPartyCertificate_ReturnsCertificateCommonName(t *testing.T) {
@@ -194,7 +194,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingRoot(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredRoot(t *testing.T) {
@@ -205,7 +205,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredRoot(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: current time ")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: current time ")
 }
 
 // This function implicitly also tests the case where an intermediate certificate is revoked, because it will be 'missing'
@@ -223,7 +223,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingIntermediate(t *testing
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing.T) {
@@ -234,7 +234,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: ")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: ")
 }
 
 func testParseAndVerifyAuthorizationRequestSuccessX509Hash(t *testing.T) {

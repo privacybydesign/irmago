@@ -58,59 +58,7 @@ func TestClaimStringsAcceptsBothAudienceForms(t *testing.T) {
 	require.Error(t, json.Unmarshal([]byte(`{"aud":[1]}`), &wrongType))
 }
 
-func TestValidateClaims(t *testing.T) {
-	now := time.Unix(1700000000, 0)
-
-	for _, tc := range []struct {
-		name     string
-		claims   irma.RegisteredClaims
-		expected error
-	}{
-		{
-			name:   "no time claims at all",
-			claims: irma.RegisteredClaims{Subject: "subject"},
-		},
-		{
-			name: "all time claims satisfied",
-			claims: irma.RegisteredClaims{
-				ExpiresAt: irma.NewNumericDate(now.Add(time.Minute)),
-				NotBefore: irma.NewNumericDate(now.Add(-time.Minute)),
-				IssuedAt:  irma.NewNumericDate(now.Add(-time.Minute)),
-			},
-		},
-		{
-			name:     "expired",
-			claims:   irma.RegisteredClaims{ExpiresAt: irma.NewNumericDate(now.Add(-time.Second))},
-			expected: irma.ErrTokenExpired,
-		},
-		{
-			name:     "expiring exactly now",
-			claims:   irma.RegisteredClaims{ExpiresAt: irma.NewNumericDate(now)},
-			expected: irma.ErrTokenExpired,
-		},
-		{
-			name:     "not valid yet",
-			claims:   irma.RegisteredClaims{NotBefore: irma.NewNumericDate(now.Add(time.Second))},
-			expected: irma.ErrTokenNotValidYet,
-		},
-		{
-			name:     "issued in the future",
-			claims:   irma.RegisteredClaims{IssuedAt: irma.NewNumericDate(now.Add(time.Second))},
-			expected: irma.ErrTokenUsedBeforeIssued,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			err := tc.claims.ValidateClaims(now)
-			if tc.expected == nil {
-				require.NoError(t, err)
-				return
-			}
-			require.ErrorIs(t, err, tc.expected)
-		})
-	}
-}
-
-// Claims structs that embed RegisteredClaims inherit both its wire format and its checks.
+// Claims structs that embed RegisteredClaims inherit its wire format.
 func TestEmbeddedRegisteredClaims(t *testing.T) {
 	claims := irma.KeyshareAuthRequestClaims{
 		RegisteredClaims: irma.RegisteredClaims{ExpiresAt: irma.NewNumericDate(time.Unix(1700000060, 0))},
@@ -121,8 +69,9 @@ func TestEmbeddedRegisteredClaims(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"exp":1700000060,"id":"user"}`, string(encoded))
 
-	require.ErrorIs(t, claims.ValidateClaims(time.Unix(1700000061, 0)), irma.ErrTokenExpired)
-	require.NoError(t, claims.ValidateClaims(time.Unix(1700000059, 0)))
+	var decoded irma.KeyshareAuthRequestClaims
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	require.Equal(t, claims, decoded)
 }
 
 // ParseApiServerJwt decodes into a claims struct, which it could not do before this package

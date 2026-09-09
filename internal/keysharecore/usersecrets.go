@@ -130,7 +130,7 @@ func (s *unencryptedUserSecrets) UnmarshalCBOR(bytes []byte) error {
 
 // keyFunc verifies with the user's own public key, which is how the keyshare protocol
 // authenticates the messages of an enrolled client.
-func (s *unencryptedUserSecrets) keyFunc(jws.Headers) (jwa.SignatureAlgorithm, any, error) {
+func (s *unencryptedUserSecrets) keyFunc(jws.Headers, []byte) (jwa.SignatureAlgorithm, any, error) {
 	if s.PublicKey == nil {
 		return jwa.EmptySignatureAlgorithm(), nil, ErrKeyNotFound
 	}

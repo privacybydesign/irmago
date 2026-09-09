@@ -402,7 +402,7 @@ func (conf *Configuration) ValidateKeys() error {
 // KeyshareServerKeyFunc returns a jose.KeyFunc that selects the public key with which to verify
 // a keyshare server JWT, using the "kid" header of the token to pick one.
 func (conf *Configuration) KeyshareServerKeyFunc(scheme SchemeManagerIdentifier) jose.KeyFunc {
-	return func(headers jws.Headers) (jwa.SignatureAlgorithm, any, error) {
+	return func(headers jws.Headers, _ []byte) (jwa.SignatureAlgorithm, any, error) {
 		var kid int
 		if kidstr, ok := headers.KeyID(); ok {
 			var err error
