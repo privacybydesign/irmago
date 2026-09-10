@@ -11,11 +11,12 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/jose"
 )
 
 const (
@@ -225,7 +226,7 @@ type RequestorJwt interface {
 	SessionRequest() SessionRequest
 	Requestor() string
 	Valid() error
-	Sign(jwt.SigningMethod, any) (string, error)
+	Sign(jwa.SignatureAlgorithm, any) (string, error)
 }
 
 // A DisclosureChoice contains the attributes chosen to be disclosed.
@@ -1081,16 +1082,16 @@ func (claims *SignatureRequestorJwt) SessionRequest() SessionRequest { return cl
 // SessionRequest returns an IRMA session object.
 func (claims *IdentityProviderJwt) SessionRequest() SessionRequest { return claims.Request.Request }
 
-func (claims *ServiceProviderJwt) Sign(method jwt.SigningMethod, key any) (string, error) {
-	return jwt.NewWithClaims(method, claims).SignedString(key)
+func (claims *ServiceProviderJwt) Sign(alg jwa.SignatureAlgorithm, key any) (string, error) {
+	return jose.Sign(claims, alg, key, nil)
 }
 
-func (claims *SignatureRequestorJwt) Sign(method jwt.SigningMethod, key any) (string, error) {
-	return jwt.NewWithClaims(method, claims).SignedString(key)
+func (claims *SignatureRequestorJwt) Sign(alg jwa.SignatureAlgorithm, key any) (string, error) {
+	return jose.Sign(claims, alg, key, nil)
 }
 
-func (claims *IdentityProviderJwt) Sign(method jwt.SigningMethod, key any) (string, error) {
-	return jwt.NewWithClaims(method, claims).SignedString(key)
+func (claims *IdentityProviderJwt) Sign(alg jwa.SignatureAlgorithm, key any) (string, error) {
+	return jose.Sign(claims, alg, key, nil)
 }
 
 func (claims *ServiceProviderJwt) RequestorRequest() RequestorRequest { return claims.Request }
@@ -1137,8 +1138,8 @@ func (claims *RevocationJwt) Valid() error {
 	return nil
 }
 
-func (claims *RevocationJwt) Sign(method jwt.SigningMethod, key any) (string, error) {
-	return jwt.NewWithClaims(method, claims).SignedString(key)
+func (claims *RevocationJwt) Sign(alg jwa.SignatureAlgorithm, key any) (string, error) {
+	return jose.Sign(claims, alg, key, nil)
 }
 
 func (claims *ServiceProviderJwt) Action() Action { return ActionDisclosing }
@@ -1147,7 +1148,7 @@ func (claims *SignatureRequestorJwt) Action() Action { return ActionSigning }
 
 func (claims *IdentityProviderJwt) Action() Action { return ActionIssuing }
 
-func SignSessionRequest(request SessionRequest, alg jwt.SigningMethod, key any, name string) (string, error) {
+func SignSessionRequest(request SessionRequest, alg jwa.SignatureAlgorithm, key any, name string) (string, error) {
 	var jwtcontents RequestorJwt
 	switch r := request.(type) {
 	case *IssuanceRequest:
@@ -1160,7 +1161,7 @@ func SignSessionRequest(request SessionRequest, alg jwt.SigningMethod, key any, 
 	return jwtcontents.Sign(alg, key)
 }
 
-func SignRequestorRequest(request RequestorRequest, alg jwt.SigningMethod, key any, name string) (string, error) {
+func SignRequestorRequest(request RequestorRequest, alg jwa.SignatureAlgorithm, key any, name string) (string, error) {
 	var jwtcontents RequestorJwt
 	switch r := request.(type) {
 	case *IdentityProviderRequest:

@@ -3,10 +3,14 @@ package irmaclient
 import (
 	"encoding/asn1"
 	"encoding/base64"
+	"encoding/json"
 	gobig "math/big"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/go-errors/errors"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/privacybydesign/irmago/internal/jose"
 )
 
 type Signer interface {
@@ -35,11 +39,34 @@ func signatureJwtEncoding(signature []byte) ([]byte, error) {
 	return out, nil
 }
 
-func SignerCreateJWT(signer Signer, keyname string, claims jwt.Claims) (string, error) {
-	unsigned, err := jwt.NewWithClaims(jwt.SigningMethodES256, claims).SigningString()
-	if err != nil {
-		return "", err
+// SignerCreateJWT signs claims into a compact JWS using the given Signer.
+//
+// The JWS is assembled here instead of by jws.Sign, because a Signer holds a private key that
+// this process never gets to see: it may live in the device keystore, and only signs the bytes
+// it is handed. So this function produces those bytes, the JWS signing input, and appends the
+// signature the Signer returns.
+func SignerCreateJWT(signer Signer, keyname string, claims any) (string, error) {
+	headers := jws.NewHeaders()
+	if err := headers.Set(jws.AlgorithmKey, jwa.ES256()); err != nil {
+		return "", errors.WrapPrefix(err, "failed to set JWT alg header", 0)
 	}
+	if err := headers.Set(jws.TypeKey, jose.TypeHeader); err != nil {
+		return "", errors.WrapPrefix(err, "failed to set JWT typ header", 0)
+	}
+	headerJson, err := json.Marshal(headers)
+	if err != nil {
+		return "", errors.WrapPrefix(err, "failed to marshal JWT header", 0)
+	}
+	claimsJson, err := json.Marshal(claims)
+	if err != nil {
+		return "", errors.WrapPrefix(err, "failed to marshal JWT claims", 0)
+	}
+
+	unsigned := strings.Join([]string{
+		base64.RawURLEncoding.EncodeToString(headerJson),
+		base64.RawURLEncoding.EncodeToString(claimsJson),
+	}, ".")
+
 	sig, err := signer.Sign(keyname, []byte(unsigned))
 	if err != nil {
 		return "", err

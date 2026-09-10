@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
@@ -228,13 +230,19 @@ type EncryptedResponsePayload struct {
 // VpToken is a map from dcql query id to a list of credentials (e.g. a list of sd-jwt vc's)
 type VpToken map[string][]string
 
-// implement jwt.Claims interface, so we can decode the auth request JWT
-
-func (ar *AuthorizationRequest) GetExpirationTime() (*jwt.NumericDate, error) { return nil, nil }
-func (ar *AuthorizationRequest) GetIssuedAt() (*jwt.NumericDate, error)       { return nil, nil }
-func (ar *AuthorizationRequest) GetNotBefore() (*jwt.NumericDate, error)      { return nil, nil }
-func (ar *AuthorizationRequest) GetIssuer() (string, error)                   { return "", nil }
-func (ar *AuthorizationRequest) GetSubject() (string, error)                  { return "", nil }
-func (ar *AuthorizationRequest) GetAudience() (jwt.ClaimStrings, error)       { return nil, nil }
-
 const AuthRequestJwtTyp string = "oauth-authz-req+jwt"
+
+// authRequestSignatureAlgorithm returns the algorithm with which an authorization request JWT
+// is to be verified, taken from its protected header and narrowed to the algorithms this module
+// accepts.
+func authRequestSignatureAlgorithm(headers jws.Headers) (jwa.SignatureAlgorithm, error) {
+	alg, ok := headers.Algorithm()
+	if !ok {
+		return jwa.EmptySignatureAlgorithm(), fmt.Errorf("auth request JWT needs 'alg' in header")
+	}
+	supported, found := eudi_jwt.LookupSupportedSignatureAlgorithm(alg.String())
+	if !found {
+		return jwa.EmptySignatureAlgorithm(), fmt.Errorf("unsupported signing algorithm in auth request JWT header: %s", alg)
+	}
+	return supported, nil
+}

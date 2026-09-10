@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	jwtOld "github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/privacybydesign/irmago/internal/jose"
 )
 
 // IssuerSignedJwt is the issued signed jwt as a string (so only the section of the sd-jwt up to and NOT including the first ~)
@@ -127,15 +128,14 @@ func decodePayloadFromJwt(jwt IssuerSignedJwt) (map[string]any, error) {
 	return payload, nil
 }
 
-// DecodeJwtWithoutCheckingSignature parses a JWT's header and claims without
+// DecodeJwtWithoutCheckingSignature parses a JWT's protected header and claims without
 // verifying its signature. Used where the caller needs to inspect a claim
 // (e.g. to determine which key to verify with) before verification is possible.
-func DecodeJwtWithoutCheckingSignature(jwtString string) (header map[string]any, claims map[string]any, err error) {
-	parser := jwtOld.NewParser()
-	var claimsResult jwtOld.MapClaims
-	token, _, err := parser.ParseUnverified(jwtString, &claimsResult)
+func DecodeJwtWithoutCheckingSignature(jwtString string) (jws.Headers, map[string]any, error) {
+	var claims map[string]any
+	headers, err := jose.ParseUnverified(jwtString, &claims)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
 	}
-	return token.Header, claimsResult, err
+	return headers, claims, nil
 }
