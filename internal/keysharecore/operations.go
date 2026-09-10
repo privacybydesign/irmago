@@ -110,13 +110,11 @@ func (c *Core) ValidateAuth(secrets UserSecrets, jwtt string) (string, error) {
 func (c *Core) authJWT(s *unencryptedUserSecrets) (string, error) {
 	t := time.Now()
 	claims := accessTokenClaims{
-		RegisteredClaims: irma.RegisteredClaims{
-			Issuer:    c.jwtIssuer,
-			Subject:   "auth_tok",
-			IssuedAt:  irma.NewNumericDate(t),
-			ExpiresAt: irma.NewNumericDate(t.Add(time.Duration(c.jwtPinExpiry) * time.Second)),
-		},
-		TokenID: base64.StdEncoding.EncodeToString(s.ID),
+		Issuer:    c.jwtIssuer,
+		Subject:   "auth_tok",
+		IssuedAt:  irma.NewNumericDate(t),
+		ExpiresAt: irma.NewNumericDate(t.Add(time.Duration(c.jwtPinExpiry) * time.Second)),
+		TokenID:   base64.StdEncoding.EncodeToString(s.ID),
 	}
 	return c.signJWT(claims)
 }
@@ -309,12 +307,10 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 
 	// Generate response
 	return c.signJWT(proofPClaims{
-		RegisteredClaims: irma.RegisteredClaims{
-			Issuer:   c.jwtIssuer,
-			Subject:  "ProofP",
-			IssuedAt: irma.NewNumericDate(time.Now()),
-		},
-		ProofP: gabi.KeyshareResponseLegacy(s.KeyshareSecret, commit, challenge, key),
+		Issuer:   c.jwtIssuer,
+		Subject:  "ProofP",
+		IssuedAt: irma.NewNumericDate(time.Now()),
+		ProofP:   gabi.KeyshareResponseLegacy(s.KeyshareSecret, commit, challenge, key),
 	})
 }
 
@@ -372,12 +368,10 @@ func (c *Core) GenerateResponseV2(
 
 	// Generate response
 	return c.signJWT(proofPClaims{
-		RegisteredClaims: irma.RegisteredClaims{
-			Issuer:   c.jwtIssuer,
-			Subject:  "ProofP",
-			IssuedAt: irma.NewNumericDate(time.Now()),
-		},
-		ProofP: proofP,
+		Issuer:   c.jwtIssuer,
+		Subject:  "ProofP",
+		IssuedAt: irma.NewNumericDate(time.Now()),
+		ProofP:   proofP,
 	})
 }
 

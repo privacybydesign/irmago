@@ -61,8 +61,8 @@ func TestClaimStringsAcceptsBothAudienceForms(t *testing.T) {
 // Claims structs that embed RegisteredClaims inherit its wire format.
 func TestEmbeddedRegisteredClaims(t *testing.T) {
 	claims := irma.KeyshareAuthRequestClaims{
-		RegisteredClaims: irma.RegisteredClaims{ExpiresAt: irma.NewNumericDate(time.Unix(1700000060, 0))},
-		Username:         "user",
+		ExpiresAt: irma.NewNumericDate(time.Unix(1700000060, 0)),
+		Username:  "user",
 	}
 
 	encoded, err := json.Marshal(claims)
