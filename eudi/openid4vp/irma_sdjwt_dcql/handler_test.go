@@ -361,7 +361,7 @@ func testMultipleCredentialQueriesInOptionIsUnsupported(t *testing.T) {
 
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
-	_, err = h.BuildDisclosurePlan(query, result, nil, nil)
+	_, _, err = h.BuildDisclosurePlan(query, result, nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not supported")
 }
@@ -624,7 +624,7 @@ func buildPlan(t *testing.T, h *dcql.DcqlHandler, rawQuery string) *clientmodels
 	query := parseDcqlQuery(t, rawQuery)
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
-	plan, err := h.BuildDisclosurePlan(query, result, nil, nil)
+	plan, _, err := h.BuildDisclosurePlan(query, result, nil, nil)
 	require.NoError(t, err)
 	return plan
 }

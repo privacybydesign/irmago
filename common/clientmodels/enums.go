@@ -7,6 +7,9 @@ const (
 	Protocol_Irma       Protocol = "irma"
 	Protocol_OpenID4VP  Protocol = "openid4vp"
 	Protocol_OpenID4VCI Protocol = "openid4vci"
+	// Protocol_ISO18013_5 is proximity presentation over ISO/IEC 18013-5 device
+	// retrieval (QR engagement + BLE), as opposed to the OpenID4VP transports above.
+	Protocol_ISO18013_5 Protocol = "iso18013-5"
 )
 
 // LogType identifies the type of a log entry.
@@ -20,9 +23,18 @@ const (
 )
 
 // CredentialFormat identifies the format of a credential.
+//
+// Adding a constant here is a breaking change for the Yivi app until irmamobile
+// is updated to match. irmamobile mirrors this list as the Dart enum
+// CredentialFormat (yivi_core/lib/src/models/log_entry.dart), and the decoders
+// json_serializable generates for it take no unknownValue: an unlisted string
+// throws out of fromJson and takes the whole event payload with it, not just
+// the one field. So a format the app does not know is not a credential it skips,
+// it is a screen that fails to build.
 type CredentialFormat string
 
 const (
 	Format_SdJwtVc CredentialFormat = "dc+sd-jwt"
 	Format_Idemix  CredentialFormat = "idemix"
+	Format_MsoMdoc CredentialFormat = "mso_mdoc"
 )

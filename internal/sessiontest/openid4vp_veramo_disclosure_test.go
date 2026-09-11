@@ -120,6 +120,12 @@ func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	// Step 4: Verify the disclosure plan and grant permission.
+	//
+	// Beyond name and attributes, the screen shows the issuer as verified (its
+	// x5c chain checked out at issuance), the format, the issuer logo the test
+	// issuer publishes inline, the issuance date, and that this credential has
+	// no status list, so revocation is neither supported nor flagged. The test
+	// issuer mints no exp for this credential, so the screen shows no expiry.
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -140,6 +146,13 @@ func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
 								Value:       strVal("test@example.com"),
 							},
 						},
+						IssuerVerified:      new(true),
+						Format:              new(clientmodels.Format_SdJwtVc),
+						HasIssuerImage:      new(true),
+						HasIssuanceDate:     new(true),
+						HasExpiryDate:       new(false),
+						Revoked:             new(false),
+						RevocationSupported: new(false),
 					},
 				},
 			},
@@ -2086,6 +2099,7 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
+				Multiple: true,
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "https://localhost:8443/vct/email",
@@ -2117,7 +2131,6 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 	})
 
 	pickOne := plan.DisclosureChoicesOverview[0]
-	require.True(t, pickOne.Multiple, "multiple flag should be true in the disclosure plan")
 
 	// Select BOTH bundles (this is the key difference from single-select).
 	var selectedCreds []clientmodels.SelectedCredential
@@ -4570,17 +4583,41 @@ type expectedCredentialDescriptor struct {
 
 // expectedPickOneChoice describes one DisclosurePickOne entry.
 type expectedPickOneChoice struct {
-	Optional   bool
+	Optional bool
+	// Multiple is the DCQL "multiple" flag: the user may pick more than one
+	// bundle. Asserted always, since a plan that lets the user hand over every
+	// matching credential where the verifier asked for one is a real fault.
+	Multiple   bool
 	Owned      []expectedPlanCredential
 	Obtainable []expectedCredentialDescriptor
 }
 
 // expectedPlanCredential describes an expected owned credential instance.
+//
+// The first four fields are always asserted. The rest are opt-in, nil skips
+// them: they are what the permission screen shows next to the name and the
+// attributes, and most tests are not about them.
 type expectedPlanCredential struct {
 	CredentialId string
 	Name         string
 	IssuerName   string
 	Attributes   []expectedAttr
+
+	// IssuerVerified is the trust the screen shows for the issuer: whether the
+	// credential's signature and chain verified against a trust anchor.
+	IssuerVerified *bool
+	Format         *clientmodels.CredentialFormat
+	// HasImage and HasIssuerImage assert presence only; the bytes come from the
+	// issuer's metadata and are not a wallet property.
+	HasImage       *bool
+	HasIssuerImage *bool
+	// HasIssuanceDate and HasExpiryDate assert the dates are set, or not. An
+	// SD-JWT without exp is a credential that never expires, and the screen must
+	// show no expiry rather than an invented one.
+	HasIssuanceDate     *bool
+	HasExpiryDate       *bool
+	Revoked             *bool
+	RevocationSupported *bool
 }
 
 // requireDisclosurePlan asserts the complete structure of a disclosure plan:
@@ -4649,6 +4686,8 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 		pickOne := plan.DisclosureChoicesOverview[i]
 		require.Equal(t, expChoice.Optional, pickOne.Optional,
 			"choice %d Optional mismatch", i)
+		require.Equal(t, expChoice.Multiple, pickOne.Multiple,
+			"choice %d Multiple mismatch", i)
 
 		// --- Owned options ---
 		// Flatten all bundle credentials and check against the flat expected
@@ -4686,6 +4725,7 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 			if len(expOwned.Attributes) > 0 {
 				requireAttrsInOrder(t, matched.Attributes, expOwned.Attributes...)
 			}
+			requirePlanCredentialDetails(t, matched, expOwned, fmt.Sprintf("choice %d owned %d", i, j))
 		}
 
 		// --- Obtainable options ---
@@ -4697,6 +4737,52 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 				fmt.Sprintf("choice %d obtainable %d", i, j))
 		}
 	}
+}
+
+// requirePlanCredentialDetails checks the opt-in fields of an owned option: what
+// the permission screen shows beside the name and the attributes.
+func requirePlanCredentialDetails(
+	t testingT,
+	actual *clientmodels.SelectableCredentialInstance,
+	expected expectedPlanCredential,
+	context string,
+) {
+	t.Helper()
+	if expected.IssuerVerified != nil {
+		require.Equal(t, *expected.IssuerVerified, actual.Issuer.Verified,
+			"%s: issuer verified mismatch", context)
+	}
+	if expected.Format != nil {
+		require.Equal(t, *expected.Format, actual.Format, "%s: format mismatch", context)
+	}
+	if expected.HasImage != nil {
+		requireImagePresence(t, actual.Image, *expected.HasImage, context+": credential image")
+	}
+	if expected.HasIssuerImage != nil {
+		requireImagePresence(t, actual.Issuer.Image, *expected.HasIssuerImage, context+": issuer image")
+	}
+	if expected.HasIssuanceDate != nil {
+		requireDatePresence(t, actual.IssuanceDate, *expected.HasIssuanceDate, context+": issuance date")
+	}
+	if expected.HasExpiryDate != nil {
+		requireDatePresence(t, actual.ExpiryDate, *expected.HasExpiryDate, context+": expiry date")
+	}
+	if expected.Revoked != nil {
+		require.Equal(t, *expected.Revoked, actual.Revoked, "%s: revoked mismatch", context)
+	}
+	if expected.RevocationSupported != nil {
+		require.Equal(t, *expected.RevocationSupported, actual.RevocationSupported,
+			"%s: revocation supported mismatch", context)
+	}
+}
+
+func requireDatePresence(t testingT, date *int64, present bool, context string) {
+	t.Helper()
+	if present {
+		require.NotNil(t, date, "%s missing", context)
+		return
+	}
+	require.Nil(t, date, "%s unexpectedly set", context)
 }
 
 // requireCredentialDescriptor asserts a CredentialDescriptor matches expectations.

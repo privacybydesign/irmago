@@ -70,3 +70,68 @@ func TestLoadResolvedLogo_NoLogosCached_ReturnsNil(t *testing.T) {
 
 	require.Nil(t, img)
 }
+
+// ---------------------------------------------------------------------------
+// mdoc claim-path aliasing
+// ---------------------------------------------------------------------------
+
+// SD-JWT paths are namespace-free by nature, so a one-component path is already
+// the real path and is indexed as published; nothing rewrites it.
+func TestResolveBatchDisplay_KeepsOneComponentPaths(t *testing.T) {
+	batch := &models.SdJwtVcBatch{
+		Format:                   models.CredentialFormatSdJwtVc,
+		VerifiableCredentialType: "https://vct.example/x",
+		ProcessedSdJwtPayload:    datatypes.JSON(`{"age_over_18":true}`),
+		CredentialMetadata: &models.CredentialMetadata{Claims: []models.CredentialClaim{{
+			Path:    datatypes.JSON(`["age_over_18"]`),
+			Display: []models.ClaimDisplay{{Name: "Label 0", Locale: nullStr("en")}},
+		}}},
+	}
+
+	d := ResolveBatchDisplay(batch, "en")
+
+	require.Equal(t, "Label 0", d.ClaimNames[clientmodels.ClaimPathKey([]any{"age_over_18"})])
+	require.Len(t, d.ClaimNames, 1)
+}
+
+// CredentialDisplayIsFallback is the signal the frontend needs to know whether
+// substituting its own label for a credential type it recognises is filling a gap
+// or overriding what the issuer published. The resolved text cannot say: the
+// fallback chain lands on English rather than on nothing.
+func TestCredentialDisplayIsFallback(t *testing.T) {
+	batch := &models.SdJwtVcBatch{
+		Format:                   models.CredentialFormatSdJwtVc,
+		VerifiableCredentialType: "https://vct.example/x",
+		ProcessedSdJwtPayload:    datatypes.JSON(`{"age_over_18":true}`),
+		CredentialMetadata: &models.CredentialMetadata{
+			Display: []models.CredentialDisplay{{Name: "Proof of Age", Locale: nullStr("en")}},
+		},
+	}
+
+	t.Run("the requested language was published", func(t *testing.T) {
+		require.False(t, CredentialDisplayIsFallback(batch, "en"))
+	})
+
+	t.Run("the requested language was not published", func(t *testing.T) {
+		// The en-only reference issuer against a Dutch wallet: the credential still
+		// renders, in English, and this is what says so.
+		require.True(t, CredentialDisplayIsFallback(batch, "nl"))
+	})
+
+	t.Run("a regional locale served by its base language is not a fallback", func(t *testing.T) {
+		require.False(t, CredentialDisplayIsFallback(batch, "en-GB"))
+	})
+
+	t.Run("no display metadata at all", func(t *testing.T) {
+		bare := &models.SdJwtVcBatch{Format: models.CredentialFormatSdJwtVc, ProcessedSdJwtPayload: datatypes.JSON(`{}`)}
+		require.True(t, CredentialDisplayIsFallback(bare, "en"))
+	})
+
+	t.Run("ResolveBatchDisplay reports it alongside the text it resolved", func(t *testing.T) {
+		require.True(t, ResolveBatchDisplay(batch, "nl").DisplayIsFallback)
+		require.False(t, ResolveBatchDisplay(batch, "en").DisplayIsFallback)
+		// Set even on the early return, where there is no name to resolve at all.
+		bare := &models.SdJwtVcBatch{Format: models.CredentialFormatSdJwtVc, ProcessedSdJwtPayload: datatypes.JSON(`{}`)}
+		require.True(t, ResolveBatchDisplay(bare, "en").DisplayIsFallback)
+	})
+}

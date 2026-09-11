@@ -8,20 +8,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// TODO: we need to add polymorphic associations to support multiple credential formats in the future, but for now we only support SD-JWT VCs, so we can keep all fields in one table and use the Format field to distinguish them. See https://gorm.io/docs/polymorphism.html for reference on how to implement this when we need it.
-
 // CredentialFormat represents the credential format identifier as defined in the OID4VCI spec.
 type CredentialFormat string
 
 const (
 	CredentialFormatSdJwtVc CredentialFormat = "dc+sd-jwt"
+	CredentialFormatMsoMdoc CredentialFormat = "mso_mdoc"
 )
 
-// CredentialBatch groups all credential instances issued from a single credential_configuration_id
-// request within one OID4VCI issuance session. When the issuer supports batch issuance,
-// BatchSize > 1 and multiple IssuedCredentialInstance rows belong to this batch. Single-use
-// wallets decrement RemainingCount on each presentation; the batch is exhausted when it reaches 0.
-type CredentialBatch struct {
+// SdJwtVcBatch is one logical SD-JWT VC credential: every credential issued from
+// a single credential_configuration_id within one OID4VCI issuance session. When
+// the issuer supports batch issuance, BatchSize > 1 and multiple
+// SdJwtVcBatchInstance rows belong to this batch. Single-use wallets decrement
+// RemainingCount on each presentation; the batch is exhausted when it reaches 0.
+//
+// SD-JWT VC only. mso_mdoc has its own tables (MdocBatch); the
+// Format column stays because it is deployed, and always reads dc+sd-jwt. The
+// table is named credential_batches, from before the split — see TableName.
+type SdJwtVcBatch struct {
 	ID datatypes.UUID
 
 	// IssuerIdentifier is the credential's issuer identity as resolved during
@@ -39,25 +43,40 @@ type CredentialBatch struct {
 	// VerifiableCredentialType is the vct claim from the issued SD-JWT VC.
 	VerifiableCredentialType string
 
-	// Format is the credential format identifier (e.g. "dc+sd-jwt").
+	// Format is the credential format identifier. Always CredentialFormatSdJwtVc
+	// for a row in this table; validate enforces it.
 	Format CredentialFormat
 
-	// Hash is a deterministic hash over the credential type and its sorted disclosed attributes.
-	// Computed with the same algorithm as irmaclient.CreateHashForSdJwtVc so that the EUDI
-	// storage remains compatible with the IRMA client's deduplication logic.
+	// Hash is a deterministic hash over the credential type, the issuer that
+	// asserted it, and its sorted disclosed attributes — the three things that make
+	// two credentials the same credential. Computed by services.credentialHash.
+	//
+	// Not the same algorithm as irmaclient.CreateHashForSdJwtVc, which serves
+	// IRMA-issued SD-JWTs: that one is a URL-encoded hash over concatenated sorted
+	// key/value pairs, this one a hex SHA-256 over length-prefixed fields. An
+	// earlier version of this comment claimed the two were the same for
+	// compatibility, which was never true and had been contradicted by
+	// hashForSdJwtVc's own doc comment for as long as both existed. The two are
+	// independent, and no table holds both.
 	Hash string `gorm:"uniqueIndex"`
 
-	// ProcessedSdJwtPayload is the JSON-encoded payload of the SD-JWT after processing/verifying the issuer-signed JWT.
+	// ProcessedSdJwtPayload is the JSON-encoded payload of the SD-JWT after
+	// processing/verifying the issuer-signed JWT, cached at issuance time so
+	// matching a DCQL query doesn't require re-parsing the raw credential. The
+	// field name is also the column name and must stay: AutoMigrate (the only
+	// schema mechanism here, see storage.autoMigrateHolderModels) cannot rename a
+	// column, and would ADD a NOT NULL one instead, which SQLite rejects once the
+	// table has rows. See credentials_schema_test.go, which pins this.
 	ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`
 
-	// IssuedAt is taken from the iat claim of the issuer-signed JWT.
+	// IssuedAt is the iat claim of the issuer-signed JWT.
 	IssuedAt datatypes.NullTime
 
-	// ExpiresAt is taken from the exp claim of the issuer-signed JWT. Nil if the credential does not expire.
+	// ExpiresAt is the exp claim of the issuer-signed JWT. Nil if the credential does not expire.
 	ExpiresAt datatypes.NullTime
 
-	// NotBefore is taken from the nbf claim of the issuer-signed JWT. Nil if the credential has no nbf restriction.
-	// OID4VP wallets must not present a credential before this time.
+	// NotBefore is the nbf claim of the issuer-signed JWT. Nil if the credential has no such
+	// restriction. OID4VP wallets must not present a credential before this time.
 	NotBefore datatypes.NullTime
 
 	// BatchSize is the number of instances that were issued in this batch.
@@ -67,12 +86,34 @@ type CredentialBatch struct {
 	// Decremented on each use; the batch is exhausted when it reaches 0.
 	RemainingCount uint
 
-	CredentialMetadata *CredentialMetadata        `gorm:"constraint:OnDelete:CASCADE"`
-	Instances          []IssuedCredentialInstance `gorm:"constraint:OnDelete:CASCADE"`
-	IssuerDisplay      []IssuerMetadataDisplay    `gorm:"constraint:OnDelete:CASCADE"`
+	// IssuerVerified records that the issuer's signature and certificate chain
+	// were verified against a trust anchor before this batch was stored.
+	//
+	// It is stored rather than re-derived. The check happens once, inside
+	// CredentialFormatParser.ParseAndVerify, and its result is not something the
+	// wallet otherwise keeps: re-deriving it at read time would mean walking the
+	// chain and fetching CRLs on every credential list, and would answer "is this
+	// issuer trusted now" rather than "was it trusted at issuance" — two claims
+	// that part company as soon as a document signer expires or is revoked. The
+	// same reasoning, and the same wording, as EudiLogEntry.RequestorVerified.
+	//
+	// Batches written before this column existed read back false. That understates
+	// them, since they went through the same verifying parser, but a stored false
+	// is the conservative direction and matches the log table's precedent.
+	IssuerVerified bool
+
+	CredentialMetadata *CredentialMetadata     `gorm:"foreignKey:CredentialBatchID;constraint:OnDelete:CASCADE"`
+	Instances          []SdJwtVcBatchInstance  `gorm:"foreignKey:CredentialBatchID;constraint:OnDelete:CASCADE"`
+	IssuerDisplay      []IssuerMetadataDisplay `gorm:"foreignKey:CredentialBatchID;constraint:OnDelete:CASCADE"`
 }
 
-func (b *CredentialBatch) BeforeCreate(tx *gorm.DB) error {
+// TableName pins the deployed table name. GORM would otherwise derive
+// sd_jwt_vc_batches from the type name, and AutoMigrate would create an empty
+// second table next to the one every installed wallet already holds its
+// credentials in.
+func (SdJwtVcBatch) TableName() string { return "credential_batches" }
+
+func (b *SdJwtVcBatch) BeforeCreate(tx *gorm.DB) error {
 	if b.ID.IsNil() {
 		b.ID = datatypes.NewUUIDv4()
 	}
@@ -80,7 +121,7 @@ func (b *CredentialBatch) BeforeCreate(tx *gorm.DB) error {
 	return b.validate()
 }
 
-func (b *CredentialBatch) normalizeChildren() {
+func (b *SdJwtVcBatch) normalizeChildren() {
 	if b.CredentialMetadata != nil {
 		b.CredentialMetadata.CredentialBatchID = b.ID
 	}
@@ -92,7 +133,7 @@ func (b *CredentialBatch) normalizeChildren() {
 	}
 }
 
-func (b *CredentialBatch) validate() error {
+func (b *SdJwtVcBatch) validate() error {
 	if b.VerifiableCredentialType == "" {
 		return fmt.Errorf("verifiable_credential_type is required")
 	}
@@ -102,8 +143,8 @@ func (b *CredentialBatch) validate() error {
 	if b.CredentialIssuerIdentifier == "" {
 		return fmt.Errorf("credential_issuer_identifier is required")
 	}
-	if b.Format == "" {
-		return fmt.Errorf("format is required")
+	if b.Format != CredentialFormatSdJwtVc {
+		return fmt.Errorf("format must be %q for an SD-JWT VC batch, got %q", CredentialFormatSdJwtVc, b.Format)
 	}
 	if b.Hash == "" {
 		return fmt.Errorf("hash is required")
@@ -120,20 +161,22 @@ func (b *CredentialBatch) validate() error {
 	return nil
 }
 
-// IssuedCredentialInstance is a single raw SD-JWT VC token within a CredentialBatch.
-// Each instance carries its own holder binding key, because the OID4VCI session creates
-// one key pair per proof JWT in the batch credential request.
-type IssuedCredentialInstance struct {
+// SdJwtVcBatchInstance is a single raw SD-JWT VC within an SdJwtVcBatch. Each
+// instance carries its own holder binding key, because the OID4VCI session
+// creates one key pair per proof JWT in the batch credential request. The table
+// is named issued_credential_instances, from before the split — see TableName.
+type SdJwtVcBatchInstance struct {
 	ID datatypes.UUID
 
 	CredentialBatchID datatypes.UUID
 
 	// HolderBindingKey is the key pair bound to this credential instance during issuance.
 	// Nil if the credential configuration did not require cryptographic key binding.
-	HolderBindingKey *HolderBindingKey `gorm:"constraint:OnDelete:CASCADE"`
+	HolderBindingKey *HolderBindingKey `gorm:"foreignKey:IssuedCredentialInstanceID;constraint:OnDelete:CASCADE"`
 
-	// RawCredential is the raw SD-JWT VC token (without key binding JWT).
-	// The surrounding SQLCipher layer encrypts this at rest.
+	// RawCredential is the SD-JWT VC token as issued, without its key binding JWT
+	// (the holder creates that per presentation). The surrounding SQLCipher layer
+	// encrypts this at rest.
 	RawCredential []byte `gorm:"type:bytea;not null"`
 
 	// Used marks this instance as consumed after it has been presented.
@@ -161,7 +204,10 @@ type IssuedCredentialInstance struct {
 	LastStatusCheckAt *time.Time
 }
 
-func (i *IssuedCredentialInstance) BeforeCreate(tx *gorm.DB) error {
+// TableName pins the deployed table name; see SdJwtVcBatch.TableName.
+func (SdJwtVcBatchInstance) TableName() string { return "issued_credential_instances" }
+
+func (i *SdJwtVcBatchInstance) BeforeCreate(tx *gorm.DB) error {
 	if i.ID.IsNil() {
 		i.ID = datatypes.NewUUIDv4()
 	}
@@ -175,7 +221,7 @@ func (i *IssuedCredentialInstance) BeforeCreate(tx *gorm.DB) error {
 	return i.validate()
 }
 
-func (i *IssuedCredentialInstance) validate() error {
+func (i *SdJwtVcBatchInstance) validate() error {
 	if i.CredentialBatchID.IsNil() {
 		return fmt.Errorf("batch_id is required")
 	}

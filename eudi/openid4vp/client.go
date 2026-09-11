@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"io"
 	"net/http"
 	"net/url"
@@ -25,10 +26,14 @@ type Handler interface {
 	// that delivered the request through the Digital Credentials API. It is only
 	// called for sessions started with NewDcApiSession, and always before Success.
 	DeliverDcApiResponse(response string)
+	// queryIds runs parallel to disclosurePlan.DisclosureChoicesOverview, one
+	// entry per pick-one, naming the DCQL query each of that pick-one's
+	// candidates answers. The UI hands it back position by position when it
+	// reports the user's choices.
 	RequestVerificationPermission(
 		disclosurePlan *clientmodels.DisclosurePlan,
 		requestor *clientmodels.TrustedParty,
-		hashToQueryId map[string]string,
+		queryIds []dcql.ChoiceQueryIds,
 		callback PermissionHandler,
 	)
 }
@@ -49,6 +54,11 @@ type Client struct {
 	dcqlHandler       *dcql.DcqlHandler
 	verifierValidator VerifierValidator
 	currentLocale     *clientmodels.CurrentLocale
+
+	// requireUnencryptedDirectPost is the deployment policy set by
+	// RequireUnencryptedDirectPost. Read on the session goroutines, written once
+	// at wallet construction before any session exists.
+	requireUnencryptedDirectPost bool
 
 	// Sessions currently performing, each on its own goroutine. Sessions may
 	// overlap: a second disclosure can arrive while one is parked awaiting
@@ -92,6 +102,37 @@ func (client *Client) deregister(session *openid4vpSession) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	delete(client.sessions, session)
+}
+
+// RequireUnencryptedDirectPost restricts URL-invoked sessions to
+// response_mode=direct_post, refusing direct_post.jwt.
+//
+// This is deployment policy, not protocol: OpenID4VP and ISO 18013-7 both allow
+// the encrypted variant, and the wallet implements it correctly (mso_mdoc's
+// session transcript commits to the response encryption key's thumbprint, see
+// mdoc_dcql). The EU Age Verification profile is narrower than the specs it
+// builds on and permits only plain direct_post on the redirect path, so a
+// deployment serving that profile can hold the wallet to it here rather than
+// discovering the mismatch at a verifier.
+//
+// Off by default: enabling it unconditionally would refuse ordinary
+// 18013-7 verifiers that do nothing wrong. It deliberately does not touch the
+// Digital Credentials API modes, which the AV profile makes the primary path and
+// where encrypted responses are expected.
+func (client *Client) RequireUnencryptedDirectPost(required bool) {
+	client.requireUnencryptedDirectPost = required
+}
+
+func (client *Client) checkRedirectResponseModeAllowed(mode ResponseMode) error {
+	if !client.requireUnencryptedDirectPost {
+		return nil
+	}
+	if mode == ResponseMode_DirectPostJwt {
+		return fmt.Errorf(
+			"response_mode %s is not accepted by this wallet deployment: only %s is allowed for a URL-invoked session",
+			ResponseMode_DirectPostJwt, ResponseMode_DirectPost)
+	}
+	return nil
 }
 
 // NewClient creates a new OpenID4VP client.
@@ -147,47 +188,20 @@ func handleFailure(handler Handler, message string, fmtArgs ...any) {
 func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSession) {
 	go func() {
 		handler := session.handler
-		parsedUrl, err := url.Parse(fullUrl)
 
-		if err != nil {
-			handleFailure(handler, "openid4vp: failed to parse request: %v", err)
-			return
-		}
-
-		requestUri := parsedUrl.Query().Get("request_uri")
-		if requestUri == "" {
-			handleFailure(handler, "openid4vp: request missing required request_uri")
-			return
-		}
-
-		eudi.Logger.Infof("starting openid4vp session: %v", requestUri)
-		response, err := common.HTTPClient.Get(requestUri)
-		if err != nil {
-			handleFailure(handler, "openid4vp: failed to get authorization request: %v", err)
-			return
-		}
-
-		defer response.Body.Close()
-
-		if response.StatusCode != http.StatusOK {
-			handleFailure(handler, "openid4vp: authorization request returned HTTP %d", response.StatusCode)
-			return
-		}
-
-		authRequestJwt, err := io.ReadAll(response.Body)
-		if err != nil {
-			handleFailure(handler, "openid4vp: failed to read authorization request body: %v", err)
-			return
-		}
-
-		request, requestor, err := client.verifySignedAuthorizationRequest(string(authRequestJwt))
+		request, requestor, err := client.parseUrlInvokedRequest(fullUrl)
 		if err != nil {
 			handleFailure(handler, "openid4vp: %v", err)
 			return
 		}
 
-		if err := validateNonce(request.Nonce); err != nil {
+		if err := validateRedirectAuthorizationRequest(request); err != nil {
 			handleFailure(handler, "openid4vp: invalid authorization request: %v", err)
+			return
+		}
+
+		if err := validateResponseUriBinding(request); err != nil {
+			handleFailure(handler, "openid4vp: refusing to answer this request: %v", err)
 			return
 		}
 
@@ -201,6 +215,18 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			return
 		}
 
+		if err := validateRedirectResponseMode(request.ResponseMode); err != nil {
+			handleFailure(handler, "openid4vp: %v", err)
+			return
+		}
+
+		if err := client.checkRedirectResponseModeAllowed(request.ResponseMode); err != nil {
+			handleFailure(handler, "openid4vp: %v", err)
+			return
+		}
+
+		eudi.Logger.Infof("auth request: %#v", request)
+
 		// Without the DC API the response is bound to the client identifier.
 		err = client.handleAuthorizationRequest(session, request, requestor, request.ClientId)
 
@@ -208,6 +234,119 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			handleFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
 		}
 	}()
+}
+
+// parseUrlInvokedRequest turns the URL the wallet was invoked with into an
+// authorization request plus the requestor to show for it.
+//
+// A link may carry its Authorization Request in three ways (OpenID4VP Section 5,
+// RFC 9101 Section 5.2): as a signed request object passed by value in
+// `request`, as one to fetch from `request_uri`, or as the request parameters
+// themselves in the query string. Neither `request` nor `request_uri` is
+// required, so the third form is a request like any other rather than a
+// malformed link, which is what the wallet used to make of it.
+//
+// The three forms are alternatives, not a fallback chain: a request object --
+// by value in `request`, or fetched from `request_uri` -- is verified and its
+// verifier authenticated, while a request whose parameters are in the query
+// string itself is unsigned, and every check that depends on a signature is
+// replaced by the far weaker binding validateUnsignedUrlRequest describes. Which
+// of the two happened is what the requestor's Verified flag reports to the user,
+// so the paths are kept apart here rather than merged into one parsed request.
+func (client *Client) parseUrlInvokedRequest(fullUrl string) (*AuthorizationRequest, *clientmodels.TrustedParty, error) {
+	parsedUrl, err := url.Parse(fullUrl)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse request: %v", err)
+	}
+	query := parsedUrl.Query()
+
+	requestObject := query.Get("request")
+	requestUri := query.Get("request_uri")
+
+	switch {
+	case requestObject != "" && requestUri != "":
+		// RFC 9101 Section 6.2 forbids sending both, and they can name different
+		// requests: honouring either one would mean acting on a request the
+		// verifier may not have meant, chosen by nothing but read order.
+		return nil, nil, fmt.Errorf("request and request_uri must not both be present")
+
+	case requestObject != "":
+		eudi.Logger.Info("starting openid4vp session from a request object in the url")
+		return client.verifyUrlRequestObject(requestObject, query)
+
+	case requestUri != "":
+		eudi.Logger.Infof("starting openid4vp session: %v", requestUri)
+		authRequestJwt, err := fetchRequestObject(requestUri)
+		if err != nil {
+			return nil, nil, err
+		}
+		return client.verifyUrlRequestObject(authRequestJwt, query)
+
+	default:
+		eudi.Logger.Info("starting openid4vp session from the request parameters in the url")
+		request, err := parseUnsignedUrlRequest(query)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := validateUnsignedUrlRequest(request); err != nil {
+			return nil, nil, fmt.Errorf("invalid unsigned authorization request: %v", err)
+		}
+		return request, unsignedUrlRequestor(request), nil
+	}
+}
+
+// fetchRequestObject retrieves the signed request object a request_uri points at.
+//
+// The GET is unconditional: request_uri_method is not honoured, so a verifier
+// asking for `post` is answered with a GET, which either works because the
+// endpoint accepts both or fails here rather than silently.
+func fetchRequestObject(requestUri string) (string, error) {
+	response, err := common.HTTPClient.Get(requestUri)
+	if err != nil {
+		return "", fmt.Errorf("failed to get authorization request: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("authorization request returned HTTP %d", response.StatusCode)
+	}
+
+	authRequestJwt, err := io.ReadAll(response.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read authorization request body: %v", err)
+	}
+	return string(authRequestJwt), nil
+}
+
+// verifyUrlRequestObject verifies a signed request object that arrived by value
+// or was fetched from a request_uri, and holds the link's own client_id to it.
+func (client *Client) verifyUrlRequestObject(authRequestJwt string, query url.Values) (
+	*AuthorizationRequest,
+	*clientmodels.TrustedParty,
+	error,
+) {
+	request, requestor, err := client.verifySignedAuthorizationRequest(authRequestJwt)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// The client_id the link carries is unauthenticated, so nothing downstream
+	// reads it -- everything comes from the signed request object instead. It is
+	// still compared against the signed one, because RFC 9101 Section 5.2.3
+	// requires the two to match and a mismatch means the link and the request it
+	// points at disagree about who is asking. Ignoring that silently would let a
+	// tampered link pass unnoticed even though the wallet happens to act on the
+	// trustworthy half. An absent client_id is tolerated: the value is only
+	// useful for this comparison, and refusing a link that omits it would fail
+	// verifiers that are otherwise conformant.
+	linkClientId := query.Get("client_id")
+	if linkClientId != "" && linkClientId != request.ClientId {
+		return nil, nil, fmt.Errorf(
+			"the link names client_id %q but the signed request names %q",
+			linkClientId, request.ClientId)
+	}
+
+	return request, requestor, nil
 }
 
 func (client *Client) handleDcApiSessionAsync(request *DcApiRequest, session *openid4vpSession) {
@@ -223,6 +362,7 @@ func (client *Client) handleDcApiSessionAsync(request *DcApiRequest, session *op
 
 		// Over the DC API the response is bound to the origin the platform
 		// authenticated, never to the client identifier (Appendix A.4).
+		session.origin = request.Origin
 		err = client.handleAuthorizationRequest(session, authRequest, requestor, OriginAudience(request.Origin))
 
 		if err != nil {
@@ -246,10 +386,29 @@ func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
 		return nil, nil, fmt.Errorf("failed to verify authorization request: %v", err)
 	}
 
-	// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
-	if endEntityCert != nil && requestorSchemeData.Organization.Logo != nil {
+	// The verifier is identified by its client_id, not by its certificate.
+	//
+	// Both are authenticated: the validator binds the leaf to the client_id,
+	// by SAN for the x509_san_dns: prefix and by leaf hash for x509_hash:,
+	// and rejects a request whose client_id carries neither. But a serial
+	// number names one certificate rather than the party holding it, so a
+	// routine re-issue filed the same organization under a second identity --
+	// splitting its disclosure history in two and orphaning the logo cached
+	// under the retired serial. A client_id also exists in the DID trust
+	// model, which has no certificate at all and so left the id empty,
+	// collapsing every DID verifier onto one blank key.
+	//
+	// Note that x509_hash: is a digest of the leaf and so still rotates with
+	// the certificate; only x509_san_dns: survives a re-issue. This is no
+	// worse than the serial in that case, and better in the other two.
+	requestorId := request.ClientId
+
+	// Store the verifier logo in the cache. The storage layer hashes a key
+	// into its on-disk filename, so the prefix and its colon need no
+	// escaping here.
+	if requestorId != "" && requestorSchemeData.Organization.Logo != nil {
 		err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().Save(
-			endEntityCert.SerialNumber.String(),
+			requestorId,
 			requestorSchemeData.Organization.Logo.Data,
 			requestorSchemeData.Organization.Logo.MimeType,
 		)
@@ -259,11 +418,9 @@ func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
 	}
 
 	requestor := &clientmodels.TrustedParty{
+		Id:       requestorId,
 		Name:     clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), client.currentLocale.Get()),
 		Verified: endEntityCert != nil,
-	}
-	if endEntityCert != nil {
-		requestor.Id = endEntityCert.SerialNumber.String()
 	}
 
 	if requestorSchemeData.Organization.Logo != nil && len(requestorSchemeData.Organization.Logo.Data) > 0 {
@@ -301,9 +458,17 @@ type openid4vpSession struct {
 	// audience is the value the disclosed presentations are bound to (the aud of
 	// a Key Binding JWT): the client identifier for a URL-invoked session, the
 	// origin-prefixed caller origin for a Digital Credentials API session.
-	audience   string
+	audience string
+	// origin is the bare caller origin the platform authenticated, set only for a
+	// Digital Credentials API session. mso_mdoc's DC API handover signs this
+	// value, which is the audience without its "origin:" prefix; keeping it
+	// rather than stripping the prefix back off keeps one representation
+	// authoritative.
+	origin     string
 	lastPlan   *clientmodels.DisclosurePlan
 	lastResult *dcql.DcqlResult
+	// lastQueryIds runs parallel to lastPlan's choices; see Handler.
+	lastQueryIds []dcql.ChoiceQueryIds
 	// preExistingHashes tracks owned credential hashes at session start,
 	// used to detect newly issued credentials for WrongCredentialIssued.
 	preExistingHashes map[string]struct{}
@@ -378,7 +543,7 @@ func (session *openid4vpSession) requestPermission() error {
 	session.handler.RequestVerificationPermission(
 		plan,
 		session.requestor,
-		session.lastResult.HashToQueryId,
+		session.lastQueryIds,
 		func(proceed bool, selections []dcql.DisclosureSelection) {
 			if proceed {
 				session.answer(&permissionResponse{selections: selections})
@@ -390,7 +555,8 @@ func (session *openid4vpSession) requestPermission() error {
 	return nil
 }
 
-// buildDisclosurePlan builds a DisclosurePlan by delegating to the DcqlHandler.
+// buildDisclosurePlan builds a DisclosurePlan by delegating to the DcqlHandler,
+// and records the per-choice query ids that go with it.
 func (session *openid4vpSession) buildDisclosurePlan() (*clientmodels.DisclosurePlan, error) {
 	result, err := session.dcqlHandler.FindCandidates(session.request.DcqlQuery)
 	if err != nil {
@@ -403,9 +569,14 @@ func (session *openid4vpSession) buildDisclosurePlan() (*clientmodels.Disclosure
 		session.preExistingHashes = dcql.CollectOwnedHashes(result.QueryResults)
 	}
 
-	return session.dcqlHandler.BuildDisclosurePlan(
+	plan, queryIds, err := session.dcqlHandler.BuildDisclosurePlan(
 		session.request.DcqlQuery, result, session.lastPlan, session.preExistingHashes,
 	)
+	if err != nil {
+		return nil, err
+	}
+	session.lastQueryIds = queryIds
+	return plan, nil
 }
 
 func (session *openid4vpSession) perform() error {
@@ -422,10 +593,45 @@ func (session *openid4vpSession) perform() error {
 		return nil
 	}
 
-	logMarshalled("selections:", permResp.selections)
+	// The response encryption key is chosen before anything is disclosed, not
+	// when the response is built: mso_mdoc's deviceAuth signs over a session
+	// transcript carrying this key's thumbprint, so the choice has to be made
+	// while the signature is still ahead of us. Formats whose holder binding is
+	// not transcript-bound ignore the thumbprint entirely.
+	var encryptionKey jwk.Key
+	var encryptionKeyThumbprint []byte
+	if session.request.ResponseMode == ResponseMode_DirectPostJwt || session.request.ResponseMode == ResponseMode_DcApiJwt {
+		if session.request.ClientMetadata == nil || session.request.ClientMetadata.Jwks == nil {
+			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", session.request.ResponseMode)
+		}
+		var err error
+		encryptionKey, encryptionKeyThumbprint, err = selectResponseEncryptionKey(session.request.ClientMetadata.Jwks.Set)
+		if err != nil {
+			return err
+		}
+	}
+
+	binding := dcql.ResponseBinding{
+		ResponseUri:             session.request.ResponseUri,
+		EncryptionKeyThumbprint: encryptionKeyThumbprint,
+		OverDcApi:               isDcApiResponseMode(session.request.ResponseMode),
+		Origin:                  session.origin,
+	}
+
+	// Logged together, and only once the binding exists. The transport-bound
+	// fields of a DisclosureSelection are still zero when the user answers the
+	// permission request -- they are filled in from the binding further down --
+	// so logging the selections alone printed an empty response_uri and a null
+	// encryption key thumbprint even for a direct_post.jwt session that had both.
+	// Those are the first values anyone reads when an mdoc's deviceAuth fails to
+	// verify, and reading them as empty sends the search in the wrong direction.
+	logMarshalled("disclosure:", struct {
+		Selections []dcql.DisclosureSelection `json:"selections"`
+		Binding    dcql.ResponseBinding       `json:"response_binding"`
+	}{permResp.selections, binding})
 
 	// Group selections by format
-	queryResponses, credLogs, err := session.prepareDisclosures(permResp.selections)
+	queryResponses, credLogs, err := session.prepareDisclosures(permResp.selections, binding)
 	if err != nil {
 		return err
 	}
@@ -438,11 +644,8 @@ func (session *openid4vpSession) perform() error {
 		ResponseMode:   session.request.ResponseMode,
 	}
 
-	if session.request.ResponseMode == ResponseMode_DirectPostJwt || session.request.ResponseMode == ResponseMode_DcApiJwt {
-		if session.request.ClientMetadata == nil || session.request.ClientMetadata.Jwks == nil {
-			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", session.request.ResponseMode)
-		}
-		responseConfig.EncryptionKeys = &session.request.ClientMetadata.Jwks.Set
+	if encryptionKey != nil {
+		responseConfig.EncryptionKey = encryptionKey
 		responseConfig.EncryptedResponseEncValuesSupported = session.request.ClientMetadata.EncryptedResponseEncValuesSupported
 	}
 
@@ -480,9 +683,10 @@ func (session *openid4vpSession) perform() error {
 // prepareDisclosures delegates to the DcqlHandler to prepare credentials for the VP token.
 func (session *openid4vpSession) prepareDisclosures(
 	selections []dcql.DisclosureSelection,
+	binding dcql.ResponseBinding,
 ) ([]dcql.QueryResponse, []clientmodels.LogCredential, error) {
 	prepared, err := session.dcqlHandler.PrepareDisclosure(
-		session.request.DcqlQuery, selections, session.request.Nonce, session.audience,
+		session.request.DcqlQuery, selections, session.request.Nonce, session.audience, binding,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -501,4 +705,16 @@ func logMarshalled(message string, value any) {
 	} else {
 		eudi.Logger.Infof("\n%s\n%s\n", message, string(jsonBytes))
 	}
+}
+
+// DcqlHandler returns the credential query handler this client searches with.
+//
+// Exposed so ISO 18013-5 proximity can answer a DeviceRequest from the SAME view
+// of the wallet's credentials an OpenID4VP request sees. Constructing a second
+// DcqlHandler over the same format handlers would work and would be wrong: the
+// two would be separate objects whose candidate results, and any state they come
+// to keep, could diverge — a credential offered over one transport and not the
+// other, with nothing to explain it.
+func (client *Client) DcqlHandler() *dcql.DcqlHandler {
+	return client.dcqlHandler
 }

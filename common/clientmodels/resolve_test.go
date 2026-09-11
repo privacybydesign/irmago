@@ -125,3 +125,38 @@ func TestCurrentLocale(t *testing.T) {
 		assert.Equal(t, DefaultFallbackLanguage, l.Get())
 	})
 }
+
+// IsFallbackLanguage is what lets the frontend tell the issuer's label in the
+// user's language from the issuer's label in some other language. The resolved
+// text cannot say so itself: the chain lands on English rather than on an empty
+// string, so a Dutch wallet is handed real English text with nothing marking it.
+func TestIsFallbackLanguage(t *testing.T) {
+	ts := TranslatedString{"en": "English", "nl": "Nederlands"}
+
+	t.Run("the requested language was published", func(t *testing.T) {
+		assert.False(t, IsFallbackLanguage("nl", BundleLanguage("nl", ts)))
+	})
+
+	t.Run("a regional locale served by its base language is not a fallback", func(t *testing.T) {
+		// The wallet asked for nl-NL and the issuer published nl. Reporting this as
+		// a fallback would have every regional locale substituting its own labels
+		// over text the issuer did publish in the user's language.
+		assert.False(t, IsFallbackLanguage("nl-NL", BundleLanguage("nl-NL", ts)))
+	})
+
+	t.Run("the requested language was not published", func(t *testing.T) {
+		assert.True(t, IsFallbackLanguage("de", BundleLanguage("de", ts)))
+	})
+
+	t.Run("nothing published in any language", func(t *testing.T) {
+		// No issuer text at all, which is the strongest case for a client using
+		// its own label rather than the raw type identifier.
+		assert.True(t, IsFallbackLanguage("nl", BundleLanguage("nl", TranslatedString{})))
+	})
+
+	t.Run("an unparseable locale cannot be compared by language", func(t *testing.T) {
+		assert.True(t, IsFallbackLanguage("not-a-locale", "en"))
+		// Except when it matches exactly, which needs no parsing.
+		assert.False(t, IsFallbackLanguage("not-a-locale", "not-a-locale"))
+	})
+}

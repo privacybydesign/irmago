@@ -49,7 +49,7 @@ func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []client
 func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 	disclosurePlan *clientmodels.DisclosurePlan,
 	requestor *clientmodels.TrustedParty,
-	hashToQueryId map[string]string,
+	queryIds []dcql.ChoiceQueryIds,
 	callback openid4vp.PermissionHandler,
 ) {
 	a.session.State.Status = clientmodels.Status_RequestPermission
@@ -65,30 +65,20 @@ func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 
 	a.session.State.DisclosurePlan = disclosurePlan
 	a.session.openid4vpPermissionHandler = callback
-	a.session.openid4vpHashToQueryId = hashToQueryId
+	a.session.openid4vpQueryIds = queryIds
 	a.session.dispatchState()
 }
 
-// disclosureChoicesToOpenID4VPSelections converts UI disclosure choices to OpenID4VP selections.
-func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDisconSelection, hashToQueryId map[string]string) []dcql.DisclosureSelection {
-	var selections []dcql.DisclosureSelection
-	for _, discon := range choices {
-		for _, cred := range discon.Credentials {
-			claimPaths := make([][]any, 0, len(cred.AttributePaths))
-			for _, path := range cred.AttributePaths {
-				if len(path) > 0 {
-					claimPaths = append(claimPaths, path)
-				}
-			}
-			queryId := hashToQueryId[cred.CredentialHash]
-			selections = append(selections, dcql.DisclosureSelection{
-				QueryId:        queryId,
-				CredentialHash: cred.CredentialHash,
-				ClaimPaths:     claimPaths,
-			})
-		}
-	}
-	return selections
+// disclosureChoicesToOpenID4VPSelections converts UI disclosure choices to
+// OpenID4VP selections.
+//
+// The logic moved to dcql.SelectionsFromChoices when ISO 18013-5 proximity became
+// a second caller: it answers "which DCQL query does this user choice satisfy",
+// which is neither OpenID4VP-specific nor client-specific, and getting it wrong
+// has a history (see that function). This wrapper stays so the call sites below
+// read unchanged.
+func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDisconSelection, queryIds []dcql.ChoiceQueryIds) []dcql.DisclosureSelection {
+	return dcql.SelectionsFromChoices(choices, queryIds)
 }
 
 // detectWrongCredentialIssued checks if any newly issued credential matches a required

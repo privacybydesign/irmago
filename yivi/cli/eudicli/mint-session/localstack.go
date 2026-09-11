@@ -1,0 +1,481 @@
+// This file drives the EUDI reference containers that docker-compose.yml brings
+// up: asking the Python issuer for a credential offer, starting a presentation at
+// the Kotlin verifier, and reading the wallet's answer back. It is kept apart from
+// main.go so that the flags and the printed walkthrough stay readable next to the
+// requests they build.
+//
+// It was an internal package while three demo programs shared it. They are gone —
+// what they showed is asserted by the mdoc groups of TestSessionHandler — and this
+// command is the only caller left, so the package boundary bought nothing but a
+// directory. The reason it exists at all still holds: these calls began inline,
+// and the moment a second caller wanted a session the request shape started
+// drifting between copies — a different nonce here, a different value constraint
+// there, which is exactly the kind of difference that makes two runs disagree for
+// reasons unrelated to the wallet.
+//
+// Three things every session request must get right, each of which cost real
+// debugging time to establish:
+//
+//   - intended_use_id is mandatory since verifier v0.11.0. Absent, the verifier
+//     answers 400 MissingRegistrationCertificate; unrecognised, 400
+//     UnknownIntendedUseId.
+//   - request_uri_method must be "get". The verifier enforces whichever method
+//     the transaction was created with, and irmago only ever GETs the request
+//     object, so "post" fails at the wallet's fetch with HTTP 400.
+//   - issuer_chain must name the CA that issued the credential in the wallet.
+//     Passing the wrong one lets the wallet disclose happily and then has the
+//     verifier refuse the response with X5CNotTrusted.
+package main
+
+import (
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// Config locates the containers and the repository's testdata.
+type Config struct {
+	// IssuerURL is the Python PID issuer, reachable only through the TLS proxy,
+	// e.g. https://localhost:8443/eudi-pid-issuer-py.
+	IssuerURL string
+	// VerifierHost is the Kotlin verifier, e.g. http://127.0.0.1:8090.
+	VerifierHost string
+	// TestdataDir is the repository's testdata folder, read for the issuer CA.
+	TestdataDir string
+}
+
+// IssuerCAPath is the anchor a verifier must be given to accept credentials the
+// local Python issuer signed: CN=Yivi Test EUDI Root CA.
+func (c Config) IssuerCAPath() string {
+	return filepath.Join(c.TestdataDir, "eudi-pid-issuer-py", "certs", "ca.pem")
+}
+
+// SessionRequest describes the presentation to ask for. The zero value is not
+// usable; use NewSessionRequest and adjust.
+type SessionRequest struct {
+	DocType string
+	// QueryID is the DCQL credential id, and the key the vp_token comes back
+	// under.
+	QueryID string
+	// Namespace defaults to DocType when empty, which is what the AV profile
+	// does; an mDL would differ.
+	Namespace string
+	Element   string
+	// Value is the DCQL value constraint. Nil omits the constraint entirely, so
+	// any value satisfies the query -- a real distinction: with a constraint the
+	// wallet refuses to match a credential holding the other value, which is the
+	// only way a verifier can insist on "true" rather than merely ask.
+	Value *bool
+	// IntendedUseID selects the verifier's configured use case.
+	IntendedUseID string
+	// Nonce ties the response to this request and travels into the mdoc
+	// SessionTranscript, so the device signature covers it. Empty means generate
+	// a fresh random one, which is what a real deployment does; pin it only when
+	// reproducible bytes matter, as the integration tests want.
+	Nonce string
+}
+
+// NewSessionRequest returns a request for one element of the AV attestation,
+// with the fields that must not be wrong already filled in.
+func NewSessionRequest(docType, element string) SessionRequest {
+	return SessionRequest{
+		DocType:       docType,
+		QueryID:       "age",
+		Element:       element,
+		IntendedUseID: "1",
+	}
+}
+
+// Session is a started presentation, as the verifier reported it.
+type Session struct {
+	TransactionID    string
+	ClientID         string
+	RequestURI       string
+	RequestURIMethod string
+	// Link is what a wallet would receive by QR or deep link.
+	Link string
+}
+
+// DcqlQuery builds the dcql_query object CreateSession sends, applying the same
+// defaults it does: an empty Namespace means the docType, and an empty QueryID
+// means "age".
+//
+// Exported so a caller can show the query it is about to send. The alternative --
+// fetching the request object and decoding the JAR -- consumes it, because
+// request_uri is single use: read it to inspect the query and the phone can no
+// longer fetch it, so inspecting the session would destroy it. The verifier is no
+// help either, answering 400 until the wallet responds and keeping nothing across
+// a restart.
+//
+// CreateSession calls this rather than building the query inline, so what gets
+// printed and what gets sent cannot drift.
+func DcqlQuery(req SessionRequest) map[string]any {
+	namespace := req.Namespace
+	if namespace == "" {
+		namespace = req.DocType
+	}
+	queryID := req.QueryID
+	if queryID == "" {
+		queryID = "age"
+	}
+
+	claim := map[string]any{"path": []string{namespace, req.Element}}
+	if req.Value != nil {
+		claim["values"] = []any{*req.Value}
+	}
+
+	return map[string]any{
+		"credentials": []map[string]any{{
+			"id":     queryID,
+			"format": "mso_mdoc",
+			"meta":   map[string]any{"doctype_value": req.DocType},
+			"claims": []map[string]any{claim},
+		}},
+	}
+}
+
+// CreateSession starts a presentation at the verifier and returns the wallet
+// link for it.
+//
+// The link is single use in two senses: the request object can be fetched once,
+// after which the verifier answers "Presentation should be in state Requested
+// but is in RequestObjectRetrieved", and each presentation spends one batch
+// instance of the credential.
+func CreateSession(cfg Config, req SessionRequest) (*Session, error) {
+	if req.DocType == "" || req.Element == "" {
+		return nil, fmt.Errorf("SessionRequest needs both DocType and Element")
+	}
+	issuerCA, err := os.ReadFile(cfg.IssuerCAPath())
+	if err != nil {
+		return nil, fmt.Errorf("read issuer CA: %w", err)
+	}
+
+	nonce := req.Nonce
+	if nonce == "" {
+		nonceBytes := make([]byte, 16)
+		if _, err := rand.Read(nonceBytes); err != nil {
+			return nil, fmt.Errorf("generate nonce: %w", err)
+		}
+		nonce = hex.EncodeToString(nonceBytes)
+	}
+
+	body, err := json.Marshal(map[string]any{
+		"type":               "vp_token",
+		"dcql_query":         DcqlQuery(req),
+		"nonce":              nonce,
+		"jar_mode":           "by_reference",
+		"request_uri_method": "get",
+		"intended_use_id":    req.IntendedUseID,
+		"issuer_chain":       string(issuerCA),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.Post(cfg.VerifierHost+"/ui/presentations",
+		"application/json", strings.NewReader(string(body)))
+	if err != nil {
+		return nil, fmt.Errorf("start verifier session: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		detail, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("verifier refused the session request: HTTP %d: %s",
+			resp.StatusCode, strings.TrimSpace(string(detail)))
+	}
+
+	var fields map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&fields); err != nil {
+		return nil, fmt.Errorf("decode verifier response: %w", err)
+	}
+
+	query := url.Values{}
+	for key, value := range fields {
+		query.Add(key, value)
+	}
+	return &Session{
+		TransactionID:    fields["transaction_id"],
+		ClientID:         fields["client_id"],
+		RequestURI:       fields["request_uri"],
+		RequestURIMethod: fields["request_uri_method"],
+		Link:             "eudi-openid4vp://?" + query.Encode(),
+	}, nil
+}
+
+// Offer is a credential offer the issuer minted.
+type Offer struct {
+	// URI is the openid-credential-offer:// link for a wallet. Its tx_code carries
+	// input_mode, length and description but no value: see
+	// stripTransactionCodeValue.
+	URI string
+	// TxCode is the one-time code the wallet must present, returned here so the
+	// caller can deliver it by some channel URI does not travel on. The reference
+	// issuer hands it back inside the offer, which is a convenience of the fixture
+	// rather than the protocol -- OpenID4VCI's tx_code object has no value member
+	// -- so it is taken out of URI and surfaced here instead.
+	TxCode string
+}
+
+// AVCredentialConfigID is the configuration the Python issuer must have enabled
+// in countries.AV.supported_credential_ids to mint the AV attestation.
+const AVCredentialConfigID = "eu.europa.ec.eudi.age_verification_mdoc"
+
+// CreateOffer asks the issuer for a credential offer carrying the given element
+// values.
+//
+// What data can actually put in the credential is the issuer's decision, not
+// this call's. Upstream, populate_pdata in app/dynamic_func.py walks its own
+// configured claims and copies a value only where `attr in data`, so an element
+// this map names and the credential configuration does not is dropped before
+// signing -- no error here, no error at the credential endpoint, and nothing in
+// the issued document. The issuer advertises thirteen age_over_NN claims, so
+// upstream that is the whole mintable set.
+//
+// The container this talks to is not upstream: docker-compose.yml bind-mounts a
+// patched dynamic_func.py (testdata/eudi-pid-issuer-py/patches/) that mints any
+// age_over_NN whether or not the configuration lists it, because ISO 18013-5 and
+// the AV profile both leave the thresholds open and the wallet has to be testable
+// against an arbitrary one. So against this stack every age_over_NN in data is
+// minted, while any *other* undeclared element is still dropped -- the patch is
+// scoped to the age-verification namespace and to that element name shape.
+//
+// The advertised metadata stays at the upstream thirteen on purpose, so the
+// wallet's issuance offer screen is not buried in a hundred rows. An element
+// minted this way therefore appears in the credential without a published label
+// and is named by DerivedMdocClaimName instead.
+//
+// The endpoint decodes the payload segment without verifying it, so the header
+// and signature of the JWT-shaped request can be empty -- see
+// app/preauthorization.py upstream.
+func CreateOffer(cfg Config, credentialConfigID string, data map[string]any) (*Offer, error) {
+	payload, err := json.Marshal(map[string]any{
+		"credentials": []map[string]any{{
+			"credential_configuration_id": credentialConfigID,
+			"data":                        data,
+		}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	jwtShaped := base64.RawURLEncoding.EncodeToString([]byte("{}")) + "." +
+		base64.RawURLEncoding.EncodeToString(payload) + "."
+
+	form := url.Values{}
+	form.Set("request", jwtShaped)
+	resp, err := http.Post(cfg.IssuerURL+"/credentialOfferReq2",
+		"application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("post credential offer request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		detail, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("issuer refused the offer request: HTTP %d: %s",
+			resp.StatusCode, strings.TrimSpace(string(detail)))
+	}
+
+	var offer map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&offer); err != nil {
+		return nil, fmt.Errorf("decode offer: %w", err)
+	}
+	txCode, err := transactionCode(offer)
+	if err != nil {
+		return nil, err
+	}
+	stripTransactionCodeValue(offer)
+
+	encoded, err := json.Marshal(offer)
+	if err != nil {
+		return nil, err
+	}
+	return &Offer{
+		URI:    "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(encoded)),
+		TxCode: txCode,
+	}, nil
+}
+
+// stripTransactionCodeValue removes tx_code.value from an offer, leaving the
+// members that tell a wallet how to prompt for it: input_mode, length and
+// description.
+//
+// The reference issuer returns the code inside the offer it hands back. That is
+// a convenience of the fixture, not the protocol -- OpenID4VCI's tx_code object
+// has no "value" member at all -- and a one-time code shipped inside the very
+// link it is supposed to protect protects nothing: anyone who can read the link
+// can read the code. Carrying it in the deep link would demonstrate the opposite
+// of what a transaction code is for.
+//
+// Removing it costs nothing here, because irmago never reads it. The wallet's
+// openid4vci.TransactionCode carries only InputMode, Length and Description, so
+// it always prompts the user; a wallet that auto-filled from the offer would
+// change behaviour, this one cannot tell the difference. The code itself still
+// reaches the caller as Offer.TxCode, to be delivered by some channel the link
+// does not travel on.
+//
+// Missing or malformed members are left alone rather than treated as an error:
+// the caller has already extracted the code through transactionCode by this
+// point, so anything unexpected here has been reported already.
+func stripTransactionCodeValue(offer map[string]any) {
+	grants, ok := offer["grants"].(map[string]any)
+	if !ok {
+		return
+	}
+	preAuth, ok := grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"].(map[string]any)
+	if !ok {
+		return
+	}
+	tx, ok := preAuth["tx_code"].(map[string]any)
+	if !ok {
+		return
+	}
+	delete(tx, "value")
+}
+
+// transactionCode digs the one-time code out of an offer.
+func transactionCode(offer map[string]any) (string, error) {
+	grants, ok := offer["grants"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("offer carries no grants")
+	}
+	preAuth, ok := grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("offer carries no pre-authorized_code grant")
+	}
+	tx, ok := preAuth["tx_code"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("offer carries no tx_code")
+	}
+	switch value := tx["value"].(type) {
+	case string:
+		return value, nil
+	case float64:
+		return fmt.Sprintf("%d", int64(value)), nil
+	default:
+		return "", fmt.Errorf("offer's tx_code has no usable value")
+	}
+}
+
+// ProxyCertPath is the self-signed certificate the tls_proxy container serves.
+func (c Config) ProxyCertPath() string {
+	return filepath.Join(c.TestdataDir, "configurations", "certs", "localhost.crt")
+}
+
+// TrustProxyCertificate teaches this process about the certificate the docker
+// TLS proxy serves, which nothing trusts by default. Without it every call to
+// the issuer fails as an unknown authority, and only the issuer -- the verifier
+// is plain HTTP -- so a presentation-only run appears to work and adding -issue
+// suddenly does not.
+//
+// It lives here rather than in one command because both callers need it and a
+// tool that forgets it fails in a way that reads like a container problem.
+// Absent certificate file is not an error: a caller pointed at a stack with a
+// real certificate has nothing to add.
+//
+// If TLS still fails with this applied, something is intercepting it -- an
+// antivirus web shield will.
+func TrustProxyCertificate(cfg Config) error {
+	pem, err := os.ReadFile(cfg.ProxyCertPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read tls proxy certificate: %w", err)
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pem) {
+		return fmt.Errorf("tls proxy certificate at %s is not usable PEM", cfg.ProxyCertPath())
+	}
+	http.DefaultTransport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}
+	return nil
+}
+
+// DefaultAVElements is the element set the local demos mint: five thresholds
+// rather than one, so a presentation of a single element visibly discloses less
+// than the credential holds -- with one element there is no selective disclosure
+// to see.
+//
+// This is the default for what mint-session issues. Its -mint can supply a
+// different set, but -value cannot:
+// -value constrains the query alone, so an offer and a query can be made to
+// disagree deliberately, which is what a refusal test needs. A single flag
+// driving both would make every run agree with itself.
+//
+// That distinction is the point rather than an accident: a credential whose value
+// matches the query it will face passes whether or not the value constraint is
+// enforced at all, so a run that agrees with itself proves less than one that had
+// to be matched on purpose.
+//
+// Nothing else may restate these values. A since-removed demo once hardcoded a
+// false value constraint and three narration lines describing an earlier version
+// of this map; when the map changed, its happy path silently became the refusal
+// path and reported it as "the wallet has nothing to disclose". Derive from this
+// function instead.
+func DefaultAVElements() map[string]any {
+	return map[string]any{
+		"age_over_18": true,
+		"age_over_21": true,
+		"age_over_40": false,
+		"age_over_60": false,
+		"age_over_67": false,
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Handing a link to a device
+// ----------------------------------------------------------------------------
+
+// adbQuotingBreakers are the characters a link must not contain, because each of
+// them can escape one of AdbCommand's two quoting layers: a single quote closes the
+// inner quoting the device's shell sees, a double quote closes the outer quoting
+// the local shell sees, and `$`, a backtick or a backslash are still live inside
+// double quotes.
+const adbQuotingBreakers = "'\"`$\\"
+
+// AdbCommand wraps a wallet link for `adb shell`. The inner single quotes are
+// load-bearing: adb concatenates its arguments and the device's own shell
+// re-parses them, so an unquoted & would background the command there.
+//
+// The link is validated rather than escaped, and rather than trusted. It arrives
+// from an HTTP response — the verifier's session or the issuer's offer — so it is
+// another party's data, and what this builds is a command a human is expected to
+// paste into a shell. A quote surviving into it would not break the process that
+// printed it, which only prints the string, but it would break out of the quoting
+// in the shell the user pastes into.
+//
+// In practice it cannot happen: both links are percent-encoded before they get
+// here (url.Values.Encode and url.QueryEscape turn ' into %27, " into %22, $ into
+// %24 and a backtick into %60), so a raw quote never survives. That invariant
+// lives in another package though, and nothing depended on it visibly. Checking
+// makes it explicit and turns a silently mangled command into a refusal.
+//
+// Validated, not escaped, on purpose: correctly escaping for two nested shells
+// would produce something unreadable, and the point of the output is that a human
+// can read it and paste it. A link needing escaping is a link something is wrong
+// with.
+func AdbCommand(link string) (string, error) {
+	if i := strings.IndexAny(link, adbQuotingBreakers); i >= 0 {
+		return "", fmt.Errorf(
+			"refusing to print an adb command for a link containing %q at offset %d: it would break out of the shell quoting when pasted. Links reaching here are percent-encoded, so this means one arrived that was not",
+			link[i], i)
+	}
+	for _, r := range link {
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf(
+				"refusing to print an adb command for a link containing the control character %U: it would break the command when pasted", r)
+		}
+	}
+	return fmt.Sprintf(`adb shell "am start -a android.intent.action.VIEW -d '%s'"`, link), nil
+}
