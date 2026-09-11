@@ -183,6 +183,17 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
+	// Reserved now, spent after the loop. See the Spend loop at the bottom.
+	reservations := make([]*services.ReservedInstance, 0, len(selections))
+
+	// Reserving takes an instance out of circulation until the disclosure it was
+	// chosen for resolves, so every path out of here has to give back what it did
+	// not spend — including the ones that return an error halfway through the
+	// loop. Unconditional because Spend releases what it marks used and releasing
+	// twice does nothing, which makes one deferred sweep correct for both
+	// outcomes.
+	defer func() { h.instances.Release(reservations...) }()
+
 	for _, sel := range selections {
 		// Which instance, and when it counts as spent, are shared with the ISO
 		// 18013-5 proximity path: see services.MdocInstanceSelector for why that is
@@ -191,6 +202,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 		if err != nil {
 			return nil, err
 		}
+		reservations = append(reservations, reserved)
 		batch, instance, doc := reserved.Batch, reserved.Instance, reserved.Document
 
 		disclosed, err := selectiveDiscloseByPaths(&doc, sel.ClaimPaths)
@@ -246,14 +258,24 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 			Credentials: []string{base64.RawURLEncoding.EncodeToString(encoded)},
 		})
 
-		// Last, and deliberately: everything that can fail for this selection has
-		// already happened. Spend carries that ordering requirement and the
-		// batch-of-one exemption in its own documentation.
+		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths, sel.Claims))
+	}
+
+	// Last, when nothing further can fail. Spend documents the ordering
+	// requirement and the batch-of-one exemption; what this loop adds is that
+	// "nothing further" spans the whole request rather than one selection of it.
+	//
+	// Spent inside the loop above, a disclosure answering two credentials whose
+	// second selection then failed to sign would have burned the first
+	// selection's single-use instance on a response this function discards and
+	// the verifier never receives — a use lost with nothing to show for it, which
+	// is the exact failure Spend exists to prevent. The ISO 18013-5 path reserves
+	// and commits in the same shape; see proximity.WalletDiscloser.Commit and the
+	// "Last, when nothing further can fail" in proximity.Session.respondTo.
+	for _, reserved := range reservations {
 		if err := h.instances.Spend(reserved); err != nil {
 			return nil, err
 		}
-
-		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths, sel.Claims))
 	}
 
 	return result, nil

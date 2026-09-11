@@ -818,14 +818,19 @@ func testOpenID4VP_MdocAv_DcApiResponseModeOnRedirectPath(t *testing.T) {
 // that treats an unknown mode as its default and posts a response somewhere the
 // request never specified.
 //
-// Refused when the wallet tries to answer rather than when it reads the request,
-// so the user is asked to approve a disclosure that then cannot be made. Nothing
-// is disclosed either way; the note is on requireMdocAvResponseRefused.
+// Refused while the request is read, before the user is asked for anything: the
+// modes a URL-invoked session can answer in are a closed set, so an unrecognised
+// one is knowable from the request alone. It used to be caught only at response
+// time, after consent had been given for a disclosure that could then not be
+// made; validateRedirectResponseMode moved the refusal forward.
 func testOpenID4VP_MdocAv_UnknownResponseMode(t *testing.T) {
-	requireMdocAvResponseRefused(t, mdocAvRefusalCase{
+	requireMdocAvRefusal(t, mdocAvRefusalCase{
 		Mutate: func(hdr, claims map[string]any) {
 			claims["response_mode"] = "direct_post.unknown"
 		},
+		// Pinned: an unknown mode is now refused for being unknown, and this is
+		// what tells that apart from a later refusal that happens to follow.
+		ErrorContains: "direct_post.unknown",
 	})
 }
 

@@ -99,6 +99,7 @@ func NewWalletDiscloser(
 var (
 	_ Discloser = (*WalletDiscloser)(nil)
 	_ Committer = (*WalletDiscloser)(nil)
+	_ Releaser  = (*WalletDiscloser)(nil)
 )
 
 // Disclose runs candidate selection, asks the user, and reserves the instances
@@ -107,7 +108,7 @@ func (w *WalletDiscloser) Disclose(request DisclosureRequest) ([]Selection, erro
 	if w.queries == nil || w.instances == nil || w.consent == nil {
 		return nil, fmt.Errorf("wallet discloser is missing its query handler, instance selector or consent handler")
 	}
-	w.reserved = nil
+	w.Release()
 
 	query := request.Query
 	candidates, err := w.queries.FindCandidates(query)
@@ -156,15 +157,18 @@ func (w *WalletDiscloser) reserveFor(selections []dcql.DisclosureSelection) ([]S
 	for _, selection := range selections {
 		reserved, err := w.instances.Reserve(selection.CredentialHash)
 		if err != nil {
+			w.Release()
 			return nil, err
 		}
+		// Recorded before anything else can fail, so the release below covers it.
+		w.reserved = append(w.reserved, reserved)
 
 		reveal, err := services.RevealFromClaimPaths(selection.ClaimPaths)
 		if err != nil {
+			w.Release()
 			return nil, fmt.Errorf("read claim paths of selected credential %s: %w", selection.CredentialHash, err)
 		}
 
-		w.reserved = append(w.reserved, reserved)
 		presented = append(presented, Selection{Document: reserved.Document, Reveal: reveal})
 	}
 
@@ -184,6 +188,20 @@ func (w *WalletDiscloser) Commit() error {
 	}
 	w.reserved = nil
 	return nil
+}
+
+// Release gives up every instance this disclosure reserved and did not spend.
+//
+// Called by Session when a transaction ends without committing, and by this file
+// whenever a disclosure abandons one it had already taken. Spending releases as
+// it goes, so a Commit that failed halfway leaves exactly the unspent remainder
+// here, and releasing an instance twice does nothing.
+func (w *WalletDiscloser) Release() {
+	if w.instances == nil {
+		return
+	}
+	w.instances.Release(w.reserved...)
+	w.reserved = nil
 }
 
 // ============================================================

@@ -38,6 +38,12 @@ type MdocStore interface {
 	// instance is used.
 	GetUnusedInstance(batchID datatypes.UUID) (*models.MdocBatchInstance, error)
 
+	// GetUnusedInstanceExcluding is GetUnusedInstance restricted to instances
+	// whose id is not in excluded, so a caller holding instances it has chosen
+	// but not yet spent can ask for a different one. Returns ErrNotFound when
+	// every unused instance is excluded.
+	GetUnusedInstanceExcluding(batchID datatypes.UUID, excluded []datatypes.UUID) (*models.MdocBatchInstance, error)
+
 	// MarkInstanceUsed sets Used on the instance and decrements the parent
 	// batch's RemainingCount, in one transaction. Returns ErrNotFound if the
 	// instance does not exist or is already used.
@@ -102,14 +108,22 @@ func (s *mdocStore) GetBatchesByDocType(docType string) ([]*models.MdocBatch, er
 }
 
 func (s *mdocStore) GetUnusedInstance(batchID datatypes.UUID) (*models.MdocBatchInstance, error) {
+	return s.GetUnusedInstanceExcluding(batchID, nil)
+}
+
+func (s *mdocStore) GetUnusedInstanceExcluding(batchID datatypes.UUID, excluded []datatypes.UUID) (*models.MdocBatchInstance, error) {
 	if batchID.IsNil() {
 		return nil, fmt.Errorf("batchID is required")
 	}
-	var instance models.MdocBatchInstance
-	err := s.db.
+	query := s.db.
 		Preload("DeviceKey").
-		Where("mdoc_batch_id = ? AND used = ?", batchID, false).
-		First(&instance).Error
+		Where("mdoc_batch_id = ? AND used = ?", batchID, false)
+	if len(excluded) > 0 {
+		query = query.Where("id NOT IN ?", excluded)
+	}
+
+	var instance models.MdocBatchInstance
+	err := query.First(&instance).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound

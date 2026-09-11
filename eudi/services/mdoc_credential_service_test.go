@@ -262,6 +262,131 @@ func TestMdocCredentialService_ReissuanceRefusedWhileBatchUsable(t *testing.T) {
 	assert.Equal(t, uint(2), batches[0].RemainingCount)
 }
 
+// A refused re-issuance leaves no device keys behind.
+//
+// The keys are minted before the documents arrive and are linked to an instance
+// only at the very end, so everything that can refuse an issuance in between
+// refuses it while they exist. Refusing because the stored batch is still usable
+// is the one that happens routinely — every duplicate offer takes it — so a leak
+// here accumulates a row per attempt in mdoc_device_keys, unbound and never
+// collected.
+func TestMdocCredentialService_RefusedReissuanceLeavesNoOrphanedDeviceKeys(t *testing.T) {
+	env := newMdocTestEnv(t)
+	mint := func(n uint) []models.PublicHolderBindingKey {
+		ids, _, err := env.keyMint.CreateKeyPairsWithProofs(n, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
+		require.NoError(t, err)
+		return ids
+	}
+	issue := func(ids []models.PublicHolderBindingKey) []*ParsedCredential {
+		out := make([]*ParsedCredential, len(ids))
+		for i, id := range ids {
+			out[i] = env.issueBoundTo(t, *id.PublicKeyThumbprint, map[string]any{"age_over_18": true})
+		}
+		return out
+	}
+
+	first := mint(2)
+	require.NoError(t, env.service.Store(issue(first), "proof_of_age", env.metadata, true, first))
+
+	second := mint(2)
+	err := env.service.Store(issue(second), "proof_of_age", env.metadata, true, second)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already held", "refused for the reason this test is about")
+
+	for i, id := range second {
+		_, err := env.keys.GetByThumbprint(*id.PublicKeyThumbprint)
+		require.ErrorIsf(t, err, db.ErrNotFound,
+			"key %d was minted for a refused issuance and should have been cleaned up", i)
+	}
+
+	// The stored batch keeps its own, which is what makes the sweep a cleanup
+	// rather than a collateral deletion.
+	for i, id := range first {
+		key, err := env.keys.GetByThumbprint(*id.PublicKeyThumbprint)
+		require.NoErrorf(t, err, "key %d belongs to the stored batch and must survive", i)
+		require.NotNil(t, key.MdocBatchInstanceID)
+	}
+}
+
+// Two disclosures running at once are handed different instances.
+//
+// "Unused" stays true for the whole of a disclosure — Spend runs last, so that a
+// presentation failing partway costs nothing — which means a second disclosure
+// reading the same column while the first is still building gets the same row.
+// Both then present it, and the second to reach Spend is refused, failing a
+// disclosure the user had already approved on a wallet with instances to spare.
+func TestMdocInstanceSelector_ConcurrentDisclosuresGetDifferentInstances(t *testing.T) {
+	env := newMdocTestEnv(t)
+	ids, _, err := env.keyMint.CreateKeyPairsWithProofs(2, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
+	require.NoError(t, err)
+	parsed := []*ParsedCredential{
+		env.issueBoundTo(t, *ids[0].PublicKeyThumbprint, map[string]any{"age_over_18": true}),
+		env.issueBoundTo(t, *ids[1].PublicKeyThumbprint, map[string]any{"age_over_18": true}),
+	}
+	require.NoError(t, env.service.Store(parsed, "proof_of_age", env.metadata, true, ids))
+
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+	hash := batches[0].Hash
+
+	// Two selectors, as the two transports build: mdoc_dcql and client.Proximity
+	// each construct their own over their own store.
+	online := NewMdocInstanceSelector(env.store)
+	inPerson := NewMdocInstanceSelector(env.store)
+
+	firstReservation, err := online.Reserve(hash)
+	require.NoError(t, err)
+	secondReservation, err := inPerson.Reserve(hash)
+	require.NoError(t, err, "the batch holds two instances, so the second disclosure has one to take")
+
+	require.NotEqual(t, firstReservation.Instance.ID, secondReservation.Instance.ID,
+		"two disclosures in flight must not be building on the same single-use instance")
+
+	// A third finds nothing left rather than reusing one of the two in flight.
+	_, err = NewMdocInstanceSelector(env.store).Reserve(hash)
+	require.Error(t, err, "both instances are claimed, so there is nothing to hand out")
+
+	// Giving one back makes it available again, which is what keeps an abandoned
+	// disclosure from costing the wallet an instance until it restarts.
+	inPerson.Release(secondReservation)
+	returned, err := NewMdocInstanceSelector(env.store).Reserve(hash)
+	require.NoError(t, err, "a released instance is reservable again")
+	require.Equal(t, secondReservation.Instance.ID, returned.Instance.ID)
+
+	online.Release(firstReservation)
+	NewMdocInstanceSelector(env.store).Release(returned)
+}
+
+// Spending ends the claim as well as marking the row, so a spent instance does
+// not stay reserved for the life of the process.
+func TestMdocInstanceSelector_SpendEndsTheClaim(t *testing.T) {
+	env := newMdocTestEnv(t)
+	ids, _, err := env.keyMint.CreateKeyPairsWithProofs(2, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
+	require.NoError(t, err)
+	parsed := []*ParsedCredential{
+		env.issueBoundTo(t, *ids[0].PublicKeyThumbprint, map[string]any{"age_over_18": true}),
+		env.issueBoundTo(t, *ids[1].PublicKeyThumbprint, map[string]any{"age_over_18": true}),
+	}
+	require.NoError(t, env.service.Store(parsed, "proof_of_age", env.metadata, true, ids))
+
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	hash := batches[0].Hash
+
+	selector := NewMdocInstanceSelector(env.store)
+	reserved, err := selector.Reserve(hash)
+	require.NoError(t, err)
+	require.NoError(t, selector.Spend(reserved))
+
+	// The spent one is now used, so the remaining instance is the only candidate
+	// — and it is offered, which it would not be if the spent claim still stood.
+	next, err := NewMdocInstanceSelector(env.store).Reserve(hash)
+	require.NoError(t, err)
+	require.NotEqual(t, reserved.Instance.ID, next.Instance.ID)
+	NewMdocInstanceSelector(env.store).Release(next)
+}
+
 func TestMdocCredentialService_DeleteByHash(t *testing.T) {
 	env := newMdocTestEnv(t)
 	ids, _, err := env.keyMint.CreateKeyPairsWithProofs(1, testProofBuilder(proofs.CryptographicBindingMethod_JWK))

@@ -54,6 +54,11 @@ type ProximitySession struct {
 	inner   *proximity.Session
 	consent *proximityConsent
 
+	// mu guards transport, which is set when a BLE run starts and read from the
+	// platform's notification thread.
+	mu        sync.Mutex
+	transport *proximity.BLETransport
+
 	closeOnce sync.Once
 }
 
@@ -122,8 +127,28 @@ func (p *ProximitySession) ServiceUUID() ([]byte, error) {
 //
 // **Blocks while the user decides.** Call it off the UI thread.
 func (p *ProximitySession) Handle(message []byte) ([]byte, error) {
+	// A message that arrives after the session is already over is not a fault of
+	// this one. The inner session answers every post-termination message with the
+	// same "session is terminated", whatever ended it — including the ordinary
+	// ending, where the transaction succeeded and the reader sent a straggler or a
+	// duplicate part on its way out. Passed to the branch below, that would
+	// overwrite a finished, successful session with Status_Error and report a
+	// failure the user never had. There is nothing to reply with either way, so it
+	// is dropped here instead.
+	if p.inner.Terminated() {
+		return nil, nil
+	}
+
 	reply, err := p.inner.Handle(message)
 	if err != nil {
+		// 9.1.1.4 has the session keys destroyed when the session ends, and this is
+		// an ending: Handle errors only on a local fault the reader cannot be told
+		// about — consent, storage, signing — after which nothing more is answered.
+		// Close and Dismiss both destroy; without this the AES-GCM keys and the
+		// message counters stayed live for the lifetime of the object. Its return
+		// is the termination message to send, and there is no longer a link to
+		// send it on.
+		_, _ = p.inner.Close()
 		p.session.State.Status = clientmodels.Status_Error
 		p.session.State.Error = &clientmodels.SessionError{
 			ErrorType: string(clientmodels.Status_Error),
@@ -312,4 +337,66 @@ func (c *proximityConsent) identify(documents []proximity.RequestedDocument) (cl
 
 	// No document carried an authenticated reader.
 	return clientmodels.TrustedParty{Name: "", Verified: false}, nil
+}
+
+// RunOverBLE conducts the whole transaction over a BLE connection the platform
+// provides, and returns when it is over.
+//
+// This is the entire app-side flow. After NewProximitySession and rendering
+// EngagementQR, the app calls this once on a background thread with its BLEPort
+// implementation, and forwards notifications to Notify and the link dropping to
+// Disconnected. Nothing else is sequenced by the app: finding the reader,
+// subscribing in the order 8.3.3.1.1.5 requires, verifying Ident, chunking,
+// reassembly, consent, the response and termination all happen inside.
+//
+// Blocks — it waits on a consent screen. Not on the UI thread.
+func (p *ProximitySession) RunOverBLE(port proximity.BLEPort, scanTimeoutMillis int) error {
+	transport, err := proximity.NewBLETransport(p.inner, port, true)
+	if err != nil {
+		return err
+	}
+
+	p.mu.Lock()
+	p.transport = transport
+	p.mu.Unlock()
+
+	if err := transport.Run(scanTimeoutMillis); err != nil {
+		p.session.State.Status = clientmodels.Status_Error
+		p.session.State.Error = &clientmodels.SessionError{
+			ErrorType: string(clientmodels.Status_Error),
+			Info:      err.Error(),
+		}
+		p.session.finish()
+		return err
+	}
+
+	p.succeed()
+	return nil
+}
+
+// Notify hands one BLE notification to the running transport.
+//
+// Parts must arrive in order and exactly once: the session's IV is never
+// transmitted, so a dropped, duplicated or reordered notification desynchronises
+// everything after it.
+func (p *ProximitySession) Notify(characteristic, data []byte) error {
+	p.mu.Lock()
+	transport := p.transport
+	p.mu.Unlock()
+
+	if transport == nil {
+		return fmt.Errorf("no BLE transport is running on this session")
+	}
+	return transport.OnNotification(characteristic, data)
+}
+
+// Disconnected reports that the BLE link dropped. Unblocks RunOverBLE.
+func (p *ProximitySession) Disconnected() {
+	p.mu.Lock()
+	transport := p.transport
+	p.mu.Unlock()
+
+	if transport != nil {
+		transport.OnDisconnect()
+	}
 }

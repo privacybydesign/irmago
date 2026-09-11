@@ -2,10 +2,12 @@ package services
 
 import (
 	"fmt"
+	"sync"
 
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"gorm.io/datatypes"
 )
 
 // ============================================================
@@ -51,6 +53,43 @@ type MdocInstanceSelector struct {
 	store db.MdocStore
 }
 
+// inFlight holds the instances some disclosure has chosen and not yet spent.
+//
+// # Why this is needed at all
+//
+// "Unused" is a column, and it stays false for the whole of a disclosure: Spend
+// runs last, deliberately, so that a presentation that fails partway costs
+// nothing. Two disclosures in flight at once — a proximity transaction while an
+// OpenID4VP link is open, or one request retried before the first finished —
+// are therefore handed the SAME instance, build on it, and the second to reach
+// Spend is refused by the conditional UPDATE in MarkInstanceUsed.
+//
+// That refusal is what keeps this from being a correlation bug: the loser's
+// response is discarded before it is transmitted, so no verifier ever sees one
+// instance twice. What it is instead is a disclosure that fails AFTER the user
+// approved it, on a wallet holding unused instances it could have picked.
+//
+// # Why it is here and not in the database
+//
+// A row lock is the obvious answer and is not available: reserving consumes
+// nothing, so there is no write for a transaction to serialize on, and the
+// wallet's own store is SQLite, which has no SELECT ... FOR UPDATE. An advisory
+// column would be a schema migration whose rows outlive the process that wrote
+// them — a wallet killed mid-disclosure would leave instances claimed forever,
+// which is worse than the problem. Process memory forgets on restart, which for
+// a claim that only ever describes work in progress is the correct behaviour.
+//
+// # Why package scope
+//
+// A selector is built per session: mdoc_dcql.NewMdocDcqlHandler and
+// client.NewProximitySession each construct their own over a fresh store. State
+// held per selector would be invisible to precisely the other session it exists
+// to be visible to.
+var inFlight = struct {
+	sync.Mutex
+	ids map[datatypes.UUID]struct{}
+}{ids: map[datatypes.UUID]struct{}{}}
+
 // NewMdocInstanceSelector builds a selector over the wallet's mdoc tables.
 func NewMdocInstanceSelector(store db.MdocStore) *MdocInstanceSelector {
 	return &MdocInstanceSelector{store: store}
@@ -63,23 +102,73 @@ func NewMdocInstanceSelector(store db.MdocStore) *MdocInstanceSelector {
 // by, and is the same identity on every transport: it is computed over docType,
 // credential issuer and element values, so it names the credential rather than any
 // particular copy of it.
+//
+// Reserve also claims the instance for the rest of this process, so a disclosure
+// running concurrently is handed a different one. Every reservation must end in
+// a Spend or a Release, or that instance stays claimed until the wallet
+// restarts. See inFlight.
 func (s *MdocInstanceSelector) Reserve(credentialHash string) (*ReservedInstance, error) {
 	batch, err := s.store.GetBatchByHash(credentialHash)
 	if err != nil {
 		return nil, fmt.Errorf("batch not found for hash %s: %w", credentialHash, err)
 	}
 
-	instance, err := s.store.GetUnusedInstance(batch.ID)
+	instance, err := s.claim(batch.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
 	}
 
 	var document stdmdoc.MDoc
 	if err := stdmdoc.Unmarshal(instance.IssuerSigned, &document); err != nil {
+		release(instance.ID)
 		return nil, fmt.Errorf("decode stored mdoc instance %s: %w", instance.ID, err)
 	}
 
 	return &ReservedInstance{Batch: batch, Instance: instance, Document: document}, nil
+}
+
+// claim picks an unused instance no other disclosure is already building on, and
+// records it as taken.
+//
+// The lock spans the read and the record, which is the whole point: released
+// between them, two callers read the same row before either wrote it down.
+func (s *MdocInstanceSelector) claim(batchID datatypes.UUID) (*models.MdocBatchInstance, error) {
+	inFlight.Lock()
+	defer inFlight.Unlock()
+
+	excluded := make([]datatypes.UUID, 0, len(inFlight.ids))
+	for id := range inFlight.ids {
+		excluded = append(excluded, id)
+	}
+
+	instance, err := s.store.GetUnusedInstanceExcluding(batchID, excluded)
+	if err != nil {
+		return nil, err
+	}
+	inFlight.ids[instance.ID] = struct{}{}
+	return instance, nil
+}
+
+func release(id datatypes.UUID) {
+	inFlight.Lock()
+	defer inFlight.Unlock()
+	delete(inFlight.ids, id)
+}
+
+// Release gives up reservations that will not be spent, so the instances they
+// hold can answer the next request.
+//
+// Call it on every path out of a disclosure that does not reach Spend. Nil
+// entries are ignored, so a partly-filled slice from a failed Reserve can be
+// passed as it is. Releasing twice, or releasing something already spent, does
+// nothing.
+func (s *MdocInstanceSelector) Release(reserved ...*ReservedInstance) {
+	for _, r := range reserved {
+		if r == nil || r.Instance == nil {
+			continue
+		}
+		release(r.Instance.ID)
+	}
 }
 
 // Spend marks a reserved instance as presented.
@@ -103,6 +192,11 @@ func (s *MdocInstanceSelector) Spend(reserved *ReservedInstance) error {
 	if reserved == nil {
 		return fmt.Errorf("no reserved instance to spend")
 	}
+
+	// The claim ends here either way: spent, the used column keeps the instance
+	// from being picked again; unspendable, holding the claim would strand it.
+	defer release(reserved.Instance.ID)
+
 	if reserved.Batch.BatchSize <= 1 {
 		return nil
 	}

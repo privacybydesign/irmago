@@ -155,6 +155,20 @@ type Committer interface {
 	Commit() error
 }
 
+// Releaser is the other half of Committer, for the transactions that end without
+// one.
+//
+// Reserving a single-use credential takes it out of circulation for as long as
+// the disclosure it was chosen for might still succeed. A transaction that then
+// fails — the response would not assemble, a signature would not produce — has
+// to give those back, or the wallet spends the rest of its life believing they
+// are in use by a session that ended. Separate from Committer because the two
+// are answers to opposite questions, and a Discloser holding reusable
+// credentials should have to implement neither.
+type Releaser interface {
+	Release()
+}
+
 // SessionConfig is everything a Session needs that it cannot generate itself.
 type SessionConfig struct {
 	// Discloser is the wallet's side of the transaction. Required.
@@ -456,16 +470,29 @@ func (s *Session) respondTo(requestBytes []byte) (mdoc.DeviceResponse, error) {
 
 	response, err := s.assemble(documents, selections)
 	if err != nil {
+		// Assembly is the step Reserve-then-Commit exists to survive, and surviving
+		// it means handing back what the disclosure had claimed. See Releaser.
+		s.releaseDisclosure()
 		return mdoc.DeviceResponse{}, err
 	}
 
 	// Last, when nothing further can fail. See Committer.
 	if committer, ok := s.cfg.Discloser.(Committer); ok && len(selections) > 0 {
 		if err := committer.Commit(); err != nil {
+			s.releaseDisclosure()
 			return mdoc.DeviceResponse{}, fmt.Errorf("commit disclosure: %w", err)
 		}
 	}
 	return response, nil
+}
+
+// releaseDisclosure gives back whatever the discloser reserved for a transaction
+// that will not complete. A Discloser with nothing to give back implements
+// nothing and is skipped.
+func (s *Session) releaseDisclosure() {
+	if releaser, ok := s.cfg.Discloser.(Releaser); ok {
+		releaser.Release()
+	}
 }
 
 // classify runs reader authentication and the 7.2.1 release policy over every
@@ -690,4 +717,14 @@ func requestedFor(documents []RequestedDocument, docType string) (mdoc.ItemsRequ
 // alarming of the two and worth surfacing differently.
 func errorIsNoReaderAuth(err error) bool {
 	return errors.Is(err, mdoc.ErrNoReaderAuth)
+}
+
+// EDeviceKeyBytes is this transaction's ephemeral device key as it appears in the
+// engagement: the complete tag-24 wrapping of 9.1.1.4.
+//
+// Exposed for the Ident check of 8.3.3.1.1.3, whose HKDF takes exactly these bytes
+// as its IKM — not the COSE_Key inside them. Public material: it is in the QR code
+// the reader already scanned.
+func (s *Session) EDeviceKeyBytes() cbor.RawMessage {
+	return s.engagement.Security.EDeviceKeyBytes
 }

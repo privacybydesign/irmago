@@ -1,10 +1,13 @@
 package client
 
 import (
+	"crypto/ecdsa"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/proximity"
 )
 
@@ -21,6 +24,133 @@ import (
 // test carries its own deadline: a regression that deadlocks would otherwise stall
 // the suite rather than fail it, and `go test` would report a panic from an
 // unrelated place.
+
+// ---------------------------------------------------------------------------
+// Ending a transaction
+// ---------------------------------------------------------------------------
+
+// failingDiscloser stands in for a wallet that cannot answer: storage
+// unavailable, the credential unreadable — a local fault the reader cannot be
+// told about, which is the only thing Session.Handle returns an error for.
+type failingDiscloser struct{}
+
+func (failingDiscloser) Disclose(proximity.DisclosureRequest) ([]proximity.Selection, error) {
+	return nil, errors.New("the wallet could not read its own storage")
+}
+
+// stubBinder satisfies the device key binder without any storage. Never reached:
+// the discloser above fails first.
+type stubBinder struct{}
+
+func (stubBinder) HolderForDeviceKey(*ecdsa.PublicKey) (mdoc.Holder, error) {
+	return nil, errors.New("no device keys in this test")
+}
+
+// newTestProximitySession builds a ProximitySession over a bare client, enough
+// for finish() to dispatch and delete without any storage behind it.
+func newTestProximitySession(t *testing.T) (*ProximitySession, *recordingHandler) {
+	t.Helper()
+
+	handler := newRecordingHandler()
+	client := &Client{sessionManager: sessionManager{Sessions: map[int]*session{}}}
+	clientSession := &session{
+		State:   &clientmodels.SessionState{Id: 1, Type: clientmodels.Type_Disclosure},
+		handler: handler,
+		client:  client,
+	}
+	consent := &proximityConsent{session: clientSession, answers: make(chan *proximityAnswer, 1)}
+	clientSession.proximityConsent = consent
+
+	inner, err := proximity.NewSession(proximity.SessionConfig{
+		Discloser:  failingDiscloser{},
+		DeviceKeys: stubBinder{},
+		Readers:    mdoc.NewVerifier(nil),
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	return &ProximitySession{session: clientSession, inner: inner, consent: consent}, handler
+}
+
+// TestProximityHandleDestroysKeysOnLocalFault: 9.1.1.4 has both parties destroy
+// their session keys when the session ends, and a local fault ends it — nothing
+// further is answered after one. Close and Dismiss both destroyed; this path did
+// not, leaving the AES-GCM keys and the message counters alive for as long as the
+// object was referenced.
+func TestProximityHandleDestroysKeysOnLocalFault(t *testing.T) {
+	p, _ := newTestProximitySession(t)
+
+	qr, err := p.EngagementQR()
+	if err != nil {
+		t.Fatalf("EngagementQR: %v", err)
+	}
+	reader := proximity.NewReader(proximity.ReaderConfig{})
+	if err := reader.Engage(qr); err != nil {
+		t.Fatalf("Engage: %v", err)
+	}
+	// An mDL mandatory element, which 7.2.1 forbids making reader authentication a
+	// precondition for. This reader carries no readerAuth, so anything else would
+	// be refused before the wallet was ever asked — and the fault under test
+	// happens when it is asked.
+	request, err := reader.Request(mdoc.ItemsRequest{
+		DocType:    mdoc.MDLDocType,
+		NameSpaces: map[string]mdoc.DataElements{mdoc.MDLNameSpace: {"family_name": false}},
+	})
+	if err != nil {
+		t.Fatalf("Request: %v", err)
+	}
+
+	if _, err := p.Handle(request); err == nil {
+		t.Fatal("a discloser that cannot read its storage must fail the transaction")
+	}
+	if !p.inner.Terminated() {
+		t.Error("the session must be terminated — and its keys destroyed — when it ends in a fault")
+	}
+	if p.session.State.Status != clientmodels.Status_Error {
+		t.Errorf("expected the session to report an error, got %q", p.session.State.Status)
+	}
+}
+
+// TestProximityHandleIgnoresMessagesAfterTheSessionEnded: a reader that sends a
+// straggler or a duplicate part on its way out gets the same "session is
+// terminated" from the inner session as any other post-termination message.
+// Treated as a fault, that overwrites a finished, successful transaction with
+// Status_Error and reports a failure the user never had.
+func TestProximityHandleIgnoresMessagesAfterTheSessionEnded(t *testing.T) {
+	p, handler := newTestProximitySession(t)
+
+	// End it the way a completed transaction does, without going through succeed(),
+	// which needs the storage this bare session does not have.
+	if _, err := p.inner.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	p.session.State.Status = clientmodels.Status_Success
+
+	reply, err := p.Handle([]byte{0x01, 0x02, 0x03})
+	if err != nil {
+		t.Fatalf("a late message is not a fault of this session: %v", err)
+	}
+	if reply != nil {
+		t.Error("there is nothing to reply with on a session that has ended")
+	}
+	if p.session.State.Status != clientmodels.Status_Success {
+		t.Errorf("a straggler must not overwrite the outcome, got %q", p.session.State.Status)
+	}
+	if p.session.State.Error != nil {
+		t.Errorf("no error should be recorded, got %v", p.session.State.Error)
+	}
+	for {
+		select {
+		case state := <-handler.states:
+			if state.Status == clientmodels.Status_Error {
+				t.Error("an error state was dispatched to the app for a session that succeeded")
+			}
+			continue
+		default:
+		}
+		break
+	}
+}
 
 // recordingHandler captures the states dispatched to the app.
 type recordingHandler struct {

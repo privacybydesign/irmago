@@ -294,18 +294,25 @@ func (r *Reader) ReadResponse(message []byte) (mdoc.DeviceResponse, error) {
 }
 
 // Verify checks every document in a response: the issuer's signature and chain,
-// and the device signature against the transcript THIS reader built.
+// and the holder's deviceAuth against the transcript THIS reader built.
 //
 // Verifying against the reader's own transcript rather than anything the mdoc sent
 // is the whole point. The payload of deviceAuth is detached, so the bytes fed into
-// the signature check come from the reader's own session state — which is what
-// makes a response from another session fail, and what a verifier trusting a
-// transmitted transcript would lose.
+// the check come from the reader's own session state — which is what makes a
+// response from another session fail, and what a verifier trusting a transmitted
+// transcript would lose.
+//
+// EReaderKey is handed over for the same reason the transcript is, and it is what
+// lets this accept both branches of 9.1.3.4: a deviceMac is keyed on
+// ECDH(EReaderKey.Priv, SDeviceKey.Pub), so the reader's own ephemeral private key
+// is the only thing that can check one. Which branch a document used is the mdoc's
+// choice, so a reader that could check only signatures would reject conformant
+// responses it had simply not implemented.
 func (r *Reader) Verify(response mdoc.DeviceResponse, namespace, docType string) ([]mdoc.VerificationResult, error) {
 	if r.cfg.Issuers == nil {
 		return nil, fmt.Errorf("this reader holds no issuer trust anchors, so it cannot verify a response")
 	}
-	return r.cfg.Issuers.VerifyDeviceResponse(response, namespace, docType, r.transcript)
+	return r.cfg.Issuers.VerifyDeviceResponseAsReader(response, namespace, docType, r.transcript, r.eReaderKey)
 }
 
 // Terminate builds Table 20's session termination message and destroys this side's

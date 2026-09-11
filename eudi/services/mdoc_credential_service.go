@@ -121,7 +121,7 @@ func (s *mdocCredentialService) Store(
 	issuerMetadata metadata.CredentialIssuerMetadata,
 	requireCryptographicKeyBinding bool,
 	publicKeyIdentifiers []models.PublicHolderBindingKey,
-) error {
+) (err error) {
 	if len(parsedCredentials) == 0 {
 		return nil
 	}
@@ -142,10 +142,22 @@ func (s *mdocCredentialService) Store(
 	// issuance without deleting the user's existing batch.
 	var matchedKeyIDs []datatypes.UUID
 	if requireCryptographicKeyBinding {
-		var err error
+		// The keys were minted for documents this issuance may still refuse, and
+		// nothing links them to an instance until the very end. Every failure
+		// between here and LinkToInstance therefore leaves rows in
+		// mdoc_device_keys bound to nothing and never collected — one per refused
+		// attempt, and re-issuance is refused routinely, whenever the stored batch
+		// is still usable. Swept from one place rather than at each return, since
+		// the leak is not a property of any particular failure: it is a property
+		// of failing at all once the keys exist.
+		defer func() {
+			if err != nil {
+				s.deleteOrphanedKeys(publicKeyIdentifiers)
+			}
+		}()
+
 		matchedKeyIDs, err = matchDeviceKeys(parsedCredentials, publicKeyIdentifiers)
 		if err != nil {
-			s.deleteOrphanedKeys(publicKeyIdentifiers)
 			return err
 		}
 	}

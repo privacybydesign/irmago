@@ -293,11 +293,25 @@ func deviceAuthenticationBytes(docType string, transcript SessionTranscript) ([]
 	if err != nil {
 		return nil, fmt.Errorf("encode empty nameSpaces: %w", err)
 	}
+	return deviceAuthenticationBytesOver(docType, transcript, emptyNS)
+}
+
+// deviceAuthenticationBytesOver is the same over deviceNameSpaces a verifier
+// received rather than assumed.
+//
+// The assumption above is right for everything this package PRODUCES, and wrong
+// for what a reader may RECEIVE: 7.1 lets a document carry holder-asserted
+// elements, and their bytes are covered by the MAC. Checking such a document
+// against an assumed empty map fails it — safely, but reporting a MAC that does
+// not authenticate the session when what actually happened is that the verifier
+// rebuilt the wrong payload. The signature branch reads the wire for the same
+// reason; see deviceNameSpacesForVerification.
+func deviceAuthenticationBytesOver(docType string, transcript SessionTranscript, deviceNameSpaces cbor.RawMessage) ([]byte, error) {
 	payload, err := tag24Wrap(DeviceAuthentication{
 		Context:           "DeviceAuthentication",
 		SessionTranscript: transcript,
 		DocType:           docType,
-		DeviceNameSpaces:  emptyNS,
+		DeviceNameSpaces:  deviceNameSpaces,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("wrap deviceAuthentication: %w", err)
@@ -312,6 +326,17 @@ func deviceAuthenticationBytes(docType string, transcript SessionTranscript) ([]
 // is over a secret-keyed tag, and a verifier that leaked timing here would leak
 // information about a value an attacker is trying to forge.
 func VerifyDeviceMac(deviceMac, emacKey []byte, docType string, transcript SessionTranscript) error {
+	emptyNS, err := tag24Wrap(map[string]any{})
+	if err != nil {
+		return fmt.Errorf("encode empty nameSpaces: %w", err)
+	}
+	return verifyDeviceMacOver(deviceMac, emacKey, docType, transcript, emptyNS)
+}
+
+// verifyDeviceMacOver is VerifyDeviceMac over the deviceNameSpaces the verifier
+// received, which is what Verifier.VerifyWithDeviceMac has and this package's
+// own callers do not.
+func verifyDeviceMacOver(deviceMac, emacKey []byte, docType string, transcript SessionTranscript, deviceNameSpaces cbor.RawMessage) error {
 	var message coseMac0
 	if err := mdocDecMode.Unmarshal(deviceMac, &message); err != nil {
 		return fmt.Errorf("decode deviceMac as COSE_Mac0: %w", err)
@@ -324,7 +349,7 @@ func VerifyDeviceMac(deviceMac, emacKey []byte, docType string, transcript Sessi
 		return err
 	}
 
-	payload, err := deviceAuthenticationBytes(docType, transcript)
+	payload, err := deviceAuthenticationBytesOver(docType, transcript, deviceNameSpaces)
 	if err != nil {
 		return err
 	}
