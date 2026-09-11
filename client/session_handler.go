@@ -28,6 +28,11 @@ type session struct {
 	openid4vciPermissionHandler openid4vci.PermissionHandler
 	openid4vpPermissionHandler  openid4vp.PermissionHandler
 	openid4vpQueryIds           []dcql.ChoiceQueryIds // per plan pick-one: credential hash → DCQL query id
+	// proximityConsent is the parked ISO 18013-5 consent bridge, when this session
+	// is a proximity transaction. It takes the user's raw choices rather than
+	// converted selections: the proximity discloser owns that conversion, because it
+	// also owns the query ids the choices are routed by.
+	proximityConsent *proximityConsent
 	// Hashes of credentials that already existed when the disclosure plan was first created.
 	// Used to exclude pre-existing credentials from WrongCredentialIssued detection.
 	preExistingCredentialHashes map[string]struct{}
@@ -737,7 +742,16 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 	switch userInteraction.Type {
 	case clientmodels.UI_Permission:
 		payload := userInteraction.Payload.(clientmodels.SessionPermissionInteractionPayload)
-		if session.openid4vpPermissionHandler != nil {
+		if session.proximityConsent != nil {
+			// ISO 18013-5 proximity: hand the raw choices over. A denial and an empty
+			// selection are the same thing here — both produce a response carrying
+			// documentErrors rather than a dropped session.
+			if !payload.Granted {
+				session.proximityConsent.answer(nil)
+			} else {
+				session.proximityConsent.answer(&proximityAnswer{choices: payload.DisclosureChoices})
+			}
+		} else if session.openid4vpPermissionHandler != nil {
 			// OpenID4VP flow: convert UI selections to DisclosureSelections
 			selections := disclosureChoicesToOpenID4VPSelections(payload.DisclosureChoices, session.openid4vpQueryIds)
 			session.openid4vpPermissionHandler(payload.Granted, selections)

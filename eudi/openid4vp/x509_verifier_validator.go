@@ -199,13 +199,5 @@ func getEndEntityCertFromX5cHeader(token *jwt.Token) (*x509.Certificate, error) 
 // first for a missing vct, and had that been supplied, for requesting the
 // namespace as though it were an unregistered attribute.
 func dcqlQueryToCredentialQueryInfos(query dcql.DcqlQuery) []scheme.CredentialQueryInfo {
-	result := make([]scheme.CredentialQueryInfo, len(query.Credentials))
-	for i, cq := range query.Credentials {
-		result[i] = scheme.CredentialQueryInfo{
-			VctValues:      cq.VctValues(),
-			DocTypeValue:   cq.DocTypeValue(),
-			AttributeNames: cq.AuthorizationAttributeNames(),
-		}
-	}
-	return result
+	return dcql.CredentialQueryInfos(query)
 }

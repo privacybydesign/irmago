@@ -43,6 +43,7 @@ type Client struct {
 	storage           *clientstorage.Storage
 	eudiStorage       storage.Storage
 	sdjwtvcStorage    irmaclient.SdJwtVcStorage
+	eudiConf          *eudi.Configuration
 	openid4vpClient   *openid4vp.Client
 	openid4vciClient  *openid4vci.Client
 	irmaClient        *irmaclient.IrmaClient
@@ -268,6 +269,7 @@ func New(
 		storage:           s,
 		sdjwtvcStorage:    sdjwtvcStorage,
 		eudiStorage:       eudiStorage,
+		eudiConf:          eudiConf,
 		openid4vpClient:   openid4vpClient,
 		openid4vciClient:  openid4vciClient,
 		irmaClient:        irmaClient,

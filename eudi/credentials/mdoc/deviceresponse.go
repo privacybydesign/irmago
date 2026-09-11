@@ -31,10 +31,19 @@ type DeviceSigned struct {
 //	   "deviceMac" : DeviceMac
 //	}
 //
-// 9.1.3 requires an mdoc reader to support both, so a proximity wallet meets
-// readers that ask for either. deviceSignature is a COSE_Sign1 over
-// DeviceAuthenticationBytes (9.1.3.6, Holder.SignDeviceAuth); deviceMac is an
-// untagged COSE_Mac0 over the same detached content (9.1.3.5, MacDeviceAuth).
+// deviceSignature is a COSE_Sign1 over DeviceAuthenticationBytes (9.1.3.6,
+// Holder.SignDeviceAuth); deviceMac is an untagged COSE_Mac0 over the same
+// detached content (9.1.3.5, MacDeviceAuth).
+//
+// Which branch is WHOLLY THE MDOC'S CHOICE: nothing in DeviceRequest selects
+// one, and 9.1.3.4's only support obligation is "an mdoc reader shall support
+// both approaches". This wallet always sends deviceSignature, which is why
+// AttachDeviceSigned populates that branch unconditionally — the reasoning, and
+// why 9.1.3.4's one-purpose-per-key rule makes it a wallet-wide rather than a
+// proximity-local decision, is in devicemac.go's header comment.
+//
+// Both branches are still parsed and verified on the way IN, because this
+// package is also the mdoc reader, which must accept either.
 //
 // Both are cbor.RawMessage, not []byte: the COSE array must be embedded inline as
 // CBOR, not wrapped in the extra byte string a plain []byte field would produce.

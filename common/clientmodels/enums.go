@@ -7,6 +7,9 @@ const (
 	Protocol_Irma       Protocol = "irma"
 	Protocol_OpenID4VP  Protocol = "openid4vp"
 	Protocol_OpenID4VCI Protocol = "openid4vci"
+	// Protocol_ISO18013_5 is proximity presentation over ISO/IEC 18013-5 device
+	// retrieval (QR engagement + BLE), as opposed to the OpenID4VP transports above.
+	Protocol_ISO18013_5 Protocol = "iso18013-5"
 )
 
 // LogType identifies the type of a log entry.

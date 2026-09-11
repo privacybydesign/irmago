@@ -362,6 +362,14 @@ func NewVerifierWithClock(rootCerts []*x509.Certificate, clock time.Time) *Verif
 // A Verifier built without a trust source has no lists and checks nothing,
 // which is what every constructor did before NewVerifierFromTrustSource.
 func (v *Verifier) checkChainRevocation(chains [][]*x509.Certificate) error {
+	return v.checkChainRevocationFor(chains, "document signer's")
+}
+
+// checkChainRevocationFor is checkChainRevocation with the role of the chain
+// named, so reader authentication (9.1.4) can reuse the same walk without
+// reporting a revoked reader certificate as a revoked document signer. whose is
+// a possessive phrase, e.g. "document signer's".
+func (v *Verifier) checkChainRevocationFor(chains [][]*x509.Certificate, whose string) error {
 	if v.revocationLists == nil {
 		return nil
 	}
@@ -382,8 +390,8 @@ func (v *Verifier) checkChainRevocation(chains [][]*x509.Certificate) error {
 					// the subject alone does not distinguish a re-issued certificate
 					// from the revoked one it replaced.
 					firstFailure = fmt.Errorf(
-						"certificate in the document signer's chain is revoked: %v (subject %q, serial %X, issued by %q)",
-						err, cert.Subject.String(), cert.SerialNumber, cert.Issuer.String())
+						"certificate in the %s chain is revoked: %v (subject %q, serial %X, issued by %q)",
+						whose, err, cert.Subject.String(), cert.SerialNumber, cert.Issuer.String())
 				}
 				break
 			}

@@ -14,9 +14,9 @@ import (
 // MDOC MAC AUTHENTICATION — ISO/IEC 18013-5 9.1.3.5
 // ============================================================
 //
-// 9.1.3 gives the mdoc two ways to authenticate a DeviceResponse and says an
-// "mdoc reader shall support both approaches", so a proximity wallet that only
-// signs will meet readers that ask for the other one. This is that other one.
+// 9.1.3 gives the mdoc two ways to authenticate a DeviceResponse. This is the
+// MAC one, and THIS WALLET DOES NOT USE IT — see "Why this is built but unused"
+// at the foot of this comment before wiring it into anything.
 //
 // The clause: "the mdoc computes the MAC of the device authentication data with
 // an ephemeral MAC key (EMacKey) derived from the mdoc authentication private key
@@ -36,10 +36,40 @@ import (
 // path, not something the presentation code can arrange. See KeyAgreer, whose
 // absence is reported with that explanation rather than as a generic failure.
 //
-// 9.1.3.4 adds a rule this package cannot enforce from here: "A single mdoc
-// authentication key shall not be used to produce both MACs and signatures during
-// its lifetime." Whichever branch a credential's key is first used for is the one
-// it is committed to.
+// # Why this is built but unused — the 9.1.3.4 decision, taken 2026-09-11
+//
+// 9.1.3.4: "A single mdoc authentication key shall not be used to produce both
+// MACs and signatures during its lifetime. An mdoc reader shall support both
+// approaches."
+//
+// Three consequences, each checked against the clause rather than assumed:
+//
+//  1. The CHOICE IS THE MDOC'S. DeviceAuth (8.3.2.1.2.2) is a plain CDDL "or",
+//     no field of DeviceRequest selects a branch, and the mdoc names the cipher
+//     suite in device engagement. The only support obligation is on the reader.
+//     So a wallet that only ever signs is fully conformant and no reader may
+//     refuse it. An earlier note in this project claimed proximity interop needs
+//     both branches; it does not.
+//  2. A SIGNING-ONLY DEVICE KEY IS CONFORMANT. Table 22 lists Ed25519/Ed448 as
+//     EdDSA-only and X25519/X448 as ECDH-only, so the spec itself contemplates
+//     device keys that can never do both. The key-agreement purpose described
+//     above is therefore an optional capability, not a conformance gap.
+//  3. THE ONE-PURPOSE RULE SPANS BOTH TRANSPORTS, because it binds the KEY, not
+//     the session. eudi/openid4vp/mdoc_dcql already authenticates with
+//     Holder.SignDeviceAuth, and a credential instance may be presented over
+//     either transport, so producing a MAC with that same key would breach the
+//     "shall not" on any instance that had already presented over OpenID4VP.
+//
+// Decision: the wallet commits to deviceSignature for every transport. That
+// satisfies 9.1.3.4 BY CONSTRUCTION — no per-credential record of which branch a
+// key has served is needed, because no key ever serves the other one — and it
+// keeps hardware-backed device keys working with no change to issuance.
+//
+// This file stays because it is complete and tested, because the mdoc READER
+// side of the proximity work must verify a MAC it did not produce, and because
+// reversing the decision should not mean rewriting the clause from scratch.
+// TestWalletNeverProducesDeviceMac enforces the decision; read it before
+// calling MacDeviceAuth from anything that is not a test or a reader.
 
 // coseAlgorithmHMAC256 is "HMAC 256/256" from RFC 8152, which 9.1.3.5 requires:
 // HMAC with SHA-256 and a full 256-bit tag, no truncation.

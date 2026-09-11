@@ -49,6 +49,73 @@ const (
 // this element appear at all"). They agree today and are free to diverge.
 var avAgeOverElement = regexp.MustCompile(`^age_over_[0-9]{1,2}$`)
 
+// MDLDocType and MDLNameSpace identify the mobile driving licence of ISO/IEC
+// 18013-5 7.1 — the document the standard is actually written about.
+//
+// irmago does not issue one, and an mDL needs no profile here: it is plain
+// ISO/IEC 18013-5, which is exactly what profileFor's default branch gives it.
+// These constants exist for the single rule in 7.2.1 that singles the mDL out,
+// namely that reader authentication may not gate its mandatory data elements.
+// Nothing else in this package should grow an mDL special case without a clause
+// naming the mDL.
+const (
+	MDLDocType   = "org.iso.18013.5.1.mDL"
+	MDLNameSpace = "org.iso.18013.5.1"
+)
+
+// mdlMandatoryElements is the "Presence: M" column of Table 5 — the eleven data
+// elements an mDL shall contain.
+//
+// They matter to this package for one reason: 7.2.1 forbids an mDL from making
+// mdoc reader authentication "a precondition for the release of any of the
+// mandatory data elements", while explicitly permitting it for the rest ("An mDL
+// may require mdoc reader authentication before releasing data elements not
+// marked as mandatory in Table 5"). So this set is the dividing line between
+// what an unauthenticated reader may still be offered and what it may be
+// refused.
+//
+// Note what "mandatory" does not mean. The NOTE 1 immediately above Table 5 is
+// explicit: "This does not mean that granting access to these elements to an mDL
+// reader is mandatory." Presence is a requirement on the issuer, not a
+// disclosure obligation on the holder — holder consent still governs every one
+// of these.
+var mdlMandatoryElements = map[string]bool{
+	"family_name":            true,
+	"given_name":             true,
+	"birth_date":             true,
+	"issue_date":             true,
+	"expiry_date":            true,
+	"issuing_country":        true,
+	"issuing_authority":      true,
+	"document_number":        true,
+	"portrait":               true,
+	"driving_privileges":     true,
+	"un_distinguishing_sign": true,
+}
+
+// releasableWithoutReaderAuthFor returns the predicate for 7.2.1's mDL rule, or
+// nil when the docType is subject to no such rule — which is every docType but
+// the mDL, and for which the wallet's own policy therefore governs alone.
+//
+// Keyed on docType here rather than made a profile entry on purpose. An mDL has
+// no profile in this package: giving it one would mean inventing issuance rules
+// (a validity period, an attribute set) that no document in this tree needs and
+// that nothing has verified. This is a presentation rule and is the only mDL
+// rule implemented.
+func releasableWithoutReaderAuthFor(docType string) func(namespace, element string) bool {
+	if docType != MDLDocType {
+		return nil
+	}
+	return func(namespace, element string) bool {
+		// The namespace is checked as well as the element. An issuing authority
+		// may add its own namespaces to an mDL (7.1), and Table 5's presence
+		// column says nothing about an element of the same name appearing in one
+		// of them — so a domestic namespace carrying its own "portrait" is not
+		// covered by the carve-out and stays refusable.
+		return namespace == MDLNameSpace && mdlMandatoryElements[element]
+	}
+}
+
 // documentProfile is the rule set for one docType. The zero-value-ish general
 // profile returned by profileFor is plain ISO/IEC 18013-5 with nothing added.
 type documentProfile struct {
@@ -94,6 +161,15 @@ type documentProfile struct {
 	// no bound; the AV Blueprint recommends "a maximum period of three (3) months
 	// from the date of issuance".
 	validityPeriod time.Duration
+
+	// releasableWithoutReaderAuth reports whether one requested data element may
+	// still be offered to a reader that did not authenticate itself (9.1.4).
+	//
+	// Nil — the case for every docType but the mDL — means nothing may be, so the
+	// wallet's own reader authentication policy governs alone. 18013-5 constrains
+	// that policy for exactly one document: see releasableWithoutReaderAuthFor
+	// and 7.2.1. Read through ReleasableWithoutReaderAuth rather than directly.
+	releasableWithoutReaderAuth func(namespace, element string) bool
 }
 
 // profileFor returns the rules that apply to docType. An unrecognised docType
@@ -112,6 +188,10 @@ func profileFor(docType string) documentProfile {
 			permittedElement:          avAgeOverElement.MatchString,
 			coarsenValidityTimestamps: true,
 			validityPeriod:            90 * 24 * time.Hour, // "maximum period of three (3) months"
+			// No carve-out: nothing in 18013-5 or the AV Blueprint stops an AV
+			// attestation from requiring reader authentication, and the wallet's
+			// policy is to require it.
+			releasableWithoutReaderAuth: nil,
 		}
 	default:
 		return documentProfile{
@@ -121,6 +201,10 @@ func profileFor(docType string) documentProfile {
 			permittedElement:          nil,
 			coarsenValidityTimestamps: true, // 9.1.2.4's recommendation, not a profile rule
 			validityPeriod:            90 * 24 * time.Hour,
+			// Keyed on docType rather than switched on above, because the mDL gets
+			// plain 18013-5 for everything except this one rule and inventing a
+			// profile entry for it would mean inventing issuance rules with it.
+			releasableWithoutReaderAuth: releasableWithoutReaderAuthFor(docType),
 		}
 	}
 }

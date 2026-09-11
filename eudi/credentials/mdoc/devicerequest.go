@@ -68,11 +68,11 @@ type DeviceRequest struct {
 //     ItemsRequest would break reader authentication for a request that was
 //     perfectly valid.
 //
-// ReaderAuth is likewise kept as raw CBOR. It is a COSE_Sign1 over the structure
-// above, and **this package does not verify it** — mdoc reader authentication is
-// 9.1.4 and is not implemented. A present ReaderAuth therefore means only that
-// the reader sent one. Do not treat a request as authenticated because this field
-// is non-nil.
+// ReaderAuth is likewise kept as raw CBOR: a COSE_Sign1 over the structure above,
+// verified by Verifier.VerifyReaderAuth (9.1.4, readerauth.go). A present
+// ReaderAuth still means only that the reader SENT one — it is evidence of nothing
+// until that call has succeeded, so do not treat a request as authenticated
+// because this field is non-nil.
 type DocRequest struct {
 	ItemsRequest cbor.RawMessage `cbor:"itemsRequest"`
 	ReaderAuth   cbor.RawMessage `cbor:"readerAuth,omitempty"`

@@ -118,13 +118,20 @@ func (tm *TrustModel) isCrlValid(crl *x509.RevocationList) bool {
 }
 
 func (tm *TrustModel) isCrlUpToDate(crl *x509.RevocationList) bool {
-	updateNeeded := crl != nil && crl.NextUpdate.After(time.Now())
+	if crl == nil {
+		// The log line below dereferences crl, so a nil check has to come first.
+		// No caller passes nil today — syncCertificateRevocationLists only reaches
+		// here after isCrlValid, which rejects nil — but the guard is one line and
+		// the panic would be a long way from its cause.
+		return false
+	}
 
-	if !updateNeeded {
+	upToDate := crl.NextUpdate.After(time.Now())
+	if !upToDate {
 		tm.logger.Infof("CRL from %x is outdated, a new version needs to be downloaded.", crl.AuthorityKeyId)
 	}
 
-	return updateNeeded
+	return upToDate
 }
 
 func (tm *TrustModel) Reload() error {
@@ -327,6 +334,12 @@ func (tm *TrustModel) loadRevocationLists() error {
 			continue
 		}
 
+		// Note what is deliberately NOT checked here: NextUpdate. A CRL past it is
+		// still loaded and still used for revocation checking, because it lists
+		// every revocation its issuer had published as of its last update — so
+		// using it can only refuse more certificates, never fewer. Dropping it
+		// would fail open. Callers that need to know how old it is ask
+		// RevocationInformationFor.
 		tm.logger.Tracef("Successfully loaded and verified CRL %x issued by %s", crl.Signature, crl.Issuer.ToRDNSequence().String())
 		verified = append(verified, crl)
 	}
@@ -342,6 +355,35 @@ func (tm *TrustModel) GetVerificationOptionsTemplate() x509.VerifyOptions {
 	}
 }
 
+// syncCertificateRevocationLists refreshes every cached CRL whose distribution
+// point this trust model knows about.
+//
+// # A stale CRL is kept when the refresh fails, and that is the point
+//
+// This used to remove the cached copy whenever the download failed. That turned
+// *stale data* into *no data*, and no data is not a neutral state: loadRevocationLists
+// then finds nothing, GetRevocationListsForIssuer returns an empty slice, and
+// VerifyCertificateAgainstIssuerRevocationLists returns nil — the certificate is
+// accepted. So a transient 500, a captive portal, or simply being offline past a
+// CRL's NextUpdate silently switched revocation checking off, traced only by a
+// logger.Warnf.
+//
+// It is also indistinguishable from an issuer that legitimately publishes no CRL,
+// which is the deeper problem: Annex B.1.4 makes a CRL distribution point
+// mandatory on a document signer and Table B.6 does the same for a reader
+// certificate, so "no list found" for either ought to be suspicious rather than
+// silently benign.
+//
+// A stale CRL is strictly better than none. It still lists every revocation the
+// issuer had published as of its last update, so keeping it can only refuse more
+// certificates, never fewer. What it cannot do is reflect revocations issued
+// since — which is what RevocationInformationFor exposes, so a caller can apply a
+// grace window and then hard-fail rather than trusting stale data forever.
+//
+// The cached copy is still removed when it is unusable (unreadable, or its
+// signature does not verify against a known authority), because such a file is
+// not revocation information at all: loadRevocationLists already skips it, so
+// keeping it would only mean re-parsing a corrupt file on every sync.
 func (tm *TrustModel) syncCertificateRevocationLists() {
 	tm.logger.Debugf("Starting CRL sync...")
 
@@ -351,36 +393,128 @@ func (tm *TrustModel) syncCertificateRevocationLists() {
 	for _, distPoint := range tm.revocationListsDistributionPoints {
 		tm.logger.Debugf("Checking CRL distribution point %q...", distPoint)
 
+		// haveUsableCache records whether there is a cached CRL worth keeping if
+		// the refresh below fails: present, readable, and signed by an authority
+		// this trust model knows. It is deliberately not the same question as
+		// "is it up to date".
+		haveUsableCache := false
+
 		// If the CRL is not cached, download and verify it
 		if present, _ := mgr.Exists(distPoint); !present {
 			tm.logger.Info("CRL not cached, downloading file...")
 		} else {
 			// CRL is cached, read it, verify it and check if an update might be available
-			// If the cached CRL is invalid, remove it and download it anew
 			crl, err := mgr.Read(distPoint)
 			if err != nil || !tm.isCrlValid(crl) {
 				tm.logger.Warnf("Failed to verify cached CRL: %v. Downloading new version...", err)
-			} else if tm.isCrlUpToDate(crl) {
-				tm.logger.Info("CRL is valid and up-to-date, no action needed.")
-				continue
+			} else {
+				haveUsableCache = true
+				if tm.isCrlUpToDate(crl) {
+					tm.logger.Info("CRL is valid and up-to-date, no action needed.")
+					continue
+				}
+				tm.logger.Info("CRL is outdated and needs to be updated. Downloading new version...")
 			}
-
-			tm.logger.Info("CRL is outdated and needs to be updated. Downloading new version...")
 		}
 
 		// At this point, we need to download a CRL update
 		if err := tm.downloadVerifyAndCacheCrl(distPoint); err != nil {
-			tm.logger.Warnf("Failed to download and cache CRL from %q: %v. Removing cached CRL.", distPoint, err)
-			if rmErr := mgr.Remove(distPoint); rmErr != nil {
-				tm.logger.Warnf("Failed to remove cached CRL for %q: %v", distPoint, rmErr)
+			if haveUsableCache {
+				// Keep it. Stale revocation information still refuses everything it
+				// already knew was revoked; deleting it refuses nothing at all.
+				tm.logger.Warnf(
+					"Failed to download and cache CRL from %q: %v. Keeping the cached copy, which is now stale — "+
+						"it still lists every revocation known as of its last update, but cannot reflect newer ones.",
+					distPoint, err)
+				continue
 			}
-			tm.logger.Info("Removed cached CRL.")
+
+			tm.logger.Warnf(
+				"Failed to download and cache CRL from %q: %v. There is no usable cached copy to fall back on, "+
+					"so no revocation information is available for this distribution point.", distPoint, err)
+			if rmErr := mgr.Remove(distPoint); rmErr != nil {
+				tm.logger.Warnf("Failed to remove unusable cached CRL for %q: %v", distPoint, rmErr)
+			}
 			continue
 		}
 		tm.logger.Info("Successfully downloaded and cached CRL.")
 	}
 
 	tm.logger.Debugf("CRL sync completed.")
+}
+
+// RevocationFreshness describes the revocation information a trust model holds
+// for one certificate's issuer.
+type RevocationFreshness int
+
+const (
+	// RevocationInformationFresh means a CRL covering the issuer is cached and
+	// has not yet passed its NextUpdate.
+	RevocationInformationFresh RevocationFreshness = iota
+
+	// RevocationInformationStale means a CRL covering the issuer is cached and is
+	// still being used for revocation checking, but is past its NextUpdate — so
+	// it cannot reflect anything revoked since. The accompanying duration says by
+	// how much.
+	RevocationInformationStale
+
+	// RevocationInformationAbsent means no CRL covering the issuer is held at all,
+	// so revocation checking for this certificate currently passes everything.
+	//
+	// For a document signer (Annex B.1.4) or an mdoc reader certificate (Table
+	// B.6) a CRL distribution point is mandatory, so this state should be treated
+	// as a failure to obtain revocation information rather than as evidence that
+	// there is none.
+	RevocationInformationAbsent
+)
+
+func (f RevocationFreshness) String() string {
+	switch f {
+	case RevocationInformationFresh:
+		return "fresh"
+	case RevocationInformationStale:
+		return "stale"
+	default:
+		return "absent"
+	}
+}
+
+// RevocationInformationFor reports how trustworthy this trust model's revocation
+// information is for cert, and for how long it has been stale.
+//
+// ISO/IEC 18013-5 9.3.3 requires a party performing certification path validation
+// to have "access to certificate revocation information", and both
+// VerifyCertificateAgainstIssuerRevocationLists and the mdoc verifier's chain walk
+// fail open when they have none — they cannot do otherwise, because an empty list
+// carries no information about why it is empty. This is where that "why" lives.
+//
+// It reports and does not decide. A caller that wants a grace window then a hard
+// failure — the right shape for an offline wallet, and the reason this exists —
+// compares the returned duration against its own threshold. The staleness is
+// measured from the CRL's NextUpdate, and the freshest list covering the issuer
+// wins when several are held.
+func (tm *TrustModel) RevocationInformationFor(cert *x509.Certificate) (RevocationFreshness, time.Duration) {
+	if cert == nil {
+		return RevocationInformationAbsent, 0
+	}
+
+	lists := utils.GetRevocationListsForIssuer(cert.AuthorityKeyId, cert.Issuer, tm.revocationLists)
+	if len(lists) == 0 {
+		return RevocationInformationAbsent, 0
+	}
+
+	newest := lists[0].NextUpdate
+	for _, list := range lists[1:] {
+		if list.NextUpdate.After(newest) {
+			newest = list.NextUpdate
+		}
+	}
+
+	now := time.Now()
+	if newest.After(now) {
+		return RevocationInformationFresh, 0
+	}
+	return RevocationInformationStale, now.Sub(newest)
 }
 
 func (tm *TrustModel) downloadAndVerifyCrl(distPoint string) (*x509.RevocationList, error) {
