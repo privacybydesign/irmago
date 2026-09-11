@@ -59,13 +59,13 @@ func newMdocTestEnv(t *testing.T) *mdocTestEnv {
 		parser:  NewMdocCredentialFormatParser(stdmdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})),
 		metadata: metadata.CredentialIssuerMetadata{
 			CredentialIssuer: testMdocIssuerURL,
-			Display:          metadata.CredentialIssuerDisplays{{Display: metadata.Display{Name: "AV Issuer", Locale: &en}}},
+			Display:          metadata.CredentialIssuerDisplays{{Name: "AV Issuer", Locale: &en}},
 			CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
 				"proof_of_age": {
 					Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
 					Doctype: testMdocDocType,
 					CredentialMetadata: &metadata.CredentialMetadata{
-						Display: metadata.CredentialDisplays{{Display: metadata.Display{Name: "Proof of Age", Locale: &en}}},
+						Display: metadata.CredentialDisplays{{Name: "Proof of Age", Locale: &en}},
 						Claims: []metadata.ClaimsDescription{{
 							Path:    metadata.ClaimsPathPointer{testMdocDocType, "age_over_18"},
 							Display: []metadata.Display{{Name: "Older than 18", Locale: &en}},
@@ -286,7 +286,7 @@ func storedMdoc(t *testing.T, env *mdocTestEnv, elements map[string]any, claims 
 	t.Helper()
 	en := "en"
 	cm, err := json.Marshal(&metadata.CredentialMetadata{
-		Display: metadata.CredentialDisplays{{Display: metadata.Display{Name: "Proof of Age", Locale: &en}}},
+		Display: metadata.CredentialDisplays{{Name: "Proof of Age", Locale: &en}},
 		Claims:  claims,
 	})
 	require.NoError(t, err)

@@ -158,7 +158,7 @@ func TestSessionRoundTrip(t *testing.T) {
 
 	// And again, to prove the counters advance in step on both sides rather than
 	// only the first message working.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		sealed, err = readerSession.Encrypt(request)
 		if err != nil {
 			t.Fatalf("reader Encrypt %d: %v", i, err)
@@ -197,7 +197,7 @@ func TestCounterNeverRepeats(t *testing.T) {
 	// ciphertext every time; equal output would mean an IV was reused.
 	seen := map[string]bool{}
 	plaintext := []byte("identical every time")
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		sealed, err := readerSession.Encrypt(plaintext)
 		if err != nil {
 			t.Fatalf("Encrypt %d: %v", i, err)

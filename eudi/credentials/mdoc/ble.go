@@ -260,12 +260,12 @@ func VerifyBLEIdent(eDeviceKeyBytes cbor.RawMessage, received []byte) error {
 		return err
 	}
 	if len(received) != len(expected) {
-		return fmt.Errorf("Ident is %d bytes, want %d", len(received), len(expected))
+		return fmt.Errorf("received Ident is %d bytes, want %d", len(received), len(expected))
 	}
 	for i := range expected {
 		if expected[i] != received[i] {
 			return fmt.Errorf(
-				"Ident does not match this engagement's EDeviceKey: connected to the wrong mdoc reader")
+				"received Ident does not match this engagement's EDeviceKey: connected to the wrong mdoc reader")
 		}
 	}
 	return nil

@@ -12,19 +12,17 @@ import (
 	"gorm.io/datatypes"
 )
 
-func strPtr(s string) *string { return &s }
-
 // mdocBatchWithClaims builds a stored mdoc carrying one namespace with two
 // elements, whose credential_metadata snapshot declares the given claim paths,
 // each labelled "Label i" in English.
 func mdocBatchWithClaims(claimPaths ...[]any) *models.MdocBatch {
 	cm := metadata.CredentialMetadata{
-		Display: metadata.CredentialDisplays{{Display: metadata.Display{Name: "Proof of Age", Locale: strPtr("en")}}},
+		Display: metadata.CredentialDisplays{{Name: "Proof of Age", Locale: new("en")}},
 	}
 	for i, path := range claimPaths {
 		cm.Claims = append(cm.Claims, metadata.ClaimsDescription{
 			Path:    metadata.ClaimsPathPointer(path),
-			Display: []metadata.Display{{Name: "Label " + strconv.Itoa(i), Locale: strPtr("en")}},
+			Display: []metadata.Display{{Name: "Label " + strconv.Itoa(i), Locale: new("en")}},
 		})
 	}
 	encoded, _ := json.Marshal(cm)
