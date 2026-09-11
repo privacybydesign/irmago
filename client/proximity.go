@@ -247,6 +247,19 @@ func (c *proximityConsent) RequestConsent(request proximity.ConsentRequest) ([]c
 			// well-formed, which is more useful than dropping the link. The user is
 			// not asked to approve something the request was never entitled to.
 			eudi.Logger.Warnf("proximity: reader is not authorized for its own request: %v", err)
+			// The status is set alongside the error, not the error on its own.
+			// State.Error never travels by itself: it reaches the app only as part of
+			// the state a finish() dispatches. Recorded next to a status that succeed()
+			// later turns into Status_Success, it would surface on a transaction the
+			// app had just been told had succeeded. Status_Error is the one status
+			// succeed() preserves, so the final state says what happened here.
+			//
+			// Which does not contradict the paragraph above: the READER is still
+			// answered normally, with documentErrors and status 0, because the ISO
+			// transaction is not in error. It is the USER who is told their wallet
+			// refused and why — the same outcome the OpenID4VP path reports when the
+			// same certificate check fails.
+			c.session.State.Status = clientmodels.Status_Error
 			c.session.State.Error = &clientmodels.SessionError{
 				ErrorType: string(clientmodels.Status_Error),
 				Info:      err.Error(),

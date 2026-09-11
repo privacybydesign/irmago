@@ -12,6 +12,8 @@ package proximity
 import (
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
@@ -93,7 +95,30 @@ func DcqlQueryFromDeviceRequest(request mdoc.DeviceRequest) (dcql.DcqlQuery, err
 // request, which is all the id has to be, and stable, which keeps the consent
 // screen and the response ordering reproducible.
 func queryId(index int) string {
-	return fmt.Sprintf("doc%d", index)
+	return queryIdPrefix + strconv.Itoa(index)
+}
+
+// queryIdPrefix is shared by queryId and queryIndex so the two cannot drift.
+const queryIdPrefix = "doc"
+
+// queryIndex reads a DocRequest's position back out of the id queryId gave it.
+//
+// This is what lets a selection be matched to the request it answers rather than
+// to the first request of the same docType — see Selection.QueryId for why those
+// are not the same thing. Reported as not-an-index rather than guessed at for an
+// id this package did not mint: a Discloser is free to answer a query built
+// somewhere else, and "doc" followed by something that is not a number says
+// nothing about which DocRequest was meant.
+func queryIndex(id string) (int, bool) {
+	digits, found := strings.CutPrefix(id, queryIdPrefix)
+	if !found || digits == "" {
+		return 0, false
+	}
+	index, err := strconv.Atoi(digits)
+	if err != nil || index < 0 {
+		return 0, false
+	}
+	return index, true
 }
 
 // claimsFor flattens nameSpaces into DCQL claims.

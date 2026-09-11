@@ -128,12 +128,20 @@ type wallet struct {
 	// lastRequest records what the wallet was asked, so tests can assert on the
 	// narrowing that happened before consent.
 	lastRequest DisclosureRequest
+
+	// answer replaces the selection logic below, for the tests whose whole subject
+	// is WHICH request a selection answers. The loop below cannot express that: it
+	// is keyed by docType and so can never return two selections of one.
+	answer func(DisclosureRequest) ([]Selection, error)
 }
 
 func (w *wallet) Disclose(request DisclosureRequest) ([]Selection, error) {
 	w.lastRequest = request
 	if w.refuse {
 		return nil, nil
+	}
+	if w.answer != nil {
+		return w.answer(request)
 	}
 
 	var selections []Selection

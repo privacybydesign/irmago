@@ -2,6 +2,7 @@ package mdoc
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/fxamacker/cbor/v2"
 )
@@ -119,10 +120,25 @@ func DecodeDeviceRequest(data []byte) (DeviceRequest, error) {
 // well-formed CBOR and meaningless as a request — a document nobody asked
 // anything of. Rejecting here means the consent screen is never built from one.
 func (r DeviceRequest) Validate() error {
-	if r.Version != DeviceRequestVersion {
+	// Only the MAJOR version is checked, for the reason 8.3.2.1.2.1 states itself:
+	// "If other versions are specified in the future, the major version of a
+	// DeviceRequest structure shall not be higher than the major version of the
+	// device engagement structure communicated by the mdoc in the same
+	// transaction." Our engagement is major 1, so any 1.x request satisfies that,
+	// and 8.1's versioning rule makes a minor increment backward compatible by
+	// construction — a "1.1" request is a structure this code still reads
+	// correctly.
+	//
+	// This was an equality check against "1.0" until 11 Sept 2026, when the first
+	// real transaction against an independent reader refused a perfectly good
+	// request: the Multipaz test app sends version "1.1". The refusal was
+	// invisible on the wire — 8.3.2.1.2.3 gives the reader a bare status code —
+	// and cost an afternoon. Mirrors the MobileSecurityObject version rule in
+	// verifier.go, which had it right.
+	if major, _, _ := strings.Cut(r.Version, "."); major != "1" {
 		return fmt.Errorf(
-			"DeviceRequest version is %q, want %q: 8.3.2.1.2.1 fixes the value for this edition",
-			r.Version, DeviceRequestVersion)
+			"DeviceRequest version is %q: this implementation reads ISO/IEC 18013-5 version 1.x only",
+			r.Version)
 	}
 	if len(r.DocRequests) == 0 {
 		return fmt.Errorf("DeviceRequest has no docRequests: 8.3.2.1.2.1 requires at least one")

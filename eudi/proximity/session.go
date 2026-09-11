@@ -75,6 +75,21 @@ type Selection struct {
 	// namespaces to a document and a single DocRequest may name elements in
 	// several; everything not named here is stripped before signing.
 	Reveal map[string][]string
+
+	// QueryId names the credential query, and so the DocRequest, this selection
+	// answers. Set it whenever the wallet knows it.
+	//
+	// Nothing else can carry that link reliably. A DeviceRequest may hold two
+	// DocRequests of the SAME docType — "give me the mDL's portrait" and "give me
+	// the mDL's age_over_18" are two requests, and 8.3.2.1.2.1 does not forbid a
+	// reader splitting them — and matching a returned document to its request by
+	// docType alone then answers the wrong one, strips it against the wrong
+	// ItemsRequest and leaves the other request with no documentError at all.
+	//
+	// Optional, because a Discloser that never sees the DCQL query cannot fill it
+	// in: empty means "match by docType", which is exactly right for the ordinary
+	// request where each docType appears once. See requestedFor.
+	QueryId string
 }
 
 // RequestedDocument is one DocRequest after parsing, reader authentication and the
@@ -186,6 +201,19 @@ type SessionConfig struct {
 	// ServiceUUID is the BLE service UUID this transaction advertises (8.3.3.1.1.3,
 	// unique per transaction). Generated when nil.
 	ServiceUUID []byte
+
+	// Debugf, when set, receives a line for every decision that is invisible in the
+	// response: a request refused at decode or validation, the outcome of reader
+	// authentication, and a document that ends up with nothing releasable.
+	//
+	// Those paths are deliberately quiet on the wire — 8.3.2.1.2.3 gives the reader
+	// a status code and nothing else, which is right, and leaves the wallet with no
+	// way to say why. Without this, "the reader received 21 bytes" is the whole
+	// story available to anyone debugging a transport.
+	//
+	// Never given credential contents: element identifiers, docTypes and error
+	// reasons only.
+	Debugf func(format string, args ...any)
 }
 
 type sessionState int
@@ -267,6 +295,14 @@ func NewSession(cfg SessionConfig) (*Session, error) {
 		engagement:      engagement,
 		engagementBytes: engagementBytes,
 	}, nil
+}
+
+// debugf reports a decision the response cannot carry. No-op unless the caller
+// asked for it.
+func (s *Session) debugf(format string, args ...any) {
+	if s.cfg.Debugf != nil {
+		s.cfg.Debugf(format, args...)
+	}
 }
 
 // EngagementQR returns the "mdoc:" URI of 8.2.2.3 for this transaction.
@@ -452,23 +488,28 @@ func (s *Session) respondTo(requestBytes []byte) (mdoc.DeviceResponse, error) {
 		// A malformed request is reportable in the response rather than by killing the
 		// session: Table 8 has a code for exactly this, and 8.3.2.1.2.3 lets the mdoc
 		// return it with no documents.
+		s.debugf("DeviceRequest could not be decoded, answering with status %d: %v",
+			mdoc.ResponseStatusCBORDecodingError, err)
 		return mdoc.NewErrorDeviceResponse(mdoc.ResponseStatusCBORDecodingError)
 	}
 	if err := request.Validate(); err != nil {
+		s.debugf("DeviceRequest is structurally invalid, answering with status %d: %v",
+			mdoc.ResponseStatusCBORValidationError, err)
 		return mdoc.NewErrorDeviceResponse(mdoc.ResponseStatusCBORValidationError)
 	}
+	s.debugf("DeviceRequest carries %d docRequest(s)", len(request.DocRequests))
 
 	documents, err := s.classify(request)
 	if err != nil {
 		return mdoc.DeviceResponse{}, err
 	}
 
-	selections, err := s.consent(documents)
+	selections, offered, err := s.consent(documents)
 	if err != nil {
 		return mdoc.DeviceResponse{}, err
 	}
 
-	response, err := s.assemble(documents, selections)
+	response, err := s.assemble(documents, offered, selections)
 	if err != nil {
 		// Assembly is the step Reserve-then-Commit exists to survive, and surviving
 		// it means handing back what the disclosure had claimed. See Releaser.
@@ -529,6 +570,7 @@ func (s *Session) classify(request mdoc.DeviceRequest) ([]RequestedDocument, err
 		result, err := s.cfg.Readers.VerifyReaderAuth(docRequest, s.transcript)
 		switch {
 		case err == nil:
+			s.debugf("docRequest %d (%s): reader authenticated as %q", i, items.DocType, result.CommonName())
 			document.Reader = result
 			// An authenticated reader may have everything it asked for, subject to
 			// consent. Whether it is AUTHORIZED to ask is a separate question,
@@ -541,6 +583,9 @@ func (s *Session) classify(request mdoc.DeviceRequest) ([]RequestedDocument, err
 			// narrowing, but the wallet is told which so it can say so.
 			if !errorIsNoReaderAuth(err) {
 				document.ReaderAuthErr = err
+				s.debugf("docRequest %d (%s): reader authentication FAILED: %v", i, items.DocType, err)
+			} else {
+				s.debugf("docRequest %d (%s): reader sent no readerAuth", i, items.DocType)
 			}
 			releasable, _ := mdoc.ReleasableWithoutReaderAuth(items)
 			document.Permitted = mdoc.ItemsRequest{
@@ -557,9 +602,16 @@ func (s *Session) classify(request mdoc.DeviceRequest) ([]RequestedDocument, err
 }
 
 // consent translates the permitted request and hands it to the wallet.
-func (s *Session) consent(documents []RequestedDocument) ([]Selection, error) {
+//
+// The second return value is the map back: element i is the index in documents of
+// the i'th DocRequest handed to the wallet, which is the i'th credential query of
+// the translated DCQL query and therefore the one queryId(i) names. Unservable
+// documents are not offered to the wallet, so the two orderings are not the same
+// and assemble cannot recompute this without repeating the filter.
+func (s *Session) consent(documents []RequestedDocument) ([]Selection, []int, error) {
 	servable := make([]mdoc.DocRequest, 0, len(documents))
-	for _, document := range documents {
+	offered := make([]int, 0, len(documents))
+	for i, document := range documents {
 		if !document.Servable() {
 			continue
 		}
@@ -570,15 +622,17 @@ func (s *Session) consent(documents []RequestedDocument) ([]Selection, error) {
 		// cannot verify is worse than none.
 		docRequest, err := mdoc.NewDocRequest(document.Permitted, nil)
 		if err != nil {
-			return nil, fmt.Errorf("rebuild permitted docRequest for %s: %w", document.DocType, err)
+			return nil, nil, fmt.Errorf("rebuild permitted docRequest for %s: %w", document.DocType, err)
 		}
 		servable = append(servable, docRequest)
+		offered = append(offered, i)
 	}
 
 	// Nothing may be released, so there is nothing to ask the user about. Consent
 	// screens for requests that can only be refused are noise.
 	if len(servable) == 0 {
-		return nil, nil
+		s.debugf("nothing is releasable for any requested document, so the user is not asked")
+		return nil, nil, nil
 	}
 
 	query, err := DcqlQueryFromDeviceRequest(mdoc.DeviceRequest{
@@ -586,41 +640,58 @@ func (s *Session) consent(documents []RequestedDocument) ([]Selection, error) {
 		DocRequests: servable,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("translate device request: %w", err)
+		return nil, nil, fmt.Errorf("translate device request: %w", err)
 	}
 
-	return s.cfg.Discloser.Disclose(DisclosureRequest{Query: query, Documents: documents})
+	selections, err := s.cfg.Discloser.Disclose(DisclosureRequest{Query: query, Documents: documents})
+	if err != nil {
+		return nil, nil, err
+	}
+	return selections, offered, nil
 }
 
 // assemble builds the DeviceResponse from what the wallet agreed to release.
-func (s *Session) assemble(documents []RequestedDocument, selections []Selection) (mdoc.DeviceResponse, error) {
+//
+// offered is consent's map from credential query position back to DocRequest; a
+// nil one is fine and falls the resolution back to docType. See requestedFor.
+func (s *Session) assemble(
+	documents []RequestedDocument, offered []int, selections []Selection,
+) (mdoc.DeviceResponse, error) {
 	var (
 		presented []mdoc.MDoc
-		served    = make(map[string]bool, len(selections))
+		// Indexed by DocRequest rather than keyed by docType: a request may hold two
+		// DocRequests of the same docType, and one of them being answered says
+		// nothing about the other.
+		served = make([]bool, len(documents))
 	)
 
 	for _, selection := range selections {
-		requested, ok := requestedFor(documents, selection.Document.DocType)
-		if !ok {
-			return mdoc.DeviceResponse{}, fmt.Errorf(
-				"wallet selected a %s document, which this request did not ask for", selection.Document.DocType)
+		index, err := requestedFor(documents, offered, served, selection)
+		if err != nil {
+			return mdoc.DeviceResponse{}, err
 		}
 
-		document, err := s.buildDocument(selection, requested)
+		document, err := s.buildDocument(selection, documents[index].Requested)
 		if err != nil {
 			return mdoc.DeviceResponse{}, err
 		}
 		presented = append(presented, *document)
-		served[selection.Document.DocType] = true
+		served[index] = true
 	}
 
 	// Every requested document that is not being returned gets a documentError.
 	// 8.3.2.1.2.2 keeps the two failure kinds apart and they are not
 	// interchangeable: documentErrors names a whole document that is absent,
 	// Document.Errors names elements missing from one that is present.
+	//
+	// Deduplicated by docType, which is all a DocumentError can name: two
+	// unanswered DocRequests for the same docType have nothing to tell them apart
+	// in the response, so reporting the docType twice would say the same thing
+	// twice rather than say more.
 	var documentErrors []mdoc.DocumentError
-	for _, document := range documents {
-		if served[document.DocType] {
+	reported := make(map[string]bool, len(documents))
+	for i, document := range documents {
+		if served[i] || reported[document.DocType] {
 			continue
 		}
 		documentError, err := mdoc.NewDocumentError(document.DocType, mdoc.ErrorCodeDataNotReturned)
@@ -628,6 +699,7 @@ func (s *Session) assemble(documents []RequestedDocument, selections []Selection
 			return mdoc.DeviceResponse{}, fmt.Errorf("build documentError for %s: %w", document.DocType, err)
 		}
 		documentErrors = append(documentErrors, documentError)
+		reported[document.DocType] = true
 	}
 
 	// Status stays 0 throughout. 8.3.2.1.2.3 forbids returning documents with a
@@ -698,14 +770,55 @@ func (s *Session) buildDocument(selection Selection, requested mdoc.ItemsRequest
 	return document, nil
 }
 
-// requestedFor finds the original ItemsRequest for a docType.
-func requestedFor(documents []RequestedDocument, docType string) (mdoc.ItemsRequest, bool) {
-	for _, document := range documents {
-		if document.DocType == docType {
-			return document.Requested, true
+// requestedFor resolves the DocRequest a selection answers, as an index into
+// documents.
+//
+// Why this is not simply a docType lookup: a DeviceRequest may carry two
+// DocRequests of the same docType, asking for different elements of it. Answering
+// both against the first would strip the second document to the first request's
+// elements — disclosing what the reader asked for in the wrong place and, worse,
+// leaving the second request looking served, so it gets no documentError. The
+// wallet's own accounting is right; only the join back to the request was lossy.
+//
+// So the DCQL query id is used where the wallet supplied one: the query it names
+// IS one DocRequest, by construction of DcqlQueryFromDeviceRequest, and offered
+// maps that position back past the unservable documents consent filtered out. A
+// selection whose id resolves to a different docType than the document it carries
+// is refused rather than reassigned: the wallet answered a query with the wrong
+// credential, and presenting it anyway would send a document no DocRequest asked
+// for.
+//
+// Without an id — a Discloser that builds selections from something other than the
+// query — the docType is all there is, and the first request of that docType not
+// yet answered is the best available reading. That is exactly right for every
+// request naming each docType once, which is every request in practice.
+func requestedFor(
+	documents []RequestedDocument, offered []int, served []bool, selection Selection,
+) (int, error) {
+	docType := selection.Document.DocType
+
+	if position, ok := queryIndex(selection.QueryId); ok {
+		if position >= len(offered) {
+			return 0, fmt.Errorf(
+				"wallet answered query %q, which this request does not have", selection.QueryId)
+		}
+		index := offered[position]
+		if documents[index].DocType != docType {
+			return 0, fmt.Errorf(
+				"wallet answered query %q, which asked for %s, with a %s document",
+				selection.QueryId, documents[index].DocType, docType)
+		}
+		return index, nil
+	}
+
+	for i, document := range documents {
+		if document.DocType == docType && !served[i] {
+			return i, nil
 		}
 	}
-	return mdoc.ItemsRequest{}, false
+	return 0, fmt.Errorf(
+		"wallet selected a %s document, which this request did not ask for (or asked for once and got twice)",
+		docType)
 }
 
 // errorIsNoReaderAuth distinguishes "the reader sent no readerAuth" from "the

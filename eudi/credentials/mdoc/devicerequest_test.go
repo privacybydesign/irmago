@@ -196,10 +196,17 @@ func TestDeviceRequestValidation(t *testing.T) {
 		t.Fatalf("NewDocRequest: %v", err)
 	}
 
-	t.Run("wrong version", func(t *testing.T) {
-		request := DeviceRequest{Version: "1.1", DocRequests: []DocRequest{validDoc}}
+	// "1.1" used to be this case, on the reading that 8.3.2.1.2.1 fixes the value
+	// at "1.0". It does — for THIS edition — but the same paragraph then bounds
+	// future versions by MAJOR version only, and a real reader (the Multipaz test
+	// app) sends "1.1". Refusing it broke interop while looking like a bare status
+	// 11 on the wire. The major-version rule is pinned by
+	// TestDeviceRequestVersionAcceptsAnyMajorOne; this case keeps the half that is
+	// still true.
+	t.Run("higher major version", func(t *testing.T) {
+		request := DeviceRequest{Version: "2.0", DocRequests: []DocRequest{validDoc}}
 		if err := request.Validate(); err == nil {
-			t.Fatal("expected an error for a version other than 1.0")
+			t.Fatal("expected an error for a major version this code does not implement")
 		}
 	})
 
@@ -279,4 +286,59 @@ func TestRequestInfoIsCarriedNotInterpreted(t *testing.T) {
 	if len(gotItems.RequestInfo) != 1 {
 		t.Errorf("requestInfo was dropped rather than carried: %v", gotItems.RequestInfo)
 	}
+}
+
+// TestDeviceRequestVersionAcceptsAnyMajorOne pins 8.3.2.1.2.1's forward
+// compatibility rule, which an equality check against "1.0" got wrong.
+//
+// The clause fixes the value at "1.0" for THIS edition, then says: "If other
+// versions are specified in the future, the major version of a DeviceRequest
+// structure shall not be higher than the major version of the device engagement
+// structure communicated by the mdoc in the same transaction." Our engagement is
+// major 1, so any 1.x request satisfies it, and 8.1 makes a minor increment
+// backward compatible by construction.
+//
+// This is not hypothetical: the Multipaz test app sends "1.1", and refusing it
+// made a real reader's perfectly good request come back as a bare status 11.
+func TestDeviceRequestVersionAcceptsAnyMajorOne(t *testing.T) {
+	for _, tc := range []struct {
+		version string
+		accept  bool
+		why     string
+	}{
+		{"1.0", true, "the value this edition fixes"},
+		{"1.1", true, "a later minor version: backward compatible by 8.1, and what Multipaz sends"},
+		{"1.9", true, "any minor increment is still readable"},
+		{"2.0", false, "a higher major version has fields this code has no definition for"},
+		{"0.9", false, "below the major version this code implements"},
+		{"", false, "no version at all"},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			request := DeviceRequest{
+				Version:     tc.version,
+				DocRequests: []DocRequest{mustDocRequest(t)},
+			}
+			err := request.Validate()
+			switch {
+			case tc.accept && err != nil:
+				t.Errorf("version %q was refused but should be accepted (%s): %v", tc.version, tc.why, err)
+			case !tc.accept && err == nil:
+				t.Errorf("version %q was accepted but should be refused (%s)", tc.version, tc.why)
+			}
+		})
+	}
+}
+
+// mustDocRequest builds a minimal valid DocRequest, so the version is the only
+// thing the test above varies.
+func mustDocRequest(t *testing.T) DocRequest {
+	t.Helper()
+	docRequest, err := NewDocRequest(ItemsRequest{
+		DocType:    AgeVerificationDocType,
+		NameSpaces: map[string]DataElements{AgeVerificationDocType: {"age_over_18": false}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewDocRequest: %v", err)
+	}
+	return docRequest
 }

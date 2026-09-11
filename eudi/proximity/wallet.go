@@ -169,7 +169,15 @@ func (w *WalletDiscloser) reserveFor(selections []dcql.DisclosureSelection) ([]S
 			return nil, fmt.Errorf("read claim paths of selected credential %s: %w", selection.CredentialHash, err)
 		}
 
-		presented = append(presented, Selection{Document: reserved.Document, Reveal: reveal})
+		// The query id travels with the selection. It is the only thing that says
+		// WHICH DocRequest this document answers when a reader sent two for the same
+		// docType, and the DCQL pipeline has already worked it out — dropping it here
+		// and rediscovering it by docType in the response is where it went wrong.
+		presented = append(presented, Selection{
+			QueryId:  selection.QueryId,
+			Document: reserved.Document,
+			Reveal:   reveal,
+		})
 	}
 
 	return presented, nil
