@@ -7,11 +7,17 @@ import (
 )
 
 // The functions in this file read an SdJwtVcBatch's validity window and batch
-// counts for the SD-JWT DCQL handler and for the SD-JWT store's re-issuance
-// rule, which must agree on what "still presentable" means. They live here
-// rather than in eudi_sdjwt_dcql because services cannot import that package.
-// mso_mdoc has its own equivalents (services.MdocBatchIsValid and the helpers
-// in mdoc_dcql); the two formats share no batch model.
+// counts. Today eudi_sdjwt_dcql is their only caller. They live in this
+// package rather than back in eudi_sdjwt_dcql on the chance a future SD-JWT
+// VC consumer in services needs them: eudi_sdjwt_dcql imports services, so
+// services could never import eudi_sdjwt_dcql back without a cycle, and dcql
+// has no such import to avoid.
+//
+// mso_mdoc does not share these: it works over a different batch model
+// (MdocBatch, not SdJwtVcBatch) with its own equivalents — services.
+// MdocBatchIsValid and the private helpers in mdoc_dcql/handler.go. The two
+// formats' batch models have no field in common to write one shared
+// implementation over without generics.
 //
 // Display-name/logo resolution (credential name, issuer name, claim names,
 // images) lives in eudi/services (ResolveBatchDisplay, LoadResolvedLogo,

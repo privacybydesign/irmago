@@ -62,11 +62,14 @@ type SdJwtVcBatch struct {
 
 	// ProcessedSdJwtPayload is the JSON-encoded payload of the SD-JWT after
 	// processing/verifying the issuer-signed JWT, cached at issuance time so
-	// matching a DCQL query doesn't require re-parsing the raw credential. The
-	// field name is also the column name and must stay: AutoMigrate (the only
-	// schema mechanism here, see storage.autoMigrateHolderModels) cannot rename a
-	// column, and would ADD a NOT NULL one instead, which SQLite rejects once the
-	// table has rows. See credentials_schema_test.go, which pins this.
+	// matching a DCQL query doesn't require re-parsing the raw credential.
+	// Renaming this field is safe on its own — as with IssuerIdentifier and
+	// CredentialIssuerIdentifier above, a `gorm:"column:"` tag can decouple the
+	// Go name from the deployed one — but the column itself cannot be renamed:
+	// AutoMigrate (the only schema mechanism here, see
+	// storage.autoMigrateHolderModels) cannot rename a column, and would ADD a
+	// NOT NULL one instead, which SQLite rejects once the table has rows. See
+	// credentials_schema_test.go, which pins this.
 	ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`
 
 	// IssuedAt is the iat claim of the issuer-signed JWT.

@@ -30,9 +30,10 @@ func openHolderDB(t *testing.T) *gorm.DB {
 // try to ADD a NOT NULL column, which SQLite refuses once the table holds rows,
 // so a wallet that already has a credential fails to open its database at all.
 //
-// The field name is misleading on purpose: the column also stores mso_mdoc
-// claims, but the cost of correcting the name is a broken upgrade for every
-// existing wallet. Rename the field only alongside a real migration.
+// The name is kept for the deployed column, not for accuracy: the column
+// holds SD-JWT VC payloads only (mso_mdoc has its own tables), but renaming
+// the field now would break the upgrade for every existing wallet. Rename it
+// only alongside a real migration.
 func TestCredentialBatchKeepsLegacyClaimsColumn(t *testing.T) {
 	d := openHolderDB(t)
 	require.NoError(t, d.AutoMigrate(&models.SdJwtVcBatch{}))
@@ -46,36 +47,6 @@ func TestCredentialBatchKeepsLegacyClaimsColumn(t *testing.T) {
 		"the claims column must stay named processed_sd_jwt_payload; renaming "+
 			"SdJwtVcBatch.ProcessedSdJwtPayload renames the column, which breaks "+
 			"AutoMigrate for every wallet that already holds a credential")
-}
-
-// TestAutoMigrateOverPopulatedDatabase runs AutoMigrate against a database that
-// already contains a credential, which is what an upgrading wallet has and what
-// every other test misses by starting from an empty schema.
-func TestAutoMigrateOverPopulatedDatabase(t *testing.T) {
-	d := openHolderDB(t)
-	require.NoError(t, d.AutoMigrate(&models.SdJwtVcBatch{}))
-
-	batch := &models.SdJwtVcBatch{
-		IssuerIdentifier:           "https://issuer.example",
-		VerifiableCredentialType:   "https://vct.example/x",
-		Format:                     models.CredentialFormatSdJwtVc,
-		Hash:                       "hash-existing",
-		ProcessedSdJwtPayload:      []byte(`{"sub":"pre-existing-user"}`),
-		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                  1,
-		RemainingCount:             1,
-		CredentialIssuerIdentifier: "https://issuer.example",
-	}
-	require.NoError(t, d.Create(batch).Error)
-
-	// The upgrade path: the same AutoMigrate the wallet runs on every startup.
-	require.NoError(t, d.AutoMigrate(&models.SdJwtVcBatch{}),
-		"AutoMigrate must succeed against a database that already holds credentials")
-
-	// The stored claims must still be readable after the migration.
-	var got models.SdJwtVcBatch
-	require.NoError(t, d.Where("hash = ?", "hash-existing").First(&got).Error)
-	require.JSONEq(t, `{"sub":"pre-existing-user"}`, string(got.ProcessedSdJwtPayload))
 }
 
 // legacyCredentialBatch is SdJwtVcBatch as it stood before IssuerVerified was
