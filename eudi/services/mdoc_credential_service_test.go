@@ -219,49 +219,6 @@ func TestMdocCredentialService_StoreSnapshotsDisplayMetadataAndListRendersIt(t *
 	assert.Equal(t, map[string]string{"age_over_18": "Older than 18", "age_over_21": "Age Over 21"}, labels)
 }
 
-// Re-issuance of identical content replaces a batch the wallet can no longer
-// present and is refused while it still can, the same rule as for SD-JWT VC.
-func TestMdocCredentialService_ReissuanceRefusedWhileBatchUsable(t *testing.T) {
-	env := newMdocTestEnv(t)
-	mint := func(n uint) []models.PublicHolderBindingKey {
-		ids, _, err := env.keyMint.CreateKeyPairsWithProofs(n, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
-		require.NoError(t, err)
-		return ids
-	}
-	issue := func(ids []models.PublicHolderBindingKey) []*ParsedCredential {
-		out := make([]*ParsedCredential, len(ids))
-		for i, id := range ids {
-			out[i] = env.issueBoundTo(t, *id.PublicKeyThumbprint, map[string]any{"age_over_18": true})
-		}
-		return out
-	}
-
-	first := mint(2)
-	require.NoError(t, env.service.Store(issue(first), "proof_of_age", env.metadata, true, first))
-
-	// Same claims, same issuer: refused while two instances are unspent.
-	second := mint(2)
-	err := env.service.Store(issue(second), "proof_of_age", env.metadata, true, second)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "already held")
-
-	// Spend the batch, then the same re-issuance replaces it.
-	batches, err := env.store.ListBatches()
-	require.NoError(t, err)
-	for range 2 {
-		inst, err := env.store.GetUnusedInstance(batches[0].ID)
-		require.NoError(t, err)
-		require.NoError(t, env.store.MarkInstanceUsed(inst.ID))
-	}
-	third := mint(2)
-	require.NoError(t, env.service.Store(issue(third), "proof_of_age", env.metadata, true, third))
-
-	batches, err = env.store.ListBatches()
-	require.NoError(t, err)
-	require.Len(t, batches, 1, "the spent batch was replaced, not duplicated")
-	assert.Equal(t, uint(2), batches[0].RemainingCount)
-}
-
 func TestMdocCredentialService_DeleteByHash(t *testing.T) {
 	env := newMdocTestEnv(t)
 	ids, _, err := env.keyMint.CreateKeyPairsWithProofs(1, testProofBuilder(proofs.CryptographicBindingMethod_JWK))

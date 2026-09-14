@@ -12,7 +12,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -317,55 +316,12 @@ func (s *sdJwtVcCredentialService) computeHashAndDeleteExisting(p *ParsedCredent
 	}
 
 	if existing, err := s.store.GetBatchByHash(hash); err == nil {
-		if reason := batchStillUsable(existing, time.Now()); reason != "" {
-			return "", fmt.Errorf(
-				"credential %q is already held (stored copy issued by %q) and %s; re-issuing identical claims would replace it and discard its unused instances",
-				existing.VerifiableCredentialType, existing.CredentialIssuerIdentifier, reason)
-		}
 		if err := s.store.DeleteBatch(existing.ID); err != nil {
 			return "", fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
 		}
 	}
 
 	return hash, nil
-}
-
-// batchStillUsable reports why a stored batch has unspent instances worth
-// keeping, or "" when the batch may be replaced by a new issuance.
-//
-// Only batched credentials are protected. What re-issuance destroys, and the
-// whole reason to refuse it, is unspent single-use attestations: a batch of
-// thirty that the holder has used twice still has twenty-eight presentations in
-// it, and replacing it to gain fresher timestamps throws those away.
-//
-// A batch of one has nothing to throw away. It is a reusable credential, so
-// re-issuing it is simply how it gets refreshed -- a new expiry, a new holder
-// binding key -- and replacing it costs the holder nothing. Refusing there would
-// block refresh for the credential's entire validity period, since "still
-// usable" is true of a reusable credential from issuance until expiry; the holder
-// would have to delete it first to obtain a new one. That is why BatchSize <= 1
-// is replaceable rather than protected, and it is what keeps ordinary SD-JWT
-// re-issuance working as it did.
-//
-// The remaining conditions mirror what the DCQL handler applies when deciding
-// whether a batch may answer a query, and they are taken from there on purpose:
-// if this drifted, the wallet would either refuse a re-issuance it needs (having
-// judged usable a batch no query will accept) or discard one it could still
-// present. dcql.IsBatchValid is called rather than re-derived for the same
-// reason. Note dcql treats a batch of one as never exhausted, the same rule
-// batchInstanceCounts encodes by returning nil there -- so consulting
-// RemainingCount for it would be meaningless as well as harmful.
-func batchStillUsable(batch *models.SdJwtVcBatch, now time.Time) string {
-	if batch.BatchSize <= 1 {
-		return ""
-	}
-	if !dcql.IsBatchValid(batch, now) {
-		return ""
-	}
-	if batch.RemainingCount == 0 {
-		return ""
-	}
-	return fmt.Sprintf("still has %d of %d instances unused", batch.RemainingCount, batch.BatchSize)
 }
 
 // statusReferenceOf returns the credential's Token Status List reference, or

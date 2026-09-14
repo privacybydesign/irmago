@@ -245,35 +245,12 @@ func (s *mdocCredentialService) computeHashAndDeleteExisting(p *ParsedCredential
 	}
 
 	if existing, err := s.store.GetBatchByHash(hash); err == nil {
-		if reason := mdocBatchStillUsable(existing, time.Now()); reason != "" {
-			return "", fmt.Errorf(
-				"credential %q is already held (stored copy issued by %q) and %s; re-issuing identical claims would replace it and discard its unused instances",
-				existing.DocType, existing.CredentialIssuer, reason)
-		}
 		if err := s.store.DeleteBatch(existing.ID); err != nil {
 			return "", fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
 		}
 	}
 
 	return hash, nil
-}
-
-// mdocBatchStillUsable reports why a stored batch has unspent documents worth
-// keeping, or "" when it may be replaced. The mdoc counterpart of
-// batchStillUsable, with the mdoc validity window: a batch of one is always
-// replaceable, a batched credential is protected while it is within its
-// validity window and has documents left.
-func mdocBatchStillUsable(batch *models.MdocBatch, now time.Time) string {
-	if batch.BatchSize <= 1 {
-		return ""
-	}
-	if !MdocBatchIsValid(batch, now) {
-		return ""
-	}
-	if batch.RemainingCount == 0 {
-		return ""
-	}
-	return fmt.Sprintf("still has %d of %d instances unused", batch.RemainingCount, batch.BatchSize)
 }
 
 // MdocBatchIsValid reports whether now falls inside the batch's MSO validity
