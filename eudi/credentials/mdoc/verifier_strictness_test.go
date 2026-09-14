@@ -27,7 +27,7 @@ import (
 // docType binds — so a rejection can only have come from the one thing the test
 // varied. Hand-building the whole document instead would let a rejection come
 // from anywhere.
-func issueCustom(t *testing.T, iss *Issuer, namespace string, mso MSO, itemBytes [][]byte) *MDoc {
+func issueCustom(t *testing.T, iss *TestIssuer, namespace string, mso MSO, itemBytes [][]byte) *MDoc {
 	t.Helper()
 
 	msoBytes, err := tag24WrapWithMode(mso, tdateEncMode)
@@ -106,8 +106,8 @@ func TestMSOVersionMustBeMajorOne(t *testing.T) {
 		{"", false},
 	} {
 		t.Run("version "+tc.version, func(t *testing.T) {
-			issuer, err := NewIssuer()
-			require.NoError(t, err, "NewIssuer: %v", err)
+			issuer, err := NewTestIssuer()
+			require.NoError(t, err, "NewTestIssuer: %v", err)
 			encoded, digest := wrapItem(t, IssuerSignedItem{
 				DigestID: 0, Random: make([]byte, minSaltLength),
 				ElementIdentifier: "age_over_18", ElementValue: true,
@@ -140,8 +140,8 @@ func TestMSOVersionMustBeMajorOne(t *testing.T) {
 func TestDuplicateElementIdentifierIsRejected(t *testing.T) {
 	const ns = "eu.europa.ec.av.1"
 
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 
 	trueItem, trueDigest := wrapItem(t, IssuerSignedItem{
 		DigestID: 0, Random: make([]byte, minSaltLength),
@@ -173,8 +173,8 @@ func TestDuplicateElementIdentifierIsRejected(t *testing.T) {
 func TestDuplicateCBORMapKeyIsRejected(t *testing.T) {
 	const ns = "eu.europa.ec.av.1"
 
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 
 	// Encode the item normally, then splice in a second elementValue pair and
 	// bump the map header by one entry. Building the whole map by hand would be
@@ -241,8 +241,8 @@ func TestVerifyCoversEveryNamespacePresent(t *testing.T) {
 // missing what the user consented to distinguishable from a verifier that asked
 // for less.
 func TestSelectiveDiscloseRefusesEmptyResult(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	holder, err := NewHolder()
 	require.NoError(t, err, "NewHolder: %v", err)
 	const ns = "eu.europa.ec.av.1"

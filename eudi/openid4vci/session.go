@@ -988,7 +988,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 // doctype=credential_metadata["doctype"], the same field the metadata document
 // advertises, so the two cannot disagree there however the configuration is
 // edited. Measured against the container on 2026-08-31. Build the mismatch with
-// mdoc.Issuer.Issue, as the tests here do.
+// mdoc.TestIssuer.Issue, as the tests here do.
 func requireMdocDocTypeMatchesMetadata(config *metadata.CredentialConfiguration, parsed *services.ParsedCredential) error {
 	if models.CredentialFormat(config.Format) != models.CredentialFormatMsoMdoc {
 		return nil

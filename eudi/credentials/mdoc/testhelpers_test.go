@@ -16,11 +16,11 @@ import (
 // buildHappyPathMDoc runs the full issuer → holder pipeline once and
 // returns everything a verifier needs. Centralized here so every test
 // below starts from the same known-good, real (not hand-crafted) mdoc.
-func buildHappyPathMDoc(t *testing.T) (*Issuer, *DefaultHolder, *Verifier, *MDoc, SessionTranscript, []byte, string, string) {
+func buildHappyPathMDoc(t *testing.T) (*TestIssuer, *DefaultHolder, *Verifier, *MDoc, SessionTranscript, []byte, string, string) {
 	t.Helper()
 
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 
 	holder, err := NewHolder()
 	require.NoError(t, err, "NewHolder: %v", err)

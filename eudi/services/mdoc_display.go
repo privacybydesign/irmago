@@ -245,8 +245,8 @@ var mdocAgeOverElement = regexp.MustCompile(`^age_over_([0-9]{1,2})$`)
 // assume it. The realistic source is not a hostile issuer but metadata drift: an
 // element added to issuance code and not to credential_configurations_supported.
 //
-// Two ways to build one: mdoc.Issuer.Issue, which is format-generic; or the local
-// compose stack, whose eudi_pid_issuer_py mounts a patched populate_pdata
+// Two ways to build one: mdoc.TestIssuer.Issue, which is format-generic; or the
+// local compose stack, whose eudi_pid_issuer_py mounts a patched populate_pdata
 // (testdata/eudi-pid-issuer-py/patches/dynamic_func.py) that mints any age_over_NN
 // while leaving the advertised metadata at those thirteen — which is exactly this
 // gap, end to end. Only a stock image cannot produce it.

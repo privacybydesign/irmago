@@ -21,6 +21,15 @@ import (
 // VERIFIER
 // ============================================================
 
+// DisclosedNamespaces maps namespace -> elementIdentifier -> decoded value, the
+// shape every issuance-time verification returns.
+type DisclosedNamespaces = map[string]map[string]any
+
+// DeviceNameSpaces maps namespace -> dataElementIdentifier -> still-encoded
+// value: ISO/IEC 18013-5's DeviceNameSpaces, holder-asserted rather than
+// issuer-signed, left undecoded because only its emptiness is checked.
+type DeviceNameSpaces = map[string]map[string]cbor.RawMessage
+
 // isoMdocDocumentSignerEKU is the extended key usage ISO/IEC 18013-5 Annex
 // B.1.2 requires on a Document Signer certificate: 1.0.18013.5.1.2. Despite
 // the registry naming it for the mDL, it is the DS usage for every 18013-5
@@ -877,7 +886,7 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 // present in the document, returning namespace -> elementIdentifier -> value.
 // Shared by Verify and VerifyAllDisclosedNamespaces so the two cannot drift
 // over what "verified" covers.
-func verifyAllNamespaces(mdoc *MDoc, mso *MSO) (map[string]map[string]any, error) {
+func verifyAllNamespaces(mdoc *MDoc, mso *MSO) (DisclosedNamespaces, error) {
 	// Resolved once for the whole document: 9.1.2.5 requires "the same digest
 	// algorithm shall be used for all data elements", so a per-namespace lookup
 	// would imply a freedom the clause does not give.
@@ -886,7 +895,7 @@ func verifyAllNamespaces(mdoc *MDoc, mso *MSO) (map[string]map[string]any, error
 		return nil, err
 	}
 
-	resolved := make(map[string]map[string]any, len(mdoc.IssuerSigned.NameSpaces))
+	resolved := make(DisclosedNamespaces, len(mdoc.IssuerSigned.NameSpaces))
 	for namespace, items := range mdoc.IssuerSigned.NameSpaces {
 		nsDigests, ok := mso.ValueDigests[namespace]
 		if !ok {
@@ -911,7 +920,7 @@ func verifyAllNamespaces(mdoc *MDoc, mso *MSO) (map[string]map[string]any, error
 // the same VerificationResult shape Verify returns (Attributes is left at
 // its zero value here — namespace-scoped attributes are the return map, not
 // the result, since a single flat map would lose the namespace boundary).
-func (v *Verifier) VerifyAllDisclosedNamespaces(mdoc *MDoc) (map[string]map[string]any, VerificationResult) {
+func (v *Verifier) VerifyAllDisclosedNamespaces(mdoc *MDoc) (DisclosedNamespaces, VerificationResult) {
 	mso, result := v.verifyIssuerAuthAndMSO(mdoc)
 	if mso == nil {
 		return nil, result
@@ -999,26 +1008,10 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 	// Rebuild the DeviceAuthentication payload the holder signed. Two of its four
 	// elements come from deliberately different places:
 	//
-	//   - SessionTranscript is the verifier's OWN. The verifier is the authority on
-	//     the session, so substituting its own copy is what defeats replay: a
-	//     signature produced over a different transcript (a different session, or
-	//     replayed from elsewhere) hashes differently and fails below. Since the
-	//     transmitted COSE_Sign1 has a detached (null) payload, this reconstruction
-	//     is the only source of the bytes fed into Sig_structure, which collapses
-	//     "content matches" and "signature valid" into a single check.
-	//
-	//   - DeviceNameSpaces are the RECEIVED bytes. ISO 18013-5 transmits
-	//     DeviceNameSpacesBytes at deviceSigned.nameSpaces precisely so a verifier
-	//     can rebuild this structure, and taking them from the wire is not a
-	//     relaxation — the signature covers them, so substituted bytes can only
-	//     make a valid signature fail. Reconstructing tag24(empty map) here
-	//     instead conflated the two cases above: a conformant holder that encoded
-	//     its empty map any other way (indefinite-length, say) was rejected with
-	//     "signature invalid", which was not what had gone wrong, and the received
-	//     field was left neither verified nor rejected.
-	//
-	// Whether any device-signed namespaces are ACCEPTABLE is a separate question,
-	// answered by the profile check after the signature has been verified.
+	//   - SessionTranscript is the verifier's OWN, which is what defeats replay: a
+	//     signature over a different transcript hashes differently and fails below.
+	//   - DeviceNameSpaces are the RECEIVED bytes, which the signature covers, so
+	//     substituted bytes can only make a valid signature fail.
 	deviceNameSpaces, err := deviceNameSpacesForVerification(mdoc)
 	if err != nil {
 		result.Valid = false
@@ -1026,9 +1019,9 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
-	// Decode now only to establish that the payload being signed over is
-	// well-formed; its contents are judged after verification, since a rule
-	// enforced on unauthenticated bytes proves nothing about the holder.
+	// Decoded only for well-formedness here; whether the contents are acceptable
+	// is the profile's question, asked after the signature has been verified —
+	// a rule enforced on unauthenticated bytes proves nothing about the holder.
 	deviceNameSpaceMap, err := decodeDeviceNameSpaces(deviceNameSpaces)
 	if err != nil {
 		result.Valid = false
@@ -1119,7 +1112,7 @@ func deviceNameSpacesForVerification(mdoc *MDoc) (cbor.RawMessage, error) {
 // comparison against tag24Wrap(map[string]any{}): CBOR admits more than one
 // encoding of an empty map, and comparing bytes would reject a conformant holder
 // for choosing a different one — the very brittleness this replaced.
-func decodeDeviceNameSpaces(raw cbor.RawMessage) (map[string]map[string]cbor.RawMessage, error) {
+func decodeDeviceNameSpaces(raw cbor.RawMessage) (DeviceNameSpaces, error) {
 	var rawTag cbor.RawTag
 	if err := mdocDecMode.Unmarshal(raw, &rawTag); err != nil {
 		return nil, fmt.Errorf("not tag-24 embedded CBOR: %w", err)
@@ -1136,7 +1129,7 @@ func decodeDeviceNameSpaces(raw cbor.RawMessage) (map[string]map[string]cbor.Raw
 	// DataElementValue}`, and the keyAuthorizations check in profile.go is per
 	// element, not per namespace. The values stay raw — nothing here interprets
 	// them, and a profile that wanted to would decode them itself.
-	var namespaces map[string]map[string]cbor.RawMessage
+	var namespaces DeviceNameSpaces
 	if err := mdocDecMode.Unmarshal(inner, &namespaces); err != nil {
 		return nil, fmt.Errorf("embedded DeviceNameSpaces is not a map of namespaces to data elements: %w", err)
 	}

@@ -501,7 +501,7 @@ func testMdocAv_AcceptsAnyAdvertisedThreshold(t *testing.T) {
 // storeIssuedAvMdoc issues a real mso_mdoc age credential under a freshly
 // generated IACA/document-signer hierarchy and stores it the way issuance does.
 //
-// The credential is genuinely signed rather than faked: stdmdoc.NewIssuer builds
+// The credential is genuinely signed rather than faked: stdmdoc.NewTestIssuer builds
 // the same two-tier PKI the AV Blueprint expects, so the stored bytes are a
 // credential a verifier could actually check.
 //
@@ -526,7 +526,7 @@ func storeIssuedAvMdocWithElements(
 ) {
 	t.Helper()
 
-	issuer, err := stdmdoc.NewIssuer()
+	issuer, err := stdmdoc.NewTestIssuer()
 	require.NoError(t, err)
 
 	holderKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

@@ -25,8 +25,8 @@ import (
 // disclosed one, for a small/guessable vocabulary like this profile's
 // age_over_NN thresholds.
 func TestClaimOrderingIsRandomized(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	holder, _ := NewHolder()
 
 	claims := map[string]any{
@@ -96,13 +96,13 @@ func TestClaimOrderingIsRandomized(t *testing.T) {
 // Blueprint) is currently enforced nowhere in this repo. Earlier revisions asserted it here, in
 // tests this one replaced, back when the package carried its own issuance
 // path. Nothing regressed by dropping them: irmago ships no production
-// mdoc issuer — Issuer exists for tests and the AV issuer is external — so
+// mdoc issuer — TestIssuer exists for tests and the AV issuer is external — so
 // there is no code path the restriction would guard. If irmago ever issues
 // mdocs itself, it belongs in that issuance path, not in Issue().
 
 func TestIssueAcceptsArbitraryDocTypeAndClaims(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	holder, _ := NewHolder()
 
 	cases := []struct {
@@ -155,8 +155,8 @@ func TestIssueAcceptsArbitraryDocTypeAndClaims(t *testing.T) {
 // validUntil, correlating exactly what the batch exists to hide. Annex A has the
 // provider set hh, mm and ss to the same value on every attestation.
 func TestIssuedValidityTimestampsAreCoarsened(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 
 	// Two attestations of the same batch, issued to different device keys.
 	var issued []*MDoc
@@ -205,8 +205,8 @@ func TestIssuedValidityTimestampsAreCoarsened(t *testing.T) {
 // Nothing downstream would notice a shortened or reused salt — every signature
 // and digest would still verify — so it is worth asserting directly.
 func TestIssuedSaltsMeetTheIsoMinimum(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	holder, err := NewHolder()
 	require.NoError(t, err, "NewHolder: %v", err)
 

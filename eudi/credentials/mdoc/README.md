@@ -31,7 +31,7 @@ walkthrough programs that replaced that demo (`mdoc-demo` in process, `mdoc-e2e`
 the real protocols) are gone too, for the same reason one step later: the tests below
 and the mdoc groups of `TestSessionHandler` assert what they printed. `yivi/cli/eudicli`
 keeps the tools that answer a question a test cannot — `mdoc-decode` and
-`vptoken-decode` for reading bytes by hand, `mint-session` for driving a real phone.
+`vptoken-decode` for reading bytes by hand.
 
 ---
 

@@ -87,7 +87,7 @@ func TestOpenID4VPSessionTranscriptBindsAllInputs(t *testing.T) {
 // wrong nonce) correctly fails deviceAuth verification, since the two
 // sides would land on different SHA-256 digests.
 func TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth(t *testing.T) {
-	issuer, err := mdoc.NewIssuer()
+	issuer, err := mdoc.NewTestIssuer()
 	require.NoError(t, err, "NewIssuer: %v", err)
 	holder, err := mdoc.NewHolder()
 	require.NoError(t, err, "NewHolder: %v", err)

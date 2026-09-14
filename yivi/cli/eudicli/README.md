@@ -1,19 +1,18 @@
 # eudicli — EUDI command line tools
 
-Three `package main` programs for working with the EUDI credential code by hand.
+Two `package main` programs for working with the EUDI credential code by hand.
 They live here rather than beside the packages they exercise because Go does not
 allow a `func main()` to sit in the same package as library code.
 
 | Tool | What it does | Needs |
 |---|---|---|
 | [`mdoc-decode`](#mdoc-decode--cosecbor-inspector) | decodes a hex-encoded COSE_Sign1 or CBOR blob and prints its structure | nothing |
-| [`mint-session`](#mint-session--drive-a-real-phone) | starts an issuance and/or presentation and prints the `adb` commands to drive a phone through them | `docker compose up -d`, `adb reverse` |
 | [`vptoken-decode`](#vptoken-decode--read-back-what-was-disclosed) | decodes a verifier's `vp_token` and reports what each document actually disclosed | nothing |
 
 Each program's own package comment is the detailed reference; this file is the
 map. Run any of them from the repository root.
 
-Three programs used to live here and are gone, because what they did is now
+Four programs used to live here and are gone, because what they did is now
 asserted rather than reported. `mdoc-demo` walked a credential through issue →
 disclose → verify in process, and `mdoc-e2e` did the same over the real protocols;
 both are covered by the unit tests in `eudi/credentials/mdoc` and the mdoc groups
@@ -24,77 +23,12 @@ whether each was refused; every one of them is now a subtest in
 `helper_mdoc_request_variants_test.go`. A report is read only when someone runs it,
 and its summary could not tell a refusal apart from a run that broke before
 reaching the violation -- ten of the 62 were passing that way on its last run.
+`mint-session` started a real issuance or presentation and printed the `adb`
+commands to drive a physical phone through it; the flows it drove are covered by
+the same sessiontest groups, and the issuer patch it depended on is documented in
+`testdata/eudi-pid-issuer-py/patches/README.md`.
 
 ---
-
-## mint-session — drive a real phone
-
-```bash
-go run ./yivi/cli/eudicli/mint-session                 presentation only
-go run ./yivi/cli/eudicli/mint-session -issue          issuance too
-go run ./yivi/cli/eudicli/mint-session -value false    ask for false
-go run ./yivi/cli/eudicli/mint-session -element age_over_40
-go run ./yivi/cli/eudicli/mint-session -show-query     print the DCQL being sent
-go run ./yivi/cli/eudicli/mint-session -issue -email   mail the one-time code
-go run ./yivi/cli/eudicli/mint-session -issue -mint age_over_21=true
-```
-
-`-mint` may name any `age_over_NN`, advertised or not. Upstream the issuer builds
-the credential from its own configured claims and copies a value only where the
-offer supplies one, so a threshold outside its thirteen would return 200, issue
-successfully, and simply be absent — no error at either end. The compose stack
-bind-mounts a patched `populate_pdata`
-(`testdata/eudi-pid-issuer-py/patches/dynamic_func.py`) that lifts that
-restriction for the age-verification namespace, because ISO 18013-5 and the AV
-profile both leave the thresholds open. Any *other* undeclared element is still
-dropped silently.
-
-The advertised metadata deliberately stays at the upstream thirteen: the wallet
-renders one row per advertised claim on the issuance offer screen, so listing a
-hundred makes the demo unusable. A threshold minted but not advertised therefore
-carries no published label and is named `Age Over NN` by the wallet's own derived
-name. To change what is *advertised*, edit
-`testdata/eudi-pid-issuer-py/metadata/age_verification_mdoc.json` (bind-mounted
-over the container's copy) and recreate the container — then
-`docker compose restart tls_proxy`, since recreating the issuer changes its IP and
-the proxy caches the old one.
-
-Requesting a threshold is a separate permission again: the relying party
-certificate's authorized set decides that, and it covers `age_over_0` through
-`age_over_99`. See `testdata/eudi/verifier/README.md`.
-
-Where the integration tests drive a wallet they build themselves, this prints the
-three commands needed to drive a real phone: the `adb` deep link for an offer, the
-one for a presentation, and the `curl` that reads the answer back. Its
-request-building lives in `localstack.go` beside `main.go`, so the links a device
-is handed are built by the same code that talks to the containers -- as is the
-`adb` command wrapping, which validates a link rather than escaping it: a quote
-surviving into a command a human pastes into two nested shells would break out of
-the quoting there, invisibly from here.
-
-Three flag pairs are easy to confuse, and the separation is deliberate:
-
-| Flag | Decides | Note |
-|---|---|---|
-| `-mint` | what the credential *holds* | empty mints `DefaultAVElements` |
-| `-element` / `-value` | what the query *asks* | so the two can be made to disagree, which is what testing a refusal needs |
-| `-email` / `-mail-to` | where the one-time code goes | the code is never in the offer link |
-
-`-email` is a bool: the default `-smtp localhost:1025` is the compose stack's
-mailhog, which captures mail and delivers none, so every recipient behaves alike
-and no address is needed. **Read it at http://localhost:8025** — it reaches no
-inbox. `-mail-to` matters only once `-smtp` points at a relay that really
-delivers, with credentials from `SMTP_USERNAME` / `SMTP_PASSWORD`.
-
-`-show-query` prints the `dcql_query` as sent, from the same
-`DcqlQuery` that builds it. There is otherwise no way to read it: the
-request object is single use, so fetching it to decode the query leaves nothing
-for the phone, and the verifier answers 400 until the wallet responds and keeps
-no record across a restart.
-
-Prerequisites beyond the stack: `adb reverse` for 8090, plus 8443 when issuing.
-The app needs developer mode on and must be *unlocked* when a link arrives — a
-locked app queues it at the PIN screen, which looks like nothing happening.
 
 ## vptoken-decode — read back what was disclosed
 

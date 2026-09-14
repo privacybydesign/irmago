@@ -20,7 +20,7 @@ import (
 // than what it does with a credential once the chain is settled. Two
 // properties are at stake, both of which the wallet depends on and neither of
 // which the rest of this package exercises, because every other test issues
-// through Issuer: a self-signed IACA that signs the document signer directly
+// through TestIssuer: a self-signed IACA that signs the document signer directly
 // and travels inside x5chain.
 //
 // Real deployments are one level deeper. Yivi's staging PKI is

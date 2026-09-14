@@ -35,16 +35,31 @@ const (
 // by this constant.
 const _ = uint(saltLength - minSaltLength)
 
-// Issuer holds a two-level certificate chain:
+// TestIssuer mints mdocs for tests. It is not, and is not on a path to
+// becoming, a production issuer.
 //
-//	IACA root CA (offline, self-signed, signs DS certs only)
-//	    └── DS cert (online HSM, signs every MSO)
+// The wallet never issues an mdoc — it receives them over OpenID4VCI from an
+// external issuer — so nothing outside a _test.go file constructs this type.
+// What it exists for is giving the verifier something real to verify: a
+// credential signed by an actual document signer, with an actual x5chain, so a
+// test asserts against the same bytes a real issuer would send rather than a
+// hand-assembled envelope.
 //
-// In production:
-//   - iacakey lives in an offline/vaulted HSM — used once a year to sign new DS certs
-//   - dskey lives in an online HSM — used for every credential issuance
-//   - Phase 3: iacacert itself is signed by the EU AV Blueprint root CA
-type Issuer struct {
+// It generates its own throwaway two-level chain on every call:
+//
+//	IACA root CA (self-signed, signs DS certs only)
+//	    └── DS cert (signs every MSO)
+//
+// A real issuer keeps the IACA key in an offline HSM and the DS key in an
+// online one, and has its IACA signed by the EU AV Blueprint root CA. None of
+// that is modelled here, which is the other reason this stays in tests.
+//
+// It lives in the production package rather than a mdoctest subpackage only
+// because it needs nine unexported helpers from it (tag24Wrap, tdateEncMode,
+// hashTag24Item, coseKeyFromECDSA, profileFor, the EKU check and the salt
+// constants). Exporting those to move this out would widen the package's real
+// API to relocate test code, which is the worse trade.
+type TestIssuer struct {
 	iacakey  *ecdsa.PrivateKey
 	iacacert *x509.Certificate
 
@@ -52,7 +67,7 @@ type Issuer struct {
 	dscert *x509.Certificate
 }
 
-func NewIssuer() (*Issuer, error) {
+func NewTestIssuer() (*TestIssuer, error) {
 	// ── Step 1: IACA root CA (self-signed) ──────────────────────
 	// In production: key generated in offline HSM key ceremony, never extracted
 	iacaKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -143,7 +158,7 @@ func NewIssuer() (*Issuer, error) {
 		return nil, fmt.Errorf("parse DS cert: %w", err)
 	}
 
-	return &Issuer{
+	return &TestIssuer{
 		iacakey:  iacaKey,
 		iacacert: iacaCert,
 		dskey:    dsKey,
@@ -153,14 +168,14 @@ func NewIssuer() (*Issuer, error) {
 
 // IACACert returns the issuer's IACA root certificate — the trust anchor
 // verifiers should pre-install (e.g. via NewVerifier). Never the private key.
-func (iss *Issuer) IACACert() *x509.Certificate {
+func (iss *TestIssuer) IACACert() *x509.Certificate {
 	return iss.iacacert
 }
 
 // DSCert returns the issuer's DS certificate. Informational only — it
 // already travels with every issued mDoc via x5chain, so verifiers never
 // need to call this themselves.
-func (iss *Issuer) DSCert() *x509.Certificate {
+func (iss *TestIssuer) DSCert() *x509.Certificate {
 	return iss.dscert
 }
 
@@ -182,7 +197,7 @@ func shuffleIdentifiers(identifiers []string) error {
 // Issue builds and signs an mDoc for the given claims
 // holderPub is the holder's device public key — gets embedded in MSO.deviceKeyInfo
 // This locks the credential to the specific device that generated that key pair
-func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any, holderPub *ecdsa.PublicKey) (*MDoc, error) {
+func (iss *TestIssuer) Issue(docType string, namespace string, claims map[string]any, holderPub *ecdsa.PublicKey) (*MDoc, error) {
 	// ── Build IssuerSignedItems ──────────────────────────────────
 	// Claim order is randomized — deliberately NOT sorted — before
 	// digestID assignment. A deterministic order (e.g. alphabetical, which

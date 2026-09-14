@@ -30,7 +30,7 @@ import (
 // ============================================================
 
 // issuerOn builds an IACA + DS chain on the given curve.
-func issuerOn(t *testing.T, curve elliptic.Curve) *Issuer {
+func issuerOn(t *testing.T, curve elliptic.Curve) *TestIssuer {
 	t.Helper()
 
 	newCert := func(tmpl, parent *x509.Certificate, pub *ecdsa.PublicKey, signer *ecdsa.PrivateKey) *x509.Certificate {
@@ -66,11 +66,11 @@ func issuerOn(t *testing.T, curve elliptic.Curve) *Issuer {
 	}
 	dsCert := newCert(dsTmpl, iacaCert, &dsKey.PublicKey, iacaKey)
 
-	return &Issuer{iacakey: iacaKey, iacacert: iacaCert, dskey: dsKey, dscert: dsCert}
+	return &TestIssuer{iacakey: iacaKey, iacacert: iacaCert, dskey: dsKey, dscert: dsCert}
 }
 
 // signMSO signs mso with iss's DS key using alg, and assembles the document.
-func signMSO(t *testing.T, iss *Issuer, alg cose.Algorithm, namespace string, mso MSO, items [][]byte) *MDoc {
+func signMSO(t *testing.T, iss *TestIssuer, alg cose.Algorithm, namespace string, mso MSO, items [][]byte) *MDoc {
 	t.Helper()
 
 	msoBytes, err := tag24WrapWithMode(mso, tdateEncMode)
@@ -176,8 +176,8 @@ func TestDigestAlgorithmAgility(t *testing.T) {
 		{"SHA-512", func(b []byte) []byte { s := sha512.Sum512(b); return s[:] }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			iss, err := NewIssuer()
-			require.NoError(t, err, "NewIssuer: %v", err)
+			iss, err := NewTestIssuer()
+			require.NoError(t, err, "NewTestIssuer: %v", err)
 			holder, err := NewHolder()
 			require.NoError(t, err, "NewHolder: %v", err)
 			encoded, err := tag24Wrap(IssuerSignedItem{
@@ -215,10 +215,11 @@ func TestDeviceKeyCurveAgility(t *testing.T) {
 			require.NoError(t, err, "encode: %v", err)
 			// The coordinates must be the curve's own width, not P-256's. This is the
 			// assertion that would have caught the silent truncation.
+			_, x, y, _ := coseKey.EC2()
 			wantLen := coordinateLen(curve)
-			require.True(t, len(coseKey.X) == wantLen && len(coseKey.Y) == wantLen,
+			require.True(t, len(x) == wantLen && len(y) == wantLen,
 				"coordinates are %d/%d bytes, want %d each for %s",
-				len(coseKey.X), len(coseKey.Y), wantLen, curve.Params().Name)
+				len(x), len(y), wantLen, curve.Params().Name)
 
 			back, err := ecdsaPublicKeyFromCOSE(coseKey)
 			require.NoError(t, err, "decode: %v", err)
@@ -230,13 +231,13 @@ func TestDeviceKeyCurveAgility(t *testing.T) {
 		// 256 is brainpoolP256r1 in the IANA COSE registry: permitted by Table 22,
 		// absent from the Go standard library, and therefore refused rather than
 		// mis-decoded as something else.
-		_, err := ecdsaPublicKeyFromCOSE(COSEKey{Kty: 2, Crv: 256, X: []byte{1}, Y: []byte{2}})
+		_, err := ecdsaPublicKeyFromCOSE(ec2Key(cose.KeyTypeEC2, 256, []byte{1}, []byte{2}))
 		require.Error(t, err, "an unsupported curve must be refused, not mis-decoded")
 		require.ErrorContains(t, err, "256", "rejection should name the curve identifier, got: %v", err)
 	})
 
 	t.Run("an OKP key is refused with a diagnosis", func(t *testing.T) {
-		_, err := ecdsaPublicKeyFromCOSE(COSEKey{Kty: 1, Crv: 6, X: []byte{1}})
+		_, err := ecdsaPublicKeyFromCOSE(ec2Key(cose.KeyTypeOKP, 6, []byte{1}, nil))
 		require.Error(t, err, "an Ed25519 OKP key must be refused rather than read as EC2")
 		require.ErrorContains(t, err, "OKP", "rejection should say the key is OKP rather than malformed, got: %v", err)
 	})
@@ -254,8 +255,8 @@ func TestDeviceAuthOnEveryCurve(t *testing.T) {
 			require.NoError(t, err, "generate device key: %v", err)
 			holder, err := NewHolderFromPrivateKey(deviceKey)
 			require.NoError(t, err, "NewHolderFromPrivateKey: %v", err)
-			iss, err := NewIssuer()
-			require.NoError(t, err, "NewIssuer: %v", err)
+			iss, err := NewTestIssuer()
+			require.NoError(t, err, "NewTestIssuer: %v", err)
 			doc, err := iss.Issue(dt, dt, map[string]any{"family_name": "Doe"}, holder.PublicKey())
 			require.NoError(t, err, "Issue: %v", err)
 			presented, err := SelectiveDisclose(doc, dt, []string{"family_name"})

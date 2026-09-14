@@ -25,8 +25,20 @@ type DcqlResult struct {
 	QueryResults map[string]*CredentialQueryResult
 }
 
-// CandidateQuery names the DCQL credential query that one owned candidate of a
-// pick-one answers, alongside the claim paths that candidate would disclose.
+// CandidateQuery identifies one owned candidate of a pick-one: which DCQL
+// credential query it answers, and which claim paths it would disclose.
+//
+// The credential hash alone is not enough to identify a candidate. One
+// credential can answer several queries — a verifier asking for age_over_18 and
+// age_over_21 in two queries is answered twice by one age credential — so keying
+// on the hash collapsed both onto whichever query was seen last: every
+// presentation went back under that one query id, the other went unanswered, and
+// the verifier rejected the response as not satisfying its request.
+//
+// The claim paths disambiguate the remaining case, where one credential appears
+// twice within a single pick-one: a credential_sets choice whose options are
+// both satisfied by the same credential offers it once per option, and the two
+// differ only in the element they would reveal.
 type CandidateQuery struct {
 	// Hash identifies the stored credential the candidate presents.
 	Hash string
@@ -39,20 +51,8 @@ type CandidateQuery struct {
 }
 
 // ChoiceQueryIds lists, in the order of one pick-one's owned options, which
-// query each candidate answers.
-//
-// A list per pick-one, rather than one map for the whole request, because a
-// credential hash does not identify a query. One credential can answer several
-// queries — a verifier asking for age_over_18 and age_over_21 in two queries is
-// answered twice by one age credential — and a single hash-keyed map collapsed
-// those onto whichever query was seen last. Every presentation then went back
-// under that one query id, the other query went unanswered, and the verifier
-// rejected the response as not satisfying its request.
-//
-// Within one pick-one the hash can be ambiguous too: a credential_sets choice
-// whose options are both satisfied by the same credential offers it twice, once
-// per option, and the two differ only in the element they would reveal. That is
-// why a candidate carries its claim paths.
+// query each candidate answers. A list per pick-one rather than one map for the
+// whole request, for the reason given on CandidateQuery.
 type ChoiceQueryIds []CandidateQuery
 
 // QueryIdFor resolves which query a selected credential answers: the candidate

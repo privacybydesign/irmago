@@ -16,7 +16,7 @@ import (
 func newTestMdocCredentialResponseString(t *testing.T) (raw string, iacaCert *x509.Certificate) {
 	t.Helper()
 
-	issuer, err := mdoc.NewIssuer()
+	issuer, err := mdoc.NewTestIssuer()
 	require.NoError(t, err)
 	holder, err := mdoc.NewHolder()
 	require.NoError(t, err)
@@ -61,7 +61,7 @@ func TestMdocCredentialFormatParser_ParseAndVerify(t *testing.T) {
 
 func TestMdocCredentialFormatParser_ParseAndVerify_UntrustedRootRejected(t *testing.T) {
 	raw, _ := newTestMdocCredentialResponseString(t)
-	otherIssuer, err := mdoc.NewIssuer()
+	otherIssuer, err := mdoc.NewTestIssuer()
 	require.NoError(t, err)
 	verifier := mdoc.NewVerifier([]*x509.Certificate{otherIssuer.IACACert()})
 	parser := NewMdocCredentialFormatParser(verifier)
@@ -235,7 +235,7 @@ func TestDecodeIssuedMdocLeavesNullIssuerAuthToVerification(t *testing.T) {
 func TestDecodeIssuedMdocAcceptsEveryShapeTheVerifierThenAccepts(t *testing.T) {
 	const docType = "eu.europa.ec.av.1"
 
-	issuer, err := mdoc.NewIssuer()
+	issuer, err := mdoc.NewTestIssuer()
 	require.NoError(t, err)
 	holder, err := mdoc.NewHolder()
 	require.NoError(t, err)
@@ -271,7 +271,7 @@ func TestDecodeIssuedMdocAcceptsEveryShapeTheVerifierThenAccepts(t *testing.T) {
 func newIssuedMdocDocument(t *testing.T, docType string) *mdoc.MDoc {
 	t.Helper()
 
-	issuer, err := mdoc.NewIssuer()
+	issuer, err := mdoc.NewTestIssuer()
 	require.NoError(t, err)
 	holder, err := mdoc.NewHolder()
 	require.NoError(t, err)
@@ -312,7 +312,7 @@ func TestMdocCredentialFormatParser_CheckBatchUniqueness(t *testing.T) {
 // and rendered as text on the offer screen; after the JSON shaping it is the
 // float64 the list also sees.
 func TestMdocCredentialFormatParser_NamespacesAreJSONShaped(t *testing.T) {
-	issuer, err := mdoc.NewIssuer()
+	issuer, err := mdoc.NewTestIssuer()
 	require.NoError(t, err)
 	holder, err := mdoc.NewHolder()
 	require.NoError(t, err)

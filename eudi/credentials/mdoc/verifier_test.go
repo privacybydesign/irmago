@@ -172,8 +172,8 @@ func withDeviceSigned(presented *MDoc, nameSpaces, deviceAuthBytes []byte) *MDoc
 // issuance-time verification shape, unlike Verify's single-namespace
 // presentation-time shape.
 func TestVerifyAllDisclosedNamespaces_HappyPath(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	holder, err := NewHolder()
 	require.NoError(t, err, "NewHolder: %v", err)
 
@@ -198,8 +198,8 @@ func TestVerifyAllDisclosedNamespaces_HappyPath(t *testing.T) {
 // TestVerifyAllDisclosedNamespaces_TamperedDigestIsRejected mirrors
 // TestTamperedDigestIsRejected for the multi-namespace entry point.
 func TestVerifyAllDisclosedNamespaces_TamperedDigestIsRejected(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	holder, err := NewHolder()
 	require.NoError(t, err, "NewHolder: %v", err)
 	docType := "eu.europa.ec.av.1"
@@ -266,7 +266,7 @@ func TestNewVerifierFromPool(t *testing.T) {
 func TestUntrustedRootIsRejected(t *testing.T) {
 	_, _, verifier, _, _, _, docType, namespace := buildHappyPathMDoc(t)
 
-	attackerIssuer, _ := NewIssuer()
+	attackerIssuer, _ := NewTestIssuer()
 	attackerHolder, _ := NewHolder()
 	attackerMDoc, err := attackerIssuer.Issue(docType, namespace,
 		map[string]any{"age_over_18": true}, attackerHolder.PublicKey())
@@ -335,8 +335,8 @@ func TestUnknownDigestIDIsRejected(t *testing.T) {
 // NotBefore/NotAfter arithmetic — i.e. that a cert issued "now" with a
 // 1-year validity window actually verifies "now".
 func TestFreshCertsVerifyUnderCurrentTime(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 
 	holder, _ := NewHolder()
@@ -356,8 +356,8 @@ func TestFreshCertsVerifyUnderCurrentTime(t *testing.T) {
 // chain is correctly rejected as expired. This exercises the actual
 // expiry-rejection path, unlike the sanity check above.
 func TestExpiredDSCertIsRejected(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 
 	holder, _ := NewHolder()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
@@ -375,13 +375,13 @@ func TestExpiredDSCertIsRejected(t *testing.T) {
 }
 
 // TestExpiredMSOValidityIsRejected uses the verifier's clock to check the
-// MSO's OWN validUntil (90 days from issuance per Issuer.Issue), separately
+// MSO's OWN validUntil (90 days from issuance per TestIssuer.Issue), separately
 // from the X.509 DS cert's 365-day expiry. A clock ~100 days out is past the
 // MSO's window but still well within the DS cert's — this specifically
 // exercises the mso.ValidityInfo check, not the certificate chain check.
 func TestExpiredMSOValidityIsRejected(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	holder, _ := NewHolder()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
 		map[string]any{"age_over_18": true}, holder.PublicKey())
@@ -401,14 +401,14 @@ func TestExpiredMSOValidityIsRejected(t *testing.T) {
 
 // TestNotYetValidMSOIsRejected mirrors the above but checks the ValidFrom
 // side. The clock is pinned to 2 minutes before "now" — AFTER the certs'
-// backdated NotBefore (-5 minutes, see Issuer cert templates) so the X.509
+// backdated NotBefore (-5 minutes, see TestIssuer cert templates) so the X.509
 // chain check passes, but BEFORE the MSO's validFrom (~"now", set in
 // Issue()) so only the MSO validityInfo check can fail. Asserts on the
 // specific "credential not yet valid" prefix so this can't pass for the
 // wrong reason (e.g. coincidentally matching the cert-chain error text).
 func TestNotYetValidMSOIsRejected(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	// The validity window is set explicitly rather than taken from Issue():
 	// issued attestations are coarsened to midnight UTC so a batch cannot be
 	// correlated by its timestamps (see TestIssuedValidityTimestampsAreCoarsened),
@@ -434,8 +434,8 @@ func TestNotYetValidMSOIsRejected(t *testing.T) {
 // BEFORE the certs' NotBefore (i.e. before issuance), which should also
 // fail chain verification.
 func TestNotYetValidCertIsRejected(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 
 	holder, _ := NewHolder()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
@@ -910,7 +910,7 @@ func TestFullIssuanceFlow_ProducesValidMDoc(t *testing.T) {
 // verification still passes. Issue() coarsens its timestamps to midnight UTC for
 // unlinkability, which is right for real attestations but leaves no way to place
 // the MSO's window relative to a test clock.
-func issueWithValidity(t *testing.T, issuer *Issuer, validFrom, validUntil time.Time) *MDoc {
+func issueWithValidity(t *testing.T, issuer *TestIssuer, validFrom, validUntil time.Time) *MDoc {
 	t.Helper()
 
 	holder, err := NewHolder()
@@ -966,8 +966,8 @@ func issueWithValidity(t *testing.T, issuer *Issuer, validFrom, validUntil time.
 // result.Attributes without asking whether what it requested is there would see
 // a missing boolean as absent-and-therefore-false.
 func TestRequireElementsCatchesAnOmittedElement(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	holder, err := NewHolder()
 	require.NoError(t, err, "NewHolder: %v", err)
 

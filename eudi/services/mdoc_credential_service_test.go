@@ -34,7 +34,7 @@ type mdocTestEnv struct {
 	keys     db.MdocDeviceKeyStore
 	service  *mdocCredentialService
 	keyMint  *MdocKeyService
-	issuer   *stdmdoc.Issuer
+	issuer   *stdmdoc.TestIssuer
 	parser   CredentialFormatParser
 	metadata metadata.CredentialIssuerMetadata
 }
@@ -44,7 +44,7 @@ func newMdocTestEnv(t *testing.T) *mdocTestEnv {
 	d := newTestHolderDB(t)
 	store := db.NewMdocStore(d)
 	keys := db.NewMdocDeviceKeyStore(d)
-	issuer, err := stdmdoc.NewIssuer()
+	issuer, err := stdmdoc.NewTestIssuer()
 	require.NoError(t, err)
 
 	en := "en"

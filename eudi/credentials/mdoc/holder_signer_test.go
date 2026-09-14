@@ -61,8 +61,8 @@ func TestOpaqueSignerProducesVerifiableDeviceAuth(t *testing.T) {
 	// Holder, not *DefaultHolder: everything below goes through the interface.
 	var asInterface Holder = holder
 
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"

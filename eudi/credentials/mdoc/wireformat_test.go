@@ -234,8 +234,13 @@ func TestTag24WrapWithModeUsesGivenEncMode(t *testing.T) {
 
 // TestCOSEKeyUsesIntegerMapKeys decodes the real MSO bytes produced by
 // the issuer and checks — at the raw CBOR level — that deviceKeyInfo's
-// map keys are CBOR integers (major type 0/1), not text strings. This
-// is the concrete regression test for the COSEKey struct-tag fix.
+// map keys are CBOR integers (major type 0/1), not text strings, and that
+// they are exactly the four labels 1/-1/-2/-3 and no others.
+//
+// The count is as load-bearing as the types. deviceKey is covered by the
+// signed MSO digest, so any extra label changes what the issuer signs:
+// cose.NewKeyFromPublic, for one, also sets Algorithm and would emit label 3.
+// coseKeyFromECDSA builds the key label by label to avoid exactly that.
 func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
 	issuer, holder, _, _, _, _, _, _ := buildHappyPathMDoc(t)
 	_ = holder
@@ -289,7 +294,7 @@ func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
 			_ = v
 		default:
 			require.Fail(t, "unexpected deviceKey map key type",
-				"key %v has type %T, want int64/uint64 (COSEKey struct tags missing ',keyasint')", k, k)
+				"key %v has type %T, want int64/uint64 (the label must be a CBOR integer, not a text string)", k, k)
 		}
 	}
 
@@ -315,6 +320,10 @@ func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
 		}
 		require.True(t, found, "deviceKey missing expected key %d (saw keys: %v)", w, keysOf(keyMap))
 	}
+
+	require.Len(t, keyMap, len(want),
+		"deviceKey carries %d labels, want exactly %v — an extra label changes the signed MSO bytes (saw: %v)",
+		len(keyMap), want, keysOf(keyMap))
 }
 
 // TestValidityInfoUsesRFC3339Tag decodes the real MSO bytes generically
@@ -325,8 +334,8 @@ func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
 // before this fix and would not match a spec-conformant decoder's
 // expectations for a real interop scenario.
 func TestValidityInfoUsesRFC3339Tag(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	holder, _ := NewHolder()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
 		map[string]any{"age_over_18": true}, holder.PublicKey())
@@ -473,8 +482,8 @@ func TestDeviceAuthPayloadIsDetached(t *testing.T) {
 // distinct holders' credentials from the same issuer, both correctly
 // attached and signed, must both come back valid.
 func TestNewDeviceResponseSupportsMultipleDocuments(t *testing.T) {
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"

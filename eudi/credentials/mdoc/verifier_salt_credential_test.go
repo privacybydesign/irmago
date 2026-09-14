@@ -11,39 +11,16 @@ import (
 	"github.com/veraison/go-cose"
 )
 
-// Salt-length rejection, exercised through the entry points a wallet actually
-// calls, on complete credentials an issuer could really have sent.
-//
-// verifier_salt_test.go already covers the comparison itself: it calls
-// verifyNamespaceDigests directly with a hand-built item and a matching digest.
-// That pins the check but cannot show it is reachable — an earlier step in
-// Verify or VerifyAllDisclosedNamespaces could reject or accept the credential
-// before the salt is ever looked at, and the unit test would stay green either
-// way. What is missing, and what these tests add, is the whole credential:
-// signed by a real document signer, with a real x5chain, an open validity
-// window, and digests that match. Everything about it verifies except the salt.
-//
-// Such a credential cannot come from Issue, which refuses to mint a short salt —
-// that is the point of its own floor check — so it is built by
-// issueWithSaltLength below, the same construction with the floor removed. That
-// makes the control load-bearing: every rejection is paired with the identical
-// credential at a legal length, so a failure can only be attributed to the salt
-// and never to the hand-assembled envelope.
+// Salt-length rejection through the entry points a wallet actually calls, where
+// verifier_salt_test.go covers the comparison itself in isolation.
 
 // issueWithSaltLength mints a fully self-consistent mdoc whose IssuerSignedItem
-// random values are exactly saltLen bytes.
-//
-// "Self-consistent" is the important part. The MSO's valueDigests are computed
-// over the short-salted items and the MSO is signed by the issuer's real
-// document signer, with the real x5chain, so the credential passes every other
-// check the verifier makes: the chain resolves, the COSE signature verifies, the
-// validity window is open, the envelope docType matches the signed one, and each
-// digest matches its item. A credential that merely had a short salt bolted onto
-// a genuine one would fail on the digest instead, and the test would pass while
-// proving nothing about the salt.
+// random values are exactly saltLen bytes — the same construction as Issue, whose
+// own floor check refuses to mint one this short. Everything else about the
+// credential verifies, so a rejection can only be attributed to the salt.
 func issueWithSaltLength(
 	t *testing.T,
-	iss *Issuer,
+	iss *TestIssuer,
 	holderPub *ecdsa.PublicKey,
 	docType, namespace string,
 	claims map[string]any,
@@ -76,7 +53,7 @@ func issueWithSaltLength(
 // is what lets these tests build the credential Issue refuses to.
 func mdocFromItems(
 	t *testing.T,
-	iss *Issuer,
+	iss *TestIssuer,
 	holderPub *ecdsa.PublicKey,
 	docType, namespace string,
 	items []IssuerSignedItem,
@@ -138,11 +115,11 @@ func mdocFromItems(
 }
 
 // saltTestFixture is the issuer, holder and verifier the salt tests share.
-func saltTestFixture(t *testing.T) (*Issuer, *ecdsa.PublicKey, *Verifier, string, string) {
+func saltTestFixture(t *testing.T) (*TestIssuer, *ecdsa.PublicKey, *Verifier, string, string) {
 	t.Helper()
 
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	holder, err := NewHolder()
 	require.NoError(t, err, "NewHolder: %v", err)
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})

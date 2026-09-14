@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	cose "github.com/veraison/go-cose"
 )
 
 // ============================================================
@@ -44,7 +45,7 @@ type IssuerSignedItem struct {
 // holder-asserted elements against, which is half of why those elements were
 // refused for every docType.
 type DeviceKeyInfo struct {
-	DeviceKey         COSEKey            `cbor:"deviceKey"`
+	DeviceKey         *cose.Key          `cbor:"deviceKey"`
 	KeyAuthorizations *KeyAuthorizations `cbor:"keyAuthorizations,omitempty"`
 	KeyInfo           map[int64]any      `cbor:"keyInfo,omitempty"`
 }

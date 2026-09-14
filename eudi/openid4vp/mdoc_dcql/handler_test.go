@@ -570,7 +570,7 @@ func newTestEnvWithBatchSize(t *testing.T, batchSize uint) *testEnv {
 func newTestEnvWithExpiry(t *testing.T, batchSize uint, expiresAt *time.Time) *testEnv {
 	t.Helper()
 
-	issuer, err := stdmdoc.NewIssuer()
+	issuer, err := stdmdoc.NewTestIssuer()
 	require.NoError(t, err)
 	verifier := stdmdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	parser := services.NewMdocCredentialFormatParser(verifier)
@@ -792,12 +792,12 @@ func (e *testEnv) disclose(t *testing.T) (*dcql.PreparedDisclosure, error) {
 // verify -- which is fine for what the tests using it assert: how
 // selectiveDiscloseByPaths groups paths by namespace and merges the per-namespace
 // results, not whether the merged document verifies. Issuing a genuinely
-// two-namespace mdoc would mean extending stdmdoc.Issuer.Issue, which signs one
+// two-namespace mdoc would mean extending stdmdoc.TestIssuer.Issue, which signs one
 // namespace at a time, and that is production surface these tests do not need.
 func newTwoNamespaceMdoc(t *testing.T, second string) *stdmdoc.MDoc {
 	t.Helper()
 
-	issuer, err := stdmdoc.NewIssuer()
+	issuer, err := stdmdoc.NewTestIssuer()
 	require.NoError(t, err)
 
 	holderKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

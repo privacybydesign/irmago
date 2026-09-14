@@ -10,6 +10,7 @@ import (
 	"math/big"
 
 	"github.com/fxamacker/cbor/v2"
+	cose "github.com/veraison/go-cose"
 )
 
 // ============================================================
@@ -185,30 +186,6 @@ func mustMarshal(v any) []byte {
 	return b
 }
 
-// COSEKey is the CBOR-encoded public key format per RFC 9053 (COSE Key).
-//
-// The struct tags carry ",keyasint" so fxamacker/cbor encodes the labels as
-// actual CBOR integer map keys (major type 0/1) rather than text-string keys
-// like "1" / "-1". Dropping it produces a non-conformant COSE_Key that still
-// round-trips against this codebase — decoding would use the same wrong
-// mapping — while failing against every spec-compliant verifier. Worse, the
-// encoding is covered by the signed MSO digest, so an mdoc issued with the
-// wrong one cannot be repaired after the fact.
-//
-//	1  = kty  (key type: 2 = EC2)
-//	-1 = crv  (curve:    see coseCurves)
-//	-2 = x    (x coordinate, the curve's field size in bytes)
-//	-3 = y    (y coordinate, the curve's field size in bytes)
-type COSEKey struct {
-	Kty int64  `cbor:"1,keyasint"`
-	Crv int64  `cbor:"-1,keyasint"`
-	X   []byte `cbor:"-2,keyasint"`
-	Y   []byte `cbor:"-3,keyasint"`
-}
-
-// coseKeyFromECDSA converts an ECDSA public key into our COSEKey type.
-// Factored out so both the issuer (embedding) and verifier (deviceAuth
-// check) build the exact same structure from the exact same logic.
 // coseCurves maps the COSE EC2 curve identifiers from the IANA COSE Elliptic
 // Curves registry to their crypto/elliptic curve.
 //
@@ -230,14 +207,14 @@ type COSEKey struct {
 //
 // An unlisted curve is refused by name rather than silently mishandled; see
 // ecdsaPublicKeyFromCOSE.
-var coseCurves = map[int64]elliptic.Curve{
-	1: elliptic.P256(),
-	2: elliptic.P384(),
-	3: elliptic.P521(),
+var coseCurves = map[cose.Curve]elliptic.Curve{
+	cose.CurveP256: elliptic.P256(),
+	cose.CurveP384: elliptic.P384(),
+	cose.CurveP521: elliptic.P521(),
 }
 
 // coseCurveIDFor is coseCurves reversed.
-func coseCurveIDFor(curve elliptic.Curve) (int64, bool) {
+func coseCurveIDFor(curve elliptic.Curve) (cose.Curve, bool) {
 	for id, c := range coseCurves {
 		if c == curve {
 			return id, true
@@ -246,35 +223,43 @@ func coseCurveIDFor(curve elliptic.Curve) (int64, bool) {
 	return 0, false
 }
 
-// coseKeyFromECDSA converts an ECDSA public key into our COSEKey type.
-// Factored out so both the issuer (embedding) and verifier (deviceAuth
-// check) build the exact same structure from the exact same logic.
-func coseKeyFromECDSA(pub *ecdsa.PublicKey) (COSEKey, error) {
+// coseKeyFromECDSA converts an ECDSA public key into the COSE_Key (RFC 9053)
+// structure ISO/IEC 18013-5 embeds in the MSO as deviceKey. Factored out so
+// both the issuer (embedding) and verifier (deviceAuth check) build the exact
+// same structure from the exact same logic.
+//
+// Built label by label rather than with cose.NewKeyFromPublic, which also sets
+// Algorithm and therefore emits COSE label 3 (alg). deviceKey sits inside the
+// signed MSO, so an extra label changes the bytes the issuer signs; the four
+// labels below are what this package has always emitted.
+func coseKeyFromECDSA(pub *ecdsa.PublicKey) (*cose.Key, error) {
 	// The curve decides both the label and the coordinate width, so it has to be
 	// resolved before the coordinates are sliced rather than assumed afterwards.
 	// This slicing used to assume P-256's 65-byte uncompressed encoding: handed a
-	// P-384 key it produced a COSEKey labelled crv=1 whose X was the first 32 of
+	// P-384 key it produced a key labelled crv=1 whose X was the first 32 of
 	// 48 X-bytes and whose Y was the remaining 64 — a silently corrupt key,
 	// stamped with the wrong curve, embedded in an MSO and signed, indistinguish-
 	// able from a genuine P-256 key until something tried to rebuild it.
 	crv, ok := coseCurveIDFor(pub.Curve)
 	if !ok {
-		return COSEKey{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"key is on %s, which has no COSE EC2 curve identifier this package supports (P-256, P-384, P-521)",
 			pub.Curve.Params().Name)
 	}
 	ecdhPub, err := pub.ECDH()
 	if err != nil {
-		return COSEKey{}, fmt.Errorf("convert pub key: %w", err)
+		return nil, fmt.Errorf("convert pub key: %w", err)
 	}
 	// 04 || X || Y, each coordinate the curve's field size.
 	pubBytes := ecdhPub.Bytes()
 	byteLen := coordinateLen(pub.Curve)
-	return COSEKey{
-		Kty: 2, // EC2
-		Crv: crv,
-		X:   pubBytes[1 : 1+byteLen],
-		Y:   pubBytes[1+byteLen:],
+	return &cose.Key{
+		Type: cose.KeyTypeEC2,
+		Params: map[any]any{
+			cose.KeyLabelEC2Curve: crv,
+			cose.KeyLabelEC2X:     pubBytes[1 : 1+byteLen],
+			cose.KeyLabelEC2Y:     pubBytes[1+byteLen:],
+		},
 	}, nil
 }
 
@@ -284,27 +269,36 @@ func coordinateLen(curve elliptic.Curve) int {
 	return (curve.Params().BitSize + 7) / 8
 }
 
-// ecdsaPublicKeyFromCOSE reconstructs a *ecdsa.PublicKey from a COSEKey.
+// ecdsaPublicKeyFromCOSE reconstructs a *ecdsa.PublicKey from a COSE_Key.
 // Used by the verifier to check deviceAuth against the deviceKey embedded
 // in the (already-verified) MSO.
-func ecdsaPublicKeyFromCOSE(k COSEKey) (*ecdsa.PublicKey, error) {
-	if k.Kty != 2 {
+//
+// Deliberately not cose.Key.PublicKey(), which builds the key from the raw
+// coordinates without checking the point is on the curve — it returns a usable
+// *ecdsa.PublicKey for an off-curve point. These coordinates come off the wire,
+// so the validation in ecdsaPublicKeyFromCoordinates stays load-bearing.
+func ecdsaPublicKeyFromCOSE(k *cose.Key) (*ecdsa.PublicKey, error) {
+	if k == nil {
+		return nil, fmt.Errorf("MSO carries no deviceKey")
+	}
+	if k.Type != cose.KeyTypeEC2 {
 		// kty 1 is OKP, which is how Ed25519 and Ed448 device keys arrive. Naming
 		// that explicitly, because "unsupported kty: 1" reads like a malformed key
 		// when it is in fact a well-formed key on a curve this package cannot yet
 		// return as an *ecdsa.PublicKey.
-		if k.Kty == 1 {
+		if k.Type == cose.KeyTypeOKP {
 			return nil, fmt.Errorf(
 				"device key has kty OKP (1), i.e. an Edwards curve: ISO/IEC 18013-5 permits it, but this package returns EC2 keys only")
 		}
-		return nil, fmt.Errorf("unsupported kty: %d (want EC2/2)", k.Kty)
+		return nil, fmt.Errorf("unsupported kty: %d (want EC2/2)", k.Type)
 	}
-	curve, ok := coseCurves[k.Crv]
+	crv, x, y, _ := k.EC2()
+	curve, ok := coseCurves[crv]
 	if !ok {
 		return nil, fmt.Errorf(
-			"unsupported COSE curve identifier %d: this package supports P-256 (1), P-384 (2) and P-521 (3)", k.Crv)
+			"unsupported COSE curve identifier %d: this package supports P-256 (1), P-384 (2) and P-521 (3)", crv)
 	}
-	return ecdsaPublicKeyFromCoordinates(curve, new(big.Int).SetBytes(k.X), new(big.Int).SetBytes(k.Y))
+	return ecdsaPublicKeyFromCoordinates(curve, new(big.Int).SetBytes(x), new(big.Int).SetBytes(y))
 }
 
 // ecdsaPublicKeyFromCoordinates builds a *ecdsa.PublicKey from raw P-256

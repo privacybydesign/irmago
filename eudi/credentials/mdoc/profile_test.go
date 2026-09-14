@@ -29,8 +29,8 @@ const generalDocType = "org.iso.18013.5.1.mDL"
 func issueUnderProfile(t *testing.T, docType string, claims map[string]any) VerificationResult {
 	t.Helper()
 
-	issuer, err := NewIssuer()
-	require.NoError(t, err, "NewIssuer: %v", err)
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err, "NewTestIssuer: %v", err)
 	holder, err := NewHolder()
 	require.NoError(t, err, "NewHolder: %v", err)
 	doc, err := issuer.Issue(docType, docType, claims, holder.PublicKey())
@@ -239,10 +239,10 @@ func revokeCert(t *testing.T, issuerCert *x509.Certificate, issuerKey *ecdsa.Pri
 func TestRevokedDocumentSignerIsRefused(t *testing.T) {
 	const dt = AgeVerificationDocType
 
-	build := func(t *testing.T) (*Issuer, *MDoc, *x509.CertPool) {
+	build := func(t *testing.T) (*TestIssuer, *MDoc, *x509.CertPool) {
 		t.Helper()
-		iss, err := NewIssuer()
-		require.NoError(t, err, "NewIssuer: %v", err)
+		iss, err := NewTestIssuer()
+		require.NoError(t, err, "NewTestIssuer: %v", err)
 		h, err := NewHolder()
 		require.NoError(t, err, "NewHolder: %v", err)
 		doc, err := iss.Issue(dt, dt, map[string]any{"age_over_18": true}, h.PublicKey())
@@ -262,8 +262,8 @@ func TestRevokedDocumentSignerIsRefused(t *testing.T) {
 
 	t.Run("an unrelated CRL does not reject", func(t *testing.T) {
 		iss, doc, pool := build(t)
-		other, err := NewIssuer()
-		require.NoError(t, err, "NewIssuer: %v", err)
+		other, err := NewTestIssuer()
+		require.NoError(t, err, "NewTestIssuer: %v", err)
 		// A CRL from a different CA, revoking a different serial.
 		crl := revokeCert(t, other.IACACert(), other.iacakey, other.DSCert())
 		v := NewVerifierFromTrustSource(staticTrustSource{roots: pool, crls: []*x509.RevocationList{crl}})
