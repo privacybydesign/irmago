@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	cose "github.com/veraison/go-cose"
 )
 
@@ -35,20 +36,14 @@ func issuerOn(t *testing.T, curve elliptic.Curve) *Issuer {
 
 	newCert := func(tmpl, parent *x509.Certificate, pub *ecdsa.PublicKey, signer *ecdsa.PrivateKey) *x509.Certificate {
 		der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, pub, signer)
-		if err != nil {
-			t.Fatalf("create certificate: %v", err)
-		}
+		require.NoError(t, err, "create certificate: %v", err)
 		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			t.Fatalf("parse certificate: %v", err)
-		}
+		require.NoError(t, err, "parse certificate: %v", err)
 		return cert
 	}
 
 	iacaKey, err := ecdsa.GenerateKey(curve, rand.Reader)
-	if err != nil {
-		t.Fatalf("generate IACA key: %v", err)
-	}
+	require.NoError(t, err, "generate IACA key: %v", err)
 	iacaTmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
 		Subject:               pkix.Name{CommonName: "Agility IACA " + curve.Params().Name},
@@ -61,9 +56,7 @@ func issuerOn(t *testing.T, curve elliptic.Curve) *Issuer {
 	iacaCert := newCert(iacaTmpl, iacaTmpl, &iacaKey.PublicKey, iacaKey)
 
 	dsKey, err := ecdsa.GenerateKey(curve, rand.Reader)
-	if err != nil {
-		t.Fatalf("generate DS key: %v", err)
-	}
+	require.NoError(t, err, "generate DS key: %v", err)
 	dsTmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(2),
 		Subject:               pkix.Name{CommonName: "Agility DS " + curve.Params().Name},
@@ -82,13 +75,9 @@ func signMSO(t *testing.T, iss *Issuer, alg cose.Algorithm, namespace string, ms
 	t.Helper()
 
 	msoBytes, err := tag24WrapWithMode(mso, tdateEncMode)
-	if err != nil {
-		t.Fatalf("wrap mso: %v", err)
-	}
+	require.NoError(t, err, "wrap mso: %v", err)
 	signer, err := cose.NewSigner(alg, iss.dskey)
-	if err != nil {
-		t.Fatalf("cose.NewSigner(%v): %v", alg, err)
-	}
+	require.NoError(t, err, "cose.NewSigner(%v): %v", alg, err)
 	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers, Payload: msoBytes}
 	msg.Headers.Protected.SetAlgorithm(alg)
 	msg.Headers.Unprotected[int64(33)] = [][]byte{iss.dscert.Raw, iss.iacacert.Raw}
@@ -96,9 +85,7 @@ func signMSO(t *testing.T, iss *Issuer, alg cose.Algorithm, namespace string, ms
 		t.Fatalf("sign: %v", err)
 	}
 	coseBytes, err := msg.MarshalCBOR()
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
+	require.NoError(t, err, "marshal: %v", err)
 
 	tag24 := make([]Tag24Item, len(items))
 	for i, b := range items {
@@ -117,9 +104,7 @@ func signMSO(t *testing.T, iss *Issuer, alg cose.Algorithm, namespace string, ms
 func msoOver(t *testing.T, namespace, digestAlgorithm string, digest []byte, holderPub *ecdsa.PublicKey) MSO {
 	t.Helper()
 	deviceKey, err := coseKeyFromECDSA(holderPub)
-	if err != nil {
-		t.Fatalf("coseKeyFromECDSA: %v", err)
-	}
+	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 	now := time.Now().UTC()
 	return MSO{
 		Version:         "1.0",
@@ -148,9 +133,7 @@ func TestIssuerAuthAlgorithmAgility(t *testing.T) {
 		t.Run(tc.curve.Params().Name, func(t *testing.T) {
 			iss := issuerOn(t, tc.curve)
 			holder, err := NewHolder()
-			if err != nil {
-				t.Fatalf("NewHolder: %v", err)
-			}
+			require.NoError(t, err, "NewHolder: %v", err)
 			encoded, digest := wrapItem(t, IssuerSignedItem{
 				DigestID: 0, Random: make([]byte, minSaltLength),
 				ElementIdentifier: "family_name", ElementValue: "Doe",
@@ -204,20 +187,14 @@ func TestDigestAlgorithmAgility(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			iss, err := NewIssuer()
-			if err != nil {
-				t.Fatalf("NewIssuer: %v", err)
-			}
+			require.NoError(t, err, "NewIssuer: %v", err)
 			holder, err := NewHolder()
-			if err != nil {
-				t.Fatalf("NewHolder: %v", err)
-			}
+			require.NoError(t, err, "NewHolder: %v", err)
 			encoded, err := tag24Wrap(IssuerSignedItem{
 				DigestID: 0, Random: make([]byte, minSaltLength),
 				ElementIdentifier: "family_name", ElementValue: "Doe",
 			})
-			if err != nil {
-				t.Fatalf("tag24Wrap: %v", err)
-			}
+			require.NoError(t, err, "tag24Wrap: %v", err)
 
 			mso := msoOver(t, ns, tc.name, tc.digest(encoded), holder.PublicKey())
 			doc := signMSO(t, iss, cose.AlgorithmES256, ns, mso, [][]byte{encoded})
@@ -250,14 +227,10 @@ func TestDeviceKeyCurveAgility(t *testing.T) {
 	for _, curve := range []elliptic.Curve{elliptic.P256(), elliptic.P384(), elliptic.P521()} {
 		t.Run(curve.Params().Name, func(t *testing.T) {
 			key, err := ecdsa.GenerateKey(curve, rand.Reader)
-			if err != nil {
-				t.Fatalf("generate: %v", err)
-			}
+			require.NoError(t, err, "generate: %v", err)
 
 			coseKey, err := coseKeyFromECDSA(&key.PublicKey)
-			if err != nil {
-				t.Fatalf("encode: %v", err)
-			}
+			require.NoError(t, err, "encode: %v", err)
 			// The coordinates must be the curve's own width, not P-256's. This is the
 			// assertion that would have caught the silent truncation.
 			wantLen := coordinateLen(curve)
@@ -267,9 +240,7 @@ func TestDeviceKeyCurveAgility(t *testing.T) {
 			}
 
 			back, err := ecdsaPublicKeyFromCOSE(coseKey)
-			if err != nil {
-				t.Fatalf("decode: %v", err)
-			}
+			require.NoError(t, err, "decode: %v", err)
 			if !back.Equal(&key.PublicKey) {
 				t.Fatal("round trip did not preserve the key — the curve label or the coordinate width is wrong")
 			}
@@ -309,30 +280,18 @@ func TestDeviceAuthOnEveryCurve(t *testing.T) {
 	for _, curve := range []elliptic.Curve{elliptic.P256(), elliptic.P384(), elliptic.P521()} {
 		t.Run(curve.Params().Name, func(t *testing.T) {
 			deviceKey, err := ecdsa.GenerateKey(curve, rand.Reader)
-			if err != nil {
-				t.Fatalf("generate device key: %v", err)
-			}
+			require.NoError(t, err, "generate device key: %v", err)
 			holder, err := NewHolderFromPrivateKey(deviceKey)
-			if err != nil {
-				t.Fatalf("NewHolderFromPrivateKey: %v", err)
-			}
+			require.NoError(t, err, "NewHolderFromPrivateKey: %v", err)
 			iss, err := NewIssuer()
-			if err != nil {
-				t.Fatalf("NewIssuer: %v", err)
-			}
+			require.NoError(t, err, "NewIssuer: %v", err)
 			doc, err := iss.Issue(dt, dt, map[string]any{"family_name": "Doe"}, holder.PublicKey())
-			if err != nil {
-				t.Fatalf("Issue: %v", err)
-			}
+			require.NoError(t, err, "Issue: %v", err)
 			presented, err := SelectiveDisclose(doc, dt, []string{"family_name"})
-			if err != nil {
-				t.Fatalf("SelectiveDisclose: %v", err)
-			}
+			require.NoError(t, err, "SelectiveDisclose: %v", err)
 			transcript := SessionTranscript{Handover: "test-handover"}
 			deviceAuth, err := holder.SignDeviceAuth(dt, transcript)
-			if err != nil {
-				t.Fatalf("SignDeviceAuth: %v", err)
-			}
+			require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 			result := NewVerifier([]*x509.Certificate{iss.IACACert()}).
 				VerifyWithDeviceAuth(presented, dt, dt, transcript, deviceAuth)

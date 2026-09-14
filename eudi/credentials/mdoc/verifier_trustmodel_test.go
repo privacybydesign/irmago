@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/stretchr/testify/require"
 	cose "github.com/veraison/go-cose"
 )
 
@@ -43,9 +44,7 @@ func buildPinnedChainMDoc(t *testing.T) (doc *MDoc, root, intermediate *x509.Cer
 
 	newCA := func(cn string, parent *x509.Certificate, parentKey *ecdsa.PrivateKey, serial int64, pathLen int) (*x509.Certificate, *ecdsa.PrivateKey) {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err != nil {
-			t.Fatalf("generate %s key: %v", cn, err)
-		}
+		require.NoError(t, err, "generate %s key: %v", cn, err)
 		template := &x509.Certificate{
 			SerialNumber:          big.NewInt(serial),
 			Subject:               pkix.Name{CommonName: cn, Organization: []string{"Yivi Test"}},
@@ -62,13 +61,9 @@ func buildPinnedChainMDoc(t *testing.T) (doc *MDoc, root, intermediate *x509.Cer
 			signingCert, signingKey = parent, parentKey
 		}
 		der, err := x509.CreateCertificate(rand.Reader, template, signingCert, &key.PublicKey, signingKey)
-		if err != nil {
-			t.Fatalf("create %s cert: %v", cn, err)
-		}
+		require.NoError(t, err, "create %s cert: %v", cn, err)
 		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			t.Fatalf("parse %s cert: %v", cn, err)
-		}
+		require.NoError(t, err, "parse %s cert: %v", cn, err)
 		return cert, key
 	}
 
@@ -76,9 +71,7 @@ func buildPinnedChainMDoc(t *testing.T) (doc *MDoc, root, intermediate *x509.Cer
 	interCert, interKey := newCA("Test Attestation Providers CA", rootCert, rootKey, 2, 0)
 
 	dsKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("generate DS key: %v", err)
-	}
+	require.NoError(t, err, "generate DS key: %v", err)
 	dsTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(0xC0FFEE),
 		Subject:               pkix.Name{CommonName: "Test DS under intermediate", Organization: []string{"Yivi Test"}},
@@ -89,29 +82,19 @@ func buildPinnedChainMDoc(t *testing.T) (doc *MDoc, root, intermediate *x509.Cer
 		UnknownExtKeyUsage:    []asn1.ObjectIdentifier{isoMdocDocumentSignerEKU},
 	}
 	dsDER, err := x509.CreateCertificate(rand.Reader, dsTemplate, interCert, &dsKey.PublicKey, interKey)
-	if err != nil {
-		t.Fatalf("create DS cert: %v", err)
-	}
+	require.NoError(t, err, "create DS cert: %v", err)
 	dsCert, err := x509.ParseCertificate(dsDER)
-	if err != nil {
-		t.Fatalf("parse DS cert: %v", err)
-	}
+	require.NoError(t, err, "parse DS cert: %v", err)
 
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 	deviceKey, err := coseKeyFromECDSA(holder.PublicKey())
-	if err != nil {
-		t.Fatalf("coseKeyFromECDSA: %v", err)
-	}
+	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 
 	const docType = "eu.europa.ec.av.1"
 	item := IssuerSignedItem{DigestID: 0, Random: make([]byte, saltLength), ElementIdentifier: "age_over_18", ElementValue: true}
 	digest, err := hashTag24Item(item)
-	if err != nil {
-		t.Fatalf("hashTag24Item: %v", err)
-	}
+	require.NoError(t, err, "hashTag24Item: %v", err)
 	now := time.Now().UTC()
 	msoBytes, err := tag24WrapWithMode(MSO{
 		Version:         "1.0",
@@ -121,14 +104,10 @@ func buildPinnedChainMDoc(t *testing.T) (doc *MDoc, root, intermediate *x509.Cer
 		ValidityInfo:    ValidityInfo{Signed: now, ValidFrom: now, ValidUntil: now.Add(24 * time.Hour)},
 		DeviceKeyInfo:   DeviceKeyInfo{DeviceKey: deviceKey},
 	}, tdateEncMode)
-	if err != nil {
-		t.Fatalf("wrap mso: %v", err)
-	}
+	require.NoError(t, err, "wrap mso: %v", err)
 
 	signer, err := cose.NewSigner(cose.AlgorithmES256, dsKey)
-	if err != nil {
-		t.Fatalf("cose.NewSigner: %v", err)
-	}
+	require.NoError(t, err, "cose.NewSigner: %v", err)
 	msg := cose.NewSign1Message()
 	msg.Payload = msoBytes
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
@@ -138,13 +117,9 @@ func buildPinnedChainMDoc(t *testing.T) (doc *MDoc, root, intermediate *x509.Cer
 		t.Fatalf("sign mso: %v", err)
 	}
 	coseBytes, err := cbor.Marshal(msg)
-	if err != nil {
-		t.Fatalf("marshal cose: %v", err)
-	}
+	require.NoError(t, err, "marshal cose: %v", err)
 	wrapped, err := tag24Wrap(item)
-	if err != nil {
-		t.Fatalf("wrap item: %v", err)
-	}
+	require.NoError(t, err, "wrap item: %v", err)
 
 	return &MDoc{
 		DocType: docType,

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/veraison/go-cose"
 )
 
@@ -87,16 +88,12 @@ func mdocFromItems(
 	valueDigests := make(map[uint64][]byte, len(items))
 	for _, item := range items {
 		digest, err := hashTag24Item(item)
-		if err != nil {
-			t.Fatalf("hash item %s: %v", item.ElementIdentifier, err)
-		}
+		require.NoError(t, err, "hash item %s: %v", item.ElementIdentifier, err)
 		valueDigests[item.DigestID] = digest
 	}
 
 	deviceKey, err := coseKeyFromECDSA(holderPub)
-	if err != nil {
-		t.Fatalf("convert holder public key: %v", err)
-	}
+	require.NoError(t, err, "convert holder public key: %v", err)
 
 	now := time.Now().UTC().Truncate(24 * time.Hour)
 	mso := MSO{
@@ -113,14 +110,10 @@ func mdocFromItems(
 	}
 
 	msoBytes, err := tag24WrapWithMode(mso, tdateEncMode)
-	if err != nil {
-		t.Fatalf("wrap mso: %v", err)
-	}
+	require.NoError(t, err, "wrap mso: %v", err)
 
 	signer, err := cose.NewSigner(cose.AlgorithmES256, iss.dskey)
-	if err != nil {
-		t.Fatalf("create signer: %v", err)
-	}
+	require.NoError(t, err, "create signer: %v", err)
 	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers,
 		Payload: msoBytes}
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
@@ -129,16 +122,12 @@ func mdocFromItems(
 		t.Fatalf("sign mso: %v", err)
 	}
 	coseBytes, err := msg.MarshalCBOR()
-	if err != nil {
-		t.Fatalf("marshal cose: %v", err)
-	}
+	require.NoError(t, err, "marshal cose: %v", err)
 
 	tag24Items := make([]Tag24Item, len(items))
 	for i, item := range items {
 		wrapped, err := tag24Wrap(item)
-		if err != nil {
-			t.Fatalf("wrap item %s: %v", item.ElementIdentifier, err)
-		}
+		require.NoError(t, err, "wrap item %s: %v", item.ElementIdentifier, err)
 		tag24Items[i] = Tag24Item{EncodedItem: wrapped}
 	}
 
@@ -156,13 +145,9 @@ func saltTestFixture(t *testing.T) (*Issuer, *ecdsa.PublicKey, *Verifier, string
 	t.Helper()
 
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	return issuer, holder.PublicKey(), verifier, "eu.europa.ec.av.1", "eu.europa.ec.av.1"
 }
@@ -260,9 +245,7 @@ func TestShortSaltIsRejectedAtPresentation(t *testing.T) {
 		map[string]any{"age_over_18": true, "age_over_21": false}, minSaltLength-1)
 
 	presented, err := SelectiveDisclose(short, namespace, []string{"age_over_18"})
-	if err != nil {
-		t.Fatalf("SelectiveDisclose: %v", err)
-	}
+	require.NoError(t, err, "SelectiveDisclose: %v", err)
 
 	result := verifier.Verify(presented, namespace)
 	if result.Valid {

@@ -2,6 +2,7 @@ package mdoc
 
 import (
 	"crypto/sha256"
+	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
 )
@@ -14,9 +15,7 @@ func wrapItemWithMatchingDigest(t *testing.T, item IssuerSignedItem) ([]Tag24Ite
 	t.Helper()
 
 	encoded, err := tag24Wrap(item)
-	if err != nil {
-		t.Fatalf("tag24Wrap: %v", err)
-	}
+	require.NoError(t, err, "tag24Wrap: %v", err)
 	digest := sha256.Sum256(encoded)
 
 	return []Tag24Item{{EncodedItem: encoded}}, map[uint64][]byte{item.DigestID: digest[:]}
@@ -60,9 +59,7 @@ func TestVerifyNamespaceDigestsAcceptsSaltAtFloor(t *testing.T) {
 	items, digests := wrapItemWithMatchingDigest(t, item)
 
 	attrs, err := verifyNamespaceDigests(items, digests, sha256Digest)
-	if err != nil {
-		t.Fatalf("a salt exactly at the ISO floor was rejected: %v", err)
-	}
+	require.NoError(t, err, "a salt exactly at the ISO floor was rejected: %v", err)
 	if got, ok := attrs["age_over_18"]; !ok || got != true {
 		t.Errorf("attrs[age_over_18] = %v, %v; want true, true", got, ok)
 	}

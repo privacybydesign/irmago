@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/stretchr/testify/require"
 	cose "github.com/veraison/go-cose"
 )
 
@@ -31,13 +32,9 @@ func issueCustom(t *testing.T, iss *Issuer, namespace string, mso MSO, itemBytes
 	t.Helper()
 
 	msoBytes, err := tag24WrapWithMode(mso, tdateEncMode)
-	if err != nil {
-		t.Fatalf("wrap mso: %v", err)
-	}
+	require.NoError(t, err, "wrap mso: %v", err)
 	signer, err := cose.NewSigner(cose.AlgorithmES256, iss.dskey)
-	if err != nil {
-		t.Fatalf("cose.NewSigner: %v", err)
-	}
+	require.NoError(t, err, "cose.NewSigner: %v", err)
 	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers, Payload: msoBytes}
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 	msg.Headers.Unprotected[int64(33)] = [][]byte{iss.dscert.Raw, iss.iacacert.Raw}
@@ -45,9 +42,7 @@ func issueCustom(t *testing.T, iss *Issuer, namespace string, mso MSO, itemBytes
 		t.Fatalf("sign mso: %v", err)
 	}
 	coseBytes, err := msg.MarshalCBOR()
-	if err != nil {
-		t.Fatalf("marshal cose: %v", err)
-	}
+	require.NoError(t, err, "marshal cose: %v", err)
 
 	items := make([]Tag24Item, len(itemBytes))
 	for i, b := range itemBytes {
@@ -66,13 +61,9 @@ func issueCustom(t *testing.T, iss *Issuer, namespace string, mso MSO, itemBytes
 func baseMSO(t *testing.T, namespace string, digests map[uint64][]byte) MSO {
 	t.Helper()
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 	deviceKey, err := coseKeyFromECDSA(holder.PublicKey())
-	if err != nil {
-		t.Fatalf("coseKeyFromECDSA: %v", err)
-	}
+	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 	now := time.Now().UTC()
 	return MSO{
 		Version:         "1.0",
@@ -89,9 +80,7 @@ func baseMSO(t *testing.T, namespace string, digests map[uint64][]byte) MSO {
 func wrapItem(t *testing.T, item IssuerSignedItem) (encoded []byte, digest []byte) {
 	t.Helper()
 	encoded, err := tag24Wrap(item)
-	if err != nil {
-		t.Fatalf("tag24Wrap: %v", err)
-	}
+	require.NoError(t, err, "tag24Wrap: %v", err)
 	sum := sha256.Sum256(encoded)
 	return encoded, sum[:]
 }
@@ -120,9 +109,7 @@ func TestMSOVersionMustBeMajorOne(t *testing.T) {
 	} {
 		t.Run("version "+tc.version, func(t *testing.T) {
 			issuer, err := NewIssuer()
-			if err != nil {
-				t.Fatalf("NewIssuer: %v", err)
-			}
+			require.NoError(t, err, "NewIssuer: %v", err)
 			encoded, digest := wrapItem(t, IssuerSignedItem{
 				DigestID: 0, Random: make([]byte, minSaltLength),
 				ElementIdentifier: "age_over_18", ElementValue: true,
@@ -161,9 +148,7 @@ func TestDuplicateElementIdentifierIsRejected(t *testing.T) {
 	const ns = "eu.europa.ec.av.1"
 
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 
 	trueItem, trueDigest := wrapItem(t, IssuerSignedItem{
 		DigestID: 0, Random: make([]byte, minSaltLength),
@@ -200,9 +185,7 @@ func TestDuplicateCBORMapKeyIsRejected(t *testing.T) {
 	const ns = "eu.europa.ec.av.1"
 
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 
 	// Encode the item normally, then splice in a second elementValue pair and
 	// bump the map header by one entry. Building the whole map by hand would be
@@ -211,28 +194,20 @@ func TestDuplicateCBORMapKeyIsRejected(t *testing.T) {
 		DigestID: 0, Random: make([]byte, minSaltLength),
 		ElementIdentifier: "age_over_18", ElementValue: false,
 	})
-	if err != nil {
-		t.Fatalf("marshal item: %v", err)
-	}
+	require.NoError(t, err, "marshal item: %v", err)
 	if base[0] != 0xa4 {
 		t.Fatalf("expected a 4-entry definite-length CBOR map header (0xa4), got 0x%02x", base[0])
 	}
 	dupKey, err := cbor.Marshal("elementValue")
-	if err != nil {
-		t.Fatalf("marshal key: %v", err)
-	}
+	require.NoError(t, err, "marshal key: %v", err)
 	dupValue, err := cbor.Marshal(true)
-	if err != nil {
-		t.Fatalf("marshal value: %v", err)
-	}
+	require.NoError(t, err, "marshal value: %v", err)
 	withDup := append([]byte{0xa5}, base[1:]...)
 	withDup = append(withDup, dupKey...)
 	withDup = append(withDup, dupValue...)
 
 	encoded, err := tag24WrapBytes(withDup)
-	if err != nil {
-		t.Fatalf("tag24WrapBytes: %v", err)
-	}
+	require.NoError(t, err, "tag24WrapBytes: %v", err)
 	sum := sha256.Sum256(encoded)
 
 	mso := baseMSO(t, ns, map[uint64][]byte{0: sum[:]})
@@ -287,18 +262,12 @@ func TestVerifyCoversEveryNamespacePresent(t *testing.T) {
 // for less.
 func TestSelectiveDiscloseRefusesEmptyResult(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 	const ns = "eu.europa.ec.av.1"
 	doc, err := issuer.Issue(ns, ns, map[string]any{"age_over_18": true}, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 
 	if _, err := SelectiveDisclose(doc, ns, []string{"age_over_65"}); err == nil {
 		t.Fatal("disclosing an element the credential does not hold must error rather than produce a namespace mapped to null")

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/stretchr/testify/require"
 	cose "github.com/veraison/go-cose"
 )
 
@@ -42,9 +43,7 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 	t.Helper()
 
 	iacaKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("generate IACA key: %v", err)
-	}
+	require.NoError(t, err, "generate IACA key: %v", err)
 	iacaTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
 		Subject:               pkix.Name{CommonName: "Test IACA"},
@@ -56,18 +55,12 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 		MaxPathLen:            1,
 	}
 	iacaDER, err := x509.CreateCertificate(rand.Reader, iacaTemplate, iacaTemplate, &iacaKey.PublicKey, iacaKey)
-	if err != nil {
-		t.Fatalf("create IACA cert: %v", err)
-	}
+	require.NoError(t, err, "create IACA cert: %v", err)
 	iacaCert, err := x509.ParseCertificate(iacaDER)
-	if err != nil {
-		t.Fatalf("parse IACA cert: %v", err)
-	}
+	require.NoError(t, err, "parse IACA cert: %v", err)
 
 	dsKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("generate DS key: %v", err)
-	}
+	require.NoError(t, err, "generate DS key: %v", err)
 	dsTemplate := &x509.Certificate{
 		// 0xD5C0DE renders as D5C0DE, which no incidental digit in the
 		// message can be mistaken for.
@@ -82,30 +75,20 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 		UnknownExtKeyUsage:    unknownEKU,
 	}
 	dsDER, err := x509.CreateCertificate(rand.Reader, dsTemplate, iacaCert, &dsKey.PublicKey, iacaKey)
-	if err != nil {
-		t.Fatalf("create DS cert: %v", err)
-	}
+	require.NoError(t, err, "create DS cert: %v", err)
 	dsCert, err := x509.ParseCertificate(dsDER)
-	if err != nil {
-		t.Fatalf("parse DS cert: %v", err)
-	}
+	require.NoError(t, err, "parse DS cert: %v", err)
 
 	// Minimal signed MSO — only the chain is under test, so a single claim in
 	// one namespace is enough for verifyIssuerAuthAndMSO to run end to end.
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 	deviceKey, err := coseKeyFromECDSA(holder.PublicKey())
-	if err != nil {
-		t.Fatalf("coseKeyFromECDSA: %v", err)
-	}
+	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 	const docType = "eu.europa.ec.av.1"
 	item := IssuerSignedItem{DigestID: 0, Random: make([]byte, 16), ElementIdentifier: "age_over_18", ElementValue: true}
 	digest, err := hashTag24Item(item)
-	if err != nil {
-		t.Fatalf("hashTag24Item: %v", err)
-	}
+	require.NoError(t, err, "hashTag24Item: %v", err)
 	now := time.Now().UTC()
 	mso := MSO{
 		Version:         "1.0",
@@ -116,13 +99,9 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 		DeviceKeyInfo:   DeviceKeyInfo{DeviceKey: deviceKey},
 	}
 	msoBytes, err := tag24WrapWithMode(mso, tdateEncMode)
-	if err != nil {
-		t.Fatalf("wrap mso: %v", err)
-	}
+	require.NoError(t, err, "wrap mso: %v", err)
 	signer, err := cose.NewSigner(cose.AlgorithmES256, dsKey)
-	if err != nil {
-		t.Fatalf("cose.NewSigner: %v", err)
-	}
+	require.NoError(t, err, "cose.NewSigner: %v", err)
 	msg := cose.NewSign1Message()
 	msg.Payload = msoBytes
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
@@ -131,13 +110,9 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 		t.Fatalf("sign mso: %v", err)
 	}
 	coseBytes, err := cbor.Marshal(msg)
-	if err != nil {
-		t.Fatalf("marshal cose: %v", err)
-	}
+	require.NoError(t, err, "marshal cose: %v", err)
 	wrapped, err := tag24Wrap(item)
-	if err != nil {
-		t.Fatalf("wrap item: %v", err)
-	}
+	require.NoError(t, err, "wrap item: %v", err)
 
 	doc := &MDoc{
 		DocType: docType,
@@ -162,14 +137,10 @@ func signDeviceAuthOver(t *testing.T, h *DefaultHolder, docType string, transcri
 		DocType:           docType,
 		DeviceNameSpaces:  cbor.RawMessage(deviceNameSpaces),
 	})
-	if err != nil {
-		t.Fatalf("wrap deviceAuthentication: %v", err)
-	}
+	require.NoError(t, err, "wrap deviceAuthentication: %v", err)
 
 	signer, err := cose.NewSigner(cose.AlgorithmES256, h.signer)
-	if err != nil {
-		t.Fatalf("create signer: %v", err)
-	}
+	require.NoError(t, err, "create signer: %v", err)
 	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers,
 		Payload: payload}
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
@@ -179,9 +150,7 @@ func signDeviceAuthOver(t *testing.T, h *DefaultHolder, docType string, transcri
 	msg.Payload = nil // detached on the wire, as SignDeviceAuth does
 
 	encoded, err := msg.MarshalCBOR()
-	if err != nil {
-		t.Fatalf("marshal deviceAuth: %v", err)
-	}
+	require.NoError(t, err, "marshal deviceAuth: %v", err)
 	return encoded
 }
 
@@ -206,22 +175,16 @@ func withDeviceSigned(presented *MDoc, nameSpaces, deviceAuthBytes []byte) *MDoc
 // presentation-time shape.
 func TestVerifyAllDisclosedNamespaces_HappyPath(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
 	claims := map[string]any{"age_over_18": true, "age_over_16": true}
 
 	issued, err := issuer.Issue(docType, namespace, claims, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	resolved, result := verifier.VerifyAllDisclosedNamespaces(issued)
@@ -245,19 +208,13 @@ func TestVerifyAllDisclosedNamespaces_HappyPath(t *testing.T) {
 // TestTamperedDigestIsRejected for the multi-namespace entry point.
 func TestVerifyAllDisclosedNamespaces_TamperedDigestIsRejected(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
 	issued, err := issuer.Issue(docType, namespace, map[string]any{"age_over_18": true}, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 
 	tamperedItem := IssuerSignedItem{
 		DigestID:          0,
@@ -266,9 +223,7 @@ func TestVerifyAllDisclosedNamespaces_TamperedDigestIsRejected(t *testing.T) {
 		ElementValue:      false, // flipped from true
 	}
 	tamperedWrapped, err := tag24Wrap(tamperedItem)
-	if err != nil {
-		t.Fatalf("tag24Wrap: %v", err)
-	}
+	require.NoError(t, err, "tag24Wrap: %v", err)
 	tamperedMDoc := &MDoc{
 		DocType: issued.DocType,
 		IssuerSigned: IssuerSigned{
@@ -335,13 +290,9 @@ func TestUntrustedRootIsRejected(t *testing.T) {
 	attackerHolder, _ := NewHolder()
 	attackerMDoc, err := attackerIssuer.Issue(docType, namespace,
 		map[string]any{"age_over_18": true}, attackerHolder.PublicKey())
-	if err != nil {
-		t.Fatalf("attacker Issue: %v", err)
-	}
+	require.NoError(t, err, "attacker Issue: %v", err)
 	attackerPresented, err := SelectiveDisclose(attackerMDoc, namespace, []string{"age_over_18"})
-	if err != nil {
-		t.Fatalf("attacker SelectiveDisclose: %v", err)
-	}
+	require.NoError(t, err, "attacker SelectiveDisclose: %v", err)
 
 	result := verifier.Verify(attackerPresented, namespace)
 	if result.Valid {
@@ -359,9 +310,7 @@ func TestTamperedDigestIsRejected(t *testing.T) {
 		ElementValue:      false, // flipped from true
 	}
 	tamperedWrapped, err := tag24Wrap(tamperedItem)
-	if err != nil {
-		t.Fatalf("tag24Wrap: %v", err)
-	}
+	require.NoError(t, err, "tag24Wrap: %v", err)
 	tamperedMDoc := &MDoc{
 		DocType: presented.DocType,
 		IssuerSigned: IssuerSigned{
@@ -388,9 +337,7 @@ func TestUnknownDigestIDIsRejected(t *testing.T) {
 		ElementValue:      true,
 	}
 	bogusWrapped, err := tag24Wrap(bogusItem)
-	if err != nil {
-		t.Fatalf("tag24Wrap: %v", err)
-	}
+	require.NoError(t, err, "tag24Wrap: %v", err)
 	bogusMDoc := &MDoc{
 		DocType: presented.DocType,
 		IssuerSigned: IssuerSigned{
@@ -415,21 +362,15 @@ func TestUnknownDigestIDIsRejected(t *testing.T) {
 // 1-year validity window actually verifies "now".
 func TestFreshCertsVerifyUnderCurrentTime(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 
 	holder, _ := NewHolder()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
 		map[string]any{"age_over_18": true}, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 	presented, err := SelectiveDisclose(mdoc, "eu.europa.ec.av.1", []string{"age_over_18"})
-	if err != nil {
-		t.Fatalf("SelectiveDisclose: %v", err)
-	}
+	require.NoError(t, err, "SelectiveDisclose: %v", err)
 
 	result := verifier.Verify(presented, "eu.europa.ec.av.1")
 	if !result.Valid {
@@ -444,20 +385,14 @@ func TestFreshCertsVerifyUnderCurrentTime(t *testing.T) {
 // expiry-rejection path, unlike the sanity check above.
 func TestExpiredDSCertIsRejected(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 
 	holder, _ := NewHolder()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
 		map[string]any{"age_over_18": true}, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 	presented, err := SelectiveDisclose(mdoc, "eu.europa.ec.av.1", []string{"age_over_18"})
-	if err != nil {
-		t.Fatalf("SelectiveDisclose: %v", err)
-	}
+	require.NoError(t, err, "SelectiveDisclose: %v", err)
 
 	futureClock := time.Now().Add(400 * 24 * time.Hour) // past the DS cert's 365-day NotAfter
 	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.IACACert()}, futureClock)
@@ -476,19 +411,13 @@ func TestExpiredDSCertIsRejected(t *testing.T) {
 // exercises the mso.ValidityInfo check, not the certificate chain check.
 func TestExpiredMSOValidityIsRejected(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	holder, _ := NewHolder()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
 		map[string]any{"age_over_18": true}, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 	presented, err := SelectiveDisclose(mdoc, "eu.europa.ec.av.1", []string{"age_over_18"})
-	if err != nil {
-		t.Fatalf("SelectiveDisclose: %v", err)
-	}
+	require.NoError(t, err, "SelectiveDisclose: %v", err)
 
 	futureClock := time.Now().Add(100 * 24 * time.Hour) // past MSO's 90-day validUntil, well within DS cert's 365-day window
 	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.IACACert()}, futureClock)
@@ -512,9 +441,7 @@ func TestExpiredMSOValidityIsRejected(t *testing.T) {
 // wrong reason (e.g. coincidentally matching the cert-chain error text).
 func TestNotYetValidMSOIsRejected(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	// The validity window is set explicitly rather than taken from Issue():
 	// issued attestations are coarsened to midnight UTC so a batch cannot be
 	// correlated by its timestamps (see TestIssuedValidityTimestampsAreCoarsened),
@@ -525,9 +452,7 @@ func TestNotYetValidMSOIsRejected(t *testing.T) {
 	futureStart := time.Now().UTC().Add(time.Hour)
 	mdoc := issueWithValidity(t, issuer, futureStart, futureStart.Add(24*time.Hour))
 	presented, err := SelectiveDisclose(mdoc, "eu.europa.ec.av.1", []string{"age_over_18"})
-	if err != nil {
-		t.Fatalf("SelectiveDisclose: %v", err)
-	}
+	require.NoError(t, err, "SelectiveDisclose: %v", err)
 
 	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.IACACert()}, time.Now())
 
@@ -546,20 +471,14 @@ func TestNotYetValidMSOIsRejected(t *testing.T) {
 // fail chain verification.
 func TestNotYetValidCertIsRejected(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 
 	holder, _ := NewHolder()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
 		map[string]any{"age_over_18": true}, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 	presented, err := SelectiveDisclose(mdoc, "eu.europa.ec.av.1", []string{"age_over_18"})
-	if err != nil {
-		t.Fatalf("SelectiveDisclose: %v", err)
-	}
+	require.NoError(t, err, "SelectiveDisclose: %v", err)
 
 	pastClock := time.Now().Add(-24 * time.Hour) // before NotBefore
 	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.IACACert()}, pastClock)
@@ -741,9 +660,7 @@ func TestTamperedEnvelopeDocTypeIsRejectedAtIssuanceVerification(t *testing.T) {
 	// VerifyAllDisclosedNamespaces is the issuance-time entry point, so use a
 	// freshly issued (not yet selectively disclosed) document.
 	issued, err := issuer.Issue(docType, namespace, map[string]any{"age_over_18": true}, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 	issued.DocType = attackerDocType
 
 	resolved, result := verifier.VerifyAllDisclosedNamespaces(issued)
@@ -795,9 +712,7 @@ func TestDeviceAuthWrongSignerIsRejected(t *testing.T) {
 	// in this mdoc's deviceKeyInfo. Simulates a cloned/copied mdoc.
 	otherHolder, _ := NewHolder()
 	wrongDeviceAuth, err := otherHolder.SignDeviceAuth(docType, transcript)
-	if err != nil {
-		t.Fatalf("SignDeviceAuth: %v", err)
-	}
+	require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, wrongDeviceAuth)
 	if result.DeviceAuthValid {
@@ -829,9 +744,7 @@ func TestDeviceAuthWrongSessionIsRejected(t *testing.T) {
 		Handover:              "different-handover",
 	}
 	replayedDeviceAuth, err := holder.SignDeviceAuth(docType, otherTranscript)
-	if err != nil {
-		t.Fatalf("SignDeviceAuth: %v", err)
-	}
+	require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 	// Verifier checks against the ORIGINAL transcript it actually issued.
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, replayedDeviceAuth)
@@ -870,9 +783,7 @@ func TestDeviceAuthAcceptsAlternativelyEncodedEmptyNameSpaces(t *testing.T) {
 	// bf ff — indefinite-length map with no entries. Valid CBOR, decodes to the
 	// same empty map as a0, different bytes.
 	indefiniteEmpty, err := tag24WrapBytes([]byte{0xbf, 0xff})
-	if err != nil {
-		t.Fatalf("wrap indefinite-length empty map: %v", err)
-	}
+	require.NoError(t, err, "wrap indefinite-length empty map: %v", err)
 
 	deviceAuthBytes := signDeviceAuthOver(t, holder, docType, transcript, indefiniteEmpty)
 	attached := withDeviceSigned(presented, indefiniteEmpty, deviceAuthBytes)
@@ -897,9 +808,7 @@ func TestDeviceAuthRejectsHolderAssertedNameSpaces(t *testing.T) {
 	holderClaims, err := tag24Wrap(map[string]any{
 		"org.example.holder": map[string]any{"self_asserted": true},
 	})
-	if err != nil {
-		t.Fatalf("wrap holder namespaces: %v", err)
-	}
+	require.NoError(t, err, "wrap holder namespaces: %v", err)
 
 	deviceAuthBytes := signDeviceAuthOver(t, holder, docType, transcript, holderClaims)
 	attached := withDeviceSigned(presented, holderClaims, deviceAuthBytes)
@@ -936,15 +845,11 @@ func TestDeviceAuthRejectsNameSpacesNotCoveredBySignature(t *testing.T) {
 	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
 
 	signedEmpty, err := tag24Wrap(map[string]any{})
-	if err != nil {
-		t.Fatalf("wrap empty namespaces: %v", err)
-	}
+	require.NoError(t, err, "wrap empty namespaces: %v", err)
 	smuggled, err := tag24Wrap(map[string]any{
 		"org.example.holder": map[string]any{"self_asserted": true},
 	})
-	if err != nil {
-		t.Fatalf("wrap smuggled namespaces: %v", err)
-	}
+	require.NoError(t, err, "wrap smuggled namespaces: %v", err)
 
 	// Signature covers the empty map; the envelope carries the claims.
 	deviceAuthBytes := signDeviceAuthOver(t, holder, docType, transcript, signedEmpty)
@@ -1022,15 +927,11 @@ func TestVerifyDeviceResponseSucceeds(t *testing.T) {
 	_, _, verifier, presented, transcript, deviceAuthBytes, docType, namespace := buildHappyPathMDoc(t)
 
 	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
-	if err != nil {
-		t.Fatalf("AttachDeviceSigned: %v", err)
-	}
+	require.NoError(t, err, "AttachDeviceSigned: %v", err)
 	resp := NewDeviceResponse(*attached)
 
 	results, err := verifier.VerifyDeviceResponse(resp, namespace, docType, transcript)
-	if err != nil {
-		t.Fatalf("VerifyDeviceResponse: %v", err)
-	}
+	require.NoError(t, err, "VerifyDeviceResponse: %v", err)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -1091,9 +992,7 @@ func TestFullIssuanceFlow_ProducesValidMDoc(t *testing.T) {
 
 	// Dump the actual presented mdoc as CBOR bytes.
 	mdocCBOR, err := cbor.Marshal(presented)
-	if err != nil {
-		t.Fatalf("marshal presented mdoc: %v", err)
-	}
+	require.NoError(t, err, "marshal presented mdoc: %v", err)
 	t.Logf("presented mdoc CBOR (%d bytes):\n%s", len(mdocCBOR), hex.EncodeToString(mdocCBOR))
 
 	// Dump the raw issuerAuth COSE_Sign1 bytes separately too — this is
@@ -1143,24 +1042,16 @@ func issueWithValidity(t *testing.T, issuer *Issuer, validFrom, validUntil time.
 	t.Helper()
 
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 	deviceKey, err := coseKeyFromECDSA(holder.PublicKey())
-	if err != nil {
-		t.Fatalf("coseKeyFromECDSA: %v", err)
-	}
+	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 
 	const docType = "eu.europa.ec.av.1"
 	item := IssuerSignedItem{DigestID: 0, Random: make([]byte, 16), ElementIdentifier: "age_over_18", ElementValue: true}
 	digest, err := hashTag24Item(item)
-	if err != nil {
-		t.Fatalf("hashTag24Item: %v", err)
-	}
+	require.NoError(t, err, "hashTag24Item: %v", err)
 	wrapped, err := tag24Wrap(item)
-	if err != nil {
-		t.Fatalf("tag24Wrap: %v", err)
-	}
+	require.NoError(t, err, "tag24Wrap: %v", err)
 
 	mso := MSO{
 		Version:         "1.0",
@@ -1171,14 +1062,10 @@ func issueWithValidity(t *testing.T, issuer *Issuer, validFrom, validUntil time.
 		DeviceKeyInfo:   DeviceKeyInfo{DeviceKey: deviceKey},
 	}
 	msoBytes, err := tag24WrapWithMode(mso, tdateEncMode)
-	if err != nil {
-		t.Fatalf("wrap mso: %v", err)
-	}
+	require.NoError(t, err, "wrap mso: %v", err)
 
 	signer, err := cose.NewSigner(cose.AlgorithmES256, issuer.dskey)
-	if err != nil {
-		t.Fatalf("cose.NewSigner: %v", err)
-	}
+	require.NoError(t, err, "cose.NewSigner: %v", err)
 	msg := cose.NewSign1Message()
 	msg.Payload = msoBytes
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
@@ -1187,9 +1074,7 @@ func issueWithValidity(t *testing.T, issuer *Issuer, validFrom, validUntil time.
 		t.Fatalf("sign mso: %v", err)
 	}
 	coseBytes, err := msg.MarshalCBOR()
-	if err != nil {
-		t.Fatalf("marshal issuerAuth: %v", err)
-	}
+	require.NoError(t, err, "marshal issuerAuth: %v", err)
 
 	return &MDoc{
 		DocType: docType,
@@ -1211,26 +1096,18 @@ func issueWithValidity(t *testing.T, issuer *Issuer, validFrom, validUntil time.
 // a missing boolean as absent-and-therefore-false.
 func TestRequireElementsCatchesAnOmittedElement(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 
 	const docType = "eu.europa.ec.av.1"
 	full, err := issuer.Issue(docType, docType,
 		map[string]any{"age_over_18": true, "age_over_21": true}, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 
 	// The holder discloses only one of the two the verifier asked for.
 	presented, err := SelectiveDisclose(full, docType, []string{"age_over_18"})
-	if err != nil {
-		t.Fatalf("SelectiveDisclose: %v", err)
-	}
+	require.NoError(t, err, "SelectiveDisclose: %v", err)
 
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	result := verifier.Verify(presented, docType)

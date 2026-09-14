@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/stretchr/testify/require"
 )
 
 // ============================================================
@@ -19,14 +20,10 @@ func buildHappyPathMDoc(t *testing.T) (*Issuer, *DefaultHolder, *Verifier, *MDoc
 	t.Helper()
 
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
@@ -38,14 +35,10 @@ func buildHappyPathMDoc(t *testing.T) (*Issuer, *DefaultHolder, *Verifier, *MDoc
 	}
 
 	mdoc, err := issuer.Issue(docType, namespace, claims, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 
 	presented, err := SelectiveDisclose(mdoc, namespace, []string{"age_over_18"})
-	if err != nil {
-		t.Fatalf("SelectiveDisclose: %v", err)
-	}
+	require.NoError(t, err, "SelectiveDisclose: %v", err)
 
 	transcript := SessionTranscript{
 		DeviceEngagementBytes: []byte("test-engagement"),
@@ -54,9 +47,7 @@ func buildHappyPathMDoc(t *testing.T) (*Issuer, *DefaultHolder, *Verifier, *MDoc
 	}
 
 	deviceAuthBytes, err := holder.SignDeviceAuth(docType, transcript)
-	if err != nil {
-		t.Fatalf("SignDeviceAuth: %v", err)
-	}
+	require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 

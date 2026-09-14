@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	cose "github.com/veraison/go-cose"
 )
 
@@ -35,9 +36,7 @@ type opaqueSigner struct {
 func newOpaqueSigner(t *testing.T, curve elliptic.Curve) *opaqueSigner {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(curve, rand.Reader)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
+	require.NoError(t, err, "generate key: %v", err)
 	return &opaqueSigner{key: key}
 }
 
@@ -59,30 +58,22 @@ func TestOpaqueSignerProducesVerifiableDeviceAuth(t *testing.T) {
 	signer := newOpaqueSigner(t, elliptic.P256())
 
 	holder, err := NewHolderFromSigner(signer)
-	if err != nil {
-		t.Fatalf("NewHolderFromSigner: %v", err)
-	}
+	require.NoError(t, err, "NewHolderFromSigner: %v", err)
 	// Holder, not *DefaultHolder: everything below goes through the interface.
 	var asInterface Holder = holder
 
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
 
 	credential, err := issuer.Issue(docType, namespace,
 		map[string]any{"age_over_18": true}, asInterface.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 
 	presented, err := SelectiveDisclose(credential, namespace, []string{"age_over_18"})
-	if err != nil {
-		t.Fatalf("SelectiveDisclose: %v", err)
-	}
+	require.NoError(t, err, "SelectiveDisclose: %v", err)
 
 	transcript := SessionTranscript{
 		DeviceEngagementBytes: []byte("test-engagement"),
@@ -91,9 +82,7 @@ func TestOpaqueSignerProducesVerifiableDeviceAuth(t *testing.T) {
 	}
 
 	deviceAuthBytes, err := asInterface.SignDeviceAuth(docType, transcript)
-	if err != nil {
-		t.Fatalf("SignDeviceAuth: %v", err)
-	}
+	require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, deviceAuthBytes)
@@ -131,15 +120,11 @@ func TestNewHolderFromSignerCurves(t *testing.T) {
 	for _, curve := range []elliptic.Curve{elliptic.P256(), elliptic.P384(), elliptic.P521()} {
 		t.Run("accepts "+curve.Params().Name, func(t *testing.T) {
 			holder, err := NewHolderFromSigner(newOpaqueSigner(t, curve))
-			if err != nil {
-				t.Fatalf("ISO/IEC 18013-5 9.1.3.6 pairs %s with an ES algorithm; it must be accepted: %v",
-					curve.Params().Name, err)
-			}
+			require.NoError(t, err, "ISO/IEC 18013-5 9.1.3.6 pairs %s with an ES algorithm; it must be accepted: %v",
+				curve.Params().Name, err)
 			// The algorithm is not a free choice — the clause fixes one per curve.
 			alg, err := deviceAuthAlgorithmFor(holder.PublicKey().Curve)
-			if err != nil {
-				t.Fatalf("no algorithm for an accepted curve: %v", err)
-			}
+			require.NoError(t, err, "no algorithm for an accepted curve: %v", err)
 			want := map[string]cose.Algorithm{
 				"P-256": cose.AlgorithmES256,
 				"P-384": cose.AlgorithmES384,
@@ -165,9 +150,7 @@ func TestNewHolderFromSignerCurves(t *testing.T) {
 
 func TestNewHolderFromSignerRejectsNonECDSA(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate ed25519 key: %v", err)
-	}
+	require.NoError(t, err, "generate ed25519 key: %v", err)
 	if _, err := NewHolderFromSigner(priv); err == nil {
 		t.Fatal("an Ed25519 device key was accepted for ES256 device authentication")
 	}
@@ -187,13 +170,9 @@ func TestNewHolderRejectsNilKeys(t *testing.T) {
 // return type is caught here rather than at the call sites.
 func TestDefaultHolderSatisfiesHolder(t *testing.T) {
 	software, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 	fromKey, err := NewHolderFromPrivateKey(software.signer.(*ecdsa.PrivateKey))
-	if err != nil {
-		t.Fatalf("NewHolderFromPrivateKey: %v", err)
-	}
+	require.NoError(t, err, "NewHolderFromPrivateKey: %v", err)
 
 	// The []Holder element type is the assertion: both values have to satisfy the
 	// interface, which is what this test is named for.

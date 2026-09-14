@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/stretchr/testify/require"
 )
 
 // ============================================================
@@ -25,9 +26,7 @@ import (
 // age_over_NN thresholds.
 func TestClaimOrderingIsRandomized(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	holder, _ := NewHolder()
 
 	claims := map[string]any{
@@ -64,9 +63,7 @@ func TestClaimOrderingIsRandomized(t *testing.T) {
 	seenOrders := make(map[string]bool)
 	for i := range runs {
 		mdoc, err := issuer.Issue("eu.europa.ec.av.1", namespace, claims, holder.PublicKey())
-		if err != nil {
-			t.Fatalf("Issue #%d: %v", i, err)
-		}
+		require.NoError(t, err, "Issue #%d: %v", i, err)
 		order := extractOrder(mdoc)
 
 		// Round-trip correctness: same set of identifiers, regardless of order.
@@ -111,9 +108,7 @@ func TestClaimOrderingIsRandomized(t *testing.T) {
 
 func TestIssueAcceptsArbitraryDocTypeAndClaims(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	holder, _ := NewHolder()
 
 	cases := []struct {
@@ -151,9 +146,7 @@ func TestIssueAcceptsArbitraryDocTypeAndClaims(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			mdoc, err := issuer.Issue(tc.docType, tc.namespace, tc.claims, holder.PublicKey())
-			if err != nil {
-				t.Fatalf("Issue: %v", err)
-			}
+			require.NoError(t, err, "Issue: %v", err)
 			if mdoc.DocType != tc.docType {
 				t.Fatalf("expected docType %q, got %q", tc.docType, mdoc.DocType)
 			}
@@ -172,22 +165,16 @@ func TestIssueAcceptsArbitraryDocTypeAndClaims(t *testing.T) {
 // provider set hh, mm and ss to the same value on every attestation.
 func TestIssuedValidityTimestampsAreCoarsened(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 
 	// Two attestations of the same batch, issued to different device keys.
 	var issued []*MDoc
 	for range 2 {
 		holder, err := NewHolder()
-		if err != nil {
-			t.Fatalf("NewHolder: %v", err)
-		}
+		require.NoError(t, err, "NewHolder: %v", err)
 		doc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
 			map[string]any{"age_over_18": true}, holder.PublicKey())
-		if err != nil {
-			t.Fatalf("Issue: %v", err)
-		}
+		require.NoError(t, err, "Issue: %v", err)
 		issued = append(issued, doc)
 	}
 
@@ -232,20 +219,14 @@ func TestIssuedValidityTimestampsAreCoarsened(t *testing.T) {
 // and digest would still verify — so it is worth asserting directly.
 func TestIssuedSaltsMeetTheIsoMinimum(t *testing.T) {
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 
 	const docType = "eu.europa.ec.av.1"
 	credential, err := issuer.Issue(docType, docType,
 		map[string]any{"age_over_18": true, "age_over_21": true}, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 
 	items := credential.IssuerSigned.NameSpaces[docType]
 	if len(items) != 2 {
@@ -255,9 +236,7 @@ func TestIssuedSaltsMeetTheIsoMinimum(t *testing.T) {
 	seen := map[string]string{}
 	for _, wrapped := range items {
 		item, err := decodeTag24Item(wrapped)
-		if err != nil {
-			t.Fatalf("decode item: %v", err)
-		}
+		require.NoError(t, err, "decode item: %v", err)
 		if len(item.Random) < minSaltLength {
 			t.Errorf("%s carries a %d-byte salt; ISO/IEC 18013-5 requires at least %d",
 				item.ElementIdentifier, len(item.Random), minSaltLength)

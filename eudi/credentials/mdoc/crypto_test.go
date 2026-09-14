@@ -2,6 +2,7 @@ package mdoc
 
 import (
 	"bytes"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
@@ -52,9 +53,7 @@ func TestECDSAPublicKeyFromCOSEAcceptsValidKey(t *testing.T) {
 	valid := validCOSEKey(t)
 
 	pub, err := ecdsaPublicKeyFromCOSE(valid)
-	if err != nil {
-		t.Fatalf("ecdsaPublicKeyFromCOSE rejected a valid key: %v", err)
-	}
+	require.NoError(t, err, "ecdsaPublicKeyFromCOSE rejected a valid key: %v", err)
 	if pub == nil {
 		t.Fatal("expected a key, got nil")
 	}
@@ -72,13 +71,9 @@ func validCOSEKey(t *testing.T) COSEKey {
 	t.Helper()
 
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 	key, err := coseKeyFromECDSA(holder.PublicKey())
-	if err != nil {
-		t.Fatalf("coseKeyFromECDSA: %v", err)
-	}
+	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 	return key
 }
 

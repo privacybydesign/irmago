@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/stretchr/testify/require"
 )
 
 // ============================================================
@@ -30,17 +31,11 @@ func issueUnderProfile(t *testing.T, docType string, claims map[string]any) Veri
 	t.Helper()
 
 	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 	doc, err := issuer.Issue(docType, docType, claims, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 	return NewVerifier([]*x509.Certificate{issuer.IACACert()}).Verify(doc, docType)
 }
 
@@ -102,9 +97,7 @@ func TestValidityCoarseningIsProfileDriven(t *testing.T) {
 	// A wallclock instant well past midnight, so coarsening is observable rather
 	// than coincidental.
 	issuedAt, err := time.Parse(time.RFC3339, "2026-09-02T10:03:53Z")
-	if err != nil {
-		t.Fatalf("parse issuedAt: %v", err)
-	}
+	require.NoError(t, err, "parse issuedAt: %v", err)
 
 	for _, docType := range []string{AgeVerificationDocType, generalDocType} {
 		t.Run(docType, func(t *testing.T) {
@@ -147,9 +140,7 @@ func TestGeneralProfileAllowsHolderAssertedClaims(t *testing.T) {
 	t.Run("authorized by namespace", func(t *testing.T) {
 		err := profileFor(generalDocType).checkDeviceSignedNameSpaces(deviceNameSpaces,
 			&KeyAuthorizations{NameSpaces: []string{"org.iso.18013.5.1"}})
-		if err != nil {
-			t.Fatalf("a whole-namespace authorization covers every element under it: %v", err)
-		}
+		require.NoError(t, err, "a whole-namespace authorization covers every element under it: %v", err)
 	})
 
 	t.Run("authorized by element", func(t *testing.T) {
@@ -157,9 +148,7 @@ func TestGeneralProfileAllowsHolderAssertedClaims(t *testing.T) {
 			&KeyAuthorizations{DataElements: map[string][]string{
 				"org.iso.18013.5.1": {"self_asserted_address"},
 			}})
-		if err != nil {
-			t.Fatalf("the element is named in dataElements: %v", err)
-		}
+		require.NoError(t, err, "the element is named in dataElements: %v", err)
 	})
 
 	t.Run("no authorizations at all", func(t *testing.T) {
@@ -209,18 +198,12 @@ func TestGeneralProfileAllowsHolderAssertedClaims(t *testing.T) {
 // and nothing would verify.
 func TestKeyAuthorizationsRoundTripDoesNotChangeSignedBytes(t *testing.T) {
 	holder, err := NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 	deviceKey, err := coseKeyFromECDSA(holder.PublicKey())
-	if err != nil {
-		t.Fatalf("coseKeyFromECDSA: %v", err)
-	}
+	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 
 	encoded, err := cbor.Marshal(DeviceKeyInfo{DeviceKey: deviceKey})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
+	require.NoError(t, err, "marshal: %v", err)
 
 	// One entry: deviceKey. 0xa1 is a definite-length map of one pair.
 	if encoded[0] != 0xa1 {
@@ -270,13 +253,9 @@ func revokeCert(t *testing.T, issuerCert *x509.Certificate, issuerKey *ecdsa.Pri
 		NextUpdate:                time.Now().Add(24 * time.Hour),
 		RevokedCertificateEntries: entries,
 	}, issuerCert, issuerKey)
-	if err != nil {
-		t.Fatalf("CreateRevocationList: %v", err)
-	}
+	require.NoError(t, err, "CreateRevocationList: %v", err)
 	crl, err := x509.ParseRevocationList(der)
-	if err != nil {
-		t.Fatalf("ParseRevocationList: %v", err)
-	}
+	require.NoError(t, err, "ParseRevocationList: %v", err)
 	return crl
 }
 
@@ -294,17 +273,11 @@ func TestRevokedDocumentSignerIsRefused(t *testing.T) {
 	build := func(t *testing.T) (*Issuer, *MDoc, *x509.CertPool) {
 		t.Helper()
 		iss, err := NewIssuer()
-		if err != nil {
-			t.Fatalf("NewIssuer: %v", err)
-		}
+		require.NoError(t, err, "NewIssuer: %v", err)
 		h, err := NewHolder()
-		if err != nil {
-			t.Fatalf("NewHolder: %v", err)
-		}
+		require.NoError(t, err, "NewHolder: %v", err)
 		doc, err := iss.Issue(dt, dt, map[string]any{"age_over_18": true}, h.PublicKey())
-		if err != nil {
-			t.Fatalf("Issue: %v", err)
-		}
+		require.NoError(t, err, "Issue: %v", err)
 		pool := x509.NewCertPool()
 		pool.AddCert(iss.IACACert())
 		return iss, doc, pool
@@ -322,9 +295,7 @@ func TestRevokedDocumentSignerIsRefused(t *testing.T) {
 	t.Run("an unrelated CRL does not reject", func(t *testing.T) {
 		iss, doc, pool := build(t)
 		other, err := NewIssuer()
-		if err != nil {
-			t.Fatalf("NewIssuer: %v", err)
-		}
+		require.NoError(t, err, "NewIssuer: %v", err)
 		// A CRL from a different CA, revoking a different serial.
 		crl := revokeCert(t, other.IACACert(), other.iacakey, other.DSCert())
 		v := NewVerifierFromTrustSource(staticTrustSource{roots: pool, crls: []*x509.RevocationList{crl}})
