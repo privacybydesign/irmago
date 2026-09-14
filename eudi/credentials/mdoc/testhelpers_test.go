@@ -70,13 +70,11 @@ func keysOf(m map[any]any) []any {
 func unwrapTag24Generic(t *testing.T, data []byte) []byte {
 	t.Helper()
 	var rawTag cbor.RawTag
-	if err := cbor.Unmarshal(data, &rawTag); err != nil {
-		t.Fatalf("unwrap tag24: %v", err)
-	}
+	err := cbor.Unmarshal(data, &rawTag)
+	require.NoError(t, err, "unwrap tag24: %v", err)
 	var inner []byte
-	if err := cbor.Unmarshal(rawTag.Content, &inner); err != nil {
-		t.Fatalf("unwrap tag24 inner bytes: %v", err)
-	}
+	err = cbor.Unmarshal(rawTag.Content, &inner)
+	require.NoError(t, err, "unwrap tag24 inner bytes: %v", err)
 	return inner
 }
 

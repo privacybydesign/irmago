@@ -1,7 +1,6 @@
 package mdoc
 
 import (
-	"bytes"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -32,12 +31,8 @@ func TestECDSAPublicKeyFromCOSERejectsOverWideCoordinate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			pub, err := ecdsaPublicKeyFromCOSE(tc.key)
-			if err == nil {
-				t.Fatalf("ecdsaPublicKeyFromCOSE accepted an over-wide coordinate, got key %v", pub)
-			}
-			if pub != nil {
-				t.Errorf("expected a nil key alongside the error, got %v", pub)
-			}
+			require.Error(t, err, "ecdsaPublicKeyFromCOSE accepted an over-wide coordinate, got key %v", pub)
+			require.Nil(t, pub, "expected a nil key alongside the error, got %v", pub)
 		})
 	}
 }
@@ -54,15 +49,13 @@ func TestECDSAPublicKeyFromCOSEAcceptsValidKey(t *testing.T) {
 
 	pub, err := ecdsaPublicKeyFromCOSE(valid)
 	require.NoError(t, err, "ecdsaPublicKeyFromCOSE rejected a valid key: %v", err)
-	if pub == nil {
-		t.Fatal("expected a key, got nil")
-	}
-	if got := pub.X.FillBytes(make([]byte, 32)); !bytes.Equal(got, leftPad(valid.X, 32)) {
-		t.Errorf("X round-tripped as %x, want %x", got, leftPad(valid.X, 32))
-	}
-	if got := pub.Y.FillBytes(make([]byte, 32)); !bytes.Equal(got, leftPad(valid.Y, 32)) {
-		t.Errorf("Y round-tripped as %x, want %x", got, leftPad(valid.Y, 32))
-	}
+	require.NotNil(t, pub, "expected a key, got nil")
+
+	gotX := pub.X.FillBytes(make([]byte, 32))
+	require.Equal(t, leftPad(valid.X, 32), gotX, "X round-tripped as %x, want %x", gotX, leftPad(valid.X, 32))
+
+	gotY := pub.Y.FillBytes(make([]byte, 32))
+	require.Equal(t, leftPad(valid.Y, 32), gotY, "Y round-tripped as %x, want %x", gotY, leftPad(valid.Y, 32))
 }
 
 // validCOSEKey returns the COSE encoding of a real generated P-256 key, so the

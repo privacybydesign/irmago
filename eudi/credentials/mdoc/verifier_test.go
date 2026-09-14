@@ -106,9 +106,8 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 	msg.Payload = msoBytes
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 	msg.Headers.Unprotected[int64(33)] = [][]byte{dsCert.Raw, iacaCert.Raw}
-	if err := msg.Sign(rand.Reader, nil, signer); err != nil {
-		t.Fatalf("sign mso: %v", err)
-	}
+	err = msg.Sign(rand.Reader, nil, signer)
+	require.NoError(t, err, "sign mso: %v", err)
 	coseBytes, err := cbor.Marshal(msg)
 	require.NoError(t, err, "marshal cose: %v", err)
 	wrapped, err := tag24Wrap(item)
@@ -144,9 +143,8 @@ func signDeviceAuthOver(t *testing.T, h *DefaultHolder, docType string, transcri
 	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers,
 		Payload: payload}
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
-	if err := msg.Sign(rand.Reader, nil, signer); err != nil {
-		t.Fatalf("sign deviceAuth: %v", err)
-	}
+	err = msg.Sign(rand.Reader, nil, signer)
+	require.NoError(t, err, "sign deviceAuth: %v", err)
 	msg.Payload = nil // detached on the wire, as SignDeviceAuth does
 
 	encoded, err := msg.MarshalCBOR()
@@ -188,20 +186,13 @@ func TestVerifyAllDisclosedNamespaces_HappyPath(t *testing.T) {
 
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	resolved, result := verifier.VerifyAllDisclosedNamespaces(issued)
-	if !result.Valid {
-		t.Fatalf("expected valid result, got error: %s", result.Error)
-	}
-	if result.DocType != docType {
-		t.Fatalf("expected DocType %q, got %q", docType, result.DocType)
-	}
+	require.True(t, result.Valid, "expected valid result, got error: %s", result.Error)
+	require.Equal(t, docType, result.DocType, "expected matching DocType")
 
 	nsAttrs, ok := resolved[namespace]
-	if !ok {
-		t.Fatalf("expected namespace %q in resolved claims, got %v", namespace, resolved)
-	}
-	if nsAttrs["age_over_18"] != true || nsAttrs["age_over_16"] != true {
-		t.Fatalf("expected both claims resolved, got %v", nsAttrs)
-	}
+	require.True(t, ok, "expected namespace %q in resolved claims, got %v", namespace, resolved)
+	require.Equal(t, true, nsAttrs["age_over_18"], "expected age_over_18 resolved, got %v", nsAttrs)
+	require.Equal(t, true, nsAttrs["age_over_16"], "expected age_over_16 resolved, got %v", nsAttrs)
 }
 
 // TestVerifyAllDisclosedNamespaces_TamperedDigestIsRejected mirrors
@@ -234,9 +225,7 @@ func TestVerifyAllDisclosedNamespaces_TamperedDigestIsRejected(t *testing.T) {
 
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	_, result := verifier.VerifyAllDisclosedNamespaces(tamperedMDoc)
-	if result.Valid {
-		t.Fatalf("expected tampered claim to be rejected, but it was accepted")
-	}
+	require.False(t, result.Valid, "expected tampered claim to be rejected, but it was accepted")
 }
 
 // TestVerify_PopulatesDeviceKeyAndValidityInfo confirms the new
@@ -246,20 +235,13 @@ func TestVerify_PopulatesDeviceKeyAndValidityInfo(t *testing.T) {
 	issuer, holder, verifier, presented, _, _, _, namespace := buildHappyPathMDoc(t)
 
 	result := verifier.Verify(presented, namespace)
-	if !result.Valid {
-		t.Fatalf("expected valid result, got error: %s", result.Error)
-	}
+	require.True(t, result.Valid, "expected valid result, got error: %s", result.Error)
 
-	if result.DeviceKey == nil {
-		t.Fatalf("expected DeviceKey to be populated")
-	}
-	if !result.DeviceKey.Equal(holder.PublicKey()) {
-		t.Fatalf("expected DeviceKey to match holder's public key")
-	}
+	require.NotNil(t, result.DeviceKey, "expected DeviceKey to be populated")
+	require.True(t, result.DeviceKey.Equal(holder.PublicKey()), "expected DeviceKey to match holder's public key")
 
-	if result.ValidityInfo.ValidFrom.IsZero() || result.ValidityInfo.ValidUntil.IsZero() {
-		t.Fatalf("expected ValidityInfo to be populated, got %+v", result.ValidityInfo)
-	}
+	require.False(t, result.ValidityInfo.ValidFrom.IsZero(), "expected ValidityInfo.ValidFrom to be populated, got %+v", result.ValidityInfo)
+	require.False(t, result.ValidityInfo.ValidUntil.IsZero(), "expected ValidityInfo.ValidUntil to be populated, got %+v", result.ValidityInfo)
 
 	_ = issuer
 }
@@ -274,9 +256,7 @@ func TestNewVerifierFromPool(t *testing.T) {
 	verifier := NewVerifierFromPool(pool)
 
 	result := verifier.Verify(presented, namespace)
-	if !result.Valid {
-		t.Fatalf("expected valid result, got error: %s", result.Error)
-	}
+	require.True(t, result.Valid, "expected valid result, got error: %s", result.Error)
 }
 
 // ---------------------------------------------------------------------------
@@ -295,9 +275,7 @@ func TestUntrustedRootIsRejected(t *testing.T) {
 	require.NoError(t, err, "attacker SelectiveDisclose: %v", err)
 
 	result := verifier.Verify(attackerPresented, namespace)
-	if result.Valid {
-		t.Fatalf("expected attacker mdoc (untrusted root) to be rejected, but it was accepted")
-	}
+	require.False(t, result.Valid, "expected attacker mdoc (untrusted root) to be rejected, but it was accepted")
 }
 
 func TestTamperedDigestIsRejected(t *testing.T) {
@@ -320,9 +298,7 @@ func TestTamperedDigestIsRejected(t *testing.T) {
 	}
 
 	result := verifier.Verify(tamperedMDoc, namespace)
-	if result.Valid {
-		t.Fatalf("expected tampered claim to be rejected, but it was accepted")
-	}
+	require.False(t, result.Valid, "expected tampered claim to be rejected, but it was accepted")
 }
 
 func TestUnknownDigestIDIsRejected(t *testing.T) {
@@ -347,9 +323,7 @@ func TestUnknownDigestIDIsRejected(t *testing.T) {
 	}
 
 	result := verifier.Verify(bogusMDoc, namespace)
-	if result.Valid {
-		t.Fatalf("expected unknown digestID to be rejected, but it was accepted")
-	}
+	require.False(t, result.Valid, "expected unknown digestID to be rejected, but it was accepted")
 }
 
 // ---------------------------------------------------------------------------
@@ -373,9 +347,7 @@ func TestFreshCertsVerifyUnderCurrentTime(t *testing.T) {
 	require.NoError(t, err, "SelectiveDisclose: %v", err)
 
 	result := verifier.Verify(presented, "eu.europa.ec.av.1")
-	if !result.Valid {
-		t.Fatalf("expected freshly issued DS cert to be valid under current time, got: %s", result.Error)
-	}
+	require.True(t, result.Valid, "expected freshly issued DS cert to be valid under current time, got: %s", result.Error)
 }
 
 // TestExpiredDSCertIsRejected uses NewVerifierWithClock to pin the
@@ -398,9 +370,7 @@ func TestExpiredDSCertIsRejected(t *testing.T) {
 	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.IACACert()}, futureClock)
 
 	result := verifier.Verify(presented, "eu.europa.ec.av.1")
-	if result.Valid {
-		t.Fatalf("expected DS cert to be rejected as expired when checked 400 days in the future, but it was accepted")
-	}
+	require.False(t, result.Valid, "expected DS cert to be rejected as expired when checked 400 days in the future, but it was accepted")
 	t.Logf("correctly rejected expired chain: %s", result.Error)
 }
 
@@ -423,12 +393,9 @@ func TestExpiredMSOValidityIsRejected(t *testing.T) {
 	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.IACACert()}, futureClock)
 
 	result := verifier.Verify(presented, "eu.europa.ec.av.1")
-	if result.Valid {
-		t.Fatalf("expected credential to be rejected as expired per MSO validityInfo, but it was accepted")
-	}
-	if !strings.HasPrefix(result.Error, "credential expired") {
-		t.Fatalf("expected the MSO validityInfo check specifically to fail, got a different error: %s", result.Error)
-	}
+	require.False(t, result.Valid, "expected credential to be rejected as expired per MSO validityInfo, but it was accepted")
+	require.True(t, strings.HasPrefix(result.Error, "credential expired"),
+		"expected the MSO validityInfo check specifically to fail, got a different error: %s", result.Error)
 	t.Logf("correctly rejected on MSO validityInfo: %s", result.Error)
 }
 
@@ -457,12 +424,9 @@ func TestNotYetValidMSOIsRejected(t *testing.T) {
 	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.IACACert()}, time.Now())
 
 	result := verifier.Verify(presented, "eu.europa.ec.av.1")
-	if result.Valid {
-		t.Fatalf("expected credential to be rejected as not-yet-valid per MSO validityInfo, but it was accepted")
-	}
-	if !strings.HasPrefix(result.Error, "credential not yet valid") {
-		t.Fatalf("expected the MSO validityInfo check specifically to fail, got a different error (chain check probably fired first): %s", result.Error)
-	}
+	require.False(t, result.Valid, "expected credential to be rejected as not-yet-valid per MSO validityInfo, but it was accepted")
+	require.True(t, strings.HasPrefix(result.Error, "credential not yet valid"),
+		"expected the MSO validityInfo check specifically to fail, got a different error (chain check probably fired first): %s", result.Error)
 	t.Logf("correctly rejected on MSO validityInfo: %s", result.Error)
 }
 
@@ -484,9 +448,7 @@ func TestNotYetValidCertIsRejected(t *testing.T) {
 	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.IACACert()}, pastClock)
 
 	result := verifier.Verify(presented, "eu.europa.ec.av.1")
-	if result.Valid {
-		t.Fatalf("expected DS cert to be rejected as not-yet-valid when checked before issuance, but it was accepted")
-	}
+	require.False(t, result.Valid, "expected DS cert to be rejected as not-yet-valid when checked before issuance, but it was accepted")
 	t.Logf("correctly rejected not-yet-valid chain: %s", result.Error)
 }
 
@@ -503,9 +465,8 @@ func TestDocumentSignerEKUIsEnforced(t *testing.T) {
 
 	t.Run("DS cert with the ISO mdoc document-signer EKU is accepted", func(t *testing.T) {
 		doc, v := issueWithDSEKU(t, nil, []asn1.ObjectIdentifier{isoMdocDocumentSignerEKU})
-		if result := v.Verify(doc, namespace); !result.Valid {
-			t.Fatalf("expected valid, got error: %s", result.Error)
-		}
+		result := v.Verify(doc, namespace)
+		require.True(t, result.Valid, "expected valid, got error: %s", result.Error)
 	})
 
 	t.Run("DS cert with the ISO 23220-4 generic mdoc document-signer EKU is accepted", func(t *testing.T) {
@@ -514,9 +475,8 @@ func TestDocumentSignerEKUIsEnforced(t *testing.T) {
 		// Rejecting it would refuse conformant credentials while claiming to
 		// support mso_mdoc generally.
 		doc, v := issueWithDSEKU(t, nil, []asn1.ObjectIdentifier{isoGenericMdocDocumentSignerEKU})
-		if result := v.Verify(doc, namespace); !result.Valid {
-			t.Fatalf("expected valid, got error: %s", result.Error)
-		}
+		result := v.Verify(doc, namespace)
+		require.True(t, result.Valid, "expected valid, got error: %s", result.Error)
 	})
 
 	t.Run("an undocumented EKU is still rejected", func(t *testing.T) {
@@ -528,28 +488,22 @@ func TestDocumentSignerEKUIsEnforced(t *testing.T) {
 		undocumented := asn1.ObjectIdentifier{1, 3, 130, 2, 0, 0, 1, 2}
 		doc, v := issueWithDSEKU(t, nil, []asn1.ObjectIdentifier{undocumented})
 		result := v.Verify(doc, namespace)
-		if result.Valid {
-			t.Fatal("an EKU with no basis in any specification must not authorize signing")
-		}
-		if !strings.Contains(result.Error, "not authorized to sign mdocs") {
-			t.Fatalf("expected an EKU rejection, got: %s", result.Error)
-		}
+		require.False(t, result.Valid, "an EKU with no basis in any specification must not authorize signing")
+		require.Contains(t, result.Error, "not authorized to sign mdocs", "expected an EKU rejection, got: %s", result.Error)
 	})
 
 	t.Run("DS cert with no EKU extension is accepted as unrestricted", func(t *testing.T) {
 		// RFC 5280 4.2.1.12: an absent EKU means the certificate is not
 		// restricted as to purpose, so there is nothing to contradict.
 		doc, v := issueWithDSEKU(t, nil, nil)
-		if result := v.Verify(doc, namespace); !result.Valid {
-			t.Fatalf("expected valid, got error: %s", result.Error)
-		}
+		result := v.Verify(doc, namespace)
+		require.True(t, result.Valid, "expected valid, got error: %s", result.Error)
 	})
 
 	t.Run("DS cert with anyExtKeyUsage is accepted", func(t *testing.T) {
 		doc, v := issueWithDSEKU(t, []x509.ExtKeyUsage{x509.ExtKeyUsageAny}, nil)
-		if result := v.Verify(doc, namespace); !result.Valid {
-			t.Fatalf("expected valid, got error: %s", result.Error)
-		}
+		result := v.Verify(doc, namespace)
+		require.True(t, result.Valid, "expected valid, got error: %s", result.Error)
 	})
 
 	t.Run("DS cert issued for TLS server auth is rejected", func(t *testing.T) {
@@ -558,12 +512,8 @@ func TestDocumentSignerEKUIsEnforced(t *testing.T) {
 		// able to sign an MSO.
 		doc, v := issueWithDSEKU(t, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, nil)
 		result := v.Verify(doc, namespace)
-		if result.Valid {
-			t.Fatal("a TLS server certificate must not be accepted as an mdoc document signer")
-		}
-		if !strings.Contains(result.Error, "not authorized to sign mdocs") {
-			t.Fatalf("expected an EKU rejection, got: %s", result.Error)
-		}
+		require.False(t, result.Valid, "a TLS server certificate must not be accepted as an mdoc document signer")
+		require.Contains(t, result.Error, "not authorized to sign mdocs", "expected an EKU rejection, got: %s", result.Error)
 	})
 
 	t.Run("DS cert issued for TLS client auth is rejected", func(t *testing.T) {
@@ -573,12 +523,8 @@ func TestDocumentSignerEKUIsEnforced(t *testing.T) {
 		// the test suite rather than discovered during integration.
 		doc, v := issueWithDSEKU(t, []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, nil)
 		result := v.Verify(doc, namespace)
-		if result.Valid {
-			t.Fatal("a TLS client certificate must not be accepted as an mdoc document signer")
-		}
-		if !strings.Contains(result.Error, "not authorized to sign mdocs") {
-			t.Fatalf("expected an EKU rejection, got: %s", result.Error)
-		}
+		require.False(t, result.Valid, "a TLS client certificate must not be accepted as an mdoc document signer")
+		require.Contains(t, result.Error, "not authorized to sign mdocs", "expected an EKU rejection, got: %s", result.Error)
 	})
 
 	t.Run("the rejection names the usages the certificate does carry", func(t *testing.T) {
@@ -592,13 +538,9 @@ func TestDocumentSignerEKUIsEnforced(t *testing.T) {
 			[]x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 			[]asn1.ObjectIdentifier{{1, 3, 6, 1, 5, 5, 7, 3, 99}})
 		result := v.Verify(doc, namespace)
-		if result.Valid {
-			t.Fatal("a TLS certificate must not be accepted as an mdoc document signer")
-		}
+		require.False(t, result.Valid, "a TLS certificate must not be accepted as an mdoc document signer")
 		for _, want := range []string{"clientAuth", "serverAuth", "1.3.6.1.5.5.7.3.99", "Test DS", "serial D5C0DE"} {
-			if !strings.Contains(result.Error, want) {
-				t.Errorf("error = %q, want it to name %s", result.Error, want)
-			}
+			require.Contains(t, result.Error, want, "error = %q, want it to name %s", result.Error, want)
 		}
 	})
 
@@ -608,9 +550,7 @@ func TestDocumentSignerEKUIsEnforced(t *testing.T) {
 		readerAuth := asn1.ObjectIdentifier{1, 0, 18013, 5, 1, 6}
 		doc, v := issueWithDSEKU(t, nil, []asn1.ObjectIdentifier{readerAuth})
 		result := v.Verify(doc, namespace)
-		if result.Valid {
-			t.Fatal("a reader-auth certificate must not be accepted as a document signer")
-		}
+		require.False(t, result.Valid, "a reader-auth certificate must not be accepted as a document signer")
 	})
 }
 
@@ -638,20 +578,14 @@ func TestTamperedEnvelopeDocTypeIsRejectedByVerify(t *testing.T) {
 	tampered.DocType = attackerDocType
 
 	result := verifier.Verify(&tampered, namespace)
-	if result.Valid {
-		t.Fatalf("a document whose envelope docType was re-labelled to %q verified as valid, "+
-			"and reported DocType=%q", attackerDocType, result.DocType)
-	}
-	if !strings.Contains(result.Error, "docType mismatch") {
-		t.Errorf("error was %q, want it to name the docType mismatch", result.Error)
-	}
-	if result.DocType == attackerDocType {
-		t.Errorf("result carries the attacker's docType %q", result.DocType)
-	}
+	require.False(t, result.Valid, "a document whose envelope docType was re-labelled to %q verified as valid, "+
+		"and reported DocType=%q", attackerDocType, result.DocType)
+	require.Contains(t, result.Error, "docType mismatch", "error was %q, want it to name the docType mismatch", result.Error)
+	require.NotEqual(t, attackerDocType, result.DocType, "result carries the attacker's docType %q", result.DocType)
 	// Sanity: the untampered document still verifies, and reports the signed value.
-	if ok := verifier.Verify(presented, namespace); !ok.Valid || ok.DocType != docType {
-		t.Errorf("untampered document: valid=%v docType=%q, want true/%q", ok.Valid, ok.DocType, docType)
-	}
+	ok := verifier.Verify(presented, namespace)
+	require.True(t, ok.Valid, "untampered document should still verify as valid")
+	require.Equal(t, docType, ok.DocType, "untampered document should report the signed docType")
 }
 
 func TestTamperedEnvelopeDocTypeIsRejectedAtIssuanceVerification(t *testing.T) {
@@ -664,13 +598,9 @@ func TestTamperedEnvelopeDocTypeIsRejectedAtIssuanceVerification(t *testing.T) {
 	issued.DocType = attackerDocType
 
 	resolved, result := verifier.VerifyAllDisclosedNamespaces(issued)
-	if result.Valid {
-		t.Fatalf("re-labelled document passed issuance verification, reporting DocType=%q with claims %v",
-			result.DocType, resolved)
-	}
-	if !strings.Contains(result.Error, "docType mismatch") {
-		t.Errorf("error was %q, want it to name the docType mismatch", result.Error)
-	}
+	require.False(t, result.Valid, "re-labelled document passed issuance verification, reporting DocType=%q with claims %v",
+		result.DocType, resolved)
+	require.Contains(t, result.Error, "docType mismatch", "error was %q, want it to name the docType mismatch", result.Error)
 }
 
 func TestVerifierRequestedDocTypeMustMatchSignedMSO(t *testing.T) {
@@ -680,24 +610,18 @@ func TestVerifierRequestedDocTypeMustMatchSignedMSO(t *testing.T) {
 	// told so plainly, rather than being left to infer it from a failed device
 	// signature (the reconstructed DeviceAuthentication payload would differ).
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, attackerDocType, transcript, deviceAuthBytes)
-	if result.Valid {
-		t.Fatalf("verification succeeded for a docType the issuer never signed")
-	}
-	if !strings.Contains(result.Error, "docType mismatch") {
-		t.Errorf("error was %q, want it to name the docType mismatch rather than an opaque signature failure", result.Error)
-	}
+	require.False(t, result.Valid, "verification succeeded for a docType the issuer never signed")
+	require.Contains(t, result.Error, "docType mismatch",
+		"error was %q, want it to name the docType mismatch rather than an opaque signature failure", result.Error)
 }
 
 func TestSignedDocTypeIsReportedNotTheEnvelopeValue(t *testing.T) {
 	_, _, verifier, presented, transcript, deviceAuthBytes, docType, namespace := buildHappyPathMDoc(t)
 
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, deviceAuthBytes)
-	if !result.Valid || !result.DeviceAuthValid {
-		t.Fatalf("happy path failed: valid=%v deviceAuth=%v err=%q", result.Valid, result.DeviceAuthValid, result.Error)
-	}
-	if result.DocType != docType {
-		t.Errorf("DocType=%q, want the signed %q", result.DocType, docType)
-	}
+	require.True(t, result.Valid, "happy path failed: valid=%v deviceAuth=%v err=%q", result.Valid, result.DeviceAuthValid, result.Error)
+	require.True(t, result.DeviceAuthValid, "happy path failed: valid=%v deviceAuth=%v err=%q", result.Valid, result.DeviceAuthValid, result.Error)
+	require.Equal(t, docType, result.DocType, "DocType=%q, want the signed %q", result.DocType, docType)
 }
 
 // ---------------------------------------------------------------------------
@@ -715,21 +639,15 @@ func TestDeviceAuthWrongSignerIsRejected(t *testing.T) {
 	require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, wrongDeviceAuth)
-	if result.DeviceAuthValid {
-		t.Fatalf("expected deviceAuth signed by wrong device key to be rejected, but it was accepted")
-	}
+	require.False(t, result.DeviceAuthValid, "expected deviceAuth signed by wrong device key to be rejected, but it was accepted")
 	// VerifyWithDeviceAuth intentionally marks the overall result invalid
 	// when device binding fails — a presentation without a valid device
 	// signature is not a valid presentation, even if issuerAuth/digests
 	// check out on their own. Confirm the underlying issuerAuth checks
 	// were in fact what ran (via the error message), rather than some
 	// earlier unrelated failure.
-	if result.Valid {
-		t.Fatalf("expected overall result to be invalid when deviceAuth fails, but Valid was true")
-	}
-	if result.Error == "" {
-		t.Fatalf("expected a descriptive error when deviceAuth fails, got empty string")
-	}
+	require.False(t, result.Valid, "expected overall result to be invalid when deviceAuth fails, but Valid was true")
+	require.NotEmpty(t, result.Error, "expected a descriptive error when deviceAuth fails, got empty string")
 }
 
 func TestDeviceAuthWrongSessionIsRejected(t *testing.T) {
@@ -748,9 +666,7 @@ func TestDeviceAuthWrongSessionIsRejected(t *testing.T) {
 
 	// Verifier checks against the ORIGINAL transcript it actually issued.
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, replayedDeviceAuth)
-	if result.DeviceAuthValid {
-		t.Fatalf("expected deviceAuth bound to a different session to be rejected, but it was accepted")
-	}
+	require.False(t, result.DeviceAuthValid, "expected deviceAuth bound to a different session to be rejected, but it was accepted")
 }
 
 // TestDeviceAuthStillVerifiesWithDetachedPayload confirms that detaching
@@ -761,9 +677,7 @@ func TestDeviceAuthStillVerifiesWithDetachedPayload(t *testing.T) {
 	_, _, verifier, presented, transcript, deviceAuthBytes, docType, namespace := buildHappyPathMDoc(t)
 
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, deviceAuthBytes)
-	if !result.DeviceAuthValid {
-		t.Fatalf("expected deviceAuth to verify successfully despite detached payload, got: %s", result.Error)
-	}
+	require.True(t, result.DeviceAuthValid, "expected deviceAuth to verify successfully despite detached payload, got: %s", result.Error)
 }
 
 // The tests below cover the DeviceNameSpaces half of DeviceAuthentication: the
@@ -789,10 +703,10 @@ func TestDeviceAuthAcceptsAlternativelyEncodedEmptyNameSpaces(t *testing.T) {
 	attached := withDeviceSigned(presented, indefiniteEmpty, deviceAuthBytes)
 
 	result := verifier.VerifyWithDeviceAuth(attached, namespace, docType, transcript, deviceAuthBytes)
-	if !result.Valid || !result.DeviceAuthValid {
-		t.Fatalf("a holder asserting nothing was rejected: valid=%v deviceAuth=%v err=%q",
-			result.Valid, result.DeviceAuthValid, result.Error)
-	}
+	require.True(t, result.Valid, "a holder asserting nothing was rejected: valid=%v deviceAuth=%v err=%q",
+		result.Valid, result.DeviceAuthValid, result.Error)
+	require.True(t, result.DeviceAuthValid, "a holder asserting nothing was rejected: valid=%v deviceAuth=%v err=%q",
+		result.Valid, result.DeviceAuthValid, result.Error)
 }
 
 // TestDeviceAuthRejectsHolderAssertedNameSpaces pins that holder-signed claims are
@@ -814,27 +728,15 @@ func TestDeviceAuthRejectsHolderAssertedNameSpaces(t *testing.T) {
 	attached := withDeviceSigned(presented, holderClaims, deviceAuthBytes)
 
 	result := verifier.VerifyWithDeviceAuth(attached, namespace, docType, transcript, deviceAuthBytes)
-	if result.Valid {
-		t.Fatal("a document asserting holder-signed namespaces was accepted")
-	}
-	if result.DeviceAuthValid {
-		t.Error("DeviceAuthValid is true on a rejected document — a caller reading it " +
-			"without checking Valid would treat this as accepted")
-	}
-	if !strings.Contains(result.Error, "no holder-asserted attributes") {
-		t.Errorf("error does not name the profile rule: %q", result.Error)
-	}
+	require.False(t, result.Valid, "a document asserting holder-signed namespaces was accepted")
+	require.False(t, result.DeviceAuthValid, "DeviceAuthValid is true on a rejected document — a caller reading it "+
+		"without checking Valid would treat this as accepted")
+	require.Contains(t, result.Error, "no holder-asserted attributes", "error does not name the profile rule: %q", result.Error)
 	// The rejection has to say which profile decided this, so it cannot be
 	// mistaken for a rule the format imposes on every docType.
-	if !strings.Contains(result.Error, AgeVerificationDocType) {
-		t.Errorf("error does not name the docType whose profile refused it: %q", result.Error)
-	}
-	if strings.Contains(result.Error, "signature invalid") {
-		t.Errorf("rejected as a signature failure rather than a profile decision: %q", result.Error)
-	}
-	if !strings.Contains(result.Error, "org.example.holder") {
-		t.Errorf("error does not name the offending namespace: %q", result.Error)
-	}
+	require.Contains(t, result.Error, AgeVerificationDocType, "error does not name the docType whose profile refused it: %q", result.Error)
+	require.NotContains(t, result.Error, "signature invalid", "rejected as a signature failure rather than a profile decision: %q", result.Error)
+	require.Contains(t, result.Error, "org.example.holder", "error does not name the offending namespace: %q", result.Error)
 }
 
 // TestDeviceAuthRejectsNameSpacesNotCoveredBySignature is the adversarial
@@ -856,13 +758,11 @@ func TestDeviceAuthRejectsNameSpacesNotCoveredBySignature(t *testing.T) {
 	attached := withDeviceSigned(presented, smuggled, deviceAuthBytes)
 
 	result := verifier.VerifyWithDeviceAuth(attached, namespace, docType, transcript, deviceAuthBytes)
-	if result.Valid || result.DeviceAuthValid {
-		t.Fatalf("namespaces outside the signature were accepted: valid=%v deviceAuth=%v",
-			result.Valid, result.DeviceAuthValid)
-	}
-	if !strings.Contains(result.Error, "signature invalid") {
-		t.Errorf("expected a signature failure, got %q", result.Error)
-	}
+	require.False(t, result.Valid, "namespaces outside the signature were accepted: valid=%v deviceAuth=%v",
+		result.Valid, result.DeviceAuthValid)
+	require.False(t, result.DeviceAuthValid, "namespaces outside the signature were accepted: valid=%v deviceAuth=%v",
+		result.Valid, result.DeviceAuthValid)
+	require.Contains(t, result.Error, "signature invalid", "expected a signature failure, got %q", result.Error)
 }
 
 // TestDeviceAuthRejectsMalformedNameSpaces covers the structural check that runs
@@ -889,12 +789,8 @@ func TestDeviceAuthRejectsMalformedNameSpaces(t *testing.T) {
 			attached := withDeviceSigned(presented, tc.nameSpaces, deviceAuthBytes)
 
 			result := verifier.VerifyWithDeviceAuth(attached, namespace, docType, transcript, deviceAuthBytes)
-			if result.Valid {
-				t.Fatal("a malformed deviceSigned.nameSpaces was accepted")
-			}
-			if !strings.Contains(result.Error, "malformed deviceSigned.nameSpaces") {
-				t.Errorf("error does not identify the malformed field: %q", result.Error)
-			}
+			require.False(t, result.Valid, "a malformed deviceSigned.nameSpaces was accepted")
+			require.Contains(t, result.Error, "malformed deviceSigned.nameSpaces", "error does not identify the malformed field: %q", result.Error)
 		})
 	}
 }
@@ -905,15 +801,13 @@ func TestDeviceAuthRejectsMalformedNameSpaces(t *testing.T) {
 func TestDeviceAuthWithoutDeviceSignedEnvelope(t *testing.T) {
 	_, _, verifier, presented, transcript, deviceAuthBytes, docType, namespace := buildHappyPathMDoc(t)
 
-	if presented.DeviceSigned != nil {
-		t.Fatal("precondition: this test needs a document with no DeviceSigned envelope")
-	}
+	require.Nil(t, presented.DeviceSigned, "precondition: this test needs a document with no DeviceSigned envelope")
 
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, deviceAuthBytes)
-	if !result.Valid || !result.DeviceAuthValid {
-		t.Fatalf("out-of-band deviceAuth was rejected: valid=%v deviceAuth=%v err=%q",
-			result.Valid, result.DeviceAuthValid, result.Error)
-	}
+	require.True(t, result.Valid, "out-of-band deviceAuth was rejected: valid=%v deviceAuth=%v err=%q",
+		result.Valid, result.DeviceAuthValid, result.Error)
+	require.True(t, result.DeviceAuthValid, "out-of-band deviceAuth was rejected: valid=%v deviceAuth=%v err=%q",
+		result.Valid, result.DeviceAuthValid, result.Error)
 }
 
 // ---------------------------------------------------------------------------
@@ -932,15 +826,9 @@ func TestVerifyDeviceResponseSucceeds(t *testing.T) {
 
 	results, err := verifier.VerifyDeviceResponse(resp, namespace, docType, transcript)
 	require.NoError(t, err, "VerifyDeviceResponse: %v", err)
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if !results[0].Valid {
-		t.Fatalf("expected valid result, got error: %s", results[0].Error)
-	}
-	if !results[0].DeviceAuthValid {
-		t.Fatalf("expected valid deviceAuth, got error: %s", results[0].Error)
-	}
+	require.Len(t, results, 1, "expected 1 result")
+	require.True(t, results[0].Valid, "expected valid result, got error: %s", results[0].Error)
+	require.True(t, results[0].DeviceAuthValid, "expected valid deviceAuth, got error: %s", results[0].Error)
 }
 
 // TestVerifyDeviceResponseRejectsMissingDeviceSigned confirms a document
@@ -952,9 +840,7 @@ func TestVerifyDeviceResponseRejectsMissingDeviceSigned(t *testing.T) {
 	resp := NewDeviceResponse(*presented) // never attached DeviceSigned
 
 	_, err := verifier.VerifyDeviceResponse(resp, namespace, docType, transcript)
-	if err == nil {
-		t.Fatalf("expected error for document missing DeviceSigned, got none")
-	}
+	require.Error(t, err, "expected error for document missing DeviceSigned, got none")
 }
 
 // TestVerifierAcceptsTaggedCoseSign1 pins the deliberate asymmetry in
@@ -972,9 +858,7 @@ func TestVerifierAcceptsTaggedCoseSign1(t *testing.T) {
 	retagged.IssuerSigned.IssuerAuth = cbor.RawMessage(tagged)
 
 	result := verifier.Verify(&retagged, namespace)
-	if !result.Valid {
-		t.Fatalf("tagged COSE_Sign1 was rejected, but the tag is not security-relevant: %s", result.Error)
-	}
+	require.True(t, result.Valid, "tagged COSE_Sign1 was rejected, but the tag is not security-relevant: %s", result.Error)
 }
 
 // ---------------------------------------------------------------------------
@@ -1007,30 +891,18 @@ func TestFullIssuanceFlow_ProducesValidMDoc(t *testing.T) {
 
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, deviceAuthBytes)
 
-	if !result.Valid {
-		t.Fatalf("expected valid mdoc, got error: %s", result.Error)
-	}
-	if !result.DeviceAuthValid {
-		t.Fatalf("expected valid deviceAuth, got error: %s", result.Error)
-	}
-	if len(result.Attributes) != 1 {
-		t.Fatalf("expected exactly 1 disclosed attribute, got %d: %v", len(result.Attributes), result.Attributes)
-	}
+	require.True(t, result.Valid, "expected valid mdoc, got error: %s", result.Error)
+	require.True(t, result.DeviceAuthValid, "expected valid deviceAuth, got error: %s", result.Error)
+	require.Len(t, result.Attributes, 1, "expected exactly 1 disclosed attribute, got %v", result.Attributes)
 	got, ok := result.Attributes["age_over_18"]
-	if !ok {
-		t.Fatalf("expected age_over_18 in disclosed attributes, got %v", result.Attributes)
-	}
-	if got != true {
-		t.Fatalf("expected age_over_18 = true, got %v", got)
-	}
+	require.True(t, ok, "expected age_over_18 in disclosed attributes, got %v", result.Attributes)
+	require.Equal(t, true, got, "expected age_over_18 = true, got %v", got)
 
 	// age_over_16 / age_over_21 were withheld — must NOT be present.
-	if _, present := result.Attributes["age_over_16"]; present {
-		t.Fatalf("age_over_16 should have been withheld, but was disclosed")
-	}
-	if _, present := result.Attributes["age_over_21"]; present {
-		t.Fatalf("age_over_21 should have been withheld, but was disclosed")
-	}
+	_, present := result.Attributes["age_over_16"]
+	require.False(t, present, "age_over_16 should have been withheld, but was disclosed")
+	_, present = result.Attributes["age_over_21"]
+	require.False(t, present, "age_over_21 should have been withheld, but was disclosed")
 }
 
 // issueWithValidity mints a credential from the given issuer with an explicit
@@ -1070,9 +942,8 @@ func issueWithValidity(t *testing.T, issuer *Issuer, validFrom, validUntil time.
 	msg.Payload = msoBytes
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 	msg.Headers.Unprotected[int64(33)] = [][]byte{issuer.dscert.Raw, issuer.iacacert.Raw}
-	if err := msg.Sign(rand.Reader, nil, signer); err != nil {
-		t.Fatalf("sign mso: %v", err)
-	}
+	err = msg.Sign(rand.Reader, nil, signer)
+	require.NoError(t, err, "sign mso: %v", err)
 	coseBytes, err := msg.MarshalCBOR()
 	require.NoError(t, err, "marshal issuerAuth: %v", err)
 
@@ -1113,24 +984,14 @@ func TestRequireElementsCatchesAnOmittedElement(t *testing.T) {
 	result := verifier.Verify(presented, docType)
 
 	// Everything the format itself checks still passes: this is not a forgery.
-	if !result.Valid {
-		t.Fatalf("expected the partial disclosure to verify as authentic, got: %s", result.Error)
-	}
+	require.True(t, result.Valid, "expected the partial disclosure to verify as authentic, got: %s", result.Error)
 
-	if err := result.RequireElements("age_over_18"); err != nil {
-		t.Errorf("age_over_18 was disclosed, so requiring it must succeed: %v", err)
-	}
+	require.NoError(t, result.RequireElements("age_over_18"), "age_over_18 was disclosed, so requiring it must succeed")
 
 	err = result.RequireElements("age_over_18", "age_over_21")
-	if err == nil {
-		t.Fatal("age_over_21 was requested and not disclosed, but RequireElements accepted the result")
-	}
-	if !strings.Contains(err.Error(), "age_over_21") {
-		t.Errorf("the error should name the element that is missing, got: %v", err)
-	}
-	if strings.Contains(err.Error(), "age_over_18") {
-		t.Errorf("the error should not name an element that was disclosed, got: %v", err)
-	}
+	require.Error(t, err, "age_over_21 was requested and not disclosed, but RequireElements accepted the result")
+	require.ErrorContains(t, err, "age_over_21", "the error should name the element that is missing")
+	require.NotContains(t, err.Error(), "age_over_18", "the error should not name an element that was disclosed, got: %v", err)
 }
 
 // TestRequireElementsRefusesAFailedResult stops the check from reading as a pass
@@ -1142,10 +1003,6 @@ func TestRequireElementsRefusesAFailedResult(t *testing.T) {
 	failed := VerificationResult{Valid: false, Error: "issuerAuth signature invalid"}
 
 	err := failed.RequireElements()
-	if err == nil {
-		t.Fatal("RequireElements must refuse a result that did not verify, even with nothing requested")
-	}
-	if !strings.Contains(err.Error(), "issuerAuth signature invalid") {
-		t.Errorf("the error should carry the underlying verification failure, got: %v", err)
-	}
+	require.Error(t, err, "RequireElements must refuse a result that did not verify, even with nothing requested")
+	require.ErrorContains(t, err, "issuerAuth signature invalid", "the error should carry the underlying verification failure")
 }

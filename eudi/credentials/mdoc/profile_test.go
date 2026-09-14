@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"math/big"
-	"strings"
 	"testing"
 	"time"
 
@@ -53,12 +52,8 @@ func TestClosedAttributeSetAppliesToAVOnly(t *testing.T) {
 			"nationality": "NL",
 		})
 
-		if result.Valid {
-			t.Fatal("the AV profile permits only age_over_NN; a document carrying nationality must be refused")
-		}
-		if !strings.Contains(result.Error, "nationality") {
-			t.Errorf("rejection should name the offending attribute, got: %s", result.Error)
-		}
+		require.False(t, result.Valid, "the AV profile permits only age_over_NN; a document carrying nationality must be refused")
+		require.Contains(t, result.Error, "nationality", "rejection should name the offending attribute, got: %s", result.Error)
 	})
 
 	t.Run("AV accepts age_over_NN", func(t *testing.T) {
@@ -67,9 +62,7 @@ func TestClosedAttributeSetAppliesToAVOnly(t *testing.T) {
 			"age_over_65": false,
 		})
 
-		if !result.Valid {
-			t.Fatalf("age_over_NN is exactly what the AV profile permits, got: %s", result.Error)
-		}
+		require.True(t, result.Valid, "age_over_NN is exactly what the AV profile permits, got: %s", result.Error)
 	})
 
 	t.Run("a general docType is unaffected", func(t *testing.T) {
@@ -79,10 +72,8 @@ func TestClosedAttributeSetAppliesToAVOnly(t *testing.T) {
 			"issuing_country": "NL",
 		})
 
-		if !result.Valid {
-			t.Fatalf("ISO 18013-5 restricts no element identifier; a non-AV docType must not "+
-				"inherit the AV profile's closed set. Got: %s", result.Error)
-		}
+		require.True(t, result.Valid, "ISO 18013-5 restricts no element identifier; a non-AV docType must not "+
+			"inherit the AV profile's closed set. Got: %s", result.Error)
 	})
 }
 
@@ -103,24 +94,17 @@ func TestValidityCoarseningIsProfileDriven(t *testing.T) {
 		t.Run(docType, func(t *testing.T) {
 			info := profileFor(docType).issuedValidityInfo(issuedAt)
 
-			if got := info.Signed.Format("15:04:05"); got != "00:00:00" {
-				t.Errorf("signed should be coarsened to midnight UTC, got %s", got)
-			}
-			if !info.ValidFrom.Equal(info.Signed) {
-				t.Errorf("validFrom %s should equal signed %s", info.ValidFrom, info.Signed)
-			}
-			if !info.ValidUntil.After(info.ValidFrom) {
-				t.Errorf("validUntil %s must be later than validFrom %s", info.ValidUntil, info.ValidFrom)
-			}
+			got := info.Signed.Format("15:04:05")
+			require.Equal(t, "00:00:00", got, "signed should be coarsened to midnight UTC, got %s", got)
+			require.True(t, info.ValidFrom.Equal(info.Signed), "validFrom %s should equal signed %s", info.ValidFrom, info.Signed)
+			require.True(t, info.ValidUntil.After(info.ValidFrom), "validUntil %s must be later than validFrom %s", info.ValidUntil, info.ValidFrom)
 		})
 	}
 
 	// The AV Blueprint's "maximum period of three (3) months from the date of
 	// issuance" is the only ceiling either profile has.
 	av := profileFor(AgeVerificationDocType)
-	if av.validityPeriod > 90*24*time.Hour {
-		t.Errorf("AV validity period %s exceeds the Blueprint's three-month maximum", av.validityPeriod)
-	}
+	require.LessOrEqual(t, av.validityPeriod, 90*24*time.Hour, "AV validity period %s exceeds the Blueprint's three-month maximum", av.validityPeriod)
 }
 
 // TestGeneralProfileAllowsHolderAssertedClaims is the positive half of the
@@ -153,12 +137,8 @@ func TestGeneralProfileAllowsHolderAssertedClaims(t *testing.T) {
 
 	t.Run("no authorizations at all", func(t *testing.T) {
 		err := profileFor(generalDocType).checkDeviceSignedNameSpaces(deviceNameSpaces, nil)
-		if err == nil {
-			t.Fatal("9.1.3.4 authorizes the device key to assert only what keyAuthorizations names; absent means nothing")
-		}
-		if !strings.Contains(err.Error(), "keyAuthorizations") {
-			t.Errorf("rejection should name the missing structure, got: %v", err)
-		}
+		require.Error(t, err, "9.1.3.4 authorizes the device key to assert only what keyAuthorizations names; absent means nothing")
+		require.ErrorContains(t, err, "keyAuthorizations", "rejection should name the missing structure, got: %v", err)
 	})
 
 	t.Run("authorized for a different element", func(t *testing.T) {
@@ -166,27 +146,20 @@ func TestGeneralProfileAllowsHolderAssertedClaims(t *testing.T) {
 			&KeyAuthorizations{DataElements: map[string][]string{
 				"org.iso.18013.5.1": {"something_else"},
 			}})
-		if err == nil {
-			t.Fatal("an authorization for a different element must not cover this one")
-		}
-		if !strings.Contains(err.Error(), "self_asserted_address") {
-			t.Errorf("rejection should name the unauthorized element, got: %v", err)
-		}
+		require.Error(t, err, "an authorization for a different element must not cover this one")
+		require.ErrorContains(t, err, "self_asserted_address", "rejection should name the unauthorized element, got: %v", err)
 	})
 
 	t.Run("AV refuses regardless of authorizations", func(t *testing.T) {
 		err := profileFor(AgeVerificationDocType).checkDeviceSignedNameSpaces(deviceNameSpaces,
 			&KeyAuthorizations{NameSpaces: []string{"org.iso.18013.5.1"}})
-		if err == nil {
-			t.Fatal("the AV profile has no holder-asserted attributes; an issuer authorization cannot create one")
-		}
+		require.Error(t, err, "the AV profile has no holder-asserted attributes; an issuer authorization cannot create one")
 	})
 
 	t.Run("empty deviceNameSpaces is fine under either profile", func(t *testing.T) {
 		for _, docType := range []string{AgeVerificationDocType, generalDocType} {
-			if err := profileFor(docType).checkDeviceSignedNameSpaces(nil, nil); err != nil {
-				t.Errorf("%s: a holder asserting nothing needs no authorization: %v", docType, err)
-			}
+			err := profileFor(docType).checkDeviceSignedNameSpaces(nil, nil)
+			require.NoError(t, err, "%s: a holder asserting nothing needs no authorization: %v", docType, err)
 		}
 	})
 }
@@ -206,19 +179,15 @@ func TestKeyAuthorizationsRoundTripDoesNotChangeSignedBytes(t *testing.T) {
 	require.NoError(t, err, "marshal: %v", err)
 
 	// One entry: deviceKey. 0xa1 is a definite-length map of one pair.
-	if encoded[0] != 0xa1 {
-		t.Fatalf("DeviceKeyInfo with no authorizations must encode as a single-entry map "+
-			"(0xa1), got 0x%02x — keyAuthorizations or keyInfo is being emitted, which changes "+
-			"the signed MSO bytes of every credential", encoded[0])
-	}
+	require.Equal(t, byte(0xa1), encoded[0], "DeviceKeyInfo with no authorizations must encode as a single-entry map "+
+		"(0xa1), got 0x%02x — keyAuthorizations or keyInfo is being emitted, which changes "+
+		"the signed MSO bytes of every credential", encoded[0])
 
 	var round DeviceKeyInfo
-	if err := mdocDecMode.Unmarshal(encoded, &round); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if round.KeyAuthorizations != nil || round.KeyInfo != nil {
-		t.Error("absent optional fields should decode to nil")
-	}
+	err = mdocDecMode.Unmarshal(encoded, &round)
+	require.NoError(t, err, "unmarshal: %v", err)
+	require.Nil(t, round.KeyAuthorizations, "absent optional fields should decode to nil")
+	require.Nil(t, round.KeyInfo, "absent optional fields should decode to nil")
 }
 
 // ============================================================
@@ -287,9 +256,8 @@ func TestRevokedDocumentSignerIsRefused(t *testing.T) {
 		iss, doc, pool := build(t)
 		_ = iss
 		v := NewVerifierFromTrustSource(staticTrustSource{roots: pool})
-		if r := v.Verify(doc, dt); !r.Valid {
-			t.Fatalf("an unrevoked signer with no CRLs available must still verify: %s", r.Error)
-		}
+		r := v.Verify(doc, dt)
+		require.True(t, r.Valid, "an unrevoked signer with no CRLs available must still verify: %s", r.Error)
 	})
 
 	t.Run("an unrelated CRL does not reject", func(t *testing.T) {
@@ -299,9 +267,8 @@ func TestRevokedDocumentSignerIsRefused(t *testing.T) {
 		// A CRL from a different CA, revoking a different serial.
 		crl := revokeCert(t, other.IACACert(), other.iacakey, other.DSCert())
 		v := NewVerifierFromTrustSource(staticTrustSource{roots: pool, crls: []*x509.RevocationList{crl}})
-		if r := v.Verify(doc, dt); !r.Valid {
-			t.Fatalf("a CRL from an unrelated issuer must not reject this signer: %s", r.Error)
-		}
+		r := v.Verify(doc, dt)
+		require.True(t, r.Valid, "a CRL from an unrelated issuer must not reject this signer: %s", r.Error)
 		_ = iss
 	})
 
@@ -311,17 +278,11 @@ func TestRevokedDocumentSignerIsRefused(t *testing.T) {
 		v := NewVerifierFromTrustSource(staticTrustSource{roots: pool, crls: []*x509.RevocationList{crl}})
 
 		r := v.Verify(doc, dt)
-		if r.Valid {
-			t.Fatal("a credential signed by a revoked document signer must be refused")
-		}
-		if !strings.Contains(r.Error, "revoked") {
-			t.Errorf("rejection should say the certificate is revoked, got: %s", r.Error)
-		}
+		require.False(t, r.Valid, "a credential signed by a revoked document signer must be refused")
+		require.Contains(t, r.Error, "revoked", "rejection should say the certificate is revoked, got: %s", r.Error)
 		// The operator acting on this needs to know which certificate, not just that
 		// something in the chain was withdrawn.
-		if !strings.Contains(r.Error, iss.DSCert().Subject.String()) {
-			t.Errorf("rejection should name the revoked certificate, got: %s", r.Error)
-		}
+		require.Contains(t, r.Error, iss.DSCert().Subject.String(), "rejection should name the revoked certificate, got: %s", r.Error)
 	})
 
 	t.Run("options-only verifiers still skip revocation", func(t *testing.T) {
@@ -330,9 +291,8 @@ func TestRevokedDocumentSignerIsRefused(t *testing.T) {
 		_ = crl
 		// NewVerifier has no trust source, so it has no lists — unchanged behaviour,
 		// pinned so the options-only constructors keep working for tests and demos.
-		if r := NewVerifier([]*x509.Certificate{iss.IACACert()}).Verify(doc, dt); !r.Valid {
-			t.Fatalf("a verifier built without a trust source cannot check revocation: %s", r.Error)
-		}
+		r := NewVerifier([]*x509.Certificate{iss.IACACert()}).Verify(doc, dt)
+		require.True(t, r.Valid, "a verifier built without a trust source cannot check revocation: %s", r.Error)
 		_ = pool
 	})
 }

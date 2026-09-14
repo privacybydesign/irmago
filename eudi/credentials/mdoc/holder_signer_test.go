@@ -8,7 +8,6 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"io"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -86,26 +85,18 @@ func TestOpaqueSignerProducesVerifiableDeviceAuth(t *testing.T) {
 
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, deviceAuthBytes)
-	if !result.Valid || !result.DeviceAuthValid {
-		t.Fatalf("presentation signed by an opaque device key was rejected: valid=%v deviceAuth=%v err=%q",
-			result.Valid, result.DeviceAuthValid, result.Error)
-	}
+	require.True(t, result.Valid && result.DeviceAuthValid, "presentation signed by an opaque device key was rejected: valid=%v deviceAuth=%v err=%q",
+		result.Valid, result.DeviceAuthValid, result.Error)
 
 	// The signing really went through the opaque signer, rather than go-cose
 	// finding an *ecdsa.PrivateKey to use directly.
-	if signer.calls != 1 {
-		t.Errorf("opaque signer was called %d times, want exactly 1", signer.calls)
-	}
+	require.Equal(t, 1, signer.calls, "opaque signer was called %d times, want exactly 1", signer.calls)
 
 	// The contract a hardware wrapper has to satisfy, asserted rather than
 	// described: it is handed a 32-byte SHA-256 digest and nil opts, so it must
 	// assume SHA-256 instead of reading the hash function out of opts.
-	if signer.lastDigestLn != 32 {
-		t.Errorf("signer was handed %d bytes, want a 32-byte SHA-256 digest", signer.lastDigestLn)
-	}
-	if !signer.lastOptsNil {
-		t.Errorf("signer was handed non-nil SignerOpts; a hardware wrapper cannot rely on opts naming the hash")
-	}
+	require.Equal(t, 32, signer.lastDigestLn, "signer was handed %d bytes, want a 32-byte SHA-256 digest", signer.lastDigestLn)
+	require.True(t, signer.lastOptsNil, "signer was handed non-nil SignerOpts; a hardware wrapper cannot rely on opts naming the hash")
 }
 
 // TestNewHolderFromSignerCurves keeps the wrong-curve failure at construction.
@@ -130,39 +121,30 @@ func TestNewHolderFromSignerCurves(t *testing.T) {
 				"P-384": cose.AlgorithmES384,
 				"P-521": cose.AlgorithmES512,
 			}[curve.Params().Name]
-			if alg != want {
-				t.Errorf("%s paired with %v, want %v", curve.Params().Name, alg, want)
-			}
+			require.Equal(t, want, alg, "%s paired with %v, want %v", curve.Params().Name, alg, want)
 		})
 	}
 
 	t.Run("refuses a curve outside the table", func(t *testing.T) {
 		// P-224 is a real curve that 18013-5 does not list for cipher suite 1.
 		_, err := NewHolderFromSigner(newOpaqueSigner(t, elliptic.P224()))
-		if err == nil {
-			t.Fatal("a P-224 device key was accepted; it has no ISO/IEC 18013-5 algorithm pairing")
-		}
-		if !strings.Contains(err.Error(), "P-224") {
-			t.Errorf("error was %q, want it to name the offending curve", err)
-		}
+		require.Error(t, err, "a P-224 device key was accepted; it has no ISO/IEC 18013-5 algorithm pairing")
+		require.ErrorContains(t, err, "P-224", "error was %q, want it to name the offending curve", err)
 	})
 }
 
 func TestNewHolderFromSignerRejectsNonECDSA(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err, "generate ed25519 key: %v", err)
-	if _, err := NewHolderFromSigner(priv); err == nil {
-		t.Fatal("an Ed25519 device key was accepted for ES256 device authentication")
-	}
+	_, err = NewHolderFromSigner(priv)
+	require.Error(t, err, "an Ed25519 device key was accepted for ES256 device authentication")
 }
 
 func TestNewHolderRejectsNilKeys(t *testing.T) {
-	if _, err := NewHolderFromSigner(nil); err == nil {
-		t.Error("a nil signer was accepted")
-	}
-	if _, err := NewHolderFromPrivateKey(nil); err == nil {
-		t.Error("a nil private key was accepted")
-	}
+	_, err := NewHolderFromSigner(nil)
+	require.Error(t, err, "a nil signer was accepted")
+	_, err = NewHolderFromPrivateKey(nil)
+	require.Error(t, err, "a nil private key was accepted")
 }
 
 // TestDefaultHolderSatisfiesHolder pins the software implementation to the same
@@ -178,11 +160,7 @@ func TestDefaultHolderSatisfiesHolder(t *testing.T) {
 	// interface, which is what this test is named for.
 	holders := []Holder{software, fromKey}
 	for i, h := range holders {
-		if h.PublicKey() == nil {
-			t.Errorf("holder %d returned a nil public key", i)
-		}
-		if h.PublicKey().Curve != elliptic.P256() {
-			t.Errorf("holder %d device key is on %s, want P-256", i, h.PublicKey().Curve.Params().Name)
-		}
+		require.NotNil(t, h.PublicKey(), "holder %d returned a nil public key", i)
+		require.Equal(t, elliptic.P256(), h.PublicKey().Curve, "holder %d device key is on %s, want P-256", i, h.PublicKey().Curve.Params().Name)
 	}
 }

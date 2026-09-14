@@ -43,17 +43,14 @@ func TestClaimOrderingIsRandomized(t *testing.T) {
 		order := make([]string, len(items))
 		for _, tag24item := range items {
 			var rawTag cbor.RawTag
-			if err := cbor.Unmarshal(tag24item.EncodedItem, &rawTag); err != nil {
-				t.Fatalf("unwrap tag24: %v", err)
-			}
+			err := cbor.Unmarshal(tag24item.EncodedItem, &rawTag)
+			require.NoError(t, err, "unwrap tag24: %v", err)
 			var innerBytes []byte
-			if err := cbor.Unmarshal(rawTag.Content, &innerBytes); err != nil {
-				t.Fatalf("unwrap inner: %v", err)
-			}
+			err = cbor.Unmarshal(rawTag.Content, &innerBytes)
+			require.NoError(t, err, "unwrap inner: %v", err)
 			var item IssuerSignedItem
-			if err := cbor.Unmarshal(innerBytes, &item); err != nil {
-				t.Fatalf("decode item: %v", err)
-			}
+			err = cbor.Unmarshal(innerBytes, &item)
+			require.NoError(t, err, "decode item: %v", err)
 			order[item.DigestID] = item.ElementIdentifier
 		}
 		return order
@@ -71,9 +68,7 @@ func TestClaimOrderingIsRandomized(t *testing.T) {
 		slices.Sort(gotSet)
 		wantSet := slices.Clone(want)
 		slices.Sort(wantSet)
-		if !slices.Equal(gotSet, wantSet) {
-			t.Fatalf("run %d: digestID assignment lost/duplicated a claim: got %v, want set %v", i, order, wantSet)
-		}
+		require.Equal(t, wantSet, gotSet, "run %d: digestID assignment lost/duplicated a claim: got %v, want set %v", i, order, wantSet)
 
 		seenOrders[strings.Join(order, ",")] = true
 	}
@@ -81,9 +76,8 @@ func TestClaimOrderingIsRandomized(t *testing.T) {
 	// With 4 claims there are 4! = 24 possible orderings; seeing only one
 	// order across 30 random issuances would mean the shuffle isn't
 	// actually randomizing anything.
-	if len(seenOrders) < 2 {
-		t.Fatalf("expected digestID order to vary across issuances (randomized shuffle), but saw only %d distinct order(s) across %d issuances — looks deterministic", len(seenOrders), runs)
-	}
+	require.GreaterOrEqual(t, len(seenOrders), 2,
+		"expected digestID order to vary across issuances (randomized shuffle), but saw only %d distinct order(s) across %d issuances — looks deterministic", len(seenOrders), runs)
 }
 
 // ============================================================
@@ -147,12 +141,9 @@ func TestIssueAcceptsArbitraryDocTypeAndClaims(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mdoc, err := issuer.Issue(tc.docType, tc.namespace, tc.claims, holder.PublicKey())
 			require.NoError(t, err, "Issue: %v", err)
-			if mdoc.DocType != tc.docType {
-				t.Fatalf("expected docType %q, got %q", tc.docType, mdoc.DocType)
-			}
-			if len(mdoc.IssuerSigned.NameSpaces[tc.namespace]) != len(tc.claims) {
-				t.Fatalf("expected %d claims in namespace %q, got %d", len(tc.claims), tc.namespace, len(mdoc.IssuerSigned.NameSpaces[tc.namespace]))
-			}
+			require.Equal(t, tc.docType, mdoc.DocType, "expected docType %q, got %q", tc.docType, mdoc.DocType)
+			require.Len(t, mdoc.IssuerSigned.NameSpaces[tc.namespace], len(tc.claims),
+				"expected %d claims in namespace %q, got %d", len(tc.claims), tc.namespace, len(mdoc.IssuerSigned.NameSpaces[tc.namespace]))
 		})
 	}
 }
@@ -182,9 +173,7 @@ func TestIssuedValidityTimestampsAreCoarsened(t *testing.T) {
 	var infos []ValidityInfo
 	for _, doc := range issued {
 		_, result := verifier.VerifyAllDisclosedNamespaces(doc)
-		if !result.Valid {
-			t.Fatalf("verify: %s", result.Error)
-		}
+		require.True(t, result.Valid, "verify: %s", result.Error)
 		infos = append(infos, result.ValidityInfo)
 	}
 
@@ -193,18 +182,16 @@ func TestIssuedValidityTimestampsAreCoarsened(t *testing.T) {
 			"signed": info.Signed, "validFrom": info.ValidFrom, "validUntil": info.ValidUntil,
 		} {
 			h, m, s := ts.UTC().Clock()
-			if h != 0 || m != 0 || s != 0 {
-				t.Errorf("%s is %s: hh:mm:ss must be coarsened away, not the issuing wallclock", name, ts.UTC().Format(time.RFC3339))
-			}
+			require.True(t, h == 0 && m == 0 && s == 0,
+				"%s is %s: hh:mm:ss must be coarsened away, not the issuing wallclock", name, ts.UTC().Format(time.RFC3339))
 		}
 	}
 
 	// The point of coarsening: two attestations of one batch must be
 	// indistinguishable by their timestamps.
-	if !infos[0].Signed.Equal(infos[1].Signed) || !infos[0].ValidUntil.Equal(infos[1].ValidUntil) {
-		t.Errorf("two attestations carry different validity timestamps (%s/%s vs %s/%s); they are linkable",
-			infos[0].Signed, infos[0].ValidUntil, infos[1].Signed, infos[1].ValidUntil)
-	}
+	require.True(t, infos[0].Signed.Equal(infos[1].Signed) && infos[0].ValidUntil.Equal(infos[1].ValidUntil),
+		"two attestations carry different validity timestamps (%s/%s vs %s/%s); they are linkable",
+		infos[0].Signed, infos[0].ValidUntil, infos[1].Signed, infos[1].ValidUntil)
 }
 
 // TestIssuedSaltsMeetTheIsoMinimum pins the size and freshness of the per-item
@@ -229,23 +216,19 @@ func TestIssuedSaltsMeetTheIsoMinimum(t *testing.T) {
 	require.NoError(t, err, "Issue: %v", err)
 
 	items := credential.IssuerSigned.NameSpaces[docType]
-	if len(items) != 2 {
-		t.Fatalf("expected 2 issuer-signed items, got %d", len(items))
-	}
+	require.Len(t, items, 2, "expected 2 issuer-signed items, got %d", len(items))
 
 	seen := map[string]string{}
 	for _, wrapped := range items {
 		item, err := decodeTag24Item(wrapped)
 		require.NoError(t, err, "decode item: %v", err)
-		if len(item.Random) < minSaltLength {
-			t.Errorf("%s carries a %d-byte salt; ISO/IEC 18013-5 requires at least %d",
-				item.ElementIdentifier, len(item.Random), minSaltLength)
-		}
+		require.GreaterOrEqual(t, len(item.Random), minSaltLength,
+			"%s carries a %d-byte salt; ISO/IEC 18013-5 requires at least %d",
+			item.ElementIdentifier, len(item.Random), minSaltLength)
 		key := string(item.Random)
-		if other, reused := seen[key]; reused {
-			t.Errorf("%s and %s share a salt, so their digests leak whether their values are equal",
-				other, item.ElementIdentifier)
-		}
+		other, reused := seen[key]
+		require.False(t, reused, "%s and %s share a salt, so their digests leak whether their values are equal",
+			other, item.ElementIdentifier)
 		seen[key] = item.ElementIdentifier
 	}
 }

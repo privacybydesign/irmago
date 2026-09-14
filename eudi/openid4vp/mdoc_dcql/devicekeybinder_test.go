@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
@@ -88,14 +87,14 @@ func TestPrepareDisclosureSignsWithNonExtractableDeviceKey(t *testing.T) {
 	results, err := env.verifier.VerifyDeviceResponse(response, testNamespace, testDocType, transcript)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
-	assert.True(t, results[0].Valid, "verification failed: %s", results[0].Error)
-	assert.True(t, results[0].DeviceAuthValid,
+	require.True(t, results[0].Valid, "verification failed: %s", results[0].Error)
+	require.True(t, results[0].DeviceAuthValid,
 		"deviceAuth signed by a non-extractable key did not verify: %s", results[0].Error)
 
 	// The signing really went through the opaque signer, rather than any key the
 	// handler found for itself.
 	require.Len(t, binder.signers, 1)
-	assert.Equal(t, 1, binder.signers[0].calls,
+	require.Equal(t, 1, binder.signers[0].calls,
 		"the device key must be used exactly once per presentation")
 }
 
@@ -113,7 +112,7 @@ func TestPrepareDisclosureAsksForTheKeyTheCredentialIsBoundTo(t *testing.T) {
 
 	require.Len(t, binder.asked, 1, "one presentation must resolve exactly one device key")
 	require.Len(t, env.deviceKeys, 1)
-	assert.True(t, env.deviceKeys[0].PublicKey.Equal(binder.asked[0]),
+	require.True(t, env.deviceKeys[0].PublicKey.Equal(binder.asked[0]),
 		"the handler asked for a device key other than the one the credential's MSO names")
 }
 
@@ -129,12 +128,12 @@ func TestPrepareDisclosureFailingBinderSpendsNoInstance(t *testing.T) {
 
 	_, err := env.withDeviceKeyBinder(binder).disclose(t)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "user did not authenticate",
+	require.Contains(t, err.Error(), "user did not authenticate",
 		"the platform's own reason for refusing must survive to the caller")
 
 	batch, err := env.store.GetBatchByHash(env.hash)
 	require.NoError(t, err)
-	assert.Equal(t, uint(2), batch.RemainingCount,
+	require.Equal(t, uint(2), batch.RemainingCount,
 		"a presentation that was never signed must not spend a batch instance")
 }
 
@@ -149,9 +148,9 @@ func TestPrepareDisclosureNamesTheInstanceWhenNoDeviceKeyIsAvailable(t *testing.
 
 	_, err := env.withDeviceKeyBinder(binder).disclose(t)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "credential instance",
+	require.Contains(t, err.Error(), "credential instance",
 		"the error must name the instance whose device key is missing")
-	assert.Contains(t, err.Error(), "no hardware key for the requested device key",
+	require.Contains(t, err.Error(), "no hardware key for the requested device key",
 		"the binder's own diagnosis must not be swallowed")
 }
 

@@ -2,9 +2,9 @@ package mdoc
 
 import (
 	"crypto/sha256"
-	"github.com/stretchr/testify/require"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // wrapItemWithMatchingDigest Tag-24 wraps item and returns it alongside a
@@ -34,17 +34,12 @@ func TestVerifyNamespaceDigestsRejectsShortSalt(t *testing.T) {
 	items, digests := wrapItemWithMatchingDigest(t, item)
 
 	attrs, err := verifyNamespaceDigests(items, digests, sha256Digest)
-	if err == nil {
-		t.Fatalf("a %d-byte salt was accepted; the undisclosed elements of such a credential are brute-forceable", len(item.Random))
-	}
-	if attrs != nil {
-		t.Errorf("attributes were returned alongside the error: %v", attrs)
-	}
+	require.Error(t, err, "a %d-byte salt was accepted; the undisclosed elements of such a credential are brute-forceable", len(item.Random))
+	require.Nil(t, attrs, "attributes were returned alongside the error: %v", attrs)
 	// The message has to name the defect, not surface as a digest mismatch:
 	// the two send an implementor looking in completely different places.
-	if !strings.Contains(err.Error(), "random value") || !strings.Contains(err.Error(), "age_over_18") {
-		t.Errorf("error should name the short random value and the element, got: %v", err)
-	}
+	require.ErrorContains(t, err, "random value", "error should name the short random value and the element, got: %v", err)
+	require.ErrorContains(t, err, "age_over_18", "error should name the short random value and the element, got: %v", err)
 }
 
 func TestVerifyNamespaceDigestsAcceptsSaltAtFloor(t *testing.T) {
@@ -60,9 +55,9 @@ func TestVerifyNamespaceDigestsAcceptsSaltAtFloor(t *testing.T) {
 
 	attrs, err := verifyNamespaceDigests(items, digests, sha256Digest)
 	require.NoError(t, err, "a salt exactly at the ISO floor was rejected: %v", err)
-	if got, ok := attrs["age_over_18"]; !ok || got != true {
-		t.Errorf("attrs[age_over_18] = %v, %v; want true, true", got, ok)
-	}
+	got, ok := attrs["age_over_18"]
+	require.True(t, ok, "attrs[age_over_18] = %v, %v; want true, true", got, ok)
+	require.Equal(t, true, got, "attrs[age_over_18] = %v, %v; want true, true", got, ok)
 }
 
 func TestVerifyNamespaceDigestsRejectsMissingSalt(t *testing.T) {
@@ -76,7 +71,6 @@ func TestVerifyNamespaceDigestsRejectsMissingSalt(t *testing.T) {
 	}
 	items, digests := wrapItemWithMatchingDigest(t, item)
 
-	if _, err := verifyNamespaceDigests(items, digests, sha256Digest); err == nil {
-		t.Fatal("an item with no random value at all was accepted")
-	}
+	_, err := verifyNamespaceDigests(items, digests, sha256Digest)
+	require.Error(t, err, "an item with no random value at all was accepted")
 }

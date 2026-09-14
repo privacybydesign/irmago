@@ -6,7 +6,6 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -79,10 +78,10 @@ func TestMdocSchema_TablesAndConstraints(t *testing.T) {
 		notNull[c.Name] = c.NotNull == 1
 	}
 	for _, c := range []string{"doc_type", "credential_issuer", "hash", "namespaces", "signed_at", "valid_from", "valid_until", "batch_size", "remaining_count"} {
-		assert.True(t, notNull[c], "mdoc_batches.%s must be NOT NULL", c)
+		require.True(t, notNull[c], "mdoc_batches.%s must be NOT NULL", c)
 	}
 	_, hasFormat := notNull["format"]
-	assert.False(t, hasFormat, "an mdoc table needs no format discriminator: the table is the format")
+	require.False(t, hasFormat, "an mdoc table needs no format discriminator: the table is the format")
 }
 
 func TestMdocSchema_HashIsUnique(t *testing.T) {
@@ -143,14 +142,14 @@ func TestMdocStore_StoreBatch_AssignsIDsAndRoundTripsNamespaces(t *testing.T) {
 
 	got, err := store.GetBatchByHash("h")
 	require.NoError(t, err)
-	assert.Equal(t, "eu.europa.ec.av.1", got.DocType)
-	assert.Equal(t, true, got.Namespaces["eu.europa.ec.av.1"]["age_over_18"])
-	assert.Equal(t, false, got.Namespaces["eu.europa.ec.av.1"]["age_over_21"])
-	assert.True(t, got.IssuerVerified)
-	assert.JSONEq(t, `[{"name":"Issuer","locale":"en"}]`, string(got.IssuerDisplay))
-	assert.Empty(t, got.CredentialMetadata)
-	assert.WithinDuration(t, b.ValidUntil, got.ValidUntil, time.Second)
-	assert.Nil(t, got.Instances, "batch lookups do not load instances")
+	require.Equal(t, "eu.europa.ec.av.1", got.DocType)
+	require.Equal(t, true, got.Namespaces["eu.europa.ec.av.1"]["age_over_18"])
+	require.Equal(t, false, got.Namespaces["eu.europa.ec.av.1"]["age_over_21"])
+	require.True(t, got.IssuerVerified)
+	require.JSONEq(t, `[{"name":"Issuer","locale":"en"}]`, string(got.IssuerDisplay))
+	require.Empty(t, got.CredentialMetadata)
+	require.WithinDuration(t, b.ValidUntil, got.ValidUntil, time.Second)
+	require.Nil(t, got.Instances, "batch lookups do not load instances")
 }
 
 func TestMdocStore_ListBatches(t *testing.T) {
@@ -276,8 +275,8 @@ func TestMdocStore_DeleteBatch_CascadesToInstancesAndDeviceKeys(t *testing.T) {
 	var instances, deviceKeys int64
 	require.NoError(t, d.Model(&models.MdocBatchInstance{}).Count(&instances).Error)
 	require.NoError(t, d.Model(&models.MdocDeviceKey{}).Count(&deviceKeys).Error)
-	assert.Zero(t, instances)
-	assert.Equal(t, int64(1), deviceKeys, "only the key bound to no instance survives")
+	require.Zero(t, instances)
+	require.Equal(t, int64(1), deviceKeys, "only the key bound to no instance survives")
 
 	require.ErrorIs(t, store.DeleteBatchByHash("h"), ErrNotFound)
 	require.ErrorIs(t, store.DeleteBatch(datatypes.NewUUIDv4()), ErrNotFound)
@@ -312,8 +311,8 @@ func TestMdocDeviceKeyStore_StoreGetLinkDelete(t *testing.T) {
 
 	got, err := keys.GetByThumbprint("a")
 	require.NoError(t, err)
-	assert.Equal(t, []byte("pkcs8-a"), got.PrivateKey)
-	assert.Nil(t, got.MdocBatchInstanceID, "a freshly minted key is bound to nothing")
+	require.Equal(t, []byte("pkcs8-a"), got.PrivateKey)
+	require.Nil(t, got.MdocBatchInstanceID, "a freshly minted key is bound to nothing")
 
 	_, err = keys.GetByThumbprint("zzz")
 	require.ErrorIs(t, err, ErrNotFound)
@@ -326,7 +325,7 @@ func TestMdocDeviceKeyStore_StoreGetLinkDelete(t *testing.T) {
 	got, err = keys.GetByThumbprint("a")
 	require.NoError(t, err)
 	require.NotNil(t, got.MdocBatchInstanceID)
-	assert.Equal(t, b.Instances[0].ID, *got.MdocBatchInstanceID)
+	require.Equal(t, b.Instances[0].ID, *got.MdocBatchInstanceID)
 
 	require.ErrorIs(t, keys.LinkToInstance(datatypes.NewUUIDv4(), b.Instances[0].ID), ErrNotFound)
 	require.Error(t, keys.LinkToInstance(datatypes.UUID{}, b.Instances[0].ID))
@@ -341,5 +340,5 @@ func TestMdocDeviceKeyStore_StoreGetLinkDelete(t *testing.T) {
 	require.NoError(t, keys.DeleteAll())
 	var n int64
 	require.NoError(t, d.Model(&models.MdocDeviceKey{}).Count(&n).Error)
-	assert.Zero(t, n)
+	require.Zero(t, n)
 }

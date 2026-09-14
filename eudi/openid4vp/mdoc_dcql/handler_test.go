@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -65,14 +64,14 @@ func TestFindCandidatesAndPrepareDisclosureRoundTrip(t *testing.T) {
 	result, err := env.handler.FindCandidates(query)
 	require.NoError(t, err)
 	require.Len(t, result.OwnedCandidates, 1, "the stored mdoc must match its own doctype")
-	assert.Empty(t, result.ObtainableDescriptors)
+	require.Empty(t, result.ObtainableDescriptors)
 
 	candidate := result.OwnedCandidates[0]
-	assert.Equal(t, testDocType, candidate.CredentialId)
-	assert.Equal(t, clientmodels.Format_MsoMdoc, candidate.Format)
-	assert.Equal(t, env.hash, candidate.Hash)
+	require.Equal(t, testDocType, candidate.CredentialId)
+	require.Equal(t, clientmodels.Format_MsoMdoc, candidate.Format)
+	require.Equal(t, env.hash, candidate.Hash)
 	require.Len(t, candidate.Attributes, 1)
-	assert.Equal(t, []any{testNamespace, "age_over_18"}, candidate.Attributes[0].ClaimPath)
+	require.Equal(t, []any{testNamespace, "age_over_18"}, candidate.Attributes[0].ClaimPath)
 
 	prepared, err := env.handler.PrepareDisclosure([]dcql.DisclosureSelection{{
 		QueryId:              query.Id,
@@ -83,7 +82,7 @@ func TestFindCandidatesAndPrepareDisclosureRoundTrip(t *testing.T) {
 	}}, testNonce, testClientId)
 	require.NoError(t, err)
 	require.Len(t, prepared.QueryResponses, 1)
-	assert.Equal(t, query.Id, prepared.QueryResponses[0].QueryId)
+	require.Equal(t, query.Id, prepared.QueryResponses[0].QueryId)
 	require.Len(t, prepared.QueryResponses[0].Credentials, 1)
 
 	// Verify the response as the verifier does: decode the base64url CBOR into a
@@ -103,18 +102,18 @@ func TestFindCandidatesAndPrepareDisclosureRoundTrip(t *testing.T) {
 	require.Len(t, results, 1)
 
 	verified := results[0]
-	assert.True(t, verified.Valid, "verification failed: %s", verified.Error)
-	assert.True(t, verified.DeviceAuthValid, "deviceAuth did not verify: %s", verified.Error)
-	assert.Equal(t, testDocType, verified.DocType)
-	assert.Equal(t, map[string]any{"age_over_18": true}, verified.Attributes,
+	require.True(t, verified.Valid, "verification failed: %s", verified.Error)
+	require.True(t, verified.DeviceAuthValid, "deviceAuth did not verify: %s", verified.Error)
+	require.Equal(t, testDocType, verified.DocType)
+	require.Equal(t, map[string]any{"age_over_18": true}, verified.Attributes,
 		"only the requested element may be disclosed")
 
 	// The activity-log entry covers the same claim, and nothing else leaked into it.
 	require.Len(t, prepared.CredentialLogs, 1)
 	logEntry := prepared.CredentialLogs[0]
-	assert.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc}, logEntry.Formats)
+	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc}, logEntry.Formats)
 	require.Len(t, logEntry.Attributes, 1)
-	assert.Equal(t, []any{testNamespace, "age_over_18"}, logEntry.Attributes[0].ClaimPath)
+	require.Equal(t, []any{testNamespace, "age_over_18"}, logEntry.Attributes[0].ClaimPath)
 }
 
 // TestPrepareDisclosureRejectsUndisclosedElement pins that an element the DCQL
@@ -138,8 +137,8 @@ func TestPrepareDisclosureRejectsUndisclosedElement(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
-	assert.NotContains(t, results[0].Attributes, "age_over_21")
-	assert.NotContains(t, results[0].Attributes, "age_over_16")
+	require.NotContains(t, results[0].Attributes, "age_over_21")
+	require.NotContains(t, results[0].Attributes, "age_over_16")
 }
 
 // TestFindCandidatesRejectsQueryWithoutDocType and the two cases below cover
@@ -152,7 +151,7 @@ func TestFindCandidatesRejectsQueryWithoutDocType(t *testing.T) {
 		Format: string(clientmodels.Format_MsoMdoc),
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "doctype_value")
+	require.Contains(t, err.Error(), "doctype_value")
 }
 
 func TestFindCandidatesDescribesUnownedDocType(t *testing.T) {
@@ -165,9 +164,9 @@ func TestFindCandidatesDescribesUnownedDocType(t *testing.T) {
 		Claims: []dcql.Claim{{Path: []any{"eu.europa.ec.eudi.pid.1", "family_name"}}},
 	})
 	require.NoError(t, err)
-	assert.Empty(t, result.OwnedCandidates)
+	require.Empty(t, result.OwnedCandidates)
 	require.Len(t, result.ObtainableDescriptors, 1)
-	assert.Equal(t, "eu.europa.ec.eudi.pid.1", result.ObtainableDescriptors[0].CredentialId)
+	require.Equal(t, "eu.europa.ec.eudi.pid.1", result.ObtainableDescriptors[0].CredentialId)
 }
 
 func TestFindCandidatesSkipsCredentialMissingRequestedClaim(t *testing.T) {
@@ -180,8 +179,8 @@ func TestFindCandidatesSkipsCredentialMissingRequestedClaim(t *testing.T) {
 		Claims: []dcql.Claim{{Path: []any{testNamespace, "age_over_65"}}},
 	})
 	require.NoError(t, err)
-	assert.Empty(t, result.OwnedCandidates)
-	assert.Len(t, result.ObtainableDescriptors, 1)
+	require.Empty(t, result.OwnedCandidates)
+	require.Len(t, result.ObtainableDescriptors, 1)
 }
 
 // TestPrepareDisclosureBurnsOneInstancePerPresentation covers the single-use
@@ -203,7 +202,7 @@ func TestPrepareDisclosureBurnsOneInstancePerPresentation(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.OwnedCandidates, 1)
 	require.NotNil(t, result.OwnedCandidates[0].BatchInstanceCountRemaining)
-	assert.Equal(t, uint(2), *result.OwnedCandidates[0].BatchInstanceCountRemaining)
+	require.Equal(t, uint(2), *result.OwnedCandidates[0].BatchInstanceCountRemaining)
 
 	for remaining := uint(1); ; remaining-- {
 		_, err := env.disclose(t)
@@ -211,7 +210,7 @@ func TestPrepareDisclosureBurnsOneInstancePerPresentation(t *testing.T) {
 
 		batch, err := env.store.GetBatchByHash(env.hash)
 		require.NoError(t, err)
-		assert.Equal(t, remaining, batch.RemainingCount)
+		require.Equal(t, remaining, batch.RemainingCount)
 
 		if remaining == 0 {
 			break
@@ -220,7 +219,7 @@ func TestPrepareDisclosureBurnsOneInstancePerPresentation(t *testing.T) {
 
 	_, err = env.handler.FindCandidates(query)
 	require.Error(t, err, "an exhausted batch must not be offered as a candidate")
-	assert.Contains(t, err.Error(), "exhausted")
+	require.Contains(t, err.Error(), "exhausted")
 }
 
 // TestPrepareDisclosureKeepsBatchOfOneReusable is the other half: a batch of one
@@ -236,11 +235,11 @@ func TestPrepareDisclosureKeepsBatchOfOneReusable(t *testing.T) {
 
 	batch, err := env.store.GetBatchByHash(env.hash)
 	require.NoError(t, err)
-	assert.Equal(t, uint(1), batch.RemainingCount)
+	require.Equal(t, uint(1), batch.RemainingCount)
 
 	instance, err := env.store.GetUnusedInstance(batch.ID)
 	require.NoError(t, err)
-	assert.False(t, instance.Used)
+	require.False(t, instance.Used)
 }
 
 // CanHandleCredentialQuery is the dispatch every other handler relies on to not
@@ -248,9 +247,9 @@ func TestPrepareDisclosureKeepsBatchOfOneReusable(t *testing.T) {
 func TestCanHandleCredentialQuery(t *testing.T) {
 	handler := &MdocDcqlHandler{}
 
-	assert.True(t, handler.CanHandleCredentialQuery(dcql.CredentialQuery{Format: "mso_mdoc"}))
-	assert.False(t, handler.CanHandleCredentialQuery(dcql.CredentialQuery{Format: "dc+sd-jwt"}))
-	assert.False(t, handler.CanHandleCredentialQuery(dcql.CredentialQuery{}))
+	require.True(t, handler.CanHandleCredentialQuery(dcql.CredentialQuery{Format: "mso_mdoc"}))
+	require.False(t, handler.CanHandleCredentialQuery(dcql.CredentialQuery{Format: "dc+sd-jwt"}))
+	require.False(t, handler.CanHandleCredentialQuery(dcql.CredentialQuery{}))
 }
 
 // TestFindCandidatesWithClaimSetsPicksFirstSatisfiableSet covers claim_sets,
@@ -280,7 +279,7 @@ func TestFindCandidatesWithClaimSetsPicksFirstSatisfiableSet(t *testing.T) {
 
 	attrs := result.OwnedCandidates[0].Attributes
 	require.Len(t, attrs, 1, "only the satisfied set's claims may be offered")
-	assert.Equal(t, []any{testNamespace, "age_over_18"}, attrs[0].ClaimPath)
+	require.Equal(t, []any{testNamespace, "age_over_18"}, attrs[0].ClaimPath)
 }
 
 // TestFindCandidatesWithClaimSetsRequiresEveryClaimInASet pins the allFound
@@ -311,7 +310,7 @@ func TestFindCandidatesWithClaimSetsRequiresEveryClaimInASet(t *testing.T) {
 	// Order-insensitive on purpose: the rows follow the credential's own order,
 	// as on its card, not the order the verifier wrote the claims in. What this
 	// test pins is the set.
-	assert.ElementsMatch(t, [][]any{
+	require.ElementsMatch(t, [][]any{
 		{testNamespace, "age_over_18"},
 		{testNamespace, "age_over_16"},
 	}, paths, "a partially satisfiable set must not be offered with its missing claim dropped")
@@ -332,8 +331,8 @@ func TestFindCandidatesWithClaimSetsNoneSatisfiable(t *testing.T) {
 		ClaimSets: [][]string{{"over65"}, {"nosuchclaim"}},
 	})
 	require.NoError(t, err)
-	assert.Empty(t, result.OwnedCandidates)
-	assert.Len(t, result.ObtainableDescriptors, 1)
+	require.Empty(t, result.OwnedCandidates)
+	require.Len(t, result.ObtainableDescriptors, 1)
 }
 
 // TestFindCandidatesRefusesQueryWithoutClaims pins the mso_mdoc reading of an
@@ -351,7 +350,7 @@ func TestFindCandidatesRefusesQueryWithoutClaims(t *testing.T) {
 		Meta:   &dcql.Meta{DocTypeValue: testDocType},
 	})
 	require.Error(t, err, "a claim-less mdoc query can only produce a signature over no elements")
-	assert.Contains(t, err.Error(), "no claims")
+	require.Contains(t, err.Error(), "no claims")
 }
 
 // TestFindCandidatesCarriesIntentToRetain covers the OpenID4VP mso_mdoc claims
@@ -383,8 +382,8 @@ func TestFindCandidatesCarriesIntentToRetain(t *testing.T) {
 	require.NotNil(t, retained)
 	require.NotNil(t, notRetained,
 		"every mdoc attribute carries the flag, so the UI can tell a declared false from a format that cannot declare")
-	assert.True(t, *retained)
-	assert.False(t, *notRetained)
+	require.True(t, *retained)
+	require.False(t, *notRetained)
 }
 
 // TestFindCandidatesRefusesMalformedClaimPath pins that a path which is not
@@ -414,9 +413,9 @@ func TestFindCandidatesRefusesMalformedClaimPath(t *testing.T) {
 			})
 			require.Error(t, err,
 				"a claim path that is not [namespace, elementIdentifier] must be refused as a query defect")
-			assert.Contains(t, err.Error(), "mso_mdoc claim path",
+			require.Contains(t, err.Error(), "mso_mdoc claim path",
 				"the error must say what is wrong with the path, not just that nothing matched")
-			assert.Nil(t, result,
+			require.Nil(t, result,
 				"a refused query must not also come back with candidates")
 		})
 	}
@@ -438,9 +437,9 @@ func TestSelectiveDiscloseByPathsSpansNamespaces(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, disclosed.IssuerSigned.NameSpaces, 2, "both requested namespaces must survive the merge")
-	assert.Equal(t, []string{"age_over_18"},
+	require.Equal(t, []string{"age_over_18"},
 		disclosedElements(t, disclosed.IssuerSigned.NameSpaces[testNamespace]))
-	assert.Equal(t, []string{"age_over_21"},
+	require.Equal(t, []string{"age_over_21"},
 		disclosedElements(t, disclosed.IssuerSigned.NameSpaces[secondNamespace]))
 }
 
@@ -455,7 +454,7 @@ func TestSelectiveDiscloseByPathsOmitsUnrequestedNamespace(t *testing.T) {
 
 	require.Len(t, disclosed.IssuerSigned.NameSpaces, 1)
 	_, present := disclosed.IssuerSigned.NameSpaces[secondNamespace]
-	assert.False(t, present, "a namespace nothing was requested from must not appear at all")
+	require.False(t, present, "a namespace nothing was requested from must not appear at all")
 }
 
 // TestSelectiveDiscloseByPathsRefusesMalformedPath settles the malformed-path
@@ -478,8 +477,8 @@ func TestSelectiveDiscloseByPathsRefusesMalformedPath(t *testing.T) {
 				path,
 			})
 			require.Error(t, err, "a malformed claim path must not be skipped")
-			assert.Contains(t, err.Error(), "mso_mdoc claim path")
-			assert.Nil(t, disclosed,
+			require.Contains(t, err.Error(), "mso_mdoc claim path")
+			require.Nil(t, disclosed,
 				"a refused disclosure must not return a document, least of all a partial one")
 		})
 	}
@@ -501,7 +500,7 @@ func TestSelectiveDiscloseByPathsReadsTheElementOffALeafPath(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, disclosed.IssuerSigned.NameSpaces, 1)
-	assert.Equal(t, []string{"age_over_21"},
+	require.Equal(t, []string{"age_over_21"},
 		disclosedElements(t, disclosed.IssuerSigned.NameSpaces[testNamespace]),
 		"the element is revealed once, not once per leaf")
 }
@@ -516,7 +515,7 @@ func TestSelectiveDiscloseByPathsRevealsOnlyNamedElements(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, disclosed.IssuerSigned.NameSpaces, 1)
-	assert.Equal(t, []string{"age_over_18"},
+	require.Equal(t, []string{"age_over_18"},
 		disclosedElements(t, disclosed.IssuerSigned.NameSpaces[testNamespace]))
 }
 
@@ -699,9 +698,9 @@ func TestPrepareDisclosureOverDcApiSignsTheDcApiHandover(t *testing.T) {
 		response, testNamespace, testDocType, expectedDcApiTranscript(t, testOrigin, testNonce))
 	require.NoError(t, err)
 	require.Len(t, results, 1)
-	assert.True(t, results[0].Valid, "verification failed: %s", results[0].Error)
-	assert.True(t, results[0].DeviceAuthValid, "deviceAuth did not verify: %s", results[0].Error)
-	assert.Equal(t, map[string]any{"age_over_18": true}, results[0].Attributes)
+	require.True(t, results[0].Valid, "verification failed: %s", results[0].Error)
+	require.True(t, results[0].DeviceAuthValid, "deviceAuth did not verify: %s", results[0].Error)
+	require.Equal(t, map[string]any{"age_over_18": true}, results[0].Attributes)
 }
 
 // TestPrepareDisclosureOverDcApiRejectsTheUrlFlowHandover is the negative half:
@@ -731,7 +730,7 @@ func TestPrepareDisclosureOverDcApiRejectsTheUrlFlowHandover(t *testing.T) {
 	results, err := env.verifier.VerifyDeviceResponse(response, testNamespace, testDocType, urlFlow)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
-	assert.False(t, results[0].DeviceAuthValid,
+	require.False(t, results[0].DeviceAuthValid,
 		"the URL-flow handover must not verify a presentation made over the DC API")
 }
 
@@ -755,7 +754,7 @@ func TestPrepareDisclosureOverDcApiWithoutOriginFails(t *testing.T) {
 	// instance the holder can never get back.
 	batch, err := env.store.GetBatchByHash(env.hash)
 	require.NoError(t, err)
-	assert.Equal(t, uint(2), batch.RemainingCount)
+	require.Equal(t, uint(2), batch.RemainingCount)
 }
 
 // expectedDcApiTranscript spells out OpenID4VP Annex B.2.6.2 rather than calling
@@ -871,9 +870,9 @@ func TestFindCandidatesSkipsExpiredBatch(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Empty(t, result.OwnedCandidates,
+	require.Empty(t, result.OwnedCandidates,
 		"a credential whose validity window has passed must not be offered")
-	assert.Len(t, result.ObtainableDescriptors, 1,
+	require.Len(t, result.ObtainableDescriptors, 1,
 		"with nothing valid to offer, the request itself must still be described")
 }
 
@@ -892,6 +891,6 @@ func TestFindCandidatesOffersABatchInsideItsValidityWindow(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, result.OwnedCandidates, 1)
-	assert.Empty(t, result.ObtainableDescriptors,
+	require.Empty(t, result.ObtainableDescriptors,
 		"a credential the wallet owns must not also be advertised as obtainable")
 }

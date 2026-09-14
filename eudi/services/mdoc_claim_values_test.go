@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -262,7 +261,7 @@ func TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames(t *
 
 	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
 	require.NotNil(t, attrs[0].DisplayName)
-	assert.Equal(t, "Age Over 18", *attrs[0].DisplayName)
+	require.Equal(t, "Age Over 18", *attrs[0].DisplayName)
 	require.NotNil(t, attrs[0].Value)
 
 	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_21"}, attrs[1].ClaimPath)
@@ -270,7 +269,7 @@ func TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames(t *
 	// No locale was set on this claim's display entry, so it was stored under
 	// DefaultFallbackLanguage -- resolving for "en" (which equals the fallback
 	// here) must still find it, not silently come back empty.
-	assert.Equal(t, "Age Over 21", *attrs[1].DisplayName)
+	require.Equal(t, "Age Over 21", *attrs[1].DisplayName)
 }
 
 func TestBuildMdocAttributesFromResolvedClaims_NoMetadataStillEmitsValues(t *testing.T) {
@@ -291,11 +290,11 @@ func TestBuildMdocAttributesFromResolvedClaims_NoMetadataStillEmitsValues(t *tes
 	require.NotNil(t, attrs[0].Value)
 	// Derived from the element identifier, since no metadata named it.
 	require.NotNil(t, attrs[0].DisplayName)
-	assert.Equal(t, "Age Over 18", *attrs[0].DisplayName)
+	require.Equal(t, "Age Over 18", *attrs[0].DisplayName)
 
 	require.Equal(t, []any{"eu.europa.ec.av.1", "issuing_country"}, attrs[1].ClaimPath)
 	require.NotNil(t, attrs[1].Value)
-	assert.Nil(t, attrs[1].DisplayName)
+	require.Nil(t, attrs[1].DisplayName)
 }
 
 // A threshold the issuer never advertised is the case the derived name exists
@@ -321,11 +320,11 @@ func TestBuildMdocAttributesFromResolvedClaims_DerivesUnadvertisedAgeOver(t *tes
 	// Published metadata, unchanged.
 	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
 	require.NotNil(t, attrs[0].DisplayName)
-	assert.Equal(t, "Age Over 18", *attrs[0].DisplayName)
+	require.Equal(t, "Age Over 18", *attrs[0].DisplayName)
 
 	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_35"}, attrs[1].ClaimPath)
 	require.NotNil(t, attrs[1].DisplayName)
-	assert.Equal(t, "Age Over 35", *attrs[1].DisplayName)
+	require.Equal(t, "Age Over 35", *attrs[1].DisplayName)
 }
 
 // An issuer's own text wins over a derived name even when it is published under
@@ -345,7 +344,7 @@ func TestBuildMdocAttributesFromResolvedClaims_PublishedBareElementNameWins(t *t
 	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "nl")
 
 	require.Len(t, attrs, 1)
-	assert.Nil(t, attrs[0].DisplayName, "a bare-element publication is not overridden by the derived English name")
+	require.Nil(t, attrs[0].DisplayName, "a bare-element publication is not overridden by the derived English name")
 }
 
 func TestDerivedMdocClaimName(t *testing.T) {
@@ -370,8 +369,8 @@ func TestDerivedMdocClaimName(t *testing.T) {
 	} {
 		t.Run(tc.element, func(t *testing.T) {
 			got, ok := DerivedMdocClaimName(tc.element)
-			assert.Equal(t, tc.ok, ok)
-			assert.Equal(t, tc.want, got)
+			require.Equal(t, tc.ok, ok)
+			require.Equal(t, tc.want, got)
 		})
 	}
 }

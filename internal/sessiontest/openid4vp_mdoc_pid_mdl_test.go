@@ -834,18 +834,16 @@ func issueMdocViaPythonIssuer(
 	)
 
 	session = awaitSessionState(t, sessionHandler)
-	if session.Status == clientmodels.Status_Error && session.Error != nil {
-		t.Fatalf("issuance of %s errored: %+v", credentialConfigId, session.Error)
-	}
+	require.False(t, session.Status == clientmodels.Status_Error && session.Error != nil,
+		"issuance of %s errored: %+v", credentialConfigId, session.Error)
 	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 	require.Len(t, session.OfferedCredentials, 1)
 
 	grantPermission(t, c, session.Id)
 
 	session = awaitSessionState(t, sessionHandler)
-	if session.Status == clientmodels.Status_Error && session.Error != nil {
-		t.Fatalf("issuance of %s errored after permission: %+v", credentialConfigId, session.Error)
-	}
+	require.False(t, session.Status == clientmodels.Status_Error && session.Error != nil,
+		"issuance of %s errored after permission: %+v", credentialConfigId, session.Error)
 	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_Success)
 }
 

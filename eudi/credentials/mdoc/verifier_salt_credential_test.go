@@ -4,7 +4,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/x509"
-	"strings"
 	"testing"
 	"time"
 
@@ -57,9 +56,8 @@ func issueWithSaltLength(
 	for identifier, value := range claims {
 		salt := make([]byte, saltLen)
 		if saltLen > 0 {
-			if _, err := rand.Read(salt); err != nil {
-				t.Fatalf("generate %d-byte salt: %v", saltLen, err)
-			}
+			_, err := rand.Read(salt)
+			require.NoError(t, err, "generate %d-byte salt: %v", saltLen, err)
 		}
 		items = append(items, IssuerSignedItem{
 			DigestID:          digestID,
@@ -118,9 +116,8 @@ func mdocFromItems(
 		Payload: msoBytes}
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 	msg.Headers.Unprotected[int64(33)] = [][]byte{iss.dscert.Raw, iss.iacacert.Raw}
-	if err := msg.Sign(rand.Reader, nil, signer); err != nil {
-		t.Fatalf("sign mso: %v", err)
-	}
+	err = msg.Sign(rand.Reader, nil, signer)
+	require.NoError(t, err, "sign mso: %v", err)
 	coseBytes, err := msg.MarshalCBOR()
 	require.NoError(t, err, "marshal cose: %v", err)
 
@@ -162,24 +159,16 @@ func TestShortSaltIsRejectedAtIssuance(t *testing.T) {
 	short := issueWithSaltLength(t, issuer, holderPub, docType, namespace, claims, minSaltLength-1)
 
 	resolved, result := verifier.VerifyAllDisclosedNamespaces(short)
-	if result.Valid {
-		t.Fatalf("a %d-byte salt was accepted at issuance; ISO/IEC 18013-5 requires at least %d",
-			minSaltLength-1, minSaltLength)
-	}
-	if resolved != nil {
-		t.Errorf("claims were resolved from a rejected credential: %v", resolved)
-	}
+	require.False(t, result.Valid, "a %d-byte salt was accepted at issuance; ISO/IEC 18013-5 requires at least %d",
+		minSaltLength-1, minSaltLength)
+	require.Nil(t, resolved, "claims were resolved from a rejected credential: %v", resolved)
 
 	// The reason has to name the salt. Reported as anything else — a digest
 	// mismatch in particular — the check would look like it fired while the
 	// credential was really being refused for an unrelated reason, and the
 	// regression this test guards against would go unnoticed.
-	if !strings.Contains(result.Error, "random value") {
-		t.Errorf("rejection should name the random value, got %q", result.Error)
-	}
-	if strings.Contains(result.Error, "digest mismatch") {
-		t.Errorf("rejected as a digest mismatch rather than a short salt: %q", result.Error)
-	}
+	require.Contains(t, result.Error, "random value", "rejection should name the random value, got %q", result.Error)
+	require.NotContains(t, result.Error, "digest mismatch", "rejected as a digest mismatch rather than a short salt: %q", result.Error)
 }
 
 // TestLegalSaltFromTheSameConstructionIsAccepted is the control for every
@@ -193,13 +182,10 @@ func TestLegalSaltFromTheSameConstructionIsAccepted(t *testing.T) {
 	legal := issueWithSaltLength(t, issuer, holderPub, docType, namespace, claims, minSaltLength)
 
 	resolved, result := verifier.VerifyAllDisclosedNamespaces(legal)
-	if !result.Valid {
-		t.Fatalf("a credential identical but for a %d-byte salt was rejected: %s",
-			minSaltLength, result.Error)
-	}
-	if got := resolved[namespace]["age_over_18"]; got != true {
-		t.Errorf("age_over_18 = %v, want true", got)
-	}
+	require.True(t, result.Valid, "a credential identical but for a %d-byte salt was rejected: %s",
+		minSaltLength, result.Error)
+	got := resolved[namespace]["age_over_18"]
+	require.Equal(t, true, got, "age_over_18 = %v, want true", got)
 }
 
 // TestSaltLengthBoundary walks the floor from both sides, so the comparison is
@@ -227,10 +213,8 @@ func TestSaltLengthBoundary(t *testing.T) {
 				map[string]any{"age_over_18": true}, test.saltLen)
 
 			_, result := verifier.VerifyAllDisclosedNamespaces(m)
-			if result.Valid != test.wantValid {
-				t.Fatalf("salt of %d bytes: valid = %t, want %t (error: %q)",
-					test.saltLen, result.Valid, test.wantValid, result.Error)
-			}
+			require.Equal(t, test.wantValid, result.Valid, "salt of %d bytes: valid = %t, want %t (error: %q)",
+				test.saltLen, result.Valid, test.wantValid, result.Error)
 		})
 	}
 }
@@ -248,12 +232,8 @@ func TestShortSaltIsRejectedAtPresentation(t *testing.T) {
 	require.NoError(t, err, "SelectiveDisclose: %v", err)
 
 	result := verifier.Verify(presented, namespace)
-	if result.Valid {
-		t.Fatalf("a presentation carrying a %d-byte salt was accepted", minSaltLength-1)
-	}
-	if !strings.Contains(result.Error, "random value") {
-		t.Errorf("rejection should name the random value, got %q", result.Error)
-	}
+	require.False(t, result.Valid, "a presentation carrying a %d-byte salt was accepted", minSaltLength-1)
+	require.Contains(t, result.Error, "random value", "rejection should name the random value, got %q", result.Error)
 }
 
 // TestShortSaltRejectedEvenWhenOnlyOneItemIsDefective guards the loop rather
@@ -277,19 +257,14 @@ func TestShortSaltRejectedEvenWhenOnlyOneItemIsDefective(t *testing.T) {
 			length = minSaltLength - 1 // the one defective element
 		}
 		salt := make([]byte, length)
-		if _, err := rand.Read(salt); err != nil {
-			t.Fatalf("generate salt: %v", err)
-		}
+		_, err := rand.Read(salt)
+		require.NoError(t, err, "generate salt: %v", err)
 		items[i].Random = salt
 	}
 
 	m := mdocFromItems(t, issuer, holderPub, docType, namespace, items)
 
 	_, result := verifier.VerifyAllDisclosedNamespaces(m)
-	if result.Valid {
-		t.Fatal("a credential with one short-salted element among sound ones was accepted")
-	}
-	if !strings.Contains(result.Error, "age_over_21") {
-		t.Errorf("rejection should name the defective element age_over_21, got %q", result.Error)
-	}
+	require.False(t, result.Valid, "a credential with one short-salted element among sound ones was accepted")
+	require.Contains(t, result.Error, "age_over_21", "rejection should name the defective element age_over_21, got %q", result.Error)
 }

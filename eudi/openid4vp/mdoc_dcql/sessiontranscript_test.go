@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/stretchr/testify/require"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 )
@@ -22,57 +23,40 @@ func TestOpenID4VPSessionTranscriptShape(t *testing.T) {
 	responseUri := "https://verifier.example.com/response"
 
 	st, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri, nil)
-	if err != nil {
-		t.Fatalf("newOpenID4VPSessionTranscript: %v", err)
-	}
+	require.NoError(t, err, "newOpenID4VPSessionTranscript: %v", err)
 
-	if st.DeviceEngagementBytes != nil {
-		t.Fatalf("expected nil DeviceEngagementBytes, got %v", st.DeviceEngagementBytes)
-	}
-	if st.EReaderKeyBytes != nil {
-		t.Fatalf("expected nil EReaderKeyBytes, got %v", st.EReaderKeyBytes)
-	}
+	require.Nil(t, st.DeviceEngagementBytes, "expected nil DeviceEngagementBytes, got %v", st.DeviceEngagementBytes)
+	require.Nil(t, st.EReaderKeyBytes, "expected nil EReaderKeyBytes, got %v", st.EReaderKeyBytes)
 
 	handover, ok := st.Handover.([]any)
-	if !ok || len(handover) != 2 {
-		t.Fatalf("expected Handover to be a 2-element []any, got %#v", st.Handover)
-	}
+	require.True(t, ok, "expected Handover to be a 2-element []any, got %#v", st.Handover)
+	require.Len(t, handover, 2, "expected Handover to be a 2-element []any, got %#v", st.Handover)
+
 	handoverType, ok := handover[0].(string)
-	if !ok || handoverType != "OpenID4VPHandover" {
-		t.Fatalf("expected handover[0] = \"OpenID4VPHandover\", got %#v", handover[0])
-	}
+	require.True(t, ok, "expected handover[0] = \"OpenID4VPHandover\", got %#v", handover[0])
+	require.Equal(t, "OpenID4VPHandover", handoverType, "expected handover[0] = \"OpenID4VPHandover\", got %#v", handover[0])
+
 	gotDigest, ok := handover[1].([]byte)
-	if !ok || len(gotDigest) != 32 {
-		t.Fatalf("expected handover[1] to be a 32-byte SHA-256 digest, got %#v", handover[1])
-	}
+	require.True(t, ok, "expected handover[1] to be a 32-byte SHA-256 digest, got %#v", handover[1])
+	require.Len(t, gotDigest, 32, "expected handover[1] to be a 32-byte SHA-256 digest, got %#v", handover[1])
 
 	// Independently recompute HandoverInfo's digest and compare.
 	wantInfoBytes, err := cbor.Marshal([]any{clientId, nonce, nil, responseUri})
-	if err != nil {
-		t.Fatalf("marshal expected handoverInfo: %v", err)
-	}
+	require.NoError(t, err, "marshal expected handoverInfo: %v", err)
 	wantDigest := sha256.Sum256(wantInfoBytes)
-	if string(gotDigest) != string(wantDigest[:]) {
-		t.Fatalf("digest mismatch: got %x, want %x", gotDigest, wantDigest)
-	}
+	require.Equal(t, wantDigest[:], gotDigest, "digest mismatch: got %x, want %x", gotDigest, wantDigest)
 
 	// The overall SessionTranscript must still round-trip as a 3-element
 	// CBOR array, since it embeds the ",toarray" tag like every other
 	// SessionTranscript regardless of Handover's shape.
 	encoded, err := cbor.Marshal(st)
-	if err != nil {
-		t.Fatalf("marshal SessionTranscript: %v", err)
-	}
+	require.NoError(t, err, "marshal SessionTranscript: %v", err)
 	var generic []any
-	if err := cbor.Unmarshal(encoded, &generic); err != nil {
-		t.Fatalf("decode SessionTranscript generic: %v", err)
-	}
-	if len(generic) != 3 {
-		t.Fatalf("expected SessionTranscript to encode as a 3-element array, got %d elements", len(generic))
-	}
-	if generic[0] != nil || generic[1] != nil {
-		t.Fatalf("expected DeviceEngagementBytes/EReaderKeyBytes to encode as null, got %v / %v", generic[0], generic[1])
-	}
+	err = cbor.Unmarshal(encoded, &generic)
+	require.NoError(t, err, "decode SessionTranscript generic: %v", err)
+	require.Len(t, generic, 3, "expected SessionTranscript to encode as a 3-element array, got %d elements", len(generic))
+	require.Nil(t, generic[0], "expected DeviceEngagementBytes/EReaderKeyBytes to encode as null, got %v / %v", generic[0], generic[1])
+	require.Nil(t, generic[1], "expected DeviceEngagementBytes/EReaderKeyBytes to encode as null, got %v / %v", generic[0], generic[1])
 }
 
 // TestOpenID4VPSessionTranscriptBindsAllInputs confirms clientId, nonce, and
@@ -81,9 +65,7 @@ func TestOpenID4VPSessionTranscriptShape(t *testing.T) {
 // session/client than the one it actually requested.
 func TestOpenID4VPSessionTranscriptBindsAllInputs(t *testing.T) {
 	base, err := newOpenID4VPSessionTranscript("client-a", "nonce-a", "https://a.example.com/response", nil)
-	if err != nil {
-		t.Fatalf("newOpenID4VPSessionTranscript base: %v", err)
-	}
+	require.NoError(t, err, "newOpenID4VPSessionTranscript base: %v", err)
 	baseDigest := base.Handover.([]any)[1].([]byte)
 
 	variants := map[string]mdoc.SessionTranscript{}
@@ -93,9 +75,7 @@ func TestOpenID4VPSessionTranscriptBindsAllInputs(t *testing.T) {
 
 	for field, variant := range variants {
 		variantDigest := variant.Handover.([]any)[1].([]byte)
-		if string(variantDigest) == string(baseDigest) {
-			t.Fatalf("changing %s did not change the handover digest — that field isn't actually bound", field)
-		}
+		require.NotEqual(t, baseDigest, variantDigest, "changing %s did not change the handover digest — that field isn't actually bound", field)
 	}
 }
 
@@ -108,58 +88,38 @@ func TestOpenID4VPSessionTranscriptBindsAllInputs(t *testing.T) {
 // sides would land on different SHA-256 digests.
 func TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth(t *testing.T) {
 	issuer, err := mdoc.NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
+	require.NoError(t, err, "NewIssuer: %v", err)
 	holder, err := mdoc.NewHolder()
-	if err != nil {
-		t.Fatalf("NewHolder: %v", err)
-	}
+	require.NoError(t, err, "NewHolder: %v", err)
 
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
 	credential, err := issuer.Issue(docType, namespace, map[string]any{"age_over_18": true}, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	require.NoError(t, err, "Issue: %v", err)
 	presented, err := mdoc.SelectiveDisclose(credential, namespace, []string{"age_over_18"})
-	if err != nil {
-		t.Fatalf("SelectiveDisclose: %v", err)
-	}
+	require.NoError(t, err, "SelectiveDisclose: %v", err)
 
 	clientId := "redirect_uri:https://verifier.example.com/response"
 	nonce := "abc123"
 	responseUri := "https://verifier.example.com/response"
 	transcript, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri, nil)
-	if err != nil {
-		t.Fatalf("newOpenID4VPSessionTranscript: %v", err)
-	}
+	require.NoError(t, err, "newOpenID4VPSessionTranscript: %v", err)
 
 	deviceAuthBytes, err := holder.SignDeviceAuth(docType, transcript)
-	if err != nil {
-		t.Fatalf("SignDeviceAuth: %v", err)
-	}
+	require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 	verifier := mdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, deviceAuthBytes)
-	if !result.Valid {
-		t.Fatalf("expected valid result, got error: %s", result.Error)
-	}
-	if !result.DeviceAuthValid {
-		t.Fatalf("expected valid deviceAuth against the OpenID4VP transcript, got error: %s", result.Error)
-	}
+	require.True(t, result.Valid, "expected valid result, got error: %s", result.Error)
+	require.True(t, result.DeviceAuthValid, "expected valid deviceAuth against the OpenID4VP transcript, got error: %s", result.Error)
 
 	// A verifier that derives its transcript from a different nonce (e.g.
 	// it issued one authorization request, the holder responded to
 	// another) must NOT accept the same deviceAuth signature.
 	wrongTranscript, err := newOpenID4VPSessionTranscript(clientId, "different-nonce", responseUri, nil)
-	if err != nil {
-		t.Fatalf("newOpenID4VPSessionTranscript (wrong nonce): %v", err)
-	}
+	require.NoError(t, err, "newOpenID4VPSessionTranscript (wrong nonce): %v", err)
 	mismatchResult := verifier.VerifyWithDeviceAuth(presented, namespace, docType, wrongTranscript, deviceAuthBytes)
-	if mismatchResult.DeviceAuthValid {
-		t.Fatalf("expected deviceAuth to be rejected against a mismatched OpenID4VP transcript, but it was accepted")
-	}
+	require.False(t, mismatchResult.DeviceAuthValid, "expected deviceAuth to be rejected against a mismatched OpenID4VP transcript, but it was accepted")
 }
 
 // TestOpenID4VPSessionTranscriptCarriesEncryptionKeyThumbprint pins the
@@ -178,45 +138,29 @@ func TestOpenID4VPSessionTranscriptCarriesEncryptionKeyThumbprint(t *testing.T) 
 	thumbprint := sha256.Sum256([]byte("response encryption key"))
 
 	encrypted, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri, thumbprint[:])
-	if err != nil {
-		t.Fatalf("newOpenID4VPSessionTranscript: %v", err)
-	}
+	require.NoError(t, err, "newOpenID4VPSessionTranscript: %v", err)
 
 	wantInfoBytes, err := cbor.Marshal([]any{clientId, nonce, thumbprint[:], responseUri})
-	if err != nil {
-		t.Fatalf("marshal expected handoverInfo: %v", err)
-	}
+	require.NoError(t, err, "marshal expected handoverInfo: %v", err)
 	wantDigest := sha256.Sum256(wantInfoBytes)
 
 	gotDigest, ok := encrypted.Handover.([]any)[1].([]byte)
-	if !ok {
-		t.Fatalf("expected handover[1] to be a digest, got %#v", encrypted.Handover.([]any)[1])
-	}
-	if string(gotDigest) != string(wantDigest[:]) {
-		t.Fatalf("digest mismatch: got %x, want %x", gotDigest, wantDigest)
-	}
+	require.True(t, ok, "expected handover[1] to be a digest, got %#v", encrypted.Handover.([]any)[1])
+	require.Equal(t, wantDigest[:], gotDigest, "digest mismatch: got %x, want %x", gotDigest, wantDigest)
 
 	// An unencrypted response must not produce the same transcript: a wallet that
 	// ignored the thumbprint would still sign something, just not what the
 	// verifier reconstructs.
 	plain, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri, nil)
-	if err != nil {
-		t.Fatalf("newOpenID4VPSessionTranscript (unencrypted): %v", err)
-	}
+	require.NoError(t, err, "newOpenID4VPSessionTranscript (unencrypted): %v", err)
 	plainDigest := plain.Handover.([]any)[1].([]byte)
-	if string(plainDigest) == string(gotDigest) {
-		t.Fatal("the encrypted and unencrypted transcripts hash to the same digest; the thumbprint is not reaching the handover")
-	}
+	require.NotEqual(t, gotDigest, plainDigest, "the encrypted and unencrypted transcripts hash to the same digest; the thumbprint is not reaching the handover")
 
 	// An empty (rather than nil) thumbprint means the same thing as nil — no
 	// encryption — and must not encode as a zero-length byte string.
 	empty, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri, []byte{})
-	if err != nil {
-		t.Fatalf("newOpenID4VPSessionTranscript (empty thumbprint): %v", err)
-	}
-	if string(empty.Handover.([]any)[1].([]byte)) != string(plainDigest) {
-		t.Fatal("an empty thumbprint must produce the same transcript as no thumbprint at all")
-	}
+	require.NoError(t, err, "newOpenID4VPSessionTranscript (empty thumbprint): %v", err)
+	require.Equal(t, plainDigest, empty.Handover.([]any)[1].([]byte), "an empty thumbprint must produce the same transcript as no thumbprint at all")
 }
 
 // TestDcApiSessionTranscriptShape is the DC API mirror of
@@ -229,34 +173,27 @@ func TestDcApiSessionTranscriptShape(t *testing.T) {
 	nonce := "abc123"
 
 	st, err := newDcApiSessionTranscript(origin, nonce, nil)
-	if err != nil {
-		t.Fatalf("newDcApiSessionTranscript: %v", err)
-	}
+	require.NoError(t, err, "newDcApiSessionTranscript: %v", err)
 
-	if st.DeviceEngagementBytes != nil || st.EReaderKeyBytes != nil {
-		t.Fatalf("expected both leading elements nil, got %v / %v", st.DeviceEngagementBytes, st.EReaderKeyBytes)
-	}
+	require.Nil(t, st.DeviceEngagementBytes, "expected both leading elements nil, got %v / %v", st.DeviceEngagementBytes, st.EReaderKeyBytes)
+	require.Nil(t, st.EReaderKeyBytes, "expected both leading elements nil, got %v / %v", st.DeviceEngagementBytes, st.EReaderKeyBytes)
 
 	handover, ok := st.Handover.([]any)
-	if !ok || len(handover) != 2 {
-		t.Fatalf("expected Handover to be a 2-element []any, got %#v", st.Handover)
-	}
-	if handoverType, ok := handover[0].(string); !ok || handoverType != "OpenID4VPDCAPIHandover" {
-		t.Fatalf("expected handover[0] = \"OpenID4VPDCAPIHandover\", got %#v", handover[0])
-	}
+	require.True(t, ok, "expected Handover to be a 2-element []any, got %#v", st.Handover)
+	require.Len(t, handover, 2, "expected Handover to be a 2-element []any, got %#v", st.Handover)
+
+	handoverType, ok := handover[0].(string)
+	require.True(t, ok, "expected handover[0] = \"OpenID4VPDCAPIHandover\", got %#v", handover[0])
+	require.Equal(t, "OpenID4VPDCAPIHandover", handoverType, "expected handover[0] = \"OpenID4VPDCAPIHandover\", got %#v", handover[0])
+
 	gotDigest, ok := handover[1].([]byte)
-	if !ok || len(gotDigest) != 32 {
-		t.Fatalf("expected handover[1] to be a 32-byte SHA-256 digest, got %#v", handover[1])
-	}
+	require.True(t, ok, "expected handover[1] to be a 32-byte SHA-256 digest, got %#v", handover[1])
+	require.Len(t, gotDigest, 32, "expected handover[1] to be a 32-byte SHA-256 digest, got %#v", handover[1])
 
 	wantInfoBytes, err := cbor.Marshal([]any{origin, nonce, nil})
-	if err != nil {
-		t.Fatalf("marshal expected handoverInfo: %v", err)
-	}
+	require.NoError(t, err, "marshal expected handoverInfo: %v", err)
 	wantDigest := sha256.Sum256(wantInfoBytes)
-	if string(gotDigest) != string(wantDigest[:]) {
-		t.Fatalf("digest mismatch: got %x, want %x", gotDigest, wantDigest)
-	}
+	require.Equal(t, wantDigest[:], gotDigest, "digest mismatch: got %x, want %x", gotDigest, wantDigest)
 }
 
 // TestDcApiSessionTranscriptBindsAllInputs confirms each of the three inputs
@@ -267,9 +204,7 @@ func TestDcApiSessionTranscriptBindsAllInputs(t *testing.T) {
 	thumbprint := sha256.Sum256([]byte("response encryption key"))
 
 	base, err := newDcApiSessionTranscript("https://a.example.com", "nonce-a", nil)
-	if err != nil {
-		t.Fatalf("newDcApiSessionTranscript base: %v", err)
-	}
+	require.NoError(t, err, "newDcApiSessionTranscript base: %v", err)
 	baseDigest := base.Handover.([]any)[1].([]byte)
 
 	variants := map[string]mdoc.SessionTranscript{}
@@ -278,19 +213,13 @@ func TestDcApiSessionTranscriptBindsAllInputs(t *testing.T) {
 	variants["thumbprint"], _ = newDcApiSessionTranscript("https://a.example.com", "nonce-a", thumbprint[:])
 
 	for field, variant := range variants {
-		if string(variant.Handover.([]any)[1].([]byte)) == string(baseDigest) {
-			t.Fatalf("changing %s did not change the handover digest — that field isn't actually bound", field)
-		}
+		require.NotEqual(t, baseDigest, variant.Handover.([]any)[1].([]byte), "changing %s did not change the handover digest — that field isn't actually bound", field)
 	}
 
 	// An empty thumbprint means the same as none, matching the URL flow.
 	empty, err := newDcApiSessionTranscript("https://a.example.com", "nonce-a", []byte{})
-	if err != nil {
-		t.Fatalf("newDcApiSessionTranscript (empty thumbprint): %v", err)
-	}
-	if string(empty.Handover.([]any)[1].([]byte)) != string(baseDigest) {
-		t.Fatal("an empty thumbprint must produce the same transcript as no thumbprint at all")
-	}
+	require.NoError(t, err, "newDcApiSessionTranscript (empty thumbprint): %v", err)
+	require.Equal(t, baseDigest, empty.Handover.([]any)[1].([]byte), "an empty thumbprint must produce the same transcript as no thumbprint at all")
 }
 
 // TestSessionTranscriptVariantsNeverCollide is the property that makes picking
@@ -305,18 +234,10 @@ func TestSessionTranscriptVariantsNeverCollide(t *testing.T) {
 	// What the DC API path passes, and what the URL path would make of the same
 	// session: an origin-prefixed audience and no response_uri.
 	dcApi, err := newDcApiSessionTranscript(origin, nonce, nil)
-	if err != nil {
-		t.Fatalf("newDcApiSessionTranscript: %v", err)
-	}
+	require.NoError(t, err, "newDcApiSessionTranscript: %v", err)
 	urlFlow, err := newOpenID4VPSessionTranscript("origin:"+origin, nonce, "", nil)
-	if err != nil {
-		t.Fatalf("newOpenID4VPSessionTranscript: %v", err)
-	}
+	require.NoError(t, err, "newOpenID4VPSessionTranscript: %v", err)
 
-	if dcApi.Handover.([]any)[0] == urlFlow.Handover.([]any)[0] {
-		t.Fatal("the two handovers must not share a label")
-	}
-	if string(dcApi.Handover.([]any)[1].([]byte)) == string(urlFlow.Handover.([]any)[1].([]byte)) {
-		t.Fatal("the two handovers hashed to the same digest for one session")
-	}
+	require.NotEqual(t, urlFlow.Handover.([]any)[0], dcApi.Handover.([]any)[0], "the two handovers must not share a label")
+	require.NotEqual(t, urlFlow.Handover.([]any)[1].([]byte), dcApi.Handover.([]any)[1].([]byte), "the two handovers hashed to the same digest for one session")
 }

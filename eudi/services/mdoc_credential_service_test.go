@@ -18,7 +18,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -125,13 +124,13 @@ func TestMdocCredentialService_StoreLinksDeviceKeysByThumbprint(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, batches, 1)
 			batch := batches[0]
-			assert.Equal(t, testMdocDocType, batch.DocType)
-			assert.Equal(t, testMdocIssuerURL, batch.CredentialIssuer)
-			assert.Equal(t, uint(2), batch.BatchSize)
-			assert.Equal(t, uint(2), batch.RemainingCount)
-			assert.True(t, batch.IssuerVerified)
-			assert.Equal(t, true, batch.Namespaces[testMdocDocType]["age_over_18"])
-			assert.WithinDuration(t, parsed[0].Mdoc.ValidityInfo.ValidUntil, batch.ValidUntil, time.Second)
+			require.Equal(t, testMdocDocType, batch.DocType)
+			require.Equal(t, testMdocIssuerURL, batch.CredentialIssuer)
+			require.Equal(t, uint(2), batch.BatchSize)
+			require.Equal(t, uint(2), batch.RemainingCount)
+			require.True(t, batch.IssuerVerified)
+			require.Equal(t, true, batch.Namespaces[testMdocDocType]["age_over_18"])
+			require.WithinDuration(t, parsed[0].Mdoc.ValidityInfo.ValidUntil, batch.ValidUntil, time.Second)
 
 			// Every minted key is now bound to the instance whose MSO carries it.
 			for _, id := range identifiers {
@@ -196,19 +195,19 @@ func TestMdocCredentialService_StoreSnapshotsDisplayMetadataAndListRendersIt(t *
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 	c := creds[0]
-	assert.Equal(t, testMdocDocType, c.CredentialId)
-	assert.Equal(t, batch[0].Hash, c.Hash)
-	assert.Equal(t, "Proof of Age", c.Name)
-	assert.Equal(t, "AV Issuer", c.Issuer.Name)
-	assert.Equal(t, testMdocIssuerURL, c.Issuer.Id)
-	assert.True(t, c.Issuer.Verified)
-	assert.False(t, c.DisplayIsFallback)
-	assert.Equal(t, map[clientmodels.CredentialFormat]string{clientmodels.Format_MsoMdoc: batch[0].Hash}, c.CredentialInstanceIds)
-	assert.Nil(t, c.BatchInstanceCountsRemaining[clientmodels.Format_MsoMdoc], "a batch of one is reusable")
+	require.Equal(t, testMdocDocType, c.CredentialId)
+	require.Equal(t, batch[0].Hash, c.Hash)
+	require.Equal(t, "Proof of Age", c.Name)
+	require.Equal(t, "AV Issuer", c.Issuer.Name)
+	require.Equal(t, testMdocIssuerURL, c.Issuer.Id)
+	require.True(t, c.Issuer.Verified)
+	require.False(t, c.DisplayIsFallback)
+	require.Equal(t, map[clientmodels.CredentialFormat]string{clientmodels.Format_MsoMdoc: batch[0].Hash}, c.CredentialInstanceIds)
+	require.Nil(t, c.BatchInstanceCountsRemaining[clientmodels.Format_MsoMdoc], "a batch of one is reusable")
 	require.NotNil(t, c.IssuanceDate)
 	require.NotNil(t, c.ExpiryDate)
-	assert.False(t, c.Revoked)
-	assert.False(t, c.RevocationSupported)
+	require.False(t, c.Revoked)
+	require.False(t, c.RevocationSupported)
 
 	labels := map[string]string{}
 	for _, attr := range c.Attributes {
@@ -216,7 +215,7 @@ func TestMdocCredentialService_StoreSnapshotsDisplayMetadataAndListRendersIt(t *
 		require.NotNil(t, attr.DisplayName)
 		labels[attr.ClaimPath[1].(string)] = *attr.DisplayName
 	}
-	assert.Equal(t, map[string]string{"age_over_18": "Older than 18", "age_over_21": "Age Over 21"}, labels)
+	require.Equal(t, map[string]string{"age_over_18": "Older than 18", "age_over_21": "Age Over 21"}, labels)
 }
 
 func TestMdocCredentialService_DeleteByHash(t *testing.T) {
@@ -232,7 +231,7 @@ func TestMdocCredentialService_DeleteByHash(t *testing.T) {
 
 	var keys int64
 	require.NoError(t, env.db.Model(&models.MdocDeviceKey{}).Count(&keys).Error)
-	assert.Zero(t, keys, "deleting the batch cascades to its device keys")
+	require.Zero(t, keys, "deleting the batch cascades to its device keys")
 }
 
 // --- the credential list's labelling, ported from the shared-table days ---
@@ -295,8 +294,8 @@ func TestMdocList_LabelsBareElementClaims(t *testing.T) {
 	labels := listedLabels(t, env)
 	require.NotNil(t, labels["age_over_18"])
 	require.NotNil(t, labels["age_over_21"])
-	assert.Equal(t, "Older than 18", *labels["age_over_18"])
-	assert.Equal(t, "Older than 21", *labels["age_over_21"])
+	require.Equal(t, "Older than 18", *labels["age_over_18"])
+	require.Equal(t, "Older than 21", *labels["age_over_21"])
 }
 
 // The credential list labels a threshold the issuer never advertised the same
@@ -310,11 +309,11 @@ func TestMdocList_LabelsUnadvertisedAgeOver(t *testing.T) {
 
 	labels := listedLabels(t, env)
 	require.NotNil(t, labels["age_over_18"])
-	assert.Equal(t, "Older than 18", *labels["age_over_18"], "published text is not displaced by the derived name")
+	require.Equal(t, "Older than 18", *labels["age_over_18"], "published text is not displaced by the derived name")
 	require.NotNil(t, labels["age_over_35"], "an unadvertised threshold must still be labelled")
-	assert.Equal(t, "Age Over 35", *labels["age_over_35"])
+	require.Equal(t, "Age Over 35", *labels["age_over_35"])
 	require.NotNil(t, labels["issuing_country"], "an element no metadata names must not render without a label")
-	assert.Equal(t, "issuing_country", *labels["issuing_country"])
+	require.Equal(t, "issuing_country", *labels["issuing_country"])
 }
 
 // An element the issuer signed into the namespace but never declared in its
@@ -329,9 +328,9 @@ func TestMdocList_NamesUndeclaredElement(t *testing.T) {
 	labels := listedLabels(t, env)
 	require.Contains(t, labels, "email")
 	require.NotNil(t, labels["email"])
-	assert.Equal(t, "email", *labels["email"])
+	require.Equal(t, "email", *labels["email"])
 	require.NotNil(t, labels["age_over_18"])
-	assert.Equal(t, "Older than 18", *labels["age_over_18"])
+	require.Equal(t, "Older than 18", *labels["age_over_18"])
 }
 
 // The read side the activity log and logo backfill use: displays per docType,
@@ -342,10 +341,10 @@ func TestMdocDisplaySource(t *testing.T) {
 
 	displays := newMdocDisplaySource(env.store).LiveDisplaysByType("en")
 	require.Contains(t, displays, testMdocDocType)
-	assert.Equal(t, "Proof of Age", displays[testMdocDocType].CredentialName)
-	assert.Equal(t, testMdocIssuerURL, displays[testMdocDocType].IssuerId)
+	require.Equal(t, "Proof of Age", displays[testMdocDocType].CredentialName)
+	require.Equal(t, testMdocIssuerURL, displays[testMdocDocType].IssuerId)
 
 	issuer, credential := newMdocDisplaySource(env.store).LogoURIs("en")
-	assert.Equal(t, []string{""}, issuer, "one entry per batch, empty when no logo is published")
-	assert.Equal(t, []string{""}, credential)
+	require.Equal(t, []string{""}, issuer, "one entry per batch, empty when no logo is published")
+	require.Equal(t, []string{""}, credential)
 }

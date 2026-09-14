@@ -43,26 +43,20 @@ func buildWireDeviceResponse(t *testing.T) (top map[any]any, namespace string) {
 	require.NoError(t, err, "marshal DeviceResponse: %v", err)
 
 	var generic any
-	if err := cbor.Unmarshal(encoded, &generic); err != nil {
-		t.Fatalf("generic decode: %v", err)
-	}
+	err = cbor.Unmarshal(encoded, &generic)
+	require.NoError(t, err, "generic decode: %v", err)
 	m, ok := generic.(map[any]any)
-	if !ok {
-		t.Fatalf("DeviceResponse decoded as %T, want a CBOR map", generic)
-	}
+	require.True(t, ok, "DeviceResponse decoded as %T, want a CBOR map", generic)
 	return m, ns
 }
 
 func wireDocument(t *testing.T, top map[any]any) map[any]any {
 	t.Helper()
 	docs, ok := top["documents"].([]any)
-	if !ok || len(docs) == 0 {
-		t.Fatalf("documents decoded as %T with no entries", top["documents"])
-	}
+	require.True(t, ok, "documents decoded as %T, want an array", top["documents"])
+	require.NotEmpty(t, docs, "documents array has no entries")
 	doc, ok := docs[0].(map[any]any)
-	if !ok {
-		t.Fatalf("document decoded as %T, want a CBOR map", docs[0])
-	}
+	require.True(t, ok, "document decoded as %T, want a CBOR map", docs[0])
 	return doc
 }
 
@@ -77,31 +71,21 @@ func TestWireIssuerAuthIsBareCoseSign1Array(t *testing.T) {
 	doc := wireDocument(t, top)
 
 	issuerSigned, ok := doc["issuerSigned"].(map[any]any)
-	if !ok {
-		t.Fatalf("issuerSigned decoded as %T, want a CBOR map", doc["issuerSigned"])
-	}
+	require.True(t, ok, "issuerSigned decoded as %T, want a CBOR map", doc["issuerSigned"])
 
 	arr, ok := issuerSigned["issuerAuth"].([]any)
-	if !ok {
-		t.Fatalf("issuerAuth decoded as %T, want a 4-element COSE_Sign1 array "+
-			"(a []byte field here yields a byte string, a tagged message yields cbor.Tag)",
-			issuerSigned["issuerAuth"])
-	}
-	if len(arr) != 4 {
-		t.Fatalf("issuerAuth has %d elements, want 4 [protected, unprotected, payload, signature]", len(arr))
-	}
-	if _, ok := arr[0].([]byte); !ok {
-		t.Errorf("issuerAuth[0] (protected headers) is %T, want a byte string", arr[0])
-	}
-	if _, ok := arr[1].(map[any]any); !ok {
-		t.Errorf("issuerAuth[1] (unprotected headers) is %T, want a map", arr[1])
-	}
-	if _, ok := arr[2].([]byte); !ok {
-		t.Errorf("issuerAuth[2] (payload) is %T, want a byte string", arr[2])
-	}
-	if _, ok := arr[3].([]byte); !ok {
-		t.Errorf("issuerAuth[3] (signature) is %T, want a byte string", arr[3])
-	}
+	require.True(t, ok, "issuerAuth decoded as %T, want a 4-element COSE_Sign1 array "+
+		"(a []byte field here yields a byte string, a tagged message yields cbor.Tag)",
+		issuerSigned["issuerAuth"])
+	require.Len(t, arr, 4, "issuerAuth must be [protected, unprotected, payload, signature]")
+	_, ok = arr[0].([]byte)
+	require.True(t, ok, "issuerAuth[0] (protected headers) is %T, want a byte string", arr[0])
+	_, ok = arr[1].(map[any]any)
+	require.True(t, ok, "issuerAuth[1] (unprotected headers) is %T, want a map", arr[1])
+	_, ok = arr[2].([]byte)
+	require.True(t, ok, "issuerAuth[2] (payload) is %T, want a byte string", arr[2])
+	_, ok = arr[3].([]byte)
+	require.True(t, ok, "issuerAuth[3] (signature) is %T, want a byte string", arr[3])
 }
 
 // TestWireIssuerSignedItemsAreTag24 pins
@@ -116,27 +100,19 @@ func TestWireIssuerSignedItemsAreTag24(t *testing.T) {
 
 	issuerSigned := doc["issuerSigned"].(map[any]any)
 	nameSpaces, ok := issuerSigned["nameSpaces"].(map[any]any)
-	if !ok {
-		t.Fatalf("nameSpaces decoded as %T, want a CBOR map", issuerSigned["nameSpaces"])
-	}
+	require.True(t, ok, "nameSpaces decoded as %T, want a CBOR map", issuerSigned["nameSpaces"])
 	items, ok := nameSpaces[namespace].([]any)
-	if !ok || len(items) == 0 {
-		t.Fatalf("nameSpaces[%q] decoded as %T with no entries", namespace, nameSpaces[namespace])
-	}
+	require.True(t, ok, "nameSpaces[%q] decoded as %T, want an array", namespace, nameSpaces[namespace])
+	require.NotEmpty(t, items, "nameSpaces[%q] has no entries", namespace)
 
 	for i, raw := range items {
 		tag, ok := raw.(cbor.Tag)
-		if !ok {
-			t.Fatalf("nameSpaces[%q][%d] is %T, want a tag-24 value "+
-				"(a map here means the Go struct's field name leaked onto the wire)",
-				namespace, i, raw)
-		}
-		if tag.Number != 24 {
-			t.Errorf("nameSpaces[%q][%d] has tag %d, want 24", namespace, i, tag.Number)
-		}
-		if _, ok := tag.Content.([]byte); !ok {
-			t.Errorf("nameSpaces[%q][%d] tag content is %T, want a byte string", namespace, i, tag.Content)
-		}
+		require.True(t, ok, "nameSpaces[%q][%d] is %T, want a tag-24 value "+
+			"(a map here means the Go struct's field name leaked onto the wire)",
+			namespace, i, raw)
+		require.Equal(t, uint64(24), tag.Number, "nameSpaces[%q][%d] tag number", namespace, i)
+		_, ok = tag.Content.([]byte)
+		require.True(t, ok, "nameSpaces[%q][%d] tag content is %T, want a byte string", namespace, i, tag.Content)
 	}
 }
 
@@ -148,32 +124,18 @@ func TestWireDeviceSignedShape(t *testing.T) {
 	doc := wireDocument(t, top)
 
 	deviceSigned, ok := doc["deviceSigned"].(map[any]any)
-	if !ok {
-		t.Fatalf("deviceSigned decoded as %T, want a CBOR map", doc["deviceSigned"])
-	}
+	require.True(t, ok, "deviceSigned decoded as %T, want a CBOR map", doc["deviceSigned"])
 
 	tag, ok := deviceSigned["nameSpaces"].(cbor.Tag)
-	if !ok {
-		t.Fatalf("deviceSigned.nameSpaces is %T, want a tag-24 value", deviceSigned["nameSpaces"])
-	}
-	if tag.Number != 24 {
-		t.Errorf("deviceSigned.nameSpaces has tag %d, want 24", tag.Number)
-	}
+	require.True(t, ok, "deviceSigned.nameSpaces is %T, want a tag-24 value", deviceSigned["nameSpaces"])
+	require.Equal(t, uint64(24), tag.Number, "deviceSigned.nameSpaces tag number")
 
 	deviceAuth, ok := deviceSigned["deviceAuth"].(map[any]any)
-	if !ok {
-		t.Fatalf("deviceAuth is %T, want a CBOR map", deviceSigned["deviceAuth"])
-	}
+	require.True(t, ok, "deviceAuth is %T, want a CBOR map", deviceSigned["deviceAuth"])
 	arr, ok := deviceAuth["deviceSignature"].([]any)
-	if !ok {
-		t.Fatalf("deviceSignature is %T, want a bare 4-element COSE_Sign1 array", deviceAuth["deviceSignature"])
-	}
-	if len(arr) != 4 {
-		t.Fatalf("deviceSignature has %d elements, want 4", len(arr))
-	}
-	if arr[2] != nil {
-		t.Errorf("deviceSignature payload is %v, want null (detached)", arr[2])
-	}
+	require.True(t, ok, "deviceSignature is %T, want a bare 4-element COSE_Sign1 array", deviceAuth["deviceSignature"])
+	require.Len(t, arr, 4, "deviceSignature must have 4 elements")
+	require.Nil(t, arr[2], "deviceSignature payload must be null (detached)")
 }
 
 // TestWireRoundTripsThroughGenericCBOR checks the fixed encoding is still
@@ -189,31 +151,24 @@ func TestWireRoundTripsThroughGenericCBOR(t *testing.T) {
 	require.NoError(t, err, "marshal: %v", err)
 
 	var decoded DeviceResponse
-	if err := cbor.Unmarshal(encoded, &decoded); err != nil {
-		t.Fatalf("decode DeviceResponse back into typed struct: %v", err)
-	}
-	if len(decoded.Documents) != 1 {
-		t.Fatalf("got %d documents, want 1", len(decoded.Documents))
-	}
+	err = cbor.Unmarshal(encoded, &decoded)
+	require.NoError(t, err, "decode DeviceResponse back into typed struct: %v", err)
+	require.Len(t, decoded.Documents, 1, "want 1 document")
 
 	original := presented.IssuerSigned.NameSpaces[namespace]
 	roundTripped := decoded.Documents[0].IssuerSigned.NameSpaces[namespace]
-	if len(roundTripped) != len(original) {
-		t.Fatalf("got %d items after round trip, want %d", len(roundTripped), len(original))
-	}
+	require.Len(t, roundTripped, len(original), "item count after round trip")
 	for i := range original {
-		if string(roundTripped[i].EncodedItem) != string(original[i].EncodedItem) {
-			t.Errorf("item %d's frozen bytes changed across the round trip — the digest would no longer match", i)
-		}
+		require.Equal(t, original[i].EncodedItem, roundTripped[i].EncodedItem,
+			"item %d's frozen bytes changed across the round trip — the digest would no longer match", i)
 	}
 
 	// A document that survived the real wire encoding must still verify.
 	results, err := verifier.VerifyDeviceResponse(decoded, namespace, docType, transcript)
 	require.NoError(t, err, "VerifyDeviceResponse: %v", err)
-	if len(results) != 1 || !results[0].Valid || !results[0].DeviceAuthValid {
-		t.Fatalf("re-decoded document did not verify: valid=%v deviceAuth=%v err=%q",
-			results[0].Valid, results[0].DeviceAuthValid, results[0].Error)
-	}
+	require.Len(t, results, 1, "want 1 verification result")
+	require.True(t, results[0].Valid, "re-decoded document did not verify: %s", results[0].Error)
+	require.True(t, results[0].DeviceAuthValid, "re-decoded document's deviceAuth did not verify: %s", results[0].Error)
 }
 
 // ---------------------------------------------------------------------------
@@ -239,18 +194,13 @@ func TestTag24WrapUnwrapRoundTrip(t *testing.T) {
 	require.NoError(t, err, "tag24Wrap: %v", err)
 
 	var rawTag cbor.RawTag
-	if err := cbor.Unmarshal(wrapped, &rawTag); err != nil {
-		t.Fatalf("expected wrapped bytes to decode as a CBOR tag: %v", err)
-	}
-	if rawTag.Number != 24 {
-		t.Fatalf("expected tag number 24, got %d", rawTag.Number)
-	}
+	err = cbor.Unmarshal(wrapped, &rawTag)
+	require.NoError(t, err, "expected wrapped bytes to decode as a CBOR tag: %v", err)
+	require.Equal(t, uint64(24), rawTag.Number, "expected tag number 24")
 
 	got, err := tag24Unwrap[tag24TestPayload](wrapped)
 	require.NoError(t, err, "tag24Unwrap: %v", err)
-	if got != original {
-		t.Fatalf("round trip mismatch: got %+v, want %+v", got, original)
-	}
+	require.Equal(t, original, got, "round trip mismatch")
 }
 
 // TestTag24WrapWithModeUsesGivenEncMode confirms tag24WrapWithMode's inner
@@ -269,16 +219,13 @@ func TestTag24WrapWithModeUsesGivenEncMode(t *testing.T) {
 
 	inner := unwrapTag24Generic(t, wrapped)
 	var raw map[string]cbor.RawMessage
-	if err := cbor.Unmarshal(inner, &raw); err != nil {
-		t.Fatalf("decode inner generic: %v", err)
-	}
+	err = cbor.Unmarshal(inner, &raw)
+	require.NoError(t, err, "decode inner generic: %v", err)
 	whenRaw, ok := raw["when"]
-	if !ok {
-		t.Fatalf("when field missing from decoded payload")
-	}
-	if len(whenRaw) == 0 || whenRaw[0] != 0xc0 {
-		t.Fatalf("expected tag-0 (RFC3339) encoding for when (first byte %#x) — tdateEncMode was not applied", whenRaw[0])
-	}
+	require.True(t, ok, "when field missing from decoded payload")
+	require.NotEmpty(t, whenRaw, "when field is empty")
+	require.Equal(t, byte(0xc0), whenRaw[0],
+		"expected tag-0 (RFC3339) encoding for when — tdateEncMode was not applied")
 }
 
 // ---------------------------------------------------------------------------
@@ -307,43 +254,31 @@ func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
 	// issuerAuth is itself a COSE_Sign1; the payload field inside it is
 	// the MSO. Easiest robust check: decode issuerAuth generically.
 	var coseGeneric []any
-	if err := cbor.Unmarshal(mdoc.IssuerSigned.IssuerAuth, &coseGeneric); err != nil {
-		t.Fatalf("decode cose generic: %v", err)
-	}
-	if len(coseGeneric) < 3 {
-		t.Fatalf("expected COSE_Sign1 array with >=3 elements, got %d", len(coseGeneric))
-	}
+	err = cbor.Unmarshal(mdoc.IssuerSigned.IssuerAuth, &coseGeneric)
+	require.NoError(t, err, "decode cose generic: %v", err)
+	require.GreaterOrEqual(t, len(coseGeneric), 3, "expected COSE_Sign1 array with >=3 elements")
 	msoPayload, ok := coseGeneric[2].([]byte)
-	if !ok {
-		t.Fatalf("payload element wrong type: %T", coseGeneric[2])
-	}
+	require.True(t, ok, "payload element wrong type: %T", coseGeneric[2])
 
 	// msoPayload is Tag24-wrapped (MobileSecurityObjectBytes = #6.24(bstr
 	// .cbor MobileSecurityObject)) — unwrap that layer before decoding the
 	// MSO map itself.
 	msoInner := unwrapTag24Generic(t, msoPayload)
-	if err := cbor.Unmarshal(msoInner, &raw); err != nil {
-		t.Fatalf("decode mso generic: %v", err)
-	}
+	err = cbor.Unmarshal(msoInner, &raw)
+	require.NoError(t, err, "decode mso generic: %v", err)
 
 	deviceKeyInfoRaw, ok := raw["deviceKeyInfo"]
-	if !ok {
-		t.Fatalf("deviceKeyInfo missing from MSO")
-	}
+	require.True(t, ok, "deviceKeyInfo missing from MSO")
 	var dkiGeneric map[string]cbor.RawMessage
-	if err := cbor.Unmarshal(deviceKeyInfoRaw, &dkiGeneric); err != nil {
-		t.Fatalf("decode deviceKeyInfo generic: %v", err)
-	}
+	err = cbor.Unmarshal(deviceKeyInfoRaw, &dkiGeneric)
+	require.NoError(t, err, "decode deviceKeyInfo generic: %v", err)
 	deviceKeyRaw, ok := dkiGeneric["deviceKey"]
-	if !ok {
-		t.Fatalf("deviceKey missing from deviceKeyInfo")
-	}
+	require.True(t, ok, "deviceKey missing from deviceKeyInfo")
 
 	// Decode deviceKey as map[any]any to see actual key types.
 	var keyMap map[any]any
-	if err := cbor.Unmarshal(deviceKeyRaw, &keyMap); err != nil {
-		t.Fatalf("decode deviceKey as generic map: %v", err)
-	}
+	err = cbor.Unmarshal(deviceKeyRaw, &keyMap)
+	require.NoError(t, err, "decode deviceKey as generic map: %v", err)
 
 	for k := range keyMap {
 		switch v := k.(type) {
@@ -353,7 +288,8 @@ func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
 			// positive keys decode as uint64
 			_ = v
 		default:
-			t.Fatalf("deviceKey map key %v has type %T, want int64/uint64 (COSEKey struct tags missing ',keyasint')", k, k)
+			require.Fail(t, "unexpected deviceKey map key type",
+				"key %v has type %T, want int64/uint64 (COSEKey struct tags missing ',keyasint')", k, k)
 		}
 	}
 
@@ -377,9 +313,7 @@ func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
 				break
 			}
 		}
-		if !found {
-			t.Fatalf("deviceKey missing expected key %d (saw keys: %v)", w, keysOf(keyMap))
-		}
+		require.True(t, found, "deviceKey missing expected key %d (saw keys: %v)", w, keysOf(keyMap))
 	}
 }
 
@@ -402,40 +336,31 @@ func TestValidityInfoUsesRFC3339Tag(t *testing.T) {
 	// through our own MSO struct (which would just decode successfully
 	// either way) — inspect the raw CBOR tag on the wire instead.
 	var coseGeneric []any
-	if err := cbor.Unmarshal(mdoc.IssuerSigned.IssuerAuth, &coseGeneric); err != nil {
-		t.Fatalf("decode cose generic: %v", err)
-	}
+	err = cbor.Unmarshal(mdoc.IssuerSigned.IssuerAuth, &coseGeneric)
+	require.NoError(t, err, "decode cose generic: %v", err)
 	msoPayload, ok := coseGeneric[2].([]byte)
-	if !ok {
-		t.Fatalf("payload element wrong type: %T", coseGeneric[2])
-	}
+	require.True(t, ok, "payload element wrong type: %T", coseGeneric[2])
 
 	// msoPayload is Tag24-wrapped — unwrap that layer before decoding the
 	// MSO map itself.
 	msoInner := unwrapTag24Generic(t, msoPayload)
 	var raw map[string]cbor.RawMessage
-	if err := cbor.Unmarshal(msoInner, &raw); err != nil {
-		t.Fatalf("decode mso generic: %v", err)
-	}
+	err = cbor.Unmarshal(msoInner, &raw)
+	require.NoError(t, err, "decode mso generic: %v", err)
 	validityRaw, ok := raw["validityInfo"]
-	if !ok {
-		t.Fatalf("validityInfo missing from MSO")
-	}
+	require.True(t, ok, "validityInfo missing from MSO")
 
 	var viGeneric map[string]cbor.RawMessage
-	if err := cbor.Unmarshal(validityRaw, &viGeneric); err != nil {
-		t.Fatalf("decode validityInfo generic: %v", err)
-	}
+	err = cbor.Unmarshal(validityRaw, &viGeneric)
+	require.NoError(t, err, "decode validityInfo generic: %v", err)
 
 	for _, field := range []string{"signed", "validFrom", "validUntil"} {
 		fieldRaw, ok := viGeneric[field]
-		if !ok {
-			t.Fatalf("validityInfo.%s missing", field)
-		}
+		require.True(t, ok, "validityInfo.%s missing", field)
 		// A CBOR tag-0 value's first byte is 0xc0 (major type 6, tag 0).
-		if len(fieldRaw) == 0 || fieldRaw[0] != 0xc0 {
-			t.Fatalf("validityInfo.%s is not tag-0 encoded (first byte: %#x) — expected RFC3339 string per spec example", field, fieldRaw[0])
-		}
+		require.NotEmpty(t, fieldRaw, "validityInfo.%s is empty", field)
+		require.Equal(t, byte(0xc0), fieldRaw[0],
+			"validityInfo.%s is not tag-0 encoded — expected RFC3339 string per spec example", field)
 	}
 }
 
@@ -451,26 +376,18 @@ func TestAttachDeviceSignedRoundTrips(t *testing.T) {
 
 	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
 	require.NoError(t, err, "AttachDeviceSigned: %v", err)
-	if attached.DeviceSigned == nil {
-		t.Fatalf("expected DeviceSigned to be populated, got nil")
-	}
+	require.NotNil(t, attached.DeviceSigned, "expected DeviceSigned to be populated")
 
 	gotDeviceAuth := []byte(attached.DeviceSigned.DeviceAuth.DeviceSignature)
-	if string(gotDeviceAuth) != string(deviceAuthBytes) {
-		t.Fatalf("deviceAuth bytes mismatch: got %x, want %x", gotDeviceAuth, deviceAuthBytes)
-	}
+	require.Equal(t, deviceAuthBytes, gotDeviceAuth, "deviceAuth bytes mismatch")
 
 	emptyNS, err := tag24Unwrap[map[string]any](attached.DeviceSigned.NameSpaces)
 	require.NoError(t, err, "unwrap deviceNameSpaces: %v", err)
-	if len(emptyNS) != 0 {
-		t.Fatalf("expected empty deviceNameSpaces, got %v", emptyNS)
-	}
+	require.Empty(t, emptyNS, "expected empty deviceNameSpaces")
 
 	// The original mdoc passed to AttachDeviceSigned must be untouched —
 	// it returns a copy, not a mutation.
-	if presented.DeviceSigned != nil {
-		t.Fatalf("expected original mdoc to be unmodified, but DeviceSigned is set")
-	}
+	require.Nil(t, presented.DeviceSigned, "expected original mdoc to be unmodified, but DeviceSigned is set")
 }
 
 // TestDeviceSignedOmittedWhenNilPresentWhenAttached confirms the
@@ -485,24 +402,20 @@ func TestDeviceSignedOmittedWhenNilPresentWhenAttached(t *testing.T) {
 	beforeCBOR, err := cbor.Marshal(presented)
 	require.NoError(t, err, "marshal presented mdoc: %v", err)
 	var beforeGeneric map[string]cbor.RawMessage
-	if err := cbor.Unmarshal(beforeCBOR, &beforeGeneric); err != nil {
-		t.Fatalf("decode presented mdoc generic: %v", err)
-	}
-	if _, present := beforeGeneric["deviceSigned"]; present {
-		t.Fatalf("expected no deviceSigned key before AttachDeviceSigned, but found one")
-	}
+	err = cbor.Unmarshal(beforeCBOR, &beforeGeneric)
+	require.NoError(t, err, "decode presented mdoc generic: %v", err)
+	_, present := beforeGeneric["deviceSigned"]
+	require.False(t, present, "expected no deviceSigned key before AttachDeviceSigned, but found one")
 
 	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
 	require.NoError(t, err, "AttachDeviceSigned: %v", err)
 	afterCBOR, err := cbor.Marshal(attached)
 	require.NoError(t, err, "marshal attached mdoc: %v", err)
 	var afterGeneric map[string]cbor.RawMessage
-	if err := cbor.Unmarshal(afterCBOR, &afterGeneric); err != nil {
-		t.Fatalf("decode attached mdoc generic: %v", err)
-	}
-	if _, present := afterGeneric["deviceSigned"]; !present {
-		t.Fatalf("expected deviceSigned key after AttachDeviceSigned, found none")
-	}
+	err = cbor.Unmarshal(afterCBOR, &afterGeneric)
+	require.NoError(t, err, "decode attached mdoc generic: %v", err)
+	_, present = afterGeneric["deviceSigned"]
+	require.True(t, present, "expected deviceSigned key after AttachDeviceSigned, found none")
 }
 
 // TestDeviceAuthSignatureEncodesInline confirms DeviceAuth.DeviceSignature
@@ -520,12 +433,10 @@ func TestDeviceAuthSignatureEncodesInline(t *testing.T) {
 	require.NoError(t, err, "marshal DeviceAuth: %v", err)
 
 	var generic map[string]any
-	if err := cbor.Unmarshal(encoded, &generic); err != nil {
-		t.Fatalf("decode DeviceAuth generic: %v", err)
-	}
-	if _, isBytes := generic["deviceSignature"].([]byte); isBytes {
-		t.Fatalf("deviceSignature encoded as an opaque byte string, not inline structured CBOR")
-	}
+	err = cbor.Unmarshal(encoded, &generic)
+	require.NoError(t, err, "decode DeviceAuth generic: %v", err)
+	_, isBytes := generic["deviceSignature"].([]byte)
+	require.False(t, isBytes, "deviceSignature encoded as an opaque byte string, not inline structured CBOR")
 }
 
 // TestDeviceAuthPayloadIsDetached confirms the transmitted deviceAuth
@@ -551,15 +462,10 @@ func TestDeviceAuthPayloadIsDetached(t *testing.T) {
 	require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 	var arr []any
-	if err := cbor.Unmarshal(deviceAuthBytes, &arr); err != nil {
-		t.Fatalf("decode deviceAuth generic: %v", err)
-	}
-	if len(arr) != 4 {
-		t.Fatalf("expected 4-element COSE_Sign1 array, got %d elements", len(arr))
-	}
-	if arr[2] != nil {
-		t.Fatalf("expected detached payload (nil/null), got %T: %v", arr[2], arr[2])
-	}
+	err = cbor.Unmarshal(deviceAuthBytes, &arr)
+	require.NoError(t, err, "decode deviceAuth generic: %v", err)
+	require.Len(t, arr, 4, "expected 4-element COSE_Sign1 array")
+	require.Nil(t, arr[2], "expected detached payload (nil/null)")
 }
 
 // TestNewDeviceResponseSupportsMultipleDocuments confirms a DeviceResponse
@@ -596,31 +502,19 @@ func TestNewDeviceResponseSupportsMultipleDocuments(t *testing.T) {
 	doc2 := buildDoc(map[string]any{"age_over_18": true, "age_over_21": false}, []string{"age_over_18", "age_over_21"})
 
 	resp := NewDeviceResponse(doc1, doc2)
-	if len(resp.Documents) != 2 {
-		t.Fatalf("expected 2 documents in DeviceResponse, got %d", len(resp.Documents))
-	}
+	require.Len(t, resp.Documents, 2, "expected 2 documents in DeviceResponse")
 
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	results, err := verifier.VerifyDeviceResponse(resp, namespace, docType, transcript)
 	require.NoError(t, err, "VerifyDeviceResponse: %v", err)
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(results))
-	}
+	require.Len(t, results, 2, "expected 2 results")
 
 	for i, result := range results {
-		if !result.Valid {
-			t.Fatalf("document %d: expected valid, got error: %s", i, result.Error)
-		}
-		if !result.DeviceAuthValid {
-			t.Fatalf("document %d: expected valid deviceAuth, got error: %s", i, result.Error)
-		}
+		require.True(t, result.Valid, "document %d: expected valid, got error: %s", i, result.Error)
+		require.True(t, result.DeviceAuthValid, "document %d: expected valid deviceAuth, got error: %s", i, result.Error)
 	}
-	if len(results[0].Attributes) != 1 {
-		t.Fatalf("document 0: expected 1 disclosed attribute, got %d: %v", len(results[0].Attributes), results[0].Attributes)
-	}
-	if len(results[1].Attributes) != 2 {
-		t.Fatalf("document 1: expected 2 disclosed attributes, got %d: %v", len(results[1].Attributes), results[1].Attributes)
-	}
+	require.Len(t, results[0].Attributes, 1, "document 0: expected 1 disclosed attribute: %v", results[0].Attributes)
+	require.Len(t, results[1].Attributes, 2, "document 1: expected 2 disclosed attributes: %v", results[1].Attributes)
 }
 
 // ---------------------------------------------------------------------------
@@ -719,27 +613,19 @@ func foreignIssuerAuth(t *testing.T, m *MDoc) *cose.Sign1Message {
 // to read a conformant third-party credential at all.
 func TestInteropForeignEudiCredentialDecodes(t *testing.T) {
 	var m MDoc
-	if err := cbor.Unmarshal(foreignEudiMdoc(t), &m); err != nil {
-		t.Fatalf("our decoder rejected a real EUDI-issued mDL: %v", err)
-	}
+	err := cbor.Unmarshal(foreignEudiMdoc(t), &m)
+	require.NoError(t, err, "our decoder rejected a real EUDI-issued mDL: %v", err)
 
-	if m.DocType != "org.iso.18013.5.1.mDL" {
-		t.Errorf("docType = %q, want org.iso.18013.5.1.mDL", m.DocType)
-	}
+	require.Equal(t, "org.iso.18013.5.1.mDL", m.DocType, "docType")
 	items, ok := m.IssuerSigned.NameSpaces["org.iso.18013.5.1"]
-	if !ok || len(items) == 0 {
-		t.Fatalf("namespace org.iso.18013.5.1 missing or empty: %v", m.IssuerSigned.NameSpaces)
-	}
+	require.True(t, ok, "namespace org.iso.18013.5.1 missing: %v", m.IssuerSigned.NameSpaces)
+	require.NotEmpty(t, items, "namespace org.iso.18013.5.1 empty")
 
 	msg := foreignIssuerAuth(t, &m)
 	mso, err := tag24Unwrap[MSO](msg.Payload)
 	require.NoError(t, err, "unwrap foreign MSO: %v", err)
-	if mso.DocType != m.DocType {
-		t.Errorf("MSO docType %q != envelope docType %q", mso.DocType, m.DocType)
-	}
-	if mso.DigestAlgorithm != "SHA-256" {
-		t.Errorf("digestAlgorithm = %q, want SHA-256", mso.DigestAlgorithm)
-	}
+	require.Equal(t, m.DocType, mso.DocType, "MSO docType != envelope docType")
+	require.Equal(t, "SHA-256", mso.DigestAlgorithm, "digestAlgorithm")
 }
 
 // TestInteropForeignEudiIssuerSignatureVerifies checks our COSE_Sign1 handling
@@ -748,35 +634,27 @@ func TestInteropForeignEudiCredentialDecodes(t *testing.T) {
 // reading of any of those three fails here.
 func TestInteropForeignEudiIssuerSignatureVerifies(t *testing.T) {
 	var m MDoc
-	if err := cbor.Unmarshal(foreignEudiMdoc(t), &m); err != nil {
-		t.Fatalf("decode vector: %v", err)
-	}
+	err := cbor.Unmarshal(foreignEudiMdoc(t), &m)
+	require.NoError(t, err, "decode vector: %v", err)
 	msg := foreignIssuerAuth(t, &m)
 
 	rawChain, exists := msg.Headers.Unprotected[int64(33)]
-	if !exists {
-		t.Fatal("no x5chain in the vector's issuerAuth header 33")
-	}
+	require.True(t, exists, "no x5chain in the vector's issuerAuth header 33")
 	chain, ok := rawChain.([]any)
 	if !ok {
 		single, isSingle := rawChain.([]byte)
-		if !isSingle {
-			t.Fatalf("x5chain has type %T", rawChain)
-		}
+		require.True(t, isSingle, "x5chain has type %T", rawChain)
 		chain = []any{single}
 	}
 	der, ok := chain[0].([]byte)
-	if !ok {
-		t.Fatalf("x5chain[0] has type %T", chain[0])
-	}
+	require.True(t, ok, "x5chain[0] has type %T", chain[0])
 	dsCert, err := x509.ParseCertificate(der)
 	require.NoError(t, err, "parse the vector's document signer certificate: %v", err)
 
 	verifier, err := cose.NewVerifier(cose.AlgorithmES256, dsCert.PublicKey)
 	require.NoError(t, err, "create verifier from the foreign DS cert: %v", err)
-	if err := msg.Verify(nil, verifier); err != nil {
-		t.Fatalf("a real EUDI issuer signature did not verify through our COSE path: %v", err)
-	}
+	err = msg.Verify(nil, verifier)
+	require.NoError(t, err, "a real EUDI issuer signature did not verify through our COSE path: %v", err)
 }
 
 // TestInteropForeignEudiIssuerSignedItemKeyOrderPreserved pins the property the
@@ -786,30 +664,25 @@ func TestInteropForeignEudiIssuerSignatureVerifies(t *testing.T) {
 // differs, which is precisely what the digest is taken over.
 func TestInteropForeignEudiIssuerSignedItemKeyOrderPreserved(t *testing.T) {
 	var m MDoc
-	if err := cbor.Unmarshal(foreignEudiMdoc(t), &m); err != nil {
-		t.Fatalf("decode vector: %v", err)
-	}
+	err := cbor.Unmarshal(foreignEudiMdoc(t), &m)
+	require.NoError(t, err, "decode vector: %v", err)
 
 	items := m.IssuerSigned.NameSpaces["org.iso.18013.5.1"]
 	var rawTag cbor.RawTag
-	if err := cbor.Unmarshal(items[0].EncodedItem, &rawTag); err != nil {
-		t.Fatalf("decode tag 24: %v", err)
-	}
+	err = cbor.Unmarshal(items[0].EncodedItem, &rawTag)
+	require.NoError(t, err, "decode tag 24: %v", err)
 	var inner []byte
-	if err := cbor.Unmarshal(rawTag.Content, &inner); err != nil {
-		t.Fatalf("unwrap tag 24 byte string: %v", err)
-	}
+	err = cbor.Unmarshal(rawTag.Content, &inner)
+	require.NoError(t, err, "unwrap tag 24 byte string: %v", err)
 
 	// a4 = map(4), 66 = tstr(6), then "random" as the first key.
 	wantPrefix := append([]byte{0xa4, 0x66}, []byte("random")...)
-	if !bytes.HasPrefix(inner, wantPrefix) {
-		got := inner
-		if len(got) > 16 {
-			got = got[:16]
-		}
-		t.Errorf("IssuerSignedItem does not start with the issuer's own first key:\n got  %x\n want prefix %x",
-			got, wantPrefix)
+	got := inner
+	if len(got) > 16 {
+		got = got[:16]
 	}
+	require.True(t, bytes.HasPrefix(inner, wantPrefix),
+		"IssuerSignedItem does not start with the issuer's own first key:\n got  %x\n want prefix %x", got, wantPrefix)
 }
 
 // TestInteropForeignEudiDigestsSurviveReEncoding is the regression test for the
@@ -820,33 +693,26 @@ func TestInteropForeignEudiIssuerSignedItemKeyOrderPreserved(t *testing.T) {
 // production, rather than a hash reimplemented in the test.
 func TestInteropForeignEudiDigestsSurviveReEncoding(t *testing.T) {
 	var original MDoc
-	if err := cbor.Unmarshal(foreignEudiMdoc(t), &original); err != nil {
-		t.Fatalf("decode vector: %v", err)
-	}
+	err := cbor.Unmarshal(foreignEudiMdoc(t), &original)
+	require.NoError(t, err, "decode vector: %v", err)
 	mso, err := tag24Unwrap[MSO](foreignIssuerAuth(t, &original).Payload)
 	require.NoError(t, err, "unwrap foreign MSO: %v", err)
 
 	reencoded, err := cbor.Marshal(MDoc{DocType: original.DocType, IssuerSigned: original.IssuerSigned})
 	require.NoError(t, err, "re-encode: %v", err)
 	var roundTripped MDoc
-	if err := cbor.Unmarshal(reencoded, &roundTripped); err != nil {
-		t.Fatalf("decode our own re-encoding: %v", err)
-	}
+	err = cbor.Unmarshal(reencoded, &roundTripped)
+	require.NoError(t, err, "decode our own re-encoding: %v", err)
 
-	if len(roundTripped.IssuerSigned.NameSpaces) == 0 {
-		t.Fatal("no namespaces survived the round trip")
-	}
+	require.NotEmpty(t, roundTripped.IssuerSigned.NameSpaces, "no namespaces survived the round trip")
 	for ns, items := range roundTripped.IssuerSigned.NameSpaces {
 		values, err := verifyNamespaceDigests(items, mso.ValueDigests[ns], sha256Digest)
 		require.NoError(t, err, "digest check failed for namespace %s after a round trip through our types "+
 			"(the issuer's IssuerSignedItem bytes were not preserved): %v", ns, err)
-		if len(values) == 0 {
-			t.Errorf("namespace %s produced no verified values", ns)
-		}
+		require.NotEmpty(t, values, "namespace %s produced no verified values", ns)
 	}
 
 	// The issuer's signature is over these bytes, so they must come back unchanged.
-	if !bytes.Equal(original.IssuerSigned.IssuerAuth, roundTripped.IssuerSigned.IssuerAuth) {
-		t.Error("issuerAuth bytes changed across the round trip — the issuer signature would no longer verify")
-	}
+	require.Equal(t, original.IssuerSigned.IssuerAuth, roundTripped.IssuerSigned.IssuerAuth,
+		"issuerAuth bytes changed across the round trip — the issuer signature would no longer verify")
 }

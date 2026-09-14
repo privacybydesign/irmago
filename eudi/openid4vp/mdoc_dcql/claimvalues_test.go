@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
@@ -14,28 +16,21 @@ import (
 // permission screen is being rendered.
 func TestClaimMatchesWithArrayValueConstraint(t *testing.T) {
 	var resolvedClaims map[string]map[string]any
-	if err := json.Unmarshal([]byte(`{"eu.europa.ec.av.1":{"age_over_NN":["18","21"]}}`), &resolvedClaims); err != nil {
-		t.Fatalf("decode resolved claims: %v", err)
-	}
+	err := json.Unmarshal([]byte(`{"eu.europa.ec.av.1":{"age_over_NN":["18","21"]}}`), &resolvedClaims)
+	require.NoError(t, err, "decode resolved claims: %v", err)
 
 	var values []any
-	if err := json.Unmarshal([]byte(`[["18","21"]]`), &values); err != nil {
-		t.Fatalf("decode query values: %v", err)
-	}
+	err = json.Unmarshal([]byte(`[["18","21"]]`), &values)
+	require.NoError(t, err, "decode query values: %v", err)
 
 	claim := dcql.Claim{Path: []any{"eu.europa.ec.av.1", "age_over_NN"}, Values: values}
-	if !claimMatches(claim, resolvedClaims) {
-		t.Error("an array-valued claim did not match an identical array constraint")
-	}
+	require.True(t, claimMatches(claim, resolvedClaims), "an array-valued claim did not match an identical array constraint")
 
 	var other []any
-	if err := json.Unmarshal([]byte(`[["16","21"]]`), &other); err != nil {
-		t.Fatalf("decode query values: %v", err)
-	}
+	err = json.Unmarshal([]byte(`[["16","21"]]`), &other)
+	require.NoError(t, err, "decode query values: %v", err)
 	otherClaim := dcql.Claim{Path: []any{"eu.europa.ec.av.1", "age_over_NN"}, Values: other}
-	if claimMatches(otherClaim, resolvedClaims) {
-		t.Error("an array-valued claim matched a different array constraint")
-	}
+	require.False(t, claimMatches(otherClaim, resolvedClaims), "an array-valued claim matched a different array constraint")
 }
 
 // TestSelectClaimsWithArrayValueConstraintFromMdlDocType is the reviewer's
@@ -43,14 +38,12 @@ func TestClaimMatchesWithArrayValueConstraint(t *testing.T) {
 // array-valued constraint, entering at selectClaims as FindCandidates does.
 func TestSelectClaimsWithArrayValueConstraintFromMdlDocType(t *testing.T) {
 	var resolvedClaims map[string]map[string]any
-	if err := json.Unmarshal([]byte(`{"org.iso.18013.5.1":{"driving_privileges":["A","B"]}}`), &resolvedClaims); err != nil {
-		t.Fatalf("decode resolved claims: %v", err)
-	}
+	err := json.Unmarshal([]byte(`{"org.iso.18013.5.1":{"driving_privileges":["A","B"]}}`), &resolvedClaims)
+	require.NoError(t, err, "decode resolved claims: %v", err)
 
 	var values []any
-	if err := json.Unmarshal([]byte(`[["A","B"]]`), &values); err != nil {
-		t.Fatalf("decode query values: %v", err)
-	}
+	err = json.Unmarshal([]byte(`[["A","B"]]`), &values)
+	require.NoError(t, err, "decode query values: %v", err)
 
 	query := dcql.CredentialQuery{
 		Claims: []dcql.Claim{{
@@ -60,9 +53,7 @@ func TestSelectClaimsWithArrayValueConstraintFromMdlDocType(t *testing.T) {
 	}
 
 	selected := selectClaims(query, resolvedClaims)
-	if len(selected) != 1 {
-		t.Fatalf("selectClaims returned %d claims, want 1", len(selected))
-	}
+	require.Len(t, selected, 1, "selectClaims returned %d claims, want 1", len(selected))
 }
 
 // TestClaimMatchesIntegerAcrossDecoders covers the second half of the report:
@@ -77,12 +68,9 @@ func TestClaimMatchesIntegerAcrossDecoders(t *testing.T) {
 
 	// float64 is what encoding/json yields for the verifier's constraint.
 	var values []any
-	if err := json.Unmarshal([]byte(`[21]`), &values); err != nil {
-		t.Fatalf("decode query values: %v", err)
-	}
+	err := json.Unmarshal([]byte(`[21]`), &values)
+	require.NoError(t, err, "decode query values: %v", err)
 
 	claim := dcql.Claim{Path: []any{"eu.europa.ec.av.1", "age_in_years"}, Values: values}
-	if !claimMatches(claim, resolvedClaims) {
-		t.Error("a CBOR uint64 claim value did not match an equal JSON number constraint")
-	}
+	require.True(t, claimMatches(claim, resolvedClaims), "a CBOR uint64 claim value did not match an equal JSON number constraint")
 }

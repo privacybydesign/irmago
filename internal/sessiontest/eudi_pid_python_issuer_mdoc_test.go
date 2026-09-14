@@ -469,9 +469,8 @@ func testEudiPidPythonIssuerDisclosesAvMdoc(t *testing.T) {
 	startOpenID4VPDisclosureSession(t, c, 2, verifierSession.SessionLink)
 
 	disclosureSession := awaitSessionState(t, sessionHandler)
-	if disclosureSession.Status == clientmodels.Status_Error && disclosureSession.Error != nil {
-		t.Fatalf("disclosure errored: %+v", disclosureSession.Error)
-	}
+	require.False(t, disclosureSession.Status == clientmodels.Status_Error && disclosureSession.Error != nil,
+		"disclosure errored: %+v", disclosureSession.Error)
 	requireSessionState(t, disclosureSession, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	chosen := disclosureSession.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -930,9 +929,8 @@ func discloseAvMdocOnce(t *testing.T, c *client.Client, sessionHandler *MockSess
 	startOpenID4VPDisclosureSession(t, c, sessionId, verifierSession.SessionLink)
 
 	session := awaitSessionState(t, sessionHandler)
-	if session.Status == clientmodels.Status_Error && session.Error != nil {
-		t.Fatalf("disclosure errored: %+v", session.Error)
-	}
+	require.False(t, session.Status == clientmodels.Status_Error && session.Error != nil,
+		"disclosure errored: %+v", session.Error)
 	requireSessionState(t, session, sessionId, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	chosen := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -1054,9 +1052,8 @@ func discloseAvMdocAndDecode(
 	startOpenID4VPDisclosureSession(t, c, sessionId, verifierSession.SessionLink)
 
 	session := awaitSessionState(t, sessionHandler)
-	if session.Status == clientmodels.Status_Error && session.Error != nil {
-		t.Fatalf("disclosure errored: %+v", session.Error)
-	}
+	require.False(t, session.Status == clientmodels.Status_Error && session.Error != nil,
+		"disclosure errored: %+v", session.Error)
 	requireSessionState(t, session, sessionId, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	chosen := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]

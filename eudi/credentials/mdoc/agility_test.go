@@ -9,7 +9,6 @@ import (
 	"crypto/x509/pkix"
 	"math/big"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -81,9 +80,8 @@ func signMSO(t *testing.T, iss *Issuer, alg cose.Algorithm, namespace string, ms
 	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers, Payload: msoBytes}
 	msg.Headers.Protected.SetAlgorithm(alg)
 	msg.Headers.Unprotected[int64(33)] = [][]byte{iss.dscert.Raw, iss.iacacert.Raw}
-	if err := msg.Sign(rand.Reader, nil, signer); err != nil {
-		t.Fatalf("sign: %v", err)
-	}
+	err = msg.Sign(rand.Reader, nil, signer)
+	require.NoError(t, err, "sign: %v", err)
 	coseBytes, err := msg.MarshalCBOR()
 	require.NoError(t, err, "marshal: %v", err)
 
@@ -142,13 +140,9 @@ func TestIssuerAuthAlgorithmAgility(t *testing.T) {
 			doc := signMSO(t, iss, tc.alg, ns, msoOver(t, ns, "SHA-256", digest, holder.PublicKey()), [][]byte{encoded})
 			result := NewVerifier([]*x509.Certificate{iss.IACACert()}).Verify(doc, ns)
 
-			if !result.Valid {
-				t.Fatalf("%v over %s is one of the four algorithms 9.1.2.4 obliges a reader to support: %s",
-					tc.alg, tc.curve.Params().Name, result.Error)
-			}
-			if result.Attributes["family_name"] != "Doe" {
-				t.Errorf("attribute did not survive: %v", result.Attributes)
-			}
+			require.True(t, result.Valid, "%v over %s is one of the four algorithms 9.1.2.4 obliges a reader to support: %s",
+				tc.alg, tc.curve.Params().Name, result.Error)
+			require.Equal(t, "Doe", result.Attributes["family_name"], "attribute did not survive: %v", result.Attributes)
 		})
 	}
 }
@@ -160,16 +154,12 @@ func TestPermittedSignatureAlgorithms(t *testing.T) {
 	for _, required := range []cose.Algorithm{
 		cose.AlgorithmES256, cose.AlgorithmES384, cose.AlgorithmES512, cose.AlgorithmEdDSA,
 	} {
-		if !slices.Contains(mdocSignatureAlgorithms, required) {
-			t.Errorf("%v is required by 9.1.2.4 but is not in the permitted set", required)
-		}
+		require.True(t, slices.Contains(mdocSignatureAlgorithms, required), "%v is required by 9.1.2.4 but is not in the permitted set", required)
 	}
 	for _, forbidden := range []cose.Algorithm{
 		cose.AlgorithmPS256, cose.AlgorithmPS384, cose.AlgorithmPS512,
 	} {
-		if slices.Contains(mdocSignatureAlgorithms, forbidden) {
-			t.Errorf("%v is not permitted by ISO/IEC 18013-5 but is in the set", forbidden)
-		}
+		require.False(t, slices.Contains(mdocSignatureAlgorithms, forbidden), "%v is not permitted by ISO/IEC 18013-5 but is in the set", forbidden)
 	}
 }
 
@@ -200,23 +190,15 @@ func TestDigestAlgorithmAgility(t *testing.T) {
 			doc := signMSO(t, iss, cose.AlgorithmES256, ns, mso, [][]byte{encoded})
 			result := NewVerifier([]*x509.Certificate{iss.IACACert()}).Verify(doc, ns)
 
-			if !result.Valid {
-				t.Fatalf("%s is permitted by 9.1.2.5 Table 21: %s", tc.name, result.Error)
-			}
-			if result.Attributes["family_name"] != "Doe" {
-				t.Errorf("attribute did not survive: %v", result.Attributes)
-			}
+			require.True(t, result.Valid, "%s is permitted by 9.1.2.5 Table 21: %s", tc.name, result.Error)
+			require.Equal(t, "Doe", result.Attributes["family_name"], "attribute did not survive: %v", result.Attributes)
 		})
 	}
 
 	t.Run("an algorithm outside Table 21 is refused by name", func(t *testing.T) {
 		_, err := digestFuncFor("SHA-1")
-		if err == nil {
-			t.Fatal("SHA-1 must be refused; Table 21 permits only SHA-256, SHA-384 and SHA-512")
-		}
-		if !strings.Contains(err.Error(), "SHA-1") {
-			t.Errorf("rejection should name the declared algorithm, got: %v", err)
-		}
+		require.Error(t, err, "SHA-1 must be refused; Table 21 permits only SHA-256, SHA-384 and SHA-512")
+		require.ErrorContains(t, err, "SHA-1", "rejection should name the declared algorithm, got: %v", err)
 	})
 }
 
@@ -234,16 +216,13 @@ func TestDeviceKeyCurveAgility(t *testing.T) {
 			// The coordinates must be the curve's own width, not P-256's. This is the
 			// assertion that would have caught the silent truncation.
 			wantLen := coordinateLen(curve)
-			if len(coseKey.X) != wantLen || len(coseKey.Y) != wantLen {
-				t.Fatalf("coordinates are %d/%d bytes, want %d each for %s",
-					len(coseKey.X), len(coseKey.Y), wantLen, curve.Params().Name)
-			}
+			require.True(t, len(coseKey.X) == wantLen && len(coseKey.Y) == wantLen,
+				"coordinates are %d/%d bytes, want %d each for %s",
+				len(coseKey.X), len(coseKey.Y), wantLen, curve.Params().Name)
 
 			back, err := ecdsaPublicKeyFromCOSE(coseKey)
 			require.NoError(t, err, "decode: %v", err)
-			if !back.Equal(&key.PublicKey) {
-				t.Fatal("round trip did not preserve the key — the curve label or the coordinate width is wrong")
-			}
+			require.True(t, back.Equal(&key.PublicKey), "round trip did not preserve the key — the curve label or the coordinate width is wrong")
 		})
 	}
 
@@ -252,22 +231,14 @@ func TestDeviceKeyCurveAgility(t *testing.T) {
 		// absent from the Go standard library, and therefore refused rather than
 		// mis-decoded as something else.
 		_, err := ecdsaPublicKeyFromCOSE(COSEKey{Kty: 2, Crv: 256, X: []byte{1}, Y: []byte{2}})
-		if err == nil {
-			t.Fatal("an unsupported curve must be refused, not mis-decoded")
-		}
-		if !strings.Contains(err.Error(), "256") {
-			t.Errorf("rejection should name the curve identifier, got: %v", err)
-		}
+		require.Error(t, err, "an unsupported curve must be refused, not mis-decoded")
+		require.ErrorContains(t, err, "256", "rejection should name the curve identifier, got: %v", err)
 	})
 
 	t.Run("an OKP key is refused with a diagnosis", func(t *testing.T) {
 		_, err := ecdsaPublicKeyFromCOSE(COSEKey{Kty: 1, Crv: 6, X: []byte{1}})
-		if err == nil {
-			t.Fatal("an Ed25519 OKP key must be refused rather than read as EC2")
-		}
-		if !strings.Contains(err.Error(), "OKP") {
-			t.Errorf("rejection should say the key is OKP rather than malformed, got: %v", err)
-		}
+		require.Error(t, err, "an Ed25519 OKP key must be refused rather than read as EC2")
+		require.ErrorContains(t, err, "OKP", "rejection should say the key is OKP rather than malformed, got: %v", err)
 	})
 }
 
@@ -295,10 +266,8 @@ func TestDeviceAuthOnEveryCurve(t *testing.T) {
 
 			result := NewVerifier([]*x509.Certificate{iss.IACACert()}).
 				VerifyWithDeviceAuth(presented, dt, dt, transcript, deviceAuth)
-			if !result.Valid || !result.DeviceAuthValid {
-				t.Fatalf("a %s device key is conformant: valid=%v deviceAuth=%v err=%q",
-					curve.Params().Name, result.Valid, result.DeviceAuthValid, result.Error)
-			}
+			require.True(t, result.Valid && result.DeviceAuthValid, "a %s device key is conformant: valid=%v deviceAuth=%v err=%q",
+				curve.Params().Name, result.Valid, result.DeviceAuthValid, result.Error)
 		})
 	}
 }

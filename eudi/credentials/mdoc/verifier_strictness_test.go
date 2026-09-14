@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
-	"strings"
 	"testing"
 	"time"
 
@@ -38,9 +37,8 @@ func issueCustom(t *testing.T, iss *Issuer, namespace string, mso MSO, itemBytes
 	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers, Payload: msoBytes}
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 	msg.Headers.Unprotected[int64(33)] = [][]byte{iss.dscert.Raw, iss.iacacert.Raw}
-	if err := msg.Sign(rand.Reader, nil, signer); err != nil {
-		t.Fatalf("sign mso: %v", err)
-	}
+	err = msg.Sign(rand.Reader, nil, signer)
+	require.NoError(t, err, "sign mso: %v", err)
 	coseBytes, err := msg.MarshalCBOR()
 	require.NoError(t, err, "marshal cose: %v", err)
 
@@ -120,16 +118,11 @@ func TestMSOVersionMustBeMajorOne(t *testing.T) {
 			doc := issueCustom(t, issuer, ns, mso, [][]byte{encoded})
 			result := NewVerifier([]*x509.Certificate{issuer.IACACert()}).Verify(doc, ns)
 
-			if tc.accepted && !result.Valid {
-				t.Fatalf("version %q should be accepted, got: %s", tc.version, result.Error)
-			}
-			if !tc.accepted {
-				if result.Valid {
-					t.Fatalf("version %q must be refused: this code has no definition for that structure", tc.version)
-				}
-				if !strings.Contains(result.Error, "version") {
-					t.Errorf("rejection should name the version, got: %s", result.Error)
-				}
+			if tc.accepted {
+				require.True(t, result.Valid, "version %q should be accepted, got: %s", tc.version, result.Error)
+			} else {
+				require.False(t, result.Valid, "version %q must be refused: this code has no definition for that structure", tc.version)
+				require.Contains(t, result.Error, "version", "rejection should name the version, got: %s", result.Error)
 			}
 		})
 	}
@@ -163,13 +156,9 @@ func TestDuplicateElementIdentifierIsRejected(t *testing.T) {
 	doc := issueCustom(t, issuer, ns, mso, [][]byte{trueItem, falseItem})
 
 	result := NewVerifier([]*x509.Certificate{issuer.IACACert()}).Verify(doc, ns)
-	if result.Valid {
-		t.Fatalf("a document disclosing age_over_18 twice must be refused; got %v for the element",
-			result.Attributes["age_over_18"])
-	}
-	if !strings.Contains(result.Error, "age_over_18") {
-		t.Errorf("rejection should name the duplicated element, got: %s", result.Error)
-	}
+	require.False(t, result.Valid, "a document disclosing age_over_18 twice must be refused; got %v for the element",
+		result.Attributes["age_over_18"])
+	require.Contains(t, result.Error, "age_over_18", "rejection should name the duplicated element, got: %s", result.Error)
 }
 
 // TestDuplicateCBORMapKeyIsRejected covers 8.1: "maps (major type 5) shall not
@@ -195,9 +184,7 @@ func TestDuplicateCBORMapKeyIsRejected(t *testing.T) {
 		ElementIdentifier: "age_over_18", ElementValue: false,
 	})
 	require.NoError(t, err, "marshal item: %v", err)
-	if base[0] != 0xa4 {
-		t.Fatalf("expected a 4-entry definite-length CBOR map header (0xa4), got 0x%02x", base[0])
-	}
+	require.Equal(t, byte(0xa4), base[0], "expected a 4-entry definite-length CBOR map header (0xa4), got 0x%02x", base[0])
 	dupKey, err := cbor.Marshal("elementValue")
 	require.NoError(t, err, "marshal key: %v", err)
 	dupValue, err := cbor.Marshal(true)
@@ -214,10 +201,8 @@ func TestDuplicateCBORMapKeyIsRejected(t *testing.T) {
 	doc := issueCustom(t, issuer, ns, mso, [][]byte{encoded})
 
 	result := NewVerifier([]*x509.Certificate{issuer.IACACert()}).Verify(doc, ns)
-	if result.Valid {
-		t.Fatalf("an IssuerSignedItem with a duplicated map key must be refused; it decoded to age_over_18=%v",
-			result.Attributes["age_over_18"])
-	}
+	require.False(t, result.Valid, "an IssuerSignedItem with a duplicated map key must be refused; it decoded to age_over_18=%v",
+		result.Attributes["age_over_18"])
 }
 
 // TestVerifyCoversEveryNamespacePresent covers 9.3.1 step 3: "calculate the
@@ -232,9 +217,8 @@ func TestDuplicateCBORMapKeyIsRejected(t *testing.T) {
 func TestVerifyCoversEveryNamespacePresent(t *testing.T) {
 	_, _, verifier, doc, _, _, _, namespace := buildHappyPathMDoc(t)
 
-	if result := verifier.Verify(doc, namespace); !result.Valid {
-		t.Fatalf("precondition: the unmodified document should verify, got: %s", result.Error)
-	}
+	result := verifier.Verify(doc, namespace)
+	require.True(t, result.Valid, "precondition: the unmodified document should verify, got: %s", result.Error)
 
 	smuggled, _ := wrapItem(t, IssuerSignedItem{
 		DigestID: 0, Random: make([]byte, minSaltLength),
@@ -242,13 +226,9 @@ func TestVerifyCoversEveryNamespacePresent(t *testing.T) {
 	})
 	doc.IssuerSigned.NameSpaces["org.iso.18013.5.1"] = []Tag24Item{{EncodedItem: smuggled}}
 
-	result := verifier.Verify(doc, namespace)
-	if result.Valid {
-		t.Fatal("a document carrying a namespace the MSO does not cover must be refused, even when the caller asked about a different namespace")
-	}
-	if !strings.Contains(result.Error, "org.iso.18013.5.1") {
-		t.Errorf("rejection should name the uncovered namespace, got: %s", result.Error)
-	}
+	result = verifier.Verify(doc, namespace)
+	require.False(t, result.Valid, "a document carrying a namespace the MSO does not cover must be refused, even when the caller asked about a different namespace")
+	require.Contains(t, result.Error, "org.iso.18013.5.1", "rejection should name the uncovered namespace, got: %s", result.Error)
 }
 
 // TestSelectiveDiscloseRefusesEmptyResult covers the CDDL's
@@ -269,11 +249,9 @@ func TestSelectiveDiscloseRefusesEmptyResult(t *testing.T) {
 	doc, err := issuer.Issue(ns, ns, map[string]any{"age_over_18": true}, holder.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 
-	if _, err := SelectiveDisclose(doc, ns, []string{"age_over_65"}); err == nil {
-		t.Fatal("disclosing an element the credential does not hold must error rather than produce a namespace mapped to null")
-	}
+	_, err = SelectiveDisclose(doc, ns, []string{"age_over_65"})
+	require.Error(t, err, "disclosing an element the credential does not hold must error rather than produce a namespace mapped to null")
 
-	if _, err := SelectiveDisclose(doc, "no.such.namespace", []string{"age_over_18"}); err == nil {
-		t.Fatal("disclosing from a namespace the credential does not hold must error")
-	}
+	_, err = SelectiveDisclose(doc, "no.such.namespace", []string{"age_over_18"})
+	require.Error(t, err, "disclosing from a namespace the credential does not hold must error")
 }

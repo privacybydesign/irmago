@@ -8,7 +8,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"math/big"
-	"strings"
 	"testing"
 	"time"
 
@@ -113,9 +112,8 @@ func buildPinnedChainMDoc(t *testing.T) (doc *MDoc, root, intermediate *x509.Cer
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 	// The document signer alone, so no CA travels with the credential.
 	msg.Headers.Unprotected[int64(33)] = [][]byte{dsCert.Raw}
-	if err := msg.Sign(rand.Reader, nil, signer); err != nil {
-		t.Fatalf("sign mso: %v", err)
-	}
+	err = msg.Sign(rand.Reader, nil, signer)
+	require.NoError(t, err, "sign mso: %v", err)
 	coseBytes, err := cbor.Marshal(msg)
 	require.NoError(t, err, "marshal cose: %v", err)
 	wrapped, err := tag24Wrap(item)
@@ -148,12 +146,9 @@ func TestVerifierUsesPinnedIntermediates(t *testing.T) {
 	})
 
 	resolved, result := verifier.VerifyAllDisclosedNamespaces(doc)
-	if !result.Valid {
-		t.Fatalf("expected the pinned intermediate to complete the chain, got %q", result.Error)
-	}
-	if got := resolved["eu.europa.ec.av.1"]["age_over_18"]; got != true {
-		t.Errorf("age_over_18 = %v, want true", got)
-	}
+	require.True(t, result.Valid, "expected the pinned intermediate to complete the chain, got %q", result.Error)
+	got := resolved["eu.europa.ec.av.1"]["age_over_18"]
+	require.Equal(t, true, got, "age_over_18 = %v, want true", got)
 }
 
 // TestVerifierRejectsUnbridgeableChain is the other side of it: a root on its
@@ -169,23 +164,13 @@ func TestVerifierRejectsUnbridgeableChain(t *testing.T) {
 	verifier := NewVerifierFromPool(roots)
 
 	_, result := verifier.VerifyAllDisclosedNamespaces(doc)
-	if result.Valid {
-		t.Fatal("expected rejection: no path from the document signer to the root")
-	}
-	if !strings.Contains(result.Error, "chain verification failed") {
-		t.Errorf("error = %q, want it to report the chain failure", result.Error)
-	}
-	if !strings.Contains(result.Error, "Test DS under intermediate") {
-		t.Errorf("error = %q, want it to name the document signer", result.Error)
-	}
-	if !strings.Contains(result.Error, "Test Attestation Providers CA") {
-		t.Errorf("error = %q, want it to name the CA that signed the document signer", result.Error)
-	}
+	require.False(t, result.Valid, "expected rejection: no path from the document signer to the root")
+	require.Contains(t, result.Error, "chain verification failed", "error = %q, want it to report the chain failure", result.Error)
+	require.Contains(t, result.Error, "Test DS under intermediate", "error = %q, want it to name the document signer", result.Error)
+	require.Contains(t, result.Error, "Test Attestation Providers CA", "error = %q, want it to name the CA that signed the document signer", result.Error)
 	// The serial is what turns the rejection into a certificate search at the
 	// CA that issued it.
-	if !strings.Contains(result.Error, "serial C0FFEE") {
-		t.Errorf("error = %q, want it to carry the document signer's serial", result.Error)
-	}
+	require.Contains(t, result.Error, "serial C0FFEE", "error = %q, want it to carry the document signer's serial", result.Error)
 }
 
 // TestVerifierReadsAnchorsPerVerification pins the second property: anchors are
@@ -211,17 +196,14 @@ func TestVerifierReadsAnchorsPerVerification(t *testing.T) {
 	current := x509.VerifyOptions{Roots: x509.NewCertPool(), Intermediates: x509.NewCertPool()}
 	verifier := NewVerifierFromOptions(func() x509.VerifyOptions { return current })
 
-	if _, result := verifier.VerifyAllDisclosedNamespaces(doc); result.Valid {
-		t.Fatal("expected rejection while no anchors are loaded")
-	}
+	_, result := verifier.VerifyAllDisclosedNamespaces(doc)
+	require.False(t, result.Valid, "expected rejection while no anchors are loaded")
 
 	current = trusted
-	if _, result := verifier.VerifyAllDisclosedNamespaces(doc); !result.Valid {
-		t.Fatalf("expected anchors loaded after construction to take effect, got %q", result.Error)
-	}
+	_, result = verifier.VerifyAllDisclosedNamespaces(doc)
+	require.True(t, result.Valid, "expected anchors loaded after construction to take effect, got %q", result.Error)
 
 	current = x509.VerifyOptions{Roots: x509.NewCertPool(), Intermediates: x509.NewCertPool()}
-	if _, result := verifier.VerifyAllDisclosedNamespaces(doc); result.Valid {
-		t.Fatal("expected rejection once the anchors were dropped again")
-	}
+	_, result = verifier.VerifyAllDisclosedNamespaces(doc)
+	require.False(t, result.Valid, "expected rejection once the anchors were dropped again")
 }
