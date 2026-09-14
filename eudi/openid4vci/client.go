@@ -286,8 +286,6 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 
 	credentialIssuerMetadataUrl := constructCredentialIssuerMetadataUrl(*parsedCredentialIssuerUri)
 
-	log.Printf("Retrieving metadata from %s", credentialIssuerMetadataUrl)
-
 	req, err := http.NewRequest("GET", credentialIssuerMetadataUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request for credential issuer metadata: %v", err)

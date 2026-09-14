@@ -19,10 +19,16 @@ import (
 // and signing a DeviceAuthentication at presentation.
 //
 // It is an interface so the private half never has to exist in this process.
-// DefaultHolder is the software implementation used by tests and by the current
-// wallet; an implementation backed by StrongBox, TrustZone or the Secure Enclave
-// satisfies the same two methods without the key ever being extractable. See
-// NewHolderFromSigner for the cheapest route to one.
+//
+// DefaultHolder is what the wallet uses in production today: the device private
+// key lives in this process, read from storage on demand, which is the same
+// arrangement sdjwt.DefaultKeyBinder has on the SD-JWT side. It is reached
+// through services.NewMdocDeviceKeyBinder and mdoc_dcql, not only from tests.
+//
+// The interface exists for what replaces it: an implementation backed by
+// StrongBox, TrustZone or the Secure Enclave satisfies the same two methods
+// with the key never extractable. See NewHolderFromSigner, which is the whole
+// seam — a platform key handle only has to implement Public and Sign.
 type Holder interface {
 	// PublicKey returns the device public key — the only part of the device key
 	// pair an issuer (or anyone else) ever needs.

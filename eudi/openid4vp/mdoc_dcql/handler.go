@@ -199,7 +199,14 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 
 		disclosed, err := selectiveDiscloseByPaths(&doc, sel.ClaimPaths)
 		if err != nil {
-			return nil, fmt.Errorf("selective disclosure: %w", err)
+			// Named by query and credential: this error fails the whole disclosure,
+			// including any other credential in it, so the message has to say which
+			// selection caused that rather than leaving a session-wide failure with
+			// no attribution. A user skipping an *optional* credential never reaches
+			// here — the app expresses a skip as a choice with no credentials, which
+			// produces no selection at all (see disclosureChoicesToOpenID4VPSelections).
+			return nil, fmt.Errorf("selective disclosure for query %q (credential %s): %w",
+				sel.QueryId, sel.CredentialHash, err)
 		}
 
 		// Which key must sign is asked of the credential, not of the key record
@@ -407,6 +414,23 @@ func claimMatches(claim dcql.Claim, resolved map[string]map[string]any) bool {
 // plan the user consented to, and nothing downstream can tell that apart from
 // a verifier asking for less.
 func selectiveDiscloseByPaths(doc *stdmdoc.MDoc, claimPaths [][]any) (*stdmdoc.MDoc, error) {
+	// An empty selection is refused here rather than allowed to fall through the
+	// loop below, which would leave IssuerSigned.NameSpaces an empty map and
+	// return no error. ISO/IEC 18013-5 has
+	// `IssuerNameSpaces = {+ NameSpace => [+ IssuerSignedItemBytes]}` — one or
+	// more — so that document is not merely empty, it is non-conformant, and it
+	// would be signed and posted with nothing naming the defect.
+	//
+	// Not unreachable via the query check in PrepareDisclosure: this takes the
+	// paths from the user's selection, not from the query, and
+	// disclosureChoicesToOpenID4VPSelections drops zero-length paths before
+	// building it — which turns a selection of one empty path, an error below,
+	// into an empty slice that used to pass silently.
+	if len(claimPaths) == 0 {
+		return nil, fmt.Errorf(
+			"mso_mdoc selection names no claim paths: an mdoc presentation must disclose at least one element")
+	}
+
 	revealByNamespace := make(map[string][]string)
 	seen := make(map[services.MdocElementRef]struct{}, len(claimPaths))
 	var namespaceOrder []string

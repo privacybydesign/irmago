@@ -59,6 +59,42 @@ func TestMdocCredentialFormatParser_ParseAndVerify(t *testing.T) {
 	require.Nil(t, parsed.SdJwtVc)
 }
 
+// TestMdocCredentialFormatParser_ParseAndVerify_RefusesEmptyNamespaces pins that
+// a credential disclosing nothing is refused rather than stored.
+//
+// The verifier passes it: every digest it was shown matched, which is vacuously
+// true when it was shown none, so result.Valid is true and only the element count
+// separates this from a real credential. ISO/IEC 18013-5 has
+// `IssuerNameSpaces = {+ NameSpace => [+ IssuerSignedItemBytes]}` — one or more —
+// so the document is malformed, and storing it produced a card with no rows that
+// no DCQL query could match.
+//
+// The MSO is left untouched, so this is the same signed credential with its items
+// stripped: the issuerAuth signature covers the digests, never which of them the
+// sender chose to transmit.
+func TestMdocCredentialFormatParser_ParseAndVerify_RefusesEmptyNamespaces(t *testing.T) {
+	issuer, err := mdoc.NewTestIssuer()
+	require.NoError(t, err)
+	holder, err := mdoc.NewHolder()
+	require.NoError(t, err)
+
+	issued, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
+		map[string]any{"age_over_18": true}, holder.PublicKey())
+	require.NoError(t, err)
+	issued.IssuerSigned.NameSpaces = map[string][]mdoc.Tag24Item{}
+
+	encoded, err := cbor.Marshal(issued)
+	require.NoError(t, err)
+
+	parser := NewMdocCredentialFormatParser(mdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()}))
+	parsed, err := parser.ParseAndVerify(
+		base64.RawURLEncoding.EncodeToString(encoded), "https://test-issuer.example.com", true)
+
+	require.Error(t, err, "an mdoc disclosing no elements must not be stored as a credential")
+	require.ErrorContains(t, err, "discloses no elements")
+	require.Nil(t, parsed, "a refused credential must not be returned, least of all an empty one")
+}
+
 func TestMdocCredentialFormatParser_ParseAndVerify_UntrustedRootRejected(t *testing.T) {
 	raw, _ := newTestMdocCredentialResponseString(t)
 	otherIssuer, err := mdoc.NewTestIssuer()

@@ -484,6 +484,38 @@ func TestSelectiveDiscloseByPathsRefusesMalformedPath(t *testing.T) {
 	}
 }
 
+// TestSelectiveDiscloseByPathsRefusesAnEmptySelection pins that disclosing
+// nothing is an error rather than an empty document.
+//
+// Without the guard this returned no error and an MDoc whose IssuerSigned
+// encodes as `{"nameSpaces": {}, "issuerAuth": ...}` — an empty CBOR map where
+// ISO/IEC 18013-5 has `IssuerNameSpaces = {+ NameSpace => [+
+// IssuerSignedItemBytes]}`, one or more. That document was signed and posted
+// with nothing naming the defect.
+//
+// The query check in PrepareDisclosure does not cover this: these paths come
+// from the user's selection, not from the verifier's query, and
+// disclosureChoicesToOpenID4VPSelections drops zero-length paths before this is
+// reached — so a selection of one empty path, which the malformed-path test
+// above proves is an error when it arrives here, became an empty slice that
+// passed silently.
+func TestSelectiveDiscloseByPathsRefusesAnEmptySelection(t *testing.T) {
+	for name, paths := range map[string][][]any{
+		"nil":         nil,
+		"empty slice": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := newTwoNamespaceMdoc(t, secondNamespace)
+
+			disclosed, err := selectiveDiscloseByPaths(doc, paths)
+			require.Error(t, err, "disclosing no elements at all must be refused, not encoded as an empty nameSpaces map")
+			require.Contains(t, err.Error(), "at least one element")
+			require.Nil(t, disclosed,
+				"a refused disclosure must not return a document, least of all one disclosing nothing")
+		})
+	}
+}
+
 // TestSelectiveDiscloseByPathsReadsTheElementOffALeafPath covers the paths the
 // app echoes back for a structured element: the permission screen lists such an
 // element as one row per leaf, each with the full path it was reached by, so a

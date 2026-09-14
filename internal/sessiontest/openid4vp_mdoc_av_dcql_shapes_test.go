@@ -58,6 +58,10 @@ func testSessionHandlerForOpenID4VPWithMdocAvDcqlShapes(t *testing.T) {
 		testOpenID4VP_MdocAv_OptionalCredentialSet,
 	)
 	t.Run(
+		"a skipped optional credential set leaves the required one disclosed",
+		testOpenID4VP_MdocAv_SkippedOptionalCredentialSet,
+	)
+	t.Run(
 		"claim_sets discloses the first satisfiable set only",
 		testOpenID4VP_MdocAv_ClaimSets,
 	)
@@ -296,6 +300,109 @@ func testOpenID4VP_MdocAv_OptionalCredentialSet(t *testing.T) {
 
 	disclosureLog := requireSingleDisclosureLog(t, c)
 	require.Len(t, disclosureLog.Credentials, 1)
+}
+
+// testOpenID4VP_MdocAv_SkippedOptionalCredentialSet is the other half of the
+// optional case: the user declines the optional credential and keeps the
+// required one.
+//
+// What it pins is that declining reaches the mdoc code as nothing at all. The
+// app expresses a skip the way the IRMA path does, by selecting no credentials
+// for that pick-one, and disclosureChoicesToOpenID4VPSelections then produces no
+// DisclosureSelection for it — so mdoc_dcql is never asked to disclose anything
+// and the query is simply absent from the vp_token.
+//
+// That distinction is load-bearing rather than cosmetic. The other shape a skip
+// could take — a credential selected with an empty claim path list — is refused
+// by selectiveDiscloseByPaths, because an mdoc has no always-disclosed payload
+// and disclosing zero elements would emit an empty `nameSpaces` map, which
+// ISO/IEC 18013-5 does not permit (IssuerNameSpaces = {+ NameSpace => [+ ...]}).
+// That refusal fails the whole PrepareDisclosure call, so if the app ever
+// expressed a skip that way, declining one optional credential would take the
+// required credential down with it. This test is what would catch that: the
+// required presentation must still arrive, and the session must still succeed.
+func testOpenID4VP_MdocAv_SkippedOptionalCredentialSet(t *testing.T) {
+	c, sessionHandler := createPidIssuerTestClient(t)
+	defer c.Close()
+
+	issueAvMdocWithElementsViaPythonIssuer(t, c, 1, sessionHandler, avElementsBoth())
+	remainingBefore := avMdocInstancesRemaining(t, c)
+
+	dcql := `{
+		"credentials": [
+			{
+				"id": "age18",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_18"] }
+				]
+			},
+			{
+				"id": "age21",
+				"format": "mso_mdoc",
+				"meta": { "doctype_value": "eu.europa.ec.av.1" },
+				"claims": [
+					{ "path": ["eu.europa.ec.av.1", "age_over_21"] }
+				]
+			}
+		],
+		"credential_sets": [
+			{ "options": [["age18"]], "required": true },
+			{ "options": [["age21"]], "required": false }
+		]
+	}`
+	testSession, requestJwt := startMdocDcqlSession(t, c, 2, sessionHandler, dcql)
+
+	session := testSession.ClientSession
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	requireDisclosurePlan(
+		t,
+		session.DisclosurePlan,
+		expectedDisclosurePlan{
+			Choices: []expectedPickOneChoice{
+				{Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver18())}},
+				{Optional: true, Owned: []expectedPlanCredential{avPlanCredential(avAttrAgeOver21())}},
+			},
+		},
+	)
+
+	approvedRequestor := session.Requestor
+
+	// The required choice takes its owned option; the optional one selects no
+	// credential at all, which is how the app declines it.
+	pickOnes := session.DisclosurePlan.DisclosureChoicesOverview
+	require.Len(t, pickOnes, 2, "the request has one required and one optional credential set")
+	grantPermission(t, c, 2,
+		makeDisclosureChoice(pickOnes[0].OwnedOptions[0]),
+		clientmodels.DisclosureDisconSelection{Credentials: []clientmodels.SelectedCredential{}},
+	)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	walletResponse := requireVerifierAccepted(t, testSession.VerifierSession)
+
+	presented18 := requireSingleDeviceResponse(t, walletResponse, avQueryIdAgeOver18)
+	requireDeviceAuthVerifiesElements(
+		t, presented18, avSessionTranscript(t, requestJwt), map[string]any{avMandatoryElement: true})
+
+	// Absent, not present and empty: a declined credential is one the verifier
+	// was never given, which is what "required": false asks about.
+	requireQueryAbsent(t, walletResponse, avQueryIdAgeOver21)
+
+	require.Equal(
+		t,
+		remainingBefore-1,
+		avMdocInstancesRemaining(t, c),
+		"only the disclosed credential may spend an instance; a declined one must spend none",
+	)
+
+	disclosureLog := requireSingleDisclosureLog(t, c)
+	requireLogVerifier(t, disclosureLog, approvedRequestor)
+	require.Len(t, disclosureLog.Credentials, 1, "only the disclosed credential belongs in the log")
+	requireLogCredential(
+		t, disclosureLog.Credentials[0], avLogCredential(avAttrAgeOver18()), "age_over_18 entry")
 }
 
 // testOpenID4VP_MdocAv_ClaimSets names both elements in one query and prefers the

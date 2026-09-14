@@ -41,6 +41,25 @@ func (p *mdocCredentialFormatParser) ParseAndVerify(raw, credentialIssuer string
 	if !result.Valid {
 		return nil, fmt.Errorf("mdoc verification failed: %s", result.Error)
 	}
+
+	// A credential that carries no elements is refused rather than stored.
+	//
+	// result.Valid does not cover this, and is not meant to: the digest check
+	// proves every element present is authentic, which is vacuously true of a
+	// document presenting none, and mdoc.VerificationResult.RequireElements
+	// exists precisely because "Valid" answers "is what I received genuine",
+	// never "did I receive anything". There is no requested element set at
+	// issuance to hand RequireElements, but there is still a floor: ISO/IEC
+	// 18013-5 has `IssuerNameSpaces = {+ NameSpace => [+ IssuerSignedItemBytes]}`,
+	// one or more, so a document with an empty nameSpaces map is malformed.
+	//
+	// Without this the wallet stored an attribute-less credential: a card with no
+	// rows, which no DCQL query can ever match, and no error anywhere saying why.
+	if len(resolved) == 0 {
+		return nil, fmt.Errorf(
+			"mdoc for docType %q discloses no elements; ISO/IEC 18013-5 requires at least one namespace carrying at least one element",
+			result.DocType)
+	}
 	if holderBindingKeyRequired && result.DeviceKey == nil {
 		return nil, fmt.Errorf("mdoc has no usable deviceKeyInfo but cryptographic key binding was required")
 	}
