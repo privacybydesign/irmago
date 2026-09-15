@@ -63,10 +63,21 @@ func AttachDeviceSigned(mdoc *MDoc, deviceAuthBytes []byte) (*MDoc, error) {
 // ISO 18013-5 also allows documentErrors (whole documents that failed)
 // and per-document errors; neither is modeled here since this profile
 // only ever presents a single document with no partial-failure cases.
+// ZkDocuments carries presentations made as zero-knowledge proofs instead of
+// disclosures, per ISO/IEC DIS 18013-5 (Second Edition) 10.2.7 — see zkp.go.
+// A response carries documents, zkDocuments, or both: the two arrays are
+// alternatives per document, not per response, because a reader may ask for one
+// credential in the clear and another as a proof in the same request.
+//
+// Both arrays are omitempty, which is what makes a proof-only response encode
+// without an empty `documents` array beside it. The CDDL has both optional, and
+// every caller in this module passes at least one document, so no existing
+// encoding changes.
 type DeviceResponse struct {
-	Version   string `cbor:"version"`
-	Documents []MDoc `cbor:"documents"`
-	Status    uint64 `cbor:"status"` // 0 = OK, per ISO 18013-5 Table 8
+	Version     string       `cbor:"version"`
+	Documents   []MDoc       `cbor:"documents,omitempty"`
+	ZkDocuments []ZkDocument `cbor:"zkDocuments,omitempty"`
+	Status      uint64       `cbor:"status"` // 0 = OK, per ISO 18013-5 Table 8
 }
 
 // NewDeviceResponse bundles one or more presented documents (each already
@@ -76,5 +87,19 @@ func NewDeviceResponse(documents ...MDoc) DeviceResponse {
 		Version:   "1.0",
 		Documents: documents,
 		Status:    0,
+	}
+}
+
+// NewZkDeviceResponse bundles one or more zero-knowledge presentations into a
+// DeviceResponse. Separate from NewDeviceResponse rather than a variadic
+// addition to it because the two are produced at different points: a ZK
+// presentation is built from a document that has already been through the
+// ordinary presentation path, so by the time these exist the plain documents
+// for the same request no longer travel.
+func NewZkDeviceResponse(documents ...ZkDocument) DeviceResponse {
+	return DeviceResponse{
+		Version:     "1.0",
+		ZkDocuments: documents,
+		Status:      0,
 	}
 }
