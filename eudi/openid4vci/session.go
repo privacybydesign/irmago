@@ -479,13 +479,6 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		displays := metadata.ToTranslateableList(credentialDisplay)
 		names := metadata.ConvertDisplayToTranslatedString(displays)
 		name := clientmodels.Resolve(names, s.locale)
-		// Whether the offer screen is showing the user text in a language they did
-		// not ask for. Computed from the same map the name resolves from, so the
-		// answer describes the text actually on screen; the equivalent for a stored
-		// credential is services.CredentialDisplayIsFallback, which this cannot use
-		// because there is no batch yet — the offer is what the user accepts to
-		// create one.
-		displayIsFallback := clientmodels.IsFallbackLanguage(s.locale, clientmodels.BundleLanguage(s.locale, names))
 
 		issuerDisplays := metadata.ToTranslateableList(s.credentialIssuerMetadata.Display)
 		issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
@@ -551,9 +544,8 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		}
 
 		cred := clientmodels.Credential{
-			CredentialId:      credentialId,
-			Name:              name,
-			DisplayIsFallback: displayIsFallback,
+			CredentialId: credentialId,
+			Name:         name,
 			Issuer: clientmodels.TrustedParty{
 				Id:    s.credentialIssuerMetadata.CredentialIssuer,
 				Name:  issuerName,

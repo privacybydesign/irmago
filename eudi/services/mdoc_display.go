@@ -102,19 +102,6 @@ func MdocCredentialLogoURIsByLanguage(displays metadata.CredentialDisplays) clie
 	return result
 }
 
-// MdocDisplayIsFallback reports whether the batch's display metadata has
-// nothing in the language asked for, so its text resolves from another one.
-// True when there is no credential display metadata at all. Same contract as
-// CredentialDisplayIsFallback on the SD-JWT side.
-func MdocDisplayIsFallback(batch *models.MdocBatch, locale string) bool {
-	cm := MdocCredentialMetadata(batch)
-	if cm == nil || len(cm.Display) == 0 {
-		return true
-	}
-	names := MdocCredentialNamesByLanguage(cm.Display)
-	return clientmodels.IsFallbackLanguage(locale, clientmodels.BundleLanguage(locale, names))
-}
-
 // ResolveMdocDisplay resolves everything an mdoc batch's display metadata says,
 // for one locale, in one pass. CredentialName is "" when the batch carries no
 // resolvable credential name, so callers can tell "no live name" from a real
@@ -134,7 +121,6 @@ func ResolveMdocDisplay(batch *models.MdocBatch, locale string) ResolvedBatchDis
 		ClaimOrder:  map[string]int{},
 	}
 	d.IssuerName = clientmodels.Resolve(d.IssuerNames, locale)
-	d.DisplayIsFallback = MdocDisplayIsFallback(batch, locale)
 
 	if cm := MdocCredentialMetadata(batch); cm != nil {
 		d.CredentialName = clientmodels.Resolve(MdocCredentialNamesByLanguage(cm.Display), locale)
@@ -253,9 +239,8 @@ var mdocAgeOverElement = regexp.MustCompile(`^age_over_([0-9]{1,2})$`)
 //
 // English only, deliberately. This stands in for metadata the issuer did not
 // publish; it is not a translation table, and the wallet's localized labels
-// still belong app-side, keyed by docType and element — which is what
-// display_is_fallback exists to signal. Issuer text always wins: every caller
-// consults this only once the published metadata has been ruled out.
+// still belong app-side, keyed by docType and element. Issuer text always wins:
+// every caller consults this only once the published metadata has been ruled out.
 func DerivedMdocClaimName(elementIdentifier string) (string, bool) {
 	m := mdocAgeOverElement.FindStringSubmatch(elementIdentifier)
 	if m == nil {
@@ -301,7 +286,7 @@ func addDerivedMdocClaimNames(d *ResolvedBatchDisplay, namespaces map[string]map
 				// Deliberately narrow: only elements nothing else names. A claim
 				// the issuer declared but left untranslated for this locale keeps
 				// its published (possibly empty) name, so the app's own label
-				// table still governs those — see display_is_fallback.
+				// table still governs those.
 				name = element
 			}
 			d.ClaimNames[key] = name

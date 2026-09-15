@@ -80,11 +80,10 @@ func (s *mdocCredentialService) List() ([]*clientmodels.Credential, error) {
 		validUntil := batch.ValidUntil.Unix()
 
 		result = append(result, &clientmodels.Credential{
-			CredentialId:      batch.DocType,
-			Hash:              batch.Hash,
-			Image:             credentialImage,
-			Name:              credentialName,
-			DisplayIsFallback: display.DisplayIsFallback,
+			CredentialId: batch.DocType,
+			Hash:         batch.Hash,
+			Image:        credentialImage,
+			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
 				Id:       batch.CredentialIssuer,
 				Name:     display.IssuerName,

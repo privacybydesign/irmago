@@ -119,11 +119,10 @@ func (s *sdJwtVcCredentialService) List() ([]*clientmodels.Credential, error) {
 		}
 
 		result = append(result, &clientmodels.Credential{
-			CredentialId:      batch.VerifiableCredentialType,
-			Hash:              batch.Hash,
-			Image:             credentialImage,
-			Name:              credentialName,
-			DisplayIsFallback: display.DisplayIsFallback,
+			CredentialId: batch.VerifiableCredentialType,
+			Hash:         batch.Hash,
+			Image:        credentialImage,
+			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
 				Id:    batch.CredentialIssuerIdentifier,
 				Name:  display.IssuerName,

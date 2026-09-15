@@ -169,7 +169,6 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Name:                        credentialDisplayName(batch, locale),
 			Issuer:                      h.issuerTrustedParty(batch, locale),
 			Format:                      clientmodels.Format_SdJwtVc,
-			DisplayIsFallback:           services.CredentialDisplayIsFallback(batch, locale),
 			BatchInstanceCountRemaining: dcql.BatchInstanceCountRemaining(batch),
 			Attributes:                  attributes,
 			ExpiryDate:                  dcql.BatchExpiryUnix(batch),

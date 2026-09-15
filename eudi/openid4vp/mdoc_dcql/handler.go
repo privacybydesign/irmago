@@ -149,7 +149,6 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 			Name:                        credentialDisplayName(batch, locale),
 			Issuer:                      h.issuerTrustedParty(batch, locale),
 			Format:                      clientmodels.Format_MsoMdoc,
-			DisplayIsFallback:           services.MdocDisplayIsFallback(batch, locale),
 			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
 			Attributes:                  buildAttributes(batch, claims, locale),
 			ExpiryDate:                  batchExpiryUnix(batch),

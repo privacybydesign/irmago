@@ -201,7 +201,6 @@ func TestMdocCredentialService_StoreSnapshotsDisplayMetadataAndListRendersIt(t *
 	require.Equal(t, "AV Issuer", c.Issuer.Name)
 	require.Equal(t, testMdocIssuerURL, c.Issuer.Id)
 	require.True(t, c.Issuer.Verified)
-	require.False(t, c.DisplayIsFallback)
 	require.Equal(t, map[clientmodels.CredentialFormat]string{clientmodels.Format_MsoMdoc: batch[0].Hash}, c.CredentialInstanceIds)
 	require.Nil(t, c.BatchInstanceCountsRemaining[clientmodels.Format_MsoMdoc], "a batch of one is reusable")
 	require.NotNil(t, c.IssuanceDate)

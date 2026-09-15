@@ -45,9 +45,8 @@ func TestResolveMdocDisplay_ReadsSnapshots(t *testing.T) {
 	require.Equal(t, "https://issuer.example", d.IssuerId)
 	require.Equal(t, "Issuer NL", d.IssuerName)
 	require.Equal(t, clientmodels.TranslatedString{"en": "Issuer EN", "nl": "Issuer NL"}, d.IssuerNames)
-	// No Dutch credential display was published, so the name falls back and says so.
+	// No Dutch credential display was published, so the name falls back.
 	require.Equal(t, "Proof of Age", d.CredentialName)
-	require.True(t, d.DisplayIsFallback)
 	require.Equal(t, "Label 0", d.ClaimNames[key("eu.europa.ec.av.1", "age_over_18")])
 	require.Equal(t, 0, d.ClaimOrder[key("eu.europa.ec.av.1", "age_over_18")])
 }
@@ -97,7 +96,7 @@ func TestResolveMdocDisplay_NamesUndeclaredElements(t *testing.T) {
 }
 
 // No metadata at all is the strongest fallback case: the docType and element
-// identifiers are all the wallet has, and DisplayIsFallback must say so.
+// identifiers are all the wallet has.
 func TestResolveMdocDisplay_WithoutMetadata(t *testing.T) {
 	batch := &models.MdocBatch{
 		DocType:          "eu.europa.ec.av.1",
@@ -109,7 +108,6 @@ func TestResolveMdocDisplay_WithoutMetadata(t *testing.T) {
 
 	require.Empty(t, d.CredentialName, "no live name: the caller applies the docType fallback")
 	require.Empty(t, d.IssuerName)
-	require.True(t, d.DisplayIsFallback)
 	require.Equal(t, "Age Over 18", d.ClaimNames[key("eu.europa.ec.av.1", "age_over_18")])
 }
 
@@ -126,15 +124,6 @@ func TestResolveMdocDisplay_MalformedSnapshotsReadAsAbsent(t *testing.T) {
 	require.Nil(t, MdocCredentialMetadata(batch))
 	require.Empty(t, d.IssuerName)
 	require.Empty(t, d.CredentialName)
-	require.True(t, d.DisplayIsFallback)
-}
-
-func TestMdocDisplayIsFallback(t *testing.T) {
-	batch := mdocBatchWithClaims()
-	require.False(t, MdocDisplayIsFallback(batch, "en"))
-	require.False(t, MdocDisplayIsFallback(batch, "en-GB"), "a regional variant of a published language is not a fallback")
-	require.True(t, MdocDisplayIsFallback(batch, "nl"))
-	require.True(t, MdocDisplayIsFallback(&models.MdocBatch{}, "en"), "no metadata at all")
 }
 
 func TestMdocLogoURIsByLanguage(t *testing.T) {
