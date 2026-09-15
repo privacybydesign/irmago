@@ -20,6 +20,27 @@ const (
 	// DcApiProtocolMultiSigned is recognized so we can report it as unsupported
 	// instead of failing on a JWS that does not parse as compact serialization.
 	DcApiProtocolMultiSigned = "openid4vp-v1-multisigned"
+
+	// DcApiProtocolIsoMdoc is ISO/IEC 18013-5's own request and response carried
+	// over the same browser API, per ISO/IEC 18013-7 Annex C. The EUDI Age
+	// Verification Blueprint pairs zero-knowledge presentation with this protocol
+	// rather than with OpenID4VP (Annex A 8), so a wallet that supports A.8 will
+	// receive it.
+	//
+	// Recognized here but not handled, and it cannot be handled by adding a case
+	// below: the other three identifiers all select an OpenID4VP
+	// AuthorizationRequest, which is what this function returns. An org-iso-mdoc
+	// request is `{deviceRequest, encryptionInfo}` — an ISO 18013-5 DeviceRequest
+	// and an HPKE recipient key, with no client_id, no nonce, no DCQL query and
+	// no response_mode. It answers to a different session shape, not to a
+	// different branch of this one.
+	//
+	// The exchange itself lives in eudi/mdocpresent: mdocpresent.Session takes
+	// the request, authenticates the reader, asks the wallet and returns the
+	// sealed response. What is absent is a Discloser backed by real storage and
+	// consent, the routing from here into it, and an app that delivers such a
+	// request at all.
+	DcApiProtocolIsoMdoc = "org-iso-mdoc"
 )
 
 // DcApiRequest is a request the platform delivered through the Digital
@@ -105,6 +126,17 @@ func (client *Client) parseDcApiRequest(request *DcApiRequest) (*AuthorizationRe
 		return nil, nil, fmt.Errorf(
 			"multi-signed digital credentials api requests (%s) are not supported",
 			DcApiProtocolMultiSigned,
+		)
+
+	case DcApiProtocolIsoMdoc:
+		// Named rather than left to the default, because this one is not an
+		// unknown protocol: it is a known one this package is the wrong place for.
+		// Falling through would report it as unsupported alongside genuine
+		// typos, which is the difference between "we do not do that yet" and
+		// "we do not know what that is".
+		return nil, nil, fmt.Errorf(
+			"digital credentials api protocol %q carries ISO/IEC 18013-5 rather than OpenID4VP and is not routed by this client yet: the exchange is implemented in eudi/mdocpresent, but nothing here hands a request to it",
+			DcApiProtocolIsoMdoc,
 		)
 
 	default:

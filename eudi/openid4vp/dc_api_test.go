@@ -382,6 +382,18 @@ func TestParseDcApiRequest_RejectsMalformedEnvelope(t *testing.T) {
 			expectErr: "multi-signed digital credentials api requests",
 		},
 		{
+			// org-iso-mdoc is a known protocol carrying a different request
+			// shape entirely, so it must not be reported the way a typo is —
+			// the wallet does know what it is, it just cannot run the session.
+			name: "the ISO 18013-5 protocol, recognised but not driven",
+			request: &DcApiRequest{
+				Protocol: DcApiProtocolIsoMdoc,
+				Origin:   testOrigin,
+				Data:     json.RawMessage(`{"deviceRequest":"omd2ZXJzaW9uYzEuMA","encryptionInfo":"gmVkY2FwaQ"}`),
+			},
+			expectErr: "carries ISO/IEC 18013-5 rather than OpenID4VP",
+		},
+		{
 			name:      "a signed request without a request member",
 			request:   &DcApiRequest{Protocol: DcApiProtocolSigned, Origin: testOrigin, Data: json.RawMessage(`{}`)},
 			expectErr: "missing its request member",

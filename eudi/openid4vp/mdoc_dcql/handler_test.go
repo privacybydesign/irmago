@@ -555,6 +555,69 @@ func TestSelectiveDiscloseByPathsRevealsOnlyNamedElements(t *testing.T) {
 // Test environment
 // ---------------------------------------------------------------------------
 
+// A disclosure answering two credentials spends neither when the second fails.
+//
+// Spending inside the per-selection loop made "nothing further can fail" mean
+// nothing further can fail FOR THIS SELECTION, which is not the property Spend
+// needs: the response is assembled from every selection and returned only if all
+// of them succeed, so a failure at the second discards the first along with it.
+// The instance the first burned is gone, on a presentation no verifier received.
+func TestPrepareDisclosureSpendsNothingWhenALaterSelectionFails(t *testing.T) {
+	env := newTestEnvWithBatchSize(t, 2)
+
+	good := dcql.DisclosureSelection{
+		QueryId:              "av",
+		CredentialHash:       env.hash,
+		ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},
+		RequireHolderBinding: true,
+		ResponseUri:          testResponseU,
+	}
+	// Names a credential the wallet does not hold, so this selection fails after
+	// the one before it has already been built and encoded.
+	missing := good
+	missing.QueryId = "second"
+	missing.CredentialHash = "no-such-credential-hash"
+
+	_, err := env.handler.PrepareDisclosure(
+		[]dcql.DisclosureSelection{good, missing}, testNonce, testClientId)
+	require.Error(t, err, "a selection naming a credential that is not held must fail the request")
+
+	batch, err := env.store.GetBatchByHash(env.hash)
+	require.NoError(t, err)
+	require.Equal(t, uint(2), batch.RemainingCount,
+		"the disclosure was discarded, so it must not have cost the wallet an instance")
+}
+
+// The same failure gives the instances back rather than holding them.
+//
+// Run on a batch of one so the assertion is unambiguous: the failed disclosure
+// reserved the only instance there is, and a disclosure that followed could only
+// succeed if that reservation had been released. Spending is not involved — a
+// batch of one is deliberately never spent — so this isolates the release.
+func TestPrepareDisclosureReleasesWhatItDidNotSpend(t *testing.T) {
+	env := newTestEnvWithBatchSize(t, 1)
+
+	good := dcql.DisclosureSelection{
+		QueryId:              "av",
+		CredentialHash:       env.hash,
+		ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},
+		RequireHolderBinding: true,
+		ResponseUri:          testResponseU,
+	}
+	missing := good
+	missing.QueryId = "second"
+	missing.CredentialHash = "no-such-credential-hash"
+
+	_, err := env.handler.PrepareDisclosure(
+		[]dcql.DisclosureSelection{good, missing}, testNonce, testClientId)
+	require.Error(t, err)
+
+	prepared, err := env.handler.PrepareDisclosure(
+		[]dcql.DisclosureSelection{good}, testNonce, testClientId)
+	require.NoError(t, err, "the instance the failed disclosure held must be available again")
+	require.Len(t, prepared.QueryResponses, 1)
+}
+
 type testEnv struct {
 	handler  *MdocDcqlHandler
 	verifier *stdmdoc.Verifier

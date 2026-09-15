@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/scheme"
 )
 
 // DcqlHandler orchestrates the handling of a complete DCQL query by delegating
@@ -217,4 +218,75 @@ func CollectOwnedHashes(queryResults map[string]*CredentialQueryResult) map[stri
 		}
 	}
 	return hashes
+}
+
+// SelectionsFromChoices converts the user's disclosure choices into the
+// DisclosureSelections a handler can act on.
+//
+// The choices arrive in the order of the plan's pick-ones, one entry each, so a
+// choice's POSITION is what narrows down which DCQL query it answers, and the
+// selected credential and its paths pick the candidate within that choice. A
+// credential hash alone cannot do it: one credential can answer several queries,
+// and looking the query up by hash across the whole request routed every
+// presentation to whichever query was seen last — the other query went unanswered
+// and the verifier rejected the response as not satisfying its request.
+//
+// Transport-neutral on purpose. The same user choice means the same thing whether
+// the request arrived over OpenID4VP or ISO 18013-5 device retrieval, and the
+// mapping above is subtle enough that a second copy of it would be a liability.
+func SelectionsFromChoices(
+	choices []clientmodels.DisclosureDisconSelection,
+	queryIds []ChoiceQueryIds,
+) []DisclosureSelection {
+	var selections []DisclosureSelection
+	for i, discon := range choices {
+		// A choice with no matching entry leaves the query id empty, which
+		// PrepareDisclosure reports as an unknown query rather than guessing.
+		var choiceQueryIds ChoiceQueryIds
+		if i < len(queryIds) {
+			choiceQueryIds = queryIds[i]
+		}
+		for _, cred := range discon.Credentials {
+			claimPaths := make([][]any, 0, len(cred.AttributePaths))
+			for _, path := range cred.AttributePaths {
+				if len(path) > 0 {
+					claimPaths = append(claimPaths, path)
+				}
+			}
+			selections = append(selections, DisclosureSelection{
+				QueryId:        choiceQueryIds.QueryIdFor(cred.CredentialHash, cred.AttributePaths),
+				CredentialHash: cred.CredentialHash,
+				ClaimPaths:     claimPaths,
+			})
+		}
+	}
+	return selections
+}
+
+// CredentialQueryInfos converts a query's credential queries into the
+// scheme-level representation the relying-party authorization check works on.
+//
+// Both the credential type and the attribute names have to be read in a
+// format-aware way. mso_mdoc names its credential type with doctype_value rather
+// than vct_values, and its claim paths carry a namespace component that is not an
+// attribute — copying only vct_values and flattening every path component made the
+// validator reject every mdoc query outright: first for a missing vct, and had one
+// been supplied, for requesting the namespace as though it were an unregistered
+// attribute.
+//
+// Lives here rather than in eudi/openid4vp because authorization is not specific to
+// that protocol: an ISO 18013-5 proximity reader presents a certificate carrying the
+// same authorized attribute sets, and a request it is not entitled to make must be
+// refused on either transport. A second copy of this mapping would be a second place
+// for the mdoc-shaped queries to be got wrong.
+func CredentialQueryInfos(query DcqlQuery) []scheme.CredentialQueryInfo {
+	result := make([]scheme.CredentialQueryInfo, len(query.Credentials))
+	for i, cq := range query.Credentials {
+		result[i] = scheme.CredentialQueryInfo{
+			VctValues:      cq.VctValues(),
+			DocTypeValue:   cq.DocTypeValue(),
+			AttributeNames: cq.AuthorizationAttributeNames(),
+		}
+	}
+	return result
 }

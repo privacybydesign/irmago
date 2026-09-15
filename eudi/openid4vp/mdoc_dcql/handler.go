@@ -42,6 +42,7 @@ type DeviceKeyBinder interface {
 type MdocDcqlHandler struct {
 	storage       storage.Storage
 	store         db.MdocStore
+	instances     *services.MdocInstanceSelector
 	deviceKeys    DeviceKeyBinder
 	currentLocale *clientmodels.CurrentLocale
 }
@@ -60,6 +61,7 @@ func NewMdocDcqlHandler(
 	return &MdocDcqlHandler{
 		storage:       eudiStorage,
 		store:         db.NewMdocStore(eudiStorage.Db()),
+		instances:     services.NewMdocInstanceSelector(db.NewMdocStore(eudiStorage.Db())),
 		deviceKeys:    deviceKeys,
 		currentLocale: currentLocale,
 	}
@@ -180,21 +182,27 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
+	// Reserved now, spent after the loop. See the Spend loop at the bottom.
+	reservations := make([]*services.ReservedInstance, 0, len(selections))
+
+	// Reserving takes an instance out of circulation until the disclosure it was
+	// chosen for resolves, so every path out of here has to give back what it did
+	// not spend — including the ones that return an error halfway through the
+	// loop. Unconditional because Spend releases what it marks used and releasing
+	// twice does nothing, which makes one deferred sweep correct for both
+	// outcomes.
+	defer func() { h.instances.Release(reservations...) }()
+
 	for _, sel := range selections {
-		batch, err := h.store.GetBatchByHash(sel.CredentialHash)
+		// Which instance, and when it counts as spent, are shared with the ISO
+		// 18013-5 proximity path: see services.MdocInstanceSelector for why that is
+		// one implementation rather than two.
+		reserved, err := h.instances.Reserve(sel.CredentialHash)
 		if err != nil {
-			return nil, fmt.Errorf("batch not found for hash %s: %w", sel.CredentialHash, err)
+			return nil, err
 		}
-
-		instance, err := h.store.GetUnusedInstance(batch.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
-		}
-
-		var doc stdmdoc.MDoc
-		if err := stdmdoc.Unmarshal(instance.IssuerSigned, &doc); err != nil {
-			return nil, fmt.Errorf("decode stored mdoc: %w", err)
-		}
+		reservations = append(reservations, reserved)
+		batch, instance, doc := reserved.Batch, reserved.Instance, reserved.Document
 
 		disclosed, err := selectiveDiscloseByPaths(&doc, sel.ClaimPaths)
 		if err != nil {
@@ -256,21 +264,24 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 			Credentials: []string{base64.RawURLEncoding.EncodeToString(encoded)},
 		})
 
-		// Everything that can fail for this selection happens before the instance is
-		// burned: a failure after MarkInstanceUsed would consume a single-use instance
-		// on a disclosure that then returned an error and never reached the verifier,
-		// and the credential would silently lose a use. eudi_sdjwt_dcql has nothing
-		// fallible after its own MarkInstanceUsed for the same reason.
-		//
-		// Only mark the instance as used when the original batch had multiple instances.
-		// A batch of 1 keeps its single instance reusable, mirroring eudi_sdjwt_dcql.
-		if batch.BatchSize > 1 {
-			if err := h.store.MarkInstanceUsed(instance.ID); err != nil {
-				return nil, fmt.Errorf("failed to mark instance as used: %w", err)
-			}
-		}
-
 		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths, sel.Claims))
+	}
+
+	// Last, when nothing further can fail. Spend documents the ordering
+	// requirement and the batch-of-one exemption; what this loop adds is that
+	// "nothing further" spans the whole request rather than one selection of it.
+	//
+	// Spent inside the loop above, a disclosure answering two credentials whose
+	// second selection then failed to sign would have burned the first
+	// selection's single-use instance on a response this function discards and
+	// the verifier never receives — a use lost with nothing to show for it, which
+	// is the exact failure Spend exists to prevent. The ISO 18013-5 path reserves
+	// and commits in the same shape; see the disclosure path's Commit and the
+	// "Last, when nothing further can fail" reasoning in the session that drives it.
+	for _, reserved := range reservations {
+		if err := h.instances.Spend(reserved); err != nil {
+			return nil, err
+		}
 	}
 
 	return result, nil
@@ -413,53 +424,13 @@ func claimMatches(claim dcql.Claim, resolved map[string]map[string]any) bool {
 // plan the user consented to, and nothing downstream can tell that apart from
 // a verifier asking for less.
 func selectiveDiscloseByPaths(doc *stdmdoc.MDoc, claimPaths [][]any) (*stdmdoc.MDoc, error) {
-	// An empty selection is refused here rather than allowed to fall through the
-	// loop below, which would leave IssuerSigned.NameSpaces an empty map and
-	// return no error. ISO/IEC 18013-5 has
-	// `IssuerNameSpaces = {+ NameSpace => [+ IssuerSignedItemBytes]}` — one or
-	// more — so that document is not merely empty, it is non-conformant, and it
-	// would be signed and posted with nothing naming the defect.
-	//
-	// Not unreachable via the query check in PrepareDisclosure: this takes the
-	// paths from the user's selection, not from the query, and
-	// disclosureChoicesToOpenID4VPSelections drops zero-length paths before
-	// building it — which turns a selection of one empty path, an error below,
-	// into an empty slice that used to pass silently.
-	if len(claimPaths) == 0 {
-		return nil, fmt.Errorf(
-			"mso_mdoc selection names no claim paths: an mdoc presentation must disclose at least one element")
+	// Both halves are shared with the ISO 18013-5 proximity path, which discloses
+	// the same stored documents and must strip them identically.
+	reveal, err := services.RevealFromClaimPaths(claimPaths)
+	if err != nil {
+		return nil, err
 	}
-
-	revealByNamespace := make(map[string][]string)
-	seen := make(map[services.MdocElementRef]struct{}, len(claimPaths))
-	var namespaceOrder []string
-	for _, path := range claimPaths {
-		ref, ok := services.MdocElementRefFromPath(path)
-		if !ok {
-			return nil, fmt.Errorf(
-				"mso_mdoc claim path must start with [namespace, elementIdentifier], got %d component(s): %v",
-				len(path), path)
-		}
-		if _, dup := seen[ref]; dup {
-			continue
-		}
-		seen[ref] = struct{}{}
-		if _, known := revealByNamespace[ref.Namespace]; !known {
-			namespaceOrder = append(namespaceOrder, ref.Namespace)
-		}
-		revealByNamespace[ref.Namespace] = append(revealByNamespace[ref.Namespace], ref.Element)
-	}
-
-	merged := *doc
-	merged.IssuerSigned.NameSpaces = make(map[string][]stdmdoc.Tag24Item, len(namespaceOrder))
-	for _, namespace := range namespaceOrder {
-		disclosed, err := stdmdoc.SelectiveDisclose(doc, namespace, revealByNamespace[namespace])
-		if err != nil {
-			return nil, err
-		}
-		merged.IssuerSigned.NameSpaces[namespace] = disclosed.IssuerSigned.NameSpaces[namespace]
-	}
-	return &merged, nil
+	return services.SelectiveDiscloseNamespaces(doc, reveal)
 }
 
 // ---------------------------------------------------------------------------

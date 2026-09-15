@@ -3,11 +3,25 @@
 An implementation of ISO 18013-5 mDoc selective disclosure, built against the EU Age
 Verification Blueprint (Annex A, `eu.europa.ec.av.1`).
 
-This package (`mdoc`) is the core format library only: `Issuer`, `Holder`, `Verifier`,
-`MDoc`, `DeviceResponse`, `SelectiveDisclose`, and the CBOR/COSE crypto helpers. It has
-no HTTP/protocol code of its own — the same role `eudi/credentials/sdjwtvc` plays for
-SD-JWT VC. Everything OpenID4VP/OpenID4VCI-shaped now lives in the real, format-agnostic
-protocol packages that also serve SD-JWT:
+This package (`mdoc`) holds what ISO/IEC 18013-5 itself specifies: `Issuer`, `Holder`,
+`Verifier`, `MDoc`, `DeviceResponse`, `SelectiveDisclose`, the CBOR/COSE crypto helpers,
+and the request half of Clauses 8 and 9 — `DeviceRequest`, `SessionTranscript`, mdoc
+reader authentication, `deviceMac` and the Table 8 response status codes — together with
+the `org-iso-mdoc` envelope of the W3C Digital Credentials API.
+
+**Device retrieval is not here, and is parked rather than pending.** Device engagement,
+the session key schedule and AES-GCM channel, and the BLE message framing all belong to
+that; rows below marked *parked* are them. Nothing in this package waits on any of it.
+
+What is here is the part an exchange needs whatever carries it: a request to parse, a
+transcript to bind to, a reader to authenticate, and the `org-iso-mdoc` envelope and
+HPKE that the Digital Credentials API adds around them.
+
+It still has no HTTP/protocol code of its own, the same role `eudi/credentials/sdjwtvc`
+plays for SD-JWT VC. Note the distinction that keeps that true: device retrieval is part
+of 18013-5 and belongs here, whereas OpenID4VP is a different standards body's protocol
+that merely carries the same structures, so everything OpenID4VP/OpenID4VCI-shaped lives
+in the format-agnostic protocol packages that also serve SD-JWT:
 
 - **Presentation (OpenID4VP):** `eudi/openid4vp/mdoc_dcql` implements
   `dcql.DcqlCredentialQueryHandler` for `mso_mdoc`, mirroring `eudi_sdjwt_dcql` for
@@ -16,6 +30,14 @@ protocol packages that also serve SD-JWT:
   both handover variants: `newOpenID4VPSessionTranscript` for a URL-invoked session
   and `newDcApiSessionTranscript` for one delivered through the Digital Credentials
   API.
+- **Presentation (W3C Digital Credentials API, `org-iso-mdoc`):** `dcapi.go` holds the
+  envelope that path wraps 18013-5 in — `EncryptionInfo` on the way in, an HPKE-sealed
+  `DeviceResponse` on the way back. The payload is the ordinary `DeviceRequest` and
+  `DeviceResponse` above; only the envelope and the handover differ.
+- **Request translation:** `eudi/mdocpresent.DcqlQueryFromDeviceRequest` maps a
+  `DeviceRequest` onto the same DCQL pipeline the OpenID4VP path uses, so a request
+  arriving as 18013-5 is answered by the machinery OpenID4VP already had — candidate
+  selection, consent and single-use instance accounting shared rather than copied.
 - **Issuance (OpenID4VCI):** `eudi/openid4vci` is the real, format-agnostic issuance
   client (credential offer, token/nonce endpoints, proof-of-possession JWT via
   `eudi/credentials/proofs.JwtProofBuilder` — none of that is mdoc-specific).
@@ -65,7 +87,7 @@ keeps the tools that answer a question a test cannot — `mdoc-decode` and
 | `deviceSigned` / `deviceAuth` | ✓ | `SignDeviceAuth` + `VerifyWithDeviceAuth` — fresh COSE_Sign1 per session, checked against `deviceKeyInfo` |
 | Device-binding replay/clone rejection | ✓ | wrong signer and wrong-session deviceAuth both rejected |
 | `DeviceSigned` wrapper struct | ✓ | `AttachDeviceSigned` populates an `MDoc.DeviceSigned` field (deviceAuth + empty deviceNameSpaces), matching ISO 18013-5's actual document shape instead of passing deviceAuth bytes around separately |
-| `DeviceResponse` container | ✓ | `NewDeviceResponse`/`VerifyDeviceResponse` — real response container, holds one or more documents; reader authentication deliberately omitted per Annex A §A.6 |
+| `DeviceResponse` container | ✓ | `NewDeviceResponse`/`VerifyDeviceResponse` — real response container, holds one or more documents, plus `documentErrors` and per-document `errors` (Table 9) so a request naming an element the wallet does not hold is answered in part rather than refused whole. `VerifyDeviceResponse` covers the signature branch; `VerifyDeviceResponseAsReader` additionally accepts the MAC branch, which needs the reader ephemeral private key and so cannot be folded into the same signature |
 | Issuance-time verification (all namespaces) | ✓ | `VerifyAllDisclosedNamespaces` — verifies issuerAuth/MSO/digests across every namespace present, for the credential-endpoint response before selective disclosure has happened; `Verify` remains the single-namespace, presentation-time entry point |
 | Real OpenID4VP `SessionTranscript`/`Handover` | ✓ | now built in `eudi/openid4vp/mdoc_dcql` (production code), not in this package — `["OpenID4VPHandover", SHA-256(CBOR([clientId, nonce, jwkThumbprint, responseUri]))]`, the redirect variant of OpenID4VP Annex B.2.6.1, matching Multipaz's `OpenID4VP.kt`. `jwkThumbprint` is the SHA-256 JWK thumbprint of the verifier's response encryption key, and CBOR null when the response is unencrypted — which is the AV Blueprint's `response_mode=direct_post` case, so that profile produces the null form. A request delivered through the W3C Digital Credentials API signs the other variant, `["OpenID4VPDCAPIHandover", SHA-256(CBOR([origin, nonce, jwkThumbprint]))]` (Annex B.2.6.2), built alongside it in the same file. Which one applies follows the transport the request arrived on, never the shape of the values |
 | OpenID4VCI `pre-authorized_code` issuance | ✓ | wired for real through `eudi/openid4vci` (generic) + `eudi/services/credential_format_parser_mdoc.go` (mdoc-specific parsing/verification) — not modeled in this package |
@@ -79,8 +101,19 @@ keeps the tools that answer a question a test cannot — `mdoc-decode` and
 | MSO `version` check | ✓ | major version must be 1. A higher one is a structure with fields this code has no definition for, and decoding drops what it does not recognise |
 | Every disclosed namespace verified | ✓ | `Verify` checks digests for every namespace present, not only the one asked about — 9.3.1 step 3 is unqualified. Previously a document could carry an uncovered namespace and still return `Valid` |
 | Document signer revocation | ✓ | `NewVerifierFromTrustSource` takes anchors and CRLs from one source, and every certificate in the verified chain is checked. A signer is refused only when *every* valid chain to an anchor contains a revoked certificate, matching RFC 5280 path semantics. Until this existed the trust model synced CRLs that only the SD-JWT `x5c` path consulted. **Operational caveat:** staging's CRLs have not been republished since 2025-10-02, so on that environment this checks ~11-month-old data — see "Known gaps" |
-| Session encryption (BLE/NFC) | ✗ | transport layer not built; also explicitly out of scope for the AV Blueprint (proximity presentation is excluded — see Annex A §A.6) |
-| W3C Digital Credentials API path (`DeviceRequest`, HPKE `EncryptedResponse`) | ✗ | out of scope for this package by design — see "OpenID4VP only" below |
+| Device engagement (8.2.1.1, 8.2.2.3) | ✗ parked | `DeviceEngagement`, the `mdoc:` QR URI and BLE central client mode are device *retrieval*. That work is parked; nothing on the DC API path engages at all, since its transcript carries `null` in both leading slots 
+| Session establishment and encryption (9.1.1.4, 9.1.1.5) | ✗ parked | `SessionEstablishment`/`SessionData` and the ECKA-DH schedule to SKDevice/SKReader belong to device retrieval, which is parked. The DC API path encrypts with HPKE instead — see the W3C row 
+| `SessionTranscript` handovers (9.1.5.1) | ✓ | `QRHandover` (null) and `NFCHandover` alongside the two OpenID4VP variants. The two leading slots are `cbor.RawMessage` holding complete tag-24 encodings inline — as `[]byte` they were double-wrapped, which is invisible in-package because OpenID4VP leaves both slots empty. `NewDCAPISessionTranscript` is the fourth, for `org-iso-mdoc`: both leading slots null, `["dcapi", SHA-256(cbor([base64url(EncryptionInfo), origin]))]` in the third. It lives here rather than beside the OpenID4VP variants because it is ISO 18013-7, not OpenID4VP |
+| `DeviceRequest` / `ItemsRequest` (8.3.2.1.2.1) | ✓ | decoded, validated, and translated onto the wallet's existing DCQL pipeline by `eudi/mdocpresent.DcqlQueryFromDeviceRequest`. `DocRequest.ItemsRequest` preserves the exact bytes, because 9.1.4 signs them |
+| mdoc reader authentication (9.1.4) | ✓ | `Verifier.VerifyReaderAuth` — untagged COSE_Sign1, null payload, zero-length `external_aad`, x5chain walked against the wallet's *verifier* trust store (the same one that authenticates an OpenID4VP relying party). Table B.6's reader EKU is reported, not enforced: it is a `should`, and every RP certificate this wallet can talk to today carries `clientAuth` only |
+| 7.2.1 release policy | ✓ | `ReleasableWithoutReaderAuth` — an unauthenticated reader still gets an mDL's Table 5 mandatory elements, because "An mDL shall not require mdoc reader authentication as a precondition for the release of any of the mandatory data elements", and nothing from any other docType. Scoped to the element *and* the namespace, since 7.1 lets an issuing authority add its own |
+| `deviceMac` (9.1.3.5) | ✓ verified, never produced | Both halves matter and they are not symmetric. As the **mdoc**, this wallet never produces a MAC: 9.1.3.4 forbids one key producing both MACs and signatures over its lifetime, the OpenID4VP path already signs with that key, and `TestWalletNeverProducesDeviceMac` enforces it by parsing every non-test file. As the **reader**, it must accept one — "an mdoc reader shall support both approaches" — so `VerifyWithDeviceMac` and `VerifyDeviceResponseAsReader` verify the MAC branch, given the reader ephemeral private key the ECDH half needs |
+| Session orchestration | ✓ | `eudi/mdocpresent.Session` runs the whole `org-iso-mdoc` exchange: transcript, per-document reader authentication, the 7.2.1 carve-out, the wallet's answer, deviceAuth, and the sealed response — in that order, which is where the interesting mistakes live. The wallet itself sits behind a `Discloser` interface, so storage and consent stay out of it |
+| Wired to the wallet | ✗ | `Discloser` has no implementation against real storage and consent yet, and nothing routes a DC API request into `mdocpresent.Session`. `openid4vp.DcApiProtocolIsoMdoc` names the protocol and says so |
+| Wired to the wallet | ✗ | No transport reaches the wallet's storage and consent yet. The machinery a session would reach is in place and shared with OpenID4VP — `dcql.DcqlHandler`, `services.MdocInstanceSelector` — but nothing calls it from an ISO 18013-5 request |
+| NFC engagement and retrieval, Wi-Fi Aware, server retrieval | ✗ | out of scope by decision, not omission. 6.3.2.3/6.3.2.5 make engagement and retrieval separate "at least one" choices, and readers must support everything — so QR + BLE is a conformant wallet and the wallet's pick decides the flow |
+
+| W3C Digital Credentials API (`org-iso-mdoc`) | ✓ crypto, ✗ session | `dcapi.go` implements the envelope — `EncryptionInfo` (nonce + COSE recipient key) and the HPKE-sealed `EncryptedResponse`, behind a shared `["dcapi", …]` decoder, pinned byte-for-byte against a captured Age Verification exchange — plus `SealDCAPIResponse`/`OpenDCAPIResponse` over `DHKEM_P256_HKDF_SHA256 / HKDF_SHA256 / AES_128_GCM` with `info` the encoded session transcript and empty `aad`, on stdlib `crypto/hpke`. `NewDCAPISessionTranscript` is the handover they bind to. What is absent is the session driving them and an `origin` from the app — see the section below 
 
 ---
 
@@ -125,8 +158,8 @@ monolithic test file:
 | `wireformat_test.go` | `TestDeviceAuthPayloadIsDetached` | Transmitted `deviceAuth` has `payload = null` (detached), matching the spec's `deviceSignature` example |
 | `holder_signer_test.go` | `TestOpaqueSignerProducesVerifiableDeviceAuth` | A device key reached only through `crypto.Signer` — no method returns the private half, as with a StrongBox / Secure Enclave key handle — produces a `deviceAuth` the verifier accepts, and is called exactly once with a 32-byte digest and nil `SignerOpts`, pinning the contract a hardware wrapper must honour |
 | `holder_signer_test.go` | `TestNewHolderFromSignerCurves` | P-256, P-384 and P-521 are accepted and each paired with the algorithm 9.1.3.6 fixes for it; a curve outside that table (P-224) is refused at construction, where the error can name the curve, rather than at signing time where it yields a wrong-width signature the verifier rejects for no stated reason |
-| `issuer_test.go` | `TestClaimOrderingIsRandomized` | Issues the same claims 30 times, confirms `digestID` assignment varies across issuances (not a fixed/predictable order) while every claim stays reachable via its digestID |
-| `issuer_test.go` | `TestIssueAcceptsArbitraryDocTypeAndClaims` | `Issue()` signs any docType/namespace/claims combination as given (age verification, PID, mDL, email) — pins the doc-type-agnostic contract described under "Data model" |
+| `issuer_testonly_test.go` | `TestClaimOrderingIsRandomized` | Issues the same claims 30 times, confirms `digestID` assignment varies across issuances (not a fixed/predictable order) while every claim stays reachable via its digestID |
+| `issuer_testonly_test.go` | `TestIssueAcceptsArbitraryDocTypeAndClaims` | `Issue()` signs any docType/namespace/claims combination as given (age verification, PID, mDL, email) — pins the doc-type-agnostic contract described under "Data model" |
 | `verifier_test.go` | `TestUntrustedRootIsRejected` | Attacker's own valid IACA→DS chain, signed correctly, still rejected — root isn't in the verifier's trust pool |
 | `verifier_test.go` | `TestTamperedDigestIsRejected` | Flipped claim value fails the digest check |
 | `verifier_test.go` | `TestDeviceAuthWrongSignerIsRejected` | Cloned mdoc — deviceAuth signed by a different device's key — rejected |
@@ -175,6 +208,25 @@ monolithic test file:
 | `wireformat_test.go` | `TestWireIssuerAuthIsBareCoseSign1Array`, `TestWireIssuerSignedItemsAreTag24`, `TestWireDeviceSignedShape`, `TestWireRoundTripsThroughGenericCBOR` (with `TestVerifierAcceptsTaggedCoseSign1` in `verifier_test.go`) | Decodes a real `DeviceResponse` **generically** — into `any`, never this package's structs, since a round trip through the same types cannot detect a wrong shape — and asserts the ISO 18013-5 encoding at each position, plus that the frozen item bytes survive the round trip and the document still verifies |
 | `verifier_test.go` | `TestTamperedEnvelopeDocTypeIsRejectedByVerify`, `…AtIssuanceVerification`, `TestVerifierRequestedDocTypeMustMatchSignedMSO`, `TestSignedDocTypeIsReportedNotTheEnvelopeValue` | The unsigned envelope `docType` must equal the signed `MSO.docType`, at every entry point that reports or consumes one |
 
+### The request half, and the DC API envelope
+
+The clause-per-file layout holds here too. These cover the 18013-5 request structures
+and the `org-iso-mdoc` envelope. The proximity transport that also consumes them —
+device engagement, the session channel, BLE framing and the end-to-end transaction —
+belongs to the parked device-retrieval work and is not tested here.
+
+| File | Tests | What it checks |
+|---|---|---|
+| `sessiontranscript_test.go` | 8 | `QRHandover`/`NFCHandover`, and that the tag-24 slots go on the wire inline rather than double-wrapped. Pinned against ISO Annex D.5.1's published `SessionTranscriptBytes` |
+| `devicerequest_test.go` | 7 | `DeviceRequest`/`ItemsRequest` decode and validation, including that `ItemsRequestBytes` survives as received — re-encoding it breaks a valid readerAuth |
+| `readerauth_test.go` | 27 | 9.1.4 in full: wire shape, all four permitted algorithms (including an Ed25519 reader under an ECDSA CA), session binding, request binding, `external_aad` as a zero-length bstr rather than absent, x5chain handling, expiry, revocation, and the Table B.6 EKU being reported rather than enforced |
+| `devicemac_test.go` | 9 | 9.1.3.5 end to end — EMacKey derived to the clause's HKDF, and both sides agreeing. Built and tested although this wallet does not use the branch |
+| `devicemac_policy_test.go` | 1 | The 9.1.3.4 decision, enforced structurally: parses every non-test file in the module and fails if anything produces a `deviceMac`. Parses rather than greps, so the prose naming those functions cannot trip it |
+| `responsestatus_test.go` | 8 | Tables 8 and 9, and 8.3.2.1.2.3's rule that a non-zero status returns no documents. Also that Table 8's codes are not Table 20's, which collide numerically at 10 |
+| `dcapi_test.go` | 9 | The `org-iso-mdoc` envelope against a captured Age Verification exchange: `EncryptionInfo` decoded to its nonce and recipient key, rebuilt from an `*ecdsa.PublicKey` to the same 125 bytes, the sealed response's framing and its four-byte length form, and both decoders refusing a foreign protocol's message |
+| `dcapi_transcript_test.go` | 6 | The `org-iso-mdoc` handover: all three slots, the two null ones checked on the wire rather than in the struct, the digest recomputed from the clause inputs, every input shown to move it, and the four handover variants shown never to collide. Also that the digest covers the base64url text *as received* — padded and unpadded spellings of identical bytes are two different transcripts, which is what makes rebuilding the structure unsafe |
+| `dcapi_hpke_test.go` | 7 | Seal/open round trip through the envelope, and the bindings that make it safe: a response sealed for one origin, one EncryptionInfo or one recipient key opens under none of the others, a QR transcript opens nothing, and neither a flipped ciphertext byte nor a substituted encapsulated key survives. Also that `info` is the bare transcript rather than 9.1.5.1's tag-24 `SessionTranscriptBytes` — both are plausible, only one interoperates, and the wrong one fails as an AEAD error naming nothing |
+
 `testhelpers_test.go` holds `buildHappyPathMDoc`, `keysOf`, and `unwrapTag24Generic` —
 shared fixtures/helpers used across the files above, rather than duplicated per-file.
 
@@ -189,6 +241,7 @@ Tests for the protocol layers live with the code they cover, not here:
 | Location | Covers |
 |---|---|
 | `eudi/openid4vp/mdoc_dcql/sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptShape`, `…BindsAllInputs`, `…IntegratesWithDeviceAuth`, the same pair for `TestDcApiSessionTranscript…`, and `TestSessionTranscriptVariantsNeverCollide` — the byte-level handover formula, and that a `deviceAuth` signed over it verifies. `…CarriesEncryptionKeyThumbprint` covers the other axis: the third handover slot, which carries the response encryption key's thumbprint when the response is encrypted and CBOR null when it is not |
+| `eudi/mdocpresent/request_test.go` | `DcqlQueryFromDeviceRequest` — the 18013-5 request to DCQL translation |
 | `eudi/services/credential_format_parser_mdoc_test.go` | `TestMdocCredentialFormatParser_ParseAndVerify` (+ `_UntrustedRootRejected`, `_InvalidBase64`) and `_CheckBatchUniqueness` — the issuance-side parse/verify path |
 | `eudi/services/mdoc_claim_values_test.go` | `TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames`, `…_NoMetadataStillEmitsValues` — permission-dialog attribute building |
 | `eudi/openid4vci/metadata_validators_test.go` | `mso_mdoc` accepted as a supported credential format, and `credential_signing_alg_values_supported` validated as COSE algorithm identifiers — ES256 (`-7`) required, an identifier ISO 18013-5 permits but this wallet cannot verify distinguished from one it does not permit at all |
@@ -501,8 +554,10 @@ mdocs itself, the check belongs in that issuance path, not in `Issue()`.
 
 ### Open ISO/IEC 18013-5 conformance items
 
-Four, as of the 2 Sept 2026 conformance review. Three are blocked on a certificate
-change at the Yivi CA rather than on code here.
+Four, from the 2 Sept 2026 conformance review. Three are blocked on a certificate
+change at the Yivi CA rather than on code here. (A fifth was found on 11 Sept 2026 by
+running proximity against the real wallet, and closed the same day — see "Partial
+satisfaction" below.)
 
 **9.3.1 step 5, first bullet — `signed` is not checked against the DS certificate's
 validity window.** The other two bullets (`validFrom`, `validUntil`) are checked.
@@ -546,7 +601,49 @@ suite" for why each, and what admitting them would cost.
 `digitalSignature` the only permitted bit; the mdoc path checks the *extended* key
 usage and not this one, while `eudi/jwt`'s `VerifyCertificate` does the opposite.
 
+### Partial satisfaction — found and closed 11 Sept 2026 *(fix lives on the proximity branch)*
+
+**Read this before wiring the DC API path.** The defect is in how a `DeviceRequest`
+meets DCQL, not in anything proximity-specific, so `org-iso-mdoc` will reproduce it
+exactly unless it reuses the same narrowing. The fix was written for the parked device-retrieval path and has not been carried across; what is
+described below is therefore a known hazard here rather than a closed one.
+
+
+8.3.2.1.2.1: "The mdoc shall ignore all unknown data elements in a device
+retrieval mdoc request when processing the request", with 8.3.2.1.2.2's `errors`
+member to report them. Together: answer with what you have, and say what you could
+not.
+
+**Half of it was implemented and the other half was not, which is the more
+dangerous shape** — once a document was being returned, everything requested and
+missing from it was correctly reported with Table 9's code. But a reader asking for
+one element the wallet did not hold got **no document at all**: DCQL is
+all-or-nothing without `claim_sets`, so a credential that cannot satisfy every
+claim of a query is not a candidate, and candidate selection runs long before
+anything reaches response building.
+
+**Closed by a narrowing retry** in the disclosure path (`WalletDiscloser.narrow`, in the parked device-retrieval work — the fix has not been carried across yet). When a
+credential query finds nothing, each of its claims is probed on its own — through
+the same `FindCandidates` path, so "held" means what the handler means by it — and
+the unsatisfiable ones are dropped before the user is asked. Dropped elements still
+reach the reader as Table 9 errors, because the response's `errors` are computed
+against the **original** ItemsRequest rather than the narrowed query. It never
+widens, leaves a query carrying `claim_sets` alone (those are the verifier's own
+alternatives), gives up rather than guessing when nothing is individually
+satisfiable, and costs one query per claim only on the path that had already
+failed.
+
+**How it was missed for three days:** the Tier 0 test that appeared to cover it
+uses a fake wallet which answers straight out of the permitted items and never runs
+a query. It was testing the fake. The real-wallet integration tests that exist
+because of this, and the `TestIntegrationPartialSatisfaction` that pins the fix
+(with the mutation check that disabling the retry makes it fail), are on
+the parked device-retrieval work alongside `WalletDiscloser` itself. The lesson transfers whether or
+not the code does: a transport test that stubs the wallet cannot see this class of
+bug at all.
+
 Two further items are held rather than open, both one-line changes deliberately not
+
 made while the staging cluster is under investigation for an unrelated certificate
 defect: `indefLengthMode` in `crypto.go` (8.1's definite-length rule, enforced on
 receipt) and the `keyUsage` check above. A new decode or certificate failure
@@ -554,17 +651,27 @@ appearing on staging right now would be attributed to the wrong cause.
 
 ### Revocation data can be stale without saying so
 
-The verifier checks the chain against whatever CRLs the trust model holds, and has
-no opinion about how old they are. On staging, measured 2 Sept 2026, the
-Attestation Providers CA CRL had `nextUpdate` 2025-10-02 and the Requestors Root CA
-CRL 2025-11-06 — both roughly eleven months expired, and the current DS certificate
-postdates its own CRL by eleven months, so it could not appear on it even if it had
-been revoked. `isCrlUpToDate` (`eudi/trustmodel.go`) correctly reports both as
-out of date, which makes every sync re-download them; nothing then refuses to *use*
-the stale copy. "We check revocation" is therefore a weaker statement on that
-environment than it sounds, and the remedy is republication at the CA, not code
-here. Worth deciding separately whether an expired CRL should be a refusal, a
-warning, or the current silence.
+The verifier checks the chain against whatever CRLs the trust model holds. On staging,
+measured 2 Sept 2026, the Attestation Providers CA CRL had `nextUpdate` 2025-10-02 and
+the Requestors Root CA CRL 2025-11-06 — both roughly eleven months expired, and the
+current DS certificate postdates its own CRL by eleven months, so it could not appear on
+it even if it had been revoked. The remedy for that is republication at the CA, not code
+here.
+
+**Fixed 11 Sept 2026:** a refresh that failed used to *delete* the cached CRL, so a
+long-offline wallet silently lost revocation checking altogether — the worst shape this
+could take, since it fails open precisely when it is least able to reach the CA. A stale
+list is strictly better than none: it still carries every revocation published as of its
+last update, so keeping it can only refuse more certificates, never fewer. The cached
+copy is now kept, and removed only when it is unusable as revocation information at all
+(unreadable, or not signed by a known authority).
+
+**Still open, and it is a policy question rather than a bug:** nothing yet *refuses* to
+use a stale list. `TrustModel.RevocationInformationFor` now reports how stale the
+information is for a given certificate, which is what a caller needs to apply a grace
+window and then hard-fail — the right shape for an offline wallet. Nobody has decided
+the threshold. Until someone does, "we check revocation" remains a weaker statement on
+that environment than it sounds.
 
 ### Timestamp coarsening leaves microseconds intact upstream
 
@@ -575,36 +682,75 @@ for the `notBefore` comparison above, but it is a per-credential correlator in
 exactly the field the coarsening exists to neutralise. This package's own `Issue`
 truncates to a whole day and is unaffected; the finding is upstream.
 
-### OpenID4VP only — ISO 18013-5's own DC API wire format is out of scope by design
+### `org-iso-mdoc` — the envelope is in, the crypto is not yet
 
 The AV Blueprint's Annex A §A.6 states the W3C Digital Credentials API is the
-*default* presentation method, with OpenID4VP only as a *fallback*. Both transports are
-supported, but only as OpenID4VP carries them: `eudi/openid4vp` handles a DC API request
-delivered by the platform (`Client.NewDcApiSession`), and `mdoc_dcql` signs that
-transport's session transcript. What stays out of scope is ISO 18013-5's own wire format
-for that path, which the blueprint pairs with the DC API:
+*default* presentation method, with OpenID4VP only as a *fallback*, and §A.8 pairs the
+zero-knowledge path with ISO 18013-5's own wire format over that API rather than with
+OpenID4VP. Both framings point at the same protocol identifier: `org-iso-mdoc`.
 
-- ISO 18013-5's native `DeviceRequest` CBOR object (§8.3.2.1.2.1) — the blueprint
-  confirms this is used *exclusively* by the DC API path; OpenID4VP requests
-  attributes via a DCQL query instead (JSON), which `eudi/openid4vp/dcql` implements
-  generically for every format.
-- The DC API's `EncryptedResponse = ["dcapi", {enc, cipherText}]` wrapper, where
-  `cipherText` is `DeviceResponse` encrypted with HPKE (RFC 9180). This package still
-  has no HPKE layer: `response_mode=direct_post` and `dc_api` send `DeviceResponse`
-  unencrypted (as base64url CBOR), and the encrypted modes (`direct_post.jwt`,
-  `dc_api.jwt`) are JWE at the OpenID4VP layer, built in `eudi/openid4vp`, not HPKE
-  around the mdoc.
-  What this package's callers do supply is the response encryption key's thumbprint, so
-  the session transcript commits to it — see the handover row above.
+Two transports therefore reach this package over the DC API, and they should not be
+confused:
 
-### No session encryption / transport layer
+- **OpenID4VP over the DC API** — `eudi/openid4vp` handles a request delivered by the
+  platform (`Client.NewDcApiSession`) and `mdoc_dcql` signs that transport's session
+  transcript. Attributes are requested as a DCQL query (JSON), and responses travel as
+  base64url CBOR, encrypted if at all as JWE at the OpenID4VP layer. This is complete.
+- **`org-iso-mdoc`** — ISO 18013-5's own request and response, in an envelope of its
+  own. The cryptography is complete: `dcapi.go` holds the envelope,
+  `SealDCAPIResponse`/`OpenDCAPIResponse` the HPKE either side of it
+  (`DHKEM_P256_HKDF_SHA256 / HKDF_SHA256 / AES_128_GCM`, `info` the encoded session
+  transcript, empty `aad`, on Go 1.27's stdlib `crypto/hpke` — no new dependency, no
+  cgo), and `NewDCAPISessionTranscript` the handover both bind to. What is missing is
+  not cryptography:
+  - **a wallet behind it.** `eudi/mdocpresent.Session` runs the exchange, but its
+    `Discloser` — find candidates, ask the user, spend a single-use instance — has no
+    implementation against real storage yet. The parts one would compose already exist
+    and are shared with OpenID4VP: `dcql.DcqlHandler`, `services.MdocInstanceSelector`,
+    `services.RevealFromClaimPaths`.
+  - **routing.** `openid4vp.DcApiProtocolIsoMdoc` names the protocol and refuses it
+    deliberately rather than as an unknown one, because it cannot be handled by adding
+    a case there: the other three identifiers select an OpenID4VP
+    `AuthorizationRequest`, and this one carries a `DeviceRequest` with no `client_id`,
+    no `nonce`, no DCQL and no `response_mode`. It answers to `mdocpresent.Session`
+    instead, and nothing hands it over yet.
+  - **an `origin`.** The handover hashes one, but it reaches the wallet from the
+    browser or OS and from no field of the request — and irmamobile has no DC API
+    wiring at all today. An integration gap rather than a Go one.
 
-Real ISO 18013-5 *proximity* presentations happen over BLE or NFC, with session keys
-derived via ECDH from a QR-code-carried verifier ephemeral key, then AES-GCM/AES-CCM
-encrypting the actual `DeviceRequest`/`DeviceResponse` exchange. None of that transport
-layer is modeled here — and per the AV Blueprint's own Annex A §A.6, it doesn't need to
-be: proximity presentation is explicitly out of scope for this profile. The real client
-only ever presents over HTTPS via OpenID4VP (`eudi/openid4vp`).
+  The pieces a session would compose already exist and are individually tested:
+  `DecodeDeviceRequest`, `DCAPIEncryptionInfo`, `NewDCAPISessionTranscript`,
+  `SealDCAPIResponse`, and `mdocpresent.DcqlQueryFromDeviceRequest` to reach the wallet's
+  existing candidate selection and consent.
+
+Note what does *not* change between them: the credential format, `deviceAuth`,
+selective disclosure, the trust model and every cryptographic primitive are identical.
+`DeviceRequest` is shared, and `eudi/mdocpresent.DcqlQueryFromDeviceRequest` translates it
+onto the same DCQL pipeline rather than standing up a parallel one.
+
+### Transports: what this package models, and what it does not
+
+**This package models two transports' worth of 18013-5 structures, but no transport
+of its own.** What lives here is what an ISO 18013-5 exchange needs whatever carries
+it: a `DeviceRequest` to parse, a `SessionTranscript` to bind to, reader
+authentication, and the `org-iso-mdoc` envelope the W3C Digital Credentials API wraps
+the exchange in.
+
+Device retrieval — ECKA-DH session keys from a QR-carried ephemeral key, the AES-GCM
+channel around the exchange, BLE framing and the orchestration over them — is **parked**.
+The rows marked *parked* above are that work. It is not scheduled, and nothing here
+should be read as waiting for it.
+
+That is why `eudi/mdocpresent` is named for presentation rather than for a transport:
+the request-to-response middle is a property of 18013-5, and only the edges (how bytes
+arrive, how the response is protected, which handover fills the transcript's third
+slot) belong to any particular carrier.
+
+The AV Blueprint does still exclude proximity from *its* profile (Annex A §A.6), and the
+real client still presents over HTTPS via OpenID4VP today. That is a statement about the
+age-verification profile and about what is wired into the app, not about this package:
+the scope here is general `mso_mdoc` under ISO 18013-5, of which the AV Blueprint is one
+profile.
 
 ### Verifier sees total digest count
 

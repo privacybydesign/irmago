@@ -21,6 +21,17 @@ type MDoc struct {
 	DocType      string        `cbor:"docType"`
 	IssuerSigned IssuerSigned  `cbor:"issuerSigned"`
 	DeviceSigned *DeviceSigned `cbor:"deviceSigned,omitempty"`
+
+	// Errors is 8.3.2.1.2.2's optional per-document error map: the data elements
+	// the reader asked for that this document does not carry. Absent when
+	// everything requested was returned, which is why it is omitempty — an empty
+	// map is not the same as no errors and the CDDL requires at least one entry
+	// when the member is present.
+	//
+	// This is how a response answers a request that named an element the wallet
+	// does not hold, instead of failing the whole exchange: see
+	// ErrorCodeDataNotReturned and MDoc.ErrorsForRequest.
+	Errors Errors `cbor:"errors,omitempty"`
 }
 
 // IssuerSignedItem is the 4-field envelope for each claim
@@ -168,23 +179,47 @@ type DeviceAuthentication struct {
 	DeviceNameSpaces  cbor.RawMessage // Tag24(empty map) for AV — no holder-added claims
 }
 
-// SessionTranscript binds a presentation to a specific verifier session
-// Contains the verifier's engagement bytes + ephemeral key + handover info
-// Also a CBOR array — toarray tag required
+// SessionTranscript binds a presentation to a specific verifier session, and is
+// the structure of ISO/IEC 18013-5 9.1.5.1:
 //
-// Handover is `any` because its shape depends on the transport: a bare
-// string in most tests (via testhelpers_test.go's buildHappyPathMDoc
-// stub, where no real session exists), or a real structured value for an
-// actual OpenID4VP presentation — built by newOpenID4VPSessionTranscript
-// in eudi/openid4vp/mdoc_dcql as
-// ["OpenID4VPHandover", SHA-256(CBOR([clientId, nonce, null, responseUri]))].
-// That construction lives there, not here, because this package holds no
-// OpenID4VP knowledge of its own — hence the open type.
+//	SessionTranscript = [DeviceEngagementBytes, EReaderKeyBytes, Handover]
+//
+// A CBOR array — toarray tag required.
+//
+// DeviceEngagementBytes and EReaderKeyBytes are cbor.RawMessage rather than
+// []byte for the reason given on IssuerSigned.IssuerAuth: 9.1.5.1 defines both
+// as `#6.24(bstr .cbor ...)`, so each field holds a *complete tag-24 encoding*
+// and must go on the wire inline. A []byte field would encode those same bytes
+// as the contents of a further byte string, wrapping the tag-24 item in a second
+// bstr and producing a transcript no conformant party derives the same keys from.
+// This was invisible while the only handovers were OpenID4VP's, which leave both
+// slots empty; it becomes load-bearing the moment proximity fills them.
+//
+// An empty cbor.RawMessage encodes as CBOR null, so leaving both fields unset
+// still yields the `[null, null, Handover]` shape the OpenID4VP and DC API
+// handovers require — see newOpenID4VPSessionTranscript.
+//
+// Handover is `any` because its shape depends on the engagement method, and the
+// set is open beyond what 18013-5 itself defines:
+//
+//   - QRHandover — CBOR null (9.1.5.1). NewQRSessionTranscript.
+//   - NFCHandover — [bstr, bstr / null] (9.1.5.1). NewNFCSessionTranscript.
+//   - OpenID4VP, including when delivered over the DC API —
+//     ["…Handover", SHA-256(CBOR(HandoverInfo))], built by
+//     eudi/openid4vp/mdoc_dcql. That construction lives there, not here, because
+//     this package holds no OpenID4VP knowledge of its own.
+//   - the DC API's own org-iso-mdoc protocol — ["dcapi", SHA-256(...)].
+//     NewDCAPISessionTranscript. That one is ISO 18013-7 rather than OpenID4VP,
+//     so by the same reasoning it belongs here. Note it is a different handover
+//     from the OpenID4VP DC API variant above, despite sharing a transport.
+//   - a bare string in older tests, where no real session exists.
+//
+// hence the open type.
 type SessionTranscript struct {
-	_                     struct{} `cbor:",toarray"`
-	DeviceEngagementBytes []byte   // from QR code / NFC tap
-	EReaderKeyBytes       []byte   // verifier's ephemeral public key
-	Handover              any      // session-specific binding data
+	_                     struct{}        `cbor:",toarray"`
+	DeviceEngagementBytes cbor.RawMessage // Tag24(DeviceEngagement) from the QR code / NFC tap
+	EReaderKeyBytes       cbor.RawMessage // Tag24(EReaderKey), the reader's ephemeral public key
+	Handover              any             // engagement-specific binding data
 }
 
 // SelectiveDisclose filters the credential to only include the requested attributes
