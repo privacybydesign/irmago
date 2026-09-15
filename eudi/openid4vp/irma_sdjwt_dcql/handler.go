@@ -131,7 +131,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 }
 
 // ============================================================================
-// Claim matching (ported from eudi/openid4vp/client/dcql.go)
+// Claim matching
 // ============================================================================
 
 type dcqlClaimMatch struct {
@@ -302,7 +302,7 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 	metadata irmaclient.SdJwtVcBatchMetadata,
 	locale string,
 ) []clientmodels.Attribute {
-	var attributes []clientmodels.Attribute
+	attributes := []clientmodels.Attribute{}
 
 	// Build a lookup of attribute types by ID for efficient access
 	attrTypesByID := make(map[string]*irma.AttributeType, len(credType.AttributeTypes))

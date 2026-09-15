@@ -22,6 +22,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -64,19 +65,50 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
 
-	credStore := db.NewCredentialStore(s.Db())
-	credentialService := services.NewCredentialService(
-		credStore,
-		db.NewHolderBindingKeyStore(s.Db()),
-		s.FileSystem(),
-		services.NewRevocationService(nil, credStore),
-		nil,
-	)
-	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService, services.NewHolderBindingKeyService(conf.Storage.Db()), nil)
+	credStore := db.NewSdJwtVcStore(s.Db())
+	formats := services.NewCredentialFormats(conf, holderVerifier, s.Db(), s.FileSystem(), services.NewRevocationService(nil, credStore), nil)
+	client, err := NewClient(&http.Client{}, conf, holderVerifier, formats, nil)
 	require.NoError(t, err)
 	client.SetAllowInsecureHttp(true)
 
 	return s, client
+}
+
+// TestNewClientRegistersEveryCredentialFormat pins that the client built the
+// way the wallet builds it carries a complete registry entry for every format
+// it claims to support.
+//
+// obtainCredential looks its format up in the registry and fails the session
+// when there is none, so a missing entry disables issuance for that format at
+// runtime with nothing failing at compile time. That is not hypothetical: the
+// parser registry used to be assembled at the call site and was silently
+// dropped twice while merging, each time leaving format dispatch broken.
+func TestNewClientRegistersEveryCredentialFormat(t *testing.T) {
+	s, client := createOpenID4VCiClientForTesting(t)
+	defer s.Close()
+
+	for _, format := range []models.CredentialFormat{
+		models.CredentialFormatSdJwtVc,
+		models.CredentialFormatMsoMdoc,
+	} {
+		support, ok := client.formats[format]
+		require.True(t, ok, "no support registered for format %q", format)
+		require.NotNil(t, support.Parser, "nil parser registered for format %q", format)
+		require.NotNil(t, support.Keys, "nil key binder registered for format %q", format)
+		require.NotNil(t, support.Store, "nil store registered for format %q", format)
+	}
+}
+
+// NewClient refuses a registry that would fail at runtime: none at all, or a
+// format missing one of its three parts.
+func TestNewClientRefusesIncompleteRegistry(t *testing.T) {
+	_, err := NewClient(&http.Client{}, &eudi.Configuration{}, nil, nil, nil)
+	require.Error(t, err)
+
+	_, err = NewClient(&http.Client{}, &eudi.Configuration{}, nil, services.CredentialFormats{
+		models.CredentialFormatSdJwtVc: {Parser: services.NewSdJwtVcCredentialFormatParser(nil)},
+	}, nil)
+	require.Error(t, err)
 }
 
 func TestOpenID4VciClient(t *testing.T) {
