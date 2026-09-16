@@ -1,6 +1,7 @@
 package irmaserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -70,6 +71,11 @@ type redisSessionStore struct {
 	client *server.RedisClient
 	conf   *server.Configuration
 }
+
+// errConcurrentSessionUpdate is returned when a session transaction had to be retried after
+// the handler already ran, but the session was changed by someone else in the meantime: the
+// handler cannot be re-run, so the write is abandoned and the client retries the request.
+var errConcurrentSessionUpdate = errors.New("session was updated concurrently")
 
 type RedisError struct {
 	err error
@@ -356,16 +362,27 @@ func (s *redisSessionStore) transaction(ctx context.Context, t irma.RequestorTok
 
 func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.ClientToken, handler func(session *sessionData) (bool, error)) error {
 	key := s.client.KeyPrefix + clientTokenLookupPrefix + string(t)
-	err := s.client.Watch(ctx, func(tx *redis.Tx) error {
-		getResult := tx.Get(ctx, key)
-		if getResult.Err() == redis.Nil {
+
+	write := func(tx *server.RedisTx, sessionJSON []byte, requestorToken irma.RequestorToken, ttl time.Duration) error {
+		_, err := tx.TxPipelined(ctx, func(p redis.Pipeliner) error {
+			if err := p.Set(ctx, key, sessionJSON, ttl).Err(); err != nil {
+				return err
+			}
+			return p.Expire(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(requestorToken), ttl).Err()
+		})
+		return err
+	}
+
+	err := s.client.WatchWithRetry(ctx, []string{key}, func(tx *server.RedisTx) error {
+		before, err := tx.Get(ctx, key).Bytes()
+		if err == redis.Nil {
 			return &UnknownSessionError{"", t}
-		} else if getResult.Err() != nil {
-			return getResult.Err()
+		} else if err != nil {
+			return err
 		}
 
 		session := &sessionData{}
-		if err := json.Unmarshal([]byte(getResult.Val()), &session); err != nil {
+		if err := json.Unmarshal(before, &session); err != nil {
 			return err
 		}
 
@@ -376,6 +393,10 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 			session.setStatus(irma.ServerStatusTimeout, s.conf)
 		}
 
+		// Everything above is a plain read that a retry can safely redo. The handler is not:
+		// it writes to a shared HTTP response recorder and consumes the request body, so it
+		// cannot be invoked a second time.
+		tx.NoRetry()
 		if update, err := handler(session); !update || err != nil {
 			return err
 		}
@@ -385,7 +406,7 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 			Info("Session updated")
 
 		// If the session has changed, update it in Redis
-		sessionJSON, err := json.Marshal(session)
+		after, err := json.Marshal(session)
 		if err != nil {
 			return err
 		}
@@ -395,14 +416,29 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 			return errors.New("session ttl is in the past")
 		}
 
-		_, err = tx.TxPipelined(ctx, func(p redis.Pipeliner) error {
-			if err := p.Set(ctx, key, sessionJSON, ttl).Err(); err != nil {
+		// The handler is done and its outcome is fully captured in after, so a write that
+		// fails on a broken connection can be redone without running the handler again. Only
+		// the session the handler based itself on may be overwritten, which is the same
+		// condition the WATCH on this key enforces for the write below.
+		tx.RetryWith(func(tx *server.RedisTx) error {
+			current, err := tx.Get(ctx, key).Bytes()
+			if err == redis.Nil {
+				return &UnknownSessionError{"", t}
+			} else if err != nil {
 				return err
 			}
-			return p.Expire(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken), ttl).Err()
+			switch {
+			case bytes.Equal(current, before):
+				return write(tx, after, session.RequestorToken, ttl)
+			case bytes.Equal(current, after):
+				// The connection broke after Redis had already applied the write.
+				return nil
+			default:
+				return errConcurrentSessionUpdate
+			}
 		})
-		return err
-	}, key)
+		return write(tx, after, session.RequestorToken, ttl)
+	})
 	if _, ok := err.(*UnknownSessionError); ok {
 		return err
 	} else if err != nil {

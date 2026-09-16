@@ -102,6 +102,113 @@ func TestRedisClientTransactionWatchesSessionKey(t *testing.T) {
 	require.Equal(t, "external", storedSession.Requestor)
 }
 
+func flakyRedisStore(t *testing.T) (*redisSessionStore, *sessionData, *atomic.Bool, *miniredis.Miniredis) {
+	mr := miniredis.NewMiniRedis()
+	require.NoError(t, mr.Start())
+	t.Cleanup(mr.Close)
+
+	client, broken := test.FlakyRedisClient(t, mr.Addr())
+
+	conf := sessionsConf(t)
+	conf.MaxSessionLifetime = 15
+	conf.SessionResultLifetime = 5
+	store := &redisSessionStore{
+		client: &server.RedisClient{Client: client},
+		conf:   conf,
+	}
+
+	req, err := server.ParseSessionRequest(`{"request":{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"MtILupG0g0J23GNR1YtupQ==","devMode":true,"disclose":[[[{"type":"test.test.email.email","value":"example@example.com"}]]]}}`)
+	require.NoError(t, err)
+	session := &sessionData{
+		Action:         irma.ActionDisclosing,
+		RequestorToken: "requestor",
+		ClientToken:    "client",
+		Rrequest:       req,
+		Status:         irma.ServerStatusConnected,
+		LastActive:     time.Now(),
+	}
+	require.NoError(t, store.add(context.Background(), session))
+
+	return store, session, broken, mr
+}
+
+func TestRedisClientTransactionRetriesBrokenConnection(t *testing.T) {
+	store, session, broken, _ := flakyRedisStore(t)
+
+	// Break the connection on the transaction's very first command, before the handler runs.
+	broken.Store(true)
+
+	handlerCalls := 0
+	require.NoError(t, store.clientTransaction(context.Background(), session.ClientToken, func(ses *sessionData) (bool, error) {
+		handlerCalls++
+		ses.Requestor = "retried"
+		return true, nil
+	}))
+	require.Equal(t, 1, handlerCalls, "handler should have run exactly once")
+
+	key := store.client.KeyPrefix + clientTokenLookupPrefix + string(session.ClientToken)
+	sessionJSON, err := store.client.Get(context.Background(), key).Bytes()
+	require.NoError(t, err)
+	var storedSession sessionData
+	require.NoError(t, json.Unmarshal(sessionJSON, &storedSession))
+	require.Equal(t, "retried", storedSession.Requestor)
+}
+
+func TestRedisClientTransactionRetriesCommit(t *testing.T) {
+	store, session, broken, _ := flakyRedisStore(t)
+
+	handlerCalls := 0
+	require.NoError(t, store.clientTransaction(context.Background(), session.ClientToken, func(ses *sessionData) (bool, error) {
+		handlerCalls++
+		// Break the connection on the write that commits the transaction, so it fails
+		// after the handler already ran.
+		broken.Store(true)
+		ses.Requestor = "committed on retry"
+		return true, nil
+	}))
+	require.Equal(t, 1, handlerCalls, "handler should not be invoked again after it has run")
+
+	key := store.client.KeyPrefix + clientTokenLookupPrefix + string(session.ClientToken)
+	sessionJSON, err := store.client.Get(context.Background(), key).Bytes()
+	require.NoError(t, err)
+	var storedSession sessionData
+	require.NoError(t, json.Unmarshal(sessionJSON, &storedSession))
+	require.Equal(t, "committed on retry", storedSession.Requestor)
+}
+
+func TestRedisClientTransactionDoesNotReplayOverConcurrentUpdate(t *testing.T) {
+	store, session, broken, mr := flakyRedisStore(t)
+	key := store.client.KeyPrefix + clientTokenLookupPrefix + string(session.ClientToken)
+
+	handlerCalls := 0
+	err := store.clientTransaction(context.Background(), session.ClientToken, func(ses *sessionData) (bool, error) {
+		handlerCalls++
+
+		// Someone else updates the session while the handler runs, so the handler based
+		// itself on a session that is no longer current.
+		session.Requestor = "external"
+		sessionJSON, err := json.Marshal(session)
+		require.NoError(t, err)
+		require.NoError(t, mr.Set(key, string(sessionJSON)))
+
+		// Break the connection on the write that commits the transaction, so the commit
+		// fails on the connection rather than on the WATCH.
+		broken.Store(true)
+		ses.Requestor = "must not be written"
+		return true, nil
+	})
+	var redisErr *RedisError
+	require.ErrorAs(t, err, &redisErr)
+	require.ErrorIs(t, redisErr.err, errConcurrentSessionUpdate)
+	require.Equal(t, 1, handlerCalls, "handler should not be invoked again after it has run")
+
+	sessionJSON, err := store.client.Get(context.Background(), key).Bytes()
+	require.NoError(t, err)
+	var storedSession sessionData
+	require.NoError(t, json.Unmarshal(sessionJSON, &storedSession))
+	require.Equal(t, "external", storedSession.Requestor, "the concurrent update must survive")
+}
+
 func TestSessionHandlerInvokedOnCancel(t *testing.T) {
 	s, err := New(sessionsConf(t))
 	require.NoError(t, err)

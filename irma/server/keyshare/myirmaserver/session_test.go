@@ -3,11 +3,13 @@ package myirmaserver
 import (
 	"context"
 	"encoding/json"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-redis/redis/v8"
+	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/stretchr/testify/assert"
@@ -84,6 +86,83 @@ func TestRedisSessionStoreUpdateWatchesSessionKey(t *testing.T) {
 	require.NoError(t, json.Unmarshal(sessionJSON, &storedSession))
 	require.NotNil(t, storedSession.UserID)
 	require.Equal(t, externalUserID, *storedSession.UserID)
+}
+
+func flakyRedisSessionStore(t *testing.T) (*redisSessionStore, session, *atomic.Bool, *miniredis.Miniredis) {
+	mr := miniredis.NewMiniRedis()
+	require.NoError(t, mr.Start())
+	t.Cleanup(mr.Close)
+
+	client, broken := test.FlakyRedisClient(t, mr.Addr())
+	store := &redisSessionStore{client: &server.RedisClient{Client: client}, logger: server.Logger}
+
+	userID := int64(1)
+	ses := session{
+		Token:  "token",
+		UserID: &userID,
+		Expiry: time.Now().Add(time.Minute),
+	}
+	require.NoError(t, store.add(context.Background(), ses))
+
+	return store, ses, broken, mr
+}
+
+func TestRedisSessionStoreUpdateRetriesCommit(t *testing.T) {
+	store, ses, broken, _ := flakyRedisSessionStore(t)
+
+	updatedUserID := int64(2)
+	handlerCalls := 0
+	require.NoError(t, store.update(context.Background(), ses.Token, func(s *session) error {
+		handlerCalls++
+		// Break the connection on the write that commits the transaction, so it fails
+		// after the handler already ran.
+		broken.Store(true)
+		s.UserID = &updatedUserID
+		return nil
+	}))
+	require.Equal(t, 1, handlerCalls, "handler should not be invoked again after it has run")
+
+	key := store.client.KeyPrefix + sessionLookupPrefix + ses.Token
+	sessionJSON, err := store.client.Get(context.Background(), key).Bytes()
+	require.NoError(t, err)
+	var storedSession session
+	require.NoError(t, json.Unmarshal(sessionJSON, &storedSession))
+	require.NotNil(t, storedSession.UserID)
+	require.Equal(t, updatedUserID, *storedSession.UserID)
+}
+
+func TestRedisSessionStoreUpdateDoesNotReplayOverConcurrentUpdate(t *testing.T) {
+	store, ses, broken, mr := flakyRedisSessionStore(t)
+	key := store.client.KeyPrefix + sessionLookupPrefix + ses.Token
+
+	externalUserID := int64(3)
+	handlerCalls := 0
+	err := store.update(context.Background(), ses.Token, func(s *session) error {
+		handlerCalls++
+
+		// Someone else updates the session while the handler runs, so the handler based
+		// itself on a session that is no longer current.
+		ses.UserID = &externalUserID
+		sessionJSON, err := json.Marshal(ses)
+		require.NoError(t, err)
+		require.NoError(t, mr.Set(key, string(sessionJSON)))
+
+		// Break the connection on the write that commits the transaction, so the commit
+		// fails on the connection rather than on the WATCH.
+		broken.Store(true)
+		updatedUserID := int64(2)
+		s.UserID = &updatedUserID
+		return nil
+	})
+	require.ErrorIs(t, err, errRedis)
+	require.Equal(t, 1, handlerCalls, "handler should not be invoked again after it has run")
+
+	sessionJSON, err := store.client.Get(context.Background(), key).Bytes()
+	require.NoError(t, err)
+	var storedSession session
+	require.NoError(t, json.Unmarshal(sessionJSON, &storedSession))
+	require.NotNil(t, storedSession.UserID)
+	require.Equal(t, externalUserID, *storedSession.UserID, "the concurrent update must survive")
 }
 
 func testSessions(t *testing.T, store sessionStore, sleepFn func(time.Duration)) {

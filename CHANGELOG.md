@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fixed
+- Redis session transactions are now retried when the connection they run on breaks, so a Redis Sentinel failover no longer fails the session requests that are in flight at that moment with `redis: Conn is in a bad state: use of closed network connection`. A transaction that broke before the session handler ran is retried from the start; one that broke on the commit afterwards has only its commit redone, and only while the session is still the one the handler read, so the handler is never executed twice and a concurrent update is never overwritten
 
 ## [1.3.1] - 2026-09-01
 ### Added
