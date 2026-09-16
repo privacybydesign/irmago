@@ -15,18 +15,19 @@ import (
 )
 
 // ============================================================
-// HOLDER AS AN INTERFACE — the hardware-backed device key path
+// DEVICE SIGNER AS AN INTERFACE — the hardware-backed device key path
 // ============================================================
 
 // opaqueSigner stands in for an Android StrongBox / Secure Enclave key handle:
 // it can sign and it can name its public key, and there is no method that
 // returns the private half. A test using it therefore cannot accidentally take
-// the software route, which is the whole point of Holder being an interface.
+// the software route, which is the whole point of DeviceSigner being an
+// interface.
 type opaqueSigner struct {
 	key *ecdsa.PrivateKey
 
 	// What go-cose actually asked for, recorded so the contract documented on
-	// NewHolderFromSigner is pinned by a test rather than by a comment alone.
+	// DeviceSignerFromSigner is pinned by a test rather than by a comment alone.
 	calls        int
 	lastDigestLn int
 	lastOptsNil  bool
@@ -50,16 +51,17 @@ func (s *opaqueSigner) Sign(rnd io.Reader, digest []byte, opts crypto.SignerOpts
 	return ecdsa.SignASN1(rnd, s.key, digest)
 }
 
-// TestOpaqueSignerProducesVerifiableDeviceAuth is the reason Holder is an
+// TestOpaqueSignerProducesVerifiableDeviceAuth is the reason DeviceSigner is an
 // interface: a device key that cannot be extracted still produces a
 // presentation the verifier accepts, with no change anywhere else in the flow.
 func TestOpaqueSignerProducesVerifiableDeviceAuth(t *testing.T) {
 	signer := newOpaqueSigner(t, elliptic.P256())
 
-	holder, err := NewHolderFromSigner(signer)
-	require.NoError(t, err, "NewHolderFromSigner: %v", err)
-	// Holder, not *DefaultHolder: everything below goes through the interface.
-	var asInterface Holder = holder
+	deviceSigner, err := DeviceSignerFromSigner(signer)
+	require.NoError(t, err, "DeviceSignerFromSigner: %v", err)
+	// DeviceSigner, not *SoftwareDeviceSigner: everything below goes through the
+	// interface.
+	var asInterface DeviceSigner = deviceSigner
 
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
@@ -99,7 +101,7 @@ func TestOpaqueSignerProducesVerifiableDeviceAuth(t *testing.T) {
 	require.True(t, signer.lastOptsNil, "signer was handed non-nil SignerOpts; a hardware wrapper cannot rely on opts naming the hash")
 }
 
-// TestNewHolderFromSignerCurves keeps the wrong-curve failure at construction.
+// TestDeviceSignerFromSignerCurves keeps the wrong-curve failure at construction.
 // Left to signing time it produces a signature the verifier rejects with nothing
 // naming the cause — and go-cose does not catch it, since
 // cose.NewSigner(AlgorithmES256, aP384Key) succeeds.
@@ -107,14 +109,14 @@ func TestOpaqueSignerProducesVerifiableDeviceAuth(t *testing.T) {
 // The accepted set is the three NIST curves 9.1.3.6 pairs with ES256, ES384 and
 // ES512. It was P-256 alone until the reader gained algorithm agility; a device
 // key on P-384 is conformant and there is no longer any reason to refuse one.
-func TestNewHolderFromSignerCurves(t *testing.T) {
+func TestDeviceSignerFromSignerCurves(t *testing.T) {
 	for _, curve := range []elliptic.Curve{elliptic.P256(), elliptic.P384(), elliptic.P521()} {
 		t.Run("accepts "+curve.Params().Name, func(t *testing.T) {
-			holder, err := NewHolderFromSigner(newOpaqueSigner(t, curve))
+			deviceSigner, err := DeviceSignerFromSigner(newOpaqueSigner(t, curve))
 			require.NoError(t, err, "ISO/IEC 18013-5 9.1.3.6 pairs %s with an ES algorithm; it must be accepted: %v",
 				curve.Params().Name, err)
 			// The algorithm is not a free choice — the clause fixes one per curve.
-			alg, err := deviceAuthAlgorithmFor(holder.PublicKey().Curve)
+			alg, err := deviceAuthAlgorithmFor(deviceSigner.PublicKey().Curve)
 			require.NoError(t, err, "no algorithm for an accepted curve: %v", err)
 			want := map[string]cose.Algorithm{
 				"P-256": cose.AlgorithmES256,
@@ -127,40 +129,40 @@ func TestNewHolderFromSignerCurves(t *testing.T) {
 
 	t.Run("refuses a curve outside the table", func(t *testing.T) {
 		// P-224 is a real curve that 18013-5 does not list for cipher suite 1.
-		_, err := NewHolderFromSigner(newOpaqueSigner(t, elliptic.P224()))
+		_, err := DeviceSignerFromSigner(newOpaqueSigner(t, elliptic.P224()))
 		require.Error(t, err, "a P-224 device key was accepted; it has no ISO/IEC 18013-5 algorithm pairing")
 		require.ErrorContains(t, err, "P-224", "error was %q, want it to name the offending curve", err)
 	})
 }
 
-func TestNewHolderFromSignerRejectsNonECDSA(t *testing.T) {
+func TestDeviceSignerFromSignerRejectsNonECDSA(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err, "generate ed25519 key: %v", err)
-	_, err = NewHolderFromSigner(priv)
+	_, err = DeviceSignerFromSigner(priv)
 	require.Error(t, err, "an Ed25519 device key was accepted for ES256 device authentication")
 }
 
 func TestNewHolderRejectsNilKeys(t *testing.T) {
-	_, err := NewHolderFromSigner(nil)
+	_, err := DeviceSignerFromSigner(nil)
 	require.Error(t, err, "a nil signer was accepted")
-	_, err = NewHolderFromPrivateKey(nil)
+	_, err = DeviceSignerFromPrivateKey(nil)
 	require.Error(t, err, "a nil private key was accepted")
 }
 
-// TestDefaultHolderSatisfiesHolder pins the software implementation to the same
-// interface the hardware one will implement, so a change to either constructor's
-// return type is caught here rather than at the call sites.
-func TestDefaultHolderSatisfiesHolder(t *testing.T) {
-	software, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
-	fromKey, err := NewHolderFromPrivateKey(software.signer.(*ecdsa.PrivateKey))
-	require.NoError(t, err, "NewHolderFromPrivateKey: %v", err)
+// TestSoftwareDeviceSignerSatisfiesDeviceSigner pins the software implementation
+// to the same interface the hardware one will implement, so a change to either
+// constructor's return type is caught here rather than at the call sites.
+func TestSoftwareDeviceSignerSatisfiesDeviceSigner(t *testing.T) {
+	software, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
+	fromKey, err := DeviceSignerFromPrivateKey(software.signer.(*ecdsa.PrivateKey))
+	require.NoError(t, err, "DeviceSignerFromPrivateKey: %v", err)
 
-	// The []Holder element type is the assertion: both values have to satisfy the
+	// The []DeviceSigner element type is the assertion: both values have to satisfy the
 	// interface, which is what this test is named for.
-	holders := []Holder{software, fromKey}
-	for i, h := range holders {
-		require.NotNil(t, h.PublicKey(), "holder %d returned a nil public key", i)
-		require.Equal(t, elliptic.P256(), h.PublicKey().Curve, "holder %d device key is on %s, want P-256", i, h.PublicKey().Curve.Params().Name)
+	deviceSigners := []DeviceSigner{software, fromKey}
+	for i, h := range deviceSigners {
+		require.NotNil(t, h.PublicKey(), "signer %d returned a nil public key", i)
+		require.Equal(t, elliptic.P256(), h.PublicKey().Curve, "signer %d device key is on %s, want P-256", i, h.PublicKey().Curve.Params().Name)
 	}
 }

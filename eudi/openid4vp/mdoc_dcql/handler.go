@@ -29,12 +29,17 @@ import (
 // need not exist in this process at all. The wallet's default implementation
 // (services.NewMdocDeviceKeyBinder) reads the stored PKCS#8 key, which is
 // software all the way down; an implementation backed by a WSCA/HSM or by
-// StrongBox / TrustZone / the Secure Enclave returns a mdoc.Holder built on a
-// platform key handle instead (mdoc.NewHolderFromSigner), and nothing here
-// changes. This mirrors sdjwt.KeyBinder, which eudi_sdjwt_dcql is handed for the
-// same reason -- and which is why that handler never touches key material either.
+// StrongBox / TrustZone / the Secure Enclave returns a mdoc.DeviceSigner built
+// on a platform key handle instead (mdoc.DeviceSignerFromSigner), and nothing
+// here changes. This mirrors sdjwt.KeyBinder, which eudi_sdjwt_dcql is handed
+// for the same reason -- and which is why that handler never touches key
+// material either.
+//
+// The two are not the same shape, which is why the mdoc side is two types where
+// SD-JWT has one: sdjwt.KeyBinder owns the key lifecycle and signs, while this
+// only looks a key up and hands back a mdoc.DeviceSigner bound to it.
 type DeviceKeyBinder interface {
-	HolderForDeviceKey(deviceKey *ecdsa.PublicKey) (stdmdoc.Holder, error)
+	SignerForDeviceKey(deviceKey *ecdsa.PublicKey) (stdmdoc.DeviceSigner, error)
 }
 
 // MdocDcqlHandler implements dcql.DcqlCredentialQueryHandler for mso_mdoc
@@ -219,7 +224,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 			return nil, fmt.Errorf("read device key of stored mdoc instance %s: %w", instance.ID, err)
 		}
 
-		holder, err := h.deviceKeys.HolderForDeviceKey(deviceKey)
+		deviceSigner, err := h.deviceKeys.SignerForDeviceKey(deviceKey)
 		if err != nil {
 			return nil, fmt.Errorf("no device key available to sign for credential instance %s: %w", instance.ID, err)
 		}
@@ -235,7 +240,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 			return nil, fmt.Errorf("build session transcript: %w", err)
 		}
 
-		deviceAuthBytes, err := holder.SignDeviceAuth(batch.DocType, transcript)
+		deviceAuthBytes, err := deviceSigner.SignDeviceAuth(batch.DocType, transcript)
 		if err != nil {
 			return nil, fmt.Errorf("sign device auth: %w", err)
 		}

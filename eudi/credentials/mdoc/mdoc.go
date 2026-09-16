@@ -165,7 +165,7 @@ type DeviceAuthentication struct {
 	Context           string            // always "DeviceAuthentication"
 	SessionTranscript SessionTranscript // fresh per session — defeats replay attacks
 	DocType           string
-	DeviceNameSpaces  cbor.RawMessage // Tag24(empty map) for AV — no holder-added claims
+	DeviceNameSpaces  cbor.RawMessage // Tag24(empty map) unless the issuer authorized holder-asserted claims
 }
 
 // SessionTranscript binds a presentation to a specific verifier session

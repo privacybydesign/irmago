@@ -12,14 +12,14 @@ import (
 // ============================================================
 
 // DeviceSigned bundles the holder-signed portion of a presented document:
-// NameSpaces (any holder-asserted claims — always empty for this profile,
-// since eu.europa.ec.av.1 has no holder-added attributes) and DeviceAuth
-// (the COSE_Sign1 proving device possession).
+// NameSpaces (any holder-asserted claims — always empty for what this package
+// produces, since SoftwareDeviceSigner asserts nothing of its own) and
+// DeviceAuth (the COSE_Sign1 proving device possession).
 // NameSpaces is cbor.RawMessage for the same reason as
 // DeviceAuthentication.DeviceNameSpaces: ISO 18013-5's DeviceNameSpacesBytes is
 // a tag-24 value at this position, and the field already holds that encoding.
 type DeviceSigned struct {
-	NameSpaces cbor.RawMessage `cbor:"nameSpaces"` // Tag24(empty map) — see holder.go's SignDeviceAuth
+	NameSpaces cbor.RawMessage `cbor:"nameSpaces"` // Tag24(empty map) — see DeviceSigner.SignDeviceAuth
 	DeviceAuth DeviceAuth      `cbor:"deviceAuth"`
 }
 
@@ -37,7 +37,7 @@ type DeviceAuth struct {
 }
 
 // AttachDeviceSigned returns a copy of mdoc with DeviceSigned populated
-// from a deviceAuth signature already produced by Holder.SignDeviceAuth.
+// from a deviceAuth signature already produced by DeviceSigner.SignDeviceAuth.
 // Kept separate from SignDeviceAuth itself so existing callers that just
 // want the raw deviceAuth bytes (e.g. Verifier.VerifyWithDeviceAuth, which
 // takes the signature as a parameter and works with or without a

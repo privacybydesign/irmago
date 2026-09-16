@@ -81,9 +81,9 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 
 	// Minimal signed MSO — only the chain is under test, so a single claim in
 	// one namespace is enough for verifyIssuerAuthAndMSO to run end to end.
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
-	deviceKey, err := coseKeyFromECDSA(holder.PublicKey())
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
+	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
 	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 	const docType = "eu.europa.ec.av.1"
 	item := IssuerSignedItem{DigestID: 0, Random: make([]byte, 16), ElementIdentifier: "age_over_18", ElementValue: true}
@@ -123,11 +123,11 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 	return doc, NewVerifier([]*x509.Certificate{iacaCert})
 }
 
-// signDeviceAuthOver is Holder.SignDeviceAuth with the deviceNameSpaces element
+// signDeviceAuthOver is DeviceSigner.SignDeviceAuth with the deviceNameSpaces element
 // under the test's control instead of hardcoded to tag24(empty map). Everything
 // else — the tag-24 wrapping, ES256, the untagged COSE_Sign1, the detached
 // payload — is kept identical, since the point is to vary one input.
-func signDeviceAuthOver(t *testing.T, h *DefaultHolder, docType string, transcript SessionTranscript, deviceNameSpaces []byte) []byte {
+func signDeviceAuthOver(t *testing.T, h *SoftwareDeviceSigner, docType string, transcript SessionTranscript, deviceNameSpaces []byte) []byte {
 	t.Helper()
 
 	payload, err := tag24Wrap(DeviceAuthentication{
@@ -174,14 +174,14 @@ func withDeviceSigned(presented *MDoc, nameSpaces, deviceAuthBytes []byte) *MDoc
 func TestVerifyAllDisclosedNamespaces_HappyPath(t *testing.T) {
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
 	claims := map[string]any{"age_over_18": true, "age_over_16": true}
 
-	issued, err := issuer.Issue(docType, namespace, claims, holder.PublicKey())
+	issued, err := issuer.Issue(docType, namespace, claims, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
@@ -200,11 +200,11 @@ func TestVerifyAllDisclosedNamespaces_HappyPath(t *testing.T) {
 func TestVerifyAllDisclosedNamespaces_TamperedDigestIsRejected(t *testing.T) {
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
-	issued, err := issuer.Issue(docType, namespace, map[string]any{"age_over_18": true}, holder.PublicKey())
+	issued, err := issuer.Issue(docType, namespace, map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 
 	tamperedItem := IssuerSignedItem{
@@ -232,13 +232,13 @@ func TestVerifyAllDisclosedNamespaces_TamperedDigestIsRejected(t *testing.T) {
 // VerificationResult fields are populated on a successful Verify, and that
 // DeviceKey matches the holder's actual public key embedded at issuance.
 func TestVerify_PopulatesDeviceKeyAndValidityInfo(t *testing.T) {
-	issuer, holder, verifier, presented, _, _, _, namespace := buildHappyPathMDoc(t)
+	issuer, deviceSigner, verifier, presented, _, _, _, namespace := buildHappyPathMDoc(t)
 
 	result := verifier.Verify(presented, namespace)
 	require.True(t, result.Valid, "expected valid result, got error: %s", result.Error)
 
 	require.NotNil(t, result.DeviceKey, "expected DeviceKey to be populated")
-	require.True(t, result.DeviceKey.Equal(holder.PublicKey()), "expected DeviceKey to match holder's public key")
+	require.True(t, result.DeviceKey.Equal(deviceSigner.PublicKey()), "expected DeviceKey to match the device signer's public key")
 
 	require.False(t, result.ValidityInfo.ValidFrom.IsZero(), "expected ValidityInfo.ValidFrom to be populated, got %+v", result.ValidityInfo)
 	require.False(t, result.ValidityInfo.ValidUntil.IsZero(), "expected ValidityInfo.ValidUntil to be populated, got %+v", result.ValidityInfo)
@@ -267,7 +267,7 @@ func TestUntrustedRootIsRejected(t *testing.T) {
 	_, _, verifier, _, _, _, docType, namespace := buildHappyPathMDoc(t)
 
 	attackerIssuer, _ := NewTestIssuer()
-	attackerHolder, _ := NewHolder()
+	attackerHolder, _ := GenerateDeviceSigner()
 	attackerMDoc, err := attackerIssuer.Issue(docType, namespace,
 		map[string]any{"age_over_18": true}, attackerHolder.PublicKey())
 	require.NoError(t, err, "attacker Issue: %v", err)
@@ -339,9 +339,9 @@ func TestFreshCertsVerifyUnderCurrentTime(t *testing.T) {
 	require.NoError(t, err, "NewTestIssuer: %v", err)
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 
-	holder, _ := NewHolder()
+	deviceSigner, _ := GenerateDeviceSigner()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
-		map[string]any{"age_over_18": true}, holder.PublicKey())
+		map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 	presented, err := SelectiveDisclose(mdoc, "eu.europa.ec.av.1", []string{"age_over_18"})
 	require.NoError(t, err, "SelectiveDisclose: %v", err)
@@ -359,9 +359,9 @@ func TestExpiredDSCertIsRejected(t *testing.T) {
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
 
-	holder, _ := NewHolder()
+	deviceSigner, _ := GenerateDeviceSigner()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
-		map[string]any{"age_over_18": true}, holder.PublicKey())
+		map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 	presented, err := SelectiveDisclose(mdoc, "eu.europa.ec.av.1", []string{"age_over_18"})
 	require.NoError(t, err, "SelectiveDisclose: %v", err)
@@ -382,9 +382,9 @@ func TestExpiredDSCertIsRejected(t *testing.T) {
 func TestExpiredMSOValidityIsRejected(t *testing.T) {
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
-	holder, _ := NewHolder()
+	deviceSigner, _ := GenerateDeviceSigner()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
-		map[string]any{"age_over_18": true}, holder.PublicKey())
+		map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 	presented, err := SelectiveDisclose(mdoc, "eu.europa.ec.av.1", []string{"age_over_18"})
 	require.NoError(t, err, "SelectiveDisclose: %v", err)
@@ -437,9 +437,9 @@ func TestNotYetValidCertIsRejected(t *testing.T) {
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
 
-	holder, _ := NewHolder()
+	deviceSigner, _ := GenerateDeviceSigner()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
-		map[string]any{"age_over_18": true}, holder.PublicKey())
+		map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 	presented, err := SelectiveDisclose(mdoc, "eu.europa.ec.av.1", []string{"age_over_18"})
 	require.NoError(t, err, "SelectiveDisclose: %v", err)
@@ -589,11 +589,11 @@ func TestTamperedEnvelopeDocTypeIsRejectedByVerify(t *testing.T) {
 }
 
 func TestTamperedEnvelopeDocTypeIsRejectedAtIssuanceVerification(t *testing.T) {
-	issuer, holder, verifier, _, _, _, docType, namespace := buildHappyPathMDoc(t)
+	issuer, deviceSigner, verifier, _, _, _, docType, namespace := buildHappyPathMDoc(t)
 
 	// VerifyAllDisclosedNamespaces is the issuance-time entry point, so use a
 	// freshly issued (not yet selectively disclosed) document.
-	issued, err := issuer.Issue(docType, namespace, map[string]any{"age_over_18": true}, holder.PublicKey())
+	issued, err := issuer.Issue(docType, namespace, map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 	issued.DocType = attackerDocType
 
@@ -634,7 +634,7 @@ func TestDeviceAuthWrongSignerIsRejected(t *testing.T) {
 	// A different holder (i.e. a different device) signs deviceAuth for
 	// the SAME session transcript, but their key isn't the one embedded
 	// in this mdoc's deviceKeyInfo. Simulates a cloned/copied mdoc.
-	otherHolder, _ := NewHolder()
+	otherHolder, _ := GenerateDeviceSigner()
 	wrongDeviceAuth, err := otherHolder.SignDeviceAuth(docType, transcript)
 	require.NoError(t, err, "SignDeviceAuth: %v", err)
 
@@ -651,7 +651,7 @@ func TestDeviceAuthWrongSignerIsRejected(t *testing.T) {
 }
 
 func TestDeviceAuthWrongSessionIsRejected(t *testing.T) {
-	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
+	_, deviceSigner, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
 
 	// Same (correct) device key, but signs over a DIFFERENT session
 	// transcript than the one the verifier actually used. Simulates a
@@ -661,7 +661,7 @@ func TestDeviceAuthWrongSessionIsRejected(t *testing.T) {
 		EReaderKeyBytes:       []byte("different-reader-key"),
 		Handover:              "different-handover",
 	}
-	replayedDeviceAuth, err := holder.SignDeviceAuth(docType, otherTranscript)
+	replayedDeviceAuth, err := deviceSigner.SignDeviceAuth(docType, otherTranscript)
 	require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 	// Verifier checks against the ORIGINAL transcript it actually issued.
@@ -692,14 +692,14 @@ func TestDeviceAuthStillVerifiesWithDetachedPayload(t *testing.T) {
 // produced a payload that did not match the signature. The report came back as
 // "deviceAuth signature invalid", which was not what had gone wrong.
 func TestDeviceAuthAcceptsAlternativelyEncodedEmptyNameSpaces(t *testing.T) {
-	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
+	_, deviceSigner, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
 
 	// bf ff — indefinite-length map with no entries. Valid CBOR, decodes to the
 	// same empty map as a0, different bytes.
 	indefiniteEmpty, err := tag24WrapBytes([]byte{0xbf, 0xff})
 	require.NoError(t, err, "wrap indefinite-length empty map: %v", err)
 
-	deviceAuthBytes := signDeviceAuthOver(t, holder, docType, transcript, indefiniteEmpty)
+	deviceAuthBytes := signDeviceAuthOver(t, deviceSigner, docType, transcript, indefiniteEmpty)
 	attached := withDeviceSigned(presented, indefiniteEmpty, deviceAuthBytes)
 
 	result := verifier.VerifyWithDeviceAuth(attached, namespace, docType, transcript, deviceAuthBytes)
@@ -719,14 +719,14 @@ func TestDeviceAuthAcceptsAlternativelyEncodedEmptyNameSpaces(t *testing.T) {
 // and an issuer that did authorize the key would be obeyed. The authorized cases
 // are covered by TestHolderAssertedClaimsFollowKeyAuthorizations below.
 func TestDeviceAuthRejectsHolderAssertedNameSpaces(t *testing.T) {
-	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
+	_, deviceSigner, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
 
 	holderClaims, err := tag24Wrap(map[string]any{
 		"org.example.holder": map[string]any{"self_asserted": true},
 	})
 	require.NoError(t, err, "wrap holder namespaces: %v", err)
 
-	deviceAuthBytes := signDeviceAuthOver(t, holder, docType, transcript, holderClaims)
+	deviceAuthBytes := signDeviceAuthOver(t, deviceSigner, docType, transcript, holderClaims)
 	attached := withDeviceSigned(presented, holderClaims, deviceAuthBytes)
 
 	result := verifier.VerifyWithDeviceAuth(attached, namespace, docType, transcript, deviceAuthBytes)
@@ -746,7 +746,7 @@ func TestDeviceAuthRejectsHolderAssertedNameSpaces(t *testing.T) {
 // signature covers them. A holder that signs the empty map and then transmits
 // claims alongside it must fail, and fail as a signature error.
 func TestDeviceAuthRejectsNameSpacesNotCoveredBySignature(t *testing.T) {
-	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
+	_, deviceSigner, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
 
 	signedEmpty, err := tag24Wrap(map[string]any{})
 	require.NoError(t, err, "wrap empty namespaces: %v", err)
@@ -756,7 +756,7 @@ func TestDeviceAuthRejectsNameSpacesNotCoveredBySignature(t *testing.T) {
 	require.NoError(t, err, "wrap smuggled namespaces: %v", err)
 
 	// Signature covers the empty map; the envelope carries the claims.
-	deviceAuthBytes := signDeviceAuthOver(t, holder, docType, transcript, signedEmpty)
+	deviceAuthBytes := signDeviceAuthOver(t, deviceSigner, docType, transcript, signedEmpty)
 	attached := withDeviceSigned(presented, smuggled, deviceAuthBytes)
 
 	result := verifier.VerifyWithDeviceAuth(attached, namespace, docType, transcript, deviceAuthBytes)
@@ -785,9 +785,9 @@ func TestDeviceAuthRejectsMalformedNameSpaces(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
+			_, deviceSigner, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
 
-			deviceAuthBytes := signDeviceAuthOver(t, holder, docType, transcript, tc.nameSpaces)
+			deviceAuthBytes := signDeviceAuthOver(t, deviceSigner, docType, transcript, tc.nameSpaces)
 			attached := withDeviceSigned(presented, tc.nameSpaces, deviceAuthBytes)
 
 			result := verifier.VerifyWithDeviceAuth(attached, namespace, docType, transcript, deviceAuthBytes)
@@ -915,9 +915,9 @@ func TestFullIssuanceFlow_ProducesValidMDoc(t *testing.T) {
 func issueWithValidity(t *testing.T, issuer *TestIssuer, validFrom, validUntil time.Time) *MDoc {
 	t.Helper()
 
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
-	deviceKey, err := coseKeyFromECDSA(holder.PublicKey())
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
+	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
 	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 
 	const docType = "eu.europa.ec.av.1"
@@ -970,12 +970,12 @@ func issueWithValidity(t *testing.T, issuer *TestIssuer, validFrom, validUntil t
 func TestRequireElementsCatchesAnOmittedElement(t *testing.T) {
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 
 	const docType = "eu.europa.ec.av.1"
 	full, err := issuer.Issue(docType, docType,
-		map[string]any{"age_over_18": true, "age_over_21": true}, holder.PublicKey())
+		map[string]any{"age_over_18": true, "age_over_21": true}, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 
 	// The holder discloses only one of the two the verifier asked for.
@@ -1083,9 +1083,9 @@ func TestHolderAssertedClaimsFollowKeyAuthorizations(t *testing.T) {
 // started encoding, every previously issued credential's MSO digest would change
 // and nothing would verify.
 func TestKeyAuthorizationsRoundTripDoesNotChangeSignedBytes(t *testing.T) {
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
-	deviceKey, err := coseKeyFromECDSA(holder.PublicKey())
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
+	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
 	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 
 	encoded, err := cbor.Marshal(DeviceKeyInfo{DeviceKey: deviceKey})

@@ -27,7 +27,7 @@ import (
 func TestClaimOrderingIsRandomized(t *testing.T) {
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
-	holder, _ := NewHolder()
+	deviceSigner, _ := GenerateDeviceSigner()
 
 	claims := map[string]any{
 		"age_over_18": true,
@@ -59,7 +59,7 @@ func TestClaimOrderingIsRandomized(t *testing.T) {
 	const runs = 30
 	seenOrders := make(map[string]bool)
 	for i := range runs {
-		mdoc, err := issuer.Issue("eu.europa.ec.av.1", namespace, claims, holder.PublicKey())
+		mdoc, err := issuer.Issue("eu.europa.ec.av.1", namespace, claims, deviceSigner.PublicKey())
 		require.NoError(t, err, "Issue #%d: %v", i, err)
 		order := extractOrder(mdoc)
 
@@ -103,7 +103,7 @@ func TestClaimOrderingIsRandomized(t *testing.T) {
 func TestIssueAcceptsArbitraryDocTypeAndClaims(t *testing.T) {
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
-	holder, _ := NewHolder()
+	deviceSigner, _ := GenerateDeviceSigner()
 
 	cases := []struct {
 		name      string
@@ -139,7 +139,7 @@ func TestIssueAcceptsArbitraryDocTypeAndClaims(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			mdoc, err := issuer.Issue(tc.docType, tc.namespace, tc.claims, holder.PublicKey())
+			mdoc, err := issuer.Issue(tc.docType, tc.namespace, tc.claims, deviceSigner.PublicKey())
 			require.NoError(t, err, "Issue: %v", err)
 			require.Equal(t, tc.docType, mdoc.DocType, "expected docType %q, got %q", tc.docType, mdoc.DocType)
 			require.Len(t, mdoc.IssuerSigned.NameSpaces[tc.namespace], len(tc.claims),
@@ -161,10 +161,10 @@ func TestIssuedValidityTimestampsAreCoarsened(t *testing.T) {
 	// Two attestations of the same batch, issued to different device keys.
 	var issued []*MDoc
 	for range 2 {
-		holder, err := NewHolder()
-		require.NoError(t, err, "NewHolder: %v", err)
+		deviceSigner, err := GenerateDeviceSigner()
+		require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 		doc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
-			map[string]any{"age_over_18": true}, holder.PublicKey())
+			map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 		require.NoError(t, err, "Issue: %v", err)
 		issued = append(issued, doc)
 	}
@@ -207,12 +207,12 @@ func TestIssuedValidityTimestampsAreCoarsened(t *testing.T) {
 func TestIssuedSaltsMeetTheIsoMinimum(t *testing.T) {
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 
 	const docType = "eu.europa.ec.av.1"
 	credential, err := issuer.Issue(docType, docType,
-		map[string]any{"age_over_18": true, "age_over_21": true}, holder.PublicKey())
+		map[string]any{"age_over_18": true, "age_over_21": true}, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 
 	items := credential.IssuerSigned.NameSpaces[docType]

@@ -130,14 +130,14 @@ func TestIssuerAuthAlgorithmAgility(t *testing.T) {
 	} {
 		t.Run(tc.curve.Params().Name, func(t *testing.T) {
 			iss := issuerOn(t, tc.curve)
-			holder, err := NewHolder()
-			require.NoError(t, err, "NewHolder: %v", err)
+			deviceSigner, err := GenerateDeviceSigner()
+			require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 			encoded, digest := wrapItem(t, IssuerSignedItem{
 				DigestID: 0, Random: make([]byte, minSaltLength),
 				ElementIdentifier: "family_name", ElementValue: "Doe",
 			})
 
-			doc := signMSO(t, iss, tc.alg, ns, msoOver(t, ns, "SHA-256", digest, holder.PublicKey()), [][]byte{encoded})
+			doc := signMSO(t, iss, tc.alg, ns, msoOver(t, ns, "SHA-256", digest, deviceSigner.PublicKey()), [][]byte{encoded})
 			result := NewVerifier([]*x509.Certificate{iss.IACACert()}).Verify(doc, ns)
 
 			require.True(t, result.Valid, "%v over %s is one of the four algorithms 9.1.2.4 obliges a reader to support: %s",
@@ -178,15 +178,15 @@ func TestDigestAlgorithmAgility(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			iss, err := NewTestIssuer()
 			require.NoError(t, err, "NewTestIssuer: %v", err)
-			holder, err := NewHolder()
-			require.NoError(t, err, "NewHolder: %v", err)
+			deviceSigner, err := GenerateDeviceSigner()
+			require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 			encoded, err := tag24Wrap(IssuerSignedItem{
 				DigestID: 0, Random: make([]byte, minSaltLength),
 				ElementIdentifier: "family_name", ElementValue: "Doe",
 			})
 			require.NoError(t, err, "tag24Wrap: %v", err)
 
-			mso := msoOver(t, ns, tc.name, tc.digest(encoded), holder.PublicKey())
+			mso := msoOver(t, ns, tc.name, tc.digest(encoded), deviceSigner.PublicKey())
 			doc := signMSO(t, iss, cose.AlgorithmES256, ns, mso, [][]byte{encoded})
 			result := NewVerifier([]*x509.Certificate{iss.IACACert()}).Verify(doc, ns)
 
@@ -253,16 +253,16 @@ func TestDeviceAuthOnEveryCurve(t *testing.T) {
 		t.Run(curve.Params().Name, func(t *testing.T) {
 			deviceKey, err := ecdsa.GenerateKey(curve, rand.Reader)
 			require.NoError(t, err, "generate device key: %v", err)
-			holder, err := NewHolderFromPrivateKey(deviceKey)
-			require.NoError(t, err, "NewHolderFromPrivateKey: %v", err)
+			deviceSigner, err := DeviceSignerFromPrivateKey(deviceKey)
+			require.NoError(t, err, "DeviceSignerFromPrivateKey: %v", err)
 			iss, err := NewTestIssuer()
 			require.NoError(t, err, "NewTestIssuer: %v", err)
-			doc, err := iss.Issue(dt, dt, map[string]any{"family_name": "Doe"}, holder.PublicKey())
+			doc, err := iss.Issue(dt, dt, map[string]any{"family_name": "Doe"}, deviceSigner.PublicKey())
 			require.NoError(t, err, "Issue: %v", err)
 			presented, err := SelectiveDisclose(doc, dt, []string{"family_name"})
 			require.NoError(t, err, "SelectiveDisclose: %v", err)
 			transcript := SessionTranscript{Handover: "test-handover"}
-			deviceAuth, err := holder.SignDeviceAuth(dt, transcript)
+			deviceAuth, err := deviceSigner.SignDeviceAuth(dt, transcript)
 			require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 			result := NewVerifier([]*x509.Certificate{iss.IACACert()}).

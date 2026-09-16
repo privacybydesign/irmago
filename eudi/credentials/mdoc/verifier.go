@@ -121,8 +121,9 @@ func coseVerifierFor(msg *cose.Sign1Message, key crypto.PublicKey, what string) 
 // message type.
 //
 // ISO 18013-5 puts the bare four-element array at issuerAuth and
-// deviceSignature, which is what this package now writes (see issuer.go and
-// holder.go). Reading is deliberately more permissive than writing: go-cose's
+// deviceSignature, which is what this package now writes (see
+// issuer_testonly.go and devicesigner.go). Reading is deliberately more
+// permissive than writing: go-cose's
 // Sign1Message insists on the tag-18 prefix and UntaggedSign1Message refuses
 // it, so accepting only one form would make the verifier reject real documents
 // from whichever party disagrees with us. The tag is outside Sig_structure and

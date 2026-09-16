@@ -37,7 +37,7 @@ func (s *nonExtractableSigner) Sign(rnd io.Reader, digest []byte, _ crypto.Signe
 }
 
 // hardwareDeviceKeyBinder is a DeviceKeyBinder whose keys are never in process as
-// keys: it resolves the device key the handler asks for to a Holder built on a
+// keys: it resolves the device key the handler asks for to a DeviceSigner built on a
 // nonExtractableSigner. It records what it was asked for, since "the handler asks
 // for the key the credential is bound to" is the property that decides whether a
 // presentation verifies at all.
@@ -48,7 +48,7 @@ type hardwareDeviceKeyBinder struct {
 	err       error
 }
 
-func (b *hardwareDeviceKeyBinder) HolderForDeviceKey(deviceKey *ecdsa.PublicKey) (stdmdoc.Holder, error) {
+func (b *hardwareDeviceKeyBinder) SignerForDeviceKey(deviceKey *ecdsa.PublicKey) (stdmdoc.DeviceSigner, error) {
 	b.asked = append(b.asked, deviceKey)
 	if b.err != nil {
 		return nil, b.err
@@ -57,7 +57,7 @@ func (b *hardwareDeviceKeyBinder) HolderForDeviceKey(deviceKey *ecdsa.PublicKey)
 		if candidate.PublicKey.Equal(deviceKey) {
 			signer := &nonExtractableSigner{key: candidate}
 			b.signers = append(b.signers, signer)
-			return stdmdoc.NewHolderFromSigner(signer)
+			return stdmdoc.DeviceSignerFromSigner(signer)
 		}
 	}
 	return nil, fmt.Errorf("no hardware key for the requested device key")

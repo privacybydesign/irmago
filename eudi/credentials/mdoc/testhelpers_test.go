@@ -16,14 +16,14 @@ import (
 // buildHappyPathMDoc runs the full issuer → holder pipeline once and
 // returns everything a verifier needs. Centralized here so every test
 // below starts from the same known-good, real (not hand-crafted) mdoc.
-func buildHappyPathMDoc(t *testing.T) (*TestIssuer, *DefaultHolder, *Verifier, *MDoc, SessionTranscript, []byte, string, string) {
+func buildHappyPathMDoc(t *testing.T) (*TestIssuer, *SoftwareDeviceSigner, *Verifier, *MDoc, SessionTranscript, []byte, string, string) {
 	t.Helper()
 
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
 
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
@@ -34,7 +34,7 @@ func buildHappyPathMDoc(t *testing.T) (*TestIssuer, *DefaultHolder, *Verifier, *
 		"age_over_21": false,
 	}
 
-	mdoc, err := issuer.Issue(docType, namespace, claims, holder.PublicKey())
+	mdoc, err := issuer.Issue(docType, namespace, claims, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 
 	presented, err := SelectiveDisclose(mdoc, namespace, []string{"age_over_18"})
@@ -46,12 +46,12 @@ func buildHappyPathMDoc(t *testing.T) (*TestIssuer, *DefaultHolder, *Verifier, *
 		Handover:              "test-handover",
 	}
 
-	deviceAuthBytes, err := holder.SignDeviceAuth(docType, transcript)
+	deviceAuthBytes, err := deviceSigner.SignDeviceAuth(docType, transcript)
 	require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
 
-	return issuer, holder, verifier, presented, transcript, deviceAuthBytes, docType, namespace
+	return issuer, deviceSigner, verifier, presented, transcript, deviceAuthBytes, docType, namespace
 }
 
 // keysOf is a small debug helper for readable failure messages.

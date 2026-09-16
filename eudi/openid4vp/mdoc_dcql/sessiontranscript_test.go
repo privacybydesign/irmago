@@ -89,12 +89,12 @@ func TestOpenID4VPSessionTranscriptBindsAllInputs(t *testing.T) {
 func TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth(t *testing.T) {
 	issuer, err := mdoc.NewTestIssuer()
 	require.NoError(t, err, "NewIssuer: %v", err)
-	holder, err := mdoc.NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
+	deviceSigner, err := mdoc.GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
-	credential, err := issuer.Issue(docType, namespace, map[string]any{"age_over_18": true}, holder.PublicKey())
+	credential, err := issuer.Issue(docType, namespace, map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 	presented, err := mdoc.SelectiveDisclose(credential, namespace, []string{"age_over_18"})
 	require.NoError(t, err, "SelectiveDisclose: %v", err)
@@ -105,7 +105,7 @@ func TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth(t *testing.T) {
 	transcript, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri, nil)
 	require.NoError(t, err, "newOpenID4VPSessionTranscript: %v", err)
 
-	deviceAuthBytes, err := holder.SignDeviceAuth(docType, transcript)
+	deviceAuthBytes, err := deviceSigner.SignDeviceAuth(docType, transcript)
 	require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 	verifier := mdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})

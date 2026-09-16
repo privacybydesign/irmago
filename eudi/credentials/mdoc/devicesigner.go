@@ -11,25 +11,29 @@ import (
 )
 
 // ============================================================
-// HOLDER
+// DEVICE SIGNER
 // ============================================================
 
-// Holder is the wallet app on the user's device, reduced to the only two
-// operations that need the device key: handing out the public half at issuance,
-// and signing a DeviceAuthentication at presentation.
+// DeviceSigner performs ISO/IEC 18013-5 mdoc authentication with one device key:
+// handing out the public half at issuance, and signing a DeviceAuthentication at
+// presentation. It is the device key and nothing else — not the wallet, not the
+// person the credential was issued to, neither of which this package models.
 //
 // It is an interface so the private half never has to exist in this process.
 //
-// DefaultHolder is what the wallet uses in production today: the device private
-// key lives in this process, read from storage on demand, which is the same
-// arrangement sdjwt.DefaultKeyBinder has on the SD-JWT side. It is reached
+// SoftwareDeviceSigner is what the wallet uses in production today: the device
+// private key lives in this process, read from storage on demand. It is reached
 // through services.NewMdocDeviceKeyBinder and mdoc_dcql, not only from tests.
 //
 // The interface exists for what replaces it: an implementation backed by
 // StrongBox, TrustZone or the Secure Enclave satisfies the same two methods
-// with the key never extractable. See NewHolderFromSigner, which is the whole
+// with the key never extractable. See DeviceSignerFromSigner, which is the whole
 // seam — a platform key handle only has to implement Public and Sign.
-type Holder interface {
+//
+// Not to be confused with mdoc_dcql.DeviceKeyBinder, which is the layer above:
+// it resolves a device public key to the DeviceSigner that can sign for it, and
+// is what mirrors sdjwt.KeyBinder in the DCQL handler's dependencies.
+type DeviceSigner interface {
 	// PublicKey returns the device public key — the only part of the device key
 	// pair an issuer (or anyone else) ever needs.
 	PublicKey() *ecdsa.PublicKey
@@ -39,42 +43,43 @@ type Holder interface {
 	SignDeviceAuth(docType string, transcript SessionTranscript) ([]byte, error)
 }
 
-// DefaultHolder is the software implementation of Holder: the device key is an
-// ordinary in-process key, reached only through crypto.Signer so the same code
-// path serves a hardware-backed key.
-type DefaultHolder struct {
+// SoftwareDeviceSigner is the software implementation of DeviceSigner: the
+// device key is an ordinary in-process key, reached only through crypto.Signer
+// so the same code path serves a hardware-backed key.
+type SoftwareDeviceSigner struct {
 	signer crypto.Signer
 	pub    *ecdsa.PublicKey
 }
 
-var _ Holder = (*DefaultHolder)(nil)
+var _ DeviceSigner = (*SoftwareDeviceSigner)(nil)
 
-// NewHolder generates a fresh software device key. In production the equivalent
-// key is generated inside Secure Enclave / TrustZone / StrongBox, where it is
-// not extractable and every signing operation happens inside the hardware — for
-// that, wrap the platform's key handle with NewHolderFromSigner instead.
-func NewHolder() (*DefaultHolder, error) {
+// GenerateDeviceSigner generates a fresh software device key. In production the
+// equivalent key is generated inside Secure Enclave / TrustZone / StrongBox,
+// where it is not extractable and every signing operation happens inside the
+// hardware — for that, wrap the platform's key handle with
+// DeviceSignerFromSigner instead.
+func GenerateDeviceSigner() (*SoftwareDeviceSigner, error) {
 	deviceKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("generate device key: %w", err)
 	}
-	return NewHolderFromSigner(deviceKey)
+	return DeviceSignerFromSigner(deviceKey)
 }
 
-// NewHolderFromPrivateKey wraps an already-generated device key pair in a
-// Holder. Used by wallet storage layers that persist the device key
-// generated at issuance time (e.g. as part of a HolderBindingKey record)
-// and need to reconstruct a Holder capable of signing at presentation
-// time, in a later process than the one that called NewHolder.
-func NewHolderFromPrivateKey(deviceKey *ecdsa.PrivateKey) (*DefaultHolder, error) {
+// DeviceSignerFromPrivateKey wraps an already-generated device key pair in a
+// DeviceSigner. Used by wallet storage layers that persist the device key
+// generated at issuance time (e.g. as part of a HolderBindingKey record) and
+// need to reconstruct a signer at presentation time, in a later process than the
+// one that called GenerateDeviceSigner.
+func DeviceSignerFromPrivateKey(deviceKey *ecdsa.PrivateKey) (*SoftwareDeviceSigner, error) {
 	if deviceKey == nil {
 		return nil, fmt.Errorf("device key is nil")
 	}
-	return NewHolderFromSigner(deviceKey)
+	return DeviceSignerFromSigner(deviceKey)
 }
 
-// NewHolderFromSigner wraps any crypto.Signer as a Holder, which is how a
-// non-extractable device key reaches this package: an Android Keystore /
+// DeviceSignerFromSigner wraps any crypto.Signer as a DeviceSigner, which is how
+// a non-extractable device key reaches this package: an Android Keystore /
 // StrongBox or Secure Enclave key handle only has to implement Public and Sign.
 //
 // The signer must satisfy the contract go-cose imposes on an opaque signer
@@ -91,7 +96,7 @@ func NewHolderFromPrivateKey(deviceKey *ecdsa.PrivateKey) (*DefaultHolder, error
 // curve with exactly one algorithm (see deviceAuthAlgorithmFor), and a signer on
 // a curve outside that table would otherwise produce a signature the verifier
 // rejects with nothing naming the cause.
-func NewHolderFromSigner(signer crypto.Signer) (*DefaultHolder, error) {
+func DeviceSignerFromSigner(signer crypto.Signer) (*SoftwareDeviceSigner, error) {
 	if signer == nil {
 		return nil, fmt.Errorf("device key signer is nil")
 	}
@@ -102,7 +107,7 @@ func NewHolderFromSigner(signer crypto.Signer) (*DefaultHolder, error) {
 	if _, err := deviceAuthAlgorithmFor(pub.Curve); err != nil {
 		return nil, err
 	}
-	return &DefaultHolder{signer: signer, pub: pub}, nil
+	return &SoftwareDeviceSigner{signer: signer, pub: pub}, nil
 }
 
 // deviceAuthAlgorithmFor pairs a device key's curve with the COSE algorithm
@@ -133,19 +138,21 @@ func deviceAuthAlgorithmFor(curve elliptic.Curve) (cose.Algorithm, error) {
 		curve.Params().Name)
 }
 
-// PublicKey returns the holder's device public key — the only part of the
-// device key pair an issuer (or anyone else) ever needs; the private key
-// stays behind the signer and is never returned.
-func (h *DefaultHolder) PublicKey() *ecdsa.PublicKey {
+// PublicKey returns the device public key — the only part of the device key pair
+// an issuer (or anyone else) ever needs; the private key stays behind the signer
+// and is never returned.
+func (h *SoftwareDeviceSigner) PublicKey() *ecdsa.PublicKey {
 	return h.pub
 }
 
 // SignDeviceAuth builds and signs a fresh DeviceAuthentication for this session
 // Called at every presentation — never reused
 // SessionTranscript ties this signature to a specific verifier + session — defeats replay
-func (h *DefaultHolder) SignDeviceAuth(docType string, transcript SessionTranscript) ([]byte, error) {
-	// deviceNameSpaces = Tag24(empty map) for AV Blueprint
-	// The AV profile has no holder-asserted claims — only issuer-signed attributes
+func (h *SoftwareDeviceSigner) SignDeviceAuth(docType string, transcript SessionTranscript) ([]byte, error) {
+	// deviceNameSpaces = Tag24(empty map). This signer asserts nothing of its own:
+	// everything it presents is issuer-signed. A holder-asserted element would
+	// need the issuer to have authorized this device key for it in the MSO's
+	// keyAuthorizations — see checkDeviceSignedNameSpaces on the verifying side.
 	emptyNS, err := tag24Wrap(map[string]any{})
 	if err != nil {
 		return nil, fmt.Errorf("encode empty nameSpaces: %w", err)

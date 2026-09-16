@@ -14,7 +14,8 @@ import (
 
 // MdocKeyService mints mdoc device keys for an issuance and stores them in
 // mdoc_device_keys, unbound until the issued document that carries the public
-// half is stored. It is the mso_mdoc HolderKeyBinder.
+// half is stored. It is the issuance-side counterpart of mdocDeviceKeyBinder,
+// which resolves those same keys back to a mdoc.DeviceSigner at presentation.
 //
 // Every key is recorded under its JWK thumbprint, whatever binding method the
 // proof used: an mdoc embeds the device public key as a COSE_Key in the MSO,

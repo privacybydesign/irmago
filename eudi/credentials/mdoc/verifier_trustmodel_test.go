@@ -85,9 +85,9 @@ func buildPinnedChainMDoc(t *testing.T) (doc *MDoc, root, intermediate *x509.Cer
 	dsCert, err := x509.ParseCertificate(dsDER)
 	require.NoError(t, err, "parse DS cert: %v", err)
 
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
-	deviceKey, err := coseKeyFromECDSA(holder.PublicKey())
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
+	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
 	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 
 	const docType = "eu.europa.ec.av.1"

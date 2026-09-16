@@ -120,10 +120,10 @@ func saltTestFixture(t *testing.T) (*TestIssuer, *ecdsa.PublicKey, *Verifier, st
 
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
-	return issuer, holder.PublicKey(), verifier, "eu.europa.ec.av.1", "eu.europa.ec.av.1"
+	return issuer, deviceSigner.PublicKey(), verifier, "eu.europa.ec.av.1", "eu.europa.ec.av.1"
 }
 
 // TestShortSaltIsRejectedAtIssuance is the case that matters most: this is the

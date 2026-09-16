@@ -16,11 +16,11 @@ import (
 //
 // The point of the seam is what can replace it. An implementation backed by a
 // WSCA/HSM or by the platform's key store (StrongBox, TrustZone, the Secure
-// Enclave) resolves the same device key to a mdoc.Holder whose private half is a
-// key handle rather than bytes -- see mdoc.NewHolderFromSigner -- and the wallet
-// then signs presentations without the key ever entering the process. Nothing
-// above this type would change; the handler is handed a DeviceKeyBinder and
-// never sees key material either way.
+// Enclave) resolves the same device key to a mdoc.DeviceSigner whose private
+// half is a key handle rather than bytes -- see mdoc.DeviceSignerFromSigner --
+// and the wallet then signs presentations without the key ever entering the
+// process. Nothing above this type would change; the handler is handed a
+// DeviceKeyBinder and never sees key material either way.
 type mdocDeviceKeyBinder struct {
 	store db.MdocDeviceKeyStore
 }
@@ -31,13 +31,13 @@ func NewMdocDeviceKeyBinder(store db.MdocDeviceKeyStore) *mdocDeviceKeyBinder {
 	return &mdocDeviceKeyBinder{store: store}
 }
 
-// HolderForDeviceKey looks the device key up by the JWK thumbprint of its public
+// SignerForDeviceKey looks the device key up by the JWK thumbprint of its public
 // half, which is the identity MdocKeyService stored it under at mint time and
 // mdocCredentialFormatParser recorded for the credential at issuance (see
 // ParsedMdoc.DeviceKeyThumbprint). All three derive it with
 // jwkThumbprintFromECDSAPublicKey, so the write and the reads cannot drift into
 // computing the thumbprint differently.
-func (b *mdocDeviceKeyBinder) HolderForDeviceKey(deviceKey *ecdsa.PublicKey) (mdoc.Holder, error) {
+func (b *mdocDeviceKeyBinder) SignerForDeviceKey(deviceKey *ecdsa.PublicKey) (mdoc.DeviceSigner, error) {
 	if deviceKey == nil {
 		return nil, fmt.Errorf("credential names no device key to sign with")
 	}
@@ -61,5 +61,5 @@ func (b *mdocDeviceKeyBinder) HolderForDeviceKey(deviceKey *ecdsa.PublicKey) (md
 		return nil, fmt.Errorf("decode stored device key %s: %w", stored.ID, err)
 	}
 
-	return mdoc.NewHolderFromPrivateKey(privateKey)
+	return mdoc.DeviceSignerFromPrivateKey(privateKey)
 }

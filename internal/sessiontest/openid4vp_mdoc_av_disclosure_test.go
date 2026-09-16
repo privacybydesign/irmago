@@ -97,7 +97,7 @@ func testSessionHandlerForOpenID4VPWithMdocAv(t *testing.T) {
 	// the attributes and the shape of the query.
 	t.Run("an attribute outside the authorized set is refused",
 		testOpenID4VP_MdocAv_AttributeNotAuthorized)
-	t.Run("an attribute the AV profile forbids is refused",
+	t.Run("a proof-of-age request for a birth date is refused",
 		testOpenID4VP_MdocAv_ForbiddenAttribute)
 	t.Run("the wrong format for a credential the wallet holds is refused",
 		testOpenID4VP_MdocAv_WrongFormat)
@@ -949,8 +949,12 @@ func testOpenID4VP_MdocAv_AttributeNotAuthorized(t *testing.T) {
 //
 // AV Annex A §A.4: the attestation SHALL carry the age_over_NN booleans and no
 // other attribute, which is the whole privacy claim of the profile — a verifier
-// learns "old enough" and not a birthday. Enforced here by the same authorized-set
-// check, since birth_date is not in the certificate's set.
+// learns "old enough" and not a birthday.
+//
+// Refused by the authorized-set check, since birth_date is not in the
+// certificate's set. That is the only thing stopping it, and deliberately so:
+// §A.4 is a rule for the issuer, and the wallet does not second-guess what a
+// signed document carries. What it does police is who may ask for it.
 func testOpenID4VP_MdocAv_ForbiddenAttribute(t *testing.T) {
 	requireMdocAvQueryRefused(t, avDocType, string(clientmodels.Format_MsoMdoc),
 		[]map[string]any{{"path": []string{avDocType, "birth_date"}}})

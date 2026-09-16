@@ -58,9 +58,9 @@ func issueCustom(t *testing.T, iss *TestIssuer, namespace string, mso MSO, itemB
 // baseMSO is a valid MSO over the given digests, for tests that vary one field.
 func baseMSO(t *testing.T, namespace string, digests map[uint64][]byte) MSO {
 	t.Helper()
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
-	deviceKey, err := coseKeyFromECDSA(holder.PublicKey())
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
+	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
 	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 	now := time.Now().UTC()
 	return MSO{
@@ -243,10 +243,10 @@ func TestVerifyCoversEveryNamespacePresent(t *testing.T) {
 func TestSelectiveDiscloseRefusesEmptyResult(t *testing.T) {
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 	const ns = "eu.europa.ec.av.1"
-	doc, err := issuer.Issue(ns, ns, map[string]any{"age_over_18": true}, holder.PublicKey())
+	doc, err := issuer.Issue(ns, ns, map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 
 	_, err = SelectiveDisclose(doc, ns, []string{"age_over_65"})

@@ -68,9 +68,9 @@ func TestECDSAPublicKeyFromCOSEAcceptsValidKey(t *testing.T) {
 func validCOSEKey(t *testing.T) *cose.Key {
 	t.Helper()
 
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
-	key, err := coseKeyFromECDSA(holder.PublicKey())
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
+	key, err := coseKeyFromECDSA(deviceSigner.PublicKey())
 	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
 	return key
 }

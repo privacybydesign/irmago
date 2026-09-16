@@ -242,13 +242,13 @@ func TestTag24WrapWithModeUsesGivenEncMode(t *testing.T) {
 // cose.NewKeyFromPublic, for one, also sets Algorithm and would emit label 3.
 // coseKeyFromECDSA builds the key label by label to avoid exactly that.
 func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
-	issuer, holder, _, _, _, _, _, _ := buildHappyPathMDoc(t)
-	_ = holder
+	issuer, deviceSigner, _, _, _, _, _, _ := buildHappyPathMDoc(t)
+	_ = deviceSigner
 
 	// Re-issue directly so we have the raw MSO payload bytes in hand.
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
-	newHolder, _ := NewHolder()
+	newHolder, _ := GenerateDeviceSigner()
 	mdoc, err := issuer.Issue(docType, namespace, map[string]any{"age_over_18": true}, newHolder.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 
@@ -336,9 +336,9 @@ func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
 func TestValidityInfoUsesRFC3339Tag(t *testing.T) {
 	issuer, err := NewTestIssuer()
 	require.NoError(t, err, "NewTestIssuer: %v", err)
-	holder, _ := NewHolder()
+	deviceSigner, _ := GenerateDeviceSigner()
 	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
-		map[string]any{"age_over_18": true}, holder.PublicKey())
+		map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 	require.NoError(t, err, "Issue: %v", err)
 
 	// Decode issuerAuth -> MSO payload bytes generically, without going
@@ -460,14 +460,14 @@ func TestDeviceAuthSignatureEncodesInline(t *testing.T) {
 // deviceNameSpaces) and supplies them before verifying (see
 // VerifyWithDeviceAuth).
 func TestDeviceAuthPayloadIsDetached(t *testing.T) {
-	holder, err := NewHolder()
-	require.NoError(t, err, "NewHolder: %v", err)
+	deviceSigner, err := GenerateDeviceSigner()
+	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 	transcript := SessionTranscript{
 		DeviceEngagementBytes: []byte("test-engagement"),
 		EReaderKeyBytes:       []byte("test-reader-key"),
 		Handover:              "test-handover",
 	}
-	deviceAuthBytes, err := holder.SignDeviceAuth("eu.europa.ec.av.1", transcript)
+	deviceAuthBytes, err := deviceSigner.SignDeviceAuth("eu.europa.ec.av.1", transcript)
 	require.NoError(t, err, "SignDeviceAuth: %v", err)
 
 	var arr []any
@@ -494,13 +494,13 @@ func TestNewDeviceResponseSupportsMultipleDocuments(t *testing.T) {
 	}
 
 	buildDoc := func(claims map[string]any, reveal []string) MDoc {
-		holder, err := NewHolder()
-		require.NoError(t, err, "NewHolder: %v", err)
-		credential, err := issuer.Issue(docType, namespace, claims, holder.PublicKey())
+		deviceSigner, err := GenerateDeviceSigner()
+		require.NoError(t, err, "GenerateDeviceSigner: %v", err)
+		credential, err := issuer.Issue(docType, namespace, claims, deviceSigner.PublicKey())
 		require.NoError(t, err, "Issue: %v", err)
 		presented, err := SelectiveDisclose(credential, namespace, reveal)
 		require.NoError(t, err, "SelectiveDisclose: %v", err)
-		deviceAuthBytes, err := holder.SignDeviceAuth(docType, transcript)
+		deviceAuthBytes, err := deviceSigner.SignDeviceAuth(docType, transcript)
 		require.NoError(t, err, "SignDeviceAuth: %v", err)
 		attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
 		require.NoError(t, err, "AttachDeviceSigned: %v", err)

@@ -18,14 +18,14 @@ func newTestMdocCredentialResponseString(t *testing.T) (raw string, iacaCert *x5
 
 	issuer, err := mdoc.NewTestIssuer()
 	require.NoError(t, err)
-	holder, err := mdoc.NewHolder()
+	deviceSigner, err := mdoc.GenerateDeviceSigner()
 	require.NoError(t, err)
 
 	issued, err := issuer.Issue(
 		"eu.europa.ec.av.1",
 		"eu.europa.ec.av.1",
 		map[string]any{"age_over_18": true},
-		holder.PublicKey(),
+		deviceSigner.PublicKey(),
 	)
 	require.NoError(t, err)
 
@@ -75,11 +75,11 @@ func TestMdocCredentialFormatParser_ParseAndVerify(t *testing.T) {
 func TestMdocCredentialFormatParser_ParseAndVerify_RefusesEmptyNamespaces(t *testing.T) {
 	issuer, err := mdoc.NewTestIssuer()
 	require.NoError(t, err)
-	holder, err := mdoc.NewHolder()
+	deviceSigner, err := mdoc.GenerateDeviceSigner()
 	require.NoError(t, err)
 
 	issued, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
-		map[string]any{"age_over_18": true}, holder.PublicKey())
+		map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 	require.NoError(t, err)
 	issued.IssuerSigned.NameSpaces = map[string][]mdoc.Tag24Item{}
 
@@ -273,10 +273,10 @@ func TestDecodeIssuedMdocAcceptsEveryShapeTheVerifierThenAccepts(t *testing.T) {
 
 	issuer, err := mdoc.NewTestIssuer()
 	require.NoError(t, err)
-	holder, err := mdoc.NewHolder()
+	deviceSigner, err := mdoc.GenerateDeviceSigner()
 	require.NoError(t, err)
 
-	issued, err := issuer.Issue(docType, docType, map[string]any{"age_over_18": true}, holder.PublicKey())
+	issued, err := issuer.Issue(docType, docType, map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 	require.NoError(t, err)
 
 	verifier := mdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})
@@ -309,10 +309,10 @@ func newIssuedMdocDocument(t *testing.T, docType string) *mdoc.MDoc {
 
 	issuer, err := mdoc.NewTestIssuer()
 	require.NoError(t, err)
-	holder, err := mdoc.NewHolder()
+	deviceSigner, err := mdoc.GenerateDeviceSigner()
 	require.NoError(t, err)
 
-	issued, err := issuer.Issue(docType, docType, map[string]any{"age_over_18": true}, holder.PublicKey())
+	issued, err := issuer.Issue(docType, docType, map[string]any{"age_over_18": true}, deviceSigner.PublicKey())
 	require.NoError(t, err)
 	return issued
 }
@@ -350,13 +350,13 @@ func TestMdocCredentialFormatParser_CheckBatchUniqueness(t *testing.T) {
 func TestMdocCredentialFormatParser_NamespacesAreJSONShaped(t *testing.T) {
 	issuer, err := mdoc.NewTestIssuer()
 	require.NoError(t, err)
-	holder, err := mdoc.NewHolder()
+	deviceSigner, err := mdoc.GenerateDeviceSigner()
 	require.NoError(t, err)
 	issued, err := issuer.Issue("eu.europa.ec.eudi.pid.1", "eu.europa.ec.eudi.pid.1", map[string]any{
 		"sex":            1,
 		"nationality":    []any{"NL", "BE"},
 		"place_of_birth": map[string]any{"country": "NL"},
-	}, holder.PublicKey())
+	}, deviceSigner.PublicKey())
 	require.NoError(t, err)
 	encoded, err := cbor.Marshal(issued)
 	require.NoError(t, err)
