@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"math/big"
+	"net/url"
 	"testing"
 	"time"
 
@@ -206,4 +207,70 @@ func TestVerifierReadsAnchorsPerVerification(t *testing.T) {
 	current = x509.VerifyOptions{Roots: x509.NewCertPool(), Intermediates: x509.NewCertPool()}
 	_, result = verifier.VerifyAllDisclosedNamespaces(doc)
 	require.False(t, result.Valid, "expected rejection once the anchors were dropped again")
+}
+
+// ============================================================
+// ISSUER IDENTITY
+// ============================================================
+
+// TestIssuerIdentifierFromDocumentSigner pins the naming rule an mdoc's stored
+// identity depends on. It matters beyond display: this string goes into the
+// credential's storage hash, so a change here re-partitions what the wallet
+// considers the same credential.
+func TestIssuerIdentifierFromDocumentSigner(t *testing.T) {
+	certWith := func(t *testing.T, mutate func(*x509.Certificate)) *x509.Certificate {
+		t.Helper()
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err, "generate key: %v", err)
+		template := &x509.Certificate{
+			SerialNumber: big.NewInt(1),
+			Subject:      pkix.Name{CommonName: "Test DS", Organization: []string{"Yivi Test"}},
+			NotBefore:    time.Now().Add(-time.Hour),
+			NotAfter:     time.Now().Add(time.Hour),
+		}
+		mutate(template)
+		der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+		require.NoError(t, err, "create cert: %v", err)
+		parsed, err := x509.ParseCertificate(der)
+		require.NoError(t, err, "parse cert: %v", err)
+		return parsed
+	}
+
+	t.Run("a URI SAN wins", func(t *testing.T) {
+		uri, err := url.Parse("https://issuer.example/av")
+		require.NoError(t, err, "parse uri: %v", err)
+		cert := certWith(t, func(c *x509.Certificate) {
+			c.URIs = []*url.URL{uri}
+			c.DNSNames = []string{"issuer.example"}
+		})
+		require.Equal(t, "https://issuer.example/av", issuerIdentifierFromDocumentSigner(cert),
+			"a certificate carrying both should be named by its URI, as the SD-JWT VC path names it")
+	})
+
+	t.Run("a DNS SAN is used when there is no URI", func(t *testing.T) {
+		cert := certWith(t, func(c *x509.Certificate) { c.DNSNames = []string{"issuer.example"} })
+		require.Equal(t, "issuer.example", issuerIdentifierFromDocumentSigner(cert))
+	})
+
+	t.Run("no SAN falls back to the subject", func(t *testing.T) {
+		cert := certWith(t, func(c *x509.Certificate) {})
+		// ISO/IEC 18013-5 requires a SAN on a reader certificate, not on a document
+		// signer, so this issuer is conformant and its credentials must still be
+		// storable. The subject is what Annex B.1.4 does populate.
+		got := issuerIdentifierFromDocumentSigner(cert)
+		require.NotEmpty(t, got, "a SAN-less document signer must still yield an identity")
+		require.Contains(t, got, "Test DS", "the fallback should name the subject, got %q", got)
+	})
+
+	t.Run("the identity survives re-keying", func(t *testing.T) {
+		// The property credentialHash depends on: a document signer is rotated
+		// often, and a rotation that changes the identity would make every
+		// re-issuance look like a credential the wallet does not hold.
+		san := func(c *x509.Certificate) { c.DNSNames = []string{"issuer.example"} }
+		first := certWith(t, san)
+		second := certWith(t, san)
+		require.NotEqual(t, first.PublicKey, second.PublicKey, "the two certificates should differ")
+		require.Equal(t, issuerIdentifierFromDocumentSigner(first), issuerIdentifierFromDocumentSigner(second),
+			"re-keying the document signer must not rename the issuer")
+	})
 }

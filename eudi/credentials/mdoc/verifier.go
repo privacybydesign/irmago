@@ -433,6 +433,45 @@ type VerificationResult struct {
 	// callers (e.g. issuance-time storage of IssuedAt/ExpiresAt/NotBefore)
 	// don't need to re-decode the MSO themselves.
 	ValidityInfo ValidityInfo
+
+	// IssuerIdentifier names the issuer this document came from, taken from the
+	// document signer certificate that signed the MSO — see
+	// issuerIdentifierFromDocumentSigner. An mdoc has no issuer claim of its own,
+	// so this is the only issuer identity the credential itself carries.
+	//
+	// Non-empty means the certificate it came from chained to a trust anchor and
+	// signed this MSO. It does not mean the document as a whole is acceptable:
+	// the digest checks over the disclosed elements run after this is set, so a
+	// result can carry an authentic issuer identity and still be Valid == false.
+	// Callers decide on Valid, as everywhere else here.
+	IssuerIdentifier string
+}
+
+// issuerIdentifierFromDocumentSigner names the issuer behind a document signer
+// certificate.
+//
+// The SAN first, via the same utils.ObtainIssuerFromCert the SD-JWT VC path uses
+// when a credential carries no `iss` (sdjwtvc's parseAndVerifyIssuerSignedJwt).
+// One helper for both formats on purpose: this value ends up in the credential's
+// storage hash, so the two formats disagreeing about what an issuer is called
+// would show up as a wallet holding the same credential twice.
+//
+// Falling back to the subject DN, because a document signer is not required to
+// carry a SAN. ISO/IEC 18013-5 mandates one on a reader certificate, where it
+// binds the client_id; Annex B.1.4's document signer profile does not, and it
+// does populate the subject (country and common name are mandatory there). A
+// SAN-less issuer is therefore conformant, and refusing its credentials over a
+// naming question would be this package inventing a rule again.
+//
+// Both forms are stable across the rotation that matters: a document signer is
+// re-keyed often, and it is the serial and public key that change, not the
+// issuer's name. That is the property credentialHash depends on — a re-issuance
+// has to hash to what the wallet already stored.
+func issuerIdentifierFromDocumentSigner(cert *x509.Certificate) string {
+	if identifier, err := utils.ObtainIssuerFromCert(cert); err == nil {
+		return identifier
+	}
+	return cert.Subject.String()
 }
 
 // RequireElements checks that every element the verifier asked for is actually
@@ -683,6 +722,11 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	result.DocType = mso.DocType
 
 	result.ValidityInfo = mso.ValidityInfo
+
+	// Safe here and not before: the chain verified in step 3, so this certificate
+	// is one a trusted IACA issued as a document signer rather than a name the
+	// document asserted about itself.
+	result.IssuerIdentifier = issuerIdentifierFromDocumentSigner(dsCert)
 
 	// Best-effort: reconstruct the device public key embedded in the MSO.
 	// Left nil on failure rather than failing verification outright — see
@@ -959,8 +1003,8 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
-	// Re-decode the MSO to get deviceKeyInfo. Verify() already proved
-	// msg.Payload is authentic (signature + chain checked), so this is safe.
+	// Re-decode the MSO for deviceKeyInfo. Safe: Verify() already checked this
+	// payload's signature and chain.
 	msg, err := decodeCoseSign1(mdoc.IssuerSigned.IssuerAuth)
 	if err != nil {
 		result.Valid = false
@@ -981,9 +1025,8 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
-	// Decode the deviceAuth COSE_Sign1. Its transmitted Payload is nil —
-	// SignDeviceAuth detaches it before returning, matching the AV
-	// Blueprint spec's own example (deviceSignature payload: null).
+	// Payload is nil on the wire: SignDeviceAuth detaches it, per the AV
+	// Blueprint's worked example. It is rebuilt below.
 	deviceMsg, err := decodeCoseSign1(deviceAuthBytes)
 	if err != nil {
 		result.Valid = false
@@ -991,13 +1034,8 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
-	// Rebuild the DeviceAuthentication payload the holder signed. Two of its four
-	// elements come from deliberately different places:
-	//
-	//   - SessionTranscript is the verifier's OWN, which is what defeats replay: a
-	//     signature over a different transcript hashes differently and fails below.
-	//   - DeviceNameSpaces are the RECEIVED bytes, which the signature covers, so
-	//     substituted bytes can only make a valid signature fail.
+	// The transcript below is the verifier's own, which is what defeats replay;
+	// the nameSpaces are the received bytes, which the signature covers.
 	deviceNameSpaces, err := deviceNameSpacesForVerification(mdoc)
 	if err != nil {
 		result.Valid = false
@@ -1005,9 +1043,8 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
-	// Decoded only for well-formedness here; whether the contents are acceptable
-	// is the profile's question, asked after the signature has been verified —
-	// a rule enforced on unauthenticated bytes proves nothing about the holder.
+	// Well-formedness only; whether the contents are authorized is asked below,
+	// once the signature over them has verified.
 	deviceNameSpaceMap, err := decodeDeviceNameSpaces(deviceNameSpaces)
 	if err != nil {
 		result.Valid = false
@@ -1041,13 +1078,9 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
-	// Whether the holder-asserted elements are acceptable, judged on authenticated
-	// content now that the signature over them has verified. The docType comes
-	// from the signed MSO, and is used only to name the document in a rejection:
-	// the rule is ISO/IEC 18013-5 9.1.3.4 and applies to every docType alike.
-	//
-	// DeviceAuthValid stays false even though the signature verified, so a caller
-	// that reads it without checking Valid cannot mistake this for acceptance.
+	// DeviceAuthValid stays false on refusal even though the signature verified,
+	// so a caller reading it without checking Valid cannot mistake this for
+	// acceptance.
 	if err := checkDeviceSignedNameSpaces(
 		result.DocType, deviceNameSpaceMap, mso.DeviceKeyInfo.KeyAuthorizations,
 	); err != nil {

@@ -27,6 +27,11 @@ const (
 	// above it because nothing here needs the extra bytes, and every byte is
 	// carried by every disclosed item on every presentation.
 	saltLength = 16
+
+	// TestIssuerDNSName is the DS certificate SAN, and so the IssuerIdentifier
+	// every credential this issuer mints is stored under. Exported because tests
+	// in other packages assert against it.
+	TestIssuerDNSName = "test-av-issuer.localhost"
 )
 
 // credentialValidityPeriod is how long an issued credential stays valid.
@@ -179,6 +184,12 @@ func NewTestIssuer() (*TestIssuer, error) {
 		// so it goes in UnknownExtKeyUsage — CreateCertificate encodes both
 		// that and ExtKeyUsage into the one EKU extension.
 		UnknownExtKeyUsage: []asn1.ObjectIdentifier{isoMdocDocumentSignerEKU},
+		// A SAN, so a credential from this issuer gets its identity the way one
+		// from a real issuer does — see issuerIdentifierFromDocumentSigner. Not
+		// required of a document signer by 18013-5, which is why the subject-DN
+		// fallback exists and is covered separately; the issuer this package
+		// verifies against most often should exercise the primary path.
+		DNSNames: []string{TestIssuerDNSName},
 	}
 
 	// parent = iacaCert (parsed), signed with iacaKey — this establishes the chain

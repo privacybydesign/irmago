@@ -25,28 +25,26 @@ type DcqlResult struct {
 	QueryResults map[string]*CredentialQueryResult
 }
 
-// CandidateQuery identifies one owned candidate of a pick-one: which DCQL
-// credential query it answers, and which claim paths it would disclose.
+// CandidateQuery is one option the user can pick in a pick-one: a credential the
+// wallet holds, the DCQL query it would answer, and the claims it would reveal.
 //
-// The credential hash alone is not enough to identify a candidate. One
-// credential can answer several queries — a verifier asking for age_over_18 and
-// age_over_21 in two queries is answered twice by one age credential — so keying
-// on the hash collapsed both onto whichever query was seen last: every
-// presentation went back under that one query id, the other went unanswered, and
-// the verifier rejected the response as not satisfying its request.
+// All three identify it, because one credential can appear as several options:
 //
-// The claim paths disambiguate the remaining case, where one credential appears
-// twice within a single pick-one: a credential_sets choice whose options are
-// both satisfied by the same credential offers it once per option, and the two
-// differ only in the element they would reveal.
+//   - Across queries. A verifier asks age_over_18 in query "a" and age_over_21 in
+//     query "b"; one age credential answers both, so it appears twice. QueryId
+//     tells those apart — answered under the wrong id, the verifier sees its
+//     other query unanswered and rejects the response.
+//
+//   - Within one query. Two options of a credential_sets choice can both be
+//     satisfied by that same credential, differing only in which element they
+//     reveal. Hash and QueryId are equal there, so PathKeys is the only tiebreak.
 type CandidateQuery struct {
-	// Hash identifies the stored credential the candidate presents.
+	// Hash identifies the stored credential this option would present.
 	Hash string
-	// QueryId is the credential query this candidate came from.
+	// QueryId is the DCQL credential query this option answers.
 	QueryId string
-	// PathKeys are the clientmodels.ClaimPathKey values of the attributes this
-	// candidate discloses, which is what tells two candidates of the same
-	// credential apart.
+	// PathKeys are the clientmodels.ClaimPathKey values this option would
+	// disclose — the tiebreak when Hash and QueryId are both equal.
 	PathKeys map[string]struct{}
 }
 

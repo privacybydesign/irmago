@@ -27,7 +27,7 @@ func NewMdocCredentialFormatParser(verifier *mdoc.Verifier) CredentialFormatPars
 	return &mdocCredentialFormatParser{verifier: verifier}
 }
 
-func (p *mdocCredentialFormatParser) ParseAndVerify(raw, credentialIssuer string, holderBindingKeyRequired bool) (*ParsedCredential, error) {
+func (p *mdocCredentialFormatParser) ParseAndVerify(raw, _ string, holderBindingKeyRequired bool) (*ParsedCredential, error) {
 	encoded, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
 		return nil, fmt.Errorf("failed to base64url-decode mdoc credential: %w", err)
@@ -109,12 +109,19 @@ func (p *mdocCredentialFormatParser) ParseAndVerify(raw, credentialIssuer string
 	return &ParsedCredential{
 		Format:                   models.CredentialFormatMsoMdoc,
 		VerifiableCredentialType: result.DocType,
-		IssuerIdentifier:         credentialIssuer,
-		RawCredentialBytes:       rawBytes,
-		IssuedAt:                 unixPtrIfNotZero(result.ValidityInfo.Signed),
-		ExpiresAt:                unixPtrIfNotZero(result.ValidityInfo.ValidUntil),
-		NotBefore:                unixPtrIfNotZero(result.ValidityInfo.ValidFrom),
-		Mdoc:                     parsedMdoc,
+		// result.IssuerIdentifier, not the credentialIssuer parameter: the
+		// parameter is the OpenID4VCI issuer the wallet fetched from, which says
+		// where the credential arrived from rather than who signed it, and which
+		// nothing in the credential attests. result.IssuerIdentifier comes from
+		// the document signer certificate whose chain verified above, so it is
+		// the issuer identity the credential actually carries — the same rule the
+		// SD-JWT VC parser follows, and it feeds the same storage hash.
+		IssuerIdentifier:   result.IssuerIdentifier,
+		RawCredentialBytes: rawBytes,
+		IssuedAt:           unixPtrIfNotZero(result.ValidityInfo.Signed),
+		ExpiresAt:          unixPtrIfNotZero(result.ValidityInfo.ValidUntil),
+		NotBefore:          unixPtrIfNotZero(result.ValidityInfo.ValidFrom),
+		Mdoc:               parsedMdoc,
 	}, nil
 }
 

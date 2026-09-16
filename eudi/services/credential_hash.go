@@ -71,6 +71,22 @@ func hashForSdJwtVc(credType, issuerIdentifier string, processedSdJwtPayloadByte
 // a credential does not change when it is re-issued, so a renewal produces the
 // same hash and is still recognised as the same credential.
 //
+// The issuer is whoever the credential itself says signed it, in both formats,
+// and never where the wallet fetched it from. SD-JWT VC takes the `iss` claim,
+// checked against the signing certificate's SANs, and falls back to those SANs
+// where `iss` is absent, which §2.2.2.3 permits. mso_mdoc has no issuer claim to
+// take, so it reads the same SANs off the document signer certificate whose
+// chain verified — mdoc.issuerIdentifierFromDocumentSigner, which shares
+// utils.ObtainIssuerFromCert with the SD-JWT path so the two cannot drift into
+// naming one issuer two ways.
+//
+// The identifier can still change over a deployment's life: an issuer moving
+// domain renames itself in both formats. A re-issuance then hashes differently
+// and is stored as a second copy — the duplicate MigrateCredentialHashes exists
+// to remove, and one no migration can repair, because the old value is gone by
+// then. Accepted rather than solved: an issuer changing its identifier is rare
+// and visible, whereas two issuers sharing a credential type is neither.
+//
 // Length-prefixed rather than concatenated. Plain concatenation cannot tell field
 // boundaries apart, so a type ending in the issuer's first characters would hash
 // identically to a shorter type and a longer issuer — ("a.b", "cd") and ("a.bc",

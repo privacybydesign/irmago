@@ -42,18 +42,24 @@ type MdocBatch struct {
 	DocType string `gorm:"not null"`
 
 	// CredentialIssuer is the OpenID4VCI credential_issuer the document was
-	// obtained from, per the issuer metadata used at issuance. It is the only
-	// issuer identity an mdoc issuance yields: an mdoc has no `iss` claim, and the
-	// document signer certificate is not lifted into a column. That certificate,
-	// with its IACA, travels inside every instance's IssuerSigned bytes
-	// (IssuerAuth unprotected header 33, x5chain), so a certificate-derived
-	// identity can be backfilled from stored data if something comes to read it.
+	// obtained from, per the issuer metadata used at issuance — where the wallet
+	// went, not who signed what it got back.
+	//
+	// It is deliberately not the identity the credential is hashed under. An mdoc
+	// has no `iss` claim, but it does carry its document signer certificate (and
+	// IACA) in every instance's IssuerSigned bytes, and Hash is keyed on the
+	// identity derived from that chain once it verifies — see
+	// mdoc.issuerIdentifierFromDocumentSigner. Keeping this column as well means
+	// the two questions stay separable: which issuer signed this, and which
+	// endpoint served it.
 	CredentialIssuer string `gorm:"not null"`
 
-	// Hash is the deterministic content identity over docType, credential issuer
-	// and the sorted element values — the three things that make two credentials
-	// the same credential. Computed by services.hashGeneric. Unique within this
-	// table; the SD-JWT table has its own.
+	// Hash is the deterministic content identity over docType, the issuer taken
+	// from the verified document signer certificate, and the sorted element
+	// values — the three things that make two credentials the same credential.
+	// Note the issuer here is not CredentialIssuer above; see that field.
+	// Computed by services.hashGeneric. Unique within this table; the SD-JWT
+	// table has its own.
 	Hash string `gorm:"uniqueIndex;not null"`
 
 	// Namespaces caches the element values so DCQL matching and display do not

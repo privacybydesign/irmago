@@ -40,13 +40,18 @@ func TestMdocCredentialFormatParser_ParseAndVerify(t *testing.T) {
 	verifier := mdoc.NewVerifier([]*x509.Certificate{iacaCert})
 	parser := NewMdocCredentialFormatParser(verifier)
 
-	parsed, err := parser.ParseAndVerify(raw, "https://test-issuer.example.com", true)
+	parsed, err := parser.ParseAndVerify(raw, "https://fetched-from.example.com", true)
 	require.NoError(t, err)
 	require.NotNil(t, parsed)
 
 	require.Equal(t, models.CredentialFormatMsoMdoc, parsed.Format)
 	require.Equal(t, "eu.europa.ec.av.1", parsed.VerifiableCredentialType)
-	require.Equal(t, "https://test-issuer.example.com", parsed.IssuerIdentifier)
+	// Not "https://fetched-from.example.com", the credentialIssuer argument above:
+	// an mdoc's issuer identity comes from the document signer certificate whose
+	// chain verified, never from where the wallet happened to fetch it. A verifier
+	// that trusted the parameter would let the fetch location decide the identity
+	// a credential is stored and deduplicated under.
+	require.Equal(t, mdoc.TestIssuerDNSName, parsed.IssuerIdentifier)
 	require.NotNil(t, parsed.Mdoc)
 	require.NotEmpty(t, parsed.Mdoc.Namespaces)
 	require.Equal(t, "eu.europa.ec.av.1", parsed.Mdoc.DocType)
@@ -292,7 +297,7 @@ func TestDecodeIssuedMdocAcceptsEveryShapeTheVerifierThenAccepts(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			raw := base64.RawURLEncoding.EncodeToString(mustCborMarshal(t, shape))
 
-			parsed, err := parser.ParseAndVerify(raw, "https://test-issuer.example.com", true)
+			parsed, err := parser.ParseAndVerify(raw, "https://fetched-from.example.com", true)
 			require.NoError(t, err)
 			require.Equal(t, docType, parsed.VerifiableCredentialType)
 			require.Equal(t, models.CredentialFormatMsoMdoc, parsed.Format)
