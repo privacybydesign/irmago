@@ -709,13 +709,15 @@ func TestDeviceAuthAcceptsAlternativelyEncodedEmptyNameSpaces(t *testing.T) {
 		result.Valid, result.DeviceAuthValid, result.Error)
 }
 
-// TestDeviceAuthRejectsHolderAssertedNameSpaces pins that holder-signed claims are
-// still refused for the AV docType — but by the profile check, with a diagnosis
-// that says so, rather than as a signature failure.
+// TestDeviceAuthRejectsHolderAssertedNameSpaces pins that holder-signed claims
+// are refused when the MSO does not authorize them — by the keyAuthorizations
+// check, with a diagnosis that says so, rather than as a signature failure.
 //
-// buildHappyPathMDoc issues under eu.europa.ec.av.1, so this is the AV branch of
-// checkDeviceSignedNameSpaces. The general-docType branch, which allows exactly
-// what the MSO's keyAuthorizations permits, is covered in profile_test.go.
+// The issuer behind buildHappyPathMDoc emits no keyAuthorizations, which under
+// ISO/IEC 18013-5 9.1.3.4 authorizes the device key to assert nothing. That is
+// the whole reason this is refused: no rule keyed on the docType is involved,
+// and an issuer that did authorize the key would be obeyed. The authorized cases
+// are covered by TestHolderAssertedClaimsFollowKeyAuthorizations below.
 func TestDeviceAuthRejectsHolderAssertedNameSpaces(t *testing.T) {
 	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
 
@@ -731,11 +733,11 @@ func TestDeviceAuthRejectsHolderAssertedNameSpaces(t *testing.T) {
 	require.False(t, result.Valid, "a document asserting holder-signed namespaces was accepted")
 	require.False(t, result.DeviceAuthValid, "DeviceAuthValid is true on a rejected document — a caller reading it "+
 		"without checking Valid would treat this as accepted")
-	require.Contains(t, result.Error, "no holder-asserted attributes", "error does not name the profile rule: %q", result.Error)
-	// The rejection has to say which profile decided this, so it cannot be
-	// mistaken for a rule the format imposes on every docType.
-	require.Contains(t, result.Error, AgeVerificationDocType, "error does not name the docType whose profile refused it: %q", result.Error)
-	require.NotContains(t, result.Error, "signature invalid", "rejected as a signature failure rather than a profile decision: %q", result.Error)
+	require.Contains(t, result.Error, "keyAuthorizations", "error does not name the structure that authorizes this: %q", result.Error)
+	// The rejection has to name the document and the namespace it refused, or an
+	// operator reading it cannot tell which issuer needs to authorize what.
+	require.Contains(t, result.Error, docType, "error does not name the docType of the refused document: %q", result.Error)
+	require.NotContains(t, result.Error, "signature invalid", "rejected as a signature failure rather than an authorization decision: %q", result.Error)
 	require.Contains(t, result.Error, "org.example.holder", "error does not name the offending namespace: %q", result.Error)
 }
 
@@ -1005,4 +1007,98 @@ func TestRequireElementsRefusesAFailedResult(t *testing.T) {
 	err := failed.RequireElements()
 	require.Error(t, err, "RequireElements must refuse a result that did not verify, even with nothing requested")
 	require.ErrorContains(t, err, "issuerAuth signature invalid", "the error should carry the underlying verification failure")
+}
+
+// ============================================================
+// HOLDER-ASSERTED CLAIMS (ISO/IEC 18013-5 9.1.3.4)
+// ============================================================
+
+// TestHolderAssertedClaimsFollowKeyAuthorizations is the positive half of the
+// device-namespaces rule: holder-asserted elements are permitted exactly to the
+// extent the MSO's keyAuthorizations covers them, and nothing about the docType
+// enters into it. What an issuer authorizes is the issuer's decision; this
+// verifier only holds it to what it signed.
+//
+// Exercised against checkDeviceSignedNameSpaces directly rather than through a
+// full presentation, because reaching it end to end needs an issuer that emits
+// keyAuthorizations, which this test issuer deliberately does not (see
+// DeviceKeyInfo — the fields are modelled for reading, not writing).
+func TestHolderAssertedClaimsFollowKeyAuthorizations(t *testing.T) {
+	deviceNameSpaces := DeviceNameSpaces{
+		"org.iso.18013.5.1": {"self_asserted_address": cbor.RawMessage{0xf5}},
+	}
+
+	// Two unrelated docTypes, run through every case below, because a rule that
+	// only ever sees one docType cannot show that it does not key on it.
+	docTypes := []string{"eu.europa.ec.av.1", "org.iso.18013.5.1.mDL"}
+
+	t.Run("authorized by namespace", func(t *testing.T) {
+		for _, docType := range docTypes {
+			err := checkDeviceSignedNameSpaces(docType, deviceNameSpaces,
+				&KeyAuthorizations{NameSpaces: []string{"org.iso.18013.5.1"}})
+			require.NoError(t, err, "%s: a whole-namespace authorization covers every element under it: %v", docType, err)
+		}
+	})
+
+	t.Run("authorized by element", func(t *testing.T) {
+		for _, docType := range docTypes {
+			err := checkDeviceSignedNameSpaces(docType, deviceNameSpaces,
+				&KeyAuthorizations{DataElements: map[string][]string{
+					"org.iso.18013.5.1": {"self_asserted_address"},
+				}})
+			require.NoError(t, err, "%s: the element is named in dataElements: %v", docType, err)
+		}
+	})
+
+	t.Run("no authorizations at all", func(t *testing.T) {
+		for _, docType := range docTypes {
+			err := checkDeviceSignedNameSpaces(docType, deviceNameSpaces, nil)
+			require.Error(t, err, "%s: 9.1.3.4 authorizes the device key to assert only what keyAuthorizations names; absent means nothing", docType)
+			require.ErrorContains(t, err, "keyAuthorizations", "%s: rejection should name the missing structure, got: %v", docType, err)
+		}
+	})
+
+	t.Run("authorized for a different element", func(t *testing.T) {
+		for _, docType := range docTypes {
+			err := checkDeviceSignedNameSpaces(docType, deviceNameSpaces,
+				&KeyAuthorizations{DataElements: map[string][]string{
+					"org.iso.18013.5.1": {"something_else"},
+				}})
+			require.Error(t, err, "%s: an authorization for a different element must not cover this one", docType)
+			require.ErrorContains(t, err, "self_asserted_address", "%s: rejection should name the unauthorized element, got: %v", docType, err)
+		}
+	})
+
+	t.Run("empty deviceNameSpaces needs no authorization", func(t *testing.T) {
+		for _, docType := range docTypes {
+			err := checkDeviceSignedNameSpaces(docType, nil, nil)
+			require.NoError(t, err, "%s: a holder asserting nothing needs no authorization: %v", docType, err)
+		}
+	})
+}
+
+// TestKeyAuthorizationsRoundTripDoesNotChangeSignedBytes guards the reason
+// DeviceKeyInfo's new fields are omitempty: they are modelled so a document that
+// carries them can be verified, not so this issuer emits them. If they ever
+// started encoding, every previously issued credential's MSO digest would change
+// and nothing would verify.
+func TestKeyAuthorizationsRoundTripDoesNotChangeSignedBytes(t *testing.T) {
+	holder, err := NewHolder()
+	require.NoError(t, err, "NewHolder: %v", err)
+	deviceKey, err := coseKeyFromECDSA(holder.PublicKey())
+	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
+
+	encoded, err := cbor.Marshal(DeviceKeyInfo{DeviceKey: deviceKey})
+	require.NoError(t, err, "marshal: %v", err)
+
+	// One entry: deviceKey. 0xa1 is a definite-length map of one pair.
+	require.Equal(t, byte(0xa1), encoded[0], "DeviceKeyInfo with no authorizations must encode as a single-entry map "+
+		"(0xa1), got 0x%02x — keyAuthorizations or keyInfo is being emitted, which changes "+
+		"the signed MSO bytes of every credential", encoded[0])
+
+	var round DeviceKeyInfo
+	err = mdocDecMode.Unmarshal(encoded, &round)
+	require.NoError(t, err, "unmarshal: %v", err)
+	require.Nil(t, round.KeyAuthorizations, "absent optional fields should decode to nil")
+	require.Nil(t, round.KeyInfo, "absent optional fields should decode to nil")
 }

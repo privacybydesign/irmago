@@ -249,3 +249,26 @@ func decodeTag24Item(wrapped Tag24Item) (*IssuerSignedItem, error) {
 	}
 	return &item, nil
 }
+
+// ============================================================
+// VALIDITY TIMESTAMPS
+// ============================================================
+
+// TestIssuedValidityInfoIsCoarsened pins the timestamp policy: one rule for
+// every docType, and the test that fails first if anyone changes the coarsening
+// without reading why 9.3.1 step 5 depends on it.
+func TestIssuedValidityInfoIsCoarsened(t *testing.T) {
+	// A wallclock instant well past midnight, so coarsening is observable rather
+	// than coincidental.
+	issuedAt, err := time.Parse(time.RFC3339, "2026-09-02T10:03:53Z")
+	require.NoError(t, err, "parse issuedAt: %v", err)
+
+	info := issuedValidityInfo(issuedAt)
+
+	got := info.Signed.Format("15:04:05")
+	require.Equal(t, "00:00:00", got, "signed should be coarsened to midnight UTC, got %s", got)
+	require.True(t, info.ValidFrom.Equal(info.Signed), "validFrom %s should equal signed %s", info.ValidFrom, info.Signed)
+	require.True(t, info.ValidUntil.After(info.ValidFrom), "validUntil %s must be later than validFrom %s", info.ValidUntil, info.ValidFrom)
+	require.LessOrEqual(t, credentialValidityPeriod, 90*24*time.Hour,
+		"validity period %s exceeds the three-month maximum the AV Blueprint recommends", credentialValidityPeriod)
+}

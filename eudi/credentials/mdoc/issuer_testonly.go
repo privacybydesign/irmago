@@ -29,6 +29,39 @@ const (
 	saltLength = 16
 )
 
+// credentialValidityPeriod is how long an issued credential stays valid.
+// ISO/IEC 18013-5 sets no bound, so this is a choice rather than a rule; three
+// months is what the EUDI Age Verification Blueprint recommends as a maximum and
+// is short enough to be unremarkable for any other docType.
+const credentialValidityPeriod = 90 * 24 * time.Hour
+
+// issuedValidityInfo builds the ValidityInfo for a credential issued now.
+//
+// The timestamps are coarsened to midnight UTC. ISO/IEC 18013-5 9.1.2.4: an
+// issuer "should set these timestamps with a precision that limits the
+// linkability information" — a per-second timestamp is as good a correlator as
+// the credential it is meant to protect, which matters most for the batches of
+// single-use credentials issued precisely so a holder cannot be followed between
+// relying parties. The EU reference issuer does the same; see is_batch_credential
+// in its formatter_func.py, which zeroes hour, minute and second.
+//
+// Truncating downwards rather than rounding keeps validFrom in the past, so a
+// credential is never briefly not-yet-valid against a verifier whose clock trails
+// ours.
+//
+// Consequence worth knowing before changing it: coarsening puts `signed` hours
+// before the document signer's NotBefore, which is why 9.3.1 step 5's first
+// bullet cannot be enforced until DS certificates are issued with a backdated
+// NotBefore.
+func issuedValidityInfo(now time.Time) ValidityInfo {
+	now = now.UTC().Truncate(24 * time.Hour)
+	return ValidityInfo{
+		Signed:     now,
+		ValidFrom:  now,
+		ValidUntil: now.Add(credentialValidityPeriod),
+	}
+}
+
 // Editing saltLength below the ISO floor fails the build: the subtraction is a
 // negative constant, which does not convert to uint. The runtime check in Issue
 // still stands, for a salt whose length is ever decided at runtime rather than
@@ -56,9 +89,9 @@ const _ = uint(saltLength - minSaltLength)
 //
 // It lives in the production package rather than a mdoctest subpackage only
 // because it needs nine unexported helpers from it (tag24Wrap, tdateEncMode,
-// hashTag24Item, coseKeyFromECDSA, profileFor, the EKU check and the salt
-// constants). Exporting those to move this out would widen the package's real
-// API to relocate test code, which is the worse trade.
+// hashTag24Item, coseKeyFromECDSA, issuedValidityInfo, the EKU check and the
+// salt constants). Exporting those to move this out would widen the package's
+// real API to relocate test code, which is the worse trade.
 type TestIssuer struct {
 	iacakey  *ecdsa.PrivateKey
 	iacacert *x509.Certificate
@@ -270,28 +303,13 @@ func (iss *TestIssuer) Issue(docType string, namespace string, claims map[string
 	}
 
 	// ── Build MSO ────────────────────────────────────────────────
-	//
-	// The validity timestamps are coarsened to midnight UTC rather than stamped
-	// with the wallclock. Single-use credentials are issued in batches precisely
-	// so a holder cannot be followed between relying parties, and a per-second
-	// timestamp defeats that on its own: every credential in a batch would carry a
-	// distinct validUntil, which is as good a correlator as the credential it is
-	// trying to protect. The EU reference issuer does the same for batch
-	// credentials — see is_batch_credential in its formatter_func.py, which
-	// replaces hour/minute/second with zero.
-	//
-	// Whether to coarsen, and for how long the credential stays valid, are the
-	// docType's business rather than this function's: 9.1.2.4 recommends
-	// coarsening for any mdoc while the AV Blueprint makes it a SHALL, and only
-	// AV puts a ceiling on the validity period. Both live in profile.go so the
-	// clause each answers to stays attached to it.
-	profile := profileFor(docType)
+	// Validity timestamps are coarsened; see issuedValidityInfo for why.
 	mso := MSO{
 		Version:         "1.0",
 		DigestAlgorithm: "SHA-256",
 		ValueDigests:    map[string]map[uint64][]byte{namespace: valueDigests},
 		DocType:         docType,
-		ValidityInfo:    profile.issuedValidityInfo(time.Now()),
+		ValidityInfo:    issuedValidityInfo(time.Now()),
 		DeviceKeyInfo:   DeviceKeyInfo{DeviceKey: deviceKey},
 	}
 

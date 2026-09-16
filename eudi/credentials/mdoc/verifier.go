@@ -860,14 +860,6 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 		return result
 	}
 
-	// A profile with a closed attribute set refuses elements outside it. Keyed on
-	// the signed docType, so a document of any other type is unaffected — see
-	// profile.go.
-	if err := profileFor(result.DocType).checkElements(resolved); err != nil {
-		result.Error = err.Error()
-		return result
-	}
-
 	// Only the requested namespace's attributes are returned, as before. An empty
 	// map rather than nil when the namespace is in the MSO but discloses nothing,
 	// so callers can index it without a nil check; RequireElements is what turns
@@ -928,13 +920,6 @@ func (v *Verifier) VerifyAllDisclosedNamespaces(mdoc *MDoc) (DisclosedNamespaces
 
 	resolved, err := verifyAllNamespaces(mdoc, mso)
 	if err != nil {
-		result.Error = err.Error()
-		return nil, result
-	}
-
-	// Same profile check as Verify, so a credential cannot be accepted at issuance
-	// and then refused at presentation, or the reverse.
-	if err := profileFor(result.DocType).checkElements(resolved); err != nil {
 		result.Error = err.Error()
 		return nil, result
 	}
@@ -1056,19 +1041,14 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 	}
 
 	// Whether the holder-asserted elements are acceptable, judged on authenticated
-	// content now that the signature over them has verified.
-	//
-	// Which rule applies depends on the docType, and the docType used is the one
-	// from the signed MSO. For a profile with no holder-asserted attributes this
-	// refuses them outright; for every other docType it is ISO/IEC 18013-5
-	// 9.1.3.4's keyAuthorizations check. See profile.go — this used to be a
-	// blanket refusal applied to every docType, which rejected conformant general
-	// mdocs and reported it as though the presentation were untrustworthy.
+	// content now that the signature over them has verified. The docType comes
+	// from the signed MSO, and is used only to name the document in a rejection:
+	// the rule is ISO/IEC 18013-5 9.1.3.4 and applies to every docType alike.
 	//
 	// DeviceAuthValid stays false even though the signature verified, so a caller
 	// that reads it without checking Valid cannot mistake this for acceptance.
-	if err := profileFor(result.DocType).checkDeviceSignedNameSpaces(
-		deviceNameSpaceMap, mso.DeviceKeyInfo.KeyAuthorizations,
+	if err := checkDeviceSignedNameSpaces(
+		result.DocType, deviceNameSpaceMap, mso.DeviceKeyInfo.KeyAuthorizations,
 	); err != nil {
 		result.Valid = false
 		result.Error = err.Error()
@@ -1108,10 +1088,11 @@ func deviceNameSpacesForVerification(mdoc *MDoc) (cbor.RawMessage, error) {
 // `DeviceNameSpacesBytes = #6.24(bstr .cbor DeviceNameSpaces)` and returns the
 // namespaces it wraps, their contents left undecoded.
 //
-// The emptiness of the result is what the profile check tests, rather than a byte
-// comparison against tag24Wrap(map[string]any{}): CBOR admits more than one
-// encoding of an empty map, and comparing bytes would reject a conformant holder
-// for choosing a different one — the very brittleness this replaced.
+// The emptiness of the result is what checkDeviceSignedNameSpaces tests, rather
+// than a byte comparison against tag24Wrap(map[string]any{}): CBOR admits more
+// than one encoding of an empty map, and comparing bytes would reject a
+// conformant holder for choosing a different one — the very brittleness this
+// replaced.
 func decodeDeviceNameSpaces(raw cbor.RawMessage) (DeviceNameSpaces, error) {
 	var rawTag cbor.RawTag
 	if err := mdocDecMode.Unmarshal(raw, &rawTag); err != nil {
@@ -1126,14 +1107,80 @@ func decodeDeviceNameSpaces(raw cbor.RawMessage) (DeviceNameSpaces, error) {
 	}
 	// Decoded two levels deep rather than one: `DeviceNameSpaces = {* NameSpace
 	// => DeviceSignedItems}` and `DeviceSignedItems = {+ DataElementIdentifier =>
-	// DataElementValue}`, and the keyAuthorizations check in profile.go is per
-	// element, not per namespace. The values stay raw — nothing here interprets
-	// them, and a profile that wanted to would decode them itself.
+	// DataElementValue}`, and checkDeviceSignedNameSpaces authorizes per element,
+	// not per namespace. The values stay raw — nothing here interprets them, and
+	// a caller that wanted to would decode them itself.
 	var namespaces DeviceNameSpaces
 	if err := mdocDecMode.Unmarshal(inner, &namespaces); err != nil {
 		return nil, fmt.Errorf("embedded DeviceNameSpaces is not a map of namespaces to data elements: %w", err)
 	}
 	return namespaces, nil
+}
+
+// checkDeviceSignedNameSpaces decides whether the holder-asserted elements in a
+// presentation are acceptable, under ISO/IEC 18013-5 9.1.3.4: "An mdoc shall
+// only authenticate response data elements in DeviceNameSpaces if the key it is
+// using for mdoc authentication is authorized to authenticate these elements in
+// the KeyAuthorizations structure in the MSO. The mdoc reader shall validate
+// this authorization as part of validating the mdoc authentication."
+//
+// So holder-asserted elements are permitted exactly to the extent the issuer
+// authorized the device key to assert them, and the issuer decides that for its
+// own docType. This verifier adds nothing on top: a docType whose issuer never
+// meant to allow self-asserted claims emits no keyAuthorizations, and the check
+// below refuses them for that reason rather than because this package recognised
+// the docType. docType is carried only to name the document in a rejection.
+//
+// Called only after the device signature over these elements has verified — a
+// rule enforced on unauthenticated bytes proves nothing about the holder.
+func checkDeviceSignedNameSpaces(
+	docType string,
+	deviceNameSpaces DeviceNameSpaces,
+	authorizations *KeyAuthorizations,
+) error {
+	if len(deviceNameSpaces) == 0 {
+		return nil
+	}
+
+	// 9.1.2.4: "If the KeyAuthorizations map is present, it shall not be empty."
+	// Absent means the issuer authorized the device key to assert nothing.
+	if authorizations == nil || authorizations.isEmpty() {
+		asserted := make([]string, 0, len(deviceNameSpaces))
+		for namespace := range deviceNameSpaces {
+			asserted = append(asserted, namespace)
+		}
+		slices.Sort(asserted)
+		return fmt.Errorf(
+			"document of docType %s asserts holder-signed namespace(s) %v, but the MSO's deviceKeyInfo carries "+
+				"no keyAuthorizations: ISO/IEC 18013-5 9.1.3.4 authorizes the device key to assert only what that "+
+				"structure names, so an absent structure authorizes nothing",
+			docType, asserted)
+	}
+
+	for namespace, elements := range deviceNameSpaces {
+		// "If authorization is given for a full namespace (by including the
+		// namespace in the AuthorizedNameSpaces array), that namespace shall not be
+		// included in the AuthorizedDataElements map" — so a whole-namespace grant
+		// settles every element under it.
+		if slices.Contains(authorizations.NameSpaces, namespace) {
+			continue
+		}
+		authorized := authorizations.DataElements[namespace]
+		var unauthorized []string
+		for elementIdentifier := range elements {
+			if !slices.Contains(authorized, elementIdentifier) {
+				unauthorized = append(unauthorized, elementIdentifier)
+			}
+		}
+		if len(unauthorized) > 0 {
+			slices.Sort(unauthorized)
+			return fmt.Errorf(
+				"the device key is not authorized to assert %s in namespace %s: the MSO's keyAuthorizations "+
+					"names neither the namespace nor those elements (ISO/IEC 18013-5 9.1.3.4)",
+				strings.Join(unauthorized, ", "), namespace)
+		}
+	}
+	return nil
 }
 
 // VerifyDeviceResponse verifies every document in a DeviceResponse via
