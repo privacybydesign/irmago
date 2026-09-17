@@ -100,12 +100,16 @@ func (s *redisSessionStore) add(ctx context.Context, ses session) error {
 	if ttl <= 0 {
 		return errors.New("session expiry time is in the past")
 	}
-	if err := s.client.Set(
-		ctx,
-		s.client.KeyPrefix+sessionLookupPrefix+ses.Token,
-		string(bytes),
-		ttl,
-	).Err(); err != nil {
+	// The write is unconditional, so it can simply be run again when the connection it ran
+	// on went away.
+	if err := s.client.RetryOnBrokenConn(ctx, func() error {
+		return s.client.Set(
+			ctx,
+			s.client.KeyPrefix+sessionLookupPrefix+ses.Token,
+			string(bytes),
+			ttl,
+		).Err()
+	}); err != nil {
 		s.logger.WithError(err).Error("failed to add session")
 		return errRedis
 	}

@@ -320,21 +320,26 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 	if ttl <= 0 {
 		return &RedisError{errors.New("session ttl is in the past")}
 	}
-	if _, err := s.client.TxPipelined(ctx, func(p redis.Pipeliner) error {
-		if err := p.Set(
-			ctx,
-			s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken),
-			string(session.ClientToken),
-			ttl,
-		).Err(); err != nil {
-			return err
-		}
-		return p.Set(
-			ctx,
-			s.client.KeyPrefix+clientTokenLookupPrefix+string(session.ClientToken),
-			sessionJSON,
-			ttl,
-		).Err()
+	// Both writes are unconditional, so the whole thing can simply be run again when the
+	// connection it ran on went away.
+	if err := s.client.RetryOnBrokenConn(ctx, func() error {
+		_, err := s.client.TxPipelined(ctx, func(p redis.Pipeliner) error {
+			if err := p.Set(
+				ctx,
+				s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken),
+				string(session.ClientToken),
+				ttl,
+			).Err(); err != nil {
+				return err
+			}
+			return p.Set(
+				ctx,
+				s.client.KeyPrefix+clientTokenLookupPrefix+string(session.ClientToken),
+				sessionJSON,
+				ttl,
+			).Err()
+		})
+		return err
 	}); err != nil {
 		return &RedisError{err}
 	}
@@ -344,7 +349,12 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 }
 
 func (s *redisSessionStore) transaction(ctx context.Context, t irma.RequestorToken, handler func(session *sessionData) (bool, error)) error {
-	val, err := s.client.Get(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(t)).Result()
+	var val string
+	err := s.client.RetryOnBrokenConn(ctx, func() error {
+		var err error
+		val, err = s.client.Get(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(t)).Result()
+		return err
+	})
 	if err == redis.Nil {
 		return &UnknownSessionError{t, ""}
 	} else if err != nil {

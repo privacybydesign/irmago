@@ -6,7 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Fixed
-- Redis session transactions are now retried when the connection they run on breaks, so a Redis Sentinel failover no longer fails the session requests that are in flight at that moment with `redis: Conn is in a bad state: use of closed network connection`. A transaction that broke before the session handler ran is retried from the start; one that broke on the commit afterwards has only its commit redone, and only while the session is still the one the handler read, so the handler is never executed twice and a concurrent update is never overwritten
+- Redis session operations are retried when the connection they run on breaks or Redis refuses writes during a failover, so a Redis Sentinel failover no longer fails the session requests that run during it. A session handler is never executed twice and a concurrent update is never overwritten
+- New `redis_settings.retry_budget` setting (`--redis-retry-budget`) controls how long such retries continue; defaults to 3 seconds
+- go-redis's own diagnostics now go through the server's logger (`component=go-redis`) instead of straight to stderr
 
 ## [1.3.1] - 2026-09-01
 ### Added

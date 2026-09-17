@@ -3,6 +3,7 @@ package irmaserver
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -130,6 +131,44 @@ func flakyRedisStore(t *testing.T) (*redisSessionStore, *sessionData, *atomic.Bo
 	require.NoError(t, store.add(context.Background(), session))
 
 	return store, session, broken, mr
+}
+
+func TestRedisSessionStoreAddRetriesRefusedDial(t *testing.T) {
+	// Redis is unreachable at first, as it is while Redis Sentinel is still pointing at a
+	// master that went away, and becomes reachable partway through the retry budget.
+	mr := miniredis.NewMiniRedis()
+	t.Cleanup(mr.Close)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := listener.Addr().String()
+	require.NoError(t, listener.Close())
+
+	time.AfterFunc(300*time.Millisecond, func() { _ = mr.StartAddr(addr) })
+
+	client := redis.NewClient(&redis.Options{Addr: addr})
+	t.Cleanup(func() { _ = client.Close() })
+
+	conf := sessionsConf(t)
+	conf.MaxSessionLifetime = 15
+	conf.SessionResultLifetime = 5
+	store := &redisSessionStore{client: &server.RedisClient{Client: client}, conf: conf}
+
+	req, err := server.ParseSessionRequest(`{"request":{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"MtILupG0g0J23GNR1YtupQ==","devMode":true,"disclose":[[[{"type":"test.test.email.email","value":"example@example.com"}]]]}}`)
+	require.NoError(t, err)
+	session := &sessionData{
+		Action:         irma.ActionDisclosing,
+		RequestorToken: "requestor",
+		ClientToken:    "client",
+		Rrequest:       req,
+		Status:         irma.ServerStatusConnected,
+		LastActive:     time.Now(),
+	}
+
+	require.NoError(t, store.add(context.Background(), session))
+
+	key := store.client.KeyPrefix + clientTokenLookupPrefix + string(session.ClientToken)
+	require.NoError(t, store.client.Get(context.Background(), key).Err())
 }
 
 func TestRedisClientTransactionRetriesBrokenConnection(t *testing.T) {
