@@ -45,7 +45,18 @@ import (
 //     shape nothing else did.
 //
 // The proof is not re-verified here and cannot be: that needs the native prover
-// this build does not have. Stage B verified it at the point it was made.
+// this build does not have. Two things outside this package did verify it:
+//
+//   - stage B, at the point the proof was made; and
+//   - GOOGLE'S REFERENCE VERIFIER, which parsed this exact fixture with its own
+//     CBOR code, recovered the issuer key from our msoX5chain, and accepted the
+//     proof. That is #724 Phase 1's gate, and it is why these tests may assert
+//     on shape alone without being a decoder that agrees only with its encoder.
+//
+// Regenerate with longfellow-go's verify-zk-pipeline.ps1, which reruns all four
+// stages including that verification. Every run produces a WHOLLY DIFFERENT
+// blob — a fresh issuer key and fresh proof randomness — so refresh the fixture
+// only when the encoding changes, never routinely.
 
 const irmagoVector = "testdata/irmago_zk_deviceresponse.cbor"
 
