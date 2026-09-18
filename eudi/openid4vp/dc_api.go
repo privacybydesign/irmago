@@ -27,19 +27,23 @@ const (
 	// rather than with OpenID4VP (Annex A 8), so a wallet that supports A.8 will
 	// receive it.
 	//
-	// Recognized here but not handled, and it cannot be handled by adding a case
-	// below: the other three identifiers all select an OpenID4VP
+	// Recognized here but never handled here, and it cannot be handled by adding a
+	// case below: the other three identifiers all select an OpenID4VP
 	// AuthorizationRequest, which is what this function returns. An org-iso-mdoc
 	// request is `{deviceRequest, encryptionInfo}` — an ISO 18013-5 DeviceRequest
 	// and an HPKE recipient key, with no client_id, no nonce, no DCQL query and
 	// no response_mode. It answers to a different session shape, not to a
 	// different branch of this one.
 	//
-	// The exchange itself lives in eudi/mdocpresent: mdocpresent.Session takes
-	// the request, authenticates the reader, asks the wallet and returns the
-	// sealed response. What is absent is a Discloser backed by real storage and
-	// consent, the routing from here into it, and an app that delivers such a
-	// request at all.
+	// It IS routed, one layer up: client.NewSession branches on the DC API's own
+	// protocol member before a request reaches this package, and hands an
+	// org-iso-mdoc one to client/isomdoc_session.go, which drives
+	// mdocpresent.Session over the same DCQL handlers this client searches with
+	// (see DcqlHandler). A request reaching the case below therefore means the
+	// branch upstream was bypassed, which is worth an error rather than silence.
+	//
+	// Duplicated as mdocpresent.DcApiProtocolIsoMdoc, which is the constant that
+	// branch reads; the two are pinned together by a test there.
 	DcApiProtocolIsoMdoc = "org-iso-mdoc"
 )
 
@@ -135,7 +139,7 @@ func (client *Client) parseDcApiRequest(request *DcApiRequest) (*AuthorizationRe
 		// typos, which is the difference between "we do not do that yet" and
 		// "we do not know what that is".
 		return nil, nil, fmt.Errorf(
-			"digital credentials api protocol %q carries ISO/IEC 18013-5 rather than OpenID4VP and is not routed by this client yet: the exchange is implemented in eudi/mdocpresent, but nothing here hands a request to it",
+			"digital credentials api protocol %q carries ISO/IEC 18013-5 rather than OpenID4VP and is answered by eudi/mdocpresent, not by this client: a request reaching here was not routed by client.NewSession",
 			DcApiProtocolIsoMdoc,
 		)
 

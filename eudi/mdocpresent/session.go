@@ -252,10 +252,31 @@ func recipientKeyFrom(encoded string) (*ecdsa.PublicKey, error) {
 // evaluate authenticates the reader for each requested document and works out
 // what it is entitled to see.
 //
-// Per document, not per session. 7.2.1 forbids requiring reader authentication
-// for an mDL's mandatory elements, so a session that refused an unauthenticated
-// reader outright would violate it — while a session that served everything to
-// one would be worse. The decision therefore belongs to each docRequest.
+// Per document, not per session. The decision belongs to each docRequest because
+// a session that refused an unauthenticated reader outright and one that served
+// everything to it are both wrong, and which applies differs per docType.
+//
+// # 18013-5 7.2.1 does NOT bind this transport, and that is a live choice
+//
+// 18013-5 7.2.1 says "An mDL shall not require mdoc reader authentication as a
+// precondition for the release of any of the mandatory data elements", and
+// ReleasableWithoutReaderAuth implements exactly that.
+//
+// ISO/IEC TS 18013-7:2025 Clause 7 lifts it for the transports IT defines —
+// which is this one, Annex C being the org-iso-mdoc retrieval this package
+// answers: "The mDL data model descriptions and requirements in ISO/IEC 18013-5
+// shall apply in this document with the following exception: an mDL may require
+// mdoc reader authentication as a precondition for the release of any of the
+// mandatory data elements. NOTE This differs from the corresponding requirement
+// in ISO/IEC 18013-5."
+//
+// So over the DC API this wallet MAY refuse an unauthenticated reader every
+// element, mDL mandatory ones included — which is what its policy elsewhere does
+// (see the AV docType in profile.go, and mdoc.VerifyReaderAuth). It currently
+// does not: the carve-out is applied here as written for 18013-5, which is
+// permitted but more generous than the policy. Tightening it is a deliberate
+// decision about what leaves the wallet, not a bug fix, so it is recorded rather
+// than taken.
 func (s *Session) evaluate(request mdoc.DeviceRequest, transcript mdoc.SessionTranscript) ([]RequestedDocument, error) {
 	documents := make([]RequestedDocument, 0, len(request.DocRequests))
 

@@ -136,6 +136,41 @@ type DeviceResponse struct {
 // answers. All three are "1.0" today.
 const DeviceResponseVersion = "1.0"
 
+// DeviceResponseVersionZk is the value a response carrying second-edition
+// members announces itself with.
+//
+// `zkDocuments` does not exist in the 2021 edition — it is ISO/IEC DIS 18013-5
+// (Second Edition) 10.2.7 — so a response carrying one is not a 1.0 response and
+// saying "1.0" would be a second-edition payload wearing a first-edition label. A
+// verifier that trusted the version would parse it as 1.0 and meet a member it
+// has no rule for.
+//
+// Verified against Multipaz rather than quoted from the clause, which is
+// paywalled. DeviceResponse.kt's builder:
+//
+//	val versionToUse = version ?: if (
+//	    zkDocuments.isNotEmpty() || encryptedDocuments.isNotEmpty() || otherDocuments.isNotEmpty()
+//	) "1.1" else "1.0"
+//
+// Its other two triggers are members this package does not implement, so the rule
+// here is the zkDocuments half of the same rule. If encryptedDocuments or
+// otherDocuments ever land, they join this condition.
+//
+// This was found by decoding a DeviceResponse Multipaz actually produced — see
+// zkp_multipaz_vector_test.go. Before that, NewZkDeviceResponse emitted "1.0" and
+// Validate rejected "1.1" outright, so this wallet would have sent a mislabelled
+// response and refused every conformant one it received.
+const DeviceResponseVersionZk = "1.1"
+
+// versionFor picks the version a response with these contents must carry, so the
+// choice lives in one place rather than at each construction site.
+func versionFor(zkDocuments []ZkDocument) string {
+	if len(zkDocuments) > 0 {
+		return DeviceResponseVersionZk
+	}
+	return DeviceResponseVersion
+}
+
 // NewDeviceResponse bundles one or more presented documents (each already carrying
 // DeviceSigned via AttachDeviceSigned) into a successful DeviceResponse.
 func NewDeviceResponse(documents ...MDoc) DeviceResponse {
@@ -154,7 +189,7 @@ func NewDeviceResponse(documents ...MDoc) DeviceResponse {
 // for the same request no longer travel.
 func NewZkDeviceResponse(documents ...ZkDocument) DeviceResponse {
 	return DeviceResponse{
-		Version:     DeviceResponseVersion,
+		Version:     versionFor(documents),
 		ZkDocuments: documents,
 		Status:      ResponseStatusOK,
 	}
@@ -190,10 +225,17 @@ func (r DeviceResponse) WithDocumentErrors(errors ...DocumentError) DeviceRespon
 // and ignored the documents, or vice versa, would disagree with one that did the
 // opposite.
 func (r DeviceResponse) Validate() error {
-	if r.Version != DeviceResponseVersion {
+	// The version is checked against what this response CONTAINS, not against a
+	// single fixed value. 8.3.2.1.2.2 fixes "1.0" for the 2021 edition, but
+	// zkDocuments is a second-edition member and a response carrying one says
+	// "1.1" — see DeviceResponseVersionZk. Enforcing the correspondence in both
+	// directions is what keeps a mislabelled response from being built here or
+	// accepted from elsewhere: a 1.0 response cannot carry proofs, and a response
+	// carrying proofs cannot claim 1.0.
+	if want := versionFor(r.ZkDocuments); r.Version != want {
 		return fmt.Errorf(
-			"DeviceResponse version is %q, want %q: 8.3.2.1.2.2 fixes the value for this edition",
-			r.Version, DeviceResponseVersion)
+			"DeviceResponse version is %q, want %q: a response carrying %d zkDocuments is version %q, one carrying none is %q",
+			r.Version, want, len(r.ZkDocuments), DeviceResponseVersionZk, DeviceResponseVersion)
 	}
 	if r.Status != ResponseStatusOK && len(r.Documents) > 0 {
 		return fmt.Errorf(

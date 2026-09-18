@@ -253,7 +253,11 @@ func TestAVSampleDeviceResponseShape(t *testing.T) {
 	require.NoError(t, cbor.Unmarshal(encoded, &response))
 
 	require.Len(t, response, 3)
-	require.Equal(t, "1.0", response["version"])
+	// "1.1", not "1.0". zkDocuments is a second-edition member, so a response
+	// carrying one is a second-edition response. This assertion said "1.0" until
+	// a DeviceResponse Multipaz actually produced was decoded here and came back
+	// 1.1 — see zkp_multipaz_vector_test.go and DeviceResponseVersionZk.
+	require.Equal(t, "1.1", response["version"])
 	require.Equal(t, uint64(0), response["status"])
 	require.NotContains(t, response, "documents")
 

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/mdocpresent"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
@@ -38,6 +39,12 @@ type session struct {
 	// the order the request asked for (the IRMA proof verifier matches j-th disclosed
 	// against j-th requested by position).
 	irmaDiscloseRequest irma.AttributeConDisCon
+	// isoMdocSession drives an org-iso-mdoc exchange, set only for that protocol.
+	// It parks for consent itself rather than through a PermissionHandler, because
+	// the ISO exchange runs to completion inside one blocking call; the handler
+	// slots above therefore stay nil for such a session, and HandleUserInteraction
+	// checks this one first.
+	isoMdocSession *isoMdocSession
 }
 
 func (s *session) dispatchState() {
@@ -732,7 +739,12 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 	switch userInteraction.Type {
 	case clientmodels.UI_Permission:
 		payload := userInteraction.Payload.(clientmodels.SessionPermissionInteractionPayload)
-		if session.openid4vpPermissionHandler != nil {
+		if session.isoMdocSession != nil {
+			// org-iso-mdoc flow: the choices go back unconverted, because the ISO
+			// session maps them to DCQL queries itself — it holds the query ids from
+			// the plan it built and needs them again after the user answers.
+			session.isoMdocSession.answer(payload.Granted, payload.DisclosureChoices)
+		} else if session.openid4vpPermissionHandler != nil {
 			// OpenID4VP flow: convert UI selections to DisclosureSelections
 			selections := disclosureChoicesToOpenID4VPSelections(payload.DisclosureChoices, session.openid4vpQueryIds)
 			session.openid4vpPermissionHandler(payload.Granted, selections)
@@ -798,10 +810,27 @@ func (client *Client) NewSession(id int, sessionrequest string) {
 
 	switch sessionReq.Protocol {
 	case clientmodels.Protocol_OpenID4VP:
-		if sessionReq.DcApi != nil {
-			session.dismisser = client.openid4vpClient.NewDcApiSession(sessionReq.DcApi, &openid4vpSessionAdapter{session: session})
-		} else {
+		switch {
+		case sessionReq.DcApi == nil:
 			session.dismisser = client.openid4vpClient.NewSession(sessionReq.URL, &openid4vpSessionAdapter{session: session})
+
+		// One app-level entry point, two unrelated exchanges. The app reports
+		// whatever protocol identifier the platform handed it and does not have to
+		// know which of them carries OpenID4VP — so the branch is on the DC API's
+		// own protocol member, not on anything the app decided. See
+		// client/isomdoc_session.go.
+		case sessionReq.DcApi.Protocol == mdocpresent.DcApiProtocolIsoMdoc:
+			state.Protocol = clientmodels.Protocol_ISO18013_5
+			if sessionReq.DcApi.Origin == "" {
+				session.error(fmt.Errorf(
+					"org-iso-mdoc session request is missing the caller origin: the platform must supply the origin it authenticated, and the session transcript binds to it"))
+				return
+			}
+			session.dismisser = client.newIsoMdocSession(
+				sessionReq.DcApi.Data, sessionReq.DcApi.Origin, session)
+
+		default:
+			session.dismisser = client.openid4vpClient.NewDcApiSession(sessionReq.DcApi, &openid4vpSessionAdapter{session: session})
 		}
 	case clientmodels.Protocol_OpenID4VCI:
 		if sessionReq.OpenID4VCIRedirectUri == "" {

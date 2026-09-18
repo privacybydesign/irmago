@@ -31,11 +31,23 @@ import (
 //
 // # Where these shapes come from
 //
-// ISO/IEC 18013-7 is not in hand, so neither structure is quoted from it. Both
-// were read off a captured Age Verification exchange byte by byte and confirmed
-// against Multipaz's reader implementation (VerificationUtil.kt, the
-// "org-iso-mdoc" branch), which is the same conformance target zkp.go uses and
-// for the same reason. Where the two agreed, that is what is encoded here.
+// Both structures were originally reverse-engineered — read off a captured Age
+// Verification exchange byte by byte and confirmed against Multipaz's reader
+// (VerificationUtil.kt, the "org-iso-mdoc" branch) — because ISO/IEC TS 18013-7
+// was not available.
+//
+// It is now, and they are confirmed. ISO/IEC TS 18013-7:2025 Annex C is
+// normative and says, verbatim:
+//
+//	C.2  {"deviceRequest": Base64DeviceRequest, "encryptionInfo": Base64EncryptionInfo}
+//	     EncryptionInfo = ["dcapi", {"nonce": bstr, "recipientPublicKey": COSE_Key}]
+//	C.3  {"response": Base64EncryptedResponse}
+//	     EncryptedResponse = ["dcapi", {"enc": bstr, "cipherText": bstr}]
+//
+// with every base64 a "base64-url-without-padding string". The reverse-engineered
+// shapes were right, including the "dcapi" envelope tag on both halves. C.1's
+// protocol identifier is likewise "org-iso-mdoc", which is what routes a request
+// here.
 //
 // # The re-encoding hazard
 //
@@ -247,6 +259,12 @@ func (r *DCAPIEncryptedResponse) UnmarshalCBOR(data []byte) error {
 
 // The cipher suite the profile fixes: DHKEM(P-256, HKDF-SHA256), HKDF-SHA256,
 // AES-128-GCM.
+//
+// Confirmed against ISO/IEC TS 18013-7:2025 Table C.1, which fixes exactly these
+// four: Mode Base, KEM DHKEM_P256, KDF HKDF_SHA256, AEAD AES_128_GCM. AES-128
+// rather than AES-256 is the one a reasonable implementer gets wrong by
+// reaching for the stronger-looking option; the result is a response no
+// conformant reader can open.
 //
 // Pinned rather than negotiated, and not read from anything on the wire. The
 // envelope carries no suite identifier — `enc` is a bare EC point and
