@@ -246,6 +246,46 @@ func (r *ZkRequest) UnmarshalCBOR(data []byte) error {
 	return nil
 }
 
+// ZkRequestKey is the requestInfo key a reader puts its zkRequest under.
+//
+// Taken from Multipaz, which is what conformance means here while the second
+// edition is unpublished. DeviceRequestGenerator.addDocumentRequest writes
+// `requestInfoMutableMap["zkRequest"] = Cbor.encode(...)` and then splices each
+// requestInfo value in with `put(key, RawCbor(value))` — RawCbor, not Bstr, so
+// the value is a nested CBOR map rather than a byte string wrapping one. Their
+// parser agrees: `requestInfo.getOrNull("zkRequest").getOrNull("systemSpecs")`
+// indexes straight into a map.
+//
+// It lives inside itemsRequest, which means it is per docRequest and not per
+// session. A reader may ask for a proof of one document and a plain disclosure
+// of another in the same request, so the decision belongs to each document.
+const ZkRequestKey = "zkRequest"
+
+// ZkRequestFrom pulls a reader's zkRequest out of an itemsRequest's requestInfo.
+// The bool is false when the reader asked for no proof, which is the ordinary
+// case and not an error.
+//
+// # Why a malformed zkRequest is an error rather than an absent one
+//
+// 8.1 says an mdoc "shall ignore any key-value pairs that it is not able to
+// interpret", and that is what RequestInfo's raw-CBOR typing is for. But the
+// clause is about keys with no meaning to this implementation, and zkRequest
+// has one. Treating a present-but-broken zkRequest as absent would silently
+// take the fallback, which is exactly what ZkRequired exists to forbid: a
+// reader that opted out of cleartext would receive cleartext because its
+// request did not parse. So it is surfaced, and the session decides.
+func ZkRequestFrom(items ItemsRequest) (ZkRequest, bool, error) {
+	raw, ok := items.RequestInfo[ZkRequestKey]
+	if !ok {
+		return ZkRequest{}, false, nil
+	}
+	var request ZkRequest
+	if err := Unmarshal(raw, &request); err != nil {
+		return ZkRequest{}, false, fmt.Errorf("requestInfo[%q]: %w", ZkRequestKey, err)
+	}
+	return request, true, nil
+}
+
 // ============================================================
 // ZkDocument — the presentation itself
 // ============================================================
@@ -318,6 +358,41 @@ type ZkDocumentData struct {
 	// goes through, and to hand the circuit the P-256 coordinates the proof is
 	// stated against.
 	MsoX5Chain []*x509.Certificate
+
+	// raw is the tag-24 payload exactly as it was received, or nil for a value
+	// built here. When it is set, MarshalCBOR returns it verbatim.
+	//
+	// 8.1: "all CBOR maps that are used in a cryptographic operation are
+	// communicated in a tagged CBOR bytestring. For any cryptographic
+	// operation, an mdoc, mdoc reader or issuing authority infrastructure shall
+	// use these bytestrings as they were sent or received, without attempting
+	// to re-create them from the underlying maps."
+	//
+	// The same reason DocRequest.ItemsRequest keeps its bytes: a decode and
+	// re-encode of a CBOR map is not guaranteed to be the identity, because 8.1
+	// also waives canonical key ordering. Re-creating the wrapper is therefore
+	// how a wallet that receives and forwards a presentation rewrites bytes it
+	// was told to pass on — and how a verifier that hashed this blob would
+	// compute a digest over something the sender never sent.
+	//
+	// Unexported and copied by value with the struct, so a decoded document
+	// re-encodes to itself without callers having to know this exists. What
+	// callers DO have to know is the other edge: mutating a field of a decoded
+	// value does not change what it encodes to. Rebuilt() is the way to say
+	// that the fields are now authoritative.
+	raw cbor.RawMessage
+}
+
+// Rebuilt returns a copy whose encoding comes from its fields rather than from
+// the bytes it was decoded out of.
+//
+// Needed only after modifying a decoded ZkDocumentData, which is not something
+// the presentation path does — it builds fresh values and forwards received
+// ones unchanged. It exists so that "the preserved bytes won" is a thing a
+// caller can opt out of explicitly rather than discover.
+func (d ZkDocumentData) Rebuilt() ZkDocumentData {
+	d.raw = nil
+	return d
 }
 
 // ZkDocument is a document presented as a proof: the cleartext claim and the
@@ -455,8 +530,12 @@ func decodeCertChain(raw cbor.RawMessage) ([]*x509.Certificate, error) {
 	return chain, nil
 }
 
-// MarshalCBOR encodes the cleartext half of a presentation.
+// MarshalCBOR encodes the cleartext half of a presentation, or returns the
+// bytes it was decoded from if it was decoded — see the note on the raw field.
 func (d ZkDocumentData) MarshalCBOR() ([]byte, error) {
+	if len(d.raw) > 0 {
+		return d.raw, nil
+	}
 	chain, err := encodeCertChain(d.MsoX5Chain)
 	if err != nil {
 		return nil, err
@@ -489,6 +568,10 @@ func (d *ZkDocumentData) UnmarshalCBOR(data []byte) error {
 	d.IssuerSigned = signedItemsFromWire(wire.IssuerSigned)
 	d.DeviceSigned = signedItemsFromWire(wire.DeviceSigned)
 	d.MsoX5Chain = chain
+
+	// Kept last and copied, not aliased: data belongs to the decoder and the
+	// slice it points into may be reused for the next value.
+	d.raw = append(cbor.RawMessage(nil), data...)
 	return nil
 }
 

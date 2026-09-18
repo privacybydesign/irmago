@@ -114,6 +114,12 @@ func (iso *isoMdocSession) run(client *Client, data []byte, origin string) {
 	// authorization request whose verifier cannot be authenticated never reaches
 	// a consent screen, and it is the wallet's own choice rather than something
 	// 18013-5 requires. See mdoc.VerifyReaderAuth.
+	// ZkSystems is deliberately unset. The native prover lives in a module this
+	// build does not link, and a nil repository is what routes an AV request to
+	// the plain A.6 presentation instead of failing — see mdocpresent.Session.
+	// Wiring it is where longfellow-go arrives; nothing else here changes when
+	// it does, because the session already reads a reader's zkRequest and takes
+	// the branch when a prover is present.
 	mdocSession := &mdocpresent.Session{
 		Verifier:  mdoc.NewVerifierFromTrustSource(&client.openid4vpClient.Configuration.Verifiers),
 		Discloser: iso.discloser,

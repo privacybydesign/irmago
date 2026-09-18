@@ -127,10 +127,20 @@ func TestIrmagoZkVectorDisclosesOnlyWhatWasProved(t *testing.T) {
 		"the AV profile has no holder-asserted claims")
 }
 
-// TestIrmagoZkVectorRoundTrips: decode, re-encode, decode again. Byte equality is
-// deliberately not asserted — 18013-5 8.1 says "the fourth rule regarding sorting
-// of map keys is not required", so a conformant peer may order maps differently
-// and so may we.
+// TestIrmagoZkVectorRoundTrips: decode and re-encode reproduces the file exactly.
+//
+// This is a stronger claim than 18013-5 requires and is only true of OUR OWN
+// fixture. 8.1 waives canonical map ordering — "the fourth rule regarding
+// sorting of map keys is not required" — so a conformant peer may order maps
+// differently, and the Multipaz vector accordingly does not reproduce byte for
+// byte at the top level. What must hold for both, and does, is that the tag-24
+// zkDocumentData is passed through as received; see
+// TestMultipazZkDocumentDataBytesArePreserved.
+//
+// Asserting the whole file here is worth it because every byte of it was
+// produced by this package: the outer DeviceResponse map by our encoder, the
+// zkDocumentData by preservation. A difference therefore means our own encoding
+// drifted, which is exactly what a committed fixture is for.
 func TestIrmagoZkVectorRoundTrips(t *testing.T) {
 	raw, err := os.ReadFile(irmagoVector)
 	require.NoError(t, err)
@@ -140,8 +150,8 @@ func TestIrmagoZkVectorRoundTrips(t *testing.T) {
 
 	reEncoded, err := decoded.Encode()
 	require.NoError(t, err)
-	require.Len(t, reEncoded, len(raw),
-		"same members and values: a length change means something was added or dropped")
+	require.Equal(t, raw, reEncoded,
+		"a fixture this package wrote must re-encode to itself, byte for byte")
 
 	var reDecoded DeviceResponse
 	require.NoError(t, Unmarshal(reEncoded, &reDecoded))

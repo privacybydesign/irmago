@@ -210,6 +210,23 @@ func NewErrorDeviceResponse(status uint64) (DeviceResponse, error) {
 	return DeviceResponse{Version: DeviceResponseVersion, Status: status}, nil
 }
 
+// WithZkDocuments attaches zero-knowledge presentations to a response.
+//
+// It exists because zkRequest is per docRequest, so one request can be answered
+// with proofs for some documents and plain disclosures for others, and neither
+// NewDeviceResponse nor NewZkDeviceResponse can express that mixture.
+//
+// The version is recomputed rather than left alone: adding a second-edition
+// member to a response built by NewDeviceResponse turns it into a 1.1 response,
+// and leaving it at 1.0 would be the mislabelling DeviceResponseVersionZk
+// exists to prevent. Validate would catch it, but at construction rather than
+// here, naming the symptom instead of the cause.
+func (r DeviceResponse) WithZkDocuments(documents ...ZkDocument) DeviceResponse {
+	r.ZkDocuments = append(r.ZkDocuments, documents...)
+	r.Version = versionFor(r.ZkDocuments)
+	return r
+}
+
 // WithDocumentErrors attaches documentErrors for documents that are not being
 // returned. It is additive: a response can carry both returned documents and
 // errors for others.

@@ -118,8 +118,8 @@ func TestMultipazZkDeviceResponseRoundTrips(t *testing.T) {
 	require.Equal(t, decoded.ZkDocuments[0].DocumentData, reDecoded.ZkDocuments[0].DocumentData)
 }
 
-// TestMultipazZkDocumentDataBytesAreRebuilt records a KNOWN GAP rather than a
-// passing property, so it cannot be lost.
+// TestMultipazZkDocumentDataBytesArePreserved: a zkDocumentData that arrived is
+// re-emitted byte for byte, not rebuilt from the struct it decoded into.
 //
 // 8.1: "Because canonical map ordering is not required, all CBOR maps that are
 // used in a cryptographic operation are communicated in a tagged CBOR bytestring.
@@ -127,19 +127,21 @@ func TestMultipazZkDeviceResponseRoundTrips(t *testing.T) {
 // infrastructure shall use these bytestrings AS THEY WERE SENT OR RECEIVED,
 // without attempting to re-create them from the underlying maps."
 //
-// ZkDocument.MarshalCBOR's own comment states exactly this rule — the Tag-24
-// wrapper "fixes one byte sequence as the thing being referred to, rather than
-// leaving the receiver to re-encode a decoded map and hope it lands on the same
-// bytes" — and then UnmarshalCBOR discards the received bytes and MarshalCBOR
-// rebuilds them from the struct. Whether that is harmful depends on whether
-// anything hashes the wrapper: longfellow's verifier takes individual
-// RequestedAttribute values rather than this blob, so today it appears not to.
-// It is still the thing 8.1 tells implementations not to do, and a wallet that
-// receives and forwards a ZkDocument would rewrite bytes it was told to pass on.
+// Multipaz's bytes are the right ones to assert this on. A fixture this package
+// produced would pass whether or not the rule were implemented, because our
+// encoder would rebuild what our encoder wrote; these arrived from a different
+// implementation with its own key ordering, so only preservation can reproduce
+// them.
 //
-// This test asserts the current behaviour. When ZkDocument learns to keep the
-// received bytes, this test flips to require.Equal and stops being a gap.
-func TestMultipazZkDocumentDataBytesAreRebuilt(t *testing.T) {
+// This test spent its first life recording the opposite as a known gap —
+// UnmarshalCBOR discarded the received bytes and MarshalCBOR rebuilt them. The
+// harm was latent rather than immediate: longfellow's verifier takes individual
+// RequestedAttribute values rather than hashing this blob, so nothing in the
+// current AV flow noticed. What it did break is forwarding — a wallet that
+// received a ZkDocument and passed it on rewrote bytes it was told to pass
+// through, and any future verifier that does hash the wrapper would have
+// computed a digest over something the sender never sent.
+func TestMultipazZkDocumentDataBytesArePreserved(t *testing.T) {
 	raw, err := os.ReadFile(multipazVector)
 	require.NoError(t, err)
 
@@ -149,14 +151,42 @@ func TestMultipazZkDocumentDataBytesAreRebuilt(t *testing.T) {
 	reEncoded, err := decoded.Encode()
 	require.NoError(t, err)
 
-	original := zkDocumentDataBytes(t, raw)
-	rebuilt := zkDocumentDataBytes(t, reEncoded)
+	require.Equal(t, zkDocumentDataBytes(t, raw), zkDocumentDataBytes(t, reEncoded),
+		"8.1: the tagged bytestring must be used as it was received")
+}
 
-	require.Len(t, rebuilt, len(original),
-		"the rebuilt wrapper must at least carry the same content")
-	require.NotEqual(t, original, rebuilt,
-		"KNOWN GAP: if these are now equal, the received bytes are being preserved — "+
-			"make this require.Equal and delete this message")
+// TestZkDocumentDataRebuiltDropsThePreservedBytes is the escape hatch, and the
+// reason it has to exist: preserved bytes mean a decoded value ignores changes
+// to its own fields when it re-encodes. Rebuilt makes the fields authoritative
+// again, so that behaviour is something a caller opts out of rather than
+// discovers.
+func TestZkDocumentDataRebuiltDropsThePreservedBytes(t *testing.T) {
+	raw, err := os.ReadFile(multipazVector)
+	require.NoError(t, err)
+
+	var decoded DeviceResponse
+	require.NoError(t, Unmarshal(raw, &decoded))
+	data := decoded.ZkDocuments[0].DocumentData
+
+	// Mutating a decoded value changes nothing: the received bytes still win.
+	mutated := data
+	mutated.DocType = "com.example.something.else"
+	asReceived, err := mutated.MarshalCBOR()
+	require.NoError(t, err)
+
+	original, err := data.MarshalCBOR()
+	require.NoError(t, err)
+	require.Equal(t, original, asReceived,
+		"a decoded document re-encodes to what it was, whatever its fields now say")
+
+	// Rebuilt hands authority back to the fields.
+	rebuilt, err := mutated.Rebuilt().MarshalCBOR()
+	require.NoError(t, err)
+	require.NotEqual(t, original, rebuilt)
+
+	var check ZkDocumentData
+	require.NoError(t, check.UnmarshalCBOR(rebuilt))
+	require.Equal(t, "com.example.something.else", check.DocType)
 }
 
 // zkDocumentDataBytes digs the Tag-24 zkDocumentData payload out of an encoded

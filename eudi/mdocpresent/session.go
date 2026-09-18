@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
@@ -79,7 +80,21 @@ type RequestedDocument struct {
 	// reader authentication optional, and the captured EUDI Age Verification
 	// reader sends none at all.
 	Reader *mdoc.ReaderAuthResult
+
+	// Zk is the reader's zkRequest for this document, or nil when it asked for a
+	// plain disclosure. Per document rather than per session, because that is
+	// where the reader puts it — see mdoc.ZkRequestKey.
+	Zk *mdoc.ZkRequest
 }
+
+// ZkRequested reports whether the reader will accept a zero-knowledge proof for
+// this document.
+func (d RequestedDocument) ZkRequested() bool { return d.Zk != nil }
+
+// ZkRequired reports whether the reader has refused the plain A.6 fallback. A
+// wallet that cannot prove must fail the session rather than answer such a
+// request in the clear.
+func (d RequestedDocument) ZkRequired() bool { return d.Zk != nil && d.Zk.ZkRequired }
 
 // Authenticated reports whether this document's request was signed by a reader
 // whose certificate chained to a trusted anchor.
@@ -147,6 +162,25 @@ type Releaser interface {
 type Session struct {
 	Verifier  *mdoc.Verifier
 	Discloser Discloser
+
+	// ZkSystems are the zero-knowledge systems this build has. Nil is the
+	// ordinary state of a build without the native prover, not an error: A.8
+	// requires that such a build "fall back to the plain ISO mDoc presentation
+	// defined in Section A.6", so absence routes to the fallback. It becomes a
+	// failure only against a reader that set zkRequired.
+	ZkSystems *mdoc.ZkSystemRepository
+
+	// Now supplies the timestamp a proof is taken at. Nil means time.Now.
+	// Injectable because the timestamp is inside the statement the circuit
+	// proves, so a test cannot assert on a proof it cannot pin the clock for.
+	Now func() time.Time
+}
+
+func (s *Session) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
 }
 
 // Respond runs the whole exchange and returns the sealed response.
@@ -188,6 +222,15 @@ func (s *Session) Respond(request Request) (mdoc.DCAPIEncryptedResponse, error) 
 		return empty, err
 	}
 
+	// Before the user is asked anything. A reader that set zkRequired against a
+	// build with no usable system is going to be refused whatever the user says,
+	// and prompting first would collect consent for a disclosure that then never
+	// happens — the one outcome worse than refusing early, because the user has
+	// agreed to something and has no way to tell it did not occur.
+	if err := s.checkZkSatisfiable(documents); err != nil {
+		return empty, err
+	}
+
 	selections, err := s.Discloser.Disclose(DisclosureRequest{
 		Origin:    request.Origin,
 		Documents: documents,
@@ -199,7 +242,7 @@ func (s *Session) Respond(request Request) (mdoc.DCAPIEncryptedResponse, error) 
 		return empty, fmt.Errorf("disclose: %w", err)
 	}
 
-	response, err := assemble(documents, selections, transcript)
+	response, err := s.assemble(documents, selections, transcript)
 	if err != nil {
 		return empty, err
 	}
@@ -286,6 +329,11 @@ func (s *Session) evaluate(request mdoc.DeviceRequest, transcript mdoc.SessionTr
 			return nil, fmt.Errorf("docRequest %d: %w", i, err)
 		}
 
+		zkRequest, zkRequested, err := mdoc.ZkRequestFrom(items)
+		if err != nil {
+			return nil, fmt.Errorf("docRequest %d (%s): %w", i, items.DocType, err)
+		}
+
 		var reader *mdoc.ReaderAuthResult
 		if s.Verifier != nil {
 			result, err := s.Verifier.VerifyReaderAuth(docRequest, transcript)
@@ -308,6 +356,9 @@ func (s *Session) evaluate(request mdoc.DeviceRequest, transcript mdoc.SessionTr
 			DocType:   items.DocType,
 			Requested: items,
 			Reader:    reader,
+		}
+		if zkRequested {
+			document.Zk = &zkRequest
 		}
 		if reader != nil {
 			document.Permitted = items
@@ -333,29 +384,58 @@ func (s *Session) evaluate(request mdoc.DeviceRequest, transcript mdoc.SessionTr
 //
 // requested is the session's full list, not the servable subset: a document the
 // wallet never offered the user still has to be reported to the reader.
-func assemble(
+func (s *Session) assemble(
 	requested []RequestedDocument,
 	selections []Selection,
 	transcript mdoc.SessionTranscript,
 ) (mdoc.DeviceResponse, error) {
 	var (
-		documents = make([]mdoc.MDoc, 0, len(selections))
-		served    = make(map[string]bool, len(selections))
+		documents   = make([]mdoc.MDoc, 0, len(selections))
+		zkDocuments = make([]mdoc.ZkDocument, 0, len(selections))
+		served      = make(map[string]bool, len(selections))
 	)
 
 	for _, selection := range selections {
-		items, ok := itemsRequestFor(requested, selection.DocType)
+		asked, ok := documentFor(requested, selection.DocType)
 		if !ok {
 			return mdoc.DeviceResponse{}, fmt.Errorf(
 				"wallet selected a %s document, which this request did not ask for", selection.DocType)
 		}
 
-		document, err := signDocument(selection, items, transcript)
+		// The ordinary presentation path runs first and unchanged, ZK or not.
+		// That is not an optimisation to skip when a proof is wanted: the proof
+		// covers the device signature over this session's transcript, so the
+		// document must already carry its DeviceSigned before it can be proved.
+		// longfellow's prover refuses one that does not, with
+		// MDOC_PROVER_DEVICE_SIGNED_MISSING.
+		document, err := signDocument(selection, asked.Requested, transcript)
 		if err != nil {
 			return mdoc.DeviceResponse{}, err
 		}
-		documents = append(documents, *document)
 		served[selection.DocType] = true
+
+		if asked.ZkRequested() {
+			zkDocument, proved, err := s.prove(asked, *document, transcript)
+			if err != nil {
+				return mdoc.DeviceResponse{}, err
+			}
+			if proved {
+				// The plain document does NOT also travel. Sending both would
+				// disclose in the clear exactly what the proof exists to keep
+				// hidden, and the reader would have no reason to look at the proof.
+				zkDocuments = append(zkDocuments, *zkDocument)
+				continue
+			}
+			if asked.ZkRequired() {
+				return mdoc.DeviceResponse{}, fmt.Errorf(
+					"reader requires a zero-knowledge proof for %s and this build cannot produce one: "+
+						"answering in the clear would disclose more than the reader asked for", selection.DocType)
+			}
+			// A.8's fallback: "where the User's device does not support
+			// Zero-Knowledge Proof generation, the AVI SHALL fall back to the
+			// plain ISO mDoc presentation defined in Section A.6."
+		}
+		documents = append(documents, *document)
 	}
 
 	// Every requested document that is not being returned gets a documentError.
@@ -382,11 +462,100 @@ func assemble(
 	// Status stays 0 throughout. 8.3.2.1.2.3 forbids returning documents with a
 	// non-zero status, so reporting "you cannot have this" as a status would throw
 	// away everything the wallet DID agree to release in the same request.
+	// Both lists can be non-empty at once: zkRequest is per docRequest, so a
+	// reader may ask for a proof of one document and a plain disclosure of
+	// another. WithZkDocuments is what keeps the version correct for that case.
 	response := mdoc.NewDeviceResponse(documents...)
+	if len(zkDocuments) > 0 {
+		response = response.WithZkDocuments(zkDocuments...)
+	}
 	if len(documentErrors) > 0 {
 		response = response.WithDocumentErrors(documentErrors...)
 	}
 	return response, nil
+}
+
+// checkZkSatisfiable refuses, before the user is asked anything, a request this
+// build cannot possibly answer.
+//
+// Only the cases that are decidable without knowing what the user will pick:
+// zkRequired against a build with no prover at all, or against one holding no
+// circuit from any system the reader offered. Whether a circuit exists for the
+// number of elements finally disclosed cannot be known yet and is caught in
+// assemble.
+func (s *Session) checkZkSatisfiable(documents []RequestedDocument) error {
+	for _, document := range documents {
+		if !document.ZkRequired() {
+			continue
+		}
+		var haveSystem bool
+		for _, offered := range document.Zk.SystemSpecs {
+			if s.ZkSystems.Lookup(offered.System) != nil {
+				haveSystem = true
+				break
+			}
+		}
+		if !haveSystem {
+			return fmt.Errorf(
+				"reader requires a zero-knowledge proof for %s under one of %d offered systems and this build has none: "+
+					"the reader has refused the plain fallback, so there is nothing to present",
+				document.DocType, len(document.Zk.SystemSpecs))
+		}
+	}
+	return nil
+}
+
+// prove turns a signed document into a zero-knowledge presentation of it.
+//
+// The false return is a fallback rather than a failure and covers every way a
+// build can come up short: no prover compiled in, no circuit in common with the
+// reader, or no circuit built for this many elements. The caller decides what
+// that means, which is ZkRequest.ZkRequired's decision to make.
+//
+// An error, by contrast, is a prover that was selected and then failed. That is
+// never a fallback: a wallet that quietly disclosed in the clear because proving
+// broke would turn a crash into an over-disclosure.
+func (s *Session) prove(
+	asked RequestedDocument,
+	document mdoc.MDoc,
+	transcript mdoc.SessionTranscript,
+) (*mdoc.ZkDocument, bool, error) {
+	disclosed, err := document.DisclosedElements()
+	if err != nil {
+		return nil, false, fmt.Errorf("count disclosed elements of %s: %w", asked.DocType, err)
+	}
+	var count int
+	for _, elements := range disclosed {
+		count += len(elements)
+	}
+
+	// Counted after narrowing, not from the request. A circuit is built for an
+	// exact number of attributes, and what the proof is over is what the user
+	// actually agreed to disclose — which partial satisfaction may have made
+	// smaller than what the reader asked for.
+	system, spec, ok := s.ZkSystems.SelectProver(*asked.Zk, count)
+	if !ok {
+		return nil, false, nil
+	}
+
+	zkDocument, err := system.GenerateProof(spec, document, transcript, s.now())
+	if err != nil {
+		return nil, false, fmt.Errorf("generate %s proof for %s: %w", system.Name(), asked.DocType, err)
+	}
+	if zkDocument == nil {
+		return nil, false, fmt.Errorf("%s returned no proof and no error for %s", system.Name(), asked.DocType)
+	}
+	return zkDocument, true, nil
+}
+
+// documentFor finds what the reader asked of a docType.
+func documentFor(documents []RequestedDocument, docType string) (RequestedDocument, bool) {
+	for _, document := range documents {
+		if document.DocType == docType {
+			return document, true
+		}
+	}
+	return RequestedDocument{}, false
 }
 
 // signDocument signs one selected document for this session and records the
