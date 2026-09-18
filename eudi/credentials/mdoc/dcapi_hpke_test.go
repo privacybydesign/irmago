@@ -14,13 +14,18 @@ import (
 // HPKE for org-iso-mdoc: DHKEM(P-256, HKDF-SHA256), HKDF-SHA256, AES-128-GCM,
 // with `info` the encoded SessionTranscript and empty `aad`.
 //
-// There are no published test vectors for this in reach — ISO/IEC 18013-7 is
-// paywalled and the captured exchange cannot be decrypted, since the reader's
-// private key was never on the wire. So these tests pin the two things that are
-// checkable without one: that our own two halves agree, and that the exchange is
-// bound to everything it is supposed to be bound to. A suite mismatch against
-// another implementation would show up as "it does not open" and is the one risk
-// this file cannot retire.
+// The suite is no longer guesswork. ISO/IEC TS 18013-7:2025 Table C.1 fixes all
+// four parameters — Mode Base, KEM DHKEM_P256, KDF HKDF_SHA256, AEAD
+// AES_128_GCM — and Tables C.2/C.3 fix `info` as the CBOR-encoded
+// SessionTranscript and `aad` as empty. That is what dcapiSuite returns.
+//
+// What is still missing is test VECTORS. The captured exchange cannot be
+// decrypted — the reader's private key was never on the wire — and none are
+// published. So these tests pin the two things checkable without one: that our
+// own two halves agree, and that the exchange is bound to everything it should
+// be. A suite mismatch against another implementation would surface as "it does
+// not open", and that is the one risk this file cannot retire; interop testing
+// against a real reader is what retires it.
 
 // dcapiSession is one request's worth of reader state: the ephemeral key pair,
 // the EncryptionInfo built from it, and the transcript both sides derive.

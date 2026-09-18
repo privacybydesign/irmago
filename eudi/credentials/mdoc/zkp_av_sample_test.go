@@ -13,9 +13,9 @@ import (
 // These tests check this package's ZK structures against captured wire samples
 // from a real Age Verification exchange — a DeviceRequest carrying a zkRequest
 // and the DeviceResponse that answered it. They are the closest thing to a
-// normative reference available: the second edition of ISO/IEC 18013-5 is a
-// paywalled draft, so the AV profile's own traffic is what conformance is
-// measured against.
+// normative reference available: the second edition of ISO/IEC 18013-5 is not
+// published, only a draft in ballot, so the AV profile's own traffic is what
+// conformance is measured against.
 //
 // Everything below is transcribed from those samples. Where a test asserts a
 // key name, a tag number or a parameter value, that is what the sample shows.

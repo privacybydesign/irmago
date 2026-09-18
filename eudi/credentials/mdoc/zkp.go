@@ -37,7 +37,9 @@ import (
 // issuer's certificate do.
 //
 // The byte shapes here are not readable from the 2021 edition of ISO/IEC
-// 18013-5, which has no ZK at all, and the second edition is a paywalled draft.
+// 18013-5, which has no ZK at all, and the second edition is not published --
+// it is still a draft in ballot (ISO/IEC DIS 18013-5), so there is no normative
+// text to quote at any price, and what there is may still change.
 // They follow Multipaz (org.multipaz.mdoc.zkp), which is both the reference the
 // AV interop events are run against and the implementation the Longfellow
 // authors' own test vectors are exercised through. Conformance here means

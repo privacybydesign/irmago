@@ -14,8 +14,8 @@ import (
 // ============================================================
 //
 // zkp.go's CBOR shapes were written AGAINST org.multipaz.mdoc.zkp, because the
-// ISO/IEC DIS 18013-5 second edition that defines them is paywalled and Multipaz
-// is the stated conformance target. Until this test, that agreement was asserted
+// ISO/IEC DIS 18013-5 second edition that defines them is not published -- it is
+// still a draft in ballot -- and Multipaz is the stated conformance target. Until this test, that agreement was asserted
 // and never checked: every other test in this package encodes with our own code
 // and decodes with our own code, which passes just as happily if both sides are
 // wrong in the same way.

@@ -145,8 +145,9 @@ const DeviceResponseVersion = "1.0"
 // verifier that trusted the version would parse it as 1.0 and meet a member it
 // has no rule for.
 //
-// Verified against Multipaz rather than quoted from the clause, which is
-// paywalled. DeviceResponse.kt's builder:
+// Verified against Multipaz rather than quoted from the clause: the second
+// edition is not published, only a draft in ballot, so there is no clause to
+// quote. DeviceResponse.kt's builder:
 //
 //	val versionToUse = version ?: if (
 //	    zkDocuments.isNotEmpty() || encryptedDocuments.isNotEmpty() || otherDocuments.isNotEmpty()

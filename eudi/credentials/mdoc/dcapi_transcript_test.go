@@ -13,10 +13,20 @@ import (
 //
 //	SessionTranscript = [null, null, ["dcapi", SHA-256(cbor([base64url(EncryptionInfo), origin]))]]
 //
-// ISO/IEC 18013-7 is paywalled, so the formula is taken from Multipaz's reader
-// (VerificationUtil.kt, the "org-iso-mdoc" branch) — the same conformance target
-// zkp.go uses. These tests recompute it independently rather than calling the
-// production helper, so a change to either side shows up as a disagreement.
+// The formula was originally taken from Multipaz's reader (VerificationUtil.kt,
+// the "org-iso-mdoc" branch) because ISO/IEC TS 18013-7 was not available. It is
+// now, and Annex C.5 gives exactly this:
+//
+//	SessionTranscript = [null, null, ["dcapi", dcapiInfoHash]]
+//	dcapiInfo = [Base64EncryptionInfo, SerializedOrigin]
+//	dcapiInfoHash = SHA-256(cbor(dcapiInfo))
+//
+// with SerializedOrigin the WHATWG ASCII serialisation of an origin, e.g.
+// "https://gov.example.com". Measured against the production helper: it encodes
+// to 83 f6 f6 82 65 "dcapi" 58 20 <32 bytes>, which is the clause.
+//
+// These tests still recompute the digest independently rather than calling that
+// helper, so a change to either side shows up as a disagreement.
 
 const testOrigin = "https://verifier.example.com"
 

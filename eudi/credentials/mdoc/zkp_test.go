@@ -10,7 +10,8 @@ import (
 )
 
 // The ZK wire format has no readable normative source in the 2021 edition of
-// ISO/IEC 18013-5 and the second edition is a paywalled draft, so these tests
+// ISO/IEC 18013-5, and the second edition is not published -- still a draft in
+// ballot (ISO/IEC DIS 18013-5) -- so these tests
 // assert against Multipaz's byte shapes (org.multipaz.mdoc.zkp), which is the
 // reference the AV interop events run against. Where a test names a key or a
 // tag, that name or tag came from Multipaz's Kotlin source, not from a guess

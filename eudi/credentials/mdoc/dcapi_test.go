@@ -13,9 +13,16 @@ import (
 
 // These tests hold dcapi.go against a captured org-iso-mdoc exchange — the same
 // Age Verification traffic zkp_av_sample_test.go replays, one layer further out.
-// ISO/IEC 18013-7 is paywalled, so the capture is the reference: where a test
-// asserts a byte, that byte is what a real reader and a real wallet put on the
-// wire.
+// Where a test asserts a byte, that byte is what a real reader and a real wallet
+// put on the wire.
+//
+// The capture was originally the only reference, because ISO/IEC TS 18013-7 was
+// not available. It is now, and Annex C confirms these shapes exactly — C.2 for
+// the request members and the ["dcapi", {nonce, recipientPublicKey}] envelope,
+// C.3 for the response. See dcapi.go, which quotes the clause. The capture is
+// kept as well as the clause rather than instead of it: the clause says what
+// conformant looks like, the capture says what one real deployment actually
+// sent, and a test that passes against both is the one worth having.
 //
 // The fixtures below are transcribed from that exchange.
 
