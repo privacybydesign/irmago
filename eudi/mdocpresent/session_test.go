@@ -9,6 +9,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/stretchr/testify/require"
 )
 
@@ -355,4 +356,137 @@ func TestSessionBindsTheResponseToItsOwnOrigin(t *testing.T) {
 	require.NoError(t, err)
 	_, err = mdoc.OpenDCAPIResponse(sealed, reader.key, elsewhere)
 	require.Error(t, err, "a response sealed for one origin must not open under another")
+}
+
+// ============================================================
+// REPORTING WHAT WAS NOT RETURNED — 8.3.2.1.2.2
+// ============================================================
+//
+// The other half of partial satisfaction. WalletDiscloser.narrow answers with
+// what the wallet has; these are the tests that it also says what it did not,
+// which is what keeps narrowing from silently answering a smaller question.
+
+// TestSessionReportsElementsItCouldNotReturn: a document is returned holding
+// fewer elements than were asked for, and the missing ones come back as Table 9
+// errors on that document rather than as silence.
+func TestSessionReportsElementsItCouldNotReturn(t *testing.T) {
+	reader := newReaderSide(t)
+
+	// The wallet holds and discloses only age_over_18; the reader asked for both.
+	document, holder := credential(t, avDocType, avNameSpace, map[string]any{"age_over_18": true})
+	wallet := &fakeDiscloser{answer: []Selection{{DocType: avDocType, Document: document, Holder: holder}}}
+
+	sealed, err := (&Session{Discloser: wallet}).Respond(Request{
+		DeviceRequest:  readerRequest(t, avDocType, avNameSpace, "age_over_18", "age_over_65"),
+		EncryptionInfo: reader.encryptionInfo,
+		Origin:         testOrigin,
+	})
+	require.NoError(t, err)
+
+	response := reader.open(t, sealed)
+	require.Len(t, response.Documents, 1)
+	require.Empty(t, response.DocumentErrors,
+		"the document WAS returned, so this is an element-level failure, not a document-level one")
+
+	errs := response.Documents[0].Errors
+	require.NotNil(t, errs, "an element asked for and not returned is reported, not silently dropped")
+	require.Equal(t, mdoc.ErrorCodeDataNotReturned, errs[avNameSpace]["age_over_65"])
+	require.NotContains(t, errs[avNameSpace], "age_over_18", "what was returned is not an error")
+}
+
+// TestSessionReportsElementsWithheldByReaderAuth: an element kept back by 7.2.1
+// is reported with the same code as one the wallet does not hold. Both were
+// requested and neither is being returned, and telling the two apart would tell
+// an unauthenticated reader what the wallet is holding back.
+func TestSessionReportsElementsWithheldByReaderAuth(t *testing.T) {
+	reader := newReaderSide(t)
+
+	// family_name is Table 5 mandatory, so 7.2.1 releases it to an unauthenticated
+	// reader. issuing_jurisdiction is Presence O, so it is withheld from one —
+	// and the wallet HOLDS it, which is what makes this the withheld path rather
+	// than the not-held path. (portrait would not do: it is Table 5 mandatory and
+	// therefore released, NOTE 2 calling it the one element that verifies the
+	// holder is the person presenting.)
+	document, holder := credential(t, mdlDocType, mdlNameSpace, map[string]any{
+		"family_name":          "Doe",
+		"issuing_jurisdiction": "NL-ZH",
+	})
+	// Disclosed as the discloser would have left it: only the permitted element.
+	stripped, err := services.SelectiveDiscloseNamespaces(&document, map[string][]string{
+		mdlNameSpace: {"family_name"},
+	})
+	require.NoError(t, err)
+	wallet := &fakeDiscloser{answer: []Selection{{DocType: mdlDocType, Document: *stripped, Holder: holder}}}
+
+	sealed, err := (&Session{Discloser: wallet}).Respond(Request{
+		DeviceRequest:  readerRequest(t, mdlDocType, mdlNameSpace, "family_name", "issuing_jurisdiction"),
+		EncryptionInfo: reader.encryptionInfo,
+		Origin:         testOrigin,
+	})
+	require.NoError(t, err)
+
+	response := reader.open(t, sealed)
+	require.Len(t, response.Documents, 1)
+
+	errs := response.Documents[0].Errors
+	require.Equal(t, mdoc.ErrorCodeDataNotReturned, errs[mdlNameSpace]["issuing_jurisdiction"],
+		"errors are computed against what the reader ASKED for, not against what it was permitted")
+	require.NotContains(t, errs[mdlNameSpace], "family_name")
+}
+
+// TestSessionReportsDocumentsItDidNotReturn: a refusal is reported as a
+// documentError per requested document, not as an empty response the reader has
+// to interpret.
+func TestSessionReportsDocumentsItDidNotReturn(t *testing.T) {
+	reader := newReaderSide(t)
+	wallet := &fakeDiscloser{answer: nil}
+
+	sealed, err := (&Session{Discloser: wallet}).Respond(Request{
+		DeviceRequest:  readerRequest(t, avDocType, avNameSpace, "age_over_18"),
+		EncryptionInfo: reader.encryptionInfo,
+		Origin:         testOrigin,
+	})
+	require.NoError(t, err)
+
+	response := reader.open(t, sealed)
+	require.Empty(t, response.Documents)
+	require.Equal(t, mdoc.ResponseStatusOK, response.Status,
+		"8.3.2.1.2.3 keeps the status for requests that could not be PROCESSED")
+	require.Len(t, response.DocumentErrors, 1)
+	require.Equal(t, mdoc.ErrorCodeDataNotReturned, response.DocumentErrors[0][avDocType])
+}
+
+// TestSessionRefusesASelectionItDidNotAskFor: a wallet answering with a document
+// the reader never requested is a bug in the wallet, and one that would disclose
+// a credential nobody asked for. It fails the exchange rather than transmitting.
+func TestSessionRefusesASelectionItDidNotAskFor(t *testing.T) {
+	reader := newReaderSide(t)
+	document, holder := credential(t, mdlDocType, mdlNameSpace, map[string]any{"family_name": "Doe"})
+	wallet := &fakeDiscloser{answer: []Selection{{DocType: mdlDocType, Document: document, Holder: holder}}}
+
+	_, err := (&Session{Discloser: wallet}).Respond(Request{
+		DeviceRequest:  readerRequest(t, avDocType, avNameSpace, "age_over_18"),
+		EncryptionInfo: reader.encryptionInfo,
+		Origin:         testOrigin,
+	})
+	require.ErrorContains(t, err, "did not ask for")
+}
+
+// TestSessionRefusesAMislabelledSelection: deviceAuth signs the docType the
+// selection is labelled with, and a verifier reads it off the document. If the
+// two disagree the response transmits, decrypts, and fails only at the reader's
+// signature check with nothing naming the cause.
+func TestSessionRefusesAMislabelledSelection(t *testing.T) {
+	reader := newReaderSide(t)
+	document, holder := credential(t, mdlDocType, mdlNameSpace, map[string]any{"family_name": "Doe"})
+
+	// Labelled as the docType that was requested, carrying a different one.
+	wallet := &fakeDiscloser{answer: []Selection{{DocType: avDocType, Document: document, Holder: holder}}}
+
+	_, err := (&Session{Discloser: wallet}).Respond(Request{
+		DeviceRequest:  readerRequest(t, avDocType, avNameSpace, "age_over_18"),
+		EncryptionInfo: reader.encryptionInfo,
+		Origin:         testOrigin,
+	})
+	require.ErrorContains(t, err, "deviceAuth would sign a docType the document does not have")
 }

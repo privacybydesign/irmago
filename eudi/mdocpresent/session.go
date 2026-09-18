@@ -199,12 +199,14 @@ func (s *Session) Respond(request Request) (mdoc.DCAPIEncryptedResponse, error) 
 		return empty, fmt.Errorf("disclose: %w", err)
 	}
 
-	response, err := assemble(selections, transcript)
+	response, err := assemble(documents, selections, transcript)
 	if err != nil {
 		return empty, err
 	}
 
-	encoded, err := cbor.Marshal(response)
+	// Encode rather than cbor.Marshal: Encode validates first, so a response this
+	// session assembled wrongly is caught here instead of at the reader.
+	encoded, err := response.Encode()
 	if err != nil {
 		return empty, fmt.Errorf("encode deviceResponse: %w", err)
 	}
@@ -299,33 +301,119 @@ func (s *Session) evaluate(request mdoc.DeviceRequest, transcript mdoc.SessionTr
 	return documents, nil
 }
 
-// assemble signs each selected document over the session transcript and bundles
-// them into a DeviceResponse.
+// assemble signs each selected document over the session transcript, records what
+// could not be returned, and bundles the result into a DeviceResponse.
 //
 // A selection with no documents produces a response with no documents, which is
-// a refusal expressed the way 8.3.2.1.2.2 expresses one: status 0 and nothing to
-// show. A non-zero status would say the request could not be processed, which is
-// not what happened when a user simply declined.
-func assemble(selections []Selection, transcript mdoc.SessionTranscript) (mdoc.DeviceResponse, error) {
-	documents := make([]mdoc.MDoc, 0, len(selections))
+// a refusal expressed the way 8.3.2.1.2.2 expresses one: status 0, nothing to
+// show, and a documentError naming each document that was asked for. A non-zero
+// status would say the request could not be processed, which is not what happened
+// when a user simply declined.
+//
+// requested is the session's full list, not the servable subset: a document the
+// wallet never offered the user still has to be reported to the reader.
+func assemble(
+	requested []RequestedDocument,
+	selections []Selection,
+	transcript mdoc.SessionTranscript,
+) (mdoc.DeviceResponse, error) {
+	var (
+		documents = make([]mdoc.MDoc, 0, len(selections))
+		served    = make(map[string]bool, len(selections))
+	)
 
 	for _, selection := range selections {
-		if selection.Holder == nil {
+		items, ok := itemsRequestFor(requested, selection.DocType)
+		if !ok {
 			return mdoc.DeviceResponse{}, fmt.Errorf(
-				"selection for %s carries no holder: nothing can sign deviceAuth for it", selection.DocType)
+				"wallet selected a %s document, which this request did not ask for", selection.DocType)
 		}
 
-		deviceAuth, err := selection.Holder.SignDeviceAuth(selection.DocType, transcript)
+		document, err := signDocument(selection, items, transcript)
 		if err != nil {
-			return mdoc.DeviceResponse{}, fmt.Errorf("sign deviceAuth for %s: %w", selection.DocType, err)
+			return mdoc.DeviceResponse{}, err
 		}
-
-		presented, err := mdoc.AttachDeviceSigned(&selection.Document, deviceAuth)
-		if err != nil {
-			return mdoc.DeviceResponse{}, fmt.Errorf("attach deviceSigned for %s: %w", selection.DocType, err)
-		}
-		documents = append(documents, *presented)
+		documents = append(documents, *document)
+		served[selection.DocType] = true
 	}
 
-	return mdoc.NewDeviceResponse(documents...), nil
+	// Every requested document that is not being returned gets a documentError.
+	// 8.3.2.1.2.2 keeps the two failure kinds apart and they are not
+	// interchangeable: documentErrors is "for unreturned documents",
+	// Document.Errors "can contain error codes for data elements that are not
+	// returned" from a document that IS returned.
+	//
+	// Returning either is a may, not a shall — see the clause quoted in
+	// WalletDiscloser's partial-satisfaction header for why this package does it
+	// regardless.
+	var documentErrors []mdoc.DocumentError
+	for _, document := range requested {
+		if served[document.DocType] {
+			continue
+		}
+		documentError, err := mdoc.NewDocumentError(document.DocType, mdoc.ErrorCodeDataNotReturned)
+		if err != nil {
+			return mdoc.DeviceResponse{}, fmt.Errorf("build documentError for %s: %w", document.DocType, err)
+		}
+		documentErrors = append(documentErrors, documentError)
+	}
+
+	// Status stays 0 throughout. 8.3.2.1.2.3 forbids returning documents with a
+	// non-zero status, so reporting "you cannot have this" as a status would throw
+	// away everything the wallet DID agree to release in the same request.
+	response := mdoc.NewDeviceResponse(documents...)
+	if len(documentErrors) > 0 {
+		response = response.WithDocumentErrors(documentErrors...)
+	}
+	return response, nil
+}
+
+// signDocument signs one selected document for this session and records the
+// elements it could not return.
+func signDocument(
+	selection Selection,
+	requested mdoc.ItemsRequest,
+	transcript mdoc.SessionTranscript,
+) (*mdoc.MDoc, error) {
+	if selection.Holder == nil {
+		return nil, fmt.Errorf(
+			"selection for %s carries no holder: nothing can sign deviceAuth for it", selection.DocType)
+	}
+	// DeviceAuthentication binds the docType, and a verifier reads it from the
+	// document rather than from whatever the wallet labelled the selection with.
+	// Disagreeing here produces a signature over a docType the document does not
+	// carry — valid CBOR, valid HPKE, and a signature check that fails at the
+	// reader with nothing naming the cause.
+	if selection.Document.DocType != selection.DocType {
+		return nil, fmt.Errorf(
+			"selection is labelled %s but carries a %s document: deviceAuth would sign a docType the document does not have",
+			selection.DocType, selection.Document.DocType)
+	}
+
+	deviceAuth, err := selection.Holder.SignDeviceAuth(selection.DocType, transcript)
+	if err != nil {
+		return nil, fmt.Errorf("sign deviceAuth for %s: %w", selection.DocType, err)
+	}
+
+	document, err := mdoc.AttachDeviceSigned(&selection.Document, deviceAuth)
+	if err != nil {
+		return nil, fmt.Errorf("attach deviceSigned for %s: %w", selection.DocType, err)
+	}
+
+	// This is the other half of the partial-satisfaction fix in WalletDiscloser.
+	// narrow answers with what the wallet has; this says what it did not.
+	//
+	// Comparing against the ORIGINAL request rather than the permitted one is what
+	// makes the reader's view complete: an element withheld because the reader did
+	// not authenticate is reported with the same Table 9 code as one the wallet
+	// does not hold, which is the truthful answer — in both cases the data was
+	// requested and is not being returned. Reporting only the unheld ones would
+	// tell an unauthenticated reader that the wallet holds nothing it withheld.
+	errs, err := document.ErrorsForRequest(requested)
+	if err != nil {
+		return nil, fmt.Errorf("compute errors for %s: %w", selection.DocType, err)
+	}
+	document.Errors = errs
+
+	return document, nil
 }

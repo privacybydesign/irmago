@@ -29,6 +29,7 @@
 package mdocpresent
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -76,12 +77,62 @@ func DcqlQueryFromDeviceRequest(request mdoc.DeviceRequest) (dcql.DcqlQuery, err
 		return dcql.DcqlQuery{}, err
 	}
 
-	credentials := make([]dcql.CredentialQuery, 0, len(request.DocRequests))
+	requested := make([]mdoc.ItemsRequest, 0, len(request.DocRequests))
 	for i, docRequest := range request.DocRequests {
 		items, err := docRequest.Items()
 		if err != nil {
 			return dcql.DcqlQuery{}, fmt.Errorf("docRequests[%d]: %w", i, err)
 		}
+		requested = append(requested, items)
+	}
+	return dcqlQueryFrom(requested)
+}
+
+// DcqlQueryFromPermittedDocuments translates documents the session has already
+// evaluated, taking each one's PERMITTED items rather than what the reader asked
+// for.
+//
+// This is the translation a Discloser wants and DcqlQueryFromDeviceRequest is
+// not. By the time a disclosure is being planned, reader authentication has run
+// and 7.2.1 has decided what an unauthenticated reader is entitled to; building
+// the query from the raw DeviceRequest at that point would undo that decision
+// silently — the withheld elements would reach candidate selection, the consent
+// screen and the disclosure log, and the only thing keeping them out of the
+// response would be that nothing later put them in.
+//
+// Documents that can serve nothing at all are skipped rather than translated to
+// an empty query: a credential query with no claims is refused by the mso_mdoc
+// handler, so including one would fail the whole request over a document that was
+// never going to be answered. They are still reported to the reader — see the
+// documentErrors loop in assemble, which works from the session's full document
+// list and not from this query.
+func DcqlQueryFromPermittedDocuments(documents []RequestedDocument) (dcql.DcqlQuery, error) {
+	permitted := make([]mdoc.ItemsRequest, 0, len(documents))
+	for _, document := range documents {
+		if !document.Servable() {
+			continue
+		}
+		permitted = append(permitted, document.Permitted)
+	}
+	if len(permitted) == 0 {
+		// Nothing may be released. An empty DcqlQuery is not valid, and there is
+		// no question to put to the user, so this is reported as the refusal it is
+		// rather than as a malformed query.
+		return dcql.DcqlQuery{}, ErrNothingServable
+	}
+	return dcqlQueryFrom(permitted)
+}
+
+// ErrNothingServable reports a request none of whose documents may be served —
+// an unauthenticated reader asking only for elements 7.2.1 does not release. It
+// is a refusal, answered with documentErrors, and not a failure of the session.
+var ErrNothingServable = errors.New("no requested document may be served to this reader")
+
+// dcqlQueryFrom builds the query both translations produce, so the two cannot
+// drift in what an mdoc request means in DCQL.
+func dcqlQueryFrom(requested []mdoc.ItemsRequest) (dcql.DcqlQuery, error) {
+	credentials := make([]dcql.CredentialQuery, 0, len(requested))
+	for i, items := range requested {
 		credentials = append(credentials, dcql.CredentialQuery{
 			Id:     queryId(i),
 			Format: string(clientmodels.Format_MsoMdoc),
@@ -104,6 +155,21 @@ func DcqlQueryFromDeviceRequest(request mdoc.DeviceRequest) (dcql.DcqlQuery, err
 		return dcql.DcqlQuery{}, fmt.Errorf("translated DeviceRequest is not a valid query: %w", err)
 	}
 	return query, nil
+}
+
+// itemsRequestFor finds what the reader originally asked of a docType.
+//
+// Matching on docType alone is the same simplification DCQL makes: a
+// DeviceRequest may carry two DocRequests of one docType, and nothing downstream
+// tells the resulting documents apart either. The first wins, which for the
+// request shapes this profile produces is the only one.
+func itemsRequestFor(documents []RequestedDocument, docType string) (mdoc.ItemsRequest, bool) {
+	for _, document := range documents {
+		if document.DocType == docType {
+			return document.Requested, true
+		}
+	}
+	return mdoc.ItemsRequest{}, false
 }
 
 // queryId names a DocRequest for the rest of the pipeline.
