@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## [1.4.0] - 2026-09-21
 ### Added
 - An OpenID4VP session started from a URL now accepts all three forms of Authorization Request the spec defines: a `request_uri`, a signed request object passed by value in `request`, or an unsigned request whose parameters sit in the query string. Only `request_uri` worked before. An unsigned request must identify its verifier with the `redirect_uri:` client identifier prefix, and that verifier is shown as unverified, without a logo, named by the address the response goes to.
 - mDoc (ISO 18013-5, `mso_mdoc`) credentials are wired into the real issuance and presentation paths, replacing the standalone prototype wire format added in 1.1.1. Issuance runs through the generic OpenID4VCI client via a new format-parser seam (`services.CredentialFormatParser`, registered per format in `client.New`), so credential offer, token request, nonce endpoint and proof of possession are shared with SD-JWT VC rather than duplicated; presentation runs through a `mdoc_dcql` DCQL handler alongside the existing SD-JWT handlers. `mso_mdoc` is accepted by the credential-configuration validators, and the transport binding the verifier chose (`response_uri` and the response encryption key) is threaded through `PrepareDisclosure` because mdoc's `deviceAuth` signs over the OpenID4VP session transcript built from it; SD-JWT's key-binding JWT ignores all of it. Both OpenID4VP transports are supported, including the W3C Digital Credentials API, which signs its own session transcript: Annex B.2.6.2 hashes `[origin, nonce, jwkThumbprint]` under `OpenID4VPDCAPIHandover`, where the URL flow hashes `[clientId, nonce, jwkThumbprint, responseUri]` under `OpenID4VPHandover`. Which variant applies is decided by the transport the request arrived on rather than by inspecting the values, since the DC API's origin-prefixed audience and absent `response_uri` are indistinguishable from an ordinary unencrypted URL session -- and picking the wrong one yields a response that transmits and decrypts fine and fails only at the verifier's `deviceAuth` check.
@@ -864,6 +866,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[1.4.0]: https://github.com/privacybydesign/irmago/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/privacybydesign/irmago/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/privacybydesign/irmago/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/privacybydesign/irmago/compare/v1.1.1...v1.2.0
