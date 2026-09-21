@@ -70,3 +70,26 @@ func TestLoadResolvedLogo_NoLogosCached_ReturnsNil(t *testing.T) {
 
 	require.Nil(t, img)
 }
+
+// ---------------------------------------------------------------------------
+// mdoc claim-path aliasing
+// ---------------------------------------------------------------------------
+
+// SD-JWT paths are namespace-free by nature, so a one-component path is already
+// the real path and is indexed as published; nothing rewrites it.
+func TestResolveBatchDisplay_KeepsOneComponentPaths(t *testing.T) {
+	batch := &models.SdJwtVcBatch{
+		Format:                   models.CredentialFormatSdJwtVc,
+		VerifiableCredentialType: "https://vct.example/x",
+		ProcessedSdJwtPayload:    datatypes.JSON(`{"age_over_18":true}`),
+		CredentialMetadata: &models.CredentialMetadata{Claims: []models.CredentialClaim{{
+			Path:    datatypes.JSON(`["age_over_18"]`),
+			Display: []models.ClaimDisplay{{Name: "Label 0", Locale: nullStr("en")}},
+		}}},
+	}
+
+	d := ResolveBatchDisplay(batch, "en")
+
+	require.Equal(t, "Label 0", d.ClaimNames[clientmodels.ClaimPathKey([]any{"age_over_18"})])
+	require.Len(t, d.ClaimNames, 1)
+}

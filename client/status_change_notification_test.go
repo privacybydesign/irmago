@@ -49,7 +49,7 @@ func newClientForStatusRefresh(t *testing.T, signer *statuslist.TestStatusListSi
 
 	c.revocationService = services.NewRevocationService(
 		newStatusChecker(signer),
-		db.NewCredentialStore(c.eudiStorage.Db()),
+		db.NewSdJwtVcStore(c.eudiStorage.Db()),
 	)
 
 	return c, handler
@@ -69,12 +69,12 @@ func newStatusChecker(signer *statuslist.TestStatusListSigner) *statuslist.Check
 // change (a later group's fetch that outlives the caller, or a shutdown
 // mid-sweep).
 type cancellingStore struct {
-	db.CredentialStore
+	db.SdJwtVcStore
 	cancel context.CancelFunc
 }
 
 func (s *cancellingStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
-	err := s.CredentialStore.UpdateInstanceStatus(instanceID, status, checkedAt)
+	err := s.SdJwtVcStore.UpdateInstanceStatus(instanceID, status, checkedAt)
 	s.cancel()
 	return err
 }
@@ -86,7 +86,7 @@ func seedStatusBearingBatch(t *testing.T, gdb *gorm.DB, hash, uri string, idx ui
 
 	iss := "https://issuer.example.com"
 	u, i, now := uri, idx, time.Now().UTC()
-	require.NoError(t, gdb.Create(&models.CredentialBatch{
+	require.NoError(t, gdb.Create(&models.SdJwtVcBatch{
 		IssuerIdentifier:           iss,
 		CredentialIssuerIdentifier: iss,
 		VerifiableCredentialType:   "https://vct.example/x",
@@ -96,7 +96,7 @@ func seedStatusBearingBatch(t *testing.T, gdb *gorm.DB, hash, uri string, idx ui
 		IssuedAt:                   datatypes.NullTime{V: now.Truncate(time.Second), Valid: true},
 		BatchSize:                  1,
 		RemainingCount:             1,
-		Instances: []models.IssuedCredentialInstance{{
+		Instances: []models.SdJwtVcBatchInstance{{
 			RawCredential:     []byte("raw"),
 			StatusListURI:     &u,
 			StatusListIdx:     &i,
@@ -157,7 +157,7 @@ func TestRefreshStatusesNotifiesOnStatusChange(t *testing.T) {
 	require.Equal(t, 1, handler.CredentialsChangedCount(), "a status change must wake the app")
 
 	// And the wallet reflects it, which is what the app finds when it re-reads.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 	require.True(t, creds[0].Revoked, "the revocation the app was woken for")
@@ -214,15 +214,15 @@ func TestRefreshStatusesNotifiesOnChangeCommittedBeforeCancellation(t *testing.T
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	c.revocationService = services.NewRevocationService(newStatusChecker(signer), &cancellingStore{
-		CredentialStore: db.NewCredentialStore(c.eudiStorage.Db()),
-		cancel:          cancel,
+		SdJwtVcStore: db.NewSdJwtVcStore(c.eudiStorage.Db()),
+		cancel:       cancel,
 	})
 
 	require.NoError(t, c.RefreshStatuses(ctx))
 	require.Equal(t, 1, handler.CredentialsChangedCount(), "a committed change must reach the app even though the caller gave up")
 
 	// And the wallet holds the revocation, which is what the woken app reads.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 	require.True(t, creds[0].Revoked)
