@@ -51,14 +51,14 @@ func requireNoFurtherSweep(t *testing.T, ch chan int) {
 // for both the issuer and the credential, served from baseURL.
 func storeBackfillBatch(t *testing.T, s *backfillTestStorage, baseURL string) {
 	t.Helper()
-	require.NoError(t, db.NewCredentialStore(s.Db()).StoreBatch(backfillBatch(baseURL)))
+	require.NoError(t, db.NewSdJwtVcStore(s.Db()).StoreBatch(backfillBatch(baseURL)))
 }
 
 // backfillBatch builds the batch storeBackfillBatch persists, so a test that
 // needs a different logo layout can adjust it before storing.
-func backfillBatch(baseURL string) *models.CredentialBatch {
+func backfillBatch(baseURL string) *models.SdJwtVcBatch {
 	iss := "https://issuer.example.com"
-	return &models.CredentialBatch{
+	return &models.SdJwtVcBatch{
 		IssuerIdentifier:           iss,
 		VerifiableCredentialType:   "https://vct.example.com/Test",
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -78,7 +78,7 @@ func backfillBatch(baseURL string) *models.CredentialBatch {
 				{Name: "Cred NL", Locale: nullStr("nl"), LogoURI: baseURL + "/cred-nl.png"},
 			},
 		},
-		Instances: []models.IssuedCredentialInstance{{RawCredential: []byte("raw")}},
+		Instances: []models.SdJwtVcBatchInstance{{RawCredential: []byte("raw")}},
 	}
 }
 
@@ -140,7 +140,7 @@ func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
 			batch.CredentialMetadata.Display[i].LogoURI = shared
 		}
 	}
-	require.NoError(t, db.NewCredentialStore(s.Db()).StoreBatch(batch))
+	require.NoError(t, db.NewSdJwtVcStore(s.Db()).StoreBatch(batch))
 
 	added := backfillLogos(context.Background(), s, server.Client(), "nl")
 

@@ -69,8 +69,8 @@ func autoMigrateHolderModels(db *gorm.DB) error {
 	// but Postgres (and any FK-enforcing driver) rejects a CREATE TABLE whose
 	// inline REFERENCES target does not exist yet, so the order matters here.
 	if err := db.AutoMigrate(
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
+		&models.SdJwtVcBatch{},
+		&models.SdJwtVcBatchInstance{},
 		&models.HolderBindingKey{},
 		&models.ECDSAKeyMetadata{},
 		&models.RSAKeyMetadata{},
@@ -82,6 +82,11 @@ func autoMigrateHolderModels(db *gorm.DB) error {
 		&models.EudiLogEntry{},
 		&models.EudiLogCredential{},
 		&models.StatusListCacheEntry{},
+		// mso_mdoc has its own tables, sharing nothing with the SD-JWT VC ones
+		// above but the database file.
+		&models.MdocBatch{},
+		&models.MdocBatchInstance{},
+		&models.MdocDeviceKey{},
 	); err != nil {
 		return fmt.Errorf("auto-migrate database failed: %w", err)
 	}
@@ -109,7 +114,15 @@ func (s *storage) Close() error {
 func (s *storage) RemoveAll() error {
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		session := tx.Session(&gorm.Session{AllowGlobalUpdate: true})
-		if err := session.Delete(&models.CredentialBatch{}).Error; err != nil {
+		if err := session.Delete(&models.SdJwtVcBatch{}).Error; err != nil {
+			return err
+		}
+		if err := session.Delete(&models.MdocBatch{}).Error; err != nil {
+			return err
+		}
+		// Device keys minted for an issuance that never completed are bound to no
+		// instance, so the cascade above does not reach them.
+		if err := session.Delete(&models.MdocDeviceKey{}).Error; err != nil {
 			return err
 		}
 		return session.Delete(&models.EudiLogEntry{}).Error
