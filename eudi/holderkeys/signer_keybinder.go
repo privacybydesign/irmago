@@ -93,8 +93,11 @@ func (b *signerKeyBinder) RemovePrivateKeys(pubKeys []jwk.Key) error {
 }
 
 func (b *signerKeyBinder) RemoveAllPrivateKeys() error {
-	// The POC HolderSigner has no enumerate-all primitive; callers that need a
-	// full wipe use Wallet.Reset (storage) plus the signer's own lifecycle.
+	// HolderSigner has no enumerate-all primitive — only Remove(refs) — so this
+	// cannot wipe keys it was never told about. A full wipe therefore runs
+	// through client.Client.RemoveStorage, which clears the wallet's own
+	// storage; disposing of the signer's key material is the signer's
+	// responsibility, and for a WSCA-backed one it happens outside irmago.
 	return nil
 }
 

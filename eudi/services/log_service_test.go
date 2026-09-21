@@ -28,7 +28,7 @@ func newTestLogServiceWithLocale(t *testing.T, locale string) *eudiLogService {
 	return &eudiLogService{
 		locale:              locale,
 		store:               db.NewEudiLogStore(database),
-		credentialStore:     db.NewCredentialStore(database),
+		displaySources:      NewCredentialDisplaySources(database),
 		credLogoManager:     fs.Credentials().LogoManager(),
 		issuerLogoManager:   fs.Issuers().LogoManager(),
 		verifierLogoManager: fs.Verifiers().LogoManager(),
@@ -261,14 +261,22 @@ func newLiveBatch(t *testing.T, svc *eudiLogService, vct string, issuer string) 
 	storeLiveBatch(t, svc, liveBatch(vct, issuer))
 }
 
-func storeLiveBatch(t *testing.T, svc *eudiLogService, batch *models.CredentialBatch) {
+func storeLiveBatch(t *testing.T, svc *eudiLogService, batch *models.SdJwtVcBatch) {
 	t.Helper()
-	require.NoError(t, svc.credentialStore.StoreBatch(batch))
+	// The log service reads live credentials through format display sources;
+	// the SD-JWT one wraps the store these fixtures are written to.
+	for _, source := range svc.displaySources {
+		if sdjwt, ok := source.(sdJwtVcDisplaySource); ok {
+			require.NoError(t, sdjwt.store.StoreBatch(batch))
+			return
+		}
+	}
+	t.Fatal("the log service under test has no SD-JWT VC display source to seed")
 }
 
 // liveBatch is a stored batch with full display metadata in "en" and "nl".
-func liveBatch(vct string, issuer string) *models.CredentialBatch {
-	return &models.CredentialBatch{
+func liveBatch(vct string, issuer string) *models.SdJwtVcBatch {
+	return &models.SdJwtVcBatch{
 		IssuerIdentifier:           issuer,
 		VerifiableCredentialType:   vct,
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -297,7 +305,7 @@ func liveBatch(vct string, issuer string) *models.CredentialBatch {
 				},
 			},
 		},
-		Instances: []models.IssuedCredentialInstance{{RawCredential: []byte("raw")}},
+		Instances: []models.SdJwtVcBatchInstance{{RawCredential: []byte("raw")}},
 	}
 }
 
@@ -486,6 +494,7 @@ func TestLogReadDecodesLegacyMapFormat(t *testing.T) {
 func TestDecodeStoredAttributes_RoundTripsEveryAttributeField(t *testing.T) {
 	displayName, description := "Email address", "The address you receive mail on"
 	value, requested := "a@b.com", "b@c.com"
+	intentToRetain := true
 
 	original := clientmodels.Attribute{
 		ClaimPath:      []any{"address", "street", float64(1)},
@@ -493,6 +502,7 @@ func TestDecodeStoredAttributes_RoundTripsEveryAttributeField(t *testing.T) {
 		Description:    &description,
 		Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &value},
 		RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &requested},
+		IntentToRetain: &intentToRetain,
 	}
 	// A field left unset would round-trip as zero either way, proving nothing.
 	rv := reflect.ValueOf(original)
@@ -507,4 +517,66 @@ func TestDecodeStoredAttributes_RoundTripsEveryAttributeField(t *testing.T) {
 
 	require.Len(t, decoded, 1)
 	require.Equal(t, original, decoded[0])
+}
+
+// A verifier authenticated by a trusted end-entity certificate must still read
+// back as verified. The flag was dropped on write, so an entry could carry the
+// certificate serial as its verifier id -- which the wallet only sets when a
+// certificate authenticated the request -- while reporting verified: false in
+// the same object, contradicting the permission screen the user had approved.
+func TestDisclosureLogRoundTrip_PreservesVerifierVerifiedFlag(t *testing.T) {
+	svc := newTestLogService(t)
+
+	verified := clientmodels.TrustedParty{
+		// A certificate serial, which is what the wallet uses as the id exactly
+		// when the request was signed by a trusted end-entity certificate.
+		Id:       "406029387936982878083113394765101392849886441027",
+		Name:     "Yivi B.V.",
+		Verified: true,
+	}
+	require.NoError(t, svc.AddDisclosureLog(verified, nil))
+
+	logs, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	require.NotNil(t, logs[0].DisclosureLog)
+	require.NotNil(t, logs[0].DisclosureLog.Verifier)
+	require.True(t, logs[0].DisclosureLog.Verifier.Verified,
+		"a certificate-authenticated verifier must not be logged as unverified")
+	require.Equal(t, verified.Id, logs[0].DisclosureLog.Verifier.Id)
+}
+
+// The converse: an unauthenticated requestor stays unverified, so the flag
+// carries information rather than always being true.
+func TestDisclosureLogRoundTrip_KeepsUnverifiedVerifierUnverified(t *testing.T) {
+	svc := newTestLogService(t)
+
+	require.NoError(t, svc.AddDisclosureLog(clientmodels.TrustedParty{
+		Id:   "https://verifier.example.com",
+		Name: "Some Verifier",
+	}, nil))
+
+	logs, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	require.False(t, logs[0].DisclosureLog.Verifier.Verified)
+}
+
+// Issuance takes the same write path, so the issuer identity on the entry keeps
+// its flag too -- distinct from the per-credential IssuerVerified already stored
+// on each logged credential.
+func TestIssuanceLogRoundTrip_PreservesIssuerVerifiedFlag(t *testing.T) {
+	svc := newTestLogService(t)
+
+	require.NoError(t, svc.AddIssuanceLog(
+		clientmodels.Protocol_OpenID4VCI,
+		clientmodels.TrustedParty{Id: "https://issuer.example.com", Name: "Test Issuer", Verified: true},
+		nil,
+	))
+
+	logs, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	require.NotNil(t, logs[0].IssuanceLog)
+	require.True(t, logs[0].IssuanceLog.Issuer.Verified)
 }

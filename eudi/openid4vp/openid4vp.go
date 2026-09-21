@@ -3,10 +3,14 @@ package openid4vp
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
@@ -221,6 +225,16 @@ type AuthorizationRequest struct {
 	// reported against these values to detect replay of the request by a
 	// malicious verifier.
 	ExpectedOrigins []string `json:"expected_origins,omitempty"`
+
+	// OPTIONAL: the request object's own expiry and not-before. Neither is
+	// required by OpenID4VP, but a verifier that sets them is stating how long
+	// the request may be used, and RFC 7519 requires a recipient that processes
+	// them to honour it. They are read here so that GetExpirationTime and
+	// GetNotBefore below can report them to the JWT parser; without the fields
+	// there is nothing for the parser to check and a request object never goes
+	// stale.
+	Expiry    int64 `json:"exp,omitempty"`
+	NotBefore int64 `json:"nbf,omitempty"`
 }
 
 type EncryptedResponsePayload struct {
@@ -245,4 +259,160 @@ func authRequestSignatureAlgorithm(headers jws.Headers) (jwa.SignatureAlgorithm,
 		return jwa.EmptySignatureAlgorithm(), fmt.Errorf("unsupported signing algorithm in auth request JWT header: %s", alg)
 	}
 	return supported, nil
+}
+
+// exp, nbf and iat are validated by jose.Verify itself (see internal/jose), which checks
+// jwx's registered time claims straight off the JSON payload. Nothing here needs to
+// implement a Go-level claims interface for that to happen, unlike with golang-jwt.
+
+// The aud claim is parsed into AuthorizationRequest.Audience but deliberately
+// not validated. OpenID4VP § 5.8 tells a *verifier* what to put there --
+// https://self-issued.me/v2 under static discovery, the wallet's issuer
+// identifier under dynamic -- and places no validation duty on the wallet.
+//
+// A check against the static value was tried and removed. It refused the veramo
+// reference verifier, which puts its own client_id in aud
+// (decentralized_identifier:did:jwk:...) rather than any wallet identifier, so
+// the field in practice says who *sent* the request as often as who it is for.
+// Refusing that rejects a verifier doing nothing harmful, and the wallet has no
+// issuer identifier of its own to recognise the conformant form by either.
+//
+// Not an mdoc concern in any case: aud lives in the OpenID4VP request object and
+// is the same for every credential format.
+
+// authRequestParserOptions are the validations the JWT parser applies to every
+// authorization request object, wherever it arrived from.
+//
+// jose.Verify already rejects a future-dated iat by default (see internal/jose), so
+// unlike golang-jwt this needs no explicit opt-in for that. The skew absorbs ordinary
+// clock drift between a wallet and a verifier, which is not the same thing as a
+// request being stale by a margin anyone would notice.
+func authRequestParserOptions() []jwt.ParseOption {
+	return []jwt.ParseOption{
+		jwt.WithAcceptableSkew(2 * time.Minute),
+	}
+}
+
+// validateRedirectAuthorizationRequest checks the parameters OpenID4VP
+// constrains for a session invoked from a URL, and is the counterpart to
+// validateDcApiRequest.
+//
+// The two transports had drifted: the DC API path checked response_type, the
+// nonce, scope-versus-dcql_query and a non-empty query, while the redirect path
+// checked only the nonce and left the rest to fail — or not fail — further down.
+// A verifier could send response_type=code over a URL and still be answered with
+// a vp_token, or send both scope and dcql_query, which the spec forbids
+// outright. Everything common to both now lives in one place.
+func validateRedirectAuthorizationRequest(request *AuthorizationRequest) error {
+	if ResponseType(request.ResponseType) != ResponseType_VpToken {
+		return fmt.Errorf("response_type must be %q, but got %q", ResponseType_VpToken, request.ResponseType)
+	}
+	if err := validateNonce(request.Nonce); err != nil {
+		return err
+	}
+	// aud is deliberately not validated -- see the note above AuthRequestJwtTyp.
+	//
+	// "Either a dcql_query or a scope parameter representing a DCQL Query MUST
+	// be present in the Authorization Request, but not both."
+	hasQuery := len(request.DcqlQuery.Credentials) > 0
+	if request.Scope != "" && hasQuery {
+		return fmt.Errorf("scope and dcql_query must not both be present")
+	}
+	if request.Scope == "" && !hasQuery {
+		return fmt.Errorf("request carries neither a dcql_query nor a scope")
+	}
+	if hasQuery {
+		if err := request.DcqlQuery.Validate(); err != nil {
+			return fmt.Errorf("invalid dcql_query: %v", err)
+		}
+	}
+
+	// "When `response_uri` is present, the `redirect_uri` must not be present" —
+	// the rule the AuthorizationRequest field comment already states. They name
+	// two different places to send the answer, so a request carrying both leaves
+	// where the response goes up to whichever the wallet happens to read first.
+	if request.ResponseUri != "" && request.RedirectUri != "" {
+		return fmt.Errorf("response_uri and redirect_uri must not both be present")
+	}
+
+	// direct_post has to say where the response goes. Without this the session
+	// failed anyway, but only later and as an unreadable transport error — a POST
+	// to the empty string, reported as an unsupported protocol scheme.
+	if request.ResponseMode == ResponseMode_DirectPost || request.ResponseMode == ResponseMode_DirectPostJwt {
+		if request.ResponseUri == "" {
+			return fmt.Errorf("response_mode %s requires a response_uri", request.ResponseMode)
+		}
+	}
+	return nil
+}
+
+// validateRedirectResponseMode rejects the response modes a URL-invoked session
+// cannot answer in.
+//
+// direct_post and direct_post.jwt are the two this wallet transmits a response
+// for; the DC API modes are refused earlier, with an error saying so. Anything
+// else -- OAuth's own `fragment` and `query`, or an omitted response_mode, whose
+// default is `fragment` for a vp_token response -- used to reach the transport,
+// where the response builder recognised no mode, built no vp_token, and POSTed
+// an empty form to whatever response location the request carried. A verifier
+// received an empty response and the wallet reported the HTTP status, or with no
+// response location at all reported an unsupported protocol scheme, neither of
+// which names the actual problem. Nothing was disclosed either way, so this only
+// changes when and how the request is refused.
+func validateRedirectResponseMode(mode ResponseMode) error {
+	switch mode {
+	case ResponseMode_DirectPost, ResponseMode_DirectPostJwt:
+		return nil
+	}
+	if mode == "" {
+		return fmt.Errorf(
+			"request carries no response_mode: a URL-invoked session requires %s or %s",
+			ResponseMode_DirectPost, ResponseMode_DirectPostJwt)
+	}
+	return fmt.Errorf(
+		"response_mode %q is not supported for a URL-invoked session: only %s and %s are",
+		mode, ResponseMode_DirectPost, ResponseMode_DirectPostJwt)
+}
+
+// validateResponseUriBinding constrains where a response may be sent for the
+// x509_san_dns client identifier scheme.
+//
+// OpenID4VP Section 5.10 lets a wallet allow a freely chosen response location
+// only when it can establish trust in the client identifier by some other means,
+// such as a list of trusted client identifiers; otherwise the host of the
+// response location MUST match the client identifier. This wallet authenticates
+// the client identifier against the certificate alone, which binds who is
+// asking but says nothing about where the answer goes, so the second rule is the
+// applicable one: without this check a certificate valid for one host could
+// direct a credential to any other.
+//
+// Only x509_san_dns is constrained here. x509_hash names a certificate rather
+// than a host, and the DC API returns the response through the platform instead
+// of transmitting it, so neither carries a host to compare against.
+func validateResponseUriBinding(request *AuthorizationRequest) error {
+	if !strings.HasPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns)) {
+		return nil
+	}
+	expected := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns))
+
+	// Whichever of the two the verifier used to say where the response goes.
+	target := request.ResponseUri
+	if target == "" {
+		target = request.RedirectUri
+	}
+	if target == "" {
+		return nil
+	}
+
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return fmt.Errorf("response location %q is not a URL: %v", target, err)
+	}
+	if !strings.EqualFold(parsed.Hostname(), expected) {
+		return fmt.Errorf(
+			"response location host %q does not match client_id %q",
+			parsed.Hostname(), expected,
+		)
+	}
+	return nil
 }

@@ -1,6 +1,7 @@
 package proofs
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -209,23 +210,77 @@ func Test_JwtProofBuilder_Build_DIDKeyMethod_SetsKidToResolvableDIDKey(t *testin
 	require.Equal(t, key.PublicKey, resolved)
 }
 
-func Test_JwtProofBuilder_Build_COSEMethod_ReturnsUnsupportedError(t *testing.T) {
+func Test_JwtProofBuilder_Build_COSEMethod_Succeeds(t *testing.T) {
 	key := mustGenerateECKey(t)
+	nonce := "test-nonce-cose"
 
 	builder := NewJwtProofBuilder(
 		"https://issuer.example.com",
 		"https://server.example.com",
 		jwa.ES256(),
-		nil,
+		&nonce,
 		fixedClock{t: testFixedTime},
 		CryptographicBindingMethod_COSE,
 	)
 
-	_, err := builder.Build(key)
+	result, err := builder.Build(key)
+	require.NoError(t, err)
 
-	require.Error(t, err)
-	require.ErrorContains(t, err, "unsupported cryptographic binding method")
-	require.ErrorContains(t, err, string(CryptographicBindingMethod_COSE))
+	jwtStr, ok := result.(string)
+	require.True(t, ok, "result should be a string")
+	require.NotEmpty(t, jwtStr)
+
+	// The proof must be signed by the holder key the COSE key was derived from,
+	// otherwise the issuer cannot bind the credential to it.
+	pubJwk := mustGetPublicJWK(t, key)
+	token, err := jwt.Parse([]byte(jwtStr), jwt.WithKey(jwa.ES256(), pubJwk))
+	require.NoError(t, err)
+
+	issuer, _ := token.Issuer()
+	require.Equal(t, "https://issuer.example.com", issuer)
+
+	audience, _ := token.Audience()
+	require.Contains(t, audience, "https://server.example.com")
+
+	issuedAt, _ := token.IssuedAt()
+	require.Equal(t, testFixedTime.Unix(), issuedAt.Unix())
+
+	nonceClaim, err := jwt.Get[string](token, "nonce")
+	require.NoError(t, err, "nonce claim should be present")
+	require.Equal(t, nonce, nonceClaim)
+
+	headers := parseProtectedHeaders(t, jwtStr)
+
+	typ, hasTyp := headers.Type()
+	require.True(t, hasTyp)
+	require.Equal(t, "openid4vci-proof+jwt", typ)
+
+	alg, hasAlg := headers.Algorithm()
+	require.True(t, hasAlg)
+	require.Equal(t, jwa.ES256(), alg)
+
+	// The COSE-derived key is conveyed in the `jwk` header, like the JWK binding method.
+	jwkHeader, hasJwk := headers.JWK()
+	require.True(t, hasJwk, "jwk header should be present for COSE binding method")
+	require.NotNil(t, jwkHeader)
+
+	_, hasKid := headers.KeyID()
+	require.False(t, hasKid, "kid header should not be present for COSE binding method")
+
+	// The header key must be the public holder key: never the private key.
+	isPrivate, err := jwk.IsPrivateKey(jwkHeader)
+	require.NoError(t, err)
+	require.False(t, isPrivate, "jwk header must not contain private key material")
+
+	expectedThumbprint, err := pubJwk.Thumbprint(crypto.SHA256)
+	require.NoError(t, err)
+	actualThumbprint, err := jwkHeader.Thumbprint(crypto.SHA256)
+	require.NoError(t, err)
+	require.Equal(t, expectedThumbprint, actualThumbprint, "jwk header should convey the holder public key")
+
+	// The advertised key must actually verify the proof signature.
+	_, err = jws.Verify([]byte(jwtStr), jws.WithKey(jwa.ES256(), jwkHeader))
+	require.NoError(t, err)
 }
 
 func Test_JwtProofBuilder_Build_UnknownMethod_ReturnsUnsupportedError(t *testing.T) {

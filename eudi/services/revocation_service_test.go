@@ -15,7 +15,7 @@ import (
 // instance pointing at that index. The cache starts cold; call warmCache to
 // populate it. IsRevoked reads the cache only (never the network), and does not
 // touch the store, so it is left nil.
-func newIsRevokedFixture(t *testing.T, bits int, value uint8) (*RevocationService, *statuslist.TestStatusListServer, *models.IssuedCredentialInstance) {
+func newIsRevokedFixture(t *testing.T, bits int, value uint8) (*RevocationService, *statuslist.TestStatusListServer, *models.SdJwtVcBatchInstance) {
 	t.Helper()
 	signer := statuslist.NewTestStatusListSigner(t)
 	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
@@ -29,13 +29,13 @@ func newIsRevokedFixture(t *testing.T, bits int, value uint8) (*RevocationServic
 
 	uri := srv.URL()
 	idx := uint64(3)
-	inst := &models.IssuedCredentialInstance{StatusListURI: &uri, StatusListIdx: &idx}
+	inst := &models.SdJwtVcBatchInstance{StatusListURI: &uri, StatusListIdx: &idx}
 	return NewRevocationService(checker, nil), srv, inst
 }
 
 // warmCache populates rc's status-list cache from the test server, the way the
 // background RefreshStatuses sweep would.
-func warmCache(t *testing.T, rc *RevocationService, inst *models.IssuedCredentialInstance) {
+func warmCache(t *testing.T, rc *RevocationService, inst *models.SdJwtVcBatchInstance) {
 	t.Helper()
 	_, err := rc.checker.Refresh(context.Background(), statuslist.Reference{URI: *inst.StatusListURI})
 	require.NoError(t, err)
@@ -85,13 +85,13 @@ func Test_RevocationService_IsRevoked_ColdCache_NotRevoked(t *testing.T) {
 
 func Test_RevocationService_IsRevoked_NoStatusReference(t *testing.T) {
 	rc, _, _ := newIsRevokedFixture(t, 1, 1)
-	require.False(t, rc.IsRevoked(&models.IssuedCredentialInstance{}), "no status_list reference -> never revoked")
+	require.False(t, rc.IsRevoked(&models.SdJwtVcBatchInstance{}), "no status_list reference -> never revoked")
 }
 
 func Test_RevocationService_IsRevoked_NilChecker(t *testing.T) {
 	uri := "https://issuer.example/sl"
 	idx := uint64(0)
 	rc := NewRevocationService(nil, nil)
-	require.False(t, rc.IsRevoked(&models.IssuedCredentialInstance{StatusListURI: &uri, StatusListIdx: &idx}),
+	require.False(t, rc.IsRevoked(&models.SdJwtVcBatchInstance{StatusListURI: &uri, StatusListIdx: &idx}),
 		"disabled (nil checker) -> not revoked")
 }

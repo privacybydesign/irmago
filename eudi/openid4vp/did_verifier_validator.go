@@ -80,7 +80,7 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 			return jwa.EmptySignatureAlgorithm(), nil, err
 		}
 		return alg, pubKey, nil
-	})
+	}, authRequestParserOptions()...)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to verify auth request jwt: %v", err)
 	}

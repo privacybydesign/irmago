@@ -171,7 +171,10 @@ func CreateTestAuthorizationRequestJWT(hostname string, verifierKey *ecdsa.Priva
 
 func CreateTestAuthorizationRequestJWTWithClientId(clientId string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *AuthorizationRequestToken)) string {
 	claims := map[string]any{
-		"aud":       "https://audience",
+		// OpenID4VP § 5.8: a statically discovered wallet — one publishing no issuer
+		// identifier, as this one does not — is addressed as this symbolic value.
+		// A placeholder here made every fixture request non-conformant.
+		"aud":       "https://self-issued.me/v2",
 		"client_id": clientId,
 		"dcql_query": map[string]any{
 			"credentials": []map[string]any{
