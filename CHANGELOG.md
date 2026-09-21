@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fixed
+- An OpenID4VP verifier holding a Yivi issued certificate can no longer choose the organisation name and logo it is displayed under by putting them in `client_metadata`. The display name was taken from `client_metadata.client_name` first and from the certificate's scheme data only when that was absent, while `Verified` is set from the presence of a valid certificate — so any verifier we certified could have the consent screen present it as another organisation, with the styling the wallet reserves for a party it recognizes. For a certificate we issued, the certificate now decides the name and the logo; `client_metadata` is still used for third party certificates, which carry no scheme data of ours to contradict. This is the display half of the same `client_metadata` shortcut whose attribute authorization half was closed in 1.4.0 ([#727](https://github.com/privacybydesign/irmago/issues/727))
+
 
 ## [1.4.0] - 2026-09-21
 ### Added
