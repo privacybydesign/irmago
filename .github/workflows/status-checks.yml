@@ -119,7 +119,7 @@ jobs:
       run: find . -type f -not -path './testdata/*.json' | xargs misspell -error -i "adres,instelling,relatie"
 
     - name: Install staticcheck
-      run: go install honnef.co/go/tools/cmd/staticcheck@2026.2
+      run: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
 
     - name: Run staticcheck
       run: staticcheck -checks "all,-ST1000,-ST1003,-SA1019,-SA1029" ./...
