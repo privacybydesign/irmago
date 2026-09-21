@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fixed
+- The holder database no longer writes the wallet's contents to the platform log. GORM's logger was built over `os.Stdout` without `ParameterizedQueries`, so a statement slower than 200ms or one that failed was rendered with its arguments substituted in -- raw SD-JWT VC tokens, the attribute JSON of a log entry, holder binding keys -- and on mobile the gomobile runtime redirects stdout to logcat and the device console, where it landed whatever log level the app had set. GORM's output now goes through irmago's logger, so it falls under that level, and it logs the statement with its placeholders rather than its values. Three smaller paths are covered too: the panic handler in `irma/irmaclient/session.go` and the random-source error in `revocation.go` printed to stdout with `fmt.Print*` instead of the logger, the keyshare session token was logged at debug level, and the two `%#v` dumps of an `AuthorizationRequest` in `eudi/openid4vp/client.go` are now an explicit field summary, so a field added to that struct later is not logged by default ([#730](https://github.com/privacybydesign/irmago/issues/730))
 
 ## [1.4.0] - 2026-09-21
 ### Added
