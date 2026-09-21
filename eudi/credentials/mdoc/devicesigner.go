@@ -111,9 +111,10 @@ func DeviceSignerFromSigner(signer crypto.Signer) (*SoftwareDeviceSigner, error)
 }
 
 // deviceAuthAlgorithmFor pairs a device key's curve with the COSE algorithm
-// ISO/IEC 18013-5 9.1.3.6 requires with it: "ES256 shall be used with curves
-// P-256 [...] ES384 shall be used with curves P-384 [...] ES512 shall be used
-// with curves P-521".
+// ISO/IEC 18013-5 9.1.3.6 requires with it. That clause fixes one algorithm per
+// curve rather than leaving the combination open: ES256 goes with P-256, ES384
+// with P-384 and ES512 with P-521. It covers the brainpool curves too, which
+// this package does not carry.
 //
 // The pairing is not a free choice, which is why it is resolved from the curve
 // rather than passed in. Signing with a mismatched algorithm is not caught by

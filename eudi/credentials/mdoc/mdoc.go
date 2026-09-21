@@ -63,9 +63,9 @@ type KeyAuthorizations struct {
 	DataElements map[string][]string `cbor:"dataElements,omitempty"`
 }
 
-// isEmpty reports the case 9.1.2.4 forbids an issuer from producing ("If the
-// KeyAuthorizations map is present, it shall not be empty") and which a verifier
-// therefore has to treat as authorizing nothing.
+// isEmpty reports the case 9.1.2.4 forbids an issuer from producing — a
+// KeyAuthorizations map that is present but carries nothing — and which a
+// verifier therefore has to treat as authorizing nothing.
 func (k *KeyAuthorizations) isEmpty() bool {
 	return k == nil || (len(k.NameSpaces) == 0 && len(k.DataElements) == 0)
 }

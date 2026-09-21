@@ -21,7 +21,7 @@ import (
 // outside the process. Nothing here should reach cbor.Unmarshal directly.
 //
 // ISO/IEC 18013-5 8.1 departs from fxamacker's defaults in one way that matters:
-// "maps (major type 5) shall not have multiple entries with the same key". The
+// it forbids a CBOR map (major type 5) from carrying the same key twice. The
 // library default is DupMapKeyQuiet, which silently keeps whichever entry came
 // last. That is not merely untidy — every structure here is either covered by a
 // signature or used to check one, so two parties can decode the same bytes to
@@ -39,10 +39,11 @@ var mdocDecMode = mustDecMode(cbor.DecOptions{
 
 // indefLengthMode is the one setting in mdocDecMode left lenient.
 //
-// 8.1's "indefinite-length items shall be made into definite-length items" is
-// written as a rule for producers; whether a reader should also refuse an
-// indefinite-length item it can decode perfectly well is a strictness judgement
-// rather than a requirement the clause places on verification. Flipping this to
+// 8.1's requirement that encoders emit definite-length items in place of
+// indefinite-length ones is written as a rule for producers; whether a reader
+// should also refuse an indefinite-length item it can decode perfectly well is
+// a strictness judgement rather than a requirement the clause places on
+// verification. Flipping this to
 // cbor.IndefLengthForbidden completes 8.1 on the receiving side and is the
 // intended end state.
 //
@@ -148,9 +149,9 @@ func hashTag24Item(item IssuerSignedItem) ([]byte, error) {
 }
 
 // digestFuncFor resolves the MSO's declared digestAlgorithm to the function that
-// computes it, per ISO/IEC 18013-5 9.1.2.5: "The issuing authority infrastructure
-// shall use one of the following digest algorithms: SHA-256, SHA-384 or SHA-512",
-// identified by the exact strings in Table 21.
+// computes it. ISO/IEC 18013-5 9.1.2.5 confines an issuing authority to three
+// choices — SHA-256, SHA-384 and SHA-512 — identified by the exact strings in
+// Table 21.
 //
 // The verifier used to assume SHA-256 and never read the field. A conformant
 // SHA-384 credential then failed as "digest mismatch for age_over_18", which
@@ -198,10 +199,10 @@ func mustMarshal(v any) []byte {
 //     VerificationResult.DeviceKey and the device-key binder to crypto.PublicKey,
 //     which is a change of shape rather than a table entry.
 //   - brainpoolP256r1/320r1/384r1/512r1 (256-259) are not in the Go standard
-//     library at all. Table 22's "support for all curves is mandatory for an mdoc
-//     reader" is unqualified, so strict conformance needs a third-party curve
-//     implementation in the verification path — a decision about dependencies,
-//     not an oversight.
+//     library at all. Table 22 makes reader support for every curve it lists
+//     mandatory, with no exception for ones a platform happens not to provide,
+//     so strict conformance needs a third-party curve implementation in the
+//     verification path — a decision about dependencies, not an oversight.
 //   - X25519 (4) and X448 (5) are ECDH-only in Table 22, so they cannot appear
 //     as a device authentication key.
 //
@@ -356,8 +357,8 @@ func ecdhCurveFor(curve elliptic.Curve) (ecdh.Curve, bool) {
 //
 // This is general ISO/IEC 18013-5 rather than a profile rule, which is why it is
 // no longer named for the AV Blueprint: ValidityInfo's fields are typed `tdate`
-// in the 9.1.2.4 CDDL, and 7.2.1 requires that "a tdate data item shall contain
-// a date-time string as specified in RFC 3339". The AV Blueprint's worked
+// in the 9.1.2.4 CDDL, and 7.2.1 defines a tdate as carrying a date-time string
+// in the form RFC 3339 specifies. The AV Blueprint's worked
 // example (Annex A §A.11) shows the same thing —
 // `"signed": 0("2025-06-20T08:45:29Z")` — because it inherits the rule, not
 // because it imposes one.

@@ -83,8 +83,8 @@ func wrapItem(t *testing.T, item IssuerSignedItem) (encoded []byte, digest []byt
 	return encoded, sum[:]
 }
 
-// TestMSOVersionMustBeMajorOne covers 9.1.2.4: the MobileSecurityObject version
-// "shall be 1.0" in this edition of the standard.
+// TestMSOVersionMustBeMajorOne covers 9.1.2.4, which pins the
+// MobileSecurityObject version to 1.0 in this edition of the standard.
 //
 // A higher major version is a structure carrying fields this code has no
 // definition for. Decoding silently drops what it does not recognise, so every
@@ -128,9 +128,9 @@ func TestMSOVersionMustBeMajorOne(t *testing.T) {
 	}
 }
 
-// TestDuplicateElementIdentifierIsRejected covers 8.3.2.1.2.2: "The mdoc shall
-// not include two or more IssuerSignedItem elements with the same
-// DataElementIdentifier in a single NameSpace and Document."
+// TestDuplicateElementIdentifierIsRejected covers 8.3.2.1.2.2, which lets a data
+// element identifier appear at most once per namespace in a document — no two
+// IssuerSignedItem entries in one namespace may name the same element.
 //
 // Both items here are genuinely signed for — different digestIDs, both digests
 // in the MSO — so every cryptographic check passes and only the structural rule
@@ -161,8 +161,8 @@ func TestDuplicateElementIdentifierIsRejected(t *testing.T) {
 	require.Contains(t, result.Error, "age_over_18", "rejection should name the duplicated element, got: %s", result.Error)
 }
 
-// TestDuplicateCBORMapKeyIsRejected covers 8.1: "maps (major type 5) shall not
-// have multiple entries with the same key."
+// TestDuplicateCBORMapKeyIsRejected covers 8.1, which forbids a CBOR map (major
+// type 5) from carrying the same key twice.
 //
 // The item below is byte-for-byte what the MSO commits to, so its digest matches
 // and the signature is untouched — the only thing wrong with it is that it

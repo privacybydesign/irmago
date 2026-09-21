@@ -42,9 +42,9 @@ const credentialValidityPeriod = 90 * 24 * time.Hour
 
 // issuedValidityInfo builds the ValidityInfo for a credential issued now.
 //
-// The timestamps are coarsened to midnight UTC. ISO/IEC 18013-5 9.1.2.4: an
-// issuer "should set these timestamps with a precision that limits the
-// linkability information" — a per-second timestamp is as good a correlator as
+// The timestamps are coarsened to midnight UTC. ISO/IEC 18013-5 9.1.2.4 advises
+// an issuer to keep their precision low enough that they do not help link
+// presentations together — a per-second timestamp is as good a correlator as
 // the credential it is meant to protect, which matters most for the batches of
 // single-use credentials issued precisely so a holder cannot be followed between
 // relying parties. The EU reference issuer does the same; see is_batch_credential

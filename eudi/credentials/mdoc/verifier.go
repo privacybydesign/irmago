@@ -70,10 +70,9 @@ var mdocDocumentSignerEKUs = []asn1.ObjectIdentifier{
 }
 
 // mdocSignatureAlgorithms are the algorithms ISO/IEC 18013-5 permits for the two
-// signatures this package verifies, and which 9.1.2.4 obliges a reader to
-// support: "For verifying the signature, the mdoc reader shall support all of
-// these signature algorithms and curves" — ES256, ES384, ES512 and EdDSA. 9.1.3.6
-// restates the same list for device authentication.
+// signatures this package verifies. 9.1.2.4 obliges a reader to handle the whole
+// set when verifying, not a subset of its choosing — ES256, ES384, ES512 and
+// EdDSA — and 9.1.3.6 restates the same list for device authentication.
 //
 // cose.AlgorithmEdDSA and the deprecated cose.AlgorithmEd25519 are the same value
 // (-8), so EdDSA appears once.
@@ -629,8 +628,9 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 		return nil, result
 	}
 
-	// Step 3c: revocation. 9.3.3 requires a party performing path validation to
-	// have "access to certificate revocation information", and Annex B.1.4 makes
+	// Step 3c: revocation. 9.3.3 requires whoever performs path validation to be
+	// able to reach revocation data for the certificates involved, and Annex B.1.4
+	// makes
 	// a CRL distribution point mandatory on a document signer precisely so this
 	// is possible. Chain validity is a statement about dates and signatures; it
 	// says nothing about a key that was compromised and withdrawn yesterday.
@@ -830,9 +830,9 @@ func verifyNamespaceDigests(items []Tag24Item, nsDigests map[uint64][]byte, dige
 				item.ElementIdentifier, len(item.Random), minSaltLength)
 		}
 
-		// ISO/IEC 18013-5 8.3.2.1.2.2: "The mdoc shall not include two or more
-		// IssuerSignedItem elements with the same DataElementIdentifier in a single
-		// NameSpace and Document."
+		// ISO/IEC 18013-5 8.3.2.1.2.2 lets a data element identifier appear at most
+		// once per namespace within a document — no two IssuerSignedItem entries in
+		// one namespace may name the same element.
 		//
 		// Nothing else here catches it. The two copies carry different digestIDs, the
 		// MSO commits to both, and both pass the digest check below — so without this
@@ -891,8 +891,8 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 	// Every namespace the document carries is verified, not only the one the
 	// caller asked about.
 	//
-	// 9.3.1 step 3 is "calculate the digest value for every IssuerSignedItem
-	// returned in the DeviceResponse", without qualification. Verifying one
+	// 9.3.1 step 3 has the reader digest every IssuerSignedItem the DeviceResponse
+	// returns, without qualification. Verifying one
 	// namespace and ignoring the rest left items in any other namespace neither
 	// checked nor refused: their values never reached result.Attributes, which is
 	// what kept it from being exploitable, but the document still came back Valid
@@ -924,9 +924,9 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 // Shared by Verify and VerifyAllDisclosedNamespaces so the two cannot drift
 // over what "verified" covers.
 func verifyAllNamespaces(mdoc *MDoc, mso *MSO) (DisclosedNamespaces, error) {
-	// Resolved once for the whole document: 9.1.2.5 requires "the same digest
-	// algorithm shall be used for all data elements", so a per-namespace lookup
-	// would imply a freedom the clause does not give.
+	// Resolved once for the whole document: 9.1.2.5 ties every data element in a
+	// document to a single digest algorithm, so a per-namespace lookup would imply
+	// a freedom the clause does not give.
 	digest, err := digestFuncFor(mso.DigestAlgorithm)
 	if err != nil {
 		return nil, err
@@ -1152,11 +1152,11 @@ func decodeDeviceNameSpaces(raw cbor.RawMessage) (DeviceNameSpaces, error) {
 }
 
 // checkDeviceSignedNameSpaces decides whether the holder-asserted elements in a
-// presentation are acceptable, under ISO/IEC 18013-5 9.1.3.4: "An mdoc shall
-// only authenticate response data elements in DeviceNameSpaces if the key it is
-// using for mdoc authentication is authorized to authenticate these elements in
-// the KeyAuthorizations structure in the MSO. The mdoc reader shall validate
-// this authorization as part of validating the mdoc authentication."
+// presentation are acceptable, under ISO/IEC 18013-5 9.1.3.4. That clause lets
+// an mdoc authenticate an element in DeviceNameSpaces only where the MSO's
+// KeyAuthorizations structure authorizes its mdoc authentication key for that
+// element, and folds the reader's check of that authorization into validating
+// mdoc authentication rather than leaving it a separate, optional step.
 //
 // So holder-asserted elements are permitted exactly to the extent the issuer
 // authorized the device key to assert them, and the issuer decides that for its
@@ -1176,8 +1176,9 @@ func checkDeviceSignedNameSpaces(
 		return nil
 	}
 
-	// 9.1.2.4: "If the KeyAuthorizations map is present, it shall not be empty."
-	// Absent means the issuer authorized the device key to assert nothing.
+	// 9.1.2.4 does not allow a KeyAuthorizations map to be present yet carry
+	// nothing, so absent means the issuer authorized the device key to assert
+	// nothing.
 	if authorizations == nil || authorizations.isEmpty() {
 		asserted := make([]string, 0, len(deviceNameSpaces))
 		for namespace := range deviceNameSpaces {
@@ -1192,10 +1193,10 @@ func checkDeviceSignedNameSpaces(
 	}
 
 	for namespace, elements := range deviceNameSpaces {
-		// "If authorization is given for a full namespace (by including the
-		// namespace in the AuthorizedNameSpaces array), that namespace shall not be
-		// included in the AuthorizedDataElements map" — so a whole-namespace grant
-		// settles every element under it.
+		// A namespace granted wholesale, by naming it in the AuthorizedNameSpaces
+		// array, is barred from appearing in the AuthorizedDataElements map as well
+		// — so a whole-namespace grant settles every element under it and there is
+		// no element-level entry left to consult.
 		if slices.Contains(authorizations.NameSpaces, namespace) {
 			continue
 		}

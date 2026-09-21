@@ -19,10 +19,10 @@ import (
 // ============================================================
 // ALGORITHM AND CURVE AGILITY
 //
-// 9.1.2.4: "For verifying the signature, the mdoc reader shall support all of
-// these signature algorithms and curves" — ES256, ES384, ES512, EdDSA.
+// 9.1.2.4: a reader must be able to verify with every algorithm and curve on
+// the list, not a subset of its choosing — ES256, ES384, ES512, EdDSA.
 // 9.1.2.5: the issuer picks SHA-256, SHA-384 or SHA-512 and declares which.
-// Table 22: "Support for all curves is mandatory for an mdoc reader."
+// Table 22: reader support for each curve it lists is mandatory.
 //
 // Every case below was rejected before, and rejected with a message pointing
 // somewhere else: an ES384 credential failed as an opaque algorithm mismatch, a
