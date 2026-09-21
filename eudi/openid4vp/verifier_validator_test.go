@@ -47,9 +47,16 @@ func TestVerifierValidator(t *testing.T) {
 	// client_metadata (nil-pointer) tests
 	t.Run("ParseAndVerifyAuthorizationRequest falls back to certificate scheme data when client_metadata is absent", testParseAndVerifyAuthorizationRequestNilClientMetadata_FallsBackToCertificateSchemeData)
 	t.Run("ParseAndVerifyAuthorizationRequest falls back to certificate scheme data when client_metadata has no client_name", testParseAndVerifyAuthorizationRequestClientMetadataWithoutClientName_FallsBackToCertificateSchemeData)
-	t.Run("ParseAndVerifyAuthorizationRequest uses client_metadata client_name when present", testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_UsesClientMetadataName)
+	t.Run("ParseAndVerifyAuthorizationRequest ignores client_metadata client_name for a Yivi issued certificate", testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_YiviCertificateWins)
+	t.Run("ParseAndVerifyAuthorizationRequest uses client_metadata client_name for a third party certificate", testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_ThirdPartyCertificate_UsesClientMetadataName)
 	t.Run("ParseAndVerifyAuthorizationRequest downloads the logo referenced in client_metadata", testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLogo)
 	t.Run("ParseAndVerifyAuthorizationRequest continues without a logo when it fails to download", testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_ContinuesWithoutLogo)
+
+	// Attribute level authorization tests: client_metadata must never bypass the
+	// authorization check bound to a Yivi issued certificate.
+	t.Run("ParseAndVerifyAuthorizationRequest validates queried credentials for a Yivi issued certificate", testParseAndVerifyAuthorizationRequestUnauthorizedQuery_Fails)
+	t.Run("ParseAndVerifyAuthorizationRequest validates queried credentials even when client_metadata is present", testParseAndVerifyAuthorizationRequestUnauthorizedQueryWithClientMetadata_Fails)
+	t.Run("ParseAndVerifyAuthorizationRequest skips credential query validation for a third party certificate", testParseAndVerifyAuthorizationRequestThirdPartyCertificate_SkipsQueryValidation)
 }
 
 func testParseAndVerifyAuthorizationRequestFailureEmptyX5cArray(t *testing.T) {
@@ -294,13 +301,37 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithoutClientName_Falls
 	require.Equal(t, "Yivi B.V.", requestorInfo.Organization.LegalName["en"])
 }
 
-func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_UsesClientMetadataName(t *testing.T) {
-	// Setup test data with client_metadata.client_name set, and no logo_uri.
+func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_YiviCertificateWins(t *testing.T) {
+	// Setup test data with a Yivi issued certificate and a client_metadata object that
+	// tries to present the verifier under a different name. The certificate is issued by
+	// us and therefore authoritative, so the self-asserted name must be ignored.
+	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+			"client_name": "Impersonated Verifier",
+			"logo_uri":    "data:image/png;base64,aGVsbG8=",
+		}
+	}, testdata.PkiOption_None)
+
+	// Parse and verify the authorization request
+	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.NoError(t, err)
+	require.Equal(t, "Yivi B.V.", requestorInfo.Organization.LegalName["en"])
+	require.Equal(t, "Yivi B.V.", requestorInfo.Organization.LegalName["nl"])
+
+	// The logo comes from the certificate scheme data, not from client_metadata.
+	require.NotNil(t, requestorInfo.Organization.Logo)
+	require.NotEqual(t, []byte("hello"), requestorInfo.Organization.Logo.Data)
+}
+
+func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_ThirdPartyCertificate_UsesClientMetadataName(t *testing.T) {
+	// Setup test data with a third party certificate (no Yivi scheme data). There is no
+	// certificate bound policy to enforce, so the self-asserted name is used.
 	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
 		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
 			"client_name": "Acme Verifier",
 		}
-	}, testdata.PkiOption_None)
+	}, testdata.PkiOption_MissingSchemeData)
 
 	// Parse and verify the authorization request
 	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -311,14 +342,14 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_UsesClie
 }
 
 func testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLogo(t *testing.T) {
-	// Setup test data with client_metadata.client_name and a data-uri logo_uri, so the
-	// logo can be "downloaded" without a real network call.
+	// Setup test data with a third party certificate, client_metadata.client_name and a
+	// data-uri logo_uri, so the logo can be "downloaded" without a real network call.
 	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
 		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
 			"client_name": "Acme Verifier",
 			"logo_uri":    "data:image/png;base64,aGVsbG8=",
 		}
-	}, testdata.PkiOption_None)
+	}, testdata.PkiOption_MissingSchemeData)
 
 	// Parse and verify the authorization request
 	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -331,14 +362,14 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLo
 }
 
 func testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_ContinuesWithoutLogo(t *testing.T) {
-	// Setup test data with client_metadata.client_name and a malformed logo_uri (missing
-	// the comma separator), so downloading the logo fails.
+	// Setup test data with a third party certificate, client_metadata.client_name and a
+	// malformed logo_uri (missing the comma separator), so downloading the logo fails.
 	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
 		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
 			"client_name": "Acme Verifier",
 			"logo_uri":    "data:image/png;base64",
 		}
-	}, testdata.PkiOption_None)
+	}, testdata.PkiOption_MissingSchemeData)
 
 	// Parse and verify the authorization request
 	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -348,7 +379,59 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_Cont
 	require.Nil(t, requestorInfo.Organization.Logo)
 }
 
+// A query validator that rejects every query, standing in for a verifier that asks for
+// attributes its certificate does not authorize it to request.
+var rejectingQueryValidatorFactory = &MockQueryValidatorFactory{failsQueryValidation: true}
+
+func testParseAndVerifyAuthorizationRequestUnauthorizedQuery_Fails(t *testing.T) {
+	// Setup test data with a Yivi issued certificate whose authorized attribute sets do
+	// not cover the requested credentials.
+	authRequestJwt, verifierValidator := setupTestWithQueryValidatorFactory(t, nil, testdata.PkiOption_None, rejectingQueryValidatorFactory)
+
+	// Parse and verify the authorization request
+	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to verify queried credentials")
+}
+
+func testParseAndVerifyAuthorizationRequestUnauthorizedQueryWithClientMetadata_Fails(t *testing.T) {
+	// Regression test: a verifier holding a Yivi issued certificate used to be able to
+	// skip the attribute level authorization check entirely, and pick its own display
+	// name, simply by including client_metadata in the request. Presence of
+	// client_metadata must not change whether the queried credentials are validated.
+	authRequestJwt, verifierValidator := setupTestWithQueryValidatorFactory(t, func(token *jwt.Token) {
+		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+			"client_name": "Impersonated Verifier",
+			"logo_uri":    "data:image/png;base64,aGVsbG8=",
+		}
+	}, testdata.PkiOption_None, rejectingQueryValidatorFactory)
+
+	// Parse and verify the authorization request
+	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to verify queried credentials")
+}
+
+func testParseAndVerifyAuthorizationRequestThirdPartyCertificate_SkipsQueryValidation(t *testing.T) {
+	// A third party certificate carries no authorized attribute sets, so there is nothing
+	// to validate the queried credentials against and the request is accepted even though
+	// the query validator would reject every query.
+	authRequestJwt, verifierValidator := setupTestWithQueryValidatorFactory(t, nil, testdata.PkiOption_MissingSchemeData, rejectingQueryValidatorFactory)
+
+	// Parse and verify the authorization request
+	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.NoError(t, err)
+	require.Equal(t, EndEntityCN, requestorInfo.Organization.LegalName["en"])
+}
+
 func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
+	return setupTestWithQueryValidatorFactory(t, tokenModifier, opts, &MockQueryValidatorFactory{})
+}
+
+func setupTestWithQueryValidatorFactory(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions, validatorFactory QueryValidatorFactory) (authRequestJwt string, verifierValidator VerifierValidator) {
 	tempDir := t.TempDir()
 
 	// Setup PKI
@@ -389,7 +472,7 @@ func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata
 	// Create the TrustModel with the PKI
 	trustModel := eudi.NewTestTrustModel(tempDir, rootPool, intermediatePool, revocationLists)
 
-	verifierValidator = NewRequestorCertificateStoreVerifierValidator(trustModel, &MockQueryValidatorFactory{})
+	verifierValidator = NewRequestorCertificateStoreVerifierValidator(trustModel, validatorFactory)
 
 	// Create an authorization request JWT
 	authRequestJwt = testdata.CreateTestAuthorizationRequestJWT(hostname, verifierKey, verifierCert, tokenModifier)

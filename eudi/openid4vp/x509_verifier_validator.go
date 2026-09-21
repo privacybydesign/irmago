@@ -51,15 +51,34 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	}
 
 	// Try to get verifier metadata in order:
-	// 1. From the verifier metadata in the authorization request (if present)
-	// 2. From the certificate OID (if it's a Yivi issued certificate)
+	// 1. From the certificate scheme data (if it's a Yivi issued certificate)
+	// 2. From the verifier metadata in the authorization request (third party certificates only)
 	// 3. Use the CN from the certificate, without a logo, as a fallback (if all else fails)
+	//
+	// The certificate is always consulted first: it is issued by us and therefore
+	// authoritative for both the verifier's identity and the attributes it is
+	// authorized to request. client_metadata is self-asserted by the verifier, so it
+	// must never override the certificate, and its presence must never cause the
+	// attribute level authorization check below to be skipped.
 
 	requestorInfo := &scheme.RelyingPartyRequestor{}
 
 	// TODO: we'll need to figure out if/how we want to authorize on attribute level when we're dealing with a non-Yivi issued certificate. For now, we only support that functionality for Yivi issued certificates, and we authorize all attribute for certificates issued by third parties.
 
-	if authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil {
+	if info, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leafCert); err == nil {
+		// The certificate is a Yivi issued certificate, so we take the requestor info from it.
+		requestorInfo = info
+
+		// Validate the credential queries in the authorization request against the requestor's allowed queries in the certificate. This ensures that the verifier is only requesting credentials that it is authorized to request.
+		queryValidator := v.validatorFactory.CreateQueryValidator(&requestorInfo.RelyingParty)
+		credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
+		if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
+		}
+	} else if authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil {
+		// Getting the requestor info from the certificate failed, so most likely the
+		// certificate is not a Yivi issued certificate. There is no certificate bound
+		// policy to enforce, so fall back to the self-asserted verifier metadata.
 		requestorInfo.Organization.LegalName = map[string]string{"en": *authRequest.ClientMetadata.ClientName}
 
 		if authRequest.ClientMetadata.LogoUri != nil {
@@ -73,16 +92,6 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 					MimeType: mimeType,
 				}
 			}
-		}
-	} else if info, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leafCert); err == nil {
-		// Try to get the requestor info from the certificate. If this fails, most likely the certificate is not a Yivi issued certificate, and we'll fall back to the CN in the certificate
-		requestorInfo = info
-
-		// If the certificate is a Yivi issued certificate, we also validate the credential queries in the authorization request against the requestor's allowed queries in the certificate. This ensures that the verifier is only requesting credentials that it is authorized to request.
-		queryValidator := v.validatorFactory.CreateQueryValidator(&requestorInfo.RelyingParty)
-		credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
-		if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
 		}
 	} else {
 		requestorInfo.Organization.LegalName = map[string]string{"en": leafCert.Subject.CommonName}

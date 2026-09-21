@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fixed
+- An OpenID4VP verifier holding a Yivi issued certificate can no longer skip the attribute level authorization check bound to that certificate, nor choose the name it is presented under, by including `client_metadata` in its authorization request. The verifier's identity was resolved from `client_metadata.client_name` first and only from the certificate's scheme data when that was absent, and `ValidateCredentialQueries` sat in the certificate branch alone — so a request carrying `client_metadata` never reached it, and the `authorized` attribute sets in the certificate went unenforced while the consent screen showed a self-asserted organisation name and logo under the "known party" styling. The certificate is now consulted first and, when it is a Yivi issued one, it is authoritative: the queried credentials are always validated against its authorized attribute sets and `client_metadata` cannot override the legal name or the logo. `client_metadata` is still used for certificates issued by third parties, which carry no scheme data and therefore no certificate bound policy to enforce ([#727](https://github.com/privacybydesign/irmago/issues/727))
 
 ## [1.3.1] - 2026-09-01
 ### Added
