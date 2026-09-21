@@ -16,7 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/irma/server/keyshare"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/irma/server"
 )
 
@@ -160,7 +160,7 @@ func setupCore(conf *Configuration) (*keysharecore.Core, error) {
 	if err != nil {
 		return nil, server.LogError(fmt.Errorf("failed to read keyshare server jwt key: %w", err))
 	}
-	jwtPrivateKey, err := jwt.ParseRSAPrivateKeyFromPEM(keybytes)
+	jwtPrivateKey, err := jose.ParseRSAPrivateKeyFromPEM(keybytes)
 	if err != nil {
 		return nil, server.LogError(fmt.Errorf("failed to read keyshare server jwt key: %w", err))
 	}

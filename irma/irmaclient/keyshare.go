@@ -12,9 +12,10 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/irma"
 )
 
@@ -171,20 +172,28 @@ func newKeyshareSession(
 	return ks, <-authenticated
 }
 
-func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
-	parser := jwt.NewParser(jwt.WithoutClaimsValidation()) // We want to verify expiry on our own below so we can add leeway
-	claims := jwt.RegisteredClaims{}
-	_, err := parser.ParseWithClaims(kss.token, &claims, conf.KeyshareServerKeyFunc(kss.SchemeManagerIdentifier))
-	if err != nil {
-		irma.Logger.Info("Keyshare server token invalid")
-		irma.Logger.Debug("Token: ", kss.token)
-		return false
-	}
+// tokenLeeway is how far ahead of the present the keyshare server token is checked against. It
+// covers clockdrift with the server, and the rest of the protocol taking place with this token.
+const tokenLeeway = time.Minute
 
-	// Add a minute of leeway for possible clockdrift with the server,
-	// and for the rest of the protocol to take place with this token
-	if !claims.VerifyExpiresAt(time.Now().Add(1*time.Minute), true) {
-		irma.Logger.Info("Keyshare server token expires too soon")
+// clockAhead reports a time a fixed distance in the future, so that jwx answers "will this token
+// still be valid then" rather than "is it valid now".
+type clockAhead struct {
+	by time.Duration
+}
+
+func (c clockAhead) Now() time.Time { return time.Now().Add(c.by) }
+
+func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
+	claims := irma.RegisteredClaims{}
+	// A token without an expiry would never stop working, so one is required rather than merely
+	// checked when present.
+	err := jose.Verify(kss.token, &claims, conf.KeyshareServerKeyFunc(kss.SchemeManagerIdentifier),
+		jwt.WithClock(clockAhead{by: tokenLeeway}),
+		jwt.WithRequiredClaim(jwt.ExpirationKey),
+	)
+	if err != nil {
+		irma.Logger.Info("Keyshare server token invalid or expiring too soon")
 		irma.Logger.Debug("Token: ", kss.token)
 		return false
 	}
@@ -235,7 +244,7 @@ const challengeRequestJWTExpiry = 3 * time.Minute
 func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HTTPTransport, pin string) (*irma.KeysharePinStatus, error) {
 	keyname := challengeResponseKeyName(kss.SchemeManagerIdentifier)
 	authRequestJWT, err := SignerCreateJWT(signer, keyname, irma.KeyshareAuthRequestClaims{
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(challengeRequestJWTExpiry)),
+		ExpiresAt: irma.NewNumericDate(time.Now().Add(challengeRequestJWTExpiry)),
 		Username:  kss.Username,
 	})
 	if err != nil {
@@ -487,12 +496,11 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 			continue
 		}
 		claims := struct {
-			jwt.StandardClaims
+			irma.RegisteredClaims
 			ProofP *gabi.ProofP
 		}{}
-		parser := new(jwt.Parser)
-		parser.SkipClaimsValidation = true // no need to abort due to clock drift issues
-		if _, err := parser.ParseWithClaims(responses[managerID], &claims, ks.client.Configuration.KeyshareServerKeyFunc(managerID)); err != nil {
+		// Time claims are not checked: no need to abort due to clock drift issues
+		if err := jose.Verify(responses[managerID], &claims, ks.client.Configuration.KeyshareServerKeyFunc(managerID), jwt.WithValidate(false)); err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}

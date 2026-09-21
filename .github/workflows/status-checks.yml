@@ -126,9 +126,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    # Above the 18m `go test -timeout` in docker-compose.yml, so go test kills an
-    # overrunning suite — and names the tests still running — before the job does.
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       # The sessiontest package hard-codes listeners on 127.0.0.1:48680-48699.

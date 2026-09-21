@@ -24,7 +24,9 @@ import (
 	"github.com/privacybydesign/irmago/internal/common"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/sirupsen/logrus"
 )
 
@@ -397,18 +399,22 @@ func (conf *Configuration) ValidateKeys() error {
 	return nil
 }
 
-// KeyshareServerKeyFunc returns a function that returns the public key with which to verify a keyshare server JWT,
-// suitable for passing to jwt.Parse() and jwt.ParseWithClaims().
-func (conf *Configuration) KeyshareServerKeyFunc(scheme SchemeManagerIdentifier) func(t *jwt.Token) (any, error) {
-	return func(t *jwt.Token) (i any, e error) {
+// KeyshareServerKeyFunc returns a jose.KeyFunc that selects the public key with which to verify
+// a keyshare server JWT, using the "kid" header of the token to pick one.
+func (conf *Configuration) KeyshareServerKeyFunc(scheme SchemeManagerIdentifier) jose.KeyFunc {
+	return func(headers jws.Headers, _ []byte) (jwa.SignatureAlgorithm, any, error) {
 		var kid int
-		if kidstr, ok := t.Header["kid"].(string); ok {
+		if kidstr, ok := headers.KeyID(); ok {
 			var err error
 			if kid, err = strconv.Atoi(kidstr); err != nil {
-				return nil, err
+				return jwa.EmptySignatureAlgorithm(), nil, err
 			}
 		}
-		return conf.KeyshareServerPublicKey(scheme, kid)
+		pk, err := conf.KeyshareServerPublicKey(scheme, kid)
+		if err != nil {
+			return jwa.EmptySignatureAlgorithm(), nil, err
+		}
+		return jwa.RS256(), pk, nil
 	}
 }
 

@@ -18,11 +18,11 @@ import (
 	"github.com/go-co-op/gocron"
 	"github.com/go-errors/errors"
 	"github.com/go-redis/redis/v8"
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/sirupsen/logrus"
 )
@@ -438,7 +438,7 @@ func (conf *Configuration) verifyJwtPrivateKey() error {
 		return fmt.Errorf("failed to read private key: %w", err)
 	}
 
-	conf.JwtRSAPrivateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)
+	conf.JwtRSAPrivateKey, err = jose.ParseRSAPrivateKeyFromPEM(keybytes)
 	conf.Logger.Info("Private key parsed, JWT endpoints enabled")
 	return err
 }
