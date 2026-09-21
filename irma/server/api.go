@@ -28,6 +28,13 @@ import (
 
 var Logger *logrus.Logger = logrus.StandardLogger()
 
+// LoggerEntry is the logrus entry through which this package emits its log
+// messages. It defaults to a plain entry wrapping Logger and is replaced in
+// Configuration.Check with the configured entry, so any persistent fields set on
+// Configuration.LoggerEntry appear on every server log line. Logger and
+// LoggerEntry always share the same underlying *logrus.Logger.
+var LoggerEntry *logrus.Entry = logrus.NewEntry(Logger)
+
 type SessionPackage struct {
 	SessionPtr      *irma.Qr                     `json:"sessionPtr"`
 	Token           irma.RequestorToken          `json:"token,omitempty"`
@@ -96,7 +103,7 @@ func (r *SessionResult) Legacy() *LegacySessionResult {
 // RemoteError converts an error and an explaining message to an *irma.RemoteError.
 func RemoteError(err Error, message string) *irma.RemoteError {
 	var stack string
-	Logger.WithFields(logrus.Fields{
+	LoggerEntry.WithFields(logrus.Fields{
 		"status":      err.Status,
 		"description": err.Description,
 		"error":       err.Type,
@@ -104,7 +111,7 @@ func RemoteError(err Error, message string) *irma.RemoteError {
 	}).Warnf("Sending session error")
 	if Logger.IsLevelEnabled(logrus.DebugLevel) {
 		stack = string(debug.Stack())
-		Logger.Warn(stack)
+		LoggerEntry.Warn(stack)
 	}
 	return &irma.RemoteError{
 		Status:      err.Status,
@@ -134,7 +141,7 @@ func encodeValOrError(v any, err *irma.RemoteError, encoder func(any) ([]byte, e
 	}
 	b, e := encoder(msg)
 	if e != nil {
-		Logger.Error("Failed to serialize response:", e.Error())
+		LoggerEntry.Error("Failed to serialize response:", e.Error())
 		return http.StatusInternalServerError, nil
 	}
 	return status, b
@@ -352,7 +359,7 @@ func ResultJwt(sessionresult *SessionResult, issuer string, validity int, privat
 }
 
 func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, validity int, privatekey *rsa.PrivateKey) {
-	logger := Logger.WithFields(logrus.Fields{"session": result.Token, "callbackUrl": callbackUrl})
+	logger := LoggerEntry.WithFields(logrus.Fields{"session": result.Token, "callbackUrl": callbackUrl})
 	if !strings.HasPrefix(callbackUrl, "https") {
 		logger.Warn("POSTing session result to callback URL without TLS: attributes are unencrypted in traffic")
 	} else {
@@ -378,7 +385,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 }
 
 func log(level logrus.Level, err error, msg ...string) error {
-	writer := Logger.WithFields(logrus.Fields{"err": TypeString(err), "msg": strings.Join(msg, " ")}).WriterLevel(level)
+	writer := LoggerEntry.WithFields(logrus.Fields{"err": TypeString(err), "msg": strings.Join(msg, " ")}).WriterLevel(level)
 	if e, ok := err.(*errors.Error); ok && Logger.IsLevelEnabled(logrus.DebugLevel) {
 		_, _ = writer.Write([]byte(e.ErrorStack()))
 	} else {
@@ -388,7 +395,7 @@ func log(level logrus.Level, err error, msg ...string) error {
 }
 
 func LogFatal(err error, msg ...string) error {
-	logger := Logger.WithFields(logrus.Fields{"err": TypeString(err), "msg": strings.Join(msg, " ")})
+	logger := LoggerEntry.WithFields(logrus.Fields{"err": TypeString(err), "msg": strings.Join(msg, " ")})
 	// using log() for this doesn't seem to do anything
 	if e, ok := err.(*errors.Error); ok && Logger.IsLevelEnabled(logrus.DebugLevel) {
 		logger.Fatal(e.ErrorStack())
@@ -406,23 +413,39 @@ func LogWarning(err error, msg ...string) error {
 	return log(logrus.WarnLevel, err, msg...)
 }
 
-// sensitiveHeaders lists HTTP header names that must not appear in logs.
-var sensitiveHeaders = map[string]struct{}{
-	"authorization": {},
-	"cookie":        {},
-	"set-cookie":    {},
-	"x-auth-token":  {},
+// loggableHeaders is the allowlist of HTTP header names that may appear in
+// request logs. An allowlist of known-safe, non-credential headers is used
+// rather than a denylist of sensitive ones: this guarantees that no header
+// carrying credentials or session secrets is ever logged, including headers we
+// did not anticipate, and avoids logging unvetted user-controlled header data.
+var loggableHeaders = []string{
+	"Accept",
+	"Accept-Encoding",
+	"Accept-Language",
+	"Content-Length",
+	"Content-Type",
+	"User-Agent",
+	"X-Forwarded-For",
+	"X-Forwarded-Host",
+	"X-Forwarded-Proto",
+	"X-Real-Ip",
 }
 
-// filterHeaders returns a copy of headers with sensitive values redacted.
+// filterHeaders returns the subset of headers whose names are in the
+// loggableHeaders allowlist, with their values redacted to avoid clear-text
+// logging of potentially sensitive user-controlled data.
 func filterHeaders(headers http.Header) http.Header {
-	filtered := make(http.Header, len(headers))
-	for k, v := range headers {
-		if _, sensitive := sensitiveHeaders[strings.ToLower(k)]; sensitive {
-			filtered[k] = []string{"[redacted]"}
-		} else {
-			filtered[k] = v
+	filtered := make(http.Header, len(loggableHeaders))
+	for _, name := range loggableHeaders {
+		values := headers.Values(name)
+		if len(values) == 0 {
+			continue
 		}
+		redacted := make([]string, len(values))
+		for i := range values {
+			redacted[i] = "<redacted>"
+		}
+		filtered[name] = redacted
 	}
 	return filtered
 }
@@ -441,13 +464,13 @@ func LogRequest(typ, proto, method, url, from string, headers http.Header, messa
 		if headers.Get("Content-Type") == "application/octet-stream" {
 			fields["message"] = hex.EncodeToString(message)
 		} else {
-			fields["message"] = string(message)
+			fields["message"] = common.SanitizeForLog(string(message))
 		}
 	}
 	if from != "" {
 		fields["from"] = common.SanitizeForLog(from)
 	}
-	Logger.WithFields(fields).Tracef("=> request")
+	LoggerEntry.WithFields(fields).Tracef("=> request")
 }
 
 func LogResponse(url string, status int, duration time.Duration, binary bool, response []byte) {
@@ -462,7 +485,7 @@ func LogResponse(url string, status int, duration time.Duration, binary bool, re
 			fields["response"] = string(response)
 		}
 	}
-	l := Logger.WithFields(fields)
+	l := LoggerEntry.WithFields(fields)
 	if status < 400 {
 		l.Trace("<= response")
 	} else {
@@ -607,7 +630,7 @@ func ParseBody(r *http.Request, input any) error {
 	defer common.Close(r.Body)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		Logger.WithField("error", err).Info("Malformed request: could not read request body")
+		LoggerEntry.WithField("error", err).Info("Malformed request: could not read request body")
 		return err
 	}
 
@@ -616,7 +639,7 @@ func ParseBody(r *http.Request, input any) error {
 		*i = string(body)
 	default:
 		if err = json.Unmarshal(body, input); err != nil {
-			Logger.WithField("error", err).Info("Malformed request: could not parse request body")
+			LoggerEntry.WithField("error", err).Info("Malformed request: could not parse request body")
 			return err
 		}
 	}
