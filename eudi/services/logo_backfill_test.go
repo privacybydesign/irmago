@@ -51,22 +51,23 @@ func requireNoFurtherSweep(t *testing.T, ch chan int) {
 // for both the issuer and the credential, served from baseURL.
 func storeBackfillBatch(t *testing.T, s *backfillTestStorage, baseURL string) {
 	t.Helper()
-	require.NoError(t, db.NewCredentialStore(s.Db()).StoreBatch(backfillBatch(baseURL)))
+	require.NoError(t, db.NewSdJwtVcStore(s.Db()).StoreBatch(backfillBatch(baseURL)))
 }
 
 // backfillBatch builds the batch storeBackfillBatch persists, so a test that
 // needs a different logo layout can adjust it before storing.
-func backfillBatch(baseURL string) *models.CredentialBatch {
-	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
-		VerifiableCredentialType: "https://vct.example.com/Test",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     "hash1",
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now(), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
-		CredentialIssuer:         "https://issuer.example.com",
+func backfillBatch(baseURL string) *models.SdJwtVcBatch {
+	iss := "https://issuer.example.com"
+	return &models.SdJwtVcBatch{
+		IssuerIdentifier:           iss,
+		VerifiableCredentialType:   "https://vct.example.com/Test",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       "hash1",
+		ProcessedSdJwtPayload:      datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                   datatypes.NullTime{V: time.Now(), Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             1,
+		CredentialIssuerIdentifier: iss,
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			{Name: "Issuer EN", Locale: nullStr("en"), LogoURI: nullStr(baseURL + "/issuer-en.png")},
 			{Name: "Issuer NL", Locale: nullStr("nl"), LogoURI: nullStr(baseURL + "/issuer-nl.png")},
@@ -77,7 +78,7 @@ func backfillBatch(baseURL string) *models.CredentialBatch {
 				{Name: "Cred NL", Locale: nullStr("nl"), LogoURI: baseURL + "/cred-nl.png"},
 			},
 		},
-		Instances: []models.IssuedCredentialInstance{{RawCredential: []byte("raw")}},
+		Instances: []models.SdJwtVcBatchInstance{{RawCredential: []byte("raw")}},
 	}
 }
 
@@ -139,7 +140,7 @@ func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
 			batch.CredentialMetadata.Display[i].LogoURI = shared
 		}
 	}
-	require.NoError(t, db.NewCredentialStore(s.Db()).StoreBatch(batch))
+	require.NoError(t, db.NewSdJwtVcStore(s.Db()).StoreBatch(batch))
 
 	added := backfillLogos(context.Background(), s, server.Client(), "nl")
 

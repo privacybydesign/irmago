@@ -126,6 +126,15 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 							Value:       strVal("test@gmail.com"),
 						},
 					},
+					// The IRMA server's SD-JWT signing certificate chains to the
+					// trusted issuer root, so the issuer shows as verified. The
+					// scheme carries no status list for this credential.
+					IssuerVerified:      new(true),
+					Format:              new(clientmodels.Format_SdJwtVc),
+					HasIssuanceDate:     new(true),
+					HasExpiryDate:       new(true),
+					Revoked:             new(false),
+					RevocationSupported: new(false),
 				}},
 				Obtainable: []expectedCredentialDescriptor{
 					{
@@ -1335,10 +1344,8 @@ func startOpenID4VPSessionWithAuthRequest(
 	verifierSession, err := StartTestSessionAtEudiVerifier(testdata.OpenID4VP_DirectPostJwt_Host, authRequestJson)
 	require.NoError(t, err)
 	sessionRequest := client.SessionRequestData{
-		Qr: irma.Qr{
-			Type: irma.ActionDisclosing,
-			URL:  verifierSession.SessionLink,
-		},
+		Type:     irma.ActionDisclosing,
+		URL:      verifierSession.SessionLink,
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	}
 	sessionJson, err := json.Marshal(sessionRequest)

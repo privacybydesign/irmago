@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
@@ -37,7 +37,7 @@ func (b *signerKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	}
 	keys := make([]jwk.Key, len(pubs))
 	for i, pub := range pubs {
-		k, err := jwk.Import(pub)
+		k, err := jwk.Import[jwk.Key](pub)
 		if err != nil {
 			return nil, fmt.Errorf("holderkeys: failed to import holder public key: %w", err)
 		}
@@ -93,8 +93,11 @@ func (b *signerKeyBinder) RemovePrivateKeys(pubKeys []jwk.Key) error {
 }
 
 func (b *signerKeyBinder) RemoveAllPrivateKeys() error {
-	// The POC HolderSigner has no enumerate-all primitive; callers that need a
-	// full wipe use Wallet.Reset (storage) plus the signer's own lifecycle.
+	// HolderSigner has no enumerate-all primitive — only Remove(refs) — so this
+	// cannot wipe keys it was never told about. A full wipe therefore runs
+	// through client.Client.RemoveStorage, which clears the wallet's own
+	// storage; disposing of the signer's key material is the signer's
+	// responsibility, and for a WSCA-backed one it happens outside irmago.
 	return nil
 }
 

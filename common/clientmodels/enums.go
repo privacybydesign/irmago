@@ -25,4 +25,5 @@ type CredentialFormat string
 const (
 	Format_SdJwtVc CredentialFormat = "dc+sd-jwt"
 	Format_Idemix  CredentialFormat = "idemix"
+	Format_MsoMdoc CredentialFormat = "mso_mdoc"
 )

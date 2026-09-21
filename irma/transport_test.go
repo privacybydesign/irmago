@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -144,5 +145,30 @@ func TestJsonRequest_RemoteErrorBodyIsPreserved(t *testing.T) {
 			require.Equal(t, http.StatusNotFound, serr.RemoteStatus)
 			require.Equal(t, apierr, serr.RemoteError)
 		})
+	}
+}
+
+// TestNewHTTPTransport_UsesEnvironmentProxy covers issue #423: HTTPTransport was the
+// only outbound transport in irmago that left http.Transport.Proxy unset, so it ignored
+// the HTTP_PROXY/HTTPS_PROXY environment variables that everything routed through
+// http.DefaultTransport already honours.
+//
+// The proxy function is inspected directly rather than exercised against a real proxy,
+// because net/http reads the environment once behind a sync.Once: a test setting
+// HTTP_PROXY would only take effect if it happened to run before any other code in the
+// process resolved a proxy.
+func TestNewHTTPTransport_UsesEnvironmentProxy(t *testing.T) {
+	inner, ok := NewHTTPTransport("https://example.com", true).client.HTTPClient.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.NotNil(t, inner.Proxy, "outbound transport must honour HTTP_PROXY/HTTPS_PROXY")
+
+	// Loopback destinations are never proxied, whatever the environment says, so local
+	// servers (including the ones in these tests) keep being dialled directly.
+	for _, dest := range []string{"http://localhost:8080/foo", "http://127.0.0.1:8080/foo"} {
+		u, err := url.Parse(dest)
+		require.NoError(t, err)
+		proxy, err := inner.Proxy(&http.Request{URL: u})
+		require.NoError(t, err)
+		require.Nil(t, proxy, "loopback destination %s must not be proxied", dest)
 	}
 }

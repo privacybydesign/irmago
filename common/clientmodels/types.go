@@ -25,7 +25,23 @@ type TrustedParty struct {
 	Image *Image `json:"image,omitempty"`
 	// The trust chain for this party (if any)
 	Parent *TrustedParty `json:"parent"`
-	// Whether this party is verified by the scheme manager
+	// Whether this party was authenticated, which means something different for
+	// each kind of party and is never a scheme-manager assertion:
+	//
+	//   - a verifier: its authorization request was signed by an end-entity
+	//     certificate that chained to a trusted relying-party root, or, over the
+	//     Digital Credentials API, false — an unsigned request carries no
+	//     certificate to authenticate.
+	//   - a credential's issuer: the credential's signature and certificate chain
+	//     verified against a trust anchor before it was stored.
+	//   - an issuer built from OpenID4VCI metadata: false. That document is
+	//     fetched over TLS and unsigned, so nothing binds its name and logo to the
+	//     document signer the credentials are checked against, and saying
+	//     "verified" would vouch for branding that was never authenticated.
+	//
+	// It records what was true at the time, and is stored rather than re-derived
+	// for anything historical: the certificate that authenticated a past session
+	// is not something the wallet keeps.
 	Verified bool `json:"verified"`
 }
 
@@ -141,6 +157,16 @@ type Attribute struct {
 	// the holder must disclose one. Empty when the verifier does not
 	// constrain the value.
 	RequestedValues []AttributeValue `json:"requested_values,omitempty"`
+
+	// IntentToRetain reports whether the verifier declared it will retain this
+	// value beyond the transaction (the OpenID4VP mso_mdoc claims parameter of
+	// the same name).
+	//
+	// Set on every mso_mdoc attribute and nil on every other format, rather than
+	// set only when true: a declared "will not be retained" is worth showing, and
+	// a format with no such concept must not be rendered as though the verifier
+	// had declared anything. The distinction is only available through a pointer.
+	IntentToRetain *bool `json:"intent_to_retain,omitempty"`
 }
 
 // ClaimPathKey produces a deterministic string key from a claim path for use
@@ -241,6 +267,25 @@ func CredentialToLogCredential(c *Credential) LogCredential {
 		RevocationSupported: c.RevocationSupported,
 		IssueURL:            c.IssueURL,
 	}
+}
+
+// ProblematicCredential describes a stored credential that could not be loaded
+// into a full Credential — its metadata failed to resolve (e.g. an SD-JWT-over-IRMA
+// credential whose type was dropped from its scheme). It carries just enough
+// to show an informative placeholder and, above all, to delete it:
+// CredentialInstanceIds maps each format to the storage hash that
+// RemoveCredentialsByHash needs, so a credential the wallet cannot render can
+// still be removed.
+type ProblematicCredential struct {
+	// Maps each format this problematic instance exists in to its storage hash,
+	// so the wallet can delete it without resolving its metadata.
+	CredentialInstanceIds map[CredentialFormat]string `json:"credential_instance_ids"`
+	// Human/debug explanation of why the credential could not be loaded.
+	Reason string `json:"reason"`
+	// The IRMA credential type id the credential was stored under (e.g.
+	// "irma-demo.RU.studentCard"). Only IRMA credentials are currently reported
+	// as problematic; EUDI credentials degrade per field instead.
+	CredentialId string `json:"credential_id,omitempty"`
 }
 
 // CredentialDescriptor describes a credential type without any instance-specific values.

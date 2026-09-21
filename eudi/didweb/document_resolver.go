@@ -2,6 +2,7 @@ package didweb
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,10 @@ import (
 )
 
 const Prefix = "did:web:"
+
+var (
+	errDocumentNotFound = errors.New("did:web: DID document not found")
+)
 
 // defaultResolveTimeout bounds a did:web fetch. It is applied by NewHTTPClient
 // (and therefore NewDocumentResolver): without it the client would be the
@@ -58,7 +63,7 @@ func (r *DocumentResolver) Resolve(didWeb string) (*did.Document, error) {
 	}
 
 	doc, err := r.fetchDocument(docURL)
-	if err != nil && r.AllowInsecure {
+	if errors.Is(err, errDocumentNotFound) && r.AllowInsecure {
 		httpURL := strings.Replace(docURL, "https://", "http://", 1)
 		doc, err = r.fetchDocument(httpURL)
 	}
@@ -80,6 +85,10 @@ func (r *DocumentResolver) fetchDocument(docURL string) (*did.Document, error) {
 		return nil, fmt.Errorf("did:web: failed to fetch DID document from %s: %w", docURL, err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, errDocumentNotFound
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("did:web: unexpected HTTP status %d fetching %s", resp.StatusCode, docURL)

@@ -109,6 +109,21 @@ func TestCreateMultibaseFromPublicKey_UnsupportedCurve_Base58BTC(t *testing.T) {
 	require.EqualError(t, err, "unsupported elliptic curve: P-521")
 }
 
+func TestCreateMultibaseFromPublicKey_EcdsaKeyWithoutCurve(t *testing.T) {
+	_, err := CreateMultibaseFromPublicKey(ecdsa.PublicKey{}, Base58Encoder{})
+	require.EqualError(t, err, "incomplete ECDSA public key")
+}
+
+func TestCreateMultibaseFromPublicKey_EcdsaKeyWithoutCoordinates(t *testing.T) {
+	_, err := CreateMultibaseFromPublicKey(ecdsa.PublicKey{Curve: elliptic.P256()}, Base58Encoder{})
+	require.EqualError(t, err, "incomplete ECDSA public key")
+}
+
+func TestCreateMultibaseFromPublicKey_MalformedEd25519Key(t *testing.T) {
+	_, err := CreateMultibaseFromPublicKey(ed25519.PublicKey{0x01, 0x02, 0x03}, Base58Encoder{})
+	require.EqualError(t, err, "invalid Ed25519 public key size: expected 32 bytes, got 3 bytes")
+}
+
 // Tests for createMultibaseVerificationMethod
 
 func TestCreateMultibaseVerificationMethod_SetsTypeAndPublicKeyMultibase(t *testing.T) {

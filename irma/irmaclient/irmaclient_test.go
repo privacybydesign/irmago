@@ -362,8 +362,8 @@ func TestCandidateConjunctionOrder(t *testing.T) {
 	)
 
 	req := &irma.DisclosureRequest{
-		BaseRequest: irma.BaseRequest{ProtocolVersion: client.maxVersion},
-		Disclose:    cdc,
+		ProtocolVersion: client.maxVersion,
+		Disclose:        cdc,
 	}
 
 	for i := 1; i < 20; i++ {

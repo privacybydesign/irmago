@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -78,6 +78,8 @@ const (
 	PkiOption_MissingSchemeData     PkiGenerationOptions = 64
 	PkiOption_InvalidAsnSchemeData  PkiGenerationOptions = 128
 	PkiOption_InvalidJsonSchemeData PkiGenerationOptions = 256
+	PkiOption_MissingUriSan         PkiGenerationOptions = 512
+	PkiOption_MissingDnsSan         PkiGenerationOptions = 1024
 )
 
 func ParseHolderPubJwk() jwk.Key {
@@ -152,7 +154,10 @@ func CreateTestAuthorizationRequestJWT(hostname string, verifierKey *ecdsa.Priva
 
 func CreateTestAuthorizationRequestJWTWithClientId(clientId string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *jwt.Token)) string {
 	claims := jwt.MapClaims{
-		"aud":       "https://audience",
+		// OpenID4VP § 5.8: a statically discovered wallet — one publishing no issuer
+		// identifier, as this one does not — is addressed as this symbolic value.
+		// A placeholder here made every fixture request non-conformant.
+		"aud":       "https://self-issued.me/v2",
 		"client_id": clientId,
 		"dcql_query": map[string]any{
 			"credentials": []map[string]any{
@@ -311,6 +316,14 @@ func CreateEndEntityCertificate(t *testing.T, subject pkix.Name, hostname string
 
 	if opts&PkiOption_MissingSchemeData != 0 {
 		certTemplate.ExtraExtensions = []pkix.Extension{}
+	}
+
+	if opts&PkiOption_MissingUriSan != 0 {
+		certTemplate.URIs = nil
+	}
+
+	if opts&PkiOption_MissingDnsSan != 0 {
+		certTemplate.DNSNames = nil
 	}
 
 	certDerBytes, err = x509.CreateCertificate(rand.Reader, certTemplate, caCert, key.Public(), caKey)

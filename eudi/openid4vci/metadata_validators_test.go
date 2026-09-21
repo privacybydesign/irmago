@@ -2,10 +2,15 @@ package openid4vci
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,6 +37,7 @@ func TestValidateCredentialConfiguration_SupportedFormats(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &metadata.CredentialConfiguration{
 				Format:                   tt.format,
+				Doctype:                  "eu.europa.ec.av.1",
 				VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
 			}
 			validator := CredentialConfigurationValidator{}
@@ -65,9 +71,7 @@ func TestValidateCredentialConfiguration_SdJwtVc_InvalidCredentialMetadata(t *te
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: []metadata.CredentialDisplay{
 				{
-					Display: metadata.Display{
-						Name: "",
-					},
+					Name: "",
 				},
 			},
 		},
@@ -89,10 +93,8 @@ func TestValidateCredentialConfiguration_SdJwtVc_ValidCredentialMetadata(t *test
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: []metadata.CredentialDisplay{
 				{
-					Display: metadata.Display{
-						Name:   "Test Credential",
-						Locale: &locale_EN,
-					},
+					Name:   "Test Credential",
+					Locale: &locale_EN,
 				},
 			},
 		},
@@ -112,20 +114,19 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: []metadata.CredentialDisplay{
 				{
-					Display: metadata.Display{
-						Name:   "Test Credential",
-						Locale: &locale_EN,
-					},
+					Name:   "Test Credential",
+					Locale: &locale_EN,
 				},
 			},
 		},
 		VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
 	}
 	tests := []struct {
-		name     string
-		metadata metadata.CredentialIssuerMetadata
-		offer    *CredentialOffer
-		wantErr  string
+		name              string
+		metadata          metadata.CredentialIssuerMetadata
+		offer             *CredentialOffer
+		allowInsecureHttp bool
+		wantErr           string
 	}{
 		{
 			name: "missing credential_issuer",
@@ -134,6 +135,32 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: "missing 'credential_issuer'",
+		},
+		{
+			name: "invalid credential_issuer (non-HTTPS)",
+			metadata: metadata.CredentialIssuerMetadata{
+				CredentialIssuer:                  "http://issuer.example.com/",
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: "invalid 'credential_issuer' URL \"http://issuer.example.com/\": scheme must be https",
+		},
+		{
+			name: "invalid credential_issuer (non-HTTPS), valid with `allowInsecureHttp` enabled",
+			metadata: metadata.CredentialIssuerMetadata{
+				CredentialIssuer:                  "http://issuer.example.com/",
+				CredentialEndpoint:                "https://issuer.example.com/credential",
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
+			},
+			allowInsecureHttp: true,
+			wantErr:           "",
+		},
+		{
+			name: "invalid credential_issuer (non-URI)",
+			metadata: metadata.CredentialIssuerMetadata{
+				CredentialIssuer:                  ":|invalid uri|:",
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: "invalid 'credential_issuer' URL \":|invalid uri|:\"",
 		},
 		{
 			name: "missing credential_endpoint",
@@ -255,7 +282,9 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			validator := CredentialIssuerMetadataValidator{}
+			validator := CredentialIssuerMetadataValidator{
+				allowInsecureHttp: tt.allowInsecureHttp,
+			}
 			err := validator.Verify(tt.metadata)
 			if tt.wantErr == "" && err != nil {
 				t.Errorf("Verify() unexpected error: %v", err)
@@ -278,10 +307,8 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: []metadata.CredentialDisplay{
 				{
-					Display: metadata.Display{
-						Name:   "Test Credential",
-						Locale: &locale_EN,
-					},
+					Name:   "Test Credential",
+					Locale: &locale_EN,
 				},
 			},
 		},
@@ -289,10 +316,6 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 	validCredentialOffer := &CredentialOffer{
 		CredentialIssuer:           "https://issuer.example.com",
 		CredentialConfigurationIds: []string{"test"},
-	}
-
-	unsupportedFeatureCredentialConfig := metadata.CredentialConfiguration{
-		Format: metadata.CredentialFormatIdentifier_MsoMdoc,
 	}
 
 	tests := []struct {
@@ -324,24 +347,13 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 			},
 			wantErr: `unsupported credential configuration "unavailable" in credential offer`,
 		},
-		{
-			name: "unsupported feature(s) in credential config",
-			metadata: metadata.CredentialIssuerMetadata{
-				CredentialIssuer:                  "https://issuer.example.com",
-				CredentialEndpoint:                "https://issuer.example.com/credential",
-				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": unsupportedFeatureCredentialConfig},
-			},
-			offer: &CredentialOffer{
-				CredentialIssuer:           "https://issuer.example.com",
-				CredentialConfigurationIds: []string{"test"},
-			},
-			wantErr: `credential configuration "test" is not supported: unsupported credential format "mso_mdoc"`,
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			validator := CredentialIssuerMetadataValidator{}
+			validator := CredentialIssuerMetadataValidator{
+				allowInsecureHttp: false,
+			}
 			err := validator.ValidateAgainstCredentialOffer(&tt.metadata, tt.offer)
 			if tt.wantErr == "" && err != nil {
 				t.Errorf("Verify() unexpected error: %v", err)
@@ -410,7 +422,7 @@ func TestCredentialConfiguration_Verify(t *testing.T) {
 	}
 }
 
-func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
+func TestCredentialConfiguration_ValidateAndGetSupportedFeatures(t *testing.T) {
 	validFullConfiguration := metadata.CredentialConfiguration{
 		Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 		Scope:  &scope,
@@ -451,6 +463,15 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "mso_mdoc is a supported format",
+			config: metadata.CredentialConfiguration{
+				Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
+				Doctype: "eu.europa.ec.av.1",
+				Scope:   &scope,
+			},
+			wantErr: false,
+		},
+		{
 			name: "credential signing algorithms can be empty",
 			config: metadata.CredentialConfiguration{
 				Format:                              metadata.CredentialFormatIdentifier_SdJwtVc,
@@ -458,6 +479,135 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 				CredentialSigningAlgValuesSupported: []any{},
 			},
 			wantErr: false,
+		},
+		// OID4VCI types credential_signing_alg_values_supported per format: COSE
+		// algorithm identifiers as integers for mso_mdoc, JWS algorithm names as
+		// strings for dc+sd-jwt. Reading mdoc's integers as strings rejected every
+		// mdoc configuration here, before any network call.
+		{
+			name: "mso_mdoc COSE ES256 identifier as float64, the shape encoding/json produces",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{float64(-7)},
+			},
+			wantErr: false,
+		},
+		{
+			name: "mso_mdoc COSE ES256 identifier as int",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{-7},
+			},
+			wantErr: false,
+		},
+		{
+			name: "mso_mdoc with several COSE identifiers, one of them ES256",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{float64(-8), float64(-7)},
+			},
+			wantErr: false,
+		},
+		// An mso_mdoc offer can miss in two distinct ways, and the error says
+		// which: it advertises an algorithm ISO 18013-5 permits (-7 ES256, -8
+		// EdDSA, -35 ES384, -36 ES512) that this wallet has yet to implement, or
+		// it advertises nothing 18013-5 permits for an MSO at all. Both are
+		// refused here, before any token or credential request.
+		{
+			name: "mso_mdoc advertising EdDSA, permitted by 18013-5 but not verifiable here",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{float64(-8)},
+			},
+			wantErr:     true,
+			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': [-8] is permitted by ISO 18013-5 but this wallet verifies only [-7 -35 -36]",
+		},
+		{
+			// ES384 and ES512 became verifiable when the mdoc verifier started reading
+			// alg from the COSE protected header. Turning such an offer away here would
+			// refuse a credential the wallet can now check.
+			name: "mso_mdoc advertising only ES384",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{float64(-35)},
+			},
+			wantErr: false,
+		},
+		{
+			name: "mso_mdoc advertising ES384 and ES512, both verifiable",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{float64(-35), float64(-36)},
+			},
+			wantErr: false,
+		},
+		{
+			name: "mso_mdoc mixing a disallowed identifier with an allowed one",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:  &scope,
+				// -257 is RS256, which 18013-5 does not permit for the MSO.
+				CredentialSigningAlgValuesSupported: []any{float64(-257), float64(-7)},
+			},
+			wantErr: false,
+		},
+		{
+			name: "mso_mdoc advertising only identifiers 18013-5 does not permit",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:  &scope,
+				// -257 is RS256, -37 is PS256; neither may sign an MSO.
+				CredentialSigningAlgValuesSupported: []any{float64(-257), float64(-37)},
+			},
+			wantErr:     true,
+			expectedErr: "no allowed signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and ISO 18013-5 permits only [-7 -8 -35 -36], got [-257 -37]",
+		},
+		{
+			name: "mso_mdoc advertising a JWS string instead of a COSE identifier",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{"ES256"},
+			},
+			wantErr:     true,
+			expectedErr: "no allowed signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and ISO 18013-5 permits only [-7 -8 -35 -36], got [ES256]",
+		},
+		{
+			name: "mso_mdoc with a non-integral number, which is not an identifier",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{-7.5},
+			},
+			wantErr:     true,
+			expectedErr: "no allowed signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and ISO 18013-5 permits only [-7 -8 -35 -36], got [-7.5]",
+		},
+		{
+			name: "mso_mdoc credential signing algorithms can be empty",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "dc+sd-jwt still rejects a COSE integer, which is the wrong shape for it",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_SdJwtVc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{float64(-7)},
+			},
+			wantErr: true,
+			// The dc+sd-jwt path defers to getSupportedCredentialSigningAlgorithm,
+			// so this is that helper's wording rather than the mdoc branch's.
+			expectedErr: "no supported credential signing algorithms found",
 		},
 		{
 			name: "single credential signing algorithm - unsupported",
@@ -467,7 +617,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 				CredentialSigningAlgValuesSupported: []any{"invalid-alg"},
 			},
 			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported'",
+			expectedErr: "no supported credential signing algorithms found",
 		},
 		{
 			name: "single credential signing algorithm - supported",
@@ -492,12 +642,39 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			config: metadata.CredentialConfiguration{
 				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
+				// A DID method the wallet does not resolve for holder binding, and
+				// one an issuer could plausibly advertise. Deliberately not
+				// cose_key: that is accepted now, so using it here made this case
+				// pass the binding-method check and fail further down on the proof
+				// type instead — asserting a message this case does not test.
 				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
-					proofs.CryptographicBindingMethod_COSE,
+					proofs.CryptographicBindingMethod("did:web"),
 				},
 			},
 			wantErr:     true,
-			expectedErr: `unsupported cryptographic binding method(s) ["cose_key"]`,
+			expectedErr: `no supported cryptographic binding method found in 'cryptographic_binding_methods_supported'`,
+		},
+		{
+			// The positive half of the case above: cose_key is what an mso_mdoc
+			// issuer advertises, since an mdoc carries the device key as a COSE_Key
+			// in the MSO. Combined with the jwt proof type the holder key travels
+			// as a JWK anyway (see proofs.JwtProofBuilder), so this is accepted
+			// rather than deferred to a CWT proof this wallet does not build.
+			name: "mso_mdoc cose_key binding with a jwt proof is accepted",
+			config: metadata.CredentialConfiguration{
+				Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
+				Doctype: "eu.europa.ec.av.1",
+				Scope:   &scope,
+				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
+					proofs.CryptographicBindingMethod_COSE,
+				},
+				ProofTypesSupported: map[metadata.ProofTypeIdentifier]metadata.ProofType{
+					metadata.ProofTypeIdentifier_JWT: {
+						ProofSigningAlgValuesSupported: []string{"ES256"},
+					},
+				},
+			},
+			wantErr: false,
 		},
 		{
 			name: "cryptographic binding method present, no proof type supported present",
@@ -509,7 +686,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 				},
 			},
 			wantErr:     true,
-			expectedErr: `missing 'proof_types_supported' for JWT`,
+			expectedErr: `no supported proof-type found in 'proof_types_supported'`,
 		},
 		{
 			name: "cryptographic binding method present, no proof type JWT available",
@@ -526,7 +703,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 				},
 			},
 			wantErr:     true,
-			expectedErr: `missing 'proof_types_supported' for JWT`,
+			expectedErr: `no supported proof-type found in 'proof_types_supported'`,
 		},
 		{
 			name: "cryptographic binding method present, proof type JWT, unsupported proof signing algorithms",
@@ -543,24 +720,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 				},
 			},
 			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'proof_signing_alg_values_supported' for JWT proof type",
-		},
-		{
-			name: "cryptographic binding method present, proof type JWT, only ES256K - unsupported",
-			config: metadata.CredentialConfiguration{
-				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
-				Scope:  &scope,
-				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
-					proofs.CryptographicBindingMethod_JWK,
-				},
-				ProofTypesSupported: map[metadata.ProofTypeIdentifier]metadata.ProofType{
-					metadata.ProofTypeIdentifier_JWT: {
-						ProofSigningAlgValuesSupported: []string{"ES256K"},
-					},
-				},
-			},
-			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'proof_signing_alg_values_supported' for JWT proof type",
+			expectedErr: "no supported proof signing algorithm found, only 'ES256' is supported",
 		},
 		{
 			name: "cryptographic binding method present, proof type JWT, multiple proof signing algorithms, at least one supported",
@@ -609,16 +769,16 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			validator := CredentialConfigurationValidator{}
-			err := validator.ValidateSupportedFeatures(&tt.config)
+			_, err := validator.ValidateAndGetSupportedFeatures(&tt.config)
 			if tt.wantErr {
 				if err == nil {
-					t.Errorf("ValidateSupportedFeatures() expected error, got nil")
+					t.Errorf("ValidateAndGetSupportedFeatures() expected error, got nil")
 				} else if tt.expectedErr != "" && err.Error() != tt.expectedErr {
-					t.Errorf("ValidateSupportedFeatures() error = %q, want %q", err.Error(), tt.expectedErr)
+					t.Errorf("ValidateAndGetSupportedFeatures() error = %q, want %q", err.Error(), tt.expectedErr)
 				}
 			} else {
 				if err != nil {
-					t.Errorf("ValidateSupportedFeatures() unexpected error: %v", err)
+					t.Errorf("ValidateAndGetSupportedFeatures() unexpected error: %v", err)
 				}
 			}
 		})
@@ -636,10 +796,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "valid single display",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Credential Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Credential Name",
+					Locale: &locale_EN,
 				},
 			},
 			wantErr: false,
@@ -648,10 +806,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "valid single display, extended locale",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Credential Name",
-						Locale: &locale_EN_US,
-					},
+					Name:   "Credential Name",
+					Locale: &locale_EN_US,
 				},
 			},
 			wantErr: false,
@@ -660,10 +816,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "missing name in display",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "",
-						Locale: &locale_EN,
-					},
+					Name:   "",
+					Locale: &locale_EN,
 				},
 			},
 			wantErr:     true,
@@ -673,10 +827,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "display without locale, should be ignored",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Issuer Name",
-						Locale: nil,
-					},
+					Name:   "Issuer Name",
+					Locale: nil,
 				},
 			},
 			wantErr: false,
@@ -685,10 +837,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "invalid logo uri",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Credential Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Credential Name",
+					Locale: &locale_EN,
 					Logo: &metadata.RemoteImage{
 						Uri: "://invalid-url",
 					},
@@ -701,10 +851,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "invalid background image uri",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Credential Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Credential Name",
+					Locale: &locale_EN,
 					BackgroundImage: &metadata.RemoteImage{
 						Uri: "://invalid-url",
 					},
@@ -717,16 +865,12 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "duplicate locale",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Credential Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Credential Name",
+					Locale: &locale_EN,
 				},
 				{
-					Display: metadata.Display{
-						Name:   "Another Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Another Name",
+					Locale: &locale_EN,
 				},
 			},
 			wantErr:     true,
@@ -736,10 +880,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			name: "invalid locale tag",
 			displays: metadata.CredentialDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Credential Name",
-						Locale: &invalid_Locale,
-					},
+					Name:   "Credential Name",
+					Locale: &invalid_Locale,
 				},
 			},
 			wantErr:     true,
@@ -796,10 +938,8 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 			name: "valid single display",
 			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Issuer Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Issuer Name",
+					Locale: &locale_EN,
 				},
 			},
 			wantErr: false,
@@ -808,10 +948,8 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 			name: "valid display with logo",
 			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Issuer Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Issuer Name",
+					Locale: &locale_EN,
 					Logo: &metadata.RemoteImage{
 						Uri: "https://example.com/logo.png",
 					},
@@ -823,10 +961,8 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 			name: "invalid logo uri",
 			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Issuer Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Issuer Name",
+					Locale: &locale_EN,
 					Logo: &metadata.RemoteImage{
 						Uri: "://invalid-url",
 					},
@@ -839,16 +975,12 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 			name: "duplicate locale",
 			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Issuer Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Issuer Name",
+					Locale: &locale_EN,
 				},
 				{
-					Display: metadata.Display{
-						Name:   "Another Name",
-						Locale: &locale_EN,
-					},
+					Name:   "Another Name",
+					Locale: &locale_EN,
 				},
 			},
 			wantErr:     true,
@@ -858,10 +990,8 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 			name: "invalid locale tag",
 			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: metadata.Display{
-						Name:   "Issuer Name",
-						Locale: &invalid_Locale,
-					},
+					Name:   "Issuer Name",
+					Locale: &invalid_Locale,
 				},
 			},
 			wantErr:     true,
@@ -1004,48 +1134,402 @@ func TestCredentialRequestEncryption_UnmarshalJSON_Success(t *testing.T) {
 	require.Equal(t, true, creqEnc.EncryptionRequired)
 }
 
-func TestGetSupportedSignatureAlgorithms(t *testing.T) {
+func TestGetSupportedCredentialSigningAlgorithm_Success(t *testing.T) {
 	tests := []struct {
 		name  string
 		input []string
-		want  []string
+		want  jwa.SignatureAlgorithm
 	}{
 		{
-			name:  "empty input",
-			input: []string{},
-			want:  []string{},
-		},
-		{
 			name:  "valid algorithms",
-			input: []string{"ES256", "RS256"},
-			want:  []string{"ES256", "RS256"},
+			input: []string{"ES256"},
+			want:  jwa.ES256(),
 		},
 		{
-			name:  "ES256K is excluded",
-			input: []string{"ES256K"},
-			want:  []string{},
+			name:  "multiple valid algorithms, should return ES512",
+			input: []string{"ES512", "ES384", "PS512", "PS384", "ES256", "PS256", "ES256K"},
+			want:  jwa.ES512(),
 		},
 		{
-			name:  "ES256K filtered out alongside valid algorithms",
-			input: []string{"ES256", "ES256K", "RS256"},
-			want:  []string{"ES256", "RS256"},
+			name:  "multiple valid algorithms, should return ES384",
+			input: []string{"ES384", "PS512", "PS384", "ES256", "PS256", "ES256K"},
+			want:  jwa.ES384(),
 		},
 		{
-			name:  "unknown algorithm is excluded",
-			input: []string{"NOT_AN_ALG"},
-			want:  []string{},
+			name:  "multiple valid algorithms, should return PS512",
+			input: []string{"PS512", "PS384", "ES256", "PS256", "ES256K"},
+			want:  jwa.PS512(),
 		},
 		{
-			name:  "mix of valid, ES256K, and unknown",
-			input: []string{"ES256", "ES256K", "NOT_AN_ALG"},
-			want:  []string{"ES256"},
+			name:  "multiple valid algorithms, should return PS384",
+			input: []string{"PS384", "ES256", "PS256", "ES256K"},
+			want:  jwa.PS384(),
+		},
+		{
+			name:  "multiple valid algorithms, should return ES256",
+			input: []string{"ES256", "PS256", "ES256K"},
+			want:  jwa.ES256(),
+		},
+		{
+			name:  "multiple valid algorithms, should return PS256",
+			input: []string{"PS256", "ES256K"},
+			want:  jwa.PS256(),
+		},
+		{
+			name:  "a rejected algorithm is skipped in favour of a usable one",
+			input: []string{"HS256", "ES256", "RS256"},
+			want:  jwa.ES256(),
+		},
+		{
+			name:  "EdDSA is accepted",
+			input: []string{"EdDSA"},
+			want:  jwa.EdDSA(),
+		},
+		{
+			name:  "Ed25519 is accepted",
+			input: []string{"Ed25519"},
+			want:  jwa.EdDSAEd25519(),
+		},
+		{
+			name:  "mix of valid and invalid",
+			input: []string{"ES256", "NOT_AN_ALG"},
+			want:  jwa.ES256(),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getSupportedSignatureAlgorithms(tt.input)
-			require.Equal(t, tt.want, got)
+			got, err := getSupportedCredentialSigningAlgorithm(tt.input)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, *got)
 		})
 	}
+}
+
+// TestValidateAndGetSupportedFeatures_EudiReferenceAgeVerificationMdoc runs the
+// validator against the credential configuration the EUDI reference issuer
+// actually serves for the AV Blueprint's Proof of Age attestation, copied
+// verbatim from age_verification_mdoc.json in
+// ghcr.io/eu-digital-identity-wallet/eudi-srv-web-issuing-eudiw-py:0.9.4.
+//
+// It is decoded from JSON rather than built as Go literals on purpose: the bug
+// this pins was entirely about the Go type a JSON number decodes to, so a test
+// constructing []any{-7} by hand would have passed while the real thing failed.
+//
+// This is the configuration an mdoc integration test would request, so if this
+// stops validating, mdoc issuance is broken again.
+func TestValidateAndGetSupportedFeatures_EudiReferenceAgeVerificationMdoc(t *testing.T) {
+	const eudiAgeVerificationMdoc = `{
+		"format": "mso_mdoc",
+		"doctype": "eu.europa.ec.av.1",
+		"scope": "eu.europa.ec.eudi.age_verification_mdoc",
+		"cryptographic_binding_methods_supported": ["jwk", "cose_key"],
+		"credential_signing_alg_values_supported": [-7],
+		"proof_types_supported": {
+			"jwt": { "proof_signing_alg_values_supported": ["ES256"] }
+		}
+	}`
+
+	var config metadata.CredentialConfiguration
+	require.NoError(t, json.Unmarshal([]byte(eudiAgeVerificationMdoc), &config))
+
+	// Guard the premise: -7 must have landed as a float64, the way
+	// encoding/json decodes every JSON number into `any`.
+	require.Len(t, config.CredentialSigningAlgValuesSupported, 1)
+	require.IsType(t, float64(0), config.CredentialSigningAlgValuesSupported[0],
+		"a JSON number decodes into any as float64; the validator has to cope with that")
+
+	validator := CredentialConfigurationValidator{}
+	prefs, err := validator.ValidateAndGetSupportedFeatures(&config)
+	require.NoError(t, err,
+		"the EUDI reference issuer's Proof of Age configuration must validate")
+	require.NotNil(t, prefs)
+}
+
+func TestGetSupportedCredentialSigningAlgorithm_Failure(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   []string
+		wantErr error
+	}{
+		{
+			name:    "empty input",
+			input:   []string{},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+		{
+			name:    "unknown algorithm is excluded",
+			input:   []string{"NOT_AN_ALG"},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+		{
+			name:    "reject symmetric algorithm HS256",
+			input:   []string{"HS256"},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+		{
+			name:    "reject symmetric algorithm HS384",
+			input:   []string{"HS384"},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+		{
+			name:    "reject symmetric algorithm HS512",
+			input:   []string{"HS512"},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+		{
+			name:    "reject 'none'",
+			input:   []string{"none"},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+		{
+			name:    "reject Ed448, which jwx does not register",
+			input:   []string{"Ed448"},
+			wantErr: errors.New("no supported credential signing algorithms found"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := getSupportedCredentialSigningAlgorithm(tt.input)
+			require.Error(t, err)
+			require.Equal(t, tt.wantErr, err)
+		})
+	}
+}
+
+// ES256K's availability depends on the jwx_es256k build tag (see eudi_jwt.SupportedSignatureAlgorithms).
+// The validator must follow that, so a build which can verify secp256k1 signatures does not turn
+// away an issuer offering them, and a build which cannot does not accept a credential
+// configuration it would later fail to verify.
+func TestGetSupportedCredentialSigningAlgorithm_ES256K_FollowsBuildTag(t *testing.T) {
+	got, err := getSupportedCredentialSigningAlgorithm([]string{"ES256K"})
+
+	if eudi_jwt.IsSupportedSignatureAlgorithm(jwa.NewSignatureAlgorithm("ES256K")) {
+		require.NoError(t, err)
+		require.Equal(t, jwa.NewSignatureAlgorithm("ES256K"), *got)
+		return
+	}
+
+	require.EqualError(t, err, "no supported credential signing algorithms found")
+}
+
+// TestMdocFormatVerifierRequiresDoctype pins the field that makes the docType
+// consistency check in session.obtainCredential possible.
+//
+// doctype is REQUIRED for mso_mdoc by OpenID4VCI's credential format profile,
+// but until it was parsed at all an issuer could advertise one docType and sign
+// another with nothing to compare against — see the check in
+// session.obtainCredential. Accepting a configuration without it would silently
+// restore that.
+func TestMdocFormatVerifierRequiresDoctype(t *testing.T) {
+	verifier := MdocFormatVerifier{}
+
+	t.Run("a configuration without doctype is rejected", func(t *testing.T) {
+		err := verifier.Verify(&metadata.CredentialConfiguration{
+			Format: metadata.CredentialFormatIdentifier_MsoMdoc,
+		})
+		require.Error(t, err, "mso_mdoc without doctype must not validate")
+		require.Contains(t, err.Error(), "doctype",
+			"the rejection has to name the missing field: it is the issuer, not the wallet, that has to act on it")
+	})
+
+	t.Run("a custom doctype is accepted", func(t *testing.T) {
+		// Nothing here is an allowlist: the check is that the issuer declared a
+		// docType, not that it declared one of ours. A Yivi-minted docType has
+		// to validate exactly as an EU one does, or the wallet is limited to
+		// doctypes someone hardcoded.
+		require.NoError(t, verifier.Verify(&metadata.CredentialConfiguration{
+			Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
+			Doctype: "nl.yivi.email.1",
+		}))
+	})
+
+	t.Run("doctype is not required of other formats", func(t *testing.T) {
+		validator := CredentialConfigurationValidator{}
+		require.NoError(t, validator.Verify(&metadata.CredentialConfiguration{
+			Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
+			VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
+		}), "dc+sd-jwt names its type with vct; requiring doctype of it would reject every SD-JWT issuer")
+	})
+}
+
+// TestCredentialConfigurationDoctypeRoundTrips guards the wiring rather than the
+// policy: CredentialConfiguration has a custom UnmarshalJSON, so a new field
+// reaches it only through the embedded alias type.
+func TestCredentialConfigurationDoctypeRoundTrips(t *testing.T) {
+	const emailMdoc = `{
+		"format": "mso_mdoc",
+		"doctype": "nl.yivi.email.1",
+		"credential_signing_alg_values_supported": [-7],
+		"credential_metadata": {
+			"claims": [{ "path": ["nl.yivi.email.1", "email"] }]
+		}
+	}`
+
+	var config metadata.CredentialConfiguration
+	require.NoError(t, json.Unmarshal([]byte(emailMdoc), &config))
+	require.Equal(t, "nl.yivi.email.1", config.Doctype,
+		"doctype has to survive the custom UnmarshalJSON, or the check downstream compares against an empty string")
+
+	validator := CredentialConfigurationValidator{}
+	_, err := validator.ValidateAndGetSupportedFeatures(&config)
+	require.NoError(t, err, "a non-EU mdoc configuration must validate")
+}
+
+// TestRequireMandatoryMdocElements covers the check that refuses an mdoc missing
+// an element the issuer's own metadata marks mandatory.
+//
+// The motivating case is age verification: eu.europa.ec.av.1 marks age_over_18
+// mandatory and every other age_over_NN optional, so a credential without
+// age_over_18 is an age attestation that attests no age. The check is written
+// against the metadata rather than the docType, so these cases also pin that a
+// non-AV docType gets the same treatment from the same code.
+func TestRequireMandatoryMdocElements(t *testing.T) {
+	mandatory := true
+	optional := false
+
+	avConfig := func() *metadata.CredentialConfiguration {
+		return &metadata.CredentialConfiguration{
+			Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
+			Doctype: "eu.europa.ec.av.1",
+			CredentialMetadata: &metadata.CredentialMetadata{
+				Claims: []metadata.ClaimsDescription{
+					{Path: metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_18"}, Mandatory: &mandatory},
+					{Path: metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_65"}, Mandatory: &optional},
+				},
+			},
+		}
+	}
+	credentialWith := func(t *testing.T, elements map[string]any) *services.ParsedCredential {
+		t.Helper()
+		return &services.ParsedCredential{Mdoc: &services.ParsedMdoc{
+			DocType:    "eu.europa.ec.av.1",
+			Namespaces: models.MdocNamespaces{"eu.europa.ec.av.1": elements},
+		}}
+	}
+
+	t.Run("an AV credential without age_over_18 is refused", func(t *testing.T) {
+		err := requireMandatoryMdocElements(avConfig(), credentialWith(t, map[string]any{
+			"age_over_65": false,
+		}))
+		require.Error(t, err, "an age attestation missing its mandatory element must not be stored")
+		require.Contains(t, err.Error(), "age_over_18",
+			"the refusal has to name the missing element: it is the issuer that has to act on it")
+	})
+
+	t.Run("age_over_18 present is enough; optional thresholds may be absent", func(t *testing.T) {
+		require.NoError(t, requireMandatoryMdocElements(avConfig(), credentialWith(t, map[string]any{
+			"age_over_18": true,
+		})), "every other age_over_NN is optional, so a credential carrying only the mandatory one is valid")
+	})
+
+	t.Run("a mandatory element present but false still satisfies the check", func(t *testing.T) {
+		// Presence, not truthiness: age_over_18=false is a meaningful assertion
+		// about the holder, not a missing claim.
+		require.NoError(t, requireMandatoryMdocElements(avConfig(), credentialWith(t, map[string]any{
+			"age_over_18": false,
+		})))
+	})
+
+	t.Run("an issuer publishing no mandatory claims is unaffected", func(t *testing.T) {
+		config := avConfig()
+		for i := range config.CredentialMetadata.Claims {
+			config.CredentialMetadata.Claims[i].Mandatory = nil
+		}
+		require.NoError(t, requireMandatoryMdocElements(config, credentialWith(t, map[string]any{})),
+			"mandatory defaults to false, so this must reject nothing an issuer did not first promise")
+	})
+
+	t.Run("a namespace-less claim path is not guessed at", func(t *testing.T) {
+		// A one-component path names an element but not where it lives. Guessing
+		// the namespace and guessing wrong would reject a valid credential, so
+		// such a path is skipped rather than enforced.
+		config := avConfig()
+		config.CredentialMetadata.Claims[0].Path = metadata.ClaimsPathPointer{"age_over_18"}
+		require.NoError(t, requireMandatoryMdocElements(config, credentialWith(t, map[string]any{})))
+	})
+
+	t.Run("dc+sd-jwt is left alone", func(t *testing.T) {
+		config := avConfig()
+		config.Format = metadata.CredentialFormatIdentifier_SdJwtVc
+		require.NoError(t, requireMandatoryMdocElements(config, credentialWith(t, map[string]any{})),
+			"an SD-JWT payload is not a namespace map; this check does not apply to it")
+	})
+
+	t.Run("the rule is not AV-specific", func(t *testing.T) {
+		config := &metadata.CredentialConfiguration{
+			Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
+			Doctype: "nl.yivi.email.1",
+			CredentialMetadata: &metadata.CredentialMetadata{
+				Claims: []metadata.ClaimsDescription{
+					{Path: metadata.ClaimsPathPointer{"nl.yivi.email.1", "email"}, Mandatory: &mandatory},
+				},
+			},
+		}
+		err := requireMandatoryMdocElements(config, &services.ParsedCredential{Mdoc: &services.ParsedMdoc{
+			DocType:    "nl.yivi.email.1",
+			Namespaces: models.MdocNamespaces{"nl.yivi.email.1": {"domain": "example.com"}},
+		}})
+		require.Error(t, err, "the check reads the metadata, so it covers any docType")
+		require.Contains(t, err.Error(), "email")
+	})
+}
+
+// The docType inside the MSO is signed by the issuer, so on its own it says only
+// "this is what I sent". Binding it to the advertised doctype is what turns it
+// into "this is what I asked for" -- and the value is load-bearing: it becomes
+// the credential's type, which DCQL doctype_value matching and relying-party
+// authorization both key off.
+//
+// Unit-tested rather than driven through the container on purpose: the EUDI
+// reference issuer calls mdocFormatter with doctype=credential_metadata["doctype"],
+// the same field it advertises, so the two cannot disagree there however the
+// bind-mounted configuration is edited (measured 2026-08-31). A mismatch has to
+// be built here.
+func TestRequireMdocDocTypeMatchesMetadata(t *testing.T) {
+	mdocConfig := func(doctype string) *metadata.CredentialConfiguration {
+		return &metadata.CredentialConfiguration{
+			Format:  metadata.CredentialFormatIdentifier_MsoMdoc,
+			Doctype: doctype,
+		}
+	}
+	signedAs := func(docType string) *services.ParsedCredential {
+		return &services.ParsedCredential{VerifiableCredentialType: docType}
+	}
+
+	t.Run("a matching docType is accepted", func(t *testing.T) {
+		require.NoError(t, requireMdocDocTypeMatchesMetadata(
+			mdocConfig("eu.europa.ec.av.1"), signedAs("eu.europa.ec.av.1")))
+	})
+
+	t.Run("a different docType is refused", func(t *testing.T) {
+		err := requireMdocDocTypeMatchesMetadata(
+			mdocConfig("eu.europa.ec.av.1"), signedAs("org.iso.18013.5.1.mDL"))
+		require.Error(t, err,
+			"an issuer answering a request for one docType with another must not be stored")
+		require.Contains(t, err.Error(), "org.iso.18013.5.1.mDL", "the refusal must name what was signed")
+		require.Contains(t, err.Error(), "eu.europa.ec.av.1", "and what was advertised")
+	})
+
+	t.Run("a configuration declaring no doctype refuses everything", func(t *testing.T) {
+		// MdocFormatVerifier already rejects such a configuration at metadata
+		// validation, so this never runs in practice -- but failing closed is the
+		// right behaviour if that gate is ever relaxed: an empty expectation must
+		// not silently match every docType.
+		require.Error(t, requireMdocDocTypeMatchesMetadata(
+			mdocConfig(""), signedAs("eu.europa.ec.av.1")))
+	})
+
+	t.Run("dc+sd-jwt is untouched", func(t *testing.T) {
+		// Doctype is empty for SD-JWT VC, whose cross-instance vct consistency
+		// check lives in storeCredentials. Applying this one would reject every
+		// SD-JWT credential.
+		config := &metadata.CredentialConfiguration{
+			Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
+			VerifiableCredentialType: "urn:eudi:pid:1",
+		}
+		require.NoError(t, requireMdocDocTypeMatchesMetadata(
+			config, &services.ParsedCredential{VerifiableCredentialType: "urn:eudi:pid:1"}))
+	})
 }

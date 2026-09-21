@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,7 +39,7 @@ func TestResolveCredentialMetadataFromVct_VctEntryWinsOnLocaleCollision(t *testi
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: metadata.CredentialDisplays{
 				// Same locale (en) as VCT — collision; VCT wins.
-				{Display: metadata.Display{Name: "FROM_CREDMETA", Locale: &enLocale}},
+				{Name: "FROM_CREDMETA", Locale: &enLocale},
 			},
 		},
 	})
@@ -108,7 +109,7 @@ func TestResolveCredentialMetadataFromVct_VctWinsOverCredentialMetadata_Sphereon
 			// credential_metadata uses sentinel names so we can detect if the
 			// wallet wrongly preferred it over the VCT.
 			Display: metadata.CredentialDisplays{
-				{Display: metadata.Display{Name: "Test Credential (from credential_metadata)", Locale: &enLocale}},
+				{Name: "Test Credential (from credential_metadata)", Locale: &enLocale},
 			},
 			Claims: []metadata.ClaimsDescription{
 				{
@@ -171,7 +172,7 @@ func TestResolveCredentialMetadataFromVct_FetchFailureLeavesCredentialMetadata(t
 	resolver := typemetadata.NewResolver(srv.Client())
 	original := &metadata.CredentialMetadata{
 		Display: metadata.CredentialDisplays{
-			{Display: metadata.Display{Name: "FROM_CREDMETA"}},
+			{Name: "FROM_CREDMETA"},
 		},
 	}
 	issuerMeta := singleConfigMetadata("Email", metadata.CredentialConfiguration{
@@ -345,12 +346,14 @@ func newResolverPrimedWith(t *testing.T, url, body string) *typemetadata.Resolve
 func makeFetchedCredential(configID, vct string, payload map[string]any) *fetchedCredential {
 	return &fetchedCredential{
 		credentialConfigurationId: configID,
-		verifiedSdJwtVcs: []*sdjwtvc.VerifiedSdJwtVc{
+		parsedCredentials: []*services.ParsedCredential{
 			{
-				IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
-					VerifiableCredentialType: vct,
+				SdJwtVc: &sdjwtvc.VerifiedSdJwtVc{
+					IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
+						VerifiableCredentialType: vct,
+					},
+					ProcessedSdJwtPayload: sdjwt.ProcessedPayload(payload),
 				},
-				ProcessedSdJwtPayload: sdjwt.ProcessedPayload(payload),
 			},
 		},
 	}
