@@ -84,6 +84,25 @@ func (conf EmailConfiguration) translateTemplate(templates map[string]*template.
 	return templates[conf.DefaultLanguage]
 }
 
+// buildRecipients parses to into bare email addresses suitable for use as SMTP envelope recipients.
+// mail.ParseAddressList rejects control characters, so the returned addresses cannot contain CR/LF.
+func buildRecipients(to []string) ([]string, error) {
+	parsedTo, err := mail.ParseAddressList(strings.Join(to, ","))
+	if err != nil {
+		return nil, ErrInvalidEmail
+	}
+	recipients := make([]string, len(parsedTo))
+	for i, addr := range parsedTo {
+		recipients[i] = addr.Address
+	}
+	return recipients, nil
+}
+
+// sanitizeEmailHeaderValue removes CR/LF to prevent header injection when rendering mail headers.
+func sanitizeEmailHeaderValue(s string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(s)
+}
+
 // SendEmail sends a templated email to the supplied email address(es).
 // When multiple recipients are specified, the email is sent as a BCC email.
 func (conf EmailConfiguration) SendEmail(
@@ -110,17 +129,17 @@ func (conf EmailConfiguration) SendEmail(
 		return errors.New("no to address specified")
 	}
 
-	parsedTo, err := mail.ParseAddressList(strings.Join(to, ","))
+	recipients, err := buildRecipients(to)
 	if err != nil {
-		return ErrInvalidEmail
+		return err
 	}
 
 	message := bytes.Buffer{}
 
 	// When single recipient, add the To header. Otherwise it is excluded, making this a BCC email.
-	// Use the parsed address to prevent CRLF injection in the email header.
+	// mail.ParseAddressList already rejects CR/LF in addresses; this is defence-in-depth for header rendering.
 	if len(to) == 1 {
-		fmt.Fprintf(&message, "To: %s\r\n", parsedTo[0].Address)
+		fmt.Fprintf(&message, "To: %s\r\n", sanitizeEmailHeaderValue(recipients[0]))
 	}
 
 	fmt.Fprintf(&message, "From: %s\r\n", from.Address)
@@ -129,7 +148,13 @@ func (conf EmailConfiguration) SendEmail(
 	fmt.Fprintf(&message, "\r\n")
 	fmt.Fprint(&message, content.String())
 
-	if err := smtp.SendMail(conf.EmailServer, conf.EmailAuth, from.Address, to, message.Bytes()); err != nil {
+	// buildRecipients calls mail.ParseAddressList, which rejects CR/LF, so the envelope
+	// recipients passed here are bare, validated addresses; the To: header (single-recipient
+	// case above) is additionally guarded by sanitizeEmailHeaderValue. Together these break
+	// the taint from user input, but CodeQL cannot model this sanitization on source-defined
+	// functions.
+	// codeql[go/email-injection]
+	if err := smtp.SendMail(conf.EmailServer, conf.EmailAuth, from.Address, recipients, message.Bytes()); err != nil {
 		server.Logger.WithField("error", err).Error("Could not send email")
 		return err
 	}
