@@ -575,7 +575,7 @@ type testEnv struct {
 // this process cannot extract.
 func (e *testEnv) withDeviceKeyBinder(binder DeviceKeyBinder) *testEnv {
 	withBinder := *e
-	withBinder.handler = NewMdocDcqlHandler(e.eudiStorage, clientmodels.NewCurrentLocale("en"), binder)
+	withBinder.handler = NewMdocDcqlHandler(e.eudiStorage, e.store, clientmodels.NewCurrentLocale("en"), binder)
 	return &withBinder
 }
 
@@ -683,7 +683,7 @@ func newTestEnvWithExpiry(t *testing.T, batchSize uint, expiresAt *time.Time) *t
 	return &testEnv{
 		// The production binder, wired as client.New wires it, so every test that
 		// does not substitute one is covering the real path.
-		handler: NewMdocDcqlHandler(eudiStorage, clientmodels.NewCurrentLocale("en"),
+		handler: NewMdocDcqlHandler(eudiStorage, store, clientmodels.NewCurrentLocale("en"),
 			services.NewMdocDeviceKeyBinder(keyStore)),
 		verifier:    verifier,
 		store:       store,

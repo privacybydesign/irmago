@@ -53,18 +53,24 @@ type MdocDcqlHandler struct {
 
 // NewMdocDcqlHandler creates a new handler.
 //
+// store is the mdoc credential store this handler reads batches and instances
+// from -- pass the same db.MdocStore instance the caller already built for
+// revocation/status tracking (e.g. db.NewMdocStore(eudiStorage.Db())) rather
+// than a second one over the same database.
+//
 // deviceKeys signs the DeviceAuthentication of every presentation this handler
 // prepares. Pass services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(
 // eudiStorage.Db())) for the default software, storage-backed signer, or a
 // hardware-backed implementation to keep the device private key out of process.
 func NewMdocDcqlHandler(
 	eudiStorage storage.Storage,
+	store db.MdocStore,
 	currentLocale *clientmodels.CurrentLocale,
 	deviceKeys DeviceKeyBinder,
 ) *MdocDcqlHandler {
 	return &MdocDcqlHandler{
 		storage:       eudiStorage,
-		store:         db.NewMdocStore(eudiStorage.Db()),
+		store:         store,
 		deviceKeys:    deviceKeys,
 		currentLocale: currentLocale,
 	}
