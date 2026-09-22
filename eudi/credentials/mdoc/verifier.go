@@ -128,6 +128,52 @@ func coseVerifierFor(msg *cose.Sign1Message, key crypto.PublicKey, what string) 
 // from whichever party disagrees with us. The tag is outside Sig_structure and
 // carries no security meaning, so accepting both costs nothing — everything
 // that matters is still checked against the signature afterwards.
+// certificateChainFromHeaders parses the x5chain out of a COSE_Sign1's
+// unprotected headers: header 33, holding [DS cert DER, IACA cert DER, ...].
+//
+// certs[0] is the leaf — the document signer — and certs[1:] are whatever
+// intermediates the credential carried with it.
+//
+// The single-certificate fallback is not decoration. RFC 9360 lets x5chain be
+// one bstr rather than an array when the chain has one element, and go-cose
+// decodes an array of bstr into []any, so both shapes have to be handled here
+// or a conformant credential is refused for the wrong reason.
+//
+// Error strings are the verification path's, verbatim, because that path
+// surfaces them to callers as result.Error.
+func certificateChainFromHeaders(unprotected cose.UnprotectedHeader) ([]*x509.Certificate, error) {
+	rawVal, exists := unprotected[int64(33)]
+	if !exists {
+		return nil, fmt.Errorf("no x5chain in issuerAuth header 33")
+	}
+
+	chainRaw, ok := rawVal.([]any)
+	if !ok {
+		single, isSingle := rawVal.([]byte)
+		if !isSingle {
+			return nil, fmt.Errorf("x5chain wrong type: %T", rawVal)
+		}
+		chainRaw = []any{single}
+	}
+	if len(chainRaw) == 0 {
+		return nil, fmt.Errorf("x5chain is empty")
+	}
+
+	certs := make([]*x509.Certificate, 0, len(chainRaw))
+	for i, raw := range chainRaw {
+		der, ok := raw.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("x5chain[%d] wrong type: %T", i, raw)
+		}
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, fmt.Errorf("parse x5chain[%d]: %v", i, err)
+		}
+		certs = append(certs, cert)
+	}
+	return certs, nil
+}
+
 func decodeCoseSign1(data []byte) (*cose.Sign1Message, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("empty COSE_Sign1")
@@ -509,44 +555,10 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	}
 
 	// Step 2: extract x5chain from unprotected header 33
-	// x5chain = [DS cert DER, IACA cert DER]
-	// go-cose decodes [][]byte as []any where each element is []byte
-	rawVal, exists := msg.Headers.Unprotected[int64(33)]
-	if !exists {
-		result.Error = "no x5chain in issuerAuth header 33"
+	certs, err := certificateChainFromHeaders(msg.Headers.Unprotected)
+	if err != nil {
+		result.Error = err.Error()
 		return nil, result
-	}
-
-	chainRaw, ok := rawVal.([]any)
-	if !ok {
-		// fallback: single cert
-		single, ok2 := rawVal.([]byte)
-		if !ok2 {
-			result.Error = fmt.Sprintf("x5chain wrong type: %T", rawVal)
-			return nil, result
-		}
-		chainRaw = []any{single}
-	}
-
-	if len(chainRaw) == 0 {
-		result.Error = "x5chain is empty"
-		return nil, result
-	}
-
-	// parse all certs: certs[0] = DS cert (leaf), certs[1..] = intermediates (IACA cert)
-	certs := make([]*x509.Certificate, 0, len(chainRaw))
-	for i, raw := range chainRaw {
-		b, ok := raw.([]byte)
-		if !ok {
-			result.Error = fmt.Sprintf("x5chain[%d] wrong type: %T", i, raw)
-			return nil, result
-		}
-		c, err := x509.ParseCertificate(b)
-		if err != nil {
-			result.Error = fmt.Sprintf("parse x5chain[%d]: %v", i, err)
-			return nil, result
-		}
-		certs = append(certs, c)
 	}
 
 	dsCert := certs[0]
