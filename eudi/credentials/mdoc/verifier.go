@@ -1,6 +1,7 @@
 package mdoc
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/subtle"
@@ -14,6 +15,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	cose "github.com/veraison/go-cose"
 
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
@@ -273,6 +275,25 @@ type Verifier struct {
 	// not-yet-valid certificate rejection without needing to wait a year
 	// or fake the system clock.
 	clock time.Time
+
+	// statusChecker, when set via SetStatusChecker, runs an IETF OAuth
+	// Token Status List check after issuerAuth/MSO verification succeeds: if
+	// the MSO carries a `status.status_list` reference, the checker
+	// fetches/verifies the referenced Status List Token (JWT or CWT — see
+	// eudi/credentials/statuslist) and verification fails unless the
+	// indexed bit reads StatusValid. Nil disables the check, mirroring
+	// SdJwtVcVerificationContext.StatusChecker.
+	statusChecker *statuslist.Checker
+}
+
+// SetStatusChecker installs a Token Status List checker consulted after
+// every successful issuerAuth/MSO verification (see runStatusListCheck).
+// There is deliberately no constructor parameter for this: every existing
+// constructor (NewVerifier, NewVerifierFromPool, NewVerifierFromTrustSource,
+// NewVerifierWithClock) stays usable without a checker, and callers that
+// want the check opt in explicitly.
+func (v *Verifier) SetStatusChecker(checker *statuslist.Checker) {
+	v.statusChecker = checker
 }
 
 func NewVerifier(rootCerts []*x509.Certificate) *Verifier {
@@ -444,6 +465,13 @@ type VerificationResult struct {
 	// result can carry an authentic issuer identity and still be Valid == false.
 	// Callers decide on Valid, as everywhere else here.
 	IssuerIdentifier string
+
+	// StatusReference is the MSO's Token Status List reference (mso.Status.StatusList),
+	// nil when the document carries none. Populated regardless of whether a
+	// StatusChecker is configured, so a caller that wants to persist the
+	// reference (to check it again later, e.g. a background refresh) can
+	// read it even when SetStatusChecker was never called.
+	StatusReference *statuslist.Reference
 }
 
 // issuerIdentifierFromDocumentSigner names the issuer behind a document signer
@@ -735,7 +763,45 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 		result.DeviceKey = devicePub
 	}
 
+	if mso.Status != nil && mso.Status.StatusList != nil {
+		result.StatusReference = mso.Status.StatusList
+	}
+
+	// Token Status List check (draft-ietf-oauth-status-list-15). Skip
+	// silently when no checker is configured or the document carries no
+	// status_list reference; otherwise fail closed, mirroring
+	// sdjwtvc.sdJwtVcProcessor.runStatusListCheck — see there for why
+	// "anything but Valid" is refused rather than only "explicitly Invalid".
+	if err := v.runStatusListCheck(result.StatusReference); err != nil {
+		result.Error = err.Error()
+		return nil, result
+	}
+
 	return &mso, result
+}
+
+// runStatusListCheck consults the configured statusChecker (if any) for ref.
+// Returns nil when no checker is configured or ref is nil; otherwise nil
+// only when the indexed bit reads StatusValid. Status-fetch/verify/decode
+// errors and any non-Valid status are returned to the caller, which rejects
+// the document — fail-closed, the same policy sdjwtvc applies.
+func (v *Verifier) runStatusListCheck(ref *statuslist.Reference) error {
+	if v.statusChecker == nil || ref == nil {
+		return nil
+	}
+	// context.Background is deliberate, mirroring sdjwtvc's
+	// runStatusListCheck: there is no session/request context to thread
+	// through the parser call chain that reaches here, and the one network
+	// step (the status-list GET) is bounded by the checker's own
+	// FetchTimeout regardless.
+	status, err := v.statusChecker.Check(context.Background(), *ref)
+	if err != nil {
+		return fmt.Errorf("status list check failed: %w", err)
+	}
+	if status != statuslist.StatusValid {
+		return fmt.Errorf("credential status is %s, not valid", status)
+	}
+	return nil
 }
 
 // DocTypeFromIssuerAuth reads the docType out of the MSO that issuerAuth signs

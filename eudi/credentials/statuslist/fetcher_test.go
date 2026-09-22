@@ -23,7 +23,7 @@ func Test_FetchStatusListToken_SendsAcceptHeader(t *testing.T) {
 
 	_, err := fetchStatusListToken(context.Background(), VerificationContext{}, srv.URL)
 	require.NoError(t, err)
-	require.Equal(t, StatusListTokenContentType, gotAccept)
+	require.Equal(t, StatusListTokenContentType+", "+StatusListTokenCWTContentType, gotAccept)
 }
 
 func Test_FetchStatusListToken_ReadsBodyAndCacheControl(t *testing.T) {

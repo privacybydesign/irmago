@@ -139,18 +139,21 @@ func New(
 	irmaKeyBinder := sdjwt.NewDefaultKeyBinder(keyBindingStorage)
 
 	credStore := db.NewSdJwtVcStore(eudiStorage.Db())
+	mdocStatusStore := db.NewMdocStore(eudiStorage.Db())
 
 	// Token Status List checker + the single revocation service built on it.
-	// The checker is also shared with the holder-side verifier
-	// (sdJwtVcVerificationContext below). The revocation service is the one home
-	// for revocation: the background sweep, the credential list's flags, and the
-	// OpenID4VP disclosure planner's cached Revoked flag all go through it.
+	// The checker is also shared with the holder-side verifiers
+	// (sdJwtVcVerificationContext below, and the mdoc verifier built inside
+	// services.NewCredentialFormats). The revocation service is the one home
+	// for revocation across every credential format: the background sweep,
+	// the credential list's flags, and the OpenID4VP disclosure planner's
+	// cached Revoked flag all go through it.
 	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
 	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: &eudiConf.Issuers,
 		Clock:       eudi_jwt.NewSystemClock(),
 	}, statusListCache)
-	revocationService := services.NewRevocationService(statusChecker, credStore)
+	revocationService := services.NewRevocationService(statusChecker, credStore, mdocStatusStore)
 
 	// Rewrite any credential hash still computed without the issuer. Runs before
 	// the wallet can be asked about its credentials, because a stale hash makes a

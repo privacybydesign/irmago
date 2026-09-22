@@ -44,7 +44,9 @@ func fetchStatusListToken(ctx context.Context, vc VerificationContext, uri strin
 	if err != nil {
 		return nil, fmt.Errorf("%w: build request: %v", ErrFetch, err)
 	}
-	req.Header.Set("Accept", StatusListTokenContentType)
+	// Both Status List Token encodings are supported (see verifyStatusList);
+	// let the provider pick whichever it publishes.
+	req.Header.Set("Accept", StatusListTokenContentType+", "+StatusListTokenCWTContentType)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -57,14 +59,17 @@ func fetchStatusListToken(ctx context.Context, vc VerificationContext, uri strin
 	}
 
 	ct := resp.Header.Get("Content-Type")
-	// Accept "application/statuslist+jwt" with or without parameters
-	// like "; charset=...". Reject anything else (RFC §8.2). Note the
-	// CWT encoding (application/statuslist+cwt) is intentionally not
-	// supported by v1 — a CWT-only status list is rejected here.
-	if !strings.HasPrefix(strings.ToLower(ct), StatusListTokenContentType) {
+	// Accept either supported media type, with or without parameters like
+	// "; charset=...". Reject anything else (RFC §8.2). Which encoding was
+	// actually returned is decided later, from the bytes themselves (see
+	// looksLikeCWT) — the cache stores only bytes, so a cache-read has no
+	// Content-Type to consult either, and this check exists to reject an
+	// unexpected response body (an HTML error page, say) early.
+	lct := strings.ToLower(ct)
+	if !strings.HasPrefix(lct, StatusListTokenContentType) && !strings.HasPrefix(lct, StatusListTokenCWTContentType) {
 		return nil, fmt.Errorf(
-			"%w: unexpected Content-Type %q: only %s is supported (CWT status lists are not implemented)",
-			ErrFetch, ct, StatusListTokenContentType,
+			"%w: unexpected Content-Type %q: only %s or %s is supported",
+			ErrFetch, ct, StatusListTokenContentType, StatusListTokenCWTContentType,
 		)
 	}
 

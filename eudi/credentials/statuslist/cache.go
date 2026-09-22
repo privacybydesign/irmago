@@ -6,15 +6,17 @@ import (
 )
 
 // Cache stores fetched Status List Tokens by URI. The interface
-// intentionally exchanges raw JWT bytes (not decoded bit arrays) so
+// intentionally exchanges raw token bytes (not decoded bit arrays) so
 // that re-verification on read happens against the current trust
 // anchors instead of trusting a decoded payload from an earlier run.
+// Bytes are opaque here regardless of encoding (JWT or CWT — see
+// verifyStatusList in cwt.go, which sniffs the encoding back out of them).
 type Cache interface {
-	// Get returns the cached raw JWT for uri together with its
+	// Get returns the cached raw token for uri together with its
 	// scheduled expiry. ok is false when the URI is not cached.
 	Get(uri string) (rawJwt []byte, expiresAt time.Time, ok bool)
 
-	// Put stores the raw JWT under uri with the given expiry.
+	// Put stores the raw token under uri with the given expiry.
 	Put(uri string, rawJwt []byte, expiresAt time.Time) error
 
 	// Delete removes any cached entry for uri.

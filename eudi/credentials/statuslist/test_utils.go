@@ -17,12 +17,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/lestrrat-go/jwx/v4/cert"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/stretchr/testify/require"
+	cose "github.com/veraison/go-cose"
 )
 
 // TestStatusListSigner is a fixture for building signed Status List
@@ -149,8 +151,18 @@ func (s *TestStatusListSigner) SignTokenWithTyp(t *testing.T, opts TestStatusLis
 
 // encodeStatusBits packs the per-index status values into a byte
 // array of bits-wide entries (little-endian within each byte, per
-// spec §4), then zlib-compresses and base64url-encodes the result.
+// spec §4), then zlib-compresses and base64url-encodes the result —
+// the JSON/JWT encoding's shape for `lst`. See encodeStatusBitsRaw for
+// the CBOR/CWT encoding, which skips the base64 step.
 func encodeStatusBits(t *testing.T, statuses map[uint64]uint8, bits int) string {
+	t.Helper()
+	return base64.RawURLEncoding.EncodeToString(encodeStatusBitsRaw(t, statuses, bits))
+}
+
+// encodeStatusBitsRaw is encodeStatusBits without the base64url step: the
+// zlib-compressed bit array as bytes, which is what the CBOR/CWT encoding's
+// native `lst` byte string carries directly.
+func encodeStatusBitsRaw(t *testing.T, statuses map[uint64]uint8, bits int) []byte {
 	t.Helper()
 	maxIdx := uint64(0)
 	for idx := range statuses {
@@ -181,16 +193,73 @@ func encodeStatusBits(t *testing.T, statuses map[uint64]uint8, bits int) string 
 	_, err := w.Write(raw)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
-	return base64.RawURLEncoding.EncodeToString(buf.Bytes())
+	return buf.Bytes()
+}
+
+// SignCWTToken builds a CWT Status List Token (draft-ietf-oauth-status-list-15
+// §5.2) and signs it as a COSE_Sign1 with the signer's key, embedding the
+// certificate in the x5chain unprotected header (33). typ defaults to
+// StatusListTokenCWTContentType.
+func (s *TestStatusListSigner) SignCWTToken(t *testing.T, opts TestStatusListOpts) []byte {
+	t.Helper()
+	return s.SignCWTTokenWithTyp(t, opts, StatusListTokenCWTContentType)
+}
+
+// SignCWTTokenWithTyp is like SignCWTToken but lets the caller override the
+// protected header 16 (type) value, for negative-path tests.
+func (s *TestStatusListSigner) SignCWTTokenWithTyp(t *testing.T, opts TestStatusListOpts, typ string) []byte {
+	t.Helper()
+	bits := opts.Bits
+	if bits == 0 {
+		bits = 1
+	}
+	if opts.IssuedAt.IsZero() && !opts.OmitIssuedAt {
+		opts.IssuedAt = time.Now()
+	}
+
+	payload := cwtStatusListPayload{
+		Subject: opts.Subject,
+		StatusList: cwtStatusListClaim{
+			Bits: bits,
+			Lst:  encodeStatusBitsRaw(t, opts.Statuses, bits),
+		},
+	}
+	if !opts.OmitIssuedAt {
+		payload.IssuedAt = opts.IssuedAt.Unix()
+	}
+	if !opts.Expiry.IsZero() {
+		payload.Expiry = opts.Expiry.Unix()
+	}
+	if opts.TTLSeconds > 0 {
+		payload.TTLSeconds = opts.TTLSeconds
+	}
+	payloadBytes, err := cbor.Marshal(payload)
+	require.NoError(t, err)
+
+	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers, Payload: payloadBytes}
+	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
+	msg.Headers.Protected[cose.HeaderLabelType] = typ
+	if !opts.OmitX5c {
+		msg.Headers.Unprotected[cose.HeaderLabelX5Chain] = [][]byte{s.DERBytes}
+	}
+
+	signer, err := cose.NewSigner(cose.AlgorithmES256, s.PrivKey)
+	require.NoError(t, err)
+	require.NoError(t, msg.Sign(rand.Reader, nil, signer))
+
+	signed, err := msg.MarshalCBOR()
+	require.NoError(t, err)
+	return signed
 }
 
 // TestStatusListServer is an httptest.Server that serves a single
 // Status List Token at any URL with the spec-mandated Content-Type.
 type TestStatusListServer struct {
-	server    *httptest.Server
-	bodyBytes atomic.Pointer[[]byte]
-	maxAge    atomic.Int64
-	hits      atomic.Int64
+	server      *httptest.Server
+	bodyBytes   atomic.Pointer[[]byte]
+	contentType atomic.Pointer[string]
+	maxAge      atomic.Int64
+	hits        atomic.Int64
 }
 
 // NewTestStatusListServer starts a server that returns body on every
@@ -201,10 +270,12 @@ func NewTestStatusListServer(t *testing.T, body []byte) *TestStatusListServer {
 	t.Helper()
 	s := &TestStatusListServer{}
 	s.bodyBytes.Store(&body)
+	jwtContentType := StatusListTokenContentType
+	s.contentType.Store(&jwtContentType)
 	s.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r
 		s.hits.Add(1)
-		w.Header().Set("Content-Type", StatusListTokenContentType)
+		w.Header().Set("Content-Type", *s.contentType.Load())
 		if mx := s.maxAge.Load(); mx > 0 {
 			w.Header().Set("Cache-Control", fmt.Sprintf("max-age=%d", mx))
 		}
@@ -240,11 +311,27 @@ func (s *TestStatusListServer) Serve(t *testing.T, signer *TestStatusListSigner,
 	if opts.Subject == "" {
 		opts.Subject = s.URL()
 	}
+	s.SetContentType(StatusListTokenContentType)
 	s.SetBody(signer.SignToken(t, opts))
+}
+
+// ServeCWT is Serve for the CWT encoding: signs opts as a CWT Status List
+// Token and serves it with the CWT Content-Type.
+func (s *TestStatusListServer) ServeCWT(t *testing.T, signer *TestStatusListSigner, opts TestStatusListOpts) {
+	t.Helper()
+	if opts.Subject == "" {
+		opts.Subject = s.URL()
+	}
+	s.SetContentType(StatusListTokenCWTContentType)
+	s.SetBody(signer.SignCWTToken(t, opts))
 }
 
 // SetBody atomically replaces the body served on subsequent requests.
 func (s *TestStatusListServer) SetBody(body []byte) { s.bodyBytes.Store(&body) }
+
+// SetContentType atomically replaces the Content-Type header served on
+// subsequent requests.
+func (s *TestStatusListServer) SetContentType(ct string) { s.contentType.Store(&ct) }
 
 // SetMaxAge sets the value of the Cache-Control: max-age=N response
 // header on subsequent requests. 0 omits the header.

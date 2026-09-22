@@ -385,3 +385,26 @@ func Test_Checker_Check_EmptyURI_FailsClosed(t *testing.T) {
 	_, err := checker.Check(context.Background(), Reference{Index: 0})
 	require.ErrorIs(t, err, ErrUnauthorized)
 }
+
+// Test_Checker_Check_CWT_EndToEnd exercises the full fetch → dispatch →
+// verify → decode path against a server serving a CWT Status List Token
+// (application/statuslist+cwt) — the encoding an mdoc's MSO status
+// reference points at. Everything above the wire format (Checker, caching,
+// content negotiation) is shared with the JWT path; this pins that the CWT
+// half of that path actually works end to end, not just at the unit level
+// verifyStatusListTokenCWT already covers.
+func Test_Checker_Check_CWT_EndToEnd(t *testing.T) {
+	signer, srv, checker := makeSignerServerChecker(t)
+	srv.ServeCWT(t, signer, TestStatusListOpts{
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0, 5: 1},
+	})
+
+	s, err := checker.Check(context.Background(), Reference{Index: 5, URI: srv.URL()})
+	require.NoError(t, err)
+	require.Equal(t, StatusInvalid, s)
+
+	s, err = checker.Check(context.Background(), Reference{Index: 0, URI: srv.URL()})
+	require.NoError(t, err)
+	require.Equal(t, StatusValid, s)
+}

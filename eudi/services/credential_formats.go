@@ -99,6 +99,13 @@ func NewCredentialFormats(
 	mdocStore := db.NewMdocStore(d)
 	mdocKeys := db.NewMdocDeviceKeyStore(d)
 
+	// The mdoc verifier used at issuance consults the same Token Status List
+	// checker RevocationService's background sweep uses, so a revoked
+	// document is refused at parse time rather than merely flagged later —
+	// the same fail-closed guarantee sdjwtvc's holder verifier gives.
+	mdocVerifier := mdoc.NewVerifierFromTrustSource(&config.Issuers)
+	mdocVerifier.SetStatusChecker(revocation.Checker())
+
 	return CredentialFormats{
 		models.CredentialFormatSdJwtVc: {
 			Parser: NewSdJwtVcCredentialFormatParser(holderVerifier),
@@ -106,9 +113,9 @@ func NewCredentialFormats(
 			Store:  NewSdJwtVcCredentialService(sdJwtVcStore, db.NewHolderBindingKeyStore(d), fs, revocation, currentLocale),
 		},
 		models.CredentialFormatMsoMdoc: {
-			Parser: NewMdocCredentialFormatParser(mdoc.NewVerifierFromTrustSource(&config.Issuers)),
+			Parser: NewMdocCredentialFormatParser(mdocVerifier),
 			Keys:   NewMdocKeyService(mdocKeys),
-			Store:  NewMdocCredentialService(mdocStore, mdocKeys, fs, currentLocale),
+			Store:  NewMdocCredentialService(mdocStore, mdocKeys, fs, revocation, currentLocale),
 		},
 	}
 }

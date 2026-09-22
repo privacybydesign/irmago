@@ -10,26 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// CredentialStatusInstance is an instance's status_list reference.
-// BatchID lets callers select a single representative instance per batch, and
-// LastKnownStatus lets them tell a status change from a re-confirmation without
-// a second read.
-type CredentialStatusInstance struct {
-	InstanceID      datatypes.UUID
-	BatchID         datatypes.UUID
-	StatusListURI   string
-	StatusListIdx   uint64
-	LastKnownStatus uint8
-}
-
-// BatchInstanceStatus pairs a batch's deterministic hash with one of its
-// instances' last-known Token Status List status. Only instances that carry
-// a status_list reference are reported.
-type BatchInstanceStatus struct {
-	Hash            string
-	LastKnownStatus uint8
-}
-
 // SdJwtVcStore persists SD-JWT VC credentials: SdJwtVcBatch rows, their
 // SdJwtVcBatchInstance copies and the display metadata tree hanging off them.
 // SD-JWT VC only; mso_mdoc has its own store (MdocStore).
@@ -63,20 +43,13 @@ type SdJwtVcStore interface {
 	// along with all its instances (via CASCADE). Returns ErrNotFound if no batch exists with that hash.
 	DeleteBatchByHash(hash string) error
 
-	// ListInstancesWithStatusReference returns every SdJwtVcBatchInstance
-	// with a (status_list.uri, status_list.idx) pair, along with the status the
-	// wallet last recorded for it.
-	ListInstancesWithStatusReference() ([]CredentialStatusInstance, error)
-
-	// ListStatusReferencedInstanceStatuses returns the (batch hash,
-	// last_known_status) pair for every instance carrying a Token Status List
-	// reference. Used to surface per-credential revocation in the credential
-	// list without loading full instances.
-	ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error)
-
-	// UpdateInstanceStatus writes last_known_status and last_status_check_at
-	// on a single SdJwtVcBatchInstance. Returns ErrNotFound on no match.
-	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
+	// CredentialStatusStore is embedded so RevocationService can treat this
+	// store's instances the same way it treats MdocStore's — see
+	// credential_status_store.go, where ListInstancesWithStatusReference,
+	// ListStatusReferencedInstanceStatuses and UpdateInstanceStatus are
+	// documented. SdJwtVcBatchInstance is the concrete row shape behind them
+	// here; MdocBatchInstance is mdoc's.
+	CredentialStatusStore
 
 	// UpdateBatchHash rewrites a SdJwtVcBatch's deduplication hash. Returns
 	// ErrNotFound on no match.

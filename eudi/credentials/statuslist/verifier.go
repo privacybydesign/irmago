@@ -37,12 +37,44 @@ type statusListPayload struct {
 	StatusList statusListClaim `json:"status_list"`
 }
 
-// verifiedStatusList holds a Status List Token whose signature, typ,
+// verifiedStatusListToken is what Checker acts on once a Status List Token
+// (JWT or CWT) has been signature/typ/iss/time-bounds verified: enough to
+// decide caching lifetime and to read the status bit at an index. Checker is
+// deliberately encoding-agnostic beyond this point — see verifyStatusList (in
+// cwt.go), which dispatches to whichever of *verifiedStatusList (this file's
+// verifyStatusListToken, JWT) or *verifiedStatusListCWT (cwt.go's
+// verifyStatusListTokenCWT) matches the fetched bytes.
+type verifiedStatusListToken interface {
+	// ttlSignal reports the caching lifetime the token itself advertises (its
+	// `ttl` claim, or the remaining `exp - now`), and whether it advertised
+	// one at all.
+	ttlSignal() (time.Duration, bool)
+
+	// statusAt decompresses the token's bit array (capped at maxBytes) and
+	// returns the status at ref.Index.
+	statusAt(ref Reference, maxBytes int64) (Status, error)
+}
+
+// verifiedStatusList holds a JWT Status List Token whose signature, typ,
 // iss, and time bounds have been validated. The lst field is still
-// base64url-encoded and zlib-compressed; the decoder consumes it.
+// base64url-encoded and zlib-compressed; statusAt consumes it.
 type verifiedStatusList struct {
 	payload statusListPayload
 	rawJwt  []byte // original signed JWT bytes — kept for caching
+}
+
+var _ verifiedStatusListToken = (*verifiedStatusList)(nil)
+
+func (v *verifiedStatusList) ttlSignal() (time.Duration, bool) {
+	return v.payloadTTLSignal()
+}
+
+func (v *verifiedStatusList) statusAt(ref Reference, maxBytes int64) (Status, error) {
+	bits, err := decodeBits(v.payload.StatusList.Lst, maxBytes)
+	if err != nil {
+		return StatusUnknown, err
+	}
+	return statusAtIndex(bits, v.payload.StatusList.Bits, ref.Index)
 }
 
 // payloadTTLSignal reports the caching lifetime advertised by the

@@ -13,9 +13,10 @@ import (
 	"gorm.io/datatypes"
 )
 
-// RevocationService is the single home for Token Status List revocation. It
-// owns the status-list Checker and the credential store, and exposes the three
-// ways the wallet consults revocation:
+// RevocationService is the single home for Token Status List revocation
+// across every credential format. It owns the status-list Checker and one
+// CredentialStatusStore per format, and exposes the three ways the wallet
+// consults revocation:
 //
 //   - IsRevoked: a cached (no-fetch) check for one instance, used by the
 //     OpenID4VP disclosure planner;
@@ -29,15 +30,25 @@ import (
 // except UNKNOWN (no status information yet), which stays advisory not-revoked.
 type RevocationService struct {
 	checker *statuslist.Checker
-	store   db.SdJwtVcStore
+	stores  []db.CredentialStatusStore
 }
 
-// NewRevocationService returns a service backed by the given Token Status List
-// Checker and credential store. A nil checker disables the cached-read and
-// refresh paths (IsRevoked returns false, RefreshStatuses is a no-op); the
-// stored-status path (BatchRevocation) still works.
-func NewRevocationService(checker *statuslist.Checker, store db.SdJwtVcStore) *RevocationService {
-	return &RevocationService{checker: checker, store: store}
+// NewRevocationService returns a service backed by the given Token Status
+// List Checker, consulting every given store for status-referenced
+// instances. A nil checker disables the cached-read and refresh paths
+// (IsRevoked returns false, RefreshStatuses is a no-op); the stored-status
+// path (BatchRevocation) still works. One store per credential format that
+// carries a Token Status List reference (today: SD-JWT VC and mso_mdoc).
+func NewRevocationService(checker *statuslist.Checker, stores ...db.CredentialStatusStore) *RevocationService {
+	return &RevocationService{checker: checker, stores: stores}
+}
+
+// Checker returns the underlying Token Status List checker, for a format's
+// own verifier (e.g. mdoc.Verifier.SetStatusChecker) that needs to run its
+// own fail-closed check at parse time rather than going through
+// RevocationService's advisory read paths.
+func (s *RevocationService) Checker() *statuslist.Checker {
+	return s.checker
 }
 
 // statusRevoked is the one revocation policy shared by every path: a credential
@@ -81,8 +92,13 @@ func (s *RevocationService) IsRevoked(instance *models.SdJwtVcBatchInstance) boo
 // (draft-ietf-oauth-status-list §13.2), so one entry's bit determines the whole
 // batch's status; re-checking every copy would be redundant work.
 //
-// Representatives are grouped by status list URI so a list shared across many
-// batches is fetched once.
+// Every configured store is swept in turn (SD-JWT VC, mso_mdoc, ...);
+// representatives are grouped by status list URI *within* each store's sweep,
+// so a list shared across many batches of the same format is fetched once. A
+// URI happening to be shared *across* formats would still cost one extra
+// fetch — an acceptable rarity, since batches of different formats are never
+// the same credential and grouping across stores would mean callers cannot
+// tell which format's row to write back to.
 //
 // Fail-soft: per-URI and per-instance errors are logged and skipped, leaving
 // the previous LastKnownStatus in place. A nil checker makes this a no-op.
@@ -100,7 +116,19 @@ func (s *RevocationService) RefreshStatuses(ctx context.Context) (changed int, e
 	if s.checker == nil {
 		return 0, nil
 	}
-	instances, err := s.store.ListInstancesWithStatusReference()
+	for _, store := range s.stores {
+		n, err := s.refreshStoreStatuses(ctx, store)
+		changed += n
+		if err != nil {
+			return changed, err
+		}
+	}
+	return changed, nil
+}
+
+// refreshStoreStatuses runs one store's sweep; see RefreshStatuses.
+func (s *RevocationService) refreshStoreStatuses(ctx context.Context, store db.CredentialStatusStore) (changed int, err error) {
+	instances, err := store.ListInstancesWithStatusReference()
 	if err != nil {
 		return 0, fmt.Errorf("load instances: %w", err)
 	}
@@ -150,7 +178,7 @@ func (s *RevocationService) RefreshStatuses(ctx context.Context) (changed int, e
 			}
 			// Written either way, so a re-confirmation still records that the
 			// wallet looked; only a different value counts as a change.
-			if err := s.store.UpdateInstanceStatus(inst.InstanceID, uint8(st), now); err != nil {
+			if err := store.UpdateInstanceStatus(inst.InstanceID, uint8(st), now); err != nil {
 				eudi.Logger.Warnf("status refresh: writeback failed for instance %s: %v", inst.InstanceID, err)
 				continue
 			}
@@ -170,16 +198,18 @@ func (s *RevocationService) RefreshStatuses(ctx context.Context) (changed int, e
 // and supports revocation if it carries any status reference at all. A lifted
 // suspension is reflected on the next RefreshStatuses sweep.
 func (s *RevocationService) BatchRevocation() (revoked, revocable map[string]bool, err error) {
-	statuses, err := s.store.ListStatusReferencedInstanceStatuses()
-	if err != nil {
-		return nil, nil, err
-	}
 	revoked = map[string]bool{}
 	revocable = map[string]bool{}
-	for _, st := range statuses {
-		revocable[st.Hash] = true
-		if statusRevoked(statuslist.Status(st.LastKnownStatus)) {
-			revoked[st.Hash] = true
+	for _, store := range s.stores {
+		statuses, err := store.ListStatusReferencedInstanceStatuses()
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, st := range statuses {
+			revocable[st.Hash] = true
+			if statusRevoked(statuslist.Status(st.LastKnownStatus)) {
+				revoked[st.Hash] = true
+			}
 		}
 	}
 	return revoked, revocable, nil
