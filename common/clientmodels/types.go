@@ -43,6 +43,38 @@ type TrustedParty struct {
 	// for anything historical: the certificate that authenticated a past session
 	// is not something the wallet keeps.
 	Verified bool `json:"verified"`
+
+	// Anonymous reports that NOTHING identified itself: there is no party here,
+	// only the origin the platform authenticated. Name is empty when it is set.
+	//
+	// It answers a different question from Verified, and the difference is the
+	// point. Verified asks "was the name authenticated"; Anonymous asks "did
+	// anyone offer a name at all". Collapsing the second into the first — by
+	// putting an origin in Name and marking it unverified — makes the strongest
+	// and the weakest thing that "unverified" can mean look identical on screen.
+	// An OpenID4VCI issuer whose real metadata simply is not signed would render
+	// exactly like a stranger that said nothing whatsoever, in the flow where a
+	// user decides whether to prove their age to that stranger.
+	//
+	// A UI is expected to render an anonymous requestor differently, not merely
+	// with a different badge: there is no name, logo or trust chain to show, and
+	// the honest thing to say is that the site has not identified itself.
+	//
+	// Verified is always false when this is set — an unnamed party cannot have
+	// had its name authenticated. The zero value, false, is correct for every
+	// party that did name itself, which is all of them bar the org-iso-mdoc
+	// reader.
+	Anonymous bool `json:"anonymous"`
+
+	// Origin is the web origin the platform authenticated for this request, when
+	// the transport has one. It is the caller's address rather than its identity:
+	// nothing about it says who is behind it.
+	//
+	// Worth showing precisely because it is the one fact the wallet did not take
+	// on trust — the platform established it, and the response is
+	// cryptographically bound to it — but it is not a name, which is why it lives
+	// here rather than in Name.
+	Origin *string `json:"origin,omitempty"`
 }
 
 type Image struct {

@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
-	"github.com/privacybydesign/irmago/eudi/mdocpresent"
+	"github.com/privacybydesign/irmago/eudi/isomdoc"
 )
 
 // ============================================================
@@ -184,7 +184,7 @@ func TestInstanceAccounting(t *testing.T) {
 		require.Equal(t, uint(2), env.remaining(t))
 
 		// Nothing is spent while the user is still deciding.
-		env.consent.before = func(mdocpresent.ConsentRequest) {
+		env.consent.before = func(isomdoc.ConsentRequest) {
 			require.Equal(t, uint(2), env.remaining(t),
 				"the user has not answered yet, so nothing can have been spent")
 		}

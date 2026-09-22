@@ -9,13 +9,13 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
-	"github.com/privacybydesign/irmago/eudi/mdocpresent"
+	"github.com/privacybydesign/irmago/eudi/isomdoc"
 	"github.com/stretchr/testify/require"
 )
 
 // These cover the two halves of the routing that do not need a wallet behind
 // them: the shape handed back to the platform, and the park-for-consent
-// handshake. The exchange itself is tested in eudi/mdocpresent.
+// handshake. The exchange itself is tested in eudi/isomdoc.
 
 // testTimeout and testPoll bound the waits for the session goroutine to park.
 // Generous, because a loaded CI machine scheduling a goroutine late is not a
@@ -37,8 +37,8 @@ func newIsoMdocTestSession() (*isoMdocSession, *dispatchSpy) {
 	return iso, spy
 }
 
-func consentRequest() mdocpresent.ConsentRequest {
-	return mdocpresent.ConsentRequest{
+func consentRequest() isomdoc.ConsentRequest {
+	return isomdoc.ConsentRequest{
 		Origin: "https://verifier.example.com",
 		Plan:   &clientmodels.DisclosurePlan{},
 	}
@@ -98,9 +98,18 @@ func TestRequestConsentParksAndReturnsTheAnswer(t *testing.T) {
 	require.Equal(t, []clientmodels.SessionStatus{clientmodels.Status_RequestPermission}, spy.statuses)
 	require.Equal(t, clientmodels.Protocol_ISO18013_5, iso.session.State.Protocol,
 		"the app is told which exchange it is showing")
-	require.Equal(t, "https://verifier.example.com", iso.session.State.Requestor.Name,
-		"an org-iso-mdoc request carries no verifier identity but the origin")
-	require.False(t, iso.session.State.Requestor.Verified,
+	// #724 O1: nothing in an org-iso-mdoc request names the caller, so the wallet
+	// reports no party rather than dressing the origin up as one. The UI owes this
+	// case a different screen, and can only know to show one if the model says so.
+	requestor := iso.session.State.Requestor
+	require.True(t, requestor.Anonymous,
+		"an org-iso-mdoc request carries no verifier identity at all")
+	require.Empty(t, requestor.Name,
+		"an origin is an address, not a name; putting it in Name is what O1 rejects")
+	require.NotNil(t, requestor.Origin)
+	require.Equal(t, "https://verifier.example.com", *requestor.Origin,
+		"the origin is still shown — it is the one fact the platform authenticated")
+	require.False(t, requestor.Verified,
 		"reader auth proves a certificate chained to an anchor, not that it belongs to this origin")
 }
 

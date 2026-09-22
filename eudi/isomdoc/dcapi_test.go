@@ -1,4 +1,4 @@
-package mdocpresent
+package isomdoc
 
 import (
 	"encoding/base64"

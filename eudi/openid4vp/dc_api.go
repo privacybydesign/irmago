@@ -38,11 +38,11 @@ const (
 	// It IS routed, one layer up: client.NewSession branches on the DC API's own
 	// protocol member before a request reaches this package, and hands an
 	// org-iso-mdoc one to client/isomdoc_session.go, which drives
-	// mdocpresent.Session over the same DCQL handlers this client searches with
+	// isomdoc.Session over the same DCQL handlers this client searches with
 	// (see DcqlHandler). A request reaching the case below therefore means the
 	// branch upstream was bypassed, which is worth an error rather than silence.
 	//
-	// Duplicated as mdocpresent.DcApiProtocolIsoMdoc, which is the constant that
+	// Duplicated as isomdoc.DcApiProtocolIsoMdoc, which is the constant that
 	// branch reads; the two are pinned together by a test there.
 	DcApiProtocolIsoMdoc = "org-iso-mdoc"
 )
@@ -139,7 +139,7 @@ func (client *Client) parseDcApiRequest(request *DcApiRequest) (*AuthorizationRe
 		// typos, which is the difference between "we do not do that yet" and
 		// "we do not know what that is".
 		return nil, nil, fmt.Errorf(
-			"digital credentials api protocol %q carries ISO/IEC 18013-5 rather than OpenID4VP and is answered by eudi/mdocpresent, not by this client: a request reaching here was not routed by client.NewSession",
+			"digital credentials api protocol %q carries ISO/IEC 18013-5 rather than OpenID4VP and is answered by eudi/isomdoc, not by this client: a request reaching here was not routed by client.NewSession",
 			DcApiProtocolIsoMdoc,
 		)
 

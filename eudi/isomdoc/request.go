@@ -1,4 +1,4 @@
-// Package mdocpresent presents mdocs the way ISO/IEC 18013-5 asks for them: a
+// Package isomdoc presents mdocs the way ISO/IEC 18013-5 asks for them: a
 // DeviceRequest in, a DeviceResponse out.
 //
 // It exists because that exchange needs to know about two things at once — the
@@ -26,7 +26,7 @@
 //
 // This package was called `proximity` when BLE device retrieval was the intended
 // route. That work is parked and the name was wrong for what remained.
-package mdocpresent
+package isomdoc
 
 import (
 	"errors"

@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/mdocpresent"
+	"github.com/privacybydesign/irmago/eudi/isomdoc"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
@@ -819,7 +819,7 @@ func (client *Client) NewSession(id int, sessionrequest string) {
 		// know which of them carries OpenID4VP — so the branch is on the DC API's
 		// own protocol member, not on anything the app decided. See
 		// client/isomdoc_session.go.
-		case sessionReq.DcApi.Protocol == mdocpresent.DcApiProtocolIsoMdoc:
+		case sessionReq.DcApi.Protocol == isomdoc.DcApiProtocolIsoMdoc:
 			state.Protocol = clientmodels.Protocol_ISO18013_5
 			if sessionReq.DcApi.Origin == "" {
 				session.error(fmt.Errorf(

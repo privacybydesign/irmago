@@ -15,6 +15,7 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
@@ -55,6 +56,11 @@ type Client struct {
 	credentialFormats services.CredentialFormats
 	revocationService *services.RevocationService
 
+	// zkSystems are the zero-knowledge systems this build has, or nil. Nil is the
+	// ordinary state rather than an error, and routes an AV request to the plain
+	// presentation instead of failing it — see WithZkProver.
+	zkSystems *mdoc.ZkSystemRepository
+
 	// handler is how the wallet wakes the app when what it has already rendered
 	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
 	// cannot survive a session.
@@ -81,6 +87,10 @@ func New(
 	signer irmaclient.Signer,
 	aesKey [32]byte,
 	locale string,
+
+	// options carry the capabilities only some builds have — a native ZK prover,
+	// today. Empty is a complete wallet; see options.go.
+	options ...Option,
 ) (*Client, error) {
 	// Required: the wallet calls it from background jobs and from IrmaClient
 	// without a nil guard, so a nil one would panic on a goroutine no caller
@@ -300,6 +310,12 @@ func New(
 	// are missing from the cache (credentials issued before the wallet became
 	// locale-aware, or whose issuance-time download failed).
 	client.logoBackfill.Request(currentLocale.Get())
+
+	// Last, so an option can read whatever New assembled, and so ordering among
+	// options is the caller's rather than a side effect of where they run.
+	for _, option := range options {
+		option(client)
+	}
 
 	return client, nil
 }

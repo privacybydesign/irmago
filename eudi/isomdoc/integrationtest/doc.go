@@ -5,7 +5,7 @@
 // # Why it exists
 //
 // Every layer of that path already passes its own tests with the layer below it
-// faked: mdocpresent.Session against a fake Discloser, mdocpresent.WalletDiscloser
+// faked: isomdoc.Session against a fake Discloser, isomdoc.WalletDiscloser
 // against a fake DCQL handler and a fake store, client.isoMdocSession against no
 // discloser at all. Each of those is the right unit test for what it covers, and
 // none of them can see a defect that lives in the seam between two layers.
@@ -21,19 +21,19 @@
 //	real SQLCipher storage holding a genuinely issued mdoc
 //	  -> mdoc_dcql.MdocDcqlHandler        real candidate search
 //	  -> dcql.DcqlHandler
-//	  -> mdocpresent.WalletDiscloser      real instance selector, real device-key binder
-//	  -> mdocpresent.Session
+//	  -> isomdoc.WalletDiscloser      real instance selector, real device-key binder
+//	  -> isomdoc.Session
 //	  -> mdoc.OpenDCAPIResponse           opened and verified as the reader would
 //
 // The only fake left is the consent handler, which stands in for a human.
 //
 // # Why it is its own package
 //
-// eudi/mdocpresent's own tests are cgo-free and fast, and they are worth keeping
+// eudi/isomdoc's own tests are cgo-free and fast, and they are worth keeping
 // that way: SQLCipher needs cgo, which needs a C toolchain that is not present on
 // every machine this package is developed on. Putting these tests in
-// eudi/mdocpresent would make that whole package unbuildable without gcc for the
+// eudi/isomdoc would make that whole package unbuildable without gcc for the
 // sake of four tests. A sibling directory keeps the cost where the benefit is —
-// `go test ./eudi/mdocpresent` stays toolchain-free, `go test ./eudi/...` runs
+// `go test ./eudi/isomdoc` stays toolchain-free, `go test ./eudi/...` runs
 // both.
 package integrationtest

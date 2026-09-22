@@ -23,7 +23,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
-	"github.com/privacybydesign/irmago/eudi/mdocpresent"
+	"github.com/privacybydesign/irmago/eudi/isomdoc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/mdoc_dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -231,16 +231,16 @@ type consent struct {
 	refuse bool
 
 	called bool
-	seen   mdocpresent.ConsentRequest
+	seen   isomdoc.ConsentRequest
 
 	// before runs while the wallet is parked waiting for an answer, which is the
 	// only moment a test can observe storage mid-disclosure.
-	before func(mdocpresent.ConsentRequest)
+	before func(isomdoc.ConsentRequest)
 }
 
 // RequestConsent approves every attribute of the first option of every pick-one,
 // which is what a user tapping through the default choice does.
-func (c *consent) RequestConsent(request mdocpresent.ConsentRequest) ([]clientmodels.DisclosureDisconSelection, error) {
+func (c *consent) RequestConsent(request isomdoc.ConsentRequest) ([]clientmodels.DisclosureDisconSelection, error) {
 	c.called = true
 	c.seen = request
 	if c.before != nil {
@@ -280,7 +280,7 @@ func (c *consent) RequestConsent(request mdocpresent.ConsentRequest) ([]clientmo
 // exists for. Every other failure on this path happens either before the
 // reservation or after the seal.
 type failFirstBinder struct {
-	inner    mdocpresent.DeviceKeyBinder
+	inner    isomdoc.DeviceKeyBinder
 	failures int
 }
 
@@ -307,8 +307,8 @@ type env struct {
 	instances *services.MdocInstanceSelector
 	consent   *consent
 
-	discloser *mdocpresent.WalletDiscloser
-	session   *mdocpresent.Session
+	discloser *isomdoc.WalletDiscloser
+	session   *isomdoc.Session
 }
 
 // newEnv issues batchSize real mdocs, each bound to its own device key as
@@ -412,9 +412,9 @@ func newEnv(t *testing.T, batchSize uint) *env {
 // Rebuilding rather than mutating is what lets a test substitute a faulting
 // binder without the rest of the stack knowing, exactly as mdoc_dcql's
 // withDeviceKeyBinder does.
-func (e *env) wire(binder mdocpresent.DeviceKeyBinder) {
-	e.discloser = mdocpresent.NewWalletDiscloser(e.queries, e.instances, binder, e.consent)
-	e.session = &mdocpresent.Session{
+func (e *env) wire(binder isomdoc.DeviceKeyBinder) {
+	e.discloser = isomdoc.NewWalletDiscloser(e.queries, e.instances, binder, e.consent)
+	e.session = &isomdoc.Session{
 		// The reader trust model, not the issuer one — the wallet authenticates a
 		// reader against the same anchors that authenticate an OpenID4VP relying
 		// party.
@@ -424,7 +424,7 @@ func (e *env) wire(binder mdocpresent.DeviceKeyBinder) {
 }
 
 // realBinder is the production device key binder over this env's key store.
-func (e *env) realBinder() mdocpresent.DeviceKeyBinder {
+func (e *env) realBinder() isomdoc.DeviceKeyBinder {
 	return services.NewMdocDeviceKeyBinder(e.keyStore)
 }
 
@@ -437,7 +437,7 @@ func (e *env) respond(t *testing.T, data []byte) (mdoc.DCAPIEncryptedResponse, e
 	// covers the paths that never reach it.
 	defer e.discloser.Release()
 
-	request, err := mdocpresent.RequestFromDcApi(data, testOrigin)
+	request, err := isomdoc.RequestFromDcApi(data, testOrigin)
 	require.NoError(t, err)
 	return e.session.Respond(request)
 }

@@ -34,7 +34,7 @@ in the format-agnostic protocol packages that also serve SD-JWT:
   envelope that path wraps 18013-5 in — `EncryptionInfo` on the way in, an HPKE-sealed
   `DeviceResponse` on the way back. The payload is the ordinary `DeviceRequest` and
   `DeviceResponse` above; only the envelope and the handover differ.
-- **Request translation:** `eudi/mdocpresent.DcqlQueryFromDeviceRequest` maps a
+- **Request translation:** `eudi/isomdoc.DcqlQueryFromDeviceRequest` maps a
   `DeviceRequest` onto the same DCQL pipeline the OpenID4VP path uses, so a request
   arriving as 18013-5 is answered by the machinery OpenID4VP already had — candidate
   selection, consent and single-use instance accounting shared rather than copied.
@@ -104,16 +104,16 @@ keeps the tools that answer a question a test cannot — `mdoc-decode` and
 | Device engagement (8.2.1.1, 8.2.2.3) | ✗ parked | `DeviceEngagement`, the `mdoc:` QR URI and BLE central client mode are device *retrieval*. That work is parked; nothing on the DC API path engages at all, since its transcript carries `null` in both leading slots 
 | Session establishment and encryption (9.1.1.4, 9.1.1.5) | ✗ parked | `SessionEstablishment`/`SessionData` and the ECKA-DH schedule to SKDevice/SKReader belong to device retrieval, which is parked. The DC API path encrypts with HPKE instead — see the W3C row 
 | `SessionTranscript` handovers (9.1.5.1) | ✓ | `QRHandover` (null) and `NFCHandover` alongside the two OpenID4VP variants. The two leading slots are `cbor.RawMessage` holding complete tag-24 encodings inline — as `[]byte` they were double-wrapped, which is invisible in-package because OpenID4VP leaves both slots empty. `NewDCAPISessionTranscript` is the fourth, for `org-iso-mdoc`: both leading slots null, `["dcapi", SHA-256(cbor([base64url(EncryptionInfo), origin]))]` in the third. It lives here rather than beside the OpenID4VP variants because it is ISO 18013-7, not OpenID4VP |
-| `DeviceRequest` / `ItemsRequest` (8.3.2.1.2.1) | ✓ | decoded, validated, and translated onto the wallet's existing DCQL pipeline by `eudi/mdocpresent.DcqlQueryFromDeviceRequest`. `DocRequest.ItemsRequest` preserves the exact bytes, because 9.1.4 signs them |
+| `DeviceRequest` / `ItemsRequest` (8.3.2.1.2.1) | ✓ | decoded, validated, and translated onto the wallet's existing DCQL pipeline by `eudi/isomdoc.DcqlQueryFromDeviceRequest`. `DocRequest.ItemsRequest` preserves the exact bytes, because 9.1.4 signs them |
 | mdoc reader authentication (9.1.4) | ✓ | `Verifier.VerifyReaderAuth` — untagged COSE_Sign1, null payload, zero-length `external_aad`, x5chain walked against the wallet's *verifier* trust store (the same one that authenticates an OpenID4VP relying party). Table B.6's reader EKU is reported, not enforced: it is a `should`, and every RP certificate this wallet can talk to today carries `clientAuth` only |
 | 7.2.1 release policy | ✓ | `ReleasableWithoutReaderAuth` — an unauthenticated reader still gets an mDL's Table 5 mandatory elements, because "An mDL shall not require mdoc reader authentication as a precondition for the release of any of the mandatory data elements", and nothing from any other docType. Scoped to the element *and* the namespace, since 7.1 lets an issuing authority add its own |
 | `deviceMac` (9.1.3.5) | ✓ verified, never produced | Both halves matter and they are not symmetric. As the **mdoc**, this wallet never produces a MAC: 9.1.3.4 forbids one key producing both MACs and signatures over its lifetime, the OpenID4VP path already signs with that key, and `TestWalletNeverProducesDeviceMac` enforces it by parsing every non-test file. As the **reader**, it must accept one — "an mdoc reader shall support both approaches" — so `VerifyWithDeviceMac` and `VerifyDeviceResponseAsReader` verify the MAC branch, given the reader ephemeral private key the ECDH half needs |
-| Session orchestration | ✓ | `eudi/mdocpresent.Session` runs the whole `org-iso-mdoc` exchange: transcript, per-document reader authentication, the 7.2.1 carve-out, the wallet's answer, deviceAuth, and the sealed response — in that order, which is where the interesting mistakes live. The wallet itself sits behind a `Discloser` interface, so storage and consent stay out of it |
-| Wired to the wallet | ✗ | `Discloser` has no implementation against real storage and consent yet, and nothing routes a DC API request into `mdocpresent.Session`. `openid4vp.DcApiProtocolIsoMdoc` names the protocol and says so |
-| Wired to the wallet | ✗ | No transport reaches the wallet's storage and consent yet. The machinery a session would reach is in place and shared with OpenID4VP — `dcql.DcqlHandler`, `services.MdocInstanceSelector` — but nothing calls it from an ISO 18013-5 request |
+| Session orchestration | ✓ | `eudi/isomdoc.Session` runs the whole `org-iso-mdoc` exchange: transcript, per-document reader authentication, the 7.2.1 carve-out, the wallet's answer, deviceAuth, and the sealed response — in that order, which is where the interesting mistakes live. The wallet itself sits behind a `Discloser` interface, so storage and consent stay out of it |
+| Wired to the wallet | ✓ | `isomdoc.WalletDiscloser` implements `Discloser` against real storage and consent, composing the same DCQL handler, instance selector and device-key binder OpenID4VP uses. `client/isomdoc_session.go` routes a `DcApiProtocolIsoMdoc` request into `isomdoc.Session` and parks it for the user |
+| Wired to the wallet | ✓ | An ISO 18013-5 request reaches the wallet through `isomdoc.WalletDiscloser`, which reuses `dcql.DcqlHandler` and `services.MdocInstanceSelector` rather than reimplementing them — so a property that holds on one transport holds on the other |
 | NFC engagement and retrieval, Wi-Fi Aware, server retrieval | ✗ | out of scope by decision, not omission. 6.3.2.3/6.3.2.5 make engagement and retrieval separate "at least one" choices, and readers must support everything — so QR + BLE is a conformant wallet and the wallet's pick decides the flow |
 
-| W3C Digital Credentials API (`org-iso-mdoc`) | ✓ crypto, ✗ session | `dcapi.go` implements the envelope — `EncryptionInfo` (nonce + COSE recipient key) and the HPKE-sealed `EncryptedResponse`, behind a shared `["dcapi", …]` decoder, pinned byte-for-byte against a captured Age Verification exchange — plus `SealDCAPIResponse`/`OpenDCAPIResponse` over `DHKEM_P256_HKDF_SHA256 / HKDF_SHA256 / AES_128_GCM` with `info` the encoded session transcript and empty `aad`, on stdlib `crypto/hpke`. `NewDCAPISessionTranscript` is the handover they bind to. What is absent is the session driving them and an `origin` from the app — see the section below 
+| W3C Digital Credentials API (`org-iso-mdoc`) | ✓ | `dcapi.go` implements the envelope — `EncryptionInfo` (nonce + COSE recipient key) and the HPKE-sealed `EncryptedResponse`, behind a shared `["dcapi", …]` decoder, pinned byte-for-byte against a captured Age Verification exchange — plus `SealDCAPIResponse`/`OpenDCAPIResponse` over `DHKEM_P256_HKDF_SHA256 / HKDF_SHA256 / AES_128_GCM` with `info` the encoded session transcript and empty `aad`, on stdlib `crypto/hpke`. `NewDCAPISessionTranscript` is the handover they bind to. What is absent is the session driving them and an `origin` from the app — see the section below 
 
 ---
 
@@ -241,7 +241,7 @@ Tests for the protocol layers live with the code they cover, not here:
 | Location | Covers |
 |---|---|
 | `eudi/openid4vp/mdoc_dcql/sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptShape`, `…BindsAllInputs`, `…IntegratesWithDeviceAuth`, the same pair for `TestDcApiSessionTranscript…`, and `TestSessionTranscriptVariantsNeverCollide` — the byte-level handover formula, and that a `deviceAuth` signed over it verifies. `…CarriesEncryptionKeyThumbprint` covers the other axis: the third handover slot, which carries the response encryption key's thumbprint when the response is encrypted and CBOR null when it is not |
-| `eudi/mdocpresent/request_test.go` | `DcqlQueryFromDeviceRequest` — the 18013-5 request to DCQL translation |
+| `eudi/isomdoc/request_test.go` | `DcqlQueryFromDeviceRequest` — the 18013-5 request to DCQL translation |
 | `eudi/services/credential_format_parser_mdoc_test.go` | `TestMdocCredentialFormatParser_ParseAndVerify` (+ `_UntrustedRootRejected`, `_InvalidBase64`) and `_CheckBatchUniqueness` — the issuance-side parse/verify path |
 | `eudi/services/mdoc_claim_values_test.go` | `TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames`, `…_NoMetadataStillEmitsValues` — permission-dialog attribute building |
 | `eudi/openid4vci/metadata_validators_test.go` | `mso_mdoc` accepted as a supported credential format, and `credential_signing_alg_values_supported` validated as COSE algorithm identifiers — ES256 (`-7`) required, an identifier ISO 18013-5 permits but this wallet cannot verify distinguished from one it does not permit at all |
@@ -703,7 +703,7 @@ confused:
   transcript, empty `aad`, on Go 1.27's stdlib `crypto/hpke` — no new dependency, no
   cgo), and `NewDCAPISessionTranscript` the handover both bind to. What is missing is
   not cryptography:
-  - **a wallet behind it.** `eudi/mdocpresent.Session` runs the exchange, but its
+  - **a wallet behind it.** `eudi/isomdoc.Session` runs the exchange, but its
     `Discloser` — find candidates, ask the user, spend a single-use instance — has no
     implementation against real storage yet. The parts one would compose already exist
     and are shared with OpenID4VP: `dcql.DcqlHandler`, `services.MdocInstanceSelector`,
@@ -712,7 +712,7 @@ confused:
     deliberately rather than as an unknown one, because it cannot be handled by adding
     a case there: the other three identifiers select an OpenID4VP
     `AuthorizationRequest`, and this one carries a `DeviceRequest` with no `client_id`,
-    no `nonce`, no DCQL and no `response_mode`. It answers to `mdocpresent.Session`
+    no `nonce`, no DCQL and no `response_mode`. It answers to `isomdoc.Session`
     instead, and nothing hands it over yet.
   - **an `origin`.** The handover hashes one, but it reaches the wallet from the
     browser or OS and from no field of the request — and irmamobile has no DC API
@@ -720,12 +720,12 @@ confused:
 
   The pieces a session would compose already exist and are individually tested:
   `DecodeDeviceRequest`, `DCAPIEncryptionInfo`, `NewDCAPISessionTranscript`,
-  `SealDCAPIResponse`, and `mdocpresent.DcqlQueryFromDeviceRequest` to reach the wallet's
+  `SealDCAPIResponse`, and `isomdoc.DcqlQueryFromDeviceRequest` to reach the wallet's
   existing candidate selection and consent.
 
 Note what does *not* change between them: the credential format, `deviceAuth`,
 selective disclosure, the trust model and every cryptographic primitive are identical.
-`DeviceRequest` is shared, and `eudi/mdocpresent.DcqlQueryFromDeviceRequest` translates it
+`DeviceRequest` is shared, and `eudi/isomdoc.DcqlQueryFromDeviceRequest` translates it
 onto the same DCQL pipeline rather than standing up a parallel one.
 
 ### Transports: what this package models, and what it does not
@@ -741,7 +741,7 @@ channel around the exchange, BLE framing and the orchestration over them — is 
 The rows marked *parked* above are that work. It is not scheduled, and nothing here
 should be read as waiting for it.
 
-That is why `eudi/mdocpresent` is named for presentation rather than for a transport:
+That is why `eudi/isomdoc` is named for presentation rather than for a transport:
 the request-to-response middle is a property of 18013-5, and only the edges (how bytes
 arrive, how the response is protected, which handover fills the transcript's third
 slot) belong to any particular carrier.

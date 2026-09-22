@@ -10,7 +10,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
-	"github.com/privacybydesign/irmago/eudi/mdocpresent"
+	"github.com/privacybydesign/irmago/eudi/isomdoc"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 )
@@ -38,11 +38,11 @@ import (
 // isoMdocSession drives one org-iso-mdoc exchange.
 //
 // It owns the park-for-consent handshake, which is the only stateful part: the
-// exchange itself runs to completion inside mdocpresent.Session.Respond, and that
+// exchange itself runs to completion inside isomdoc.Session.Respond, and that
 // call blocks on the wallet's Disclose, which blocks on the user.
 type isoMdocSession struct {
 	session   *session
-	discloser *mdocpresent.WalletDiscloser
+	discloser *isomdoc.WalletDiscloser
 
 	// answers carries the user's verdict to the parked goroutine. Buffered so
 	// nobody blocks, mirroring openid4vpSession.
@@ -81,8 +81,8 @@ func (client *Client) newIsoMdocSession(
 	// path uses: the same DCQL handlers search the same credentials, the same
 	// instance selector spends them, and the same binder resolves the device key.
 	// A second implementation of any of those is how a property that holds on one
-	// transport stops holding on the other. See eudi/mdocpresent/wallet.go.
-	iso.discloser = mdocpresent.NewWalletDiscloser(
+	// transport stops holding on the other. See eudi/isomdoc/wallet.go.
+	iso.discloser = isomdoc.NewWalletDiscloser(
 		client.openid4vpClient.DcqlHandler(),
 		services.NewMdocInstanceSelector(db.NewMdocStore(client.eudiStorage.Db())),
 		services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(client.eudiStorage.Db())),
@@ -101,7 +101,7 @@ func (iso *isoMdocSession) run(client *Client, data []byte, origin string) {
 	// paths that never reach it.
 	defer iso.discloser.Release()
 
-	request, err := mdocpresent.RequestFromDcApi(data, origin)
+	request, err := isomdoc.RequestFromDcApi(data, origin)
 	if err != nil {
 		iso.fail("org-iso-mdoc: %v", err)
 		return
@@ -114,15 +114,16 @@ func (iso *isoMdocSession) run(client *Client, data []byte, origin string) {
 	// authorization request whose verifier cannot be authenticated never reaches
 	// a consent screen, and it is the wallet's own choice rather than something
 	// 18013-5 requires. See mdoc.VerifyReaderAuth.
-	// ZkSystems is deliberately unset. The native prover lives in a module this
-	// build does not link, and a nil repository is what routes an AV request to
-	// the plain A.6 presentation instead of failing — see mdocpresent.Session.
-	// Wiring it is where longfellow-go arrives; nothing else here changes when
-	// it does, because the session already reads a reader's zkRequest and takes
-	// the branch when a prover is present.
-	mdocSession := &mdocpresent.Session{
+	// ZkSystems is whatever the application registered with client.WithZkProver,
+	// and nil when it registered nothing. Nil is the ordinary case, not an error:
+	// it routes an AV request to the plain A.6 presentation instead of failing
+	// it. The session reads the reader's zkRequest either way and takes the ZK
+	// branch only when a prover is present, so nothing on this path knows or
+	// cares which kind of build it is in.
+	mdocSession := &isomdoc.Session{
 		Verifier:  mdoc.NewVerifierFromTrustSource(&client.openid4vpClient.Configuration.Verifiers),
 		Discloser: iso.discloser,
+		ZkSystems: client.zkSystems,
 	}
 
 	sealed, err := mdocSession.Respond(request)
@@ -191,12 +192,12 @@ func (iso *isoMdocSession) fail(message string, args ...any) {
 
 // RequestConsent shows the reader's request and parks until the user answers.
 //
-// Implements mdocpresent.ConsentHandler. Returning no choices is a refusal and is
+// Implements isomdoc.ConsentHandler. Returning no choices is a refusal and is
 // expected rather than exceptional: it produces a response carrying documentErrors
 // rather than a failed session, which is what an mdoc says when it is not
 // answering.
 func (iso *isoMdocSession) RequestConsent(
-	request mdocpresent.ConsentRequest,
+	request isomdoc.ConsentRequest,
 ) ([]clientmodels.DisclosureDisconSelection, error) {
 	// Dismissed before the window opened. Answering with a refusal rather than an
 	// error keeps a user who backed out from seeing a failure screen.
@@ -223,22 +224,32 @@ func (iso *isoMdocSession) RequestConsent(
 	return answer.choices, nil
 }
 
-// requestor is who the user is being told is asking.
+// requestor is who the user is being told is asking — which, here, is nobody.
 //
-// The origin, and never more. An org-iso-mdoc request carries no client_id and no
-// verifier metadata, so the only identity the wallet has for the caller is the one
-// the platform authenticated — and it is the value the response is
-// cryptographically bound to, so it is also the truthful one to show.
+// An org-iso-mdoc request carries no client_id and no verifier metadata. Nothing
+// in it names the caller, so the wallet has an address and no identity, and it
+// says so: Anonymous, with the origin in Origin and Name left empty.
 //
-// Verified stays false even when readerAuth succeeded. It reports that the party
-// NAMED here was authenticated, and what reader authentication proves is that some
-// certificate chained to a trusted anchor, not that it belongs to this origin.
+// The alternative was to put the origin in Name and mark it unverified, which is
+// what this did first and what the OpenID4VP DC API path still does. It reads as
+// a party whose name we could not check. But there is no name to check, and that
+// rank already holds an OpenID4VCI issuer whose genuine metadata merely is not
+// signed. Making those two indistinguishable is worst in exactly this flow,
+// where the question in front of the user is whether to prove their age to a
+// stranger. irmago #724 O1 settles it this way; the UI owes an anonymous
+// requestor a different screen, not a different badge.
+//
+// Verified stays false even when readerAuth succeeded, and the reason is
+// unchanged by any of the above: reader authentication proves that some
+// certificate chained to a trusted anchor, never that it belongs to this origin.
 // Conflating the two would let a trusted reader lend its badge to any origin that
 // replayed its request.
-func (iso *isoMdocSession) requestor(request mdocpresent.ConsentRequest) clientmodels.TrustedParty {
+func (iso *isoMdocSession) requestor(request isomdoc.ConsentRequest) clientmodels.TrustedParty {
+	origin := request.Origin
 	return clientmodels.TrustedParty{
-		Name:     request.Origin,
-		Verified: false,
+		Anonymous: true,
+		Origin:    &origin,
+		Verified:  false,
 	}
 }
 
