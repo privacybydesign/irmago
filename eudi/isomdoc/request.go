@@ -33,7 +33,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
@@ -157,21 +156,6 @@ func dcqlQueryFrom(requested []mdoc.ItemsRequest) (dcql.DcqlQuery, error) {
 	return query, nil
 }
 
-// itemsRequestFor finds what the reader originally asked of a docType.
-//
-// Matching on docType alone is the same simplification DCQL makes: a
-// DeviceRequest may carry two DocRequests of one docType, and nothing downstream
-// tells the resulting documents apart either. The first wins, which for the
-// request shapes this profile produces is the only one.
-func itemsRequestFor(documents []RequestedDocument, docType string) (mdoc.ItemsRequest, bool) {
-	for _, document := range documents {
-		if document.DocType == docType {
-			return document.Requested, true
-		}
-	}
-	return mdoc.ItemsRequest{}, false
-}
-
 // queryId names a DocRequest for the rest of the pipeline.
 //
 // The docType would be the obvious identifier and cannot be used: DCQL requires an
@@ -183,28 +167,8 @@ func queryId(index int) string {
 	return queryIdPrefix + strconv.Itoa(index)
 }
 
-// queryIdPrefix is shared by queryId and queryIndex so the two cannot drift.
+// queryIdPrefix is the fixed prefix every generated query id carries.
 const queryIdPrefix = "doc"
-
-// queryIndex reads a DocRequest's position back out of the id queryId gave it.
-//
-// This is what lets a selection be matched to the request it answers rather than
-// to the first request of the same docType — see Selection.QueryId for why those
-// are not the same thing. Reported as not-an-index rather than guessed at for an
-// id this package did not mint: a Discloser is free to answer a query built
-// somewhere else, and "doc" followed by something that is not a number says
-// nothing about which DocRequest was meant.
-func queryIndex(id string) (int, bool) {
-	digits, found := strings.CutPrefix(id, queryIdPrefix)
-	if !found || digits == "" {
-		return 0, false
-	}
-	index, err := strconv.Atoi(digits)
-	if err != nil || index < 0 {
-		return 0, false
-	}
-	return index, true
-}
 
 // claimsFor flattens nameSpaces into DCQL claims.
 //

@@ -151,7 +151,7 @@ func (e DCAPIEncryptionInfo) MarshalCBOR() ([]byte, error) {
 	}
 	return dcapiEncMode.Marshal([]any{
 		dcapiEnvelopeTag,
-		dcapiEncryptionInfoWire{Nonce: e.Nonce, RecipientPublicKey: e.RecipientPublicKey},
+		dcapiEncryptionInfoWire(e),
 	})
 }
 
@@ -228,7 +228,7 @@ func (r DCAPIEncryptedResponse) MarshalCBOR() ([]byte, error) {
 	}
 	return dcapiEncMode.Marshal([]any{
 		dcapiEnvelopeTag,
-		dcapiEncryptedResponseWire{Enc: r.Enc, CipherText: r.CipherText},
+		dcapiEncryptedResponseWire(r),
 	})
 }
 

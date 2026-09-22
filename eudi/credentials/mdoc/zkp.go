@@ -447,10 +447,7 @@ func signedItemsToWire(namespaces map[string][]ZkSignedItem) map[string][]zkSign
 	for namespace, items := range namespaces {
 		encoded := make([]zkSignedItemWire, 0, len(items))
 		for _, item := range items {
-			encoded = append(encoded, zkSignedItemWire{
-				ElementIdentifier: item.ElementIdentifier,
-				ElementValue:      item.ElementValue,
-			})
+			encoded = append(encoded, zkSignedItemWire(item))
 		}
 		wire[namespace] = encoded
 	}
@@ -462,10 +459,7 @@ func signedItemsFromWire(wire map[string][]zkSignedItemWire) map[string][]ZkSign
 	for namespace, items := range wire {
 		decoded := make([]ZkSignedItem, 0, len(items))
 		for _, item := range items {
-			decoded = append(decoded, ZkSignedItem{
-				ElementIdentifier: item.ElementIdentifier,
-				ElementValue:      item.ElementValue,
-			})
+			decoded = append(decoded, ZkSignedItem(item))
 		}
 		namespaces[namespace] = decoded
 	}

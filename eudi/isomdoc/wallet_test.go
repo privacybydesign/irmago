@@ -3,6 +3,7 @@ package isomdoc
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"maps"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -227,9 +228,7 @@ func newWalletEnv(t *testing.T, claims map[string]any) *walletEnv {
 	}
 
 	elements := make(map[string]any, len(claims))
-	for name, value := range claims {
-		elements[name] = value
-	}
+	maps.Copy(elements, claims)
 
 	queries := &fakeQueryHandler{held: heldCredential{
 		docType:   avDocType,
