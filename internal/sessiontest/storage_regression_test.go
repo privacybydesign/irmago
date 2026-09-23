@@ -495,8 +495,7 @@ func TestClientStorageRegressionV1_4_0(t *testing.T) {
 	require.True(t, statusList.Revoked)
 
 	// The mdoc reads back with the docType as its id, the issuer's display
-	// metadata, the MSO's validity dates, and the signed element values. The
-	// dates are pinned to the ones the generator's metadata.json recorded.
+	// metadata, the MSO's validity dates, and the signed element values.
 	mdoc := findMdocCredentialByDocType(t, creds, avDocType)
 	require.Equal(t, avCredentialDisplayName, mdoc.Name)
 	require.Equal(t, "https://localhost:8443/eudi-pid-issuer-py", mdoc.Issuer.Id)
@@ -541,6 +540,22 @@ func TestClientStorageRegressionV1_4_0(t *testing.T) {
 	require.Len(t, logs[3].DisclosureLog.Credentials, 1)
 	requireLogCredential(t, logs[3].DisclosureLog.Credentials[0], storedAvLogCredential(), "mdoc disclosure log")
 
+	// EUDI logo files survive a reload. The fixture carries the encrypted logo
+	// files next to the databases, and a log entry finds its logo by the
+	// credential, issuer or verifier id it recorded. Log entries are checked
+	// rather than credentials on purpose: a credential's logo is looked up by
+	// URL and downloaded again at startup when missing, which would hide a
+	// broken logo store, while a log entry's logo cannot be fetched again.
+	requireValidImage(t, logs[3].DisclosureLog.Credentials[0].Image, "mdoc disclosure log credential")
+	require.NotNil(t, logs[3].DisclosureLog.Verifier)
+	requireValidImage(t, logs[3].DisclosureLog.Verifier.Image, "mdoc disclosure log verifier")
+	for i := range 2 {
+		removal := logs[i].RemovalLog
+		require.NotNil(t, removal)
+		require.Equal(t, "https://localhost:8443/vct/test", removal.Credentials[0].CredentialId)
+		requireValidImage(t, removal.Credentials[0].Issuer.Image, "removed EUDI credential's issuer")
+	}
+
 	// The mdoc issuance log names the docType, like the SD-JWT issuance logs
 	// name their vct.
 	vciIssued := map[string]int{}
@@ -576,24 +591,24 @@ func TestClientStorageRegressionV1_4_0(t *testing.T) {
 	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
 }
 
-// The validity dates in the v1.4.0 fixture's mdoc MSO, as recorded in its
-// metadata.json.
+// Values stored in the v1.4.0 fixture.
 const (
 	// veramoIssuerIdV1_4_0 is the id the v1.4.0 fixture stored for the veramo
 	// test issuer; older fixtures stored a did:web identifier.
 	veramoIssuerIdV1_4_0 = "https://localhost:8443/test-issuer"
+
+	// The validity dates in the mdoc's MSO: issued 2026-09-23, valid 90 days.
 
 	avMdocIssuanceDate int64 = 1790121600
 	avMdocExpiryDate   int64 = 1797897600
 )
 
 // storedAvLogCredential is the age credential as a v1.4.0 fixture log entry
-// reads back. Unlike a live wallet's, it carries no image: the log stores only
-// the logo URI, and the bytes live in the eudi filesystem, which is not part of
-// the snapshot.
+// reads back: its logo comes from the fixture's EUDI logo files, and the issuer
+// publishes no logo of its own.
 func storedAvLogCredential() expectedLogCredential {
 	expected := avLogCredential(avAttrAgeOver18())
-	expected.HasImage = new(false)
+	expected.HasIssuerImage = new(false)
 	expected.IssuanceDate = new(avMdocIssuanceDate)
 	expected.ExpiryDate = new(avMdocExpiryDate)
 	return expected
@@ -956,6 +971,16 @@ func loadClientFromFixture(t *testing.T, db2Path string) (*client.Client, *MockS
 	if _, err := os.Stat(eudiDBSrc); err == nil {
 		copyFile(t, eudiDBSrc, eudiDBDest)
 		hasEudiDB = true
+	}
+
+	// Copy the EUDI logo files in when the fixture has them (v1.4.0+). Older
+	// fixtures don't, and load with no EUDI images.
+	logosSrc := filepath.Join(filepath.Dir(db2Path), eudiLogosFixtureDir)
+	for _, container := range eudiLogoContainers {
+		from := filepath.Join(logosSrc, container)
+		if _, err := os.Stat(from); err == nil {
+			require.NoError(t, common.CopyDirectory(from, filepath.Join(storagePath, "eudi", container, "logos")))
+		}
 	}
 
 	// Load the signer key from the fixture

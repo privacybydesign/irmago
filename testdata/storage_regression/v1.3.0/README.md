@@ -33,11 +33,8 @@ file is not plaintext (`sqlcipher.IsPlaintext` is false).
 | `eudi_client_db` | EUDI SQLCipher database (`yivi-eudi.db`): OpenID4VCI credentials, logs, and status-list state. **Encrypted at rest.** |
 | `ecdsa_sk.pem` | Client signer key. |
 | `keyshare_users.json` | Keyshare users preloaded into the test keyshare server. |
-| `metadata.json` | Human-readable dump of the stored credentials and logs. |
 
-Note that `metadata.json` is dumped from the live client that generated the snapshot,
-so it shows logo bytes and MIME types that the databases themselves do not hold — the
-EUDI database stores only a logo *URI*, while the bytes live in the eudi filesystem,
+The EUDI database stores only a logo *URI*; the bytes live in the eudi filesystem,
 which is not part of this snapshot. EUDI credentials and log entries therefore load
 without an image here.
 

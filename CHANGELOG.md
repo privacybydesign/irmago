@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 ### Internal
 - Storage regression snapshot for v1.4.0 (`testdata/storage_regression/v1.4.0/`), verified by `TestClientStorageRegressionV1_4_0`. It is the first snapshot that holds an `mso_mdoc` credential: the fixture generator now issues an age-verification mdoc (`eu.europa.ec.av.1`) from the Python PID issuer and discloses it once to the EUDI reference verifier, so the snapshot carries the mdoc tables, a batch with one spent instance, and mdoc issuance and disclosure logs. The shared check that a reloaded client still works now also issues and discloses a fresh mdoc, for every snapshot version.
+- The v1.4.0 snapshot also carries the EUDI logo files (`eudi_logos/`), and `TestClientStorageRegressionV1_4_0` checks that log entries still find their logos after a reload. A change to how logo files are encrypted or named would otherwise go unnoticed: nothing fails, the images are just missing, and a log entry's logo cannot be downloaded again.
+- The storage regression snapshots no longer include a `metadata.json` dump. No test read it, it was taken from the live wallet rather than from the stored files (so it held image bytes the databases never had), and each snapshot's README already describes its contents. Together the files were about 3MB, mostly base64 logos.
 
 
 ## [1.4.0] - 2026-09-21

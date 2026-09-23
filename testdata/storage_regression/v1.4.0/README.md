@@ -13,6 +13,8 @@ the `v1.3.0` snapshot:
   (`mdoc_batches`, `mdoc_batch_instances`, `mdoc_device_keys`): one age-verification
   batch of 30 instances, one of them spent by a disclosure, plus mdoc issuance and
   disclosure log entries.
+- **EUDI logo files are part of the snapshot for the first time** (`eudi_logos/`), so
+  the test can check that logos stored by an older version still load.
 - **The veramo test issuer is stored under its credential issuer URL**
   (`https://localhost:8443/test-issuer`), where older snapshots stored a `did:web`
   identifier.
@@ -25,13 +27,14 @@ Like the `v1.1.1` and `v1.3.0` snapshots, its `eudi_client_db` is **born encrypt
 |------|-------------|
 | `bbolt_client_db` | IRMA client bbolt database (idemix credentials, IRMA-issued SD-JWTs, logs). Copied to `db2` on load. |
 | `eudi_client_db` | EUDI SQLCipher database (`yivi-eudi.db`): OpenID4VCI SD-JWT and mdoc credentials, logs, and status-list state. **Encrypted at rest.** |
+| `eudi_logos/` | EUDI logo files, one folder per container (`credentials`, `issuers`, `verifiers`). Encrypted, with HMAC file names. Copied to `eudi/<container>/logos/` on load. |
 | `ecdsa_sk.pem` | Client signer key. |
 | `keyshare_users.json` | Keyshare users preloaded into the test keyshare server. |
-| `metadata.json` | Human-readable dump of the stored credentials and logs. |
 
-As with the older snapshots, `metadata.json` shows logo bytes that the databases do not
-hold: the EUDI database stores only a logo URI. EUDI credentials and log entries,
-including the mdoc ones, therefore load without an image.
+The databases hold no image bytes. IRMA logos come from the scheme in
+`irma_configuration`. An EUDI logo is an encrypted file in `eudi_logos/`, found by the
+key the database or log entry recorded: the logo URL for a credential or issuer, and
+the credential, issuer or verifier id for a log entry.
 
 ## Sessions performed
 
@@ -71,6 +74,11 @@ The same session script as the `v1.3.0` snapshot, plus two mdoc steps:
 - the mdoc issuance and disclosure log entries: credential, format, names, attribute,
   dates;
 - log count, types and order;
+- that EUDI logos stored by the generator still load: the mdoc disclosure entry's
+  credential and verifier logos, and the issuer logo in the removal entries of the
+  removed `vct/test` credentials. Log entries are checked rather than credentials,
+  because a missing credential logo is downloaded again at startup, which would hide a
+  broken logo store; a log entry's logo cannot be fetched again;
 - that the loaded client can still run fresh sessions of every kind, including a fresh
   mdoc issuance and disclosure.
 

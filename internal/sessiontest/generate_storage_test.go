@@ -284,6 +284,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	copyFile(t, filepath.Join(storagePath, "db2"), filepath.Join(versionDir, "bbolt_client_db"))
 	copyFile(t, filepath.Join(storagePath, "eudi", storage.DbFilename), filepath.Join(versionDir, "eudi_client_db"))
 	copyFile(t, filepath.Join(storagePath, "ecdsa_sk.pem"), filepath.Join(versionDir, "ecdsa_sk.pem"))
+	copyEudiLogos(t, filepath.Join(storagePath, "eudi"), filepath.Join(versionDir, eudiLogosFixtureDir))
 
 	// Save the keyshare server's user database so the regression test can
 	// start a keyshare server that recognizes the enrolled user.
@@ -291,16 +292,6 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	keyshareUsersBts, err := json.Marshal(keyshareUsers)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(versionDir, "keyshare_users.json"), keyshareUsersBts, 0644))
-
-	metadata := map[string]any{
-		"description": "Client storage generated for regression testing",
-		"credentials": creds,
-		"logs":        logs,
-		"aes_key":     "asdfasdfasdfasdfasdfasdfasdfasdf",
-	}
-	metadataBts, err := json.MarshalIndent(metadata, "", "  ")
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(versionDir, "metadata.json"), metadataBts, 0644))
 
 	fmt.Printf("Storage written to %s\n", versionDir)
 }
@@ -376,6 +367,27 @@ func credentialAttrValue(cred *clientmodels.Credential, key string) string {
 		}
 	}
 	return ""
+}
+
+// eudiLogosFixtureDir holds a fixture's EUDI logo files, one subdirectory per
+// filesystem container (credentials, issuers, verifiers).
+const eudiLogosFixtureDir = "eudi_logos"
+
+// eudiLogoContainers are the EUDI filesystem containers that keep logos.
+var eudiLogoContainers = []string{"credentials", "issuers", "verifiers"}
+
+// copyEudiLogos copies the logos directory of each EUDI filesystem container
+// from src/<container>/logos to dst/<container>. The databases store only a
+// logo's key; the bytes are these encrypted files, named by an HMAC of the key.
+func copyEudiLogos(t *testing.T, src, dst string) {
+	t.Helper()
+	for _, container := range eudiLogoContainers {
+		from := filepath.Join(src, container, "logos")
+		if _, err := os.Stat(from); os.IsNotExist(err) {
+			continue
+		}
+		require.NoError(t, common.CopyDirectory(from, filepath.Join(dst, container)))
+	}
 }
 
 func copyFile(t *testing.T, src, dst string) {
