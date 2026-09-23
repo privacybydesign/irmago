@@ -42,6 +42,14 @@ type DeviceKeyBinder interface {
 	SignerForDeviceKey(deviceKey *ecdsa.PublicKey) (stdmdoc.DeviceSigner, error)
 }
 
+// RevocationChecker reports whether a stored mdoc instance is currently
+// revoked, mirroring eudi_sdjwt_dcql.RevocationChecker: the disclosure planner
+// depends only on this narrow verb, keeping the Token Status List mechanics out
+// of this package (see services.RevocationService).
+type RevocationChecker interface {
+	IsMdocRevoked(instance *models.MdocBatchInstance) bool
+}
+
 // MdocDcqlHandler implements dcql.DcqlCredentialQueryHandler for mso_mdoc
 // credentials stored in the eudi storage (SQLite).
 type MdocDcqlHandler struct {
@@ -49,6 +57,10 @@ type MdocDcqlHandler struct {
 	store         db.MdocStore
 	deviceKeys    DeviceKeyBinder
 	currentLocale *clientmodels.CurrentLocale
+
+	// revocation determines a candidate's Revoked flag. Nil disables the check
+	// (candidates are then never flagged revoked).
+	revocation RevocationChecker
 }
 
 // NewMdocDcqlHandler creates a new handler.
@@ -62,17 +74,22 @@ type MdocDcqlHandler struct {
 // prepares. Pass services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(
 // eudiStorage.Db())) for the default software, storage-backed signer, or a
 // hardware-backed implementation to keep the device private key out of process.
+//
+// revocation sets the Revoked flag on candidates and log entries; pass the
+// wallet's services.RevocationService, or nil to never flag anything revoked.
 func NewMdocDcqlHandler(
 	eudiStorage storage.Storage,
 	store db.MdocStore,
 	currentLocale *clientmodels.CurrentLocale,
 	deviceKeys DeviceKeyBinder,
+	revocation RevocationChecker,
 ) *MdocDcqlHandler {
 	return &MdocDcqlHandler{
 		storage:       eudiStorage,
 		store:         store,
 		deviceKeys:    deviceKeys,
 		currentLocale: currentLocale,
+		revocation:    revocation,
 	}
 }
 
@@ -153,6 +170,14 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 			continue
 		}
 
+		// Revocation is per instance, like in eudi_sdjwt_dcql: each copy in a
+		// batch carries its own status list entry. The copy asked about is the
+		// one PrepareDisclosure will present.
+		instance, err := h.store.GetUnusedInstance(batch.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
+		}
+
 		signedAt := batch.SignedAt.Unix()
 		candidate := clientmodels.SelectableCredentialInstance{
 			CredentialId:                batch.DocType,
@@ -165,6 +190,8 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 			ExpiryDate:                  batchExpiryUnix(batch),
 			IssuanceDate:                &signedAt,
 			Image:                       h.credentialImage(batch, locale),
+			Revoked:                     h.isRevoked(instance),
+			RevocationSupported:         instance.StatusListURI != nil,
 		}
 
 		result.OwnedCandidates = append(result.OwnedCandidates, &candidate)
@@ -281,7 +308,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 			}
 		}
 
-		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths, sel.Claims))
+		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, instance, sel.ClaimPaths, sel.Claims))
 	}
 
 	return result, nil
@@ -652,7 +679,12 @@ func batchExpiryUnix(batch *models.MdocBatch) *int64 {
 // The verifier's intent to retain is recorded with each row, as the screen
 // showed it: a log that forgets it leaves the user unable to see later what
 // they agreed to.
-func (h *MdocDcqlHandler) buildLogCredential(batch *models.MdocBatch, claimPaths [][]any, claims []dcql.Claim) clientmodels.LogCredential {
+func (h *MdocDcqlHandler) buildLogCredential(
+	batch *models.MdocBatch,
+	instance *models.MdocBatchInstance,
+	claimPaths [][]any,
+	claims []dcql.Claim,
+) clientmodels.LogCredential {
 	locale := h.currentLocale.Get()
 	attrs := services.BuildMdocAttributesForElements(batch, services.UniqueMdocElementRefs(claimPaths), locale)
 	attrs = stampRequestFacts(attrs, claims, false)
@@ -667,5 +699,14 @@ func (h *MdocDcqlHandler) buildLogCredential(batch *models.MdocBatch, claimPaths
 		Attributes:   attrs,
 		ExpiryDate:   batchExpiryUnix(batch),
 		IssuanceDate: &signedAt,
+		// Read off the presented instance, the same way FindCandidates reports
+		// them on the plan, so the log shows afterwards that what was shared had
+		// already been revoked.
+		Revoked:             h.isRevoked(instance),
+		RevocationSupported: instance.StatusListURI != nil,
 	}
+}
+
+func (h *MdocDcqlHandler) isRevoked(instance *models.MdocBatchInstance) bool {
+	return h.revocation != nil && h.revocation.IsMdocRevoked(instance)
 }

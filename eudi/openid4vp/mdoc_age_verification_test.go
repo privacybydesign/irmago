@@ -662,6 +662,7 @@ func newAvMdocHandlerForLocale(t *testing.T, eudiStorage storage.Storage, locale
 		db.NewMdocStore(eudiStorage.Db()),
 		clientmodels.NewCurrentLocale(locale),
 		services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(eudiStorage.Db())),
+		nil,
 	)
 }
 

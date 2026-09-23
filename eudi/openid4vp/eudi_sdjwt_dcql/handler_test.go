@@ -162,7 +162,7 @@ func TestFindCandidates_ValidCredentialIncluded(t *testing.T) {
 // Status List machinery (that lives with services.RevocationService).
 type stubRevocation struct{ revoked bool }
 
-func (s stubRevocation) IsRevoked(*models.SdJwtVcBatchInstance) bool { return s.revoked }
+func (s stubRevocation) IsSdJwtVcRevoked(*models.SdJwtVcBatchInstance) bool { return s.revoked }
 
 // TestFindCandidates_RevokedSurfaced pins the IRMA-parity contract: a revoked
 // SD-JWT VC is NOT dropped or refused during planning. It still appears as an

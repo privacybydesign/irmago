@@ -76,7 +76,8 @@ func (c *Checker) Refresh(ctx context.Context, ref Reference) (Status, error) {
 // (StatusUnknown, nil). A cached entry that no longer verifies is dropped (by
 // verifyAndDecode) and returned as (StatusUnknown, err) for logging. Callers
 // that rely on the background refresh to keep the cache warm treat any
-// non-definitive result as advisory (see services.RevocationService.IsRevoked).
+// non-definitive result as advisory (see services.RevocationService.IsSdJwtVcRevoked
+// and IsMdocRevoked).
 func (c *Checker) CheckCached(ref Reference) (Status, error) {
 	if ref.URI == "" {
 		return StatusUnknown, fmt.Errorf("%w: empty URI", ErrUnauthorized)

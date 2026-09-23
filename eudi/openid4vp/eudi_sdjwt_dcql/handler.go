@@ -51,7 +51,7 @@ func isHttpVct(vct string) bool {
 // revoked. The disclosure planner depends only on this narrow verb, keeping the
 // Token Status List mechanics out of this package (see services.RevocationService).
 type RevocationChecker interface {
-	IsRevoked(instance *models.SdJwtVcBatchInstance) bool
+	IsSdJwtVcRevoked(instance *models.SdJwtVcBatchInstance) bool
 }
 
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
@@ -173,7 +173,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Attributes:                  attributes,
 			ExpiryDate:                  dcql.BatchExpiryUnix(batch),
 			Image:                       image,
-			Revoked:                     h.revocation != nil && h.revocation.IsRevoked(instance),
+			Revoked:                     h.revocation != nil && h.revocation.IsSdJwtVcRevoked(instance),
 			RevocationSupported:         instance.StatusListURI != nil,
 		}
 
@@ -910,7 +910,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(
 		// Read off the disclosed instance, the same way FindCandidates reports
 		// them on the plan. A log that forgets them leaves the user unable to see
 		// later that what they shared was already revoked.
-		Revoked:             h.revocation != nil && h.revocation.IsRevoked(instance),
+		Revoked:             h.revocation != nil && h.revocation.IsSdJwtVcRevoked(instance),
 		RevocationSupported: instance.StatusListURI != nil,
 	}
 

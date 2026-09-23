@@ -120,6 +120,74 @@ func TestFindCandidatesAndPrepareDisclosureRoundTrip(t *testing.T) {
 // query did not ask for never reaches the verifier, which is the property
 // selective disclosure exists for and the one a wire-format regression breaks
 // most quietly.
+// stubRevocation is an injectable RevocationChecker, so these tests exercise
+// the handler's use of the flag without any Token Status List machinery (that
+// lives with services.RevocationService). It records the instance it was asked
+// about, so a test can check the question was about a real stored copy.
+type stubRevocation struct {
+	revoked bool
+	asked   *[]*models.MdocBatchInstance
+}
+
+func (s stubRevocation) IsMdocRevoked(instance *models.MdocBatchInstance) bool {
+	if s.asked != nil {
+		*s.asked = append(*s.asked, instance)
+	}
+	return s.revoked
+}
+
+// TestRevokedMdocIsOfferedAndLoggedAsRevoked pins the IRMA-parity contract for
+// mso_mdoc, as eudi_sdjwt_dcql does for SD-JWT VC: a revoked credential is not
+// dropped from the plan. It is offered with Revoked=true, so the frontend can
+// decide, and the log records that what was shared had been revoked.
+func TestRevokedMdocIsOfferedAndLoggedAsRevoked(t *testing.T) {
+	env := newTestEnv(t)
+	var asked []*models.MdocBatchInstance
+	env.handler.revocation = stubRevocation{revoked: true, asked: &asked}
+
+	query := dcql.CredentialQuery{
+		Id:     "av",
+		Format: string(clientmodels.Format_MsoMdoc),
+		Meta:   &dcql.Meta{DocTypeValue: testDocType},
+		Claims: []dcql.Claim{{Path: []any{testNamespace, "age_over_18"}}},
+	}
+	result, err := env.handler.FindCandidates(query)
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1, "a revoked credential is still offered")
+	require.True(t, result.OwnedCandidates[0].Revoked)
+	require.NotEmpty(t, asked)
+	require.False(t, asked[0].ID.IsNil(), "the check must be about a stored instance")
+
+	prepared, err := env.handler.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:              query.Id,
+		CredentialHash:       env.hash,
+		ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},
+		RequireHolderBinding: true,
+		ResponseUri:          testResponseU,
+	}}, testNonce, testClientId)
+	require.NoError(t, err)
+	require.Len(t, prepared.CredentialLogs, 1)
+	require.True(t, prepared.CredentialLogs[0].Revoked, "the log must record that the credential was revoked")
+}
+
+// TestMdocWithoutRevocationCheckerIsNeverRevoked covers the nil checker the
+// constructor allows, and a credential without a status reference.
+func TestMdocWithoutRevocationCheckerIsNeverRevoked(t *testing.T) {
+	env := newTestEnv(t)
+
+	result, err := env.handler.FindCandidates(dcql.CredentialQuery{
+		Id:     "av",
+		Format: string(clientmodels.Format_MsoMdoc),
+		Meta:   &dcql.Meta{DocTypeValue: testDocType},
+		Claims: []dcql.Claim{{Path: []any{testNamespace, "age_over_18"}}},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+	require.False(t, result.OwnedCandidates[0].Revoked)
+	require.False(t, result.OwnedCandidates[0].RevocationSupported,
+		"this credential carries no status reference")
+}
+
 func TestPrepareDisclosureRejectsUndisclosedElement(t *testing.T) {
 	env := newTestEnv(t)
 
@@ -575,7 +643,7 @@ type testEnv struct {
 // this process cannot extract.
 func (e *testEnv) withDeviceKeyBinder(binder DeviceKeyBinder) *testEnv {
 	withBinder := *e
-	withBinder.handler = NewMdocDcqlHandler(e.eudiStorage, e.store, clientmodels.NewCurrentLocale("en"), binder)
+	withBinder.handler = NewMdocDcqlHandler(e.eudiStorage, e.store, clientmodels.NewCurrentLocale("en"), binder, nil)
 	return &withBinder
 }
 
@@ -684,7 +752,7 @@ func newTestEnvWithExpiry(t *testing.T, batchSize uint, expiresAt *time.Time) *t
 		// The production binder, wired as client.New wires it, so every test that
 		// does not substitute one is covering the real path.
 		handler: NewMdocDcqlHandler(eudiStorage, store, clientmodels.NewCurrentLocale("en"),
-			services.NewMdocDeviceKeyBinder(keyStore)),
+			services.NewMdocDeviceKeyBinder(keyStore), nil),
 		verifier:    verifier,
 		store:       store,
 		hash:        hash,

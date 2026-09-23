@@ -18,8 +18,8 @@ import (
 // CredentialStatusStore per format, and exposes the three ways the wallet
 // consults revocation:
 //
-//   - IsRevoked: a cached (no-fetch) check for one instance, used by the
-//     OpenID4VP disclosure planner;
+//   - IsSdJwtVcRevoked / IsMdocRevoked: a cached (no-fetch) check for one
+//     instance, used by the OpenID4VP disclosure planners;
 //   - RefreshStatuses: the background sweep that re-fetches and writes back each
 //     stored instance's LastKnownStatus, and keeps the status-list cache warm;
 //   - BatchRevocation: per-batch flags derived from stored status, for the
@@ -36,7 +36,7 @@ type RevocationService struct {
 // NewRevocationService returns a service backed by the given Token Status
 // List Checker, consulting every given store for status-referenced
 // instances. A nil checker disables the cached-read and refresh paths
-// (IsRevoked returns false, RefreshStatuses is a no-op); the stored-status
+// (IsSdJwtVcRevoked/IsMdocRevoked return false, RefreshStatuses is a no-op); the stored-status
 // path (BatchRevocation) still works. One store per credential format that
 // carries a Token Status List reference (today: SD-JWT VC and mso_mdoc).
 func NewRevocationService(checker *statuslist.Checker, stores ...db.CredentialStatusStore) *RevocationService {
@@ -56,7 +56,7 @@ func (s *RevocationService) Checker() *statuslist.Checker {
 // application-specific status all count as revoked (fail-closed on anything the
 // issuer flags). UNKNOWN is the sole exception — it means "no status
 // information" (cold cache / not yet checked), not a bad status, so it stays
-// advisory not-revoked (see IsRevoked and the cold-cache behaviour).
+// advisory not-revoked (see isReferenceRevoked and the cold-cache behaviour).
 // TODO: the client model has no separate suspended state, so suspension is
 // surfaced as "revoked" for now — add a distinct suspended state (clientmodels
 // + frontend) to show it as temporary rather than permanent.
@@ -64,23 +64,35 @@ func statusRevoked(s statuslist.Status) bool {
 	return s != statuslist.StatusValid && s != statuslist.StatusUnknown
 }
 
-// IsRevoked reports whether the instance's credential reads INVALID according
-// to the locally cached Token Status List — no network fetch. An instance
-// without a status_list reference is never revoked. A missing or
+// IsSdJwtVcRevoked reports whether the SD-JWT VC instance reads revoked
+// according to the locally cached Token Status List -- no network fetch. See
+// isReferenceRevoked for what counts as revoked.
+func (s *RevocationService) IsSdJwtVcRevoked(instance *models.SdJwtVcBatchInstance) bool {
+	return s.isReferenceRevoked(instance.StatusListURI, instance.StatusListIdx, instance.ID)
+}
+
+// IsMdocRevoked is IsSdJwtVcRevoked for an mso_mdoc instance.
+func (s *RevocationService) IsMdocRevoked(instance *models.MdocBatchInstance) bool {
+	return s.isReferenceRevoked(instance.StatusListURI, instance.StatusListIdx, instance.ID)
+}
+
+// isReferenceRevoked reports whether the entry at uri/idx reads revoked
+// according to the locally cached Token Status List -- no network fetch. An
+// instance without a status_list reference is never revoked. A missing or
 // undeterminable cached status reads as NOT revoked: the flag is advisory, the
 // cache is kept warm by RefreshStatuses, and the verifier's own status check is
 // the backstop.
 //
-// The check never blocks disclosure — revocation is surfaced as a flag for the
+// The check never blocks disclosure -- revocation is surfaced as a flag for the
 // frontend, with the verifier as the backstop.
-func (s *RevocationService) IsRevoked(instance *models.SdJwtVcBatchInstance) bool {
-	if s.checker == nil || instance.StatusListURI == nil || instance.StatusListIdx == nil {
+func (s *RevocationService) isReferenceRevoked(uri *string, idx *uint64, instanceID datatypes.UUID) bool {
+	if s.checker == nil || uri == nil || idx == nil {
 		return false
 	}
-	ref := statuslist.Reference{URI: *instance.StatusListURI, Index: *instance.StatusListIdx}
+	ref := statuslist.Reference{URI: *uri, Index: *idx}
 	status, err := s.checker.CheckCached(ref)
 	if err != nil {
-		eudi.Logger.Warnf("revocation: cached status read for instance %s: %v", instance.ID, err)
+		eudi.Logger.Warnf("revocation: cached status read for instance %s: %v", instanceID, err)
 		return false // advisory: undeterminable status -> not flagged
 	}
 	return statusRevoked(status)

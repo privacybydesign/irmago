@@ -194,7 +194,7 @@ func New(
 	// stored. Replacing it with a StrongBox / Secure Enclave implementation is the
 	// one change needed to keep mdoc device keys out of this process.
 	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, mdocCredentialStore, currentLocale,
-		services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(eudiStorage.Db())))
+		services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(eudiStorage.Db())), revocationService)
 
 	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler, mdocDcqlHandler}, verifierValidator, currentLocale)
 	if err != nil {
