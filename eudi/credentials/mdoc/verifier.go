@@ -482,7 +482,7 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 
 	// Step 2: parse x5chain (unprotected header 33): certs[0] = DS cert (leaf),
 	// certs[1..] = intermediates (IACA cert)
-	certs, err := coseutil.X5Chain(msg)
+	certs, err := coseutil.UnprotectedX5Chain(msg)
 	if err != nil {
 		result.Error = fmt.Sprintf("issuerAuth: %v", err)
 		return nil, result

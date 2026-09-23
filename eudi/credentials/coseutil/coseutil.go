@@ -105,18 +105,33 @@ func DecodeSign1(data []byte) (*cose.Sign1Message, error) {
 	return &msg, nil
 }
 
-// X5Chain parses the certificate chain in the message's unprotected x5chain
-// header (label 33, RFC 9360), leaf first. It accepts both encodings the RFC
-// allows: an array of certificates, and a single bare certificate.
+// X5Chain parses the certificate chain in the message's x5chain header
+// (label 33, RFC 9360), leaf first. RFC 9360 lets the header sit in either
+// the protected or the unprotected bucket. When both carry one, the
+// protected one wins, because the signature covers it.
 //
 // It only parses. Whether the chain is trusted is for the caller to decide,
 // against its own trust anchors.
 func X5Chain(msg *cose.Sign1Message) ([]*x509.Certificate, error) {
+	if raw, ok := msg.Headers.Protected[cose.HeaderLabelX5Chain]; ok {
+		return parseX5Chain(raw)
+	}
+	return UnprotectedX5Chain(msg)
+}
+
+// UnprotectedX5Chain is like X5Chain but only looks in the unprotected
+// header. ISO/IEC 18013-5 requires the mdoc issuerAuth chain to sit there.
+func UnprotectedX5Chain(msg *cose.Sign1Message) ([]*x509.Certificate, error) {
 	raw, ok := msg.Headers.Unprotected[cose.HeaderLabelX5Chain]
 	if !ok {
 		return nil, fmt.Errorf("no x5chain in header 33")
 	}
+	return parseX5Chain(raw)
+}
 
+// parseX5Chain accepts both encodings RFC 9360 allows: an array of
+// certificates, and a single bare certificate.
+func parseX5Chain(raw any) ([]*x509.Certificate, error) {
 	var ders []any
 	switch v := raw.(type) {
 	case []any:

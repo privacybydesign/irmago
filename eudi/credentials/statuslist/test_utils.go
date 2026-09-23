@@ -90,6 +90,9 @@ type TestStatusListOpts struct {
 	// OmitX5c builds a token without the x5c header, so key
 	// resolution has to go through `kid` instead of the certificate.
 	OmitX5c bool
+	// X5ChainInProtected puts a CWT token's x5chain in the protected
+	// header instead of the unprotected one. JWT tokens ignore it.
+	X5ChainInProtected bool
 }
 
 // SignToken builds a JWT carrying the Status List Token claims and
@@ -198,7 +201,8 @@ func encodeStatusBitsRaw(t *testing.T, statuses map[uint64]uint8, bits int) []by
 
 // SignCWTToken builds a CWT Status List Token (draft-ietf-oauth-status-list-15
 // §5.2) and signs it as a COSE_Sign1 with the signer's key, embedding the
-// certificate in the x5chain unprotected header (33). typ defaults to
+// certificate in the x5chain header (33), unprotected unless
+// opts.X5ChainInProtected is set. typ defaults to
 // StatusListTokenCWTContentType.
 func (s *TestStatusListSigner) SignCWTToken(t *testing.T, opts TestStatusListOpts) []byte {
 	t.Helper()
@@ -238,7 +242,11 @@ func (s *TestStatusListSigner) SignCWTTokenWithTyp(t *testing.T, opts TestStatus
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 	msg.Headers.Protected[cose.HeaderLabelType] = typ
 	if !opts.OmitX5c {
-		msg.Headers.Unprotected[cose.HeaderLabelX5Chain] = [][]byte{s.DERBytes}
+		if opts.X5ChainInProtected {
+			msg.Headers.Protected[cose.HeaderLabelX5Chain] = [][]byte{s.DERBytes}
+		} else {
+			msg.Headers.Unprotected[cose.HeaderLabelX5Chain] = [][]byte{s.DERBytes}
+		}
 	}
 
 	signer, err := cose.NewSigner(cose.AlgorithmES256, s.PrivKey)

@@ -28,6 +28,21 @@ func Test_VerifyStatusListTokenCWT_ValidX5ChainSignature(t *testing.T) {
 	require.Equal(t, StatusInvalid, status)
 }
 
+func Test_VerifyStatusListTokenCWT_X5ChainInProtectedHeader_Accepted(t *testing.T) {
+	signer := NewTestStatusListSigner(t)
+	body := signer.SignCWTToken(t, TestStatusListOpts{
+		Subject:            "https://issuer.example/sl/1",
+		IssuedAt:           time.Now(),
+		Bits:               1,
+		Statuses:           map[uint64]uint8{0: 0},
+		X5ChainInProtected: true,
+	})
+
+	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
+	_, err := verifyStatusListTokenCWT(body, vc, "https://issuer.example/sl/1", time.Now())
+	require.NoError(t, err)
+}
+
 func Test_VerifyStatusListTokenCWT_WrongType_Rejected(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
 	body := signer.SignCWTTokenWithTyp(t, TestStatusListOpts{
