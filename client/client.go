@@ -247,7 +247,7 @@ func New(
 	// (services.NewCredentialFormats), so adding a format is one entry there and
 	// nothing to register here.
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI)
-	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, currentLocale)
+	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, statusChecker, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, currentLocale)
 	openid4vciClient, err := openid4vci.NewClient(
 		common.HTTPClient,
 		eudiConf,

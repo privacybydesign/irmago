@@ -18,13 +18,7 @@ import (
 // a Status List Token is a signed, security-relevant structure, and two
 // parties decoding the same bytes to different claim sets is exactly the
 // shape of a parser-differential attack.
-var statusListCborDecMode = func() cbor.DecMode {
-	mode, err := cbor.DecOptions{DupMapKey: cbor.DupMapKeyEnforcedAPF}.DecMode()
-	if err != nil {
-		panic(fmt.Sprintf("statuslist: invalid CBOR decoder options: %v", err))
-	}
-	return mode
-}()
+var statusListCborDecMode = coseutil.MustDecMode(cbor.DecOptions{DupMapKey: cbor.DupMapKeyEnforcedAPF})
 
 // looksLikeCWT reports whether raw is (very likely) a CBOR-encoded
 // COSE_Sign1 rather than a JWT. A JWT is ASCII — base64url characters and
@@ -70,8 +64,6 @@ type cwtStatusListPayload struct {
 type verifiedStatusListCWT struct {
 	payload cwtStatusListPayload
 }
-
-var _ verifiedStatusListToken = (*verifiedStatusListCWT)(nil)
 
 func (v *verifiedStatusListCWT) ttlSignal() (time.Duration, bool) {
 	return ttlFromClaims(v.payload.TTLSeconds, v.payload.Expiry)

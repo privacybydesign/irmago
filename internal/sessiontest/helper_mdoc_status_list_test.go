@@ -80,19 +80,25 @@ type mdocStatusListServer struct {
 }
 
 // startMdocStatusListServer starts the server for the running test and stops it
-// when the test ends.
-func startMdocStatusListServer(t *testing.T, encoding mdocStatusListEncoding) *mdocStatusListServer {
+// when the test ends. The token is signed by signer, or, when nil, by the
+// issuer's own document signer, as an issuer running its own status list would.
+func startMdocStatusListServer(
+	t *testing.T,
+	encoding mdocStatusListEncoding,
+	signer *statuslist.TestStatusListSigner,
+) *mdocStatusListServer {
 	t.Helper()
 
-	key, chain := pidIssuerSigningIdentity(t)
-	cert, err := x509.ParseCertificate(chain[0])
-	require.NoError(t, err)
+	if signer == nil {
+		key, chain := pidIssuerSigningIdentity(t)
+		cert, err := x509.ParseCertificate(chain[0])
+		require.NoError(t, err)
+		signer = &statuslist.TestStatusListSigner{PrivKey: key, Cert: cert, DERBytes: chain[0]}
+	}
 
 	s := &mdocStatusListServer{
-		t: t,
-		// The issuer's own document signer, as an issuer running its own
-		// status list would use.
-		signer:   &statuslist.TestStatusListSigner{PrivKey: key, Cert: cert, DERBytes: chain[0]},
+		t:        t,
+		signer:   signer,
 		encoding: encoding,
 		// A fresh list per test, so the wallet cannot be served a token it
 		// cached for another test's list.
@@ -119,15 +125,6 @@ func startMdocStatusListServer(t *testing.T, encoding mdocStatusListEncoding) *m
 		_ = s.server.Shutdown(ctx)
 	})
 
-	return s
-}
-
-// withSigner swaps the key the token is signed with, for the tests about a
-// token the wallet must not trust.
-func (s *mdocStatusListServer) withSigner(signer *statuslist.TestStatusListSigner) *mdocStatusListServer {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.signer = signer
 	return s
 }
 

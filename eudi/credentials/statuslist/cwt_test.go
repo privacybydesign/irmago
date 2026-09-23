@@ -176,24 +176,3 @@ func Test_VerifyStatusList_DispatchesByEncoding(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, StatusInvalid, status)
 }
-
-func Test_VerifiedStatusListCWT_TtlSignal(t *testing.T) {
-	t.Run("ttl claim wins", func(t *testing.T) {
-		v := &verifiedStatusListCWT{payload: cwtStatusListPayload{TTLSeconds: 300}}
-		d, ok := v.ttlSignal()
-		require.True(t, ok)
-		require.Equal(t, 300*time.Second, d)
-	})
-	t.Run("falls back to exp", func(t *testing.T) {
-		exp := time.Now().Add(10 * time.Minute)
-		v := &verifiedStatusListCWT{payload: cwtStatusListPayload{Expiry: exp.Unix()}}
-		d, ok := v.ttlSignal()
-		require.True(t, ok)
-		require.InDelta(t, 10*time.Minute, d, float64(time.Second))
-	})
-	t.Run("neither present", func(t *testing.T) {
-		v := &verifiedStatusListCWT{}
-		_, ok := v.ttlSignal()
-		require.False(t, ok)
-	})
-}

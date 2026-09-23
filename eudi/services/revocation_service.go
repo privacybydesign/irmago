@@ -42,14 +42,6 @@ func NewRevocationService(checker *statuslist.Checker, stores ...db.CredentialSt
 	return &RevocationService{checker: checker, stores: stores}
 }
 
-// Checker returns the underlying Token Status List checker, for a format's
-// own verifier (e.g. mdoc.Verifier.SetStatusChecker) that needs to run its
-// own fail-closed check at parse time rather than going through
-// RevocationService's advisory read paths.
-func (s *RevocationService) Checker() *statuslist.Checker {
-	return s.checker
-}
-
 // statusRevoked is the one revocation policy shared by every path: a credential
 // is usable only when it reads VALID. INVALID, SUSPENDED, and any
 // application-specific status all count as revoked (fail-closed on anything the

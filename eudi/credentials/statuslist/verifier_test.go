@@ -196,7 +196,7 @@ func Test_VerifyStatusListToken_TTLSignal_Precedence(t *testing.T) {
 		TTLSeconds: 60,
 		Expiry:     time.Now().Add(2 * time.Hour).Unix(),
 	}}
-	d, ok := v.payloadTTLSignal()
+	d, ok := v.ttlSignal()
 	require.True(t, ok)
 	require.Equal(t, time.Minute, d)
 }
@@ -204,7 +204,7 @@ func Test_VerifyStatusListToken_TTLSignal_Precedence(t *testing.T) {
 func Test_VerifyStatusListToken_TTLSignal_FallsBackToExp(t *testing.T) {
 	exp := time.Now().Add(30 * time.Minute)
 	v := &verifiedStatusList{payload: statusListPayload{Expiry: exp.Unix()}}
-	d, ok := v.payloadTTLSignal()
+	d, ok := v.ttlSignal()
 	require.True(t, ok)
 	// Allow a small window so the test isn't time-sensitive.
 	require.InDelta(t, 30*time.Minute, d, float64(2*time.Second))
@@ -214,7 +214,7 @@ func Test_VerifyStatusListToken_TTLSignal_AbsentWhenNoTTLorExp(t *testing.T) {
 	// No ttl and no exp: the token advertises no lifetime, so the caller
 	// falls back to the HTTP max-age (and ultimately ClampTTL's default).
 	v := &verifiedStatusList{}
-	_, ok := v.payloadTTLSignal()
+	_, ok := v.ttlSignal()
 	require.False(t, ok)
 }
 

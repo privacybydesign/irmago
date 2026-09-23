@@ -6,8 +6,6 @@ import (
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
-
-	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
 // CredentialStatusInstance is an instance's status_list reference.
@@ -60,31 +58,28 @@ type CredentialStatusStore interface {
 // so both stores share the CredentialStatusStore queries below. The status
 // columns themselves are named the same in every instance table.
 type statusTables struct {
-	instanceModel any
-	instances     string // instance table
-	batches       string // batch table
-	batchFK       string // instance column pointing at the batch
+	instances string // instance table
+	batches   string // batch table
+	batchFK   string // instance column pointing at the batch
 }
 
 var (
 	sdJwtVcStatusTables = statusTables{
-		instanceModel: &models.SdJwtVcBatchInstance{},
-		instances:     "issued_credential_instances",
-		batches:       "credential_batches",
-		batchFK:       "credential_batch_id",
+		instances: "issued_credential_instances",
+		batches:   "credential_batches",
+		batchFK:   "credential_batch_id",
 	}
 	mdocStatusTables = statusTables{
-		instanceModel: &models.MdocBatchInstance{},
-		instances:     "mdoc_batch_instances",
-		batches:       "mdoc_batches",
-		batchFK:       "mdoc_batch_id",
+		instances: "mdoc_batch_instances",
+		batches:   "mdoc_batches",
+		batchFK:   "mdoc_batch_id",
 	}
 )
 
 func (t statusTables) listInstancesWithStatusReference(db *gorm.DB) ([]CredentialStatusInstance, error) {
 	var out []CredentialStatusInstance
 	err := db.
-		Model(t.instanceModel).
+		Table(t.instances).
 		Select("id AS instance_id, " +
 			t.batchFK + " AS batch_id, " +
 			"status_list_uri AS status_list_uri, " +
@@ -98,7 +93,7 @@ func (t statusTables) listInstancesWithStatusReference(db *gorm.DB) ([]Credentia
 func (t statusTables) listStatusReferencedInstanceStatuses(db *gorm.DB) ([]BatchInstanceStatus, error) {
 	var out []BatchInstanceStatus
 	err := db.
-		Model(t.instanceModel).
+		Table(t.instances).
 		Select(t.batches + ".hash AS hash, " +
 			t.instances + ".last_known_status AS last_known_status").
 		Joins("JOIN " + t.batches + " ON " + t.batches + ".id = " + t.instances + "." + t.batchFK).
@@ -111,7 +106,7 @@ func (t statusTables) updateInstanceStatus(db *gorm.DB, instanceID datatypes.UUI
 	if instanceID.IsNil() {
 		return fmt.Errorf("instanceID is required")
 	}
-	res := db.Model(t.instanceModel).
+	res := db.Table(t.instances).
 		Where("id = ?", instanceID).
 		Updates(map[string]any{
 			"last_known_status":    status,

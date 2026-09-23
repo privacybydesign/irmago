@@ -10,8 +10,19 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/fxamacker/cbor/v2"
 	cose "github.com/veraison/go-cose"
 )
+
+// MustDecMode builds a CBOR decoder from options written in code, which can
+// only be wrong at build time, so it panics rather than returning the error.
+func MustDecMode(opts cbor.DecOptions) cbor.DecMode {
+	mode, err := opts.DecMode()
+	if err != nil {
+		panic(fmt.Sprintf("invalid CBOR decoder options: %v", err))
+	}
+	return mode
+}
 
 // SignatureAlgorithms are the algorithms a COSE_Sign1 may be signed with.
 //

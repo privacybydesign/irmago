@@ -81,22 +81,12 @@ func newMdocTestEnv(t *testing.T) *mdocTestEnv {
 // stored under thumbprint, and runs it through the production parser.
 func (e *mdocTestEnv) issueBoundTo(t *testing.T, thumbprint string, elements map[string]any) *ParsedCredential {
 	t.Helper()
-	stored, err := e.keys.GetByThumbprint(thumbprint)
-	require.NoError(t, err)
-	priv, err := decodePKCS8PrivateKey(stored.PrivateKey)
-	require.NoError(t, err)
-	return e.issueFor(t, &priv.PublicKey, elements)
+	return e.issueBoundToWithStatus(t, thumbprint, elements, nil)
 }
 
 func (e *mdocTestEnv) issueFor(t *testing.T, devicePub *ecdsa.PublicKey, elements map[string]any) *ParsedCredential {
 	t.Helper()
-	issued, err := e.issuer.Issue(testMdocDocType, testMdocDocType, elements, devicePub)
-	require.NoError(t, err)
-	raw, err := cbor.Marshal(issued)
-	require.NoError(t, err)
-	parsed, err := e.parser.ParseAndVerify(base64.RawURLEncoding.EncodeToString(raw), testMdocIssuerURL, true)
-	require.NoError(t, err)
-	return parsed
+	return e.issueForWithStatus(t, devicePub, elements, nil)
 }
 
 // issueForWithStatus is issueFor plus a Token Status List reference embedded

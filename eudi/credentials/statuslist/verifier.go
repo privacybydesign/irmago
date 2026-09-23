@@ -63,10 +63,8 @@ type verifiedStatusList struct {
 	rawJwt  []byte // original signed JWT bytes — kept for caching
 }
 
-var _ verifiedStatusListToken = (*verifiedStatusList)(nil)
-
 func (v *verifiedStatusList) ttlSignal() (time.Duration, bool) {
-	return v.payloadTTLSignal()
+	return ttlFromClaims(v.payload.TTLSeconds, v.payload.Expiry)
 }
 
 func (v *verifiedStatusList) statusAt(ref Reference, maxBytes int64) (Status, error) {
@@ -77,19 +75,13 @@ func (v *verifiedStatusList) statusAt(ref Reference, maxBytes int64) (Status, er
 	return statusAtIndex(bits, v.payload.StatusList.Bits, ref.Index)
 }
 
-// payloadTTLSignal reports the caching lifetime advertised by the
-// Status List Token itself — the `ttl` claim if present, otherwise the
-// remaining `exp - now` — together with whether the token advertised
-// one at all. draft-ietf-oauth-status-list-15 §8.2 requires the `ttl`
-// and `exp` claims to take priority over HTTP caching headers, so the
-// caller must distinguish "token said nothing" (fall back to the HTTP
-// header) from "token advertised a lifetime".
-func (v *verifiedStatusList) payloadTTLSignal() (time.Duration, bool) {
-	return ttlFromClaims(v.payload.TTLSeconds, v.payload.Expiry)
-}
-
-// ttlFromClaims is payloadTTLSignal's rule over the two claims, shared by both
-// encodings of the token.
+// ttlFromClaims reports the caching lifetime advertised by the Status List
+// Token itself — the `ttl` claim if present, otherwise the remaining
+// `exp - now` — together with whether the token advertised one at all. Shared
+// by both encodings. draft-ietf-oauth-status-list-15 §8.2 requires the `ttl`
+// and `exp` claims to take priority over HTTP caching headers, so the caller
+// must distinguish "token said nothing" (fall back to the HTTP header) from
+// "token advertised a lifetime".
 func ttlFromClaims(ttlSeconds, expiry int64) (time.Duration, bool) {
 	if ttlSeconds > 0 {
 		return time.Duration(ttlSeconds) * time.Second, true
