@@ -17,13 +17,12 @@ type StatusListCacheEntry struct {
 	// `status.status_list.uri` claim; the table key.
 	URI string `gorm:"primaryKey"`
 
-	// RawJwt is the unmodified signed Status List Token, whichever encoding
+	// RawToken is the unmodified signed Status List Token, whichever encoding
 	// the issuer published — a JWT (typ `statuslist+jwt`) or a CWT (COSE
-	// protected header 16 `application/statuslist+cwt`). The field name
-	// predates CWT support and is kept: it is a deployed column name (see
-	// credentials_schema_test.go's precedent for why a Go field here isn't
-	// renamed lightly). The SQLCipher layer encrypts this at rest.
-	RawJwt []byte `gorm:"type:bytea;not null"`
+	// protected header 16 `application/statuslist+cwt`). The column keeps its
+	// deployed name raw_jwt, from before CWT support: AutoMigrate cannot
+	// rename a column. The SQLCipher layer encrypts this at rest.
+	RawToken []byte `gorm:"column:raw_jwt;type:bytea;not null"`
 
 	// ExpiresAt is the absolute time at which the cached value
 	// becomes stale and the entry must be re-fetched. Set from the

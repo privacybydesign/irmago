@@ -14,10 +14,10 @@ import (
 type Cache interface {
 	// Get returns the cached raw token for uri together with its
 	// scheduled expiry. ok is false when the URI is not cached.
-	Get(uri string) (rawJwt []byte, expiresAt time.Time, ok bool)
+	Get(uri string) (rawToken []byte, expiresAt time.Time, ok bool)
 
 	// Put stores the raw token under uri with the given expiry.
-	Put(uri string, rawJwt []byte, expiresAt time.Time) error
+	Put(uri string, rawToken []byte, expiresAt time.Time) error
 
 	// Delete removes any cached entry for uri.
 	Delete(uri string) error
@@ -59,7 +59,7 @@ type inMemoryCache struct {
 }
 
 type inMemoryEntry struct {
-	rawJwt    []byte
+	rawToken  []byte
 	expiresAt time.Time
 }
 
@@ -76,13 +76,13 @@ func (c *inMemoryCache) Get(uri string) ([]byte, time.Time, bool) {
 	if !ok {
 		return nil, time.Time{}, false
 	}
-	return e.rawJwt, e.expiresAt, true
+	return e.rawToken, e.expiresAt, true
 }
 
-func (c *inMemoryCache) Put(uri string, rawJwt []byte, expiresAt time.Time) error {
+func (c *inMemoryCache) Put(uri string, rawToken []byte, expiresAt time.Time) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.entries[uri] = inMemoryEntry{rawJwt: rawJwt, expiresAt: expiresAt}
+	c.entries[uri] = inMemoryEntry{rawToken: rawToken, expiresAt: expiresAt}
 	return nil
 }
 

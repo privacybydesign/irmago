@@ -2,14 +2,14 @@ package statuslist
 
 import "errors"
 
-// StatusListTokenTyp is the JOSE 'typ' header value mandated by the spec
+// StatusListTokenJWTTyp is the JOSE 'typ' header value mandated by the spec
 // for the JWT encoding (draft-ietf-oauth-status-list-15 §5.1; the media
 // type itself is registered in §8.2).
-const StatusListTokenTyp = "statuslist+jwt"
+const StatusListTokenJWTTyp = "statuslist+jwt"
 
-// StatusListTokenContentType is the HTTP Content-Type value for the JWT
+// StatusListTokenJWTContentType is the HTTP Content-Type value for the JWT
 // encoding (draft-ietf-oauth-status-list-15 §8.2).
-const StatusListTokenContentType = "application/statuslist+jwt"
+const StatusListTokenJWTContentType = "application/statuslist+jwt"
 
 // StatusListTokenCWTContentType is both the HTTP Content-Type value (§8.2)
 // and the value of the COSE protected header "type" (label 16, registered by

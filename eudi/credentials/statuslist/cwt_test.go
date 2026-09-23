@@ -145,7 +145,7 @@ func Test_VerifyStatusListTokenCWT_InvalidBitSize_Rejected(t *testing.T) {
 
 func Test_LooksLikeCWT(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
-	jwtBody := signer.SignToken(t, TestStatusListOpts{
+	jwtBody := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer: "https://issuer.example", Subject: "https://issuer.example/sl/1",
 		IssuedAt: time.Now(), Bits: 1, Statuses: map[uint64]uint8{0: 0},
 	})
@@ -169,13 +169,13 @@ func Test_VerifyStatusList_DispatchesByEncoding(t *testing.T) {
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
 	uri := "https://issuer.example/sl/1"
 
-	jwtBody := signer.SignToken(t, TestStatusListOpts{
+	jwtBody := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer: "https://issuer.example", Subject: uri,
 		IssuedAt: time.Now(), Bits: 1, Statuses: map[uint64]uint8{0: 1},
 	})
 	v, err := verifyStatusList(jwtBody, vc, uri, time.Now())
 	require.NoError(t, err)
-	require.IsType(t, &verifiedStatusList{}, v)
+	require.IsType(t, &verifiedStatusListJWT{}, v)
 	status, err := v.statusAt(Reference{Index: 0}, 0)
 	require.NoError(t, err)
 	require.Equal(t, StatusInvalid, status)

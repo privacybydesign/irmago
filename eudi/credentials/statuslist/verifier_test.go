@@ -14,7 +14,7 @@ import (
 
 func Test_VerifyStatusListToken_ValidX5cSignature(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
-	body := signer.SignToken(t, TestStatusListOpts{
+	body := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Subject:  "https://issuer.example/sl/1",
 		IssuedAt: time.Now(),
@@ -23,7 +23,7 @@ func Test_VerifyStatusListToken_ValidX5cSignature(t *testing.T) {
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	v, err := verifyStatusListToken(body, vc, "https://issuer.example/sl/1", time.Now())
+	v, err := verifyStatusListTokenJWT(body, vc, "https://issuer.example/sl/1", time.Now())
 	require.NoError(t, err)
 	require.Equal(t, "https://issuer.example", v.payload.Issuer)
 	require.Equal(t, 1, v.payload.StatusList.Bits)
@@ -34,7 +34,7 @@ func Test_VerifyStatusListToken_DelegatedIssuer_Accepted(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
 	// Token signed by a delegated Status Issuer: trusted signature, sub
 	// matches the uri, but iss differs from the credential issuer.
-	body := signer.SignToken(t, TestStatusListOpts{
+	body := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer:   "https://delegated-status-issuer.example",
 		Subject:  "https://issuer.example/sl/1",
 		IssuedAt: time.Now(),
@@ -45,13 +45,13 @@ func Test_VerifyStatusListToken_DelegatedIssuer_Accepted(t *testing.T) {
 	// Accepted: the spec binds the token via sub + a trusted signature and
 	// leaves issuer alignment to the trust model (§11.3).
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(body, vc, "https://issuer.example/sl/1", time.Now())
+	_, err := verifyStatusListTokenJWT(body, vc, "https://issuer.example/sl/1", time.Now())
 	require.NoError(t, err)
 }
 
 func Test_VerifyStatusListToken_WrongTyp_Rejected(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
-	body := signer.SignTokenWithTyp(t, TestStatusListOpts{
+	body := signer.SignJWTTokenWithTyp(t, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Subject:  "https://issuer.example/sl/1",
 		IssuedAt: time.Now(),
@@ -60,13 +60,13 @@ func Test_VerifyStatusListToken_WrongTyp_Rejected(t *testing.T) {
 	}, "dc+sd-jwt")
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(body, vc, "https://issuer.example/sl/1", time.Now())
+	_, err := verifyStatusListTokenJWT(body, vc, "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 }
 
 func Test_VerifyStatusListToken_X5cWithoutTrustAnchor_Rejected(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
-	body := signer.SignToken(t, TestStatusListOpts{
+	body := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Subject:  "https://issuer.example/sl/1",
 		IssuedAt: time.Now(),
@@ -76,14 +76,14 @@ func Test_VerifyStatusListToken_X5cWithoutTrustAnchor_Rejected(t *testing.T) {
 
 	// No X509Context configured — x5c path can't validate.
 	vc := VerificationContext{}
-	_, err := verifyStatusListToken(body, vc, "https://issuer.example/sl/1", time.Now())
+	_, err := verifyStatusListTokenJWT(body, vc, "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 }
 
 func Test_VerifyStatusListToken_FutureIat_BeyondSkew_Rejected(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
 	farFuture := time.Now().Add(2 * time.Hour)
-	body := signer.SignToken(t, TestStatusListOpts{
+	body := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Subject:  "https://issuer.example/sl/1",
 		IssuedAt: farFuture,
@@ -92,14 +92,14 @@ func Test_VerifyStatusListToken_FutureIat_BeyondSkew_Rejected(t *testing.T) {
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(body, vc, "https://issuer.example/sl/1", time.Now())
+	_, err := verifyStatusListTokenJWT(body, vc, "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 }
 
 func Test_VerifyStatusListToken_ExpiredBeyondSkew_Rejected(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
 	now := time.Now()
-	body := signer.SignToken(t, TestStatusListOpts{
+	body := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Subject:  "https://issuer.example/sl/1",
 		IssuedAt: now.Add(-2 * time.Hour),
@@ -109,7 +109,7 @@ func Test_VerifyStatusListToken_ExpiredBeyondSkew_Rejected(t *testing.T) {
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(body, vc, "https://issuer.example/sl/1", now)
+	_, err := verifyStatusListTokenJWT(body, vc, "https://issuer.example/sl/1", now)
 	require.ErrorIs(t, err, ErrUnauthorized)
 }
 
@@ -120,14 +120,14 @@ func Test_VerifyStatusListToken_InvalidBitSize_Rejected(t *testing.T) {
 	bits3Token := buildTokenWithBits(t, signer, 3)
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(bits3Token, vc, "https://issuer.example/sl/1", time.Now())
+	_, err := verifyStatusListTokenJWT(bits3Token, vc, "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 	require.Contains(t, err.Error(), "bits")
 }
 
 func Test_VerifyStatusListToken_SubMismatch_Rejected(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
-	body := signer.SignToken(t, TestStatusListOpts{
+	body := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Subject:  "https://issuer.example/sl/1",
 		IssuedAt: time.Now(),
@@ -136,14 +136,14 @@ func Test_VerifyStatusListToken_SubMismatch_Rejected(t *testing.T) {
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(body, vc, "https://issuer.example/sl/DIFFERENT", time.Now())
+	_, err := verifyStatusListTokenJWT(body, vc, "https://issuer.example/sl/DIFFERENT", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 	require.Contains(t, err.Error(), "sub")
 }
 
 func Test_VerifyStatusListToken_MissingSub_Rejected(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
-	body := signer.SignToken(t, TestStatusListOpts{
+	body := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer: "https://issuer.example",
 		// no Subject
 		IssuedAt: time.Now(),
@@ -152,14 +152,14 @@ func Test_VerifyStatusListToken_MissingSub_Rejected(t *testing.T) {
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(body, vc, "https://issuer.example/sl/1", time.Now())
+	_, err := verifyStatusListTokenJWT(body, vc, "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 	require.Contains(t, err.Error(), "sub")
 }
 
 func Test_VerifyStatusListToken_MissingIat_Rejected(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
-	body := signer.SignToken(t, TestStatusListOpts{
+	body := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer:       "https://issuer.example",
 		Subject:      "https://issuer.example/sl/1",
 		OmitIssuedAt: true,
@@ -168,14 +168,14 @@ func Test_VerifyStatusListToken_MissingIat_Rejected(t *testing.T) {
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(body, vc, "https://issuer.example/sl/1", time.Now())
+	_, err := verifyStatusListTokenJWT(body, vc, "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 	require.Contains(t, err.Error(), "iat")
 }
 
 func Test_VerifyStatusListToken_TTLClaim_ReadOnPayload(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
-	body := signer.SignToken(t, TestStatusListOpts{
+	body := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer:     "https://issuer.example",
 		Subject:    "https://issuer.example/sl/1",
 		IssuedAt:   time.Now(),
@@ -185,14 +185,14 @@ func Test_VerifyStatusListToken_TTLClaim_ReadOnPayload(t *testing.T) {
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	v, err := verifyStatusListToken(body, vc, "https://issuer.example/sl/1", time.Now())
+	v, err := verifyStatusListTokenJWT(body, vc, "https://issuer.example/sl/1", time.Now())
 	require.NoError(t, err)
 	require.Equal(t, int64(600), v.payload.TTLSeconds)
 }
 
 func Test_VerifyStatusListToken_TTLSignal_Precedence(t *testing.T) {
 	// Explicit TTL claim wins over remaining exp duration.
-	v := &verifiedStatusList{payload: statusListPayload{
+	v := &verifiedStatusListJWT{payload: jwtStatusListPayload{
 		TTLSeconds: 60,
 		Expiry:     time.Now().Add(2 * time.Hour).Unix(),
 	}}
@@ -203,7 +203,7 @@ func Test_VerifyStatusListToken_TTLSignal_Precedence(t *testing.T) {
 
 func Test_VerifyStatusListToken_TTLSignal_FallsBackToExp(t *testing.T) {
 	exp := time.Now().Add(30 * time.Minute)
-	v := &verifiedStatusList{payload: statusListPayload{Expiry: exp.Unix()}}
+	v := &verifiedStatusListJWT{payload: jwtStatusListPayload{Expiry: exp.Unix()}}
 	d, ok := v.ttlSignal()
 	require.True(t, ok)
 	// Allow a small window so the test isn't time-sensitive.
@@ -213,13 +213,13 @@ func Test_VerifyStatusListToken_TTLSignal_FallsBackToExp(t *testing.T) {
 func Test_VerifyStatusListToken_TTLSignal_AbsentWhenNoTTLorExp(t *testing.T) {
 	// No ttl and no exp: the token advertises no lifetime, so the caller
 	// falls back to the HTTP max-age (and ultimately ClampTTL's default).
-	v := &verifiedStatusList{}
+	v := &verifiedStatusListJWT{}
 	_, ok := v.ttlSignal()
 	require.False(t, ok)
 }
 
 // ─── OAuth discovery key resolution ──────────────────────────────────────────
-// verifyStatusListToken registers two key providers: the OAuth-discovery
+// verifyStatusListTokenJWT registers two key providers: the OAuth-discovery
 // provider (iss → RFC 8414 metadata → jwks_uri → kid) followed by the
 // typ-checking x5c/DID provider. jwx tries them in order and only fails when no
 // provider produces a key that verifies the signature.
@@ -228,7 +228,7 @@ func Test_VerifyStatusListToken_OAuthDiscoveredKey_Accepted(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
 	srv := newTestJwksIssuerServer(t, signer, "status-key-1")
 
-	body := signer.SignToken(t, TestStatusListOpts{
+	body := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer:    srv.URL(),
 		Subject:   srv.URL() + "/sl/1",
 		IssuedAt:  time.Now(),
@@ -240,7 +240,7 @@ func Test_VerifyStatusListToken_OAuthDiscoveredKey_Accepted(t *testing.T) {
 
 	// No X509Context: the key comes from the issuer's published JWKS, not from a
 	// certificate chain.
-	v, err := verifyStatusListToken(body, VerificationContext{}, srv.URL()+"/sl/1", time.Now())
+	v, err := verifyStatusListTokenJWT(body, VerificationContext{}, srv.URL()+"/sl/1", time.Now())
 	require.NoError(t, err)
 	require.Equal(t, srv.URL(), v.payload.Issuer)
 	require.Equal(t, int64(1), srv.jwksHits.Load())
@@ -253,7 +253,7 @@ func Test_VerifyStatusListToken_OAuthDiscoveredKey_WrongTyp_Rejected(t *testing.
 	signer := NewTestStatusListSigner(t)
 	srv := newTestJwksIssuerServer(t, signer, "status-key-1")
 
-	body := signer.SignTokenWithTyp(t, TestStatusListOpts{
+	body := signer.SignJWTTokenWithTyp(t, TestStatusListOpts{
 		Issuer:    srv.URL(),
 		Subject:   srv.URL() + "/sl/1",
 		IssuedAt:  time.Now(),
@@ -263,7 +263,7 @@ func Test_VerifyStatusListToken_OAuthDiscoveredKey_WrongTyp_Rejected(t *testing.
 		OmitX5c:   true,
 	}, "JWT")
 
-	_, err := verifyStatusListToken(body, VerificationContext{}, srv.URL()+"/sl/1", time.Now())
+	_, err := verifyStatusListTokenJWT(body, VerificationContext{}, srv.URL()+"/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 }
 
@@ -273,7 +273,7 @@ func Test_VerifyStatusListToken_X5cToken_SkipsDiscoveryNetworkTraffic(t *testing
 	signer := NewTestStatusListSigner(t)
 	srv := newTestJwksIssuerServer(t, signer, "status-key-1")
 
-	body := signer.SignToken(t, TestStatusListOpts{
+	body := signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer:   srv.URL(),
 		Subject:  srv.URL() + "/sl/1",
 		IssuedAt: time.Now(),
@@ -282,7 +282,7 @@ func Test_VerifyStatusListToken_X5cToken_SkipsDiscoveryNetworkTraffic(t *testing
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(body, vc, srv.URL()+"/sl/1", time.Now())
+	_, err := verifyStatusListTokenJWT(body, vc, srv.URL()+"/sl/1", time.Now())
 	require.NoError(t, err)
 	require.Zero(t, srv.discoveryHits.Load(), "an x5c token carries no kid, so discovery must be skipped entirely")
 	require.Zero(t, srv.jwksHits.Load())
@@ -337,7 +337,7 @@ func (s *testJwksIssuerServer) URL() string { return s.server.URL }
 // an arbitrary integer for negative-path tests.
 func buildTokenWithBits(t *testing.T, s *TestStatusListSigner, bits int) []byte {
 	t.Helper()
-	// Reuse SignToken's machinery by signing with bits=1, then we
+	// Reuse SignJWTToken's machinery by signing with bits=1, then we
 	// patch the JWT payload below — but that breaks the signature.
 	// Instead, build via a parallel path that calls into the same
 	// token builder with arbitrary bits.
@@ -348,10 +348,10 @@ func buildTokenWithBits(t *testing.T, s *TestStatusListSigner, bits int) []byte 
 		Bits:     bits,
 		Statuses: map[uint64]uint8{0: 0},
 	}
-	// encodeStatusBits guards against invalid bits indirectly; for
+	// encodeStatusBitsBase64 guards against invalid bits indirectly; for
 	// bits=3 the bit-packing math still produces *a* byte sequence
 	// (mask becomes 0b00000111). That's exactly what we want for
 	// this test — a verifiable token with bits=3 on the wire so we
 	// confirm the verifier rejects it.
-	return s.SignToken(t, opts)
+	return s.SignJWTToken(t, opts)
 }

@@ -38,7 +38,7 @@ func looksLikeCWT(raw []byte) bool {
 // CWT-encoded. Kept separate from statusListClaim (the JSON/JWT shape)
 // because Lst differs in Go type: a CBOR byte string decodes straight into
 // []byte, where the JSON encoding's `lst` is a base64url string that needs
-// an extra decode step (see statusListClaim / decodeBits).
+// an extra decode step (see jwtStatusListClaim / decodeBitsBase64).
 type cwtStatusListClaim struct {
 	Bits int    `cbor:"bits"`
 	Lst  []byte `cbor:"lst"`
@@ -84,7 +84,7 @@ func verifyStatusList(raw []byte, ctx VerificationContext, expectedURI string, n
 	if looksLikeCWT(raw) {
 		return verifyStatusListTokenCWT(raw, ctx, expectedURI, now)
 	}
-	return verifyStatusListToken(raw, ctx, expectedURI, now)
+	return verifyStatusListTokenJWT(raw, ctx, expectedURI, now)
 }
 
 // verifyStatusListTokenCWT parses, signature-verifies, and time-checks a CWT
@@ -92,7 +92,7 @@ func verifyStatusList(raw []byte, ctx VerificationContext, expectedURI string, n
 // COSE/CBOR-based Referenced Tokens — including an ISO mdoc's MSO, §6.3.2 —
 // use.
 //
-// Unlike the JWT path (verifyStatusListToken), this only resolves the
+// Unlike the JWT path (verifyStatusListTokenJWT), this only resolves the
 // signing key via x5chain — mirroring how this codebase's own mdoc issuance
 // signs (x5chain-only, no kid). The JWT path's kid+did:web/did:jwk
 // resolution has no established equivalent in ecosystems that use CWT/COSE,

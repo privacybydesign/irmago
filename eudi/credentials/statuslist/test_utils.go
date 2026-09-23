@@ -67,7 +67,8 @@ func (s *TestStatusListSigner) X509VerificationContext() eudi_jwt.X509Verificati
 	}
 }
 
-// TestStatusListOpts shapes a Status List Token built by SignToken.
+// TestStatusListOpts shapes a Status List Token built by SignJWTToken or
+// SignCWTToken.
 // Zero-value defaults: bits=1, lst=all-zero (everyone Valid) sized
 // to fit the highest Statuses key, iat=now, no exp/ttl.
 type TestStatusListOpts struct {
@@ -95,24 +96,24 @@ type TestStatusListOpts struct {
 	X5ChainInProtected bool
 }
 
-// SignToken builds a JWT carrying the Status List Token claims and
+// SignJWTToken builds a JWT carrying the Status List Token claims and
 // signs it with the signer's key, embedding the certificate in the
 // x5c header. typ defaults to "statuslist+jwt".
-func (s *TestStatusListSigner) SignToken(t *testing.T, opts TestStatusListOpts) []byte {
+func (s *TestStatusListSigner) SignJWTToken(t *testing.T, opts TestStatusListOpts) []byte {
 	t.Helper()
-	return s.SignTokenWithTyp(t, opts, StatusListTokenTyp)
+	return s.SignJWTTokenWithTyp(t, opts, StatusListTokenJWTTyp)
 }
 
-// SignTokenWithTyp is like SignToken but lets the caller override
+// SignJWTTokenWithTyp is like SignJWTToken but lets the caller override
 // the 'typ' header for negative-path tests.
-func (s *TestStatusListSigner) SignTokenWithTyp(t *testing.T, opts TestStatusListOpts, typ string) []byte {
+func (s *TestStatusListSigner) SignJWTTokenWithTyp(t *testing.T, opts TestStatusListOpts, typ string) []byte {
 	t.Helper()
 	bits := opts.Bits
 	if bits == 0 {
 		bits = 1
 	}
 
-	lstBytes := encodeStatusBits(t, opts.Statuses, bits)
+	lstBytes := encodeStatusBitsBase64(t, opts.Statuses, bits)
 
 	builder := jwt.NewBuilder().
 		Issuer(opts.Issuer).
@@ -152,17 +153,17 @@ func (s *TestStatusListSigner) SignTokenWithTyp(t *testing.T, opts TestStatusLis
 	return signed
 }
 
-// encodeStatusBits packs the per-index status values into a byte
+// encodeStatusBitsBase64 packs the per-index status values into a byte
 // array of bits-wide entries (little-endian within each byte, per
 // spec §4), then zlib-compresses and base64url-encodes the result —
 // the JSON/JWT encoding's shape for `lst`. See encodeStatusBitsRaw for
 // the CBOR/CWT encoding, which skips the base64 step.
-func encodeStatusBits(t *testing.T, statuses map[uint64]uint8, bits int) string {
+func encodeStatusBitsBase64(t *testing.T, statuses map[uint64]uint8, bits int) string {
 	t.Helper()
 	return base64.RawURLEncoding.EncodeToString(encodeStatusBitsRaw(t, statuses, bits))
 }
 
-// encodeStatusBitsRaw is encodeStatusBits without the base64url step: the
+// encodeStatusBitsRaw is encodeStatusBitsBase64 without the base64url step: the
 // zlib-compressed bit array as bytes, which is what the CBOR/CWT encoding's
 // native `lst` byte string carries directly.
 func encodeStatusBitsRaw(t *testing.T, statuses map[uint64]uint8, bits int) []byte {
@@ -276,7 +277,7 @@ func NewTestStatusListServer(t *testing.T, body []byte) *TestStatusListServer {
 	t.Helper()
 	s := &TestStatusListServer{}
 	s.bodyBytes.Store(&body)
-	jwtContentType := StatusListTokenContentType
+	jwtContentType := StatusListTokenJWTContentType
 	s.contentType.Store(&jwtContentType)
 	s.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r
@@ -301,7 +302,7 @@ func NewTestStatusListServer(t *testing.T, body []byte) *TestStatusListServer {
 func NewTestStatusListServerWithToken(t *testing.T, signer *TestStatusListSigner, opts TestStatusListOpts) *TestStatusListServer {
 	t.Helper()
 	srv := NewTestStatusListServer(t, nil)
-	srv.Serve(t, signer, opts)
+	srv.ServeJWT(t, signer, opts)
 	return srv
 }
 
@@ -309,19 +310,19 @@ func NewTestStatusListServerWithToken(t *testing.T, signer *TestStatusListSigner
 // status_list.uri.
 func (s *TestStatusListServer) URL() string { return s.server.URL }
 
-// Serve signs opts with signer and serves the result on subsequent
+// ServeJWT signs opts with signer as a JWT and serves the result on subsequent
 // requests. opts.Subject defaults to this server's URL when unset so
 // the spec-required `sub` == `uri` binding holds.
-func (s *TestStatusListServer) Serve(t *testing.T, signer *TestStatusListSigner, opts TestStatusListOpts) {
+func (s *TestStatusListServer) ServeJWT(t *testing.T, signer *TestStatusListSigner, opts TestStatusListOpts) {
 	t.Helper()
 	if opts.Subject == "" {
 		opts.Subject = s.URL()
 	}
-	s.SetContentType(StatusListTokenContentType)
-	s.SetBody(signer.SignToken(t, opts))
+	s.SetContentType(StatusListTokenJWTContentType)
+	s.SetBody(signer.SignJWTToken(t, opts))
 }
 
-// ServeCWT is Serve for the CWT encoding: signs opts as a CWT Status List
+// ServeCWT is ServeJWT for the CWT encoding: signs opts as a CWT Status List
 // Token and serves it with the CWT Content-Type.
 func (s *TestStatusListServer) ServeCWT(t *testing.T, signer *TestStatusListSigner, opts TestStatusListOpts) {
 	t.Helper()

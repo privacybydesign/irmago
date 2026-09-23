@@ -142,7 +142,7 @@ func (c *Checker) fetchVerifyStore(ctx context.Context, uri string, now time.Tim
 		return nil, err
 	}
 
-	v, err := verifyStatusList(res.rawJwt, c.ctx, uri, now)
+	v, err := verifyStatusList(res.rawToken, c.ctx, uri, now)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func (c *Checker) fetchVerifyStore(ctx context.Context, uri string, now time.Tim
 	}
 	expires := now.Add(ClampTTL(ttl))
 
-	if err := c.cache.Put(uri, res.rawJwt, expires); err != nil {
+	if err := c.cache.Put(uri, res.rawToken, expires); err != nil {
 		// Cache failures aren't fatal — the token is already verified.
 		// Log and proceed rather than fail-closed on a transient cache
 		// error (e.g. a locked/full DB), which would otherwise reject an

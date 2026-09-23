@@ -10,16 +10,16 @@ import (
 	"time"
 )
 
-// fetchResult bundles the raw JWT bytes returned by the status
+// fetchResult bundles the raw token bytes (JWT or CWT) returned by the status
 // provider with the HTTP-side TTL signal (Cache-Control: max-age).
 type fetchResult struct {
-	rawJwt     []byte
+	rawToken   []byte
 	httpMaxAge time.Duration // 0 if response had no max-age directive
 }
 
 // fetchStatusListToken performs an HTTP GET against uri, enforcing
 // the spec's Accept/Content-Type contract and the configured body
-// size cap. The returned bytes are the unparsed signed JWT.
+// size cap. The returned bytes are the unparsed signed token.
 //
 // Callers are expected to wrap this in singleflight at the URI level
 // to dedupe concurrent fetches; the Checker does so.
@@ -46,7 +46,7 @@ func fetchStatusListToken(ctx context.Context, vc VerificationContext, uri strin
 	}
 	// Both Status List Token encodings are supported (see verifyStatusList);
 	// let the provider pick whichever it publishes.
-	req.Header.Set("Accept", StatusListTokenContentType+", "+StatusListTokenCWTContentType)
+	req.Header.Set("Accept", StatusListTokenJWTContentType+", "+StatusListTokenCWTContentType)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -66,10 +66,10 @@ func fetchStatusListToken(ctx context.Context, vc VerificationContext, uri strin
 	// Content-Type to consult either, and this check exists to reject an
 	// unexpected response body (an HTML error page, say) early.
 	lct := strings.ToLower(ct)
-	if !strings.HasPrefix(lct, StatusListTokenContentType) && !strings.HasPrefix(lct, StatusListTokenCWTContentType) {
+	if !strings.HasPrefix(lct, StatusListTokenJWTContentType) && !strings.HasPrefix(lct, StatusListTokenCWTContentType) {
 		return nil, fmt.Errorf(
 			"%w: unexpected Content-Type %q: only %s or %s is supported",
-			ErrFetch, ct, StatusListTokenContentType, StatusListTokenCWTContentType,
+			ErrFetch, ct, StatusListTokenJWTContentType, StatusListTokenCWTContentType,
 		)
 	}
 
@@ -83,7 +83,7 @@ func fetchStatusListToken(ctx context.Context, vc VerificationContext, uri strin
 	}
 
 	return &fetchResult{
-		rawJwt:     body,
+		rawToken:   body,
 		httpMaxAge: parseMaxAge(resp.Header.Get("Cache-Control")),
 	}, nil
 }

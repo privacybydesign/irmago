@@ -236,8 +236,8 @@ func (s *mdocStatusListServer) handleToken(w http.ResponseWriter, r *http.Reques
 	var body []byte
 	switch s.encoding {
 	case mdocStatusListJWT:
-		w.Header().Set("Content-Type", statuslist.StatusListTokenContentType)
-		body = s.signer.SignToken(s.t, opts)
+		w.Header().Set("Content-Type", statuslist.StatusListTokenJWTContentType)
+		body = s.signer.SignJWTToken(s.t, opts)
 	default:
 		w.Header().Set("Content-Type", statuslist.StatusListTokenCWTContentType)
 		body = s.signer.SignCWTToken(s.t, opts)

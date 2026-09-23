@@ -50,7 +50,7 @@ func TestMSOStatusReference_PopulatedFromMSO(t *testing.T) {
 func TestVerifier_StatusChecker_FailClosed(t *testing.T) {
 	signer := statuslist.NewTestStatusListSigner(t)
 	srv := statuslist.NewTestStatusListServer(t, nil)
-	srv.Serve(t, signer, statuslist.TestStatusListOpts{
+	srv.ServeJWT(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://status-issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{0: 0, 1: 1}, // idx 0 valid, idx 1 invalid
