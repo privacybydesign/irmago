@@ -171,46 +171,13 @@ func (s *mdocStore) DeleteBatchByHash(hash string) error {
 }
 
 func (s *mdocStore) ListInstancesWithStatusReference() ([]CredentialStatusInstance, error) {
-	var out []CredentialStatusInstance
-	err := s.db.
-		Model(&models.MdocBatchInstance{}).
-		Select("id AS instance_id, " +
-			"mdoc_batch_id AS batch_id, " +
-			"status_list_uri AS status_list_uri, " +
-			"status_list_idx AS status_list_idx, " +
-			"last_known_status AS last_known_status").
-		Where("status_list_uri IS NOT NULL AND status_list_idx IS NOT NULL").
-		Scan(&out).Error
-	return out, err
+	return mdocStatusTables.listInstancesWithStatusReference(s.db)
 }
 
 func (s *mdocStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error) {
-	var out []BatchInstanceStatus
-	err := s.db.
-		Model(&models.MdocBatchInstance{}).
-		Select("mdoc_batches.hash AS hash, " +
-			"mdoc_batch_instances.last_known_status AS last_known_status").
-		Joins("JOIN mdoc_batches ON mdoc_batches.id = mdoc_batch_instances.mdoc_batch_id").
-		Where("mdoc_batch_instances.status_list_uri IS NOT NULL").
-		Scan(&out).Error
-	return out, err
+	return mdocStatusTables.listStatusReferencedInstanceStatuses(s.db)
 }
 
 func (s *mdocStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
-	if instanceID.IsNil() {
-		return fmt.Errorf("instanceID is required")
-	}
-	res := s.db.Model(&models.MdocBatchInstance{}).
-		Where("id = ?", instanceID).
-		Updates(map[string]any{
-			"last_known_status":    status,
-			"last_status_check_at": checkedAt,
-		})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return mdocStatusTables.updateInstanceStatus(s.db, instanceID, status, checkedAt)
 }

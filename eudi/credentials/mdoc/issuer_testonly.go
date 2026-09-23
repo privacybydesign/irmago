@@ -244,17 +244,13 @@ func shuffleIdentifiers(identifiers []string) error {
 // holderPub is the holder's device public key — gets embedded in MSO.deviceKeyInfo
 // This locks the credential to the specific device that generated that key pair
 func (iss *TestIssuer) Issue(docType string, namespace string, claims map[string]any, holderPub *ecdsa.PublicKey) (*MDoc, error) {
-	return iss.issue(docType, namespace, claims, holderPub, nil)
+	return iss.IssueWithStatus(docType, namespace, claims, holderPub, nil)
 }
 
 // IssueWithStatus is Issue plus a Token Status List reference embedded in
 // the MSO's `status` field (draft-ietf-oauth-status-list-15 §6.3.2), for
-// tests exercising status-aware verification.
+// tests exercising status-aware verification. A nil status is Issue.
 func (iss *TestIssuer) IssueWithStatus(docType string, namespace string, claims map[string]any, holderPub *ecdsa.PublicKey, status *statuslist.StatusClaim) (*MDoc, error) {
-	return iss.issue(docType, namespace, claims, holderPub, status)
-}
-
-func (iss *TestIssuer) issue(docType string, namespace string, claims map[string]any, holderPub *ecdsa.PublicKey, status *statuslist.StatusClaim) (*MDoc, error) {
 	// ── Build IssuerSignedItems ──────────────────────────────────
 	// Claim order is randomized — deliberately NOT sorted — before
 	// digestID assignment. A deterministic order (e.g. alphabetical, which

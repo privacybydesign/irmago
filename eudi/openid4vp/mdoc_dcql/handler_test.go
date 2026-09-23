@@ -15,6 +15,7 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -116,25 +117,12 @@ func TestFindCandidatesAndPrepareDisclosureRoundTrip(t *testing.T) {
 	require.Equal(t, []any{testNamespace, "age_over_18"}, logEntry.Attributes[0].ClaimPath)
 }
 
-// TestPrepareDisclosureRejectsUndisclosedElement pins that an element the DCQL
-// query did not ask for never reaches the verifier, which is the property
-// selective disclosure exists for and the one a wire-format regression breaks
-// most quietly.
 // stubRevocation is an injectable RevocationChecker, so these tests exercise
 // the handler's use of the flag without any Token Status List machinery (that
-// lives with services.RevocationService). It records the instance it was asked
-// about, so a test can check the question was about a real stored copy.
-type stubRevocation struct {
-	revoked bool
-	asked   *[]*models.MdocBatchInstance
-}
+// lives with services.RevocationService).
+type stubRevocation struct{ revoked bool }
 
-func (s stubRevocation) IsMdocRevoked(instance *models.MdocBatchInstance) bool {
-	if s.asked != nil {
-		*s.asked = append(*s.asked, instance)
-	}
-	return s.revoked
-}
+func (s stubRevocation) IsRevoked(*statuslist.Reference) bool { return s.revoked }
 
 // TestRevokedMdocIsOfferedAndLoggedAsRevoked pins the IRMA-parity contract for
 // mso_mdoc, as eudi_sdjwt_dcql does for SD-JWT VC: a revoked credential is not
@@ -142,8 +130,7 @@ func (s stubRevocation) IsMdocRevoked(instance *models.MdocBatchInstance) bool {
 // decide, and the log records that what was shared had been revoked.
 func TestRevokedMdocIsOfferedAndLoggedAsRevoked(t *testing.T) {
 	env := newTestEnv(t)
-	var asked []*models.MdocBatchInstance
-	env.handler.revocation = stubRevocation{revoked: true, asked: &asked}
+	env.handler.revocation = stubRevocation{revoked: true}
 
 	query := dcql.CredentialQuery{
 		Id:     "av",
@@ -155,8 +142,6 @@ func TestRevokedMdocIsOfferedAndLoggedAsRevoked(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.OwnedCandidates, 1, "a revoked credential is still offered")
 	require.True(t, result.OwnedCandidates[0].Revoked)
-	require.NotEmpty(t, asked)
-	require.False(t, asked[0].ID.IsNil(), "the check must be about a stored instance")
 
 	prepared, err := env.handler.PrepareDisclosure([]dcql.DisclosureSelection{{
 		QueryId:              query.Id,
@@ -188,6 +173,10 @@ func TestMdocWithoutRevocationCheckerIsNeverRevoked(t *testing.T) {
 		"this credential carries no status reference")
 }
 
+// TestPrepareDisclosureRejectsUndisclosedElement pins that an element the DCQL
+// query did not ask for never reaches the verifier, which is the property
+// selective disclosure exists for and the one a wire-format regression breaks
+// most quietly.
 func TestPrepareDisclosureRejectsUndisclosedElement(t *testing.T) {
 	env := newTestEnv(t)
 

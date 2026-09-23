@@ -1,9 +1,13 @@
 package db
 
 import (
+	"fmt"
 	"time"
 
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
+
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
 // CredentialStatusInstance is an instance's status_list reference.
@@ -50,4 +54,74 @@ type CredentialStatusStore interface {
 	// UpdateInstanceStatus writes last_known_status and last_status_check_at
 	// on a single instance. Returns ErrNotFound on no match.
 	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
+}
+
+// statusTables names where one format keeps its instances and their batches,
+// so both stores share the CredentialStatusStore queries below. The status
+// columns themselves are named the same in every instance table.
+type statusTables struct {
+	instanceModel any
+	instances     string // instance table
+	batches       string // batch table
+	batchFK       string // instance column pointing at the batch
+}
+
+var (
+	sdJwtVcStatusTables = statusTables{
+		instanceModel: &models.SdJwtVcBatchInstance{},
+		instances:     "issued_credential_instances",
+		batches:       "credential_batches",
+		batchFK:       "credential_batch_id",
+	}
+	mdocStatusTables = statusTables{
+		instanceModel: &models.MdocBatchInstance{},
+		instances:     "mdoc_batch_instances",
+		batches:       "mdoc_batches",
+		batchFK:       "mdoc_batch_id",
+	}
+)
+
+func (t statusTables) listInstancesWithStatusReference(db *gorm.DB) ([]CredentialStatusInstance, error) {
+	var out []CredentialStatusInstance
+	err := db.
+		Model(t.instanceModel).
+		Select("id AS instance_id, " +
+			t.batchFK + " AS batch_id, " +
+			"status_list_uri AS status_list_uri, " +
+			"status_list_idx AS status_list_idx, " +
+			"last_known_status AS last_known_status").
+		Where("status_list_uri IS NOT NULL AND status_list_idx IS NOT NULL").
+		Scan(&out).Error
+	return out, err
+}
+
+func (t statusTables) listStatusReferencedInstanceStatuses(db *gorm.DB) ([]BatchInstanceStatus, error) {
+	var out []BatchInstanceStatus
+	err := db.
+		Model(t.instanceModel).
+		Select(t.batches + ".hash AS hash, " +
+			t.instances + ".last_known_status AS last_known_status").
+		Joins("JOIN " + t.batches + " ON " + t.batches + ".id = " + t.instances + "." + t.batchFK).
+		Where(t.instances + ".status_list_uri IS NOT NULL").
+		Scan(&out).Error
+	return out, err
+}
+
+func (t statusTables) updateInstanceStatus(db *gorm.DB, instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
+	if instanceID.IsNil() {
+		return fmt.Errorf("instanceID is required")
+	}
+	res := db.Model(t.instanceModel).
+		Where("id = ?", instanceID).
+		Updates(map[string]any{
+			"last_known_status":    status,
+			"last_status_check_at": checkedAt,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

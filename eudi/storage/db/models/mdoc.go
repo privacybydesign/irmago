@@ -6,6 +6,8 @@ import (
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 )
 
 // The mso_mdoc storage models. They share nothing with the SD-JWT VC models
@@ -176,6 +178,12 @@ type MdocBatchInstance struct {
 }
 
 func (MdocBatchInstance) TableName() string { return "mdoc_batch_instances" }
+
+// StatusReference is the document's Token Status List reference, nil when it
+// carries none.
+func (i *MdocBatchInstance) StatusReference() *statuslist.Reference {
+	return statusReference(i.StatusListURI, i.StatusListIdx)
+}
 
 func (i *MdocBatchInstance) BeforeCreate(tx *gorm.DB) error {
 	if i.ID.IsNil() {

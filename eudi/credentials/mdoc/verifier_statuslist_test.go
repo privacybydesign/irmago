@@ -20,12 +20,7 @@ func buildStatusIssuerAndDoc(t *testing.T, status *statuslist.StatusClaim) (*Tes
 	require.NoError(t, err)
 	h, err := GenerateDeviceSigner()
 	require.NoError(t, err)
-	var doc *MDoc
-	if status == nil {
-		doc, err = iss.Issue(dt, dt, map[string]any{"age_over_18": true}, h.PublicKey())
-	} else {
-		doc, err = iss.IssueWithStatus(dt, dt, map[string]any{"age_over_18": true}, h.PublicKey(), status)
-	}
+	doc, err := iss.IssueWithStatus(dt, dt, map[string]any{"age_over_18": true}, h.PublicKey(), status)
 	require.NoError(t, err)
 	return iss, doc
 }

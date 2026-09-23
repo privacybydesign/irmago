@@ -64,6 +64,22 @@ func (c *Checker) Check(ctx context.Context, ref Reference) (Status, error) {
 	return c.check(ctx, ref, false)
 }
 
+// RequireValid is the fail-closed check a holder applies to a credential it is
+// about to accept: nil only when the entry at ref reads StatusValid. A fetch,
+// verification or decode error refuses the credential too, as does any other
+// status, since the issuer flags suspension and application-specific states for
+// a reason.
+func (c *Checker) RequireValid(ctx context.Context, ref Reference) error {
+	status, err := c.Check(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("status list check failed: %w", err)
+	}
+	if status != StatusValid {
+		return fmt.Errorf("credential status is %s, not valid", status)
+	}
+	return nil
+}
+
 // Refresh ignores any cached entry and re-fetches the list. Used by
 // the background sweep to bring stored credential statuses up to
 // date independent of the Check-side TTL.

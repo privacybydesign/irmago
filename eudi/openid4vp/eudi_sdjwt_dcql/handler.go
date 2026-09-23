@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -47,11 +48,11 @@ func isHttpVct(vct string) bool {
 	return strings.HasPrefix(vct, "https://") || strings.HasPrefix(vct, "http://")
 }
 
-// RevocationChecker reports whether a stored credential instance is currently
+// RevocationChecker reports whether a status list entry is currently
 // revoked. The disclosure planner depends only on this narrow verb, keeping the
 // Token Status List mechanics out of this package (see services.RevocationService).
 type RevocationChecker interface {
-	IsSdJwtVcRevoked(instance *models.SdJwtVcBatchInstance) bool
+	IsRevoked(ref *statuslist.Reference) bool
 }
 
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
@@ -173,7 +174,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Attributes:                  attributes,
 			ExpiryDate:                  dcql.BatchExpiryUnix(batch),
 			Image:                       image,
-			Revoked:                     h.revocation != nil && h.revocation.IsSdJwtVcRevoked(instance),
+			Revoked:                     h.revocation != nil && h.revocation.IsRevoked(instance.StatusReference()),
 			RevocationSupported:         instance.StatusListURI != nil,
 		}
 
@@ -910,7 +911,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(
 		// Read off the disclosed instance, the same way FindCandidates reports
 		// them on the plan. A log that forgets them leaves the user unable to see
 		// later that what they shared was already revoked.
-		Revoked:             h.revocation != nil && h.revocation.IsSdJwtVcRevoked(instance),
+		Revoked:             h.revocation != nil && h.revocation.IsRevoked(instance.StatusReference()),
 		RevocationSupported: instance.StatusListURI != nil,
 	}
 

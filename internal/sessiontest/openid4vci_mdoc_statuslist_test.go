@@ -13,7 +13,7 @@ package sessiontest
 //
 // What they exercise:
 //   - issuance-time holder check: the wallet fetches and verifies the Status List
-//     Token (CWT by default, JWT in one test) and stores the credential only
+//     Token (CWT, or JWT in one test) and stores the credential only
 //     when its entry reads VALID; a revoked entry, an unreachable list or a list
 //     signed by an untrusted key all refuse the credential;
 //   - the credential list reports revocation support and the status;
@@ -23,8 +23,6 @@ package sessiontest
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -39,13 +37,12 @@ const statusListEntryRevoked uint8 = 1
 
 func testSessionHandlerForOpenID4VCIMdocStatusList(t *testing.T) {
 	t.Run("issuance/a valid status is accepted and reported", testMdocStatusListIssuanceAcceptsValid)
-	t.Run("issuance/a JWT status list works for an mdoc too", testMdocStatusListIssuanceAcceptsJwtList)
 	t.Run("issuance/without a status the credential reports no revocation support", testMdocStatusListWithoutStatus)
 	t.Run("issuance/a credential revoked before it is stored is refused", testMdocStatusListIssuanceRefusesRevoked)
 	t.Run("issuance/a status list that cannot be fetched refuses the credential", testMdocStatusListIssuanceRefusesUnreachableList)
 	t.Run("issuance/a status list signed by an untrusted key refuses the credential", testMdocStatusListIssuanceRefusesUntrustedList)
 	t.Run("refresh/a revocation found by the sweep notifies the app", testMdocStatusListRevocationNotifiesApp)
-	t.Run("refresh/a revocation in a JWT status list is found too", testMdocStatusListJwtRevocationFound)
+	t.Run("refresh/a JWT status list works for an mdoc too", testMdocStatusListJwtList)
 	t.Run("disclosure/a revoked credential is offered as revoked and logged as revoked", testMdocStatusListRevokedDisclosure)
 }
 
@@ -55,7 +52,7 @@ func testSessionHandlerForOpenID4VCIMdocStatusList(t *testing.T) {
 // status would succeed too. The token fetch proves the wallet looked, and the
 // credential list proves it kept the reference.
 func testMdocStatusListIssuanceAcceptsValid(t *testing.T) {
-	statusList := startMdocStatusListServer(t, mdocStatusListCWT, pidMdocDocType)
+	statusList := startMdocStatusListServer(t, mdocStatusListCWT)
 
 	c, sessionHandler := createPidIssuerTestClient(t)
 	defer c.Close()
@@ -74,28 +71,11 @@ func testMdocStatusListIssuanceAcceptsValid(t *testing.T) {
 	require.False(t, pid.Revoked, "the sweep re-reads the list, which still says valid")
 }
 
-// testMdocStatusListIssuanceAcceptsJwtList is the same issuance with the list
-// served as a JWT. Nothing in the spec ties the list's encoding to the
-// credential's, and the wallet tells them apart by the bytes it fetches.
-func testMdocStatusListIssuanceAcceptsJwtList(t *testing.T) {
-	statusList := startMdocStatusListServer(t, mdocStatusListJWT, pidMdocDocType)
-
-	c, sessionHandler := createPidIssuerTestClient(t)
-	defer c.Close()
-
-	issueMdocViaPythonIssuer(t, c, 1, sessionHandler, pidMdocConfigId, pidMdocIssuanceData())
-
-	require.Positive(t, statusList.tokenFetchCount(), "the wallet should have checked the status at issuance")
-	pid := credentialListEntry(t, c, pidMdocDocType)
-	require.True(t, pid.RevocationSupported)
-	require.False(t, pid.Revoked)
-}
-
 // testMdocStatusListWithoutStatus issues an mDL next to a status-carrying PID.
-// The server refuses to hand the mDL an entry, as an issuer without revocation
-// would, so the two must come out different: only the PID can be checked.
+// The server hands entries to the PID only, so the mDL is issued as by an issuer
+// without revocation, so the two must come out different: only the PID can be checked.
 func testMdocStatusListWithoutStatus(t *testing.T) {
-	statusList := startMdocStatusListServer(t, mdocStatusListCWT, pidMdocDocType)
+	statusList := startMdocStatusListServer(t, mdocStatusListCWT)
 
 	c, sessionHandler := createPidIssuerTestClient(t)
 	defer c.Close()
@@ -122,7 +102,7 @@ func testMdocStatusListWithoutStatus(t *testing.T) {
 // revoked. The wallet checks at issuance and must refuse, the same fail-closed
 // rule it applies to SD-JWT VCs.
 func testMdocStatusListIssuanceRefusesRevoked(t *testing.T) {
-	statusList := startMdocStatusListServer(t, mdocStatusListCWT, pidMdocDocType)
+	statusList := startMdocStatusListServer(t, mdocStatusListCWT)
 	statusList.setNewStatus(statusListEntryRevoked)
 
 	requirePidMdocIssuanceRefused(t, statusList, "credential status is invalid")
@@ -132,7 +112,7 @@ func testMdocStatusListIssuanceRefusesRevoked(t *testing.T) {
 // reference to a list the server then fails to serve. A status the wallet
 // cannot read is not a valid one.
 func testMdocStatusListIssuanceRefusesUnreachableList(t *testing.T) {
-	statusList := startMdocStatusListServer(t, mdocStatusListCWT, pidMdocDocType)
+	statusList := startMdocStatusListServer(t, mdocStatusListCWT)
 	statusList.setTokenUnavailable()
 
 	requirePidMdocIssuanceRefused(t, statusList, "status list fetch failed")
@@ -142,7 +122,7 @@ func testMdocStatusListIssuanceRefusesUnreachableList(t *testing.T) {
 // says valid, signed by a key the wallet does not trust. The signature is what
 // makes the list the issuer's word, so this must be refused like a revocation.
 func testMdocStatusListIssuanceRefusesUntrustedList(t *testing.T) {
-	statusList := startMdocStatusListServer(t, mdocStatusListCWT, pidMdocDocType).
+	statusList := startMdocStatusListServer(t, mdocStatusListCWT).
 		withSigner(statuslist.NewTestStatusListSigner(t))
 
 	requirePidMdocIssuanceRefused(t, statusList, "certificate signed by unknown authority")
@@ -152,7 +132,7 @@ func testMdocStatusListIssuanceRefusesUntrustedList(t *testing.T) {
 // testOpenID4VCIStatusListRevocationNotifiesApp: the issuer revokes after
 // issuance, and the wallet's sweep finds it and tells the app, once.
 func testMdocStatusListRevocationNotifiesApp(t *testing.T) {
-	statusList := startMdocStatusListServer(t, mdocStatusListCWT, pidMdocDocType)
+	statusList := startMdocStatusListServer(t, mdocStatusListCWT)
 
 	c, clientHandler, sessionHandler := instantiateClient(t, readEudiPidIssuerPyCA(t), "en")
 	defer c.Close()
@@ -179,15 +159,21 @@ func testMdocStatusListRevocationNotifiesApp(t *testing.T) {
 		"a known revocation is not re-reported")
 }
 
-// testMdocStatusListJwtRevocationFound is the sweep against a JWT list, so the
-// refresh path is covered for both encodings and not only issuance.
-func testMdocStatusListJwtRevocationFound(t *testing.T) {
-	statusList := startMdocStatusListServer(t, mdocStatusListJWT, pidMdocDocType)
+// testMdocStatusListJwtList runs issuance and the sweep against a list served
+// as a JWT. Nothing in the spec ties the list's encoding to the credential's,
+// and the wallet tells them apart by the bytes it fetches.
+func testMdocStatusListJwtList(t *testing.T) {
+	statusList := startMdocStatusListServer(t, mdocStatusListJWT)
 
 	c, sessionHandler := createPidIssuerTestClient(t)
 	defer c.Close()
 
 	issueMdocViaPythonIssuer(t, c, 1, sessionHandler, pidMdocConfigId, pidMdocIssuanceData())
+	require.Positive(t, statusList.tokenFetchCount(), "the wallet should have checked the status at issuance")
+	pid := credentialListEntry(t, c, pidMdocDocType)
+	require.True(t, pid.RevocationSupported)
+	require.False(t, pid.Revoked)
+
 	statusList.setAll(statusListEntryRevoked)
 
 	require.NoError(t, c.RefreshStatuses(context.Background()))
@@ -199,7 +185,7 @@ func testMdocStatusListJwtRevocationFound(t *testing.T) {
 // offers it marked revoked, leaves the choice to the user, and records in the
 // log that what was shared had been revoked.
 func testMdocStatusListRevokedDisclosure(t *testing.T) {
-	statusList := startMdocStatusListServer(t, mdocStatusListCWT, pidMdocDocType)
+	statusList := startMdocStatusListServer(t, mdocStatusListCWT)
 
 	c, sessionHandler := createPidIssuerTestClient(t)
 	defer c.Close()
@@ -259,34 +245,11 @@ func testMdocStatusListRevokedDisclosure(t *testing.T) {
 // the refusal lands before any permission step and nothing is offered.
 func requirePidMdocIssuanceRefused(t *testing.T, statusList *mdocStatusListServer, wantReason string) {
 	t.Helper()
+
 	c, sessionHandler := createPidIssuerTestClient(t)
 	defer c.Close()
 
-	status, body := postAvMdocOfferRequest(t, map[string]any{
-		"credentials": []map[string]any{
-			{"credential_configuration_id": pidMdocConfigId, "data": pidMdocIssuanceData()},
-		},
-	})
-	require.Equal(t, http.StatusOK, status, "the issuer should mint an offer: %s", body)
-
-	var offerJSON map[string]any
-	require.NoError(t, json.Unmarshal([]byte(body), &offerJSON))
-	txCode := extractTxCodeValue(t, offerJSON)
-
-	startOpenID4VCISession(t, c, 1, offerUriFromJson(t, offerJSON))
-	session := awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
-
-	userInteraction(t, c, clientmodels.SessionUserInteraction{
-		SessionId: session.Id,
-		Type:      clientmodels.UI_PreAuthorizedCode,
-		Payload: clientmodels.SessionPreAuthorizedCodeInteractionPayload{
-			Proceed:         true,
-			TransactionCode: &txCode,
-		},
-	})
-
-	session = awaitSessionState(t, sessionHandler)
+	session := redeemMdocOfferViaPythonIssuer(t, c, 1, sessionHandler, pidMdocConfigId, pidMdocIssuanceData())
 	require.Equal(t, clientmodels.Status_Error, session.Status,
 		"the wallet must refuse a credential whose status is not valid")
 	require.NotNil(t, session.Error)
@@ -295,10 +258,5 @@ func requirePidMdocIssuanceRefused(t *testing.T, statusList *mdocStatusListServe
 
 	require.Positive(t, statusList.entriesHandedOut(),
 		"the issuer never asked for a status entry, so this refusal proves nothing about status")
-
-	creds, _, err := c.GetCredentials()
-	require.NoError(t, err)
-	for _, cred := range creds {
-		require.NotEqual(t, pidMdocDocType, cred.CredentialId, "the refused credential was stored anyway")
-	}
+	requireNoMdocStored(t, c, pidMdocDocType)
 }

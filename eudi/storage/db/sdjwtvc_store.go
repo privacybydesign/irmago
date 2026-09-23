@@ -200,29 +200,11 @@ func (s *sdJwtVcStore) DeleteBatch(batchID datatypes.UUID) error {
 }
 
 func (s *sdJwtVcStore) ListInstancesWithStatusReference() ([]CredentialStatusInstance, error) {
-	var out []CredentialStatusInstance
-	err := s.db.
-		Model(&models.SdJwtVcBatchInstance{}).
-		Select("id AS instance_id, " +
-			"credential_batch_id AS batch_id, " +
-			"status_list_uri AS status_list_uri, " +
-			"status_list_idx AS status_list_idx, " +
-			"last_known_status AS last_known_status").
-		Where("status_list_uri IS NOT NULL AND status_list_idx IS NOT NULL").
-		Scan(&out).Error
-	return out, err
+	return sdJwtVcStatusTables.listInstancesWithStatusReference(s.db)
 }
 
 func (s *sdJwtVcStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error) {
-	var out []BatchInstanceStatus
-	err := s.db.
-		Model(&models.SdJwtVcBatchInstance{}).
-		Select("credential_batches.hash AS hash, " +
-			"issued_credential_instances.last_known_status AS last_known_status").
-		Joins("JOIN credential_batches ON credential_batches.id = issued_credential_instances.credential_batch_id").
-		Where("issued_credential_instances.status_list_uri IS NOT NULL").
-		Scan(&out).Error
-	return out, err
+	return sdJwtVcStatusTables.listStatusReferencedInstanceStatuses(s.db)
 }
 
 func (s *sdJwtVcStore) UpdateBatchHash(batchID datatypes.UUID, hash string) error {
@@ -245,20 +227,5 @@ func (s *sdJwtVcStore) UpdateBatchHash(batchID datatypes.UUID, hash string) erro
 }
 
 func (s *sdJwtVcStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
-	if instanceID.IsNil() {
-		return fmt.Errorf("instanceID is required")
-	}
-	res := s.db.Model(&models.SdJwtVcBatchInstance{}).
-		Where("id = ?", instanceID).
-		Updates(map[string]any{
-			"last_known_status":    status,
-			"last_status_check_at": checkedAt,
-		})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return sdJwtVcStatusTables.updateInstanceStatus(s.db, instanceID, status, checkedAt)
 }

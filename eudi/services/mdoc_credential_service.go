@@ -61,10 +61,8 @@ func (s *mdocCredentialService) List() ([]*clientmodels.Credential, error) {
 	}
 
 	// Per-credential revocation flags are derived from stored Token Status List
-	// statuses (maintained by RevocationService.RefreshStatuses). Shared with
-	// the SD-JWT VC store: BatchRevocation is keyed by the batch's own Hash
-	// column, format-agnostic.
-	revoked, revocable, err := s.revocation.BatchRevocation()
+	// statuses (maintained by RevocationService.RefreshStatuses).
+	revoked, revocable, err := s.revocation.BatchRevocation(s.store)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +145,7 @@ func (s *mdocCredentialService) Store(
 	// Same batch-wide Token Status List invariants sdjwtvc_credential_service
 	// enforces, and for the same reason: reject here, before any side effects,
 	// so a malformed issuance can't delete the user's existing batch.
-	if err := validateMdocStatusReferences(parsedCredentials); err != nil {
+	if err := validateStatusReferences(parsedCredentials); err != nil {
 		if requireCryptographicKeyBinding {
 			s.deleteOrphanedKeys(publicKeyIdentifiers)
 		}
@@ -273,47 +271,6 @@ func (s *mdocCredentialService) computeHashAndDeleteExisting(p *ParsedCredential
 	return hash, nil
 }
 
-// mdocStatusReferenceOf returns the document's Token Status List reference,
-// or the zero Reference when it carries none. Mirrors
-// sdjwtvc_credential_service.statusReferenceOf.
-func mdocStatusReferenceOf(p *ParsedCredential) statuslist.Reference {
-	if p.Mdoc == nil || p.Mdoc.StatusReference == nil {
-		return statuslist.Reference{}
-	}
-	return *p.Mdoc.StatusReference
-}
-
-// validateMdocStatusReferences enforces the same batch-wide Token Status
-// List invariants sdjwtvc_credential_service.validateStatusReferences does —
-// see there for the full draft-ietf-oauth-status-list §13.2/§13.3
-// rationale: either every instance in the batch carries a status_list
-// reference or none does, and references must be pairwise distinct.
-func validateMdocStatusReferences(parsedCredentials []*ParsedCredential) error {
-	firstHasRef := mdocStatusReferenceOf(parsedCredentials[0]) != (statuslist.Reference{})
-	seen := make(map[statuslist.Reference]int, len(parsedCredentials))
-	for i, p := range parsedCredentials {
-		ref := mdocStatusReferenceOf(p)
-		hasRef := ref != (statuslist.Reference{})
-		if hasRef != firstHasRef {
-			return fmt.Errorf(
-				"partial status_list reference in batch: instance 0 hasRef=%t but instance %d hasRef=%t; either all instances carry a status_list reference or none do",
-				firstHasRef, i, hasRef,
-			)
-		}
-		if !hasRef {
-			continue
-		}
-		if prev, dup := seen[ref]; dup {
-			return fmt.Errorf(
-				"duplicate status_list reference in batch: instances %d and %d both use %+v; each one-time-use copy MUST have a dedicated entry (draft-ietf-oauth-status-list §13.2)",
-				prev, i, ref,
-			)
-		}
-		seen[ref] = i
-	}
-	return nil
-}
-
 // buildMdocInstances builds the batch's instance rows, persisting each
 // document's Token Status List reference (if any) so the disclosure path
 // and the refresh sweep can run without re-parsing the mdoc. Mirrors
@@ -327,7 +284,7 @@ func buildMdocInstances(parsedCredentials []*ParsedCredential) []models.MdocBatc
 		// reads StatusValid (or the document has no status reference), so
 		// seed LastKnownStatus accordingly — see
 		// mdoc.Verifier.SetStatusChecker / runStatusListCheck.
-		if ref := mdocStatusReferenceOf(p); ref != (statuslist.Reference{}) {
+		if ref := statusReferenceOf(p); ref != (statuslist.Reference{}) {
 			uri := ref.URI
 			idx := ref.Index
 			t := now

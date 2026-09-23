@@ -213,25 +213,23 @@ func (s *TestStatusListSigner) SignCWTTokenWithTyp(t *testing.T, opts TestStatus
 	if bits == 0 {
 		bits = 1
 	}
-	if opts.IssuedAt.IsZero() && !opts.OmitIssuedAt {
-		opts.IssuedAt = time.Now()
-	}
-
 	payload := cwtStatusListPayload{
-		Subject: opts.Subject,
+		Subject:    opts.Subject,
+		TTLSeconds: opts.TTLSeconds,
 		StatusList: cwtStatusListClaim{
 			Bits: bits,
 			Lst:  encodeStatusBitsRaw(t, opts.Statuses, bits),
 		},
 	}
 	if !opts.OmitIssuedAt {
-		payload.IssuedAt = opts.IssuedAt.Unix()
+		issuedAt := opts.IssuedAt
+		if issuedAt.IsZero() {
+			issuedAt = time.Now()
+		}
+		payload.IssuedAt = issuedAt.Unix()
 	}
 	if !opts.Expiry.IsZero() {
 		payload.Expiry = opts.Expiry.Unix()
-	}
-	if opts.TTLSeconds > 0 {
-		payload.TTLSeconds = opts.TTLSeconds
 	}
 	payloadBytes, err := cbor.Marshal(payload)
 	require.NoError(t, err)

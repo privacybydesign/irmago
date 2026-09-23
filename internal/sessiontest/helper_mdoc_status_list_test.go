@@ -4,13 +4,10 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -37,9 +34,8 @@ import (
 // signs the credential without a status, which is what keeps every other test
 // on the credentials it always had.
 //
-// The token is signed with the issuer's own document signer key, as an issuer
-// that runs its own status list would, so the wallet trusts it through the same
-// root it trusts the MSO through.
+// The token is signed with the issuer's own document signer key, so the wallet
+// trusts it through the same root it trusts the MSO through.
 // ============================================================================
 
 const (
@@ -72,9 +68,6 @@ type mdocStatusListServer struct {
 	listID   string
 
 	mu sync.Mutex
-	// docTypes are the docTypes take hands out entries for. For anything else
-	// take answers 404, so the issuer signs that credential without a status.
-	docTypes map[string]bool
 	// statuses holds the value of every entry handed out so far.
 	statuses map[uint64]uint8
 	next     uint64
@@ -87,27 +80,23 @@ type mdocStatusListServer struct {
 }
 
 // startMdocStatusListServer starts the server for the running test and stops it
-// when the test ends. It hands out entries for the given docTypes only.
-func startMdocStatusListServer(
-	t *testing.T,
-	encoding mdocStatusListEncoding,
-	docTypes ...string,
-) *mdocStatusListServer {
+// when the test ends.
+func startMdocStatusListServer(t *testing.T, encoding mdocStatusListEncoding) *mdocStatusListServer {
 	t.Helper()
 
-	allowed := map[string]bool{}
-	for _, docType := range docTypes {
-		allowed[docType] = true
-	}
+	key, chain := pidIssuerSigningIdentity(t)
+	cert, err := x509.ParseCertificate(chain[0])
+	require.NoError(t, err)
 
 	s := &mdocStatusListServer{
-		t:        t,
-		signer:   eudiPidIssuerPyStatusListSigner(t),
+		t: t,
+		// The issuer's own document signer, as an issuer running its own
+		// status list would use.
+		signer:   &statuslist.TestStatusListSigner{PrivKey: key, Cert: cert, DERBytes: chain[0]},
 		encoding: encoding,
 		// A fresh list per test, so the wallet cannot be served a token it
 		// cached for another test's list.
 		listID:   fmt.Sprintf("%d", time.Now().UnixNano()),
-		docTypes: allowed,
 		statuses: map[uint64]uint8{},
 	}
 
@@ -189,6 +178,8 @@ func (s *mdocStatusListServer) listURI() string {
 
 // handleTake answers the Python issuer's take call (a form POST naming the
 // doctype, country and expiry date) in the shape of eudi-srv-statuslist-py.
+// Only the PID mdoc gets an entry; for anything else take answers 404, so the
+// issuer signs that credential without a status.
 // The issuer requires identifier_list to be present and copies the whole
 // object into the MSO, so the credential also carries a status mechanism the
 // wallet does not support, next to the status_list it does.
@@ -201,7 +192,7 @@ func (s *mdocStatusListServer) handleTake(w http.ResponseWriter, r *http.Request
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if !s.docTypes[r.PostForm.Get("doctype")] {
+	if r.PostForm.Get("doctype") != pidMdocDocType {
 		http.NotFound(w, r)
 		return
 	}
@@ -238,15 +229,11 @@ func (s *mdocStatusListServer) handleToken(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	statuses := make(map[uint64]uint8, len(s.statuses))
-	for idx, status := range s.statuses {
-		statuses[idx] = status
-	}
 	opts := statuslist.TestStatusListOpts{
 		Subject:  s.listURI(),
 		IssuedAt: time.Now(),
 		Bits:     1,
-		Statuses: statuses,
+		Statuses: s.statuses,
 	}
 
 	var body []byte
@@ -259,27 +246,4 @@ func (s *mdocStatusListServer) handleToken(w http.ResponseWriter, r *http.Reques
 		body = s.signer.SignCWTToken(s.t, opts)
 	}
 	_, _ = w.Write(body)
-}
-
-// eudiPidIssuerPyStatusListSigner signs with the Python issuer's own document
-// signer key and certificate, the ones it signs its MSOs with.
-func eudiPidIssuerPyStatusListSigner(t *testing.T) *statuslist.TestStatusListSigner {
-	t.Helper()
-	certsDir := filepath.Join(testdataFolder, "eudi-pid-issuer-py", "certs")
-
-	keyPEM, err := os.ReadFile(filepath.Join(certsDir, "issuer.key"))
-	require.NoError(t, err)
-	keyBlock, _ := pem.Decode(keyPEM)
-	require.NotNil(t, keyBlock, "issuer.key is not PEM")
-	key, err := x509.ParseECPrivateKey(keyBlock.Bytes)
-	require.NoError(t, err)
-
-	certPEM, err := os.ReadFile(filepath.Join(certsDir, "issuer.pem"))
-	require.NoError(t, err)
-	certBlock, _ := pem.Decode(certPEM)
-	require.NotNil(t, certBlock, "issuer.pem is not PEM")
-	cert, err := x509.ParseCertificate(certBlock.Bytes)
-	require.NoError(t, err)
-
-	return &statuslist.TestStatusListSigner{PrivKey: key, Cert: cert, DERBytes: certBlock.Bytes}
 }

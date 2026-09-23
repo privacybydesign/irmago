@@ -14,6 +14,7 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -42,12 +43,12 @@ type DeviceKeyBinder interface {
 	SignerForDeviceKey(deviceKey *ecdsa.PublicKey) (stdmdoc.DeviceSigner, error)
 }
 
-// RevocationChecker reports whether a stored mdoc instance is currently
-// revoked, mirroring eudi_sdjwt_dcql.RevocationChecker: the disclosure planner
-// depends only on this narrow verb, keeping the Token Status List mechanics out
-// of this package (see services.RevocationService).
+// RevocationChecker reports whether a status list entry is currently revoked,
+// mirroring eudi_sdjwt_dcql.RevocationChecker: the disclosure planner depends
+// only on this narrow verb, keeping the Token Status List mechanics out of this
+// package (see services.RevocationService).
 type RevocationChecker interface {
-	IsMdocRevoked(instance *models.MdocBatchInstance) bool
+	IsRevoked(ref *statuslist.Reference) bool
 }
 
 // MdocDcqlHandler implements dcql.DcqlCredentialQueryHandler for mso_mdoc
@@ -708,5 +709,5 @@ func (h *MdocDcqlHandler) buildLogCredential(
 }
 
 func (h *MdocDcqlHandler) isRevoked(instance *models.MdocBatchInstance) bool {
-	return h.revocation != nil && h.revocation.IsMdocRevoked(instance)
+	return h.revocation != nil && h.revocation.IsRevoked(instance.StatusReference())
 }

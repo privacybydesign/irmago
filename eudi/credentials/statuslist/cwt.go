@@ -1,14 +1,13 @@
 package statuslist
 
 import (
-	"crypto/x509"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	cose "github.com/veraison/go-cose"
 
+	"github.com/privacybydesign/irmago/eudi/credentials/coseutil"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 )
 
@@ -27,106 +26,16 @@ var statusListCborDecMode = func() cbor.DecMode {
 	return mode
 }()
 
-// cwtSignatureAlgorithms are the COSE algorithms this package accepts for a
-// CWT Status List Token's signature. Duplicated from
-// mdoc.mdocSignatureAlgorithms (the same ISO/IEC 18013-5 9.1.2.4 / 9.1.3.6
-// allow-list) rather than shared: mdoc imports this package for the shared
-// Reference/StatusClaim types, so this package cannot import mdoc back
-// without a cycle.
-var cwtSignatureAlgorithms = []cose.Algorithm{
-	cose.AlgorithmES256,
-	cose.AlgorithmES384,
-	cose.AlgorithmES512,
-	cose.AlgorithmEdDSA,
-}
-
-// coseVerifierFor builds a verifier for the algorithm the message's own
-// protected header declares (covered by the signature, so it cannot be
-// substituted), restricted to cwtSignatureAlgorithms.
-func coseVerifierFor(msg *cose.Sign1Message, key any) (cose.Verifier, error) {
-	alg, err := msg.Headers.Protected.Algorithm()
-	if err != nil {
-		return nil, fmt.Errorf("no usable alg in protected header: %w", err)
-	}
-	supported := slices.Contains(cwtSignatureAlgorithms, alg)
-	if !supported {
-		return nil, fmt.Errorf("signed with %v, which is not one of the algorithms this package accepts (ES256, ES384, ES512, EdDSA)", alg)
-	}
-	verifier, err := cose.NewVerifier(alg, key)
-	if err != nil {
-		return nil, fmt.Errorf("declares %v, which does not match its %T signing key: %w", alg, key, err)
-	}
-	return verifier, nil
-}
-
-// decodeCoseSign1 decodes either COSE_Sign1 serialization — tag-18
-// (COSE_Sign1_Tagged) or the bare four-element array — into the same
-// message type. Duplicated from mdoc.decodeCoseSign1 for the same reason as
-// cwtSignatureAlgorithms: this package cannot import mdoc.
-func decodeCoseSign1(data []byte) (*cose.Sign1Message, error) {
-	if len(data) == 0 {
-		return nil, fmt.Errorf("empty COSE_Sign1")
-	}
-	if data[0] == 0xd2 { // tag 18: COSE_Sign1_Tagged
-		var tagged cose.Sign1Message
-		if err := tagged.UnmarshalCBOR(data); err != nil {
-			return nil, err
-		}
-		return &tagged, nil
-	}
-	var untagged cose.UntaggedSign1Message
-	if err := untagged.UnmarshalCBOR(data); err != nil {
-		return nil, err
-	}
-	msg := cose.Sign1Message(untagged)
-	return &msg, nil
-}
-
 // looksLikeCWT reports whether raw is (very likely) a CBOR-encoded
 // COSE_Sign1 rather than a JWT. A JWT is ASCII — base64url characters and
 // '.' separators, all below 0x80 — so any leading byte at or above 0x80 can
 // only be a CBOR major-type/tag byte: 0xd2 (tag 18, COSE_Sign1_Tagged) or
-// 0x84 (a 4-element array, the untagged COSE_Sign1 decodeCoseSign1 also
+// 0x84 (a 4-element array, the untagged COSE_Sign1 coseutil.DecodeSign1 also
 // accepts). Used to dispatch verification by encoding without threading the
 // HTTP response's Content-Type through the cache, which stores only raw
 // bytes (see Cache) — so a cache-read has no Content-Type to consult.
 func looksLikeCWT(raw []byte) bool {
 	return len(raw) > 0 && raw[0] >= 0x80
-}
-
-// certFromX5ChainLeaf extracts the leaf certificate from a COSE_Sign1's
-// x5chain (unprotected header 33, RFC 9360) — only the leaf, mirroring the
-// JWT path's eudi_jwt.X509KeyProvider convention for x5c: trust comes from
-// ctx.X509Context's own configured intermediates, not from whatever chain
-// the token happened to carry alongside itself.
-func certFromX5ChainLeaf(msg *cose.Sign1Message) (*x509.Certificate, error) {
-	raw, ok := msg.Headers.Unprotected[cose.HeaderLabelX5Chain]
-	if !ok {
-		return nil, fmt.Errorf("no x5chain in unprotected header")
-	}
-
-	var der []byte
-	switch v := raw.(type) {
-	case []byte:
-		der = v
-	case []any:
-		if len(v) == 0 {
-			return nil, fmt.Errorf("x5chain is empty")
-		}
-		b, ok := v[0].([]byte)
-		if !ok {
-			return nil, fmt.Errorf("x5chain[0] has wrong type: %T", v[0])
-		}
-		der = b
-	default:
-		return nil, fmt.Errorf("x5chain has wrong type: %T", raw)
-	}
-
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return nil, fmt.Errorf("parse x5chain[0]: %w", err)
-	}
-	return cert, nil
 }
 
 // cwtStatusListClaim mirrors the CBOR `status_list` map value
@@ -160,21 +69,12 @@ type cwtStatusListPayload struct {
 // zlib-compressed; statusAt consumes it.
 type verifiedStatusListCWT struct {
 	payload cwtStatusListPayload
-	raw     []byte // original signed CWT bytes — kept for caching
 }
 
 var _ verifiedStatusListToken = (*verifiedStatusListCWT)(nil)
 
 func (v *verifiedStatusListCWT) ttlSignal() (time.Duration, bool) {
-	if v.payload.TTLSeconds > 0 {
-		return time.Duration(v.payload.TTLSeconds) * time.Second, true
-	}
-	if v.payload.Expiry > 0 {
-		if remaining := time.Until(time.Unix(v.payload.Expiry, 0)); remaining > 0 {
-			return remaining, true
-		}
-	}
-	return 0, false
+	return ttlFromClaims(v.payload.TTLSeconds, v.payload.Expiry)
 }
 
 func (v *verifiedStatusListCWT) statusAt(ref Reference, maxBytes int64) (Status, error) {
@@ -187,10 +87,7 @@ func (v *verifiedStatusListCWT) statusAt(ref Reference, maxBytes int64) (Status,
 
 // verifyStatusList parses, signature-verifies, and time-checks a Status List
 // Token of either encoding, dispatching on the fetched bytes (see
-// looksLikeCWT). This is the single entry point Checker uses; the two
-// concrete verify functions (this file's verifyStatusListTokenCWT and
-// verifier.go's verifyStatusListToken) stay independently testable under
-// their existing names.
+// looksLikeCWT). This is the single entry point Checker uses.
 func verifyStatusList(raw []byte, ctx VerificationContext, expectedURI string, now time.Time) (verifiedStatusListToken, error) {
 	if looksLikeCWT(raw) {
 		return verifyStatusListTokenCWT(raw, ctx, expectedURI, now)
@@ -209,7 +106,7 @@ func verifyStatusList(raw []byte, ctx VerificationContext, expectedURI string, n
 // resolution has no established equivalent in ecosystems that use CWT/COSE,
 // so it is out of scope here rather than half-implemented.
 func verifyStatusListTokenCWT(raw []byte, ctx VerificationContext, expectedURI string, now time.Time) (*verifiedStatusListCWT, error) {
-	msg, err := decodeCoseSign1(raw)
+	msg, err := coseutil.DecodeSign1(raw)
 	if err != nil {
 		return nil, fmt.Errorf("%w: decode cose: %v", ErrUnauthorized, err)
 	}
@@ -229,15 +126,19 @@ func verifyStatusListTokenCWT(raw []byte, ctx VerificationContext, expectedURI s
 	if ctx.X509Context == nil {
 		return nil, fmt.Errorf("%w: no X509VerificationContext configured", ErrUnauthorized)
 	}
-	cert, err := certFromX5ChainLeaf(msg)
+	// Only the leaf, mirroring the JWT path's eudi_jwt.X509KeyProvider
+	// convention for x5c: trust comes from ctx.X509Context's own configured
+	// intermediates, not from whatever chain the token carried alongside itself.
+	chain, err := coseutil.X5Chain(msg)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnauthorized, err)
 	}
+	cert := chain[0]
 	if err := eudi_jwt.VerifyCertificate(ctx.X509Context, cert, nil); err != nil {
 		return nil, fmt.Errorf("%w: certificate validation: %v", ErrUnauthorized, err)
 	}
 
-	verifier, err := coseVerifierFor(msg, cert.PublicKey)
+	verifier, err := coseutil.VerifierFor(msg, cert.PublicKey, "status list token")
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnauthorized, err)
 	}
@@ -285,5 +186,5 @@ func verifyStatusListTokenCWT(raw []byte, ctx VerificationContext, expectedURI s
 		return nil, fmt.Errorf("%w: empty status_list.lst", ErrUnauthorized)
 	}
 
-	return &verifiedStatusListCWT{payload: payload, raw: raw}, nil
+	return &verifiedStatusListCWT{payload: payload}, nil
 }

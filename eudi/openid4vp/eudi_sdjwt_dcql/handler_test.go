@@ -9,6 +9,7 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -162,7 +163,7 @@ func TestFindCandidates_ValidCredentialIncluded(t *testing.T) {
 // Status List machinery (that lives with services.RevocationService).
 type stubRevocation struct{ revoked bool }
 
-func (s stubRevocation) IsSdJwtVcRevoked(*models.SdJwtVcBatchInstance) bool { return s.revoked }
+func (s stubRevocation) IsRevoked(*statuslist.Reference) bool { return s.revoked }
 
 // TestFindCandidates_RevokedSurfaced pins the IRMA-parity contract: a revoked
 // SD-JWT VC is NOT dropped or refused during planning. It still appears as an

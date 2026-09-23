@@ -85,11 +85,17 @@ func (v *verifiedStatusList) statusAt(ref Reference, maxBytes int64) (Status, er
 // caller must distinguish "token said nothing" (fall back to the HTTP
 // header) from "token advertised a lifetime".
 func (v *verifiedStatusList) payloadTTLSignal() (time.Duration, bool) {
-	if v.payload.TTLSeconds > 0 {
-		return time.Duration(v.payload.TTLSeconds) * time.Second, true
+	return ttlFromClaims(v.payload.TTLSeconds, v.payload.Expiry)
+}
+
+// ttlFromClaims is payloadTTLSignal's rule over the two claims, shared by both
+// encodings of the token.
+func ttlFromClaims(ttlSeconds, expiry int64) (time.Duration, bool) {
+	if ttlSeconds > 0 {
+		return time.Duration(ttlSeconds) * time.Second, true
 	}
-	if v.payload.Expiry > 0 {
-		if remaining := time.Until(time.Unix(v.payload.Expiry, 0)); remaining > 0 {
+	if expiry > 0 {
+		if remaining := time.Until(time.Unix(expiry, 0)); remaining > 0 {
 			return remaining, true
 		}
 	}

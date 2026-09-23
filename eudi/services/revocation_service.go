@@ -8,7 +8,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
-	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/internal/common"
 	"gorm.io/datatypes"
 )
@@ -18,8 +17,8 @@ import (
 // CredentialStatusStore per format, and exposes the three ways the wallet
 // consults revocation:
 //
-//   - IsSdJwtVcRevoked / IsMdocRevoked: a cached (no-fetch) check for one
-//     instance, used by the OpenID4VP disclosure planners;
+//   - IsRevoked: a cached (no-fetch) check for one status list entry, used by
+//     the OpenID4VP disclosure planners;
 //   - RefreshStatuses: the background sweep that re-fetches and writes back each
 //     stored instance's LastKnownStatus, and keeps the status-list cache warm;
 //   - BatchRevocation: per-batch flags derived from stored status, for the
@@ -36,7 +35,7 @@ type RevocationService struct {
 // NewRevocationService returns a service backed by the given Token Status
 // List Checker, consulting every given store for status-referenced
 // instances. A nil checker disables the cached-read and refresh paths
-// (IsSdJwtVcRevoked/IsMdocRevoked return false, RefreshStatuses is a no-op); the stored-status
+// (IsRevoked returns false, RefreshStatuses is a no-op); the stored-status
 // path (BatchRevocation) still works. One store per credential format that
 // carries a Token Status List reference (today: SD-JWT VC and mso_mdoc).
 func NewRevocationService(checker *statuslist.Checker, stores ...db.CredentialStatusStore) *RevocationService {
@@ -56,7 +55,7 @@ func (s *RevocationService) Checker() *statuslist.Checker {
 // application-specific status all count as revoked (fail-closed on anything the
 // issuer flags). UNKNOWN is the sole exception — it means "no status
 // information" (cold cache / not yet checked), not a bad status, so it stays
-// advisory not-revoked (see isReferenceRevoked and the cold-cache behaviour).
+// advisory not-revoked (see IsRevoked and the cold-cache behaviour).
 // TODO: the client model has no separate suspended state, so suspension is
 // surfaced as "revoked" for now — add a distinct suspended state (clientmodels
 // + frontend) to show it as temporary rather than permanent.
@@ -64,35 +63,22 @@ func statusRevoked(s statuslist.Status) bool {
 	return s != statuslist.StatusValid && s != statuslist.StatusUnknown
 }
 
-// IsSdJwtVcRevoked reports whether the SD-JWT VC instance reads revoked
-// according to the locally cached Token Status List -- no network fetch. See
-// isReferenceRevoked for what counts as revoked.
-func (s *RevocationService) IsSdJwtVcRevoked(instance *models.SdJwtVcBatchInstance) bool {
-	return s.isReferenceRevoked(instance.StatusListURI, instance.StatusListIdx, instance.ID)
-}
-
-// IsMdocRevoked is IsSdJwtVcRevoked for an mso_mdoc instance.
-func (s *RevocationService) IsMdocRevoked(instance *models.MdocBatchInstance) bool {
-	return s.isReferenceRevoked(instance.StatusListURI, instance.StatusListIdx, instance.ID)
-}
-
-// isReferenceRevoked reports whether the entry at uri/idx reads revoked
-// according to the locally cached Token Status List -- no network fetch. An
-// instance without a status_list reference is never revoked. A missing or
+// IsRevoked reports whether the entry ref points at reads revoked according to
+// the locally cached Token Status List -- no network fetch. A nil ref (an
+// instance without a status_list reference) is never revoked. A missing or
 // undeterminable cached status reads as NOT revoked: the flag is advisory, the
 // cache is kept warm by RefreshStatuses, and the verifier's own status check is
 // the backstop.
 //
 // The check never blocks disclosure -- revocation is surfaced as a flag for the
 // frontend, with the verifier as the backstop.
-func (s *RevocationService) isReferenceRevoked(uri *string, idx *uint64, instanceID datatypes.UUID) bool {
-	if s.checker == nil || uri == nil || idx == nil {
+func (s *RevocationService) IsRevoked(ref *statuslist.Reference) bool {
+	if s.checker == nil || ref == nil {
 		return false
 	}
-	ref := statuslist.Reference{URI: *uri, Index: *idx}
-	status, err := s.checker.CheckCached(ref)
+	status, err := s.checker.CheckCached(*ref)
 	if err != nil {
-		eudi.Logger.Warnf("revocation: cached status read for instance %s: %v", instanceID, err)
+		eudi.Logger.Warnf("revocation: cached status read for %s idx %d: %v", common.SanitizeForLog(ref.URI), ref.Index, err)
 		return false // advisory: undeterminable status -> not flagged
 	}
 	return statusRevoked(status)
@@ -202,26 +188,25 @@ func (s *RevocationService) refreshStoreStatuses(ctx context.Context, store db.C
 	return changed, nil
 }
 
-// BatchRevocation returns, keyed by batch hash, which batches support revocation
-// (carry any status reference) and which are currently revoked, derived from the
-// stored LastKnownStatus that RefreshStatuses maintains. A batch's instances are
-// the same credential and are revoked together, so a batch is revoked as soon as
+// BatchRevocation returns, keyed by batch hash, which of store's batches support
+// revocation (carry any status reference) and which are currently revoked,
+// derived from the stored LastKnownStatus that RefreshStatuses maintains. Each
+// format's credential list passes its own store. A batch's instances are the
+// same credential and are revoked together, so a batch is revoked as soon as
 // any status-referenced instance reads a non-VALID status (see statusRevoked),
 // and supports revocation if it carries any status reference at all. A lifted
 // suspension is reflected on the next RefreshStatuses sweep.
-func (s *RevocationService) BatchRevocation() (revoked, revocable map[string]bool, err error) {
+func (s *RevocationService) BatchRevocation(store db.CredentialStatusStore) (revoked, revocable map[string]bool, err error) {
+	statuses, err := store.ListStatusReferencedInstanceStatuses()
+	if err != nil {
+		return nil, nil, err
+	}
 	revoked = map[string]bool{}
 	revocable = map[string]bool{}
-	for _, store := range s.stores {
-		statuses, err := store.ListStatusReferencedInstanceStatuses()
-		if err != nil {
-			return nil, nil, err
-		}
-		for _, st := range statuses {
-			revocable[st.Hash] = true
-			if statusRevoked(statuslist.Status(st.LastKnownStatus)) {
-				revoked[st.Hash] = true
-			}
+	for _, st := range statuses {
+		revocable[st.Hash] = true
+		if statusRevoked(statuslist.Status(st.LastKnownStatus)) {
+			revoked[st.Hash] = true
 		}
 	}
 	return revoked, revocable, nil
