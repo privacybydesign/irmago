@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Internal
+- Storage regression snapshot for v1.4.0 (`testdata/storage_regression/v1.4.0/`), verified by `TestClientStorageRegressionV1_4_0`. It is the first snapshot that holds an `mso_mdoc` credential: the fixture generator now issues an age-verification mdoc (`eu.europa.ec.av.1`) from the Python PID issuer and discloses it once to the EUDI reference verifier, so the snapshot carries the mdoc tables, a batch with one spent instance, and mdoc issuance and disclosure logs. The shared check that a reloaded client still works now also issues and discloses a fresh mdoc, for every snapshot version.
+
 
 ## [1.4.0] - 2026-09-21
 ### Added

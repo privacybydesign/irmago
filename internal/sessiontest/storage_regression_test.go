@@ -453,6 +453,152 @@ func TestClientStorageRegressionV1_3_0(t *testing.T) {
 	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
 }
 
+// TestClientStorageRegressionV1_4_0 validates the first snapshot that holds an
+// mso_mdoc credential: an age-verification mdoc (docType eu.europa.ec.av.1)
+// issued over OpenID4VCI by the Python PID issuer, one batch instance of which
+// was spent by an OpenID4VP disclosure to the EUDI reference verifier.
+//
+// The rest of the snapshot comes from the same generator steps as v1.3.0, so
+// those checks are a representative subset here; the exhaustive ones live in
+// TestClientStorageRegressionV1_3_0.
+//
+// The stored mdoc is checked but not disclosed again: its MSO is valid for 90
+// days from generation, so a disclosure of it would start failing on its own.
+// The fresh mdoc sessions in the shared usability check cover presentation.
+func TestClientStorageRegressionV1_4_0(t *testing.T) {
+	c, sessionHandler, irmaServer := setupStorageRegressionClient(t, "v1.4.0")
+
+	creds, _, err := c.GetCredentials()
+	require.NoError(t, err)
+	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.fullName")
+	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.singleton")
+	requireCredentialPresent(t, creds, "test.test.email")
+	requireSdJwtInstancesRemaining(t, creds, "test.test.email", 8)
+
+	testCred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
+	require.NotNil(t, testCred, "expected OpenID4VCI credential from the EUDI DB")
+	requireEudiCredentialMetaWithIssuer(t, testCred, veramoIssuerIdV1_4_0)
+	requireAttrsInOrder(t, testCred.Attributes,
+		expectedAttr{Path: []any{"given_name"}, DisplayName: new("Given Name"), Value: strVal("Test")},
+		expectedAttr{Path: []any{"family_name"}, DisplayName: new("Family Name"), Value: strVal("User")},
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("test@example.com")},
+	)
+
+	org := findCredentialById(creds, "https://localhost:8443/vct/organization")
+	require.NotNil(t, org, "expected deeply nested organization credential")
+	requireEudiCredentialMetaWithIssuer(t, org, veramoIssuerIdV1_4_0)
+	requireAttrsInOrder(t, org.Attributes, expectedOrganizationAttrs()...)
+
+	statusList := findCredentialById(creds, "https://localhost:8443/vct/statuslist")
+	require.NotNil(t, statusList, "expected the revoked status-list credential")
+	require.True(t, statusList.RevocationSupported)
+	require.True(t, statusList.Revoked)
+
+	// The mdoc reads back with the docType as its id, the issuer's display
+	// metadata, the MSO's validity dates, and the signed element values. The
+	// dates are pinned to the ones the generator's metadata.json recorded.
+	mdoc := findMdocCredentialByDocType(t, creds, avDocType)
+	require.Equal(t, avCredentialDisplayName, mdoc.Name)
+	require.Equal(t, "https://localhost:8443/eudi-pid-issuer-py", mdoc.Issuer.Id)
+	require.Equal(t, avIssuerDisplayName, mdoc.Issuer.Name)
+	require.True(t, mdoc.Issuer.Verified, "the document signer chain verified at issuance")
+	require.Contains(t, mdoc.CredentialInstanceIds, clientmodels.CredentialFormat(clientmodels.Format_MsoMdoc))
+	require.NotNil(t, mdoc.IssuanceDate)
+	require.Equal(t, avMdocIssuanceDate, *mdoc.IssuanceDate)
+	require.NotNil(t, mdoc.ExpiryDate)
+	require.Equal(t, avMdocExpiryDate, *mdoc.ExpiryDate)
+	require.False(t, mdoc.Revoked)
+	require.False(t, mdoc.RevocationSupported, "the mdoc path has no status mechanism")
+	requireAttrsInOrder(t, mdoc.Attributes, avAttrAgeOver18())
+
+	// The issuer issued a batch of 30 and the disclosure spent one. The count
+	// comes from the per-instance rows, so this pins that used instances stay
+	// marked used across a reload.
+	remaining := mdoc.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_MsoMdoc)]
+	require.NotNil(t, remaining, "a batched mdoc credential must carry a remaining count")
+	require.Equal(t, uint(29), *remaining)
+
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logs, 24)
+	requireLogTypePresent(t, logs, clientmodels.LogType_Issuance)
+	requireLogTypePresent(t, logs, clientmodels.LogType_Disclosure)
+	requireLogTypePresent(t, logs, clientmodels.LogType_Signature)
+	requireLogTypePresent(t, logs, clientmodels.LogType_CredentialRemoval)
+	assertLogsNewestFirst(t, logs)
+	require.Equal(t, 5, countDisclosures(logs, clientmodels.Protocol_OpenID4VP))
+	require.Equal(t, 4, countDisclosures(logs, clientmodels.Protocol_Irma))
+	for i := range 3 {
+		require.Equal(t, clientmodels.LogType_CredentialRemoval, logs[i].Type,
+			"expected the 3 newest logs to be credential removals")
+	}
+
+	// The mdoc disclosure was the last session before the removals, so it is
+	// the newest entry after them.
+	require.Equal(t, clientmodels.LogType_Disclosure, logs[3].Type)
+	require.NotNil(t, logs[3].DisclosureLog)
+	require.Equal(t, clientmodels.Protocol_OpenID4VP, logs[3].DisclosureLog.Protocol)
+	require.Len(t, logs[3].DisclosureLog.Credentials, 1)
+	requireLogCredential(t, logs[3].DisclosureLog.Credentials[0], storedAvLogCredential(), "mdoc disclosure log")
+
+	// The mdoc issuance log names the docType, like the SD-JWT issuance logs
+	// name their vct.
+	vciIssued := map[string]int{}
+	var mdocIssuance *clientmodels.LogCredential
+	for _, log := range logs {
+		if log.Type != clientmodels.LogType_Issuance || log.IssuanceLog == nil ||
+			log.IssuanceLog.Protocol != clientmodels.Protocol_OpenID4VCI {
+			continue
+		}
+		for i, lc := range log.IssuanceLog.Credentials {
+			vciIssued[lc.CredentialId]++
+			if lc.CredentialId == avDocType {
+				mdocIssuance = &log.IssuanceLog.Credentials[i]
+			}
+		}
+	}
+	require.Equal(t, map[string]int{
+		"https://localhost:8443/vct/test":         3,
+		"https://localhost:8443/vct/organization": 1,
+		"https://localhost:8443/vct/statuslist":   1,
+		avDocType:                                 1,
+	}, vciIssued)
+	require.NotNil(t, mdocIssuance)
+	requireLogCredential(t, *mdocIssuance, storedAvLogCredential(), "mdoc issuance log")
+
+	// Hand the shared usability check the same baseline the other fixtures give
+	// it: no stored status-list credential (see TestClientStorageRegressionV1_3_0)
+	// and no stored mdoc, which would otherwise be the first candidate for the
+	// fresh mdoc disclosure and has an expiry date of its own.
+	require.NoError(t, c.RemoveCredentialsByHash(statusList.CredentialInstanceIds))
+	require.NoError(t, c.RemoveCredentialsByHash(mdoc.CredentialInstanceIds))
+
+	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
+}
+
+// The validity dates in the v1.4.0 fixture's mdoc MSO, as recorded in its
+// metadata.json.
+const (
+	// veramoIssuerIdV1_4_0 is the id the v1.4.0 fixture stored for the veramo
+	// test issuer; older fixtures stored a did:web identifier.
+	veramoIssuerIdV1_4_0 = "https://localhost:8443/test-issuer"
+
+	avMdocIssuanceDate int64 = 1790121600
+	avMdocExpiryDate   int64 = 1797897600
+)
+
+// storedAvLogCredential is the age credential as a v1.4.0 fixture log entry
+// reads back. Unlike a live wallet's, it carries no image: the log stores only
+// the logo URI, and the bytes live in the eudi filesystem, which is not part of
+// the snapshot.
+func storedAvLogCredential() expectedLogCredential {
+	expected := avLogCredential(avAttrAgeOver18())
+	expected.HasImage = new(false)
+	expected.IssuanceDate = new(avMdocIssuanceDate)
+	expected.ExpiryDate = new(avMdocExpiryDate)
+	return expected
+}
+
 // TestClientStorageRegressionV0_19_2 validates a snapshot from before the EUDI
 // SQLCipher store existed: bbolt only, no OpenID4VCI credentials, no removals.
 func TestClientStorageRegressionV0_19_2(t *testing.T) {
@@ -575,6 +721,7 @@ func assertLoadedClientUsable(t *testing.T, c *client.Client, sessionHandler *Mo
 	assertFreshIrmaSessionsWork(t, c, sessionHandler, irmaServer)
 	assertFreshOpenID4VCISessionsWork(t, c, sessionHandler)
 	assertStatusListSessionsWork(t, c, sessionHandler)
+	assertFreshMdocSessionsWork(t, c, sessionHandler)
 }
 
 // assertFreshIrmaSessionsWork runs a fresh IRMA issuance, non-keyshare and
@@ -659,6 +806,16 @@ func assertStatusListSessionsWork(t *testing.T, c *client.Client, sessionHandler
 		"a revoked status-list credential must be surfaced as Revoked on the disclosure plan")
 }
 
+// assertFreshMdocSessionsWork issues an age-verification mdoc from the Python
+// PID issuer into the reloaded client and discloses it to the EUDI reference
+// verifier, which checks the issuer and device signatures.
+func assertFreshMdocSessionsWork(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler) {
+	t.Helper()
+
+	issueAvMdocViaPythonIssuer(t, c, 10, sessionHandler)
+	discloseAvMdocOnce(t, c, sessionHandler, 11)
+}
+
 // discloseViaVeramoOpenID4VP runs a full OpenID4VP disclosure against the veramo
 // verifier for the given DCQL query: it awaits the permission request, grants
 // the first owned option, and returns the final session state for the caller to
@@ -721,7 +878,15 @@ func requireSdJwtInstancesRemaining(t *testing.T, creds []*clientmodels.Credenti
 // (EUDI) credentials in the fixture, as surfaced by Client.GetCredentials.
 func requireEudiCredentialMeta(t *testing.T, cred *clientmodels.Credential) {
 	t.Helper()
-	require.Equal(t, "did:web:localhost%3A8443:test-issuer:.well-known", cred.Issuer.Id)
+	requireEudiCredentialMetaWithIssuer(t, cred, "did:web:localhost%3A8443:test-issuer:.well-known")
+}
+
+// requireEudiCredentialMetaWithIssuer is requireEudiCredentialMeta for a fixture
+// that stored the veramo issuer under a different id. From v1.4.0 that id is the
+// credential issuer URL rather than a did:web identifier.
+func requireEudiCredentialMetaWithIssuer(t *testing.T, cred *clientmodels.Credential, issuerId string) {
+	t.Helper()
+	require.Equal(t, issuerId, cred.Issuer.Id)
 	require.Equal(t, "Test Issuer", cred.Issuer.Name)
 	require.Contains(t, cred.CredentialInstanceIds, clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc),
 		"EUDI credential should have an SD-JWT instance")
@@ -772,6 +937,7 @@ func loadClientFromFixture(t *testing.T, db2Path string) (*client.Client, *MockS
 	encIssuer, err := encMiddleware.Encrypt(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	require.NoError(t, err)
 	require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), encIssuer))
+	installPidIssuerTrustAnchor(t, encMiddleware, issuerCertsPath)
 
 	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
 	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))

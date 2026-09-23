@@ -43,6 +43,8 @@ import (
 //     (served from the EUDI DB, via the veramo verifier).
 //   - Status list: 1x StatusListCredentialSdJwt (vct https://localhost:8443/vct/statuslist),
 //     revoked at the issuer and then refreshed, so it is stored as revoked.
+//   - mdoc: 1x age-verification mdoc (docType eu.europa.ec.av.1) issued over OpenID4VCI by
+//     the Python PID issuer, then disclosed once over OpenID4VP to the EUDI reference verifier.
 //   - Removals, as the final actions: irma-demo.RU.studentCard + 2 spare https://localhost:8443/vct/test.
 //
 // Resulting database state:
@@ -52,7 +54,8 @@ import (
 //   - EUDI sqlcipher (eudi_client_db): one https://localhost:8443/vct/test, one
 //     https://localhost:8443/vct/organization and one https://localhost:8443/vct/statuslist
 //     batch remaining; the status-list batch carries a status.status_list reference with a
-//     LastKnownStatus of INVALID, alongside a cached Status List Token.
+//     LastKnownStatus of INVALID, alongside a cached Status List Token; plus one
+//     eu.europa.ec.av.1 mdoc batch with one instance spent by the disclosure.
 //   - Activity logs (merged from both stores): all four types — issuance, disclosure, signature,
 //     removal — returned newest-first, ending with the three removals.
 func TestGenerateClientStorageForRegressionTests(t *testing.T) {
@@ -126,6 +129,11 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	issueStatusListCredential(t, c, sessionHandler, 18)
 	revokeStatusListCredentialViaVeramo(t, statusListCredentialEmail)
 	require.NoError(t, c.RefreshStatuses(context.Background()))
+
+	// 3g. Issue an age-verification mdoc from the Python PID issuer, so the
+	// snapshot holds an mso_mdoc batch: per-instance device keys, the issuer
+	// signed MSO, and the issuer's display metadata.
+	issueAvMdocViaPythonIssuer(t, c, 19, sessionHandler)
 
 	// Verify credentials are present
 	creds, _, err := c.GetCredentials()
@@ -218,6 +226,10 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	orgVpSession = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, orgVpSession.Status)
 
+	// 7g. Disclose the mdoc to the EUDI reference verifier, which spends one
+	// batch instance and writes an mdoc disclosure log.
+	discloseAvMdocOnce(t, c, sessionHandler, 20)
+
 	// 8. Remove several credentials as the final actions, so the newest activity
 	// logs are an ordered run of removals. Keep the credentials the regression
 	// test asserts on: fullName, singleton, email, and one OpenID4VCI credential.
@@ -227,6 +239,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 		"test.test.email":                         true,
 		"https://localhost:8443/vct/organization": true, // keep the deeply nested credential
 		"https://localhost:8443/vct/statuslist":   true, // keep the revoked status-list credential
+		eudiPidIssuerPyAvDocType:                  true, // keep the mdoc
 	}
 	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
@@ -315,6 +328,7 @@ func createClientWithStoragePath(t *testing.T) (*client.Client, string, *MockSes
 	encIssuer, err := encMiddleware.Encrypt(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	require.NoError(t, err)
 	require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), encIssuer))
+	installPidIssuerTrustAnchor(t, encMiddleware, issuerCertsPath)
 
 	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
 	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))
@@ -342,6 +356,15 @@ func createClientWithStoragePath(t *testing.T) (*client.Client, string, *MockSes
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
 
 	return c, storagePath, sessionHandler
+}
+
+// installPidIssuerTrustAnchor trusts the Python PID issuer's CA, next to the
+// staging issuer certificate, so the wallet accepts the mdoc it issues.
+func installPidIssuerTrustAnchor(t *testing.T, encMiddleware encryption.EncryptionMiddleware, issuerCertsPath string) {
+	t.Helper()
+	encCA, err := encMiddleware.Encrypt(readEudiPidIssuerPyCA(t))
+	require.NoError(t, err)
+	require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "eudi_pid_issuer_py_ca.pem"), encCA))
 }
 
 // credentialAttrValue returns the string value of a top-level attribute, or ""
