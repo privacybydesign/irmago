@@ -283,6 +283,82 @@ func TestMdocStore_DeleteBatch_CascadesToInstancesAndDeviceKeys(t *testing.T) {
 	require.Error(t, store.DeleteBatch(datatypes.UUID{}))
 }
 
+// --- Token Status List columns ---
+
+func TestMdocStore_StatusListColumnsDefaultToNil(t *testing.T) {
+	store := NewMdocStore(newMdocTestDB(t))
+	b := newMdocBatch("h-no-status", 1)
+	require.NoError(t, store.StoreBatch(b))
+
+	got, err := store.GetUnusedInstance(b.ID)
+	require.NoError(t, err)
+	require.Nil(t, got.StatusListURI)
+	require.Nil(t, got.StatusListIdx)
+	require.Equal(t, uint8(0), got.LastKnownStatus)
+	require.Nil(t, got.LastStatusCheckAt)
+}
+
+func TestMdocStore_ListInstancesWithStatusReference(t *testing.T) {
+	store := NewMdocStore(newMdocTestDB(t))
+
+	uri := "https://issuer.example/sl/1"
+	idx := uint64(7)
+	withStatus := newMdocBatch("h-with-status", 1)
+	withStatus.Instances[0].StatusListURI = &uri
+	withStatus.Instances[0].StatusListIdx = &idx
+	withStatus.Instances[0].LastKnownStatus = 1 // StatusValid
+	require.NoError(t, store.StoreBatch(withStatus))
+
+	// A batch without a status reference must be excluded.
+	require.NoError(t, store.StoreBatch(newMdocBatch("h-no-status", 1)))
+
+	got, err := store.ListInstancesWithStatusReference()
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, withStatus.Instances[0].ID, got[0].InstanceID)
+	require.Equal(t, withStatus.ID, got[0].BatchID)
+	require.Equal(t, uri, got[0].StatusListURI)
+	require.Equal(t, idx, got[0].StatusListIdx)
+	require.Equal(t, uint8(1), got[0].LastKnownStatus)
+}
+
+func TestMdocStore_ListStatusReferencedInstanceStatuses(t *testing.T) {
+	store := NewMdocStore(newMdocTestDB(t))
+
+	uri := "https://issuer.example/sl/1"
+	idx := uint64(3)
+	withStatus := newMdocBatch("h-with-status", 1)
+	withStatus.Instances[0].StatusListURI = &uri
+	withStatus.Instances[0].StatusListIdx = &idx
+	withStatus.Instances[0].LastKnownStatus = 2 // StatusInvalid
+	require.NoError(t, store.StoreBatch(withStatus))
+
+	require.NoError(t, store.StoreBatch(newMdocBatch("h-no-status", 1)))
+
+	got, err := store.ListStatusReferencedInstanceStatuses()
+	require.NoError(t, err)
+	require.Equal(t, []BatchInstanceStatus{{Hash: "h-with-status", LastKnownStatus: 2}}, got)
+}
+
+func TestMdocStore_UpdateInstanceStatus(t *testing.T) {
+	store := NewMdocStore(newMdocTestDB(t))
+
+	require.Error(t, store.UpdateInstanceStatus(datatypes.UUID{}, 1, time.Now()))
+	require.ErrorIs(t, store.UpdateInstanceStatus(datatypes.NewUUIDv4(), 1, time.Now()), ErrNotFound)
+
+	b := newMdocBatch("h", 1)
+	require.NoError(t, store.StoreBatch(b))
+
+	checked := time.Now().UTC().Truncate(time.Second)
+	require.NoError(t, store.UpdateInstanceStatus(b.Instances[0].ID, 2, checked))
+
+	got, err := store.GetUnusedInstance(b.ID)
+	require.NoError(t, err)
+	require.Equal(t, uint8(2), got.LastKnownStatus)
+	require.NotNil(t, got.LastStatusCheckAt)
+	require.WithinDuration(t, checked, got.LastStatusCheckAt.UTC(), time.Second)
+}
+
 // --- MdocDeviceKeyStore ---
 
 func TestMdocDeviceKeyStore_Validation(t *testing.T) {

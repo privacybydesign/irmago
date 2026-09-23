@@ -147,7 +147,7 @@ func TestRefreshStatusesNotifiesOnStatusChange(t *testing.T) {
 	require.Zero(t, handler.CredentialsChangedCount(), "re-confirming a status must not wake the app")
 
 	// The issuer revokes the credential.
-	srv.Serve(t, signer, statuslist.TestStatusListOpts{
+	srv.ServeJWT(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{7: 1}, // Invalid

@@ -2,19 +2,26 @@
 // Token Status List specification, draft-ietf-oauth-status-list-15
 // (https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/15/).
 //
-// The package fetches Status List Tokens advertised by SD-JWT VCs via the
-// `status.status_list` claim, verifies their signatures (x5c or kid+did
-// resolution), decodes the zlib-compressed bit array, and returns the
-// status value at a given index. Callers use the single Checker.Check
-// verb to obtain a typed Status value for a given Reference; partial
-// fetch/decode/verify is intentionally not exposed.
+// The package fetches Status List Tokens advertised by a credential's
+// `status.status_list` claim (an SD-JWT VC's JSON claim, or an mdoc MSO's
+// CBOR field), verifies their signatures, decodes the zlib-compressed bit
+// array, and returns the status value at a given index. Callers use the
+// single Checker.Check verb to obtain a typed Status value for a given
+// Reference; partial fetch/decode/verify is intentionally not exposed.
 //
-// Status List Token verification reuses the same x5c-or-kid+DID
-// dispatcher as SD-JWT VC verification via eudi_jwt.JwtKeyProvider,
-// configured with the `statuslist+jwt` typ value mandated by the spec.
+// Both encodings the spec defines for the Status List Token itself are
+// supported, dispatched on the fetched bytes (see verifyStatusList in
+// cwt.go):
 //
-// v1 supports JWT Status List Tokens only (`application/statuslist+jwt`);
-// CWT (`application/statuslist+cwt`) is intentionally out of scope.
+//   - JWT (`application/statuslist+jwt`, §5.1): signature verification reuses
+//     the same x5c-or-kid+DID dispatcher as SD-JWT VC verification via
+//     eudi_jwt.JwtKeyProvider, configured with the `statuslist+jwt` typ value
+//     the spec mandates.
+//   - CWT (`application/statuslist+cwt`, §5.2), the encoding COSE/CBOR-based
+//     Referenced Tokens use — including an ISO mdoc's MSO (§6.3.2). Signature
+//     verification is x5chain-only (see verifyStatusListTokenCWT in cwt.go);
+//     the JWT path's kid+did:web/did:jwk resolution has no established
+//     equivalent in ecosystems that use CWT/COSE.
 package statuslist
 
 import (
@@ -55,6 +62,22 @@ func NewChecker(ctx VerificationContext, cache Cache) *Checker {
 // when fresh) and returns the status at ref.Index.
 func (c *Checker) Check(ctx context.Context, ref Reference) (Status, error) {
 	return c.check(ctx, ref, false)
+}
+
+// RequireValid is the fail-closed check a holder applies to a credential it is
+// about to accept: nil only when the entry at ref reads StatusValid. A fetch,
+// verification or decode error refuses the credential too, as does any other
+// status, since the issuer flags suspension and application-specific states for
+// a reason.
+func (c *Checker) RequireValid(ctx context.Context, ref Reference) error {
+	status, err := c.Check(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("status list check failed: %w", err)
+	}
+	if status != StatusValid {
+		return fmt.Errorf("credential status is %s, not valid", status)
+	}
+	return nil
 }
 
 // Refresh ignores any cached entry and re-fetches the list. Used by
@@ -106,20 +129,20 @@ func (c *Checker) check(ctx context.Context, ref Reference, bypassCache bool) (S
 	if err != nil {
 		return StatusUnknown, err
 	}
-	v := resAny.(*verifiedStatusList)
+	v := resAny.(verifiedStatusListToken)
 
-	return decodeStatusFromVerified(v, ref, c.ctx.MaxBodyBytes)
+	return v.statusAt(ref, c.ctx.MaxBodyBytes)
 }
 
 // fetchVerifyStore runs one fetch+verify cycle and writes the raw
-// JWT into the cache with the computed expiry.
-func (c *Checker) fetchVerifyStore(ctx context.Context, uri string, now time.Time) (*verifiedStatusList, error) {
+// token bytes into the cache with the computed expiry.
+func (c *Checker) fetchVerifyStore(ctx context.Context, uri string, now time.Time) (verifiedStatusListToken, error) {
 	res, err := fetchStatusListToken(ctx, c.ctx, uri)
 	if err != nil {
 		return nil, err
 	}
 
-	v, err := verifyStatusListToken(res.rawJwt, c.ctx, uri, now)
+	v, err := verifyStatusList(res.rawToken, c.ctx, uri, now)
 	if err != nil {
 		return nil, err
 	}
@@ -129,13 +152,13 @@ func (c *Checker) fetchVerifyStore(ctx context.Context, uri string, now time.Tim
 	// headers, so the HTTP max-age is only a fallback used when the
 	// token advertises no lifetime of its own. ClampTTL bounds the
 	// result and supplies the default when neither signal is present.
-	ttl, ok := v.payloadTTLSignal()
+	ttl, ok := v.ttlSignal()
 	if !ok {
 		ttl = res.httpMaxAge
 	}
 	expires := now.Add(ClampTTL(ttl))
 
-	if err := c.cache.Put(uri, res.rawJwt, expires); err != nil {
+	if err := c.cache.Put(uri, res.rawToken, expires); err != nil {
 		// Cache failures aren't fatal — the token is already verified.
 		// Log and proceed rather than fail-closed on a transient cache
 		// error (e.g. a locked/full DB), which would otherwise reject an
@@ -148,22 +171,14 @@ func (c *Checker) fetchVerifyStore(ctx context.Context, uri string, now time.Tim
 }
 
 // verifyAndDecode runs the verify+decode path against an already
-// cached raw JWT.
+// cached raw token.
 func (c *Checker) verifyAndDecode(raw []byte, ref Reference, now time.Time) (Status, error) {
-	v, err := verifyStatusListToken(raw, c.ctx, ref.URI, now)
+	v, err := verifyStatusList(raw, c.ctx, ref.URI, now)
 	if err != nil {
 		// Cached value failed re-verification — drop it so the
 		// next call re-fetches.
 		_ = c.cache.Delete(ref.URI)
 		return StatusUnknown, err
 	}
-	return decodeStatusFromVerified(v, ref, c.ctx.MaxBodyBytes)
-}
-
-func decodeStatusFromVerified(v *verifiedStatusList, ref Reference, maxBytes int64) (Status, error) {
-	bits, err := decodeBits(v.payload.StatusList.Lst, maxBytes)
-	if err != nil {
-		return StatusUnknown, err
-	}
-	return statusAtIndex(bits, v.payload.StatusList.Bits, ref.Index)
+	return v.statusAt(ref, c.ctx.MaxBodyBytes)
 }

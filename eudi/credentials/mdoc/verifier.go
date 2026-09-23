@@ -1,7 +1,7 @@
 package mdoc
 
 import (
-	"crypto"
+	"context"
 	"crypto/ecdsa"
 	"crypto/subtle"
 	"crypto/x509"
@@ -12,8 +12,9 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	cose "github.com/veraison/go-cose"
 
+	"github.com/privacybydesign/irmago/eudi/credentials/coseutil"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
@@ -67,85 +68,6 @@ var mdocDocumentSignerEKUs = []asn1.ObjectIdentifier{
 	isoMdocDocumentSignerEKU,
 	isoMdocJsonWebSignatureEKU,
 	isoGenericMdocDocumentSignerEKU,
-}
-
-// mdocSignatureAlgorithms are the algorithms ISO/IEC 18013-5 permits for the two
-// signatures this package verifies. 9.1.2.4 obliges a reader to handle the whole
-// set when verifying, not a subset of its choosing — ES256, ES384, ES512 and
-// EdDSA — and 9.1.3.6 restates the same list for device authentication.
-//
-// cose.AlgorithmEdDSA and the deprecated cose.AlgorithmEd25519 are the same value
-// (-8), so EdDSA appears once.
-var mdocSignatureAlgorithms = []cose.Algorithm{
-	cose.AlgorithmES256,
-	cose.AlgorithmES384,
-	cose.AlgorithmES512,
-	cose.AlgorithmEdDSA,
-}
-
-// coseVerifierFor builds a verifier for the algorithm the message itself
-// declares, rather than for one this package assumed in advance.
-//
-// Reading `alg` from the protected header is not a relaxation. The header is
-// inside Sig_structure, so the algorithm is covered by the signature and cannot
-// be substituted; go-cose re-checks that the verifier's algorithm matches it
-// before verifying. What this replaces is a hardcoded ES256 verifier, which made
-// every other permitted algorithm fail as an opaque mismatch — a conformant
-// ES384 issuer looked like a broken one.
-//
-// The allow-list is what keeps this from being "whatever the document says":
-// go-cose implements RSA-PSS and others that 18013-5 does not permit, and a
-// document signer is only authorised to use the four above.
-func coseVerifierFor(msg *cose.Sign1Message, key crypto.PublicKey, what string) (cose.Verifier, error) {
-	alg, err := msg.Headers.Protected.Algorithm()
-	if err != nil {
-		return nil, fmt.Errorf("%s has no usable alg in its protected header: %w", what, err)
-	}
-	if !slices.Contains(mdocSignatureAlgorithms, alg) {
-		return nil, fmt.Errorf(
-			"%s is signed with %v, which is not one of the four algorithms ISO/IEC 18013-5 permits (ES256, ES384, ES512, EdDSA)",
-			what, alg)
-	}
-	verifier, err := cose.NewVerifier(alg, key)
-	if err != nil {
-		// Reached when the algorithm and the key disagree — an ES384 header over a
-		// P-256 certificate, or EdDSA over an ECDSA key. Naming both halves,
-		// because either one could be the wrong half.
-		return nil, fmt.Errorf("%s declares %v, which does not match its %T signing key: %w", what, alg, key, err)
-	}
-	return verifier, nil
-}
-
-// decodeCoseSign1 decodes either COSE_Sign1 serialization into the same
-// message type.
-//
-// ISO 18013-5 puts the bare four-element array at issuerAuth and
-// deviceSignature, which is what this package now writes (see
-// issuer_testonly.go and devicesigner.go). Reading is deliberately more
-// permissive than writing: go-cose's
-// Sign1Message insists on the tag-18 prefix and UntaggedSign1Message refuses
-// it, so accepting only one form would make the verifier reject real documents
-// from whichever party disagrees with us. The tag is outside Sig_structure and
-// carries no security meaning, so accepting both costs nothing — everything
-// that matters is still checked against the signature afterwards.
-func decodeCoseSign1(data []byte) (*cose.Sign1Message, error) {
-	if len(data) == 0 {
-		return nil, fmt.Errorf("empty COSE_Sign1")
-	}
-	// 0xd2 = tag 18, the COSE_Sign1_Tagged prefix.
-	if data[0] == 0xd2 {
-		var tagged cose.Sign1Message
-		if err := tagged.UnmarshalCBOR(data); err != nil {
-			return nil, err
-		}
-		return &tagged, nil
-	}
-	var untagged cose.UntaggedSign1Message
-	if err := untagged.UnmarshalCBOR(data); err != nil {
-		return nil, err
-	}
-	msg := cose.Sign1Message(untagged)
-	return &msg, nil
 }
 
 // checkDocumentSignerEKU rejects a leaf certificate that is not authorized to
@@ -273,6 +195,18 @@ type Verifier struct {
 	// not-yet-valid certificate rejection without needing to wait a year
 	// or fake the system clock.
 	clock time.Time
+
+	// statusChecker, when set, refuses a document whose status list entry does
+	// not read valid (see runStatusListCheck). Nil disables the check.
+	statusChecker *statuslist.Checker
+}
+
+// SetStatusChecker installs a Token Status List checker consulted after every
+// successful issuerAuth/MSO verification (see runStatusListCheck). A setter
+// rather than a constructor parameter, so every existing constructor stays
+// usable without one.
+func (v *Verifier) SetStatusChecker(checker *statuslist.Checker) {
+	v.statusChecker = checker
 }
 
 func NewVerifier(rootCerts []*x509.Certificate) *Verifier {
@@ -444,6 +378,13 @@ type VerificationResult struct {
 	// result can carry an authentic issuer identity and still be Valid == false.
 	// Callers decide on Valid, as everywhere else here.
 	IssuerIdentifier string
+
+	// StatusReference is the MSO's Token Status List reference (mso.Status.StatusList),
+	// nil when the document carries none. Populated regardless of whether a
+	// StatusChecker is configured, so a caller that wants to persist the
+	// reference (to check it again later, e.g. a background refresh) can
+	// read it even when SetStatusChecker was never called.
+	StatusReference *statuslist.Reference
 }
 
 // issuerIdentifierFromDocumentSigner names the issuer behind a document signer
@@ -533,51 +474,18 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	}
 
 	// Step 1: decode COSE_Sign1
-	msg, err := decodeCoseSign1(mdoc.IssuerSigned.IssuerAuth)
+	msg, err := coseutil.DecodeSign1(mdoc.IssuerSigned.IssuerAuth)
 	if err != nil {
 		result.Error = fmt.Sprintf("decode cose: %v", err)
 		return nil, result
 	}
 
-	// Step 2: extract x5chain from unprotected header 33
-	// x5chain = [DS cert DER, IACA cert DER]
-	// go-cose decodes [][]byte as []any where each element is []byte
-	rawVal, exists := msg.Headers.Unprotected[int64(33)]
-	if !exists {
-		result.Error = "no x5chain in issuerAuth header 33"
+	// Step 2: parse x5chain (unprotected header 33): certs[0] = DS cert (leaf),
+	// certs[1..] = intermediates (IACA cert)
+	certs, err := coseutil.UnprotectedX5Chain(msg)
+	if err != nil {
+		result.Error = fmt.Sprintf("issuerAuth: %v", err)
 		return nil, result
-	}
-
-	chainRaw, ok := rawVal.([]any)
-	if !ok {
-		// fallback: single cert
-		single, ok2 := rawVal.([]byte)
-		if !ok2 {
-			result.Error = fmt.Sprintf("x5chain wrong type: %T", rawVal)
-			return nil, result
-		}
-		chainRaw = []any{single}
-	}
-
-	if len(chainRaw) == 0 {
-		result.Error = "x5chain is empty"
-		return nil, result
-	}
-
-	// parse all certs: certs[0] = DS cert (leaf), certs[1..] = intermediates (IACA cert)
-	certs := make([]*x509.Certificate, 0, len(chainRaw))
-	for i, raw := range chainRaw {
-		b, ok := raw.([]byte)
-		if !ok {
-			result.Error = fmt.Sprintf("x5chain[%d] wrong type: %T", i, raw)
-			return nil, result
-		}
-		c, err := x509.ParseCertificate(b)
-		if err != nil {
-			result.Error = fmt.Sprintf("parse x5chain[%d]: %v", i, err)
-			return nil, result
-		}
-		certs = append(certs, c)
 	}
 
 	dsCert := certs[0]
@@ -642,7 +550,7 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	// Step 4: verify COSE_Sign1 signature using DS cert's public key
 	// go-cose internally builds the Sig_structure and verifies ECDSA against it
 	// NOT the bare MSO bytes — the Sig_structure wrapping is what actually gets signed
-	coseverifier, err := coseVerifierFor(msg, dsCert.PublicKey, "issuerAuth")
+	coseverifier, err := coseutil.VerifierFor(msg, dsCert.PublicKey, "issuerAuth")
 	if err != nil {
 		result.Error = err.Error()
 		return nil, result
@@ -735,7 +643,29 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 		result.DeviceKey = devicePub
 	}
 
+	if mso.Status != nil {
+		result.StatusReference = mso.Status.StatusList
+	}
+
+	if err := v.runStatusListCheck(result.StatusReference); err != nil {
+		result.Error = err.Error()
+		return nil, result
+	}
+
 	return &mso, result
+}
+
+// runStatusListCheck applies the Token Status List check
+// (draft-ietf-oauth-status-list-15) when a checker is set and the MSO carries a
+// reference: fail closed, the same policy sdjwtvc applies (see
+// statuslist.Checker.RequireValid). context.Background is deliberate, as in
+// sdjwtvc: no session context reaches the parser call chain, and the one
+// network step is bounded by the checker's own FetchTimeout.
+func (v *Verifier) runStatusListCheck(ref *statuslist.Reference) error {
+	if v.statusChecker == nil || ref == nil {
+		return nil
+	}
+	return v.statusChecker.RequireValid(context.Background(), *ref)
 }
 
 // DocTypeFromIssuerAuth reads the docType out of the MSO that issuerAuth signs
@@ -751,7 +681,7 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 // still established afterwards: the caller's Verify re-reads it from the MSO
 // only once the Document Signer's signature over it has been checked.
 func DocTypeFromIssuerAuth(issuerAuth cbor.RawMessage) (string, error) {
-	msg, err := decodeCoseSign1(issuerAuth)
+	msg, err := coseutil.DecodeSign1(issuerAuth)
 	if err != nil {
 		return "", fmt.Errorf("decode cose: %w", err)
 	}
@@ -775,7 +705,7 @@ func DocTypeFromIssuerAuth(issuerAuth cbor.RawMessage) (string, error) {
 // VerifyWithDeviceAuth, after the Document Signer's signature over it has been
 // checked.
 func DeviceKeyFromIssuerAuth(issuerAuth cbor.RawMessage) (*ecdsa.PublicKey, error) {
-	msg, err := decodeCoseSign1(issuerAuth)
+	msg, err := coseutil.DecodeSign1(issuerAuth)
 	if err != nil {
 		return nil, fmt.Errorf("decode cose: %w", err)
 	}
@@ -1005,7 +935,7 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 
 	// Re-decode the MSO for deviceKeyInfo. Safe: Verify() already checked this
 	// payload's signature and chain.
-	msg, err := decodeCoseSign1(mdoc.IssuerSigned.IssuerAuth)
+	msg, err := coseutil.DecodeSign1(mdoc.IssuerSigned.IssuerAuth)
 	if err != nil {
 		result.Valid = false
 		result.Error = fmt.Sprintf("decode cose (deviceAuth phase): %v", err)
@@ -1027,7 +957,7 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 
 	// Payload is nil on the wire: SignDeviceAuth detaches it, per the AV
 	// Blueprint's worked example. It is rebuilt below.
-	deviceMsg, err := decodeCoseSign1(deviceAuthBytes)
+	deviceMsg, err := coseutil.DecodeSign1(deviceAuthBytes)
 	if err != nil {
 		result.Valid = false
 		result.Error = fmt.Sprintf("decode deviceAuth cose: %v", err)
@@ -1066,7 +996,7 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 	}
 	deviceMsg.Payload = expectedPayload
 
-	deviceVerifier, err := coseVerifierFor(deviceMsg, devicePub, "deviceAuth")
+	deviceVerifier, err := coseutil.VerifierFor(deviceMsg, devicePub, "deviceAuth")
 	if err != nil {
 		result.Valid = false
 		result.Error = err.Error()

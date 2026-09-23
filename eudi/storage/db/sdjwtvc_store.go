@@ -10,26 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// CredentialStatusInstance is an instance's status_list reference.
-// BatchID lets callers select a single representative instance per batch, and
-// LastKnownStatus lets them tell a status change from a re-confirmation without
-// a second read.
-type CredentialStatusInstance struct {
-	InstanceID      datatypes.UUID
-	BatchID         datatypes.UUID
-	StatusListURI   string
-	StatusListIdx   uint64
-	LastKnownStatus uint8
-}
-
-// BatchInstanceStatus pairs a batch's deterministic hash with one of its
-// instances' last-known Token Status List status. Only instances that carry
-// a status_list reference are reported.
-type BatchInstanceStatus struct {
-	Hash            string
-	LastKnownStatus uint8
-}
-
 // SdJwtVcStore persists SD-JWT VC credentials: SdJwtVcBatch rows, their
 // SdJwtVcBatchInstance copies and the display metadata tree hanging off them.
 // SD-JWT VC only; mso_mdoc has its own store (MdocStore).
@@ -63,20 +43,13 @@ type SdJwtVcStore interface {
 	// along with all its instances (via CASCADE). Returns ErrNotFound if no batch exists with that hash.
 	DeleteBatchByHash(hash string) error
 
-	// ListInstancesWithStatusReference returns every SdJwtVcBatchInstance
-	// with a (status_list.uri, status_list.idx) pair, along with the status the
-	// wallet last recorded for it.
-	ListInstancesWithStatusReference() ([]CredentialStatusInstance, error)
-
-	// ListStatusReferencedInstanceStatuses returns the (batch hash,
-	// last_known_status) pair for every instance carrying a Token Status List
-	// reference. Used to surface per-credential revocation in the credential
-	// list without loading full instances.
-	ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error)
-
-	// UpdateInstanceStatus writes last_known_status and last_status_check_at
-	// on a single SdJwtVcBatchInstance. Returns ErrNotFound on no match.
-	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
+	// CredentialStatusStore is embedded so RevocationService can treat this
+	// store's instances the same way it treats MdocStore's — see
+	// credential_status_store.go, where ListInstancesWithStatusReference,
+	// ListStatusReferencedInstanceStatuses and UpdateInstanceStatus are
+	// documented. SdJwtVcBatchInstance is the concrete row shape behind them
+	// here; MdocBatchInstance is mdoc's.
+	CredentialStatusStore
 
 	// UpdateBatchHash rewrites a SdJwtVcBatch's deduplication hash. Returns
 	// ErrNotFound on no match.
@@ -227,29 +200,11 @@ func (s *sdJwtVcStore) DeleteBatch(batchID datatypes.UUID) error {
 }
 
 func (s *sdJwtVcStore) ListInstancesWithStatusReference() ([]CredentialStatusInstance, error) {
-	var out []CredentialStatusInstance
-	err := s.db.
-		Model(&models.SdJwtVcBatchInstance{}).
-		Select("id AS instance_id, " +
-			"credential_batch_id AS batch_id, " +
-			"status_list_uri AS status_list_uri, " +
-			"status_list_idx AS status_list_idx, " +
-			"last_known_status AS last_known_status").
-		Where("status_list_uri IS NOT NULL AND status_list_idx IS NOT NULL").
-		Scan(&out).Error
-	return out, err
+	return sdJwtVcStatusTables.listInstancesWithStatusReference(s.db)
 }
 
 func (s *sdJwtVcStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error) {
-	var out []BatchInstanceStatus
-	err := s.db.
-		Model(&models.SdJwtVcBatchInstance{}).
-		Select("credential_batches.hash AS hash, " +
-			"issued_credential_instances.last_known_status AS last_known_status").
-		Joins("JOIN credential_batches ON credential_batches.id = issued_credential_instances.credential_batch_id").
-		Where("issued_credential_instances.status_list_uri IS NOT NULL").
-		Scan(&out).Error
-	return out, err
+	return sdJwtVcStatusTables.listStatusReferencedInstanceStatuses(s.db)
 }
 
 func (s *sdJwtVcStore) UpdateBatchHash(batchID datatypes.UUID, hash string) error {
@@ -272,20 +227,5 @@ func (s *sdJwtVcStore) UpdateBatchHash(batchID datatypes.UUID, hash string) erro
 }
 
 func (s *sdJwtVcStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
-	if instanceID.IsNil() {
-		return fmt.Errorf("instanceID is required")
-	}
-	res := s.db.Model(&models.SdJwtVcBatchInstance{}).
-		Where("id = ?", instanceID).
-		Updates(map[string]any{
-			"last_known_status":    status,
-			"last_status_check_at": checkedAt,
-		})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return sdJwtVcStatusTables.updateInstanceStatus(s.db, instanceID, status, checkedAt)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -52,7 +53,7 @@ func newMdocTestEnv(t *testing.T) *mdocTestEnv {
 		db:      d,
 		store:   store,
 		keys:    keys,
-		service: NewMdocCredentialService(store, keys, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()), clientmodels.NewCurrentLocale("en")),
+		service: NewMdocCredentialService(store, keys, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()), NewRevocationService(nil, store), clientmodels.NewCurrentLocale("en")),
 		keyMint: NewMdocKeyService(keys),
 		issuer:  issuer,
 		parser:  NewMdocCredentialFormatParser(stdmdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})),
@@ -80,22 +81,36 @@ func newMdocTestEnv(t *testing.T) *mdocTestEnv {
 // stored under thumbprint, and runs it through the production parser.
 func (e *mdocTestEnv) issueBoundTo(t *testing.T, thumbprint string, elements map[string]any) *ParsedCredential {
 	t.Helper()
-	stored, err := e.keys.GetByThumbprint(thumbprint)
-	require.NoError(t, err)
-	priv, err := decodePKCS8PrivateKey(stored.PrivateKey)
-	require.NoError(t, err)
-	return e.issueFor(t, &priv.PublicKey, elements)
+	return e.issueBoundToWithStatus(t, thumbprint, elements, nil)
 }
 
 func (e *mdocTestEnv) issueFor(t *testing.T, devicePub *ecdsa.PublicKey, elements map[string]any) *ParsedCredential {
 	t.Helper()
-	issued, err := e.issuer.Issue(testMdocDocType, testMdocDocType, elements, devicePub)
+	return e.issueForWithStatus(t, devicePub, elements, nil)
+}
+
+// issueForWithStatus is issueFor plus a Token Status List reference embedded
+// in the MSO, run through the same production parser.
+func (e *mdocTestEnv) issueForWithStatus(t *testing.T, devicePub *ecdsa.PublicKey, elements map[string]any, status *statuslist.StatusClaim) *ParsedCredential {
+	t.Helper()
+	issued, err := e.issuer.IssueWithStatus(testMdocDocType, testMdocDocType, elements, devicePub, status)
 	require.NoError(t, err)
 	raw, err := cbor.Marshal(issued)
 	require.NoError(t, err)
 	parsed, err := e.parser.ParseAndVerify(base64.RawURLEncoding.EncodeToString(raw), testMdocIssuerURL, true)
 	require.NoError(t, err)
 	return parsed
+}
+
+// issueBoundToWithStatus is issueBoundTo plus a Token Status List reference
+// embedded in the MSO.
+func (e *mdocTestEnv) issueBoundToWithStatus(t *testing.T, thumbprint string, elements map[string]any, status *statuslist.StatusClaim) *ParsedCredential {
+	t.Helper()
+	stored, err := e.keys.GetByThumbprint(thumbprint)
+	require.NoError(t, err)
+	priv, err := decodePKCS8PrivateKey(stored.PrivateKey)
+	require.NoError(t, err)
+	return e.issueForWithStatus(t, &priv.PublicKey, elements, status)
 }
 
 // The mdoc store matches issued documents to minted device keys by the thumbprint
@@ -231,6 +246,70 @@ func TestMdocCredentialService_DeleteByHash(t *testing.T) {
 	var keys int64
 	require.NoError(t, env.db.Model(&models.MdocDeviceKey{}).Count(&keys).Error)
 	require.Zero(t, keys, "deleting the batch cascades to its device keys")
+}
+
+// --- Token Status List ---
+
+func TestMdocCredentialService_StorePersistsStatusReferenceAndListReportsRevocable(t *testing.T) {
+	env := newMdocTestEnv(t)
+	ids, _, err := env.keyMint.CreateKeyPairsWithProofs(1, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
+	require.NoError(t, err)
+
+	ref := &statuslist.Reference{URI: "https://issuer.example/statuslists/1", Index: 9}
+	parsed := env.issueBoundToWithStatus(t, *ids[0].PublicKeyThumbprint, map[string]any{"age_over_18": true}, &statuslist.StatusClaim{StatusList: ref})
+	require.NoError(t, env.service.Store([]*ParsedCredential{parsed}, "proof_of_age", env.metadata, true, ids))
+
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+	inst, err := env.store.GetUnusedInstance(batches[0].ID)
+	require.NoError(t, err)
+	require.NotNil(t, inst.StatusListURI)
+	require.Equal(t, ref.URI, *inst.StatusListURI)
+	require.NotNil(t, inst.StatusListIdx)
+	require.Equal(t, ref.Index, *inst.StatusListIdx)
+	// Seeded optimistically: the parser already accepted the document, so it
+	// reads Valid until the next RefreshStatuses sweep says otherwise.
+	require.Equal(t, uint8(statuslist.StatusValid), inst.LastKnownStatus)
+
+	creds, err := env.service.List()
+	require.NoError(t, err)
+	require.Len(t, creds, 1)
+	require.True(t, creds[0].RevocationSupported, "a batch carrying a status reference must report revocation support")
+	require.False(t, creds[0].Revoked, "seeded as Valid, so not (yet) revoked")
+}
+
+func TestMdocCredentialService_StoreRejectsPartialStatusReferences(t *testing.T) {
+	env := newMdocTestEnv(t)
+	ids, _, err := env.keyMint.CreateKeyPairsWithProofs(2, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
+	require.NoError(t, err)
+
+	withStatus := env.issueBoundToWithStatus(t, *ids[0].PublicKeyThumbprint, map[string]any{"age_over_18": true}, &statuslist.StatusClaim{
+		StatusList: &statuslist.Reference{URI: "https://issuer.example/statuslists/1", Index: 0},
+	})
+	withoutStatus := env.issueBoundTo(t, *ids[1].PublicKeyThumbprint, map[string]any{"age_over_18": true})
+
+	err = env.service.Store([]*ParsedCredential{withStatus, withoutStatus}, "proof_of_age", env.metadata, true, ids)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "partial status_list reference")
+
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	require.Empty(t, batches, "a rejected batch must not be stored")
+}
+
+func TestMdocCredentialService_StoreRejectsDuplicateStatusReferences(t *testing.T) {
+	env := newMdocTestEnv(t)
+	ids, _, err := env.keyMint.CreateKeyPairsWithProofs(2, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
+	require.NoError(t, err)
+
+	sameRef := &statuslist.StatusClaim{StatusList: &statuslist.Reference{URI: "https://issuer.example/statuslists/1", Index: 3}}
+	first := env.issueBoundToWithStatus(t, *ids[0].PublicKeyThumbprint, map[string]any{"age_over_18": true}, sameRef)
+	second := env.issueBoundToWithStatus(t, *ids[1].PublicKeyThumbprint, map[string]any{"age_over_18": true}, sameRef)
+
+	err = env.service.Store([]*ParsedCredential{first, second}, "proof_of_age", env.metadata, true, ids)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate status_list reference")
 }
 
 // --- the credential list's labelling, ported from the shared-table days ---

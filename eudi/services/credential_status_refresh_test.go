@@ -231,7 +231,7 @@ func Test_RefreshStatuses_DetectsRevocationTransition(t *testing.T) {
 	require.Zero(t, refresh(t, svc), "re-confirming the same status is not a change")
 
 	// The issuer revokes the credential by flipping the bit at idx 4.
-	srv.Serve(t, signer, statuslist.TestStatusListOpts{
+	srv.ServeJWT(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{4: 1}, // Invalid (revoked)
@@ -408,7 +408,7 @@ func Test_ScheduledRefresh_PicksUpRevocation(t *testing.T) {
 		3*time.Second, 20*time.Millisecond, "scheduled refresh should record Valid")
 
 	// Issuer revokes the credential by flipping the bit at idx 9.
-	srv.Serve(t, signer, statuslist.TestStatusListOpts{
+	srv.ServeJWT(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{9: 1}, // Invalid (revoked)

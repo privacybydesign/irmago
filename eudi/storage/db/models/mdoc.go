@@ -6,6 +6,8 @@ import (
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 )
 
 // The mso_mdoc storage models. They share nothing with the SD-JWT VC models
@@ -154,9 +156,34 @@ type MdocBatchInstance struct {
 	// the key by the thumbprint of the device public key in the MSO — but the
 	// association is what carries the cascade.
 	DeviceKey *MdocDeviceKey `gorm:"foreignKey:MdocBatchInstanceID;constraint:OnDelete:CASCADE"`
+
+	// StatusListURI is the canonical URI from the MSO's `status.status_list.uri`
+	// field, when present. Nil for a document that carries no Token Status
+	// List reference. Mirrors SdJwtVcBatchInstance.StatusListURI; see there.
+	StatusListURI *string
+
+	// StatusListIdx is the bit-position into the referenced status list.
+	// Nil iff StatusListURI is nil.
+	StatusListIdx *uint64
+
+	// LastKnownStatus is the most recently observed statuslist.Status for
+	// this document. 0 (StatusUnknown) is the default for documents that
+	// have not yet been checked, and for documents without a status_list
+	// reference.
+	LastKnownStatus uint8 `gorm:"default:0"`
+
+	// LastStatusCheckAt records the wall-clock time of the most recent
+	// successful status check. Nil iff the document has never been checked.
+	LastStatusCheckAt *time.Time
 }
 
 func (MdocBatchInstance) TableName() string { return "mdoc_batch_instances" }
+
+// StatusReference is the document's Token Status List reference, nil when it
+// carries none.
+func (i *MdocBatchInstance) StatusReference() *statuslist.Reference {
+	return statusReference(i.StatusListURI, i.StatusListIdx)
+}
 
 func (i *MdocBatchInstance) BeforeCreate(tx *gorm.DB) error {
 	if i.ID.IsNil() {

@@ -8,16 +8,28 @@ import (
 	"io"
 )
 
-// decodeBits decompresses the base64url + zlib encoded `lst` field and
+// decodeBitsBase64 decompresses the base64url + zlib encoded `lst` field and
 // returns the raw bit-array bytes. maxBytes caps the decompressed size
 // to defend against zip bombs; 0 means use MaxBodyDefault.
-func decodeBits(lstB64 string, maxBytes int64) ([]byte, error) {
-	if maxBytes <= 0 {
-		maxBytes = MaxBodyDefault
-	}
+//
+// This is the JWT/JSON encoding's shape: `lst` travels as a base64url text
+// string because JSON has no binary type. The CWT/CBOR encoding carries the
+// same field as a native byte string, already binary — see decodeBitsRaw,
+// which this delegates to once the base64 layer is peeled off.
+func decodeBitsBase64(lstB64 string, maxBytes int64) ([]byte, error) {
 	compressed, err := base64.RawURLEncoding.DecodeString(lstB64)
 	if err != nil {
 		return nil, fmt.Errorf("%w: lst is not base64url: %v", ErrDecode, err)
+	}
+	return decodeBitsRaw(compressed, maxBytes)
+}
+
+// decodeBitsRaw decompresses an already-binary, zlib-compressed `lst` byte
+// string and returns the raw bit-array bytes. maxBytes caps the decompressed
+// size to defend against zip bombs; <= 0 means use MaxBodyDefault.
+func decodeBitsRaw(compressed []byte, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		maxBytes = MaxBodyDefault
 	}
 	zr, err := zlib.NewReader(bytes.NewReader(compressed))
 	if err != nil {

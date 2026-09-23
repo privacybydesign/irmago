@@ -6,6 +6,8 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	cose "github.com/veraison/go-cose"
+
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 )
 
 // ============================================================
@@ -79,6 +81,15 @@ type MSO struct {
 	DocType         string                       `cbor:"docType"`
 	ValidityInfo    ValidityInfo                 `cbor:"validityInfo"`
 	DeviceKeyInfo   DeviceKeyInfo                `cbor:"deviceKeyInfo"` // holder's device public key
+
+	// Status carries the IETF Token Status List reference (draft-ietf-oauth-status-list-15
+	// §6.3.2): "status" is the RECOMMENDED label for the field, and its shape —
+	// a `status_list` map with `idx`/`uri` — is the same CBOR structure the
+	// CWT-encoded Referenced Token format uses (§6.3), which is why this reuses
+	// statuslist.StatusClaim/Reference (whose cbor tags already match) rather
+	// than a separate mdoc-local type. Omitted by an issuer that publishes no
+	// revocation status, hence the pointer and omitempty.
+	Status *statuslist.StatusClaim `cbor:"status,omitempty"`
 }
 
 type ValidityInfo struct {
