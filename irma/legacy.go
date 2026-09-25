@@ -161,13 +161,11 @@ func (dr *DisclosureRequest) Legacy() (SessionRequest, error) {
 		return nil, err
 	}
 	return &LegacyDisclosureRequest{
-		BaseRequest: BaseRequest{
-			Type:            ActionDisclosing,
-			Context:         dr.Context,
-			Nonce:           dr.Nonce,
-			ProtocolVersion: dr.ProtocolVersion,
-		},
-		Content: disjunctions,
+		Type:            ActionDisclosing,
+		Context:         dr.Context,
+		Nonce:           dr.Nonce,
+		ProtocolVersion: dr.ProtocolVersion,
+		Content:         disjunctions,
 	}, nil
 }
 
@@ -205,16 +203,12 @@ func (sr *SignatureRequest) Legacy() (SessionRequest, error) {
 		return nil, err
 	}
 	return &LegacySignatureRequest{
-		Message: sr.Message,
-		LegacyDisclosureRequest: LegacyDisclosureRequest{
-			BaseRequest: BaseRequest{
-				Type:            ActionSigning,
-				Context:         sr.Context,
-				Nonce:           sr.Nonce,
-				ProtocolVersion: sr.ProtocolVersion,
-			},
-			Content: disjunctions,
-		},
+		Message:         sr.Message,
+		Type:            ActionSigning,
+		Context:         sr.Context,
+		Nonce:           sr.Nonce,
+		ProtocolVersion: sr.ProtocolVersion,
+		Content:         disjunctions,
 	}, nil
 }
 
@@ -266,14 +260,12 @@ func (ir *IssuanceRequest) Legacy() (SessionRequest, error) {
 		return nil, err
 	}
 	return &LegacyIssuanceRequest{
-		BaseRequest: BaseRequest{
-			Type:            ActionIssuing,
-			Context:         ir.Context,
-			Nonce:           ir.Nonce,
-			ProtocolVersion: ir.ProtocolVersion,
-		},
-		Credentials: ir.Credentials,
-		Disclose:    disjunctions,
+		Type:            ActionIssuing,
+		Context:         ir.Context,
+		Nonce:           ir.Nonce,
+		ProtocolVersion: ir.ProtocolVersion,
+		Credentials:     ir.Credentials,
+		Disclose:        disjunctions,
 	}, nil
 }
 

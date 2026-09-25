@@ -68,11 +68,9 @@ func postRevocation(request *irma.RevocationRequest, url, schemesPath, schemesAs
 			clihelpers.Die("failed to configure JWT key", errJwtKey, Logger)
 		}
 		j := irma.RevocationJwt{
-			ServerJwt: irma.ServerJwt{
-				ServerName: name,
-				IssuedAt:   irma.Timestamp(time.Now()),
-			},
-			Request: request,
+			ServerName: name,
+			IssuedAt:   irma.Timestamp(time.Now()),
+			Request:    request,
 		}
 		// Prevent that err is redeclared in the inner scope
 		jwtstr, errJwtSign := j.Sign(jwtalg, sk)

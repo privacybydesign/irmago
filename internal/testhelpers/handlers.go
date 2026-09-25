@@ -3,6 +3,7 @@ package testhelpers
 import (
 	"encoding/json"
 	"math/rand"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,10 +19,21 @@ type TestClientHandler struct {
 	C           chan error
 	RevokedCred *irma.CredentialIdentifier
 	Storage     string
+
+	// Atomic: written from whichever goroutine woke the UI, read from the test's.
+	credentialsChanged atomic.Int32
 }
 
 func (i *TestClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet) {}
 func (i *TestClientHandler) UpdateAttributes()                               {}
+func (i *TestClientHandler) CredentialsChanged() {
+	i.credentialsChanged.Add(1)
+}
+
+func (i *TestClientHandler) CredentialsChangedCount() int {
+	return int(i.credentialsChanged.Load())
+}
+
 func (i *TestClientHandler) Revoked(cred *irma.CredentialIdentifier) {
 	i.RevokedCred = cred
 }

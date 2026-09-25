@@ -1,0 +1,44 @@
+{
+  "path": "/vct/statuslist",
+  "credentials": [
+    "StatusListCredentialSdJwt"
+  ],
+  "document": {
+    "name": "Status List Credential (SD-JWT)",
+    "description": "VCT metadata for the Token Status List integration test SD-JWT credential",
+    "language": "en",
+    "display": [
+      {
+        "locale": "en",
+        "name": "Status List Credential (SD-JWT)"
+      }
+    ],
+    "claims": [
+      {
+        "path": ["given_name"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Given Name" },
+          { "locale": "nl", "label": "Voornaam" }
+        ]
+      },
+      {
+        "path": ["family_name"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Family Name" },
+          { "locale": "nl", "label": "Achternaam" }
+        ]
+      },
+      {
+        "path": ["email"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Email" },
+          { "locale": "nl", "label": "E-mailadres" }
+        ]
+      }
+    ],
+    "issuer": "{{ here }}"
+  }
+}

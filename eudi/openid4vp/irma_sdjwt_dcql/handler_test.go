@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -361,7 +361,7 @@ func testMultipleCredentialQueriesInOptionIsUnsupported(t *testing.T) {
 
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
-	_, err = h.BuildDisclosurePlan(query, result, nil, nil)
+	_, _, err = h.BuildDisclosurePlan(query, result, nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not supported")
 }
@@ -624,7 +624,7 @@ func buildPlan(t *testing.T, h *dcql.DcqlHandler, rawQuery string) *clientmodels
 	query := parseDcqlQuery(t, rawQuery)
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
-	plan, err := h.BuildDisclosurePlan(query, result, nil, nil)
+	plan, _, err := h.BuildDisclosurePlan(query, result, nil, nil)
 	require.NoError(t, err)
 	return plan
 }
@@ -683,15 +683,15 @@ func createTestDcqlHandler(t *testing.T) (*dcql.DcqlHandler, *irmaclient.InMemor
 
 	storage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
-	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
+	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 	return dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{
-		irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(storage, conf, keyBinder),
+		irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(storage, conf, keyBinder, nil),
 	}), storage
 }
 
 func storeTestCred(t *testing.T, storage *irmaclient.InMemorySdJwtVcStorage, vct string, claims map[string]string) irmaclient.SdJwtVcBatchMetadata {
 	t.Helper()
-	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
+	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 	info, sdjwts := irmaclient.CreateMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, vct, "https://openid4vc.staging.yivi.app", claims, 1)
 	require.NoError(t, storage.StoreCredential(info, sdjwts))
 	return info

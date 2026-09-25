@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
 
-// signerKeyBinder implements sdjwtvc.KeyBinder on top of a HolderSigner, so the
+// signerKeyBinder implements sdjwt.KeyBinder on top of a HolderSigner, so the
 // KB-JWT signed at OpenID4VP presentation time is produced by whatever backs the
 // HolderSigner (software keys, or a WSCA/HSM). It replaces DefaultKeyBinder,
 // which requires a raw *ecdsa.PrivateKey pulled from storage.
@@ -25,8 +25,8 @@ type signerKeyBinder struct {
 	clock  jwt.Clock
 }
 
-// NewSignerKeyBinder returns a sdjwtvc.KeyBinder backed by the given HolderSigner.
-func NewSignerKeyBinder(signer HolderSigner) sdjwtvc.KeyBinder {
+// NewSignerKeyBinder returns a sdjwt.KeyBinder backed by the given HolderSigner.
+func NewSignerKeyBinder(signer HolderSigner) sdjwt.KeyBinder {
 	return &signerKeyBinder{signer: signer, clock: eudi_jwt.NewSystemClock()}
 }
 
@@ -37,7 +37,7 @@ func (b *signerKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	}
 	keys := make([]jwk.Key, len(pubs))
 	for i, pub := range pubs {
-		k, err := jwk.Import(pub)
+		k, err := jwk.Import[jwk.Key](pub)
 		if err != nil {
 			return nil, fmt.Errorf("holderkeys: failed to import holder public key: %w", err)
 		}
@@ -50,17 +50,17 @@ func (b *signerKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	return keys, nil
 }
 
-func (b *signerKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, nonce string, audience string) (sdjwtvc.KeyBindingJwt, error) {
+func (b *signerKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, nonce string, audience string) (sdjwt.KeyBindingJwt, error) {
 	ref, err := b.signer.Reference(holderKey)
 	if err != nil {
 		return "", fmt.Errorf("holderkeys: failed to resolve holder key reference: %w", err)
 	}
 
 	header := map[string]any{
-		"typ": sdjwtvc.KbJwtTyp,
+		"typ": sdjwt.KbJwtTyp,
 		"alg": "ES256",
 	}
-	payload := sdjwtvc.KeyBindingJwtPayload{
+	payload := sdjwt.KeyBindingJwtPayload{
 		IssuerSignedJwtHash: hash,
 		Nonce:               nonce,
 		IssuedAt:            b.clock.Now().Unix(),
@@ -77,7 +77,7 @@ func (b *signerKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, no
 	}
 	jws := append(signingInput, '.')
 	jws = append(jws, []byte(base64.RawURLEncoding.EncodeToString(sig))...)
-	return sdjwtvc.KeyBindingJwt(jws), nil
+	return sdjwt.KeyBindingJwt(jws), nil
 }
 
 func (b *signerKeyBinder) RemovePrivateKeys(pubKeys []jwk.Key) error {
@@ -93,12 +93,15 @@ func (b *signerKeyBinder) RemovePrivateKeys(pubKeys []jwk.Key) error {
 }
 
 func (b *signerKeyBinder) RemoveAllPrivateKeys() error {
-	// The POC HolderSigner has no enumerate-all primitive; callers that need a
-	// full wipe use Wallet.Reset (storage) plus the signer's own lifecycle.
+	// HolderSigner has no enumerate-all primitive — only Remove(refs) — so this
+	// cannot wipe keys it was never told about. A full wipe therefore runs
+	// through client.Client.RemoveStorage, which clears the wallet's own
+	// storage; disposing of the signer's key material is the signer's
+	// responsibility, and for a WSCA-backed one it happens outside irmago.
 	return nil
 }
 
-var _ sdjwtvc.KeyBinder = (*signerKeyBinder)(nil)
+var _ sdjwt.KeyBinder = (*signerKeyBinder)(nil)
 
 // jwsSigningInput returns the ASCII "base64url(header).base64url(payload)"
 // signing input for a compact JWS.

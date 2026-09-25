@@ -17,7 +17,6 @@ import (
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
-	"github.com/privacybydesign/irmago/irma/server/keyshare"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -191,8 +190,8 @@ func marshalJSON(t *testing.T, v any) string {
 
 func authJWT(t *testing.T, sk *ecdsa.PrivateKey, username string) string {
 	jwtt, err := jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareAuthRequestClaims{
-		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(3 * time.Minute))},
-		Username:         username,
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(3 * time.Minute)),
+		Username:  username,
 	}).SignedString(sk)
 	require.NoError(t, err)
 	x := marshalJSON(t, irma.KeyshareAuthRequest{AuthRequestJWT: jwtt})
@@ -395,10 +394,10 @@ func TestKeyshareSessions(t *testing.T) {
 	auth1 := jwtMsg.Message
 
 	test.HTTPPost(t, nil, "http://localhost:8080/api/v1/users/verify/pin",
-		marshalJSON(t, irma.KeyshareAuthResponse{KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
+		marshalJSON(t, irma.KeyshareAuthResponse{
 			Username: "legacyuser",
 			Pin:      "puZGbaLDmFywGhFDi4vW2G87ZhXpaUsvymZwNJfB/SU=\n",
-		}}), nil,
+		}), nil,
 		200, &jwtMsg,
 	)
 	auth2 := jwtMsg.Message
@@ -470,11 +469,9 @@ func StartKeyshareServer(t *testing.T, db DB, emailserver string) (*Server, *htt
 			IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
 			Logger:                irma.Logger,
 		},
-		EmailConfiguration: keyshare.EmailConfiguration{
-			EmailServer:     emailserver,
-			EmailFrom:       "test@example.com",
-			DefaultLanguage: "en",
-		},
+		EmailServer:           emailserver,
+		EmailFrom:             "test@example.com",
+		DefaultLanguage:       "en",
 		DB:                    db,
 		JwtKeyID:              0,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "test-kss-sk-0.pem"),
@@ -593,11 +590,9 @@ func doChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey, username, pin strin
 	require.NotEmpty(t, auth.Challenge)
 
 	jwtt, err := jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareAuthResponseClaims{
-		KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
-			Username:  username,
-			Pin:       pin,
-			Challenge: auth.Challenge,
-		},
+		Username:  username,
+		Pin:       pin,
+		Challenge: auth.Challenge,
 	}).SignedString(sk)
 	require.NoError(t, err)
 

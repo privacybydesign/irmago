@@ -54,3 +54,13 @@ func (cl CredentialInfoList) Less(i, j int) bool {
 	// TODO Decide on sorting, and if it depends on a irmago.TranslatedString, allow language choosing
 	return strings.Compare(cl[i].ID, cl[j].ID) > 0
 }
+
+// ToClientmodels converts an optional irma.TranslatedString to a nil-safe
+// clientmodels.TranslatedString, for resolving app-facing text at the DTO
+// boundary. Both types are map[string]string; a nil receiver yields nil.
+func (ts *TranslatedString) ToClientmodels() clientmodels.TranslatedString {
+	if ts == nil {
+		return nil
+	}
+	return clientmodels.TranslatedString(*ts)
+}

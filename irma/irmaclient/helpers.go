@@ -30,10 +30,11 @@ func CreateHashForSdJwtVc(credType string, attributes map[string]any) (string, e
 		if err != nil {
 			return "", err
 		}
-		hashContent.WriteString(key + string(valueStr))
+		hashContent.WriteString(key)
+		hashContent.WriteString(string(valueStr))
 	}
 
-	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent.String())
+	return iana.CreateUrlEncodedHash(iana.SHA256, hashContent.String())
 }
 
 func createCredentialInfoAndVerifiedSdJwtVc(

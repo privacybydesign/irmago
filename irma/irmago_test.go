@@ -471,7 +471,7 @@ func TestSessionRequests(t *testing.T) {
 	sigMessage := "message to be signed"
 
 	base := &DisclosureRequest{
-		BaseRequest: BaseRequest{LDContext: LDContextDisclosureRequest},
+		LDContext: LDContextDisclosureRequest,
 		Disclose: AttributeConDisCon{
 			AttributeDisCon{
 				AttributeCon{NewAttributeRequest("irma-demo.MijnOverheid.ageLimits.over18")},

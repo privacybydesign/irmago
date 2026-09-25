@@ -2,6 +2,7 @@ package myirmaserver
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMemorySessionStore(t *testing.T) {
@@ -18,10 +20,70 @@ func TestMemorySessionStore(t *testing.T) {
 
 func TestRedisSessionStore(t *testing.T) {
 	mr := miniredis.NewMiniRedis()
-	mr.Start()
+	require.NoError(t, mr.Start())
 	defer mr.Close()
 	client := redis.NewClient(&redis.Options{Addr: mr.Host() + ":" + mr.Port()})
+	defer client.Close()
 	testSessions(t, &redisSessionStore{client: &server.RedisClient{Client: client}, logger: server.Logger}, mr.FastForward)
+}
+
+func TestRedisSessionStoreUpdateWatchesSessionKey(t *testing.T) {
+	mr := miniredis.NewMiniRedis()
+	require.NoError(t, mr.Start())
+	defer mr.Close()
+
+	client := redis.NewClient(&redis.Options{Addr: mr.Host() + ":" + mr.Port()})
+	defer client.Close()
+	store := &redisSessionStore{client: &server.RedisClient{Client: client}, logger: server.Logger}
+
+	userID := int64(1)
+	ses := session{
+		Token:  "token",
+		UserID: &userID,
+		Expiry: time.Now().Add(time.Minute),
+	}
+	require.NoError(t, store.add(context.Background(), ses))
+
+	readDone := make(chan struct{})
+	continueWrite := make(chan struct{})
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- store.update(context.Background(), ses.Token, func(s *session) error {
+			close(readDone)
+			<-continueWrite
+			updatedUserID := int64(2)
+			s.UserID = &updatedUserID
+			return nil
+		})
+	}()
+
+	select {
+	case <-readDone:
+	case <-time.After(time.Second):
+		t.Fatal("transaction did not read the session")
+	}
+
+	externalUserID := int64(3)
+	ses.UserID = &externalUserID
+	sessionJSON, err := json.Marshal(ses)
+	require.NoError(t, err)
+	key := store.client.KeyPrefix + sessionLookupPrefix + ses.Token
+	require.NoError(t, client.Set(context.Background(), key, sessionJSON, time.Minute).Err())
+
+	close(continueWrite)
+	select {
+	case err := <-errChan:
+		require.ErrorIs(t, err, errRedis)
+	case <-time.After(time.Second):
+		t.Fatal("transaction did not finish")
+	}
+
+	sessionJSON, err = client.Get(context.Background(), key).Bytes()
+	require.NoError(t, err)
+	var storedSession session
+	require.NoError(t, json.Unmarshal(sessionJSON, &storedSession))
+	require.NotNil(t, storedSession.UserID)
+	require.Equal(t, externalUserID, *storedSession.UserID)
 }
 
 func testSessions(t *testing.T, store sessionStore, sleepFn func(time.Duration)) {

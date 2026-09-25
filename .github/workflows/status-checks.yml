@@ -119,14 +119,16 @@ jobs:
       run: find . -type f -not -path './testdata/*.json' | xargs misspell -error -i "adres,instelling,relatie"
 
     - name: Install staticcheck
-      run: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+      run: go install honnef.co/go/tools/cmd/staticcheck@2026.2
 
     - name: Run staticcheck
       run: staticcheck -checks "all,-ST1000,-ST1003,-SA1019,-SA1029" ./...
 
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Above the 18m `go test -timeout` in docker-compose.yml, so go test kills an
+    # overrunning suite — and names the tests still running — before the job does.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       # The sessiontest package hard-codes listeners on 127.0.0.1:48680-48699.

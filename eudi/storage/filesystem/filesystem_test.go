@@ -3,6 +3,7 @@ package filesystem
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -138,6 +139,57 @@ func TestCertificateManager_InstallCertificate_Idempotent(t *testing.T) {
 	certs, err := storage.CertificateManager().GetRawCertificates()
 	require.NoError(t, err)
 	require.Len(t, certs, 1)
+}
+
+func TestCertificateManager_RemoveCertificate_RemovesInstalledChain(t *testing.T) {
+	storage, _ := newTestStorage(t)
+	rootKey, rootCert := testdata.CreateRootCertificate(t, testdata.CreateDistinguishedName("SHARED ROOT"), testdata.PkiOption_None)
+	_, caCert1, _ := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("CA 1"), rootCert, rootKey, testdata.PkiOption_None, nil)
+	_, caCert2, _ := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("CA 2"), rootCert, rootKey, testdata.PkiOption_None, nil)
+
+	require.NoError(t, storage.CertificateManager().InstallCertificate(certsToPem(caCert1, rootCert)))
+	require.NoError(t, storage.CertificateManager().InstallCertificate(certsToPem(caCert2, rootCert)))
+
+	// The thumbprint is the hex-encoded signature of the chain's leaf, the
+	// same value InstallCertificate derived the filename from.
+	require.NoError(t, storage.CertificateManager().RemoveCertificate(fmt.Sprintf("%x", caCert1.Signature)))
+
+	certs, err := storage.CertificateManager().GetRawCertificates()
+	require.NoError(t, err)
+	require.Len(t, certs, 1)
+	require.Equal(t, certsToPem(caCert2, rootCert), certs[0])
+}
+
+func TestCertificateManager_RemoveCertificate_UnknownThumbprint(t *testing.T) {
+	storage, _ := newTestStorage(t)
+
+	err := storage.CertificateManager().RemoveCertificate("abcdef012345")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no certificate found")
+}
+
+func TestCertificateManager_RemoveCertificate_EmptyThumbprint(t *testing.T) {
+	storage, _ := newTestStorage(t)
+
+	err := storage.CertificateManager().RemoveCertificate("")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no thumbprint provided")
+}
+
+func TestCertificateManager_RemoveCertificate_RejectsNonHexThumbprint(t *testing.T) {
+	// The thumbprint doubles as the filename, so anything that is not plain
+	// hex (like a path traversal attempt) must be rejected before it reaches
+	// the filesystem.
+	storage, certsPath := newTestStorage(t)
+
+	// Sits next to the certificates directory, where "../escaped" would land.
+	outside := filepath.Join(certsPath, "escaped.pem")
+	require.NoError(t, os.WriteFile(outside, []byte("data"), 0o600))
+
+	err := storage.CertificateManager().RemoveCertificate("../escaped")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid thumbprint")
+	require.FileExists(t, outside)
 }
 
 // --- LogoManager tests ---

@@ -11,12 +11,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwe"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwe"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
@@ -170,12 +174,12 @@ func Test_openid4vciSession_obtainCredential_successResponses(t *testing.T) {
 
 	holderKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	holderJwkKey, err := jwk.Import(holderKey)
+	holderJwkKey, err := jwk.Import[jwk.Key](holderKey)
 	require.NoError(t, err)
 
 	testCredential, err := createTestSdJwtVcWithHolderKey(
 		"test.credential.type",
-		"https://test-issuer.example.com",
+		"https://openid4vc.staging.yivi.app",
 		map[string]string{"name": "Test User"},
 		certChain,
 		holderJwkKey,
@@ -193,15 +197,18 @@ func Test_openid4vciSession_obtainCredential_successResponses(t *testing.T) {
 	sess, ts := setupTestEnvironment(t, NonceNotRequired, credEndpointHandler)
 	defer ts.Close()
 
-	sess.holderVerifier = sdjwtvc.NewHolderVerificationProcessor(
+	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(
 		sdjwtvc.CreateDefaultVerificationContext(chain),
 	)
+	sess.formats = services.CredentialFormats{
+		models.CredentialFormatSdJwtVc: {Parser: services.NewSdJwtVcCredentialFormatParser(holderVerifier)},
+	}
 
 	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
 	require.NoError(t, err)
 	require.NotNil(t, fetched)
 	require.Equal(t, "credential-config-1", fetched.credentialConfigurationId)
-	require.Len(t, fetched.verifiedSdJwtVcs, 1)
+	require.Len(t, fetched.parsedCredentials, 1)
 	require.False(t, fetched.requireCryptographicKeyBinding)
 }
 
@@ -237,6 +244,12 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	require.NoError(t, err)
 
 	session := &session{
+		// The SD-JWT VC format is registered so a test that never reaches the
+		// parser (an HTTP error, an encrypted request) still resolves its format;
+		// tests that parse a credential replace the parser with a real one.
+		formats: services.CredentialFormats{
+			models.CredentialFormatSdJwtVc: {Parser: services.NewSdJwtVcCredentialFormatParser(nil)},
+		},
 		storage: eudiStorage,
 		credentialOffer: &CredentialOffer{
 			CredentialConfigurationIds: []string{"credential-config-1"},
@@ -264,13 +277,13 @@ func Test_openid4vciSession_configureIssuerSettings_credentialRequestEncryption(
 	ecPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
-	encKey, err := jwk.Import(ecPrivateKey)
+	encKey, err := jwk.Import[jwk.Key](ecPrivateKey)
 	require.NoError(t, err)
 	require.NoError(t, encKey.Set(jwk.AlgorithmKey, jwa.ECDH_ES()))
 	require.NoError(t, encKey.Set(jwk.KeyUsageKey, "enc"))
 
 	// Same key but without "enc" usage, to test the "no suitable key" error path
-	keyWithoutUsage, err := jwk.Import(ecPrivateKey)
+	keyWithoutUsage, err := jwk.Import[jwk.Key](ecPrivateKey)
 	require.NoError(t, err)
 	require.NoError(t, keyWithoutUsage.Set(jwk.AlgorithmKey, jwa.ECDH_ES()))
 
@@ -376,7 +389,10 @@ func Test_openid4vciSession_configureIssuerSettings_grantSelection(t *testing.T)
 	preAuthGrant := &PreAuthorizedCodeGrant{PreAuthorizedCode: "pre-auth-code"}
 
 	tests := []struct {
-		name        string
+		name string
+		// asMetadata is the authorization server metadata document served to the
+		// session; it determines the grant type for an offer without grants.
+		asMetadata  string
 		grants      *Grants
 		expectGrant GrantType
 		expectErr   string
@@ -397,17 +413,51 @@ func Test_openid4vciSession_configureIssuerSettings_grantSelection(t *testing.T)
 			expectGrant: GrantType_PreAuthorizedCode,
 		},
 		{
-			name:      "no grants returns error",
-			grants:    &Grants{},
-			expectErr: "no supported grant type found",
+			// OID4VCI v1.0 § 4.1.1: no grants means the wallet determines the
+			// grant type from the authorization server metadata.
+			name:        "absent grants derives authorization code from grant_types_supported",
+			asMetadata:  `{"grant_types_supported":["authorization_code","refresh_token"]}`,
+			grants:      nil,
+			expectGrant: GrantType_AuthorizationCode,
+		},
+		{
+			name:        "empty grants object derives authorization code",
+			asMetadata:  `{"grant_types_supported":["authorization_code"]}`,
+			grants:      &Grants{},
+			expectGrant: GrantType_AuthorizationCode,
+		},
+		{
+			// RFC 8414 § 2: an omitted grant_types_supported defaults to
+			// ["authorization_code", "implicit"].
+			name:        "absent grants derives authorization code when grant_types_supported is omitted",
+			asMetadata:  `{}`,
+			grants:      nil,
+			expectGrant: GrantType_AuthorizationCode,
+		},
+		{
+			// The pre-authorized code flow needs a pre-authorized_code, which
+			// only the offer can supply, so it cannot be derived.
+			name:       "absent grants without authorization code support returns error",
+			asMetadata: `{"grant_types_supported":["urn:ietf:params:oauth:grant-type:pre-authorized_code"]}`,
+			grants:     nil,
+			expectErr:  "authorization server does not support the authorization_code grant type",
+		},
+		{
+			name:      "grants with only unsupported grant types returns error",
+			grants:    &Grants{UnsupportedGrantTypes: []string{"urn:example:some-future-grant"}},
+			expectErr: "no supported grant type found in credential offer, which only offers urn:example:some-future-grant",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			asMetadata := tt.asMetadata
+			if asMetadata == "" {
+				asMetadata = `{}`
+			}
 			asServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{}`))
+				_, _ = w.Write([]byte(asMetadata))
 			}))
 			defer asServer.Close()
 
@@ -434,11 +484,52 @@ func Test_openid4vciSession_configureIssuerSettings_grantSelection(t *testing.T)
 	}
 }
 
+// An offer without grants carries no authorization_server hint either, so the
+// authorization server has to be picked from the issuer metadata without
+// consulting the (not yet determined) grant.
+func Test_openid4vciSession_configureIssuerSettings_derivesGrantWithAdvertisedAuthorizationServers(t *testing.T) {
+	asServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"grant_types_supported":["authorization_code"]}`))
+	}))
+	defer asServer.Close()
+
+	s := &session{
+		credentialOffer: &CredentialOffer{
+			CredentialIssuer: "https://issuer.example.com",
+		},
+		credentialIssuerMetadata: &metadata.CredentialIssuerMetadata{
+			AuthorizationServers: []string{asServer.URL},
+		},
+		issuerSettings: openid4vciSessionIssuerSettings{},
+	}
+
+	require.NoError(t, s.configureIssuerSettings())
+	require.Equal(t, asServer.URL, s.issuerSettings.authorizationServer)
+	require.Equal(t, GrantType_AuthorizationCode, s.issuerSettings.grantType.GetGrantType())
+}
+
+func Test_openid4vciSession_grantAccessorsUseTheConfiguredGrant(t *testing.T) {
+	s := &session{
+		credentialOffer: &CredentialOffer{CredentialIssuer: "https://issuer.example.com"},
+		issuerSettings:  openid4vciSessionIssuerSettings{grantType: &AuthorizationCodeGrant{}},
+	}
+
+	// The offer has no grants member at all, so a handler reading the grant from
+	// the offer instead of from the session settings would nil dereference here.
+	grant, err := s.authorizationCodeGrant()
+	require.NoError(t, err)
+	require.Nil(t, grant.IssuerState)
+
+	_, err = s.preAuthorizedCodeGrant()
+	require.ErrorContains(t, err, "not configured with a pre-authorized code grant")
+}
+
 func Test_openid4vciSession_obtainCredential_sendsEncryptedRequest(t *testing.T) {
 	ecPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
-	jwkPrivKey, err := jwk.Import(ecPrivateKey)
+	jwkPrivKey, err := jwk.Import[jwk.Key](ecPrivateKey)
 	require.NoError(t, err)
 	require.NoError(t, jwkPrivKey.Set(jwk.AlgorithmKey, jwa.ECDH_ES()))
 	require.NoError(t, jwkPrivKey.Set(jwk.KeyUsageKey, "enc"))
@@ -481,9 +572,204 @@ func Test_openid4vciSession_obtainCredential_sendsEncryptedRequest(t *testing.T)
 	token, err := jwt.Parse(decrypted, jwt.WithVerify(false))
 	require.NoError(t, err)
 
-	var configId string
-	require.NoError(t, token.Get("credential_configuration_id", &configId), "expected credential_configuration_id claim in decrypted JWT")
+	configId, err := jwt.Get[string](token, "credential_configuration_id")
+	require.NoError(t, err, "expected credential_configuration_id claim in decrypted JWT")
 	require.Equal(t, "credential-config-1", configId)
+}
+
+// Test_buildOfferedCredentials_CredentialIdComesFromTheIssuedCredential pins
+// where the credential id shown to the user — and recorded in the issuance log —
+// is taken from: the credential the issuer signed, with its advertised
+// configuration as fallback.
+//
+// The distinction is not academic for mso_mdoc. A credential configuration
+// carries a vct only for dc+sd-jwt (metadata.CredentialConfiguration.VerifiableCredentialType,
+// `json:"vct"`), so preferring the configuration leaves an mdoc issuance naming
+// nothing at all: an empty id in the permission dialog and in the activity log,
+// while the stored batch — keyed off the same docType this reads — has it right.
+func Test_buildOfferedCredentials_CredentialIdComesFromTheIssuedCredential(t *testing.T) {
+	const configId = "credential-config-1"
+
+	// The namespace -> elementIdentifier -> value shape the mdoc branch reads.
+	resolvedMdocClaims := &services.ParsedMdoc{
+		DocType:    "eu.europa.ec.av.1",
+		Namespaces: models.MdocNamespaces{"eu.europa.ec.av.1": {"age_over_18": true}},
+	}
+
+	tests := []struct {
+		name       string
+		configVct  string
+		parsed     *services.ParsedCredential
+		expectedId string
+	}{
+		{
+			name: "mso_mdoc is named by the docType out of the signed MSO",
+			// An mso_mdoc configuration has no vct field to publish.
+			configVct: "",
+			parsed: &services.ParsedCredential{
+				Format:                   models.CredentialFormatMsoMdoc,
+				VerifiableCredentialType: "eu.europa.ec.av.1",
+				Mdoc:                     resolvedMdocClaims,
+			},
+			expectedId: "eu.europa.ec.av.1",
+		},
+		{
+			name: "dc+sd-jwt prefers the signed vct over the advertised one",
+			// The placeholder veramo publishes, which must not win.
+			configVct: "unknown",
+			// Both fields carry the vct, as NewSdJwtVcCredentialFormatParser
+			// leaves them: ParsedCredential.VerifiableCredentialType is copied
+			// from the same IssuerSignedJwtPayload that SdJwtVc exposes. Setting
+			// only one would make this subtest pass or fail on which field the
+			// code happens to read, rather than on the id it produces.
+			parsed: &services.ParsedCredential{
+				Format:                   models.CredentialFormatSdJwtVc,
+				VerifiableCredentialType: "https://issuer.example.com/vct/pid",
+				SdJwtVc: &sdjwtvc.VerifiedSdJwtVc{
+					IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
+						VerifiableCredentialType: "https://issuer.example.com/vct/pid",
+					},
+					ProcessedSdJwtPayload: sdjwt.ProcessedPayload{"given_name": "Alice"},
+				},
+			},
+			expectedId: "https://issuer.example.com/vct/pid",
+		},
+		{
+			name:      "the configuration is the fallback when the credential names nothing",
+			configVct: "https://issuer.example.com/vct/fallback",
+			parsed: &services.ParsedCredential{
+				Format: models.CredentialFormatMsoMdoc,
+				Mdoc:   resolvedMdocClaims,
+			},
+			expectedId: "https://issuer.example.com/vct/fallback",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var aesKey [32]byte
+			copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+			// Needed only for the logo managers the display resolution consults.
+			eudiStorage, err := sqlcipherstorage.New(aesKey, ":memory:", t.TempDir())
+			require.NoError(t, err)
+
+			s := &session{
+				storage: eudiStorage,
+				locale:  "en",
+				credentialIssuerMetadata: &metadata.CredentialIssuerMetadata{
+					CredentialIssuer: "https://issuer.example.com",
+					CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+						configId: {
+							VerifiableCredentialType: tt.configVct,
+							CredentialMetadata:       &metadata.CredentialMetadata{},
+						},
+					},
+				},
+			}
+
+			offered := s.buildOfferedCredentials([]*fetchedCredential{{
+				credentialConfigurationId: configId,
+				parsedCredentials:         []*services.ParsedCredential{tt.parsed},
+			}})
+
+			require.Len(t, offered, 1)
+			require.Equal(t, tt.expectedId, offered[0].CredentialId)
+		})
+	}
+}
+
+// The permission screen must report the instances actually obtained, not the
+// issuer's advertised ceiling.
+//
+// It read `batch_credential_issuance.batch_size` — the largest `proofs` array the
+// issuer will accept — while `batchInstancesToRequest` caps what the wallet asks
+// for at `maxBatchInstances`. Against the EUDI reference issuer, which advertises
+// 100, the offer promised 100 and the credential list showed 30 the instant it was
+// stored, because storage records `len(parsedCredentials)`. Seen on a phone on
+// 2026-08-26.
+func Test_buildOfferedCredentials_ReportsInstancesObtainedNotAdvertisedCeiling(t *testing.T) {
+	const configId = "credential-config-1"
+
+	newInstance := func() *services.ParsedCredential {
+		return &services.ParsedCredential{
+			Format:                   models.CredentialFormatMsoMdoc,
+			VerifiableCredentialType: "eu.europa.ec.av.1",
+			IssuerIdentifier:         "https://issuer.example.com",
+			Mdoc: &services.ParsedMdoc{
+				DocType:    "eu.europa.ec.av.1",
+				Namespaces: models.MdocNamespaces{"eu.europa.ec.av.1": {"age_over_18": true}},
+			},
+		}
+	}
+
+	tests := []struct {
+		name       string
+		advertised *uint
+		obtained   int
+		// expected is what the offer must promise. One instance is nil rather
+		// than 1: services.batchInstanceCountsRemaining reports nil for a
+		// stored batch size of 1, since a lone instance is a reusable
+		// credential with no count to spend down, and the offer has to say
+		// what the list will.
+		expected *uint
+	}{
+		{
+			name:       "capped below the issuer's ceiling",
+			advertised: new(uint(100)),
+			obtained:   int(maxBatchInstances),
+			expected:   new(uint(maxBatchInstances)),
+		},
+		{
+			name:       "an issuer advertising no batch issuance promises no count",
+			advertised: nil,
+			obtained:   1,
+			expected:   nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var aesKey [32]byte
+			copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+			eudiStorage, err := sqlcipherstorage.New(aesKey, ":memory:", t.TempDir())
+			require.NoError(t, err)
+
+			issuerMetadata := &metadata.CredentialIssuerMetadata{
+				CredentialIssuer: "https://issuer.example.com",
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+					configId: {CredentialMetadata: &metadata.CredentialMetadata{}},
+				},
+			}
+			if tt.advertised != nil {
+				issuerMetadata.BatchCredentialIssuance = &metadata.BatchCredentialIssuance{
+					BatchSize: *tt.advertised,
+				}
+			}
+
+			s := &session{storage: eudiStorage, locale: "en", credentialIssuerMetadata: issuerMetadata}
+
+			instances := make([]*services.ParsedCredential, 0, tt.obtained)
+			for range tt.obtained {
+				instances = append(instances, newInstance())
+			}
+
+			offered := s.buildOfferedCredentials([]*fetchedCredential{{
+				credentialConfigurationId: configId,
+				parsedCredentials:         instances,
+			}})
+
+			require.Len(t, offered, 1)
+			remaining, ok := offered[0].BatchInstanceCountsRemaining[clientmodels.Format_MsoMdoc]
+			require.True(t, ok, "the offer should report a count for the format it carries")
+			if tt.expected == nil {
+				require.Nil(t, remaining, "a single reusable instance has no count to promise")
+				return
+			}
+			require.NotNil(t, remaining)
+			require.Equal(t, *tt.expected, *remaining,
+				"the offer must promise what was obtained, since that is what the wallet will hold")
+		})
+	}
 }
 
 func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
@@ -498,7 +784,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 			Display: []metadata.Display{{Name: "Address", Locale: &en}},
 		},
 	}
-	payload := sdjwtvc.ProcessedSdJwtPayload{
+	payload := sdjwt.ProcessedPayload{
 		"family_name": "Smith",
 		"given_name":  "Alice",
 		"address":     map[string]any{"city": "Amsterdam", "extra": ""},
@@ -507,7 +793,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 		"sub":         "u1",
 	}
 
-	attrs := buildAttributesWithValues(claims, payload)
+	attrs := buildAttributesWithValues(claims, payload, "en")
 
 	byPath := map[string]int{}
 	for i, a := range attrs {
@@ -519,7 +805,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 	}
 
 	// Standard claims are filtered out.
-	for _, key := range []string{"iss", "iat", "sub"} {
+	for _, key := range []string{jwt.IssuerKey, jwt.IssuedAtKey, jwt.SubjectKey} {
 		_, present := byPath[key]
 		require.False(t, present, "standard claim %q should not appear", key)
 	}
@@ -528,7 +814,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 	idx, ok := byPath["family_name"]
 	require.True(t, ok, "family_name should appear")
 	require.NotNil(t, attrs[idx].DisplayName)
-	require.Equal(t, "Family Name", (*attrs[idx].DisplayName)["en"])
+	require.Equal(t, "Family Name", *attrs[idx].DisplayName)
 
 	// given_name is in payload but not metadata → DisplayName nil.
 	idx, ok = byPath["given_name"]
@@ -539,7 +825,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 	idx, ok = byPath["address"]
 	require.True(t, ok, "address section header should appear")
 	require.NotNil(t, attrs[idx].DisplayName)
-	require.Equal(t, "Address", (*attrs[idx].DisplayName)["en"])
+	require.Equal(t, "Address", *attrs[idx].DisplayName)
 	require.Nil(t, attrs[idx].Value)
 
 	// address.city: no metadata → no inherited display.

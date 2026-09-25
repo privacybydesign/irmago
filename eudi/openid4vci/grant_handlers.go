@@ -74,9 +74,37 @@ type pkceParameters struct {
 	CodeChallenge oauth2.CodeChallenge
 }
 
+// authorizationCodeGrant returns the Authorization Code grant this session was
+// configured with. Handlers have to read the grant here rather than from
+// credentialOffer.Grants: an offer may omit grants entirely, in which case
+// configureIssuerSettings derived the grant from the authorization server
+// metadata and credentialOffer.Grants is nil.
+func (s *session) authorizationCodeGrant() (*AuthorizationCodeGrant, error) {
+	grant, ok := s.issuerSettings.grantType.(*AuthorizationCodeGrant)
+	if !ok {
+		return nil, fmt.Errorf("session is not configured with an authorization code grant")
+	}
+	return grant, nil
+}
+
+// preAuthorizedCodeGrant returns the Pre-Authorized Code grant this session was
+// configured with. See authorizationCodeGrant.
+func (s *session) preAuthorizedCodeGrant() (*PreAuthorizedCodeGrant, error) {
+	grant, ok := s.issuerSettings.grantType.(*PreAuthorizedCodeGrant)
+	if !ok {
+		return nil, fmt.Errorf("session is not configured with a pre-authorized code grant")
+	}
+	return grant, nil
+}
+
 // HandleGrant TODO: accept raw input, not session
 func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenResponse, error) {
 	// TODO: split this func into doCodeRequest + doTokenRequest
+
+	grant, err := s.authorizationCodeGrant()
+	if err != nil {
+		return nil, err
+	}
 
 	// Generate the code_challenge from the code_verifier, using a method supported by the AS (if any)
 	var pkce *pkceParameters
@@ -105,7 +133,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		s.redirectUri,
 		&clientId,
 		pkce,
-		s.credentialOffer.Grants.AuthorizationCodeGrant.IssuerState,
+		grant.IssuerState,
 	)
 
 	// Add `authorization_details` if the AS supports the feature and the Credential Issuer offers multiple credentials in the Credential Offer
@@ -356,10 +384,15 @@ type PreAuthorizedCodeFlowHandler struct {
 
 // HandleGrant TODO: accept raw input, not session?
 func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *session) (AccessTokenResponse, error) {
+	grant, err := s.preAuthorizedCodeGrant()
+	if err != nil {
+		return nil, err
+	}
+
 	var transactionCodeParameters *clientmodels.PreAuthorizedCodeTransactionCodeParameters = nil
-	txCodeRequired := s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode != nil
+	txCodeRequired := grant.TxCode != nil
 	if txCodeRequired {
-		txCode := s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode
+		txCode := grant.TxCode
 
 		txCodeInputMode := "numeric" // Default input mode is 'numeric' if it's not specified in the grant
 		if txCode.InputMode != nil {
@@ -404,7 +437,7 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 			return &authTokenResponse{permissionGranted: false}, nil
 		}
 
-		response, err := h.doTokenRequest(s, permission.transactionCode)
+		response, err := h.doTokenRequest(s, grant, permission.transactionCode)
 		if err == nil {
 			return response, nil
 		}
@@ -438,14 +471,14 @@ func shouldRetryTxCode(err error, txCodeRequired bool) bool {
 	return tokErr.ErrorCode == "invalid_grant" || tokErr.ErrorCode == "invalid_request"
 }
 
-func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, transactionCode *string) (AccessTokenResponse, error) {
+func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, grant *PreAuthorizedCodeGrant, transactionCode *string) (AccessTokenResponse, error) {
 	values := url.Values{}
 
-	values.Add("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
-	values.Add("pre-authorized_code", s.credentialOffer.Grants.PreAuthorizedCodeGrant.PreAuthorizedCode)
+	values.Add("grant_type", oauth2.GrantTypePreAuthorizedCode)
+	values.Add("pre-authorized_code", grant.PreAuthorizedCode)
 
 	// If a tx_code is required, it should be asked from the user via the TokenPermissionHandler callback
-	if s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode != nil {
+	if grant.TxCode != nil {
 		if transactionCode == nil {
 			return nil, fmt.Errorf("transaction code is required by issuer, but was not provided")
 		}

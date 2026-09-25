@@ -55,8 +55,33 @@ type AuthorizedAttributeSet struct {
 // CredentialQueryInfo describes the subset of a DCQL credential query
 // needed for authorization validation, avoiding a direct dependency on the dcql package.
 type CredentialQueryInfo struct {
-	VctValues  []string
-	ClaimPaths []string
+	// VctValues holds the SD-JWT VC type identifiers the query accepts
+	// (`vct_values`), for the dc+sd-jwt family.
+	VctValues []string
+
+	// DocTypeValue holds the ISO 18013-5 docType the query accepts
+	// (`doctype_value`), for mso_mdoc. A DCQL credential query names exactly
+	// one format, so a query carries either VctValues or DocTypeValue, never
+	// both — read them through CredentialTypes rather than separately.
+	DocTypeValue string
+
+	// AttributeNames holds the attribute identifiers the query requests, matched
+	// against AuthorizedAttributeSet.Attributes. These are names, not claim
+	// paths: projecting a query's claim paths into attribute names is
+	// format-specific and is the caller's job — see
+	// dcql.CredentialQuery.AuthorizationAttributeNames.
+	AttributeNames []string
+}
+
+// CredentialTypes returns the credential type identifiers the query accepts,
+// whichever format named them. Authorization treats every format alike: the
+// identifier is matched against AuthorizedAttributeSet.Credential, so the
+// distinction between a vct and a docType matters only when reading the query.
+func (q CredentialQueryInfo) CredentialTypes() []string {
+	if q.DocTypeValue != "" {
+		return []string{q.DocTypeValue}
+	}
+	return q.VctValues
 }
 
 // SchemeQueryValidator validates queries against the relying party's authorized attribute sets.
@@ -72,8 +97,11 @@ func (v *SchemeQueryValidator) ValidateCredentialQueries(queries []CredentialQue
 	}
 
 	for _, query := range queries {
-		if len(query.VctValues) == 0 {
-			return errors.New("credential query is missing vct_values")
+		// Fail closed on a query that names no credential type at all: with
+		// nothing to match against AuthorizedAttributeSet.Credential there is
+		// no way to decide whether the relying party may ask for it.
+		if len(query.CredentialTypes()) == 0 {
+			return errors.New("credential query identifies no credential type: neither vct_values nor doctype_value is set")
 		}
 
 		if err := isQueryAuthorized(query, v.RelyingParty.AuthorizedQueryableAttributeSets); err != nil {
@@ -89,8 +117,8 @@ func (ap AttestationProvider) VerifySdJwtIssuance(vct string, disclosureKeys []s
 }
 
 func isQueryAuthorized(query CredentialQueryInfo, authorizedAttributeSets []AuthorizedAttributeSet) error {
-	for _, vctValue := range query.VctValues {
-		err := isCredentialAuthorized(vctValue, query.ClaimPaths, authorizedAttributeSets)
+	for _, credentialType := range query.CredentialTypes() {
+		err := isCredentialAuthorized(credentialType, query.AttributeNames, authorizedAttributeSets)
 		if err != nil {
 			return err
 		}
@@ -111,6 +139,18 @@ func isCredentialAuthorized(requestedCredential string, requestedAttributes []st
 			requestedCredentialParts := strings.Split(requestedCredential, ".")
 
 			for i, requestedCredentialPart := range requestedCredentialParts {
+				// The requested identifier can be deeper than the authorized
+				// one, and the authorized one is indexed by the requested
+				// one's position — so run off its end and this panics. That
+				// was reachable before only from a short scheme entry; a
+				// dotted mdoc docType ("eu.europa.ec.av.1", five parts
+				// against a scheme's usual three) makes it ordinary. A
+				// non-wildcard authorized identifier that ran out of parts
+				// never matched the longer request anyway, so this is a
+				// rejection, not a new policy.
+				if i >= len(authorizedCredentialParts) {
+					return false
+				}
 				if authorizedCredentialParts[i] == "*" {
 					return true
 				}

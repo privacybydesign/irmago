@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,36 +19,71 @@ func init() {
 	eudi.Logger = logrus.New()
 }
 
-// testHandler captures the Failure callback from the OpenID4VP client.
-type testHandler struct {
-	failureCh chan *clientmodels.SessionError
+// newTestClient builds a Client with the one collaborator a session needs.
+func newTestClient() *Client {
+	return &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
 }
 
-func (h *testHandler) Failure(err *clientmodels.SessionError) {
-	h.failureCh <- err
-}
-
-func (h *testHandler) Cancelled() {}
-
-func (h *testHandler) Success(_ string, _ []clientmodels.LogCredential) {}
-
-func (h *testHandler) RequestVerificationPermission(
-	_ *clientmodels.DisclosurePlan,
-	_ *clientmodels.TrustedParty,
-	_ map[string]string,
-	_ PermissionHandler,
-) {
-}
-
-func awaitFailure(t *testing.T, h *testHandler) *clientmodels.SessionError {
+// awaitOn returns the next value sent on ch, failing the test if none arrives.
+func awaitOn[T any](t *testing.T, ch chan T, what string) T {
 	t.Helper()
 	select {
-	case err := <-h.failureCh:
-		return err
+	case v := <-ch:
+		return v
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for failure callback")
-		return nil
+		t.Fatalf("timed out waiting for %s", what)
+		var zero T
+		return zero
 	}
+}
+
+// spyHandler records what the client reported, so a test can tell a legitimate
+// re-ask from the runaway re-asking of a dead session.
+type spyHandler struct {
+	requests  atomic.Int32
+	cancels   atomic.Int32
+	successes atomic.Int32
+	requested chan PermissionHandler
+	failed    chan *clientmodels.SessionError
+}
+
+func newSpyHandler() *spyHandler {
+	return &spyHandler{
+		requested: make(chan PermissionHandler, 16),
+		failed:    make(chan *clientmodels.SessionError, 1),
+	}
+}
+
+func (h *spyHandler) Failure(err *clientmodels.SessionError) { h.failed <- err }
+
+func (h *spyHandler) Cancelled() { h.cancels.Add(1) }
+
+func (h *spyHandler) Success(_ string, _ []clientmodels.LogCredential) { h.successes.Add(1) }
+
+// DeliverDcApiResponse is never called for the URL-invoked sessions this handler
+// serves; sessions started over the Digital Credentials API use testHandler.
+func (h *spyHandler) DeliverDcApiResponse(_ string) {}
+
+func (h *spyHandler) RequestVerificationPermission(
+	_ *clientmodels.DisclosurePlan,
+	_ *clientmodels.TrustedParty,
+	_ []dcql.ChoiceQueryIds,
+	callback PermissionHandler,
+) {
+	h.requests.Add(1)
+	h.requested <- callback
+}
+
+// awaitRequest returns the callback the session handed out with its latest
+// permission request, so a test can answer as the UI would.
+func (h *spyHandler) awaitRequest(t *testing.T) PermissionHandler {
+	t.Helper()
+	return awaitOn(t, h.requested, "a permission request")
+}
+
+func (h *spyHandler) awaitFailure(t *testing.T) *clientmodels.SessionError {
+	t.Helper()
+	return awaitOn(t, h.failed, "a failure callback")
 }
 
 func TestNewSession_NonOKHttpStatus_ReportsFailure(t *testing.T) {
@@ -65,23 +101,27 @@ func TestNewSession_NonOKHttpStatus_ReportsFailure(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
-			handler := &testHandler{failureCh: make(chan *clientmodels.SessionError, 1)}
+			client := newTestClient()
+			handler := newSpyHandler()
 
 			client.NewSession(fmt.Sprintf("openid4vp://?request_uri=%s", server.URL), handler)
 
-			err := awaitFailure(t, handler)
+			err := handler.awaitFailure(t)
 			require.Contains(t, err.WrappedError, fmt.Sprintf("HTTP %d", code))
 		})
 	}
 }
 
-func TestNewSession_MissingRequestUri_ReportsFailure(t *testing.T) {
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
-	handler := &testHandler{failureCh: make(chan *clientmodels.SessionError, 1)}
+// A link with no parameters at all names no request object and carries no
+// request parameters of its own, so there is nothing to act on. It used to be
+// refused for missing a request_uri; now that the parameters may be in the query
+// string instead, it is refused for carrying neither.
+func TestNewSession_EmptyUrl_ReportsFailure(t *testing.T) {
+	client := newTestClient()
+	handler := newSpyHandler()
 
 	client.NewSession("openid4vp://", handler)
 
-	err := awaitFailure(t, handler)
-	require.Contains(t, err.WrappedError, "request_uri")
+	err := handler.awaitFailure(t)
+	require.Contains(t, err.WrappedError, "no client_id")
 }

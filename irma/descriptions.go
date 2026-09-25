@@ -6,6 +6,7 @@ import (
 	"maps"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -248,16 +249,15 @@ func buildDependencyTree(contents []IssueWizardItem, conf *Configuration, credsm
 	reversed := make([]IssueWizardItem, 0, len(contents))
 	byID := map[CredentialTypeIdentifier]IssueWizardItem{}
 	skipped := 0
-	for i := len(contents) - 1; i >= 0; i-- {
-		item := contents[i]
+	for _, item := range slices.Backward(contents) {
 		if item.Credential == nil {
 			// If an item does not denote what credential it issues, we cannot take it into account -
 			// just ignore it here and append it back to the end of the wizard just before returning.
 			skipped++
 			continue
 		}
-		reversed = append(reversed, contents[i])
-		byID[*contents[i].Credential] = contents[i]
+		reversed = append(reversed, item)
+		byID[*item.Credential] = item
 	}
 
 	// Build a map containing per level of the dependency tree the (deduplicated) nodes at that level
@@ -612,12 +612,12 @@ func NewRequestorInfo(hostname string) *RequestorInfo {
 	}
 }
 
-func (ad AttributeType) GetAttributeTypeIdentifier() AttributeTypeIdentifier {
-	return NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s.%s.%s", ad.SchemeManagerID, ad.IssuerID, ad.CredentialTypeID, ad.ID))
+func (at AttributeType) GetAttributeTypeIdentifier() AttributeTypeIdentifier {
+	return NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s.%s.%s", at.SchemeManagerID, at.IssuerID, at.CredentialTypeID, at.ID))
 }
 
-func (ad AttributeType) IsOptional() bool {
-	return ad.Optional == "true"
+func (at AttributeType) IsOptional() bool {
+	return at.Optional == "true"
 }
 
 // RandomBlindAttributeIndices returns indices of random blind attributes within this credentialtype
@@ -819,9 +819,9 @@ func (ct *CredentialType) Logo(conf *Configuration) string {
 }
 
 // Logo returns the absolute path to the issuer's logo, or empty string if not present.
-func (id *Issuer) Logo(conf *Configuration) string {
-	scheme := conf.SchemeManagers[id.SchemeManagerIdentifier()]
-	path := filepath.Join(scheme.path(), id.ID, "logo.png")
+func (issuer *Issuer) Logo(conf *Configuration) string {
+	scheme := conf.SchemeManagers[issuer.SchemeManagerIdentifier()]
+	path := filepath.Join(scheme.path(), issuer.ID, "logo.png")
 	exists, err := common.PathExists(path)
 	if err != nil || !exists {
 		return ""
@@ -830,12 +830,12 @@ func (id *Issuer) Logo(conf *Configuration) string {
 }
 
 // Identifier returns the identifier of the specified issuer description.
-func (id *Issuer) Identifier() IssuerIdentifier {
-	return NewIssuerIdentifier(id.SchemeManagerID + "." + id.ID)
+func (issuer *Issuer) Identifier() IssuerIdentifier {
+	return NewIssuerIdentifier(issuer.SchemeManagerID + "." + issuer.ID)
 }
 
-func (id *Issuer) SchemeManagerIdentifier() SchemeManagerIdentifier {
-	return NewSchemeManagerIdentifier(id.SchemeManagerID)
+func (issuer *Issuer) SchemeManagerIdentifier() SchemeManagerIdentifier {
+	return NewSchemeManagerIdentifier(issuer.SchemeManagerID)
 }
 
 func (ri *RequestorInfo) ResolveLogoPath(scheme *RequestorScheme) string {

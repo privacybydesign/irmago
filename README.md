@@ -6,6 +6,57 @@
 * The Go library [`irmaserver`](https://docs.yivi.app/irma-server-lib/) providing a HTTP server that handles IRMA session with the [IRMA mobile app](https://github.com/privacybydesign/irma_mobile), and functions for starting and managing IRMA sessions.
 * The root package `irma` contains generic IRMA functionality used by all other components below, such as parsing [IRMA schemes](https://docs.yivi.app/schemes/), parsing [IRMA metadata attributes](https://docs.yivi.app/technical-overview#the-metadata-attribute), and structs representing messages of the IRMA protocol.
 * The Go package `irmaclient` is a library that serves as the client in the IRMA protocol; it can receive and disclose IRMA attributes and store and read them from storage. It also implements the [keyshare protocol](https://github.com/privacybydesign/irma_keyshare_server) and handles registering to keyshare servers. The [IRMA mobile app](https://github.com/privacybydesign/irma_mobile) uses `irmaclient`.
+* The Go package `client` is a unified wallet client that combines the classic `irmaclient` with support for the European Digital Identity (EUDI) standards. It is built around the `eudi` packages described below and is used by the Yivi app to issue, store and present credentials over both the IRMA and the OpenID4VC protocol families.
+
+## Standards and credential formats
+
+`irmago` has evolved from an IRMA-only implementation into a crypto-agile wallet stack that speaks both the original IRMA protocol and the OpenID for Verifiable Credentials (OpenID4VC) family of standards used by the European Digital Identity (EUDI) ecosystem.
+
+### Supported protocols
+
+* **IRMA** — the original issuance and disclosure protocol based on Idemix attribute-based credentials.
+* **OpenID4VCI** ([OpenID for Verifiable Credential Issuance](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)) — credential issuance supporting both the Pre-Authorized Code flow (with optional transaction code) and the Authorization Code flow with Pushed Authorization Requests (PAR), in-app browser authorization and PKCE. Implemented in `eudi/openid4vci`.
+* **OpenID4VP** ([OpenID for Verifiable Presentations](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)) — credential presentation over both transports the specification defines: a URL-invoked session (`direct_post` and `direct_post.jwt` response modes) and a request delivered by the platform through the [W3C Digital Credentials API](https://www.w3.org/TR/digital-credentials/) (`dc_api` and `dc_api.jwt`, signed or unsigned, with the caller origin authenticated by the platform). Credential selection uses [DCQL](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l) (Digital Credentials Query Language), including credential sets and optional cryptographic holder binding. Implemented in `eudi/openid4vp`.
+
+### Supported credential formats
+
+* **IRMA / Idemix** (`idemix`) — the classic IRMA credential format.
+* **SD-JWT VC** (`dc+sd-jwt`) — [Selective Disclosure JWT Verifiable Credentials](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/), with selectively disclosable nested and array claims, batch issuance over OpenID4VCI and presentation over OpenID4VP. Implemented in `eudi/credentials/sdjwtvc`.
+* **mdoc / mDL** (`mso_mdoc`) — [ISO/IEC 18013-5](https://www.iso.org/standard/69084.html) mobile documents, as profiled by the EU Age Verification Blueprint (docType `eu.europa.ec.av.1`), with selective disclosure of individual namespace elements, single-use attestations issued in batches, and `deviceAuth` signed over the OpenID4VP session transcript for holder binding. Issued over OpenID4VCI and presented over OpenID4VP on either transport. Implemented in `eudi/credentials/mdoc`, with the presentation handler in `eudi/openid4vp/mdoc_dcql`.
+
+### Cryptographic agility
+
+The EUDI client's architecture is designed to accommodate multiple signature schemes, holder binding methods and DID methods side by side, so that algorithms and key representations can evolve without changing the surrounding protocol code:
+
+* **Signature algorithms**: holder signing currently uses ES256 (ECDSA over P-256). Issuer-signature verification is algorithm-agile via [`lestrrat-go/jwx`](https://github.com/lestrrat-go/jwx), bounded by a single allow-list defined in `eudi/jwt/signature_algorithms.go`: `ES256`, `ES384`, `ES512`, `EdDSA`, `Ed25519`, `PS256`, `PS384`, `PS512`, `RS256`, `RS384` and `RS512`, plus `ES256K` in builds carrying the `jwx_es256k` [build tag](#build-tags). That one list is read both when verifying a signature and when validating the algorithms an issuer advertises, so a credential configuration accepted up front is one whose signatures can actually be verified afterwards. Both the deprecated `EdDSA` name and the curve-specific `Ed25519` one are accepted: RFC 9864 supersedes the former, but issuers still publish and sign with it and jwx verifies either, so the curve comes from the key rather than the name. `Ed448` is not accepted, since jwx does not register it and the Go standard library does not implement it. The post-quantum `ML-DSA-44`, `ML-DSA-65` and `ML-DSA-87` are not accepted either, but for a different reason: no OpenID4VC or EUDI profile specifies post-quantum issuer signatures yet. jwx registers them from v4.4.0 on and verifies them against `crypto/mldsa`, so this build could check such a signature; it declines to. A test asserts that every algorithm jwx knows is either accepted or rejected on purpose, so an algorithm a future jwx release adds cannot enter the accepted set without someone deciding it should.
+* **Holder binding**: `jwk`, `did:key`, `did:jwk` and COSE key binding.
+* **DID methods**: `did:web`, `did:jwk` and `did:key` resolution for verifying issuers and verifiers.
+
+Sensitive material such as holder binding keys, key metadata and issued credentials is stored encrypted at rest using [SQLCipher](https://www.zetetic.net/sqlcipher/) (see [Prerequisites](#prerequisites)).
+
+### Build tags
+
+| Tag | Effect |
+| --- | --- |
+| `jwx_es256k` | Imports [`jwx-go/es256k`](https://github.com/jwx-go/es256k), the companion module holding `lestrrat-go/jwx`'s secp256k1 support, which adds `ES256K` to the accepted JWS signature algorithms (see [Cryptographic agility](#cryptographic-agility)). |
+
+`irmago`'s own builds and CI do **not** set `jwx_es256k`, so in this repository `ES256K` is rejected
+on both paths: an issuer advertising it in `credential_signing_alg_values_supported` is turned away
+while the credential offer is validated, and a JWS protected header naming it is refused before any
+key reaches signature verification.
+
+Projects that embed `irmago` and need `ES256K` pass the tag through their own build, which enables it
+on both paths:
+
+    go build -tags jwx_es256k ./...
+    go test -tags jwx_es256k ./...
+
+The allow-list follows the tag rather than the algorithm name. Under jwx v3 that was load-bearing:
+`jwa.LookupSignatureAlgorithm("ES256K")` resolved the name whether or not the tag was set, so
+accepting `ES256K` in a build that cannot verify it would let a credential through validation only
+to fail later as an opaque signature error instead of a clear algorithm error. Under jwx v4 the name
+resolves only once the companion module is imported, so an untagged build does not know `ES256K` at
+all and turns it away on both paths without the allow-list having to.
 
 ## Documentation
 
@@ -117,8 +168,20 @@ When the databases and MailHog are running, the tests can be run using:
 
     go test -p 1 ./...
 
-* The option `./...` makes sure all tests are run. You can also limit the number of tests by only running the tests from a single directory or even from a single file, for example only running all tests in the directory `./internal/sessiontest`. When you only want to execute one single test, for example the `TestDisclosureSession` test, you can do this by adding the option `-run TestDisclosureSession`.
+* The option `./...` makes sure all tests are run. You can also limit the number of tests by only running the tests from a single directory or even from a single file, for example only running all tests in the directory `./internal/sessiontest`. When you only want to execute one single test, for example the `TestManualDisclosureSession` test, you can do this by adding the option `-run TestManualDisclosureSession`.
 * The option `-p 1` is necessary to prevent parallel execution of tests. Most tests use file manipulation and therefore tests can interfere.
+
+### Trusting the test TLS certificate
+
+Some EUDI tests reach the veramo issuer and the EUDI Python PID issuer through the
+`tls_proxy` service over HTTPS on ports 8443–8445. Their certificate is the self-signed
+`testdata/configurations/certs/localhost.crt`, so a `go test` run on the host must trust
+it: that directory's README gives the Linux command, and on macOS or Windows it has to go
+into the platform's own trust store. Without it these tests fail on
+`tls: failed to verify certificate: x509: certificate signed by unknown authority`
+rather than being skipped; the whole `TestSessionHandler/openid4vp/sdjwtvc` group goes red
+this way. Running the tests in Docker (`docker-compose run test`, below) needs no setup:
+that service installs the certificate into its own trust store before running.
 
 ### Running without Docker
 
@@ -134,7 +197,7 @@ You can also run the tests fully in Docker using the command below. This is usef
 
 You can override the default command by specifying command line options for `go test` manually, for example:
 
-    docker-compose run test ./internal/sessiontest -run TestDisclosureSession
+    docker-compose run test ./internal/sessiontest -run TestManualDisclosureSession
 
 We always enforce the `-p 1` option to be used (as explained [above](#running-the-tests)).
 
@@ -152,7 +215,9 @@ You can then start `yivi irma` with the store-type flag set to Redis and the [de
 yivi irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-empty-password --redis-no-tls
 ```
 
-If you use Redis in Sentinel mode for high availability, you need to consider whether you accept the risk of losing session state in case of a failover. Redis does not guarantee [strong consistency](https://redis.io/docs/management/scaling/#redis-cluster-consistency-guarantees) in these setups. We mitigated this by waiting for a write to have reached the master node and at least one replica. This means that at least two replicas should be configured for every master node to achieve high availability. Even then, there is a small chance of losing session state when a replica fails at the same time as the master node. For example, this might be problematic if you want to guarantee that a credential is not issued twice or if you need a session QR to have a long lifetime but you do want the session to be finished soon after the QR is scanned. If you require IRMA sessions to be highly consistent, you should use the default in-memory store or Redis in standalone mode. If you accept this risk, then you can enable Sentinel mode support by setting the `--redis-accept-inconsistency-risk` flag.
+If you use Redis in Sentinel mode for high availability, you need to consider whether you accept the risk of losing session state in case of a failover. Redis does not guarantee [strong consistency](https://redis.io/docs/management/scaling/#redis-cluster-consistency-guarantees) in these setups. This might be problematic if you want to guarantee that a credential is not issued twice or if you need a session QR to have a long lifetime but you do want the session to be finished soon after the QR is scanned. If you require IRMA sessions to be highly consistent, you should use the default in-memory store or Redis in standalone mode. If you accept this risk, then you can enable Sentinel mode support by setting the `--redis-accept-inconsistency-risk` flag.
+
+If you use a managed Redis service from a cloud provider, please be aware that if you enable high availability or cluster mode, they use Redis Cluster or Redis Sentinel under water. The `irma server` does not automatically detect this, so it does not require you to set the `--redis-accept-inconsistency-risk` flag. However, the same inconsistency risks hold here too.
 
 Besides the `yivi irma server`, Redis can also be configured for the `yivi irma keyshare server` and the `yivi irma keyshare myirmaserver` in the same way as described above. Note that the `yivi irma keyshare server` does not become stateless when using Redis, because it stores the keyshare commitments and authentication challenges in memory. These cannot be stored in Redis, because we require this data to be strongly consistent. Instead, you can use sticky sessions to make sure that the same user is always routed to the same keyshare server instance. The stored commitments and challenges are only relevant for a few seconds, so the risk of losing this data is low. The `yivi irma keyshare myirmaserver` does become stateless when using Redis.
 
@@ -171,6 +236,6 @@ By default, k6 runs a single test iteration using 1 virtual user. These defaults
 ## Contact
 Request access to our IRMA slack channel by mailing to [our support](mailto:support@yivi.app) if you want to become part of the community. In our slack channels, the latest news on IRMA are shared and technical details get discussed.
 
-For responsible disclosure mail to [our responsible disclosure mailbox](mailto:responsible.disclosure@sidn.nl)
+For responsible disclosure mail to [our responsible disclosure mailbox](mailto:support@yivi.app)
 
 <!-- vim: set ts=4 sw=4: -->

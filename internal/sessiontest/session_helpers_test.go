@@ -136,6 +136,23 @@ func runSessionTest(t *testing.T, name string, test SessionIntegrationTest) {
 	})
 }
 
+// runDutchSessionTest mirrors runEudiSessionTest with a Dutch-locale client,
+// for tests that pin the "nl" resolution of app-facing text per protocol.
+func runDutchSessionTest(t *testing.T, name string, test SessionIntegrationTest) {
+	t.Run(name, func(t *testing.T) {
+		irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+		defer irmaServer.Stop()
+
+		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+		defer keyshareServer.Stop()
+
+		c, sessionHandler := createDutchClient(t)
+		defer c.Close()
+
+		test(t, irmaServer, c, sessionHandler)
+	})
+}
+
 func issue(
 	t *testing.T,
 	irmaServer *IrmaServer,
@@ -200,15 +217,37 @@ func requireSessionState(
 ) {
 	t.Helper()
 	require.Equal(t, id, session.Id)
-	require.Equal(t, status, session.Status)
+	require.Equal(t, status, session.Status, "session error: %s", describeSessionError(session.Error))
 	require.Equal(t, sessionType, session.Type)
+}
+
+// describeSessionError renders the error a failed session carries, for use in an
+// assertion message. A session that fails reaches the test only as
+// Status_Error, so a status assertion that does not print this reports the
+// symptom ("expected request_permission, got error") and drops the reason.
+func describeSessionError(err *clientmodels.SessionError) string {
+	if err == nil {
+		return "none"
+	}
+
+	description := fmt.Sprintf("type=%q wrapped=%q", err.ErrorType, err.WrappedError)
+	if err.Info != "" {
+		description += fmt.Sprintf(" info=%q", err.Info)
+	}
+	if err.RemoteStatus != 0 {
+		description += fmt.Sprintf(" remote_status=%d", err.RemoteStatus)
+	}
+	if err.RemoteError != nil {
+		description += fmt.Sprintf(" remote_error=%+v", *err.RemoteError)
+	}
+	return description
 }
 
 // requireRequestorInfo validates the standard test requestor info
 func requireRequestorInfo(t *testing.T, session clientmodels.SessionState) {
 	t.Helper()
 	require.Equal(t, "test-requestors.test-requestor", session.Requestor.Id)
-	require.Equal(t, clientmodels.TranslatedString{"nl": "Lokale IRMA server", "en": "Local IRMA server"}, session.Requestor.Name)
+	require.Equal(t, "Local IRMA server", session.Requestor.Name)
 	require.True(t, session.Requestor.Verified)
 }
 
@@ -273,13 +312,19 @@ func attributeMap(attrs []clientmodels.Attribute) map[string]clientmodels.Attrib
 }
 
 // expectedAttr describes an expected attribute with its full claim path,
-// display name, optional description, and typed value.
+// display name (resolved to the client's locale), optional description, and
+// typed value.
 type expectedAttr struct {
 	Path           []any
-	DisplayName    *clientmodels.TranslatedString
-	Description    *clientmodels.TranslatedString // nil to skip description check
-	Value          *clientmodels.AttributeValue   // nil means section header (asserts actual is nil)
-	RequestedValue *clientmodels.AttributeValue   // nil to skip check
+	DisplayName    *string
+	Description    *string                      // nil to skip description check
+	Value          *clientmodels.AttributeValue // nil means section header (asserts actual is nil)
+	RequestedValue *clientmodels.AttributeValue // nil to skip check
+	// IntentToRetain pins the verifier's retention declaration for this attribute.
+	// Nil skips the check. The wallet sets the flag on every mso_mdoc attribute
+	// and on no other format, so a test about the flag names it on every mdoc
+	// attribute it lists rather than only on the ones declared true.
+	IntentToRetain *bool
 }
 
 // strVal creates a string AttributeValue.
@@ -292,13 +337,19 @@ func boolVal(b bool) *clientmodels.AttributeValue {
 	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Bool, Bool: &b}
 }
 
+// imgVal creates a base64 image AttributeValue, the shape a byte-string
+// element the wallet recognises as a picture takes.
+func imgVal(base64Png string) *clientmodels.AttributeValue {
+	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Base64Image, Base64Image: &base64Png}
+}
+
 // intVal creates an integer AttributeValue.
 func intVal(i int64) *clientmodels.AttributeValue {
 	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Int, Int: &i}
 }
 
 // header creates an expectedAttr for a section header (Value == nil).
-func header(path []any, displayName clientmodels.TranslatedString) expectedAttr {
+func header(path []any, displayName string) expectedAttr {
 	return expectedAttr{
 		Path:        path,
 		DisplayName: &displayName,
@@ -329,13 +380,8 @@ func requireAttrsInOrder(t testingT, attrs []clientmodels.Attribute, expected ..
 		if exp.DisplayName != nil {
 			require.NotNil(t, actual.DisplayName,
 				"attribute %d (%s) should have a display name", i, pathKey)
-			for locale, expectedName := range *exp.DisplayName {
-				actualName, ok := (*actual.DisplayName)[locale]
-				require.True(t, ok, "attribute %d (%s) should have display name for locale %q",
-					i, pathKey, locale)
-				require.Equal(t, expectedName, actualName,
-					"attribute %d (%s) display name [%s] mismatch", i, pathKey, locale)
-			}
+			require.Equal(t, *exp.DisplayName, *actual.DisplayName,
+				"attribute %d (%s) display name mismatch", i, pathKey)
 		} else {
 			require.Nil(t, actual.DisplayName,
 				"attribute %d (%s) should have nil display name (array item)", i, pathKey)
@@ -343,13 +389,8 @@ func requireAttrsInOrder(t testingT, attrs []clientmodels.Attribute, expected ..
 		if exp.Description != nil {
 			require.NotNil(t, actual.Description,
 				"attribute %d (%s) should have a description", i, pathKey)
-			for locale, expectedDesc := range *exp.Description {
-				actualDesc, ok := (*actual.Description)[locale]
-				require.True(t, ok, "attribute %d (%s) should have description for locale %q",
-					i, pathKey, locale)
-				require.Equal(t, expectedDesc, actualDesc,
-					"attribute %d (%s) description [%s] mismatch", i, pathKey, locale)
-			}
+			require.Equal(t, *exp.Description, *actual.Description,
+				"attribute %d (%s) description mismatch", i, pathKey)
 		}
 		if exp.RequestedValue != nil {
 			require.NotNil(t, actual.RequestedValue,
@@ -359,7 +400,177 @@ func requireAttrsInOrder(t testingT, attrs []clientmodels.Attribute, expected ..
 			require.Equal(t, exp.RequestedValue, actual.RequestedValue,
 				"attribute %d (%s) requested value mismatch", i, pathKey)
 		}
+		if exp.IntentToRetain != nil {
+			require.NotNil(t, actual.IntentToRetain,
+				"attribute %d (%s) should carry an intent_to_retain flag", i, pathKey)
+			require.Equal(t, *exp.IntentToRetain, *actual.IntentToRetain,
+				"attribute %d (%s) intent_to_retain mismatch", i, pathKey)
+		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Activity log assertion helpers
+// ---------------------------------------------------------------------------
+
+// expectedLogCredential describes one credential entry of a disclosure or
+// issuance log. Every field except CredentialId is opt-in: a nil pointer or an
+// empty slice skips that check, so a test pins only what it is about.
+type expectedLogCredential struct {
+	CredentialId string
+	Formats      []clientmodels.CredentialFormat
+	Name         *string
+	IssuerName   *string
+	// IssuerVerified is whether the credential's chain verified at issuance.
+	// The log snapshots it, so it must equal what the permission screen showed.
+	IssuerVerified *bool
+	// HasImage and HasIssuerImage assert presence, not bytes: a logo is fetched
+	// from the issuer's metadata at issuance and a change in the PNG is not a
+	// wallet change.
+	HasImage       *bool
+	HasIssuerImage *bool
+	Attributes     []expectedAttr
+	// IssuanceDate and ExpiryDate pin the timestamps to the ones the credential
+	// list reports, since the log is what dates the entry in the activity UI.
+	IssuanceDate        *int64
+	ExpiryDate          *int64
+	Revoked             *bool
+	RevocationSupported *bool
+}
+
+// requireLogCredential asserts one log credential against the expectation.
+// context names the entry in failure messages.
+func requireLogCredential(
+	t testingT,
+	actual clientmodels.LogCredential,
+	expected expectedLogCredential,
+	context string,
+) {
+	t.Helper()
+
+	require.Equal(t, expected.CredentialId, actual.CredentialId, "%s: credential id mismatch", context)
+	if expected.Formats != nil {
+		require.Equal(t, expected.Formats, actual.Formats, "%s: formats mismatch", context)
+	}
+	if expected.Name != nil {
+		require.Equal(t, *expected.Name, actual.Name, "%s: name mismatch", context)
+	}
+	if expected.IssuerName != nil {
+		require.Equal(t, *expected.IssuerName, actual.Issuer.Name, "%s: issuer name mismatch", context)
+	}
+	if expected.IssuerVerified != nil {
+		require.Equal(t, *expected.IssuerVerified, actual.Issuer.Verified, "%s: issuer verified mismatch", context)
+	}
+	if expected.HasImage != nil {
+		requireImagePresence(t, actual.Image, *expected.HasImage, context+": credential image")
+	}
+	if expected.HasIssuerImage != nil {
+		requireImagePresence(t, actual.Issuer.Image, *expected.HasIssuerImage, context+": issuer image")
+	}
+	if len(expected.Attributes) > 0 {
+		requireAttrsInOrder(t, actual.Attributes, expected.Attributes...)
+	}
+	if expected.IssuanceDate != nil {
+		require.NotNil(t, actual.IssuanceDate, "%s: issuance date missing", context)
+		require.Equal(t, *expected.IssuanceDate, *actual.IssuanceDate, "%s: issuance date mismatch", context)
+	}
+	if expected.ExpiryDate != nil {
+		require.NotNil(t, actual.ExpiryDate, "%s: expiry date missing", context)
+		require.Equal(t, *expected.ExpiryDate, *actual.ExpiryDate, "%s: expiry date mismatch", context)
+	}
+	if expected.Revoked != nil {
+		require.Equal(t, *expected.Revoked, actual.Revoked, "%s: revoked mismatch", context)
+	}
+	if expected.RevocationSupported != nil {
+		require.Equal(t, *expected.RevocationSupported, actual.RevocationSupported,
+			"%s: revocation supported mismatch", context)
+	}
+}
+
+// requireImagePresence asserts an image is there (with bytes) or absent.
+func requireImagePresence(t testingT, image *clientmodels.Image, present bool, context string) {
+	t.Helper()
+	if !present {
+		require.Nil(t, image, "%s: expected no image", context)
+		return
+	}
+	require.NotNil(t, image, "%s: expected an image", context)
+	require.NotEmpty(t, image.Base64, "%s: image carries no bytes", context)
+}
+
+// disclosureLogs returns every disclosure entry, newest first.
+func disclosureLogs(logs []clientmodels.LogInfo) []*clientmodels.LogInfo {
+	var out []*clientmodels.LogInfo
+	for i := range logs {
+		if logs[i].Type == clientmodels.LogType_Disclosure {
+			out = append(out, &logs[i])
+		}
+	}
+	return out
+}
+
+// requireSingleDisclosureLog asserts the wallet holds exactly one disclosure
+// entry and returns it. Counting matters: the merged read across the two log
+// stores makes logging a session twice possible, and "at least one" would not
+// catch it.
+func requireSingleDisclosureLog(t testingT, c *client.Client) *clientmodels.DisclosureLog {
+	t.Helper()
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	entries := disclosureLogs(logs)
+	require.Len(t, entries, 1, "expected exactly one disclosure log entry")
+	require.NotNil(t, entries[0].DisclosureLog)
+	return entries[0].DisclosureLog
+}
+
+// requireNoDisclosureLog asserts no disclosure was recorded. Used after a
+// refused, denied or dismissed session: nothing was disclosed, so nothing may be
+// filed as a disclosure.
+func requireNoDisclosureLog(t testingT, c *client.Client) {
+	t.Helper()
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Empty(t, disclosureLogs(logs), "a session that disclosed nothing must not be logged as a disclosure")
+}
+
+// findLogCredential returns the log credential with the given id. A disclosure of
+// several credentials does not guarantee their order in the entry.
+func findLogCredential(
+	t testingT,
+	creds []clientmodels.LogCredential,
+	credentialId string,
+) clientmodels.LogCredential {
+	t.Helper()
+	for _, cred := range creds {
+		if cred.CredentialId == credentialId {
+			return cred
+		}
+	}
+	var seen []string
+	for _, cred := range creds {
+		seen = append(seen, cred.CredentialId)
+	}
+	require.Failf(t, "log credential not found", "no log credential with id %q; found %v", credentialId, seen)
+	return clientmodels.LogCredential{}
+}
+
+// credentialListEntry returns the credential list item with the given id, which
+// is what the activity log's dates and issuer are compared against.
+func credentialListEntry(t testingT, c *client.Client, credentialId string) *clientmodels.Credential {
+	t.Helper()
+	creds, _, err := c.GetCredentials()
+	require.NoError(t, err)
+	for _, cred := range creds {
+		if cred.CredentialId == credentialId {
+			return cred
+		}
+	}
+	var seen []string
+	for _, cred := range creds {
+		seen = append(seen, cred.CredentialId)
+	}
+	require.Failf(t, "credential not in wallet", "no credential with id %q; found %v", credentialId, seen)
+	return nil
 }
 
 // requireNewestDisclosureLogAttrs loads the newest logs and asserts that the
@@ -508,7 +719,7 @@ func init() {
 func startOpenID4VCISession(t *testing.T, c *client.Client, sessionId int, credOfferURL string) {
 	t.Helper()
 	sessionReq, err := json.Marshal(client.SessionRequestData{
-		Qr:                    irma.Qr{URL: credOfferURL},
+		URL:                   credOfferURL,
 		Protocol:              clientmodels.Protocol_OpenID4VCI,
 		OpenID4VCIRedirectUri: openid4vciRedirectURI,
 	})

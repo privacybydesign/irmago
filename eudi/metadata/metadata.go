@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -66,14 +66,53 @@ type Proofs map[ProofTypeIdentifier][]any
 type CredentialConfiguration struct {
 	Format                               CredentialFormatIdentifier          `json:"format"`
 	Scope                                *string                             `json:"scope,omitempty"`
-	CredentialSigningAlgValuesSupported  []any                               `json:"credential_signing_alg_values_supported,omitempty"` // Can be string values for SD-JWTs, or objects for ISO mDoc
+	CredentialSigningAlgValuesSupported  []any                               `json:"credential_signing_alg_values_supported,omitempty"` // Element type is format-specific per OID4VCI: JWS algorithm names as strings ("ES256") for dc+sd-jwt, COSE algorithm identifiers as integers (-7) for mso_mdoc
 	CryptographicBindingMethodsSupported []proofs.CryptographicBindingMethod `json:"cryptographic_binding_methods_supported,omitempty"`
 	ProofTypesSupported                  map[ProofTypeIdentifier]ProofType   `json:"proof_types_supported,omitempty"`
 	CredentialMetadata                   *CredentialMetadata                 `json:"credential_metadata,omitempty"`
 
 	// The following fields are present/absent, depending on the credential format
 	VerifiableCredentialType string                   `json:"vct,omitempty"`                   // SD-JWT VC
+	Doctype                  string                   `json:"doctype,omitempty"`               // mso_mdoc
 	CredentialDefinition     *W3CCredentialDefinition `json:"credential_definition,omitempty"` // W3C VC Signed as JWT, no JSON-LD
+}
+
+// UnmarshalJSON accepts both the OID4VCI v1.0 shape, where a credential's
+// display and claims live inside a `credential_metadata` object (§12.2.4), and
+// the widely-deployed pre-1.0 shape, where `display` and `claims` sit directly
+// on the credential configuration. When an issuer uses the legacy layout there
+// is no `credential_metadata`, so the metadata is synthesized from the top-level
+// fields — every downstream reader consults CredentialMetadata, so this one seam
+// is enough to make a legacy issuer's credentials display and store with a name.
+func (c *CredentialConfiguration) UnmarshalJSON(data []byte) error {
+	// alias drops the method set so this Unmarshal does not recurse.
+	type alias CredentialConfiguration
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	*c = CredentialConfiguration(a)
+
+	if c.CredentialMetadata == nil {
+		var legacy struct {
+			Display CredentialDisplays  `json:"display"`
+			Claims  []ClaimsDescription `json:"claims"`
+		}
+		// Before credential_metadata existed these fields were unknown to the
+		// parser and ignored, so a malformed legacy block must not start rejecting
+		// a document that used to parse. The error is deliberately dropped rather
+		// than returned early: encoding/json keeps filling the other fields past a
+		// type mismatch, and draft-13 issuers write `claims` as an object keyed by
+		// claim name — the `display` decoded next to it must still be kept.
+		_ = json.Unmarshal(data, &legacy)
+		if len(legacy.Display) > 0 || len(legacy.Claims) > 0 {
+			c.CredentialMetadata = &CredentialMetadata{
+				Display: legacy.Display,
+				Claims:  legacy.Claims,
+			}
+		}
+	}
+	return nil
 }
 
 type ProofType struct {
@@ -193,17 +232,7 @@ func (m CredentialIssuerMetadata) GetAllBaseLanguages() []string {
 }
 
 func TryGetBaseLanguageFromLocale(locale string) (string, bool) {
-	if locale == "" {
-		return "", false
-	}
-
-	baseLang, err := language.Parse(locale)
-	if err != nil {
-		return "", false
-	}
-	lang, _ := baseLang.Base()
-
-	return lang.String(), true
+	return clientmodels.BaseLanguage(locale)
 }
 
 func (m CredentialIssuerMetadata) GetAllLanguages() []string {
@@ -259,7 +288,9 @@ func (c *CredentialRequestEncryption) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("invalid 'jwks': %w", err)
 		}
-		if jwks, err := jwk.Parse(rawJwksBytes); err != nil {
+		// jwx v4 by default keeps unparseable set entries as placeholder keys;
+		// strict parsing preserves the v3 behavior of rejecting the whole set.
+		if jwks, err := jwk.Parse(rawJwksBytes, jwk.WithStrictKeySetParsing(true)); err != nil {
 			return fmt.Errorf("invalid 'jwks': %w", err)
 		} else {
 			c.Jwks = jwks
@@ -291,6 +322,36 @@ func ToTranslateableList[T Display | CredentialDisplay | CredentialIssuerDisplay
 		translations[i] = any(display).(Translateable)
 	}
 	return translations
+}
+
+// LogoURIsByLanguage maps base language → logo URI over the displays that
+// carry a logo, keyed like ConvertDisplayToTranslatedString keys names
+// (no-locale displays map to the raw "" key). The resulting map feeds
+// clientmodels.Resolve so the logo falls back across languages independently
+// of the text.
+func LogoURIsByLanguage[T CredentialDisplay | CredentialIssuerDisplay](displays []T) clientmodels.TranslatedString {
+	result := clientmodels.TranslatedString{}
+	for _, display := range displays {
+		var locale *string
+		var logo *RemoteImage
+		switch d := any(display).(type) {
+		case CredentialDisplay:
+			locale, logo = d.Locale, d.Logo
+		case CredentialIssuerDisplay:
+			locale, logo = d.Locale, d.Logo
+		}
+		if logo == nil || logo.Uri == "" {
+			continue
+		}
+		if locale == nil {
+			result[""] = logo.Uri
+			continue
+		}
+		if base, ok := TryGetBaseLanguageFromLocale(*locale); ok {
+			result[base] = logo.Uri
+		}
+	}
+	return result
 }
 
 func ConvertDisplayToTranslatedString(displays []Translateable) clientmodels.TranslatedString {

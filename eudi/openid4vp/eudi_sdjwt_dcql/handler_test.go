@@ -34,7 +34,7 @@ func (s *testStorage) RemoveAll() error                         { return nil }
 
 var _ storage.Storage = (*testStorage)(nil)
 
-func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.CredentialStore) {
+func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.SdJwtVcStore) {
 	t.Helper()
 	d, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("test-key-123"))}, &gorm.Config{})
 	require.NoError(t, err)
@@ -48,33 +48,35 @@ func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.CredentialStore) {
 		&models.CredentialDisplay{},
 		&models.CredentialClaim{},
 		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
+		&models.SdJwtVcBatch{},
+		&models.SdJwtVcBatchInstance{},
 	))
 
 	fs := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	ts := &testStorage{db: d, fs: fs}
-	credStore := db.NewCredentialStore(ts.Db())
+	credStore := db.NewSdJwtVcStore(ts.Db())
 	handler := &SdJwtVcDcqlHandler{
 		storage:         ts,
 		credentialStore: credStore,
+		currentLocale:   clientmodels.NewCurrentLocale("en"),
 	}
 	return handler, credStore
 }
 
-func newTestBatch(hash, vct string, payload map[string]any) *models.CredentialBatch {
+func newTestBatch(hash, vct string, payload map[string]any) *models.SdJwtVcBatch {
 	payloadJSON, _ := json.Marshal(payload)
-	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
-		VerifiableCredentialType: vct,
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(payloadJSON),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
-		CredentialIssuer:         "https://issuer.example.com",
-		Instances: []models.IssuedCredentialInstance{
+	iss := "https://issuer.example.com"
+	return &models.SdJwtVcBatch{
+		IssuerIdentifier:           iss,
+		VerifiableCredentialType:   vct,
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(payloadJSON),
+		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             1,
+		CredentialIssuerIdentifier: iss,
+		Instances: []models.SdJwtVcBatchInstance{
 			{RawCredential: []byte("fake-raw-credential")},
 		},
 	}
@@ -155,6 +157,72 @@ func TestFindCandidates_ValidCredentialIncluded(t *testing.T) {
 	require.Len(t, result.OwnedCandidates, 1, "valid credential should appear as candidate")
 }
 
+// stubRevocation is an injectable RevocationChecker for handler tests: it lets
+// them exercise the disclosure planner's use of the flag without any Token
+// Status List machinery (that lives with services.RevocationService).
+type stubRevocation struct{ revoked bool }
+
+func (s stubRevocation) IsRevoked(*models.SdJwtVcBatchInstance) bool { return s.revoked }
+
+// TestFindCandidates_RevokedSurfaced pins the IRMA-parity contract: a revoked
+// SD-JWT VC is NOT dropped or refused during planning. It still appears as an
+// owned candidate carrying Revoked=true (from the injected RevocationChecker),
+// so the frontend can decide — the verifier's own status check is the backstop.
+func TestFindCandidates_RevokedSurfaced(t *testing.T) {
+	h, store := newTestHandler(t)
+	h.revocation = stubRevocation{revoked: true}
+
+	batch := newTestBatch("hash-revoked", "https://example.com/EmailCredential", map[string]any{
+		"email": "test@example.com",
+	})
+	uri := "https://issuer.example.com/statuslist"
+	idx := uint64(3)
+	batch.Instances[0].StatusListURI = &uri
+	batch.Instances[0].StatusListIdx = &idx
+	require.NoError(t, store.StoreBatch(batch))
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/EmailCredential"]},
+		"claims": [{"path": ["email"]}]
+	}`)
+
+	result, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1, "revoked credential must still be offered, not dropped")
+	assert.True(t, result.OwnedCandidates[0].Revoked, "checker reports revoked -> Revoked")
+	assert.True(t, result.OwnedCandidates[0].RevocationSupported)
+}
+
+// TestFindCandidates_NotRevoked: an instance the checker reports as not revoked
+// is offered with Revoked=false but RevocationSupported=true (it carries a
+// status_list reference).
+func TestFindCandidates_NotRevoked(t *testing.T) {
+	h, store := newTestHandler(t)
+	h.revocation = stubRevocation{revoked: false}
+
+	batch := newTestBatch("hash-valid-stored", "https://example.com/EmailCredential", map[string]any{
+		"email": "test@example.com",
+	})
+	uri := "https://issuer.example.com/statuslist"
+	idx := uint64(3)
+	batch.Instances[0].StatusListURI = &uri
+	batch.Instances[0].StatusListIdx = &idx
+	require.NoError(t, store.StoreBatch(batch))
+
+	result, err := h.FindCandidates(parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/EmailCredential"]},
+		"claims": [{"path": ["email"]}]
+	}`))
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+	assert.False(t, result.OwnedCandidates[0].Revoked, "checker reports not revoked -> not Revoked")
+	assert.True(t, result.OwnedCandidates[0].RevocationSupported)
+}
+
 // TestFindCandidates_RegionalLocale_KeyedByBaseLanguage pins the contract
 // that issuer name, credential name, and claim display name on OpenID4VP
 // disclosure candidates are keyed by BCP 47 base language — the same
@@ -200,11 +268,11 @@ func TestFindCandidates_RegionalLocale_KeyedByBaseLanguage(t *testing.T) {
 	require.Len(t, result.OwnedCandidates, 1)
 
 	cand := result.OwnedCandidates[0]
-	assert.Equal(t, "Example Issuer", cand.Issuer.Name["en"], "issuer name must collapse en-US to en")
-	assert.Equal(t, "Email Credential", cand.Name["en"], "credential name must collapse en-US to en")
+	assert.Equal(t, "Example Issuer", cand.Issuer.Name, "issuer name must collapse en-US to en")
+	assert.Equal(t, "Email Credential", cand.Name, "credential name must collapse en-US to en")
 	require.NotEmpty(t, cand.Attributes)
 	require.NotNil(t, cand.Attributes[0].DisplayName)
-	assert.Equal(t, "Email", (*cand.Attributes[0].DisplayName)["en"], "claim display must collapse en-US to en")
+	assert.Equal(t, "Email", *cand.Attributes[0].DisplayName, "claim display must collapse en-US to en")
 }
 
 func TestFindCandidates_NoExpiryOrNotBefore_Included(t *testing.T) {
@@ -522,7 +590,7 @@ func TestPrepareDisclosure_BatchOfOne_RemainsUsableAfterDisclosure(t *testing.T)
 	})
 	batch.BatchSize = 1
 	batch.RemainingCount = 1
-	batch.Instances = []models.IssuedCredentialInstance{
+	batch.Instances = []models.SdJwtVcBatchInstance{
 		{RawCredential: []byte(validTestSdJwtVc)},
 	}
 	require.NoError(t, store.StoreBatch(batch))
@@ -560,7 +628,7 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	})
 	batch.BatchSize = 2
 	batch.RemainingCount = 2
-	batch.Instances = []models.IssuedCredentialInstance{
+	batch.Instances = []models.SdJwtVcBatchInstance{
 		{RawCredential: []byte(validTestSdJwtVc)},
 		{RawCredential: []byte(validTestSdJwtVc)},
 	}
@@ -658,7 +726,7 @@ func (s *stubIssuerFetcher) Fetch(_ context.Context, issuerURL string) (*typemet
 }
 
 func newHandlerWithFetchers(vct typemetadata.VctFetcher, issuer typemetadata.IssuerFetcher) *SdJwtVcDcqlHandler {
-	return &SdJwtVcDcqlHandler{vctFetcher: vct, issuerFetcher: issuer}
+	return &SdJwtVcDcqlHandler{vctFetcher: vct, issuerFetcher: issuer, currentLocale: clientmodels.NewCurrentLocale("en")}
 }
 
 func TestComposeUnobtainableDescriptor_VctFetchFails_UrlOnlyFallback(t *testing.T) {
@@ -704,11 +772,11 @@ func TestComposeUnobtainableDescriptor_VctOk_NoIssuerField(t *testing.T) {
 	desc := h.composeUnobtainableDescriptor(query)
 	require.NotNil(t, desc)
 	assert.Equal(t, "https://example.com/vct/email", desc.CredentialId)
-	assert.Equal(t, "Email Credential", desc.Name["en"])
+	assert.Equal(t, "Email Credential", desc.Name)
 	assert.Empty(t, desc.Issuer.Id, "no issuer URL means no TrustedParty")
 	assert.Nil(t, desc.IssueURL)
 	require.Len(t, desc.Attributes, 1)
-	assert.Equal(t, "Email", (*desc.Attributes[0].DisplayName)["en"], "claim display from VCT metadata")
+	assert.Equal(t, "Email", *desc.Attributes[0].DisplayName, "claim display from VCT metadata")
 }
 
 func TestComposeUnobtainableDescriptor_VctOk_IssuerFetchFails(t *testing.T) {
@@ -763,9 +831,9 @@ func TestComposeUnobtainableDescriptor_VctAndIssuerOk(t *testing.T) {
 
 	desc := h.composeUnobtainableDescriptor(query)
 	require.NotNil(t, desc)
-	assert.Equal(t, "Email Credential", desc.Name["en"])
+	assert.Equal(t, "Email Credential", desc.Name)
 	assert.Equal(t, "https://issuer.example.com", desc.Issuer.Id)
-	assert.Equal(t, "Example Issuer", desc.Issuer.Name["en"])
+	assert.Equal(t, "Example Issuer", desc.Issuer.Name)
 	assert.Nil(t, desc.IssueURL)
 }
 
@@ -792,7 +860,7 @@ func TestComposeUnobtainableDescriptor_MultiVct_FirstFailsSecondSucceeds(t *test
 	desc := h.composeUnobtainableDescriptor(query)
 	require.NotNil(t, desc)
 	assert.Equal(t, "https://example.com/vct/good", desc.CredentialId, "should pick the first VCT whose fetch succeeded")
-	assert.Equal(t, "Good Credential", desc.Name["en"])
+	assert.Equal(t, "Good Credential", desc.Name)
 }
 
 func TestComposeUnobtainableDescriptor_MultiVct_AllFail_UrlOnlyForFirst(t *testing.T) {
@@ -891,7 +959,7 @@ func TestIsIrmaStyleVct(t *testing.T) {
 }
 
 func TestCanHandleCredentialQuery(t *testing.T) {
-	h := &SdJwtVcDcqlHandler{}
+	h := &SdJwtVcDcqlHandler{currentLocale: clientmodels.NewCurrentLocale("en")}
 
 	mkQuery := func(format string, vcts ...string) dcql.CredentialQuery {
 		q := dcql.CredentialQuery{Format: format}

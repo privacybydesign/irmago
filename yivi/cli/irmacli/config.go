@@ -178,19 +178,26 @@ func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, 
 	// Create our logger instance
 	logger := server.NewLogger(viper.GetInt("verbose"), viper.GetBool("quiet"), viper.GetBool("log_json"))
 
-	// First log output: hello, development or production mode, log level
-	mode := "development"
-	if viper.GetBool("production") {
-		mode = "production"
-		for key, val := range productionDefaults {
-			viper.SetDefault(key, val)
-		}
-	}
-	logger.WithFields(logrus.Fields{
+	// First log output: hello, (development or production mode,) log level
+	fields := logrus.Fields{
 		"version":   irmago.Version,
-		"mode":      mode,
 		"verbosity": server.Verbosity(viper.GetInt("verbose")),
-	}).Info(logname + " running")
+	}
+	// Only commands that actually have a development/production distinction
+	// (i.e. that define a --production flag) log the mode. Commands without
+	// such a distinction, like the keyshare tasks command, would otherwise
+	// always log a confusing and meaningless "mode=development".
+	if commandHasProductionMode(cmd) {
+		mode := "development"
+		if viper.GetBool("production") {
+			mode = "production"
+			for key, val := range productionDefaults {
+				viper.SetDefault(key, val)
+			}
+		}
+		fields["mode"] = mode
+	}
+	logger.WithFields(fields).Info(logname + " running")
 
 	if logger.Level >= logrus.TraceLevel {
 		logger.Warn("Logger has been configured to show TRACE messages. These messages may contain untrusted user input and personal data of users. Use this option with care!")
@@ -206,6 +213,14 @@ func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, 
 	} else {
 		logger.Info("Config file: ", viper.ConfigFileUsed())
 	}
+}
+
+// commandHasProductionMode reports whether the given command distinguishes
+// between development and production mode, which is the case exactly when it
+// defines a --production flag. Commands without that flag (such as the
+// keyshare tasks command) have no such distinction.
+func commandHasProductionMode(cmd *cobra.Command) bool {
+	return cmd.Flags().Lookup("production") != nil
 }
 
 func wasProvidedInAnyWay(key string) bool {
