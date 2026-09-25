@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/gabi/signed"
 	rootpkg "github.com/privacybydesign/irmago"
@@ -72,15 +73,15 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	c, storagePath, sessionHandler := createClientWithStoragePath(t)
 
 	// 1. Issue idemix-only credential (MijnOverheid.fullName)
-	issue(t, irmaServer, c, sessionHandler, 1, createMijnOverheidIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 1, withLongValidity(createMijnOverheidIssuanceRequest()))
 	awaitSessionState(t, sessionHandler)
 
 	// 2. Issue combined idemix + sd-jwt credential (test.test.email)
-	issue(t, irmaServer, c, sessionHandler, 2, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 2, withLongValidity(createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
 	awaitSessionState(t, sessionHandler)
 
 	// 3. Issue singleton credential
-	issue(t, irmaServer, c, sessionHandler, 3, &irma.IssuanceRequest{
+	issue(t, irmaServer, c, sessionHandler, 3, withLongValidity(&irma.IssuanceRequest{
 		LDContext: irma.LDContextIssuanceRequest,
 		Credentials: []*irma.CredentialRequest{
 			{
@@ -90,7 +91,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 				},
 			},
 		},
-	})
+	}))
 	awaitSessionState(t, sessionHandler)
 
 	// 3b. Issue an OpenID4VCI SD-JWT credential so the EUDI (sqlcipher) DB is
@@ -100,7 +101,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 		`{"given_name": "Test", "family_name": "User", "email": "test@example.com"}`)
 
 	// 3c. Issue an idemix-only student card (another credential type).
-	issue(t, irmaServer, c, sessionHandler, 9, createStudentCardIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 9, withLongValidity(createStudentCardIssuanceRequest()))
 	awaitSessionState(t, sessionHandler)
 
 	// 3d. Issue two more OpenID4VCI credentials (more EUDI data, and spare
@@ -363,4 +364,15 @@ func copyFile(t *testing.T, src, dst string) {
 	}
 	require.NoError(t, os.WriteFile(dst, data, 0644))
 	t.Logf("Copied %s -> %s (%d bytes)", src, dst, len(data))
+}
+
+// fixtureValidity is far in the future so the fixture's IRMA credentials don't expire
+// and break the regression tests (the server default is 6 months).
+var fixtureValidity = irma.Timestamp(time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC))
+
+func withLongValidity(req *irma.IssuanceRequest) *irma.IssuanceRequest {
+	for _, cred := range req.Credentials {
+		cred.Validity = &fixtureValidity
+	}
+	return req
 }

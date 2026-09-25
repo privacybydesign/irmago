@@ -35,7 +35,7 @@
       },
       "credential_instance_ids": {
         "dc+sd-jwt": "DJwHV7dsaJgoMh8PQkIKE2MaKy1tfY9irW42HmxARX4",
-        "idemix": "d0f1bb5f6fcdd6ce6c159dccd91ec7e54bb0cf0d04acc6d10b46c8eb30d272fc"
+        "idemix": "9b8b1b2ba952303655cccc61f1eac245fb5702df96a411f00f475436b71a2ffb"
       },
       "batch_instance_counts_remaining": {
         "dc+sd-jwt": 8,
@@ -60,8 +60,8 @@
           }
         }
       ],
-      "issuance_date": 1783951927,
-      "expiry_date": 1799853127,
+      "issuance_date": 1790340581,
+      "expiry_date": 4102444800,
       "revoked": false,
       "revocation_supported": false,
       "issue_url": {
@@ -102,7 +102,7 @@
         "verified": true
       },
       "credential_instance_ids": {
-        "idemix": "6ed30dc266733f3bcc3a8e3a123b430881666b6c9b957eec2cf29804a2f2b638"
+        "idemix": "5480879a349263dc5b37ff5cceaf014924fdda8312ca5e51b6c04c597e11ae31"
       },
       "batch_instance_counts_remaining": {
         "idemix": null
@@ -177,8 +177,8 @@
           }
         }
       ],
-      "issuance_date": 1783555200,
-      "expiry_date": 1799280000,
+      "issuance_date": 1790208000,
+      "expiry_date": 4102358400,
       "revoked": false,
       "revocation_supported": false,
       "issue_url": null
@@ -216,7 +216,7 @@
         "verified": true
       },
       "credential_instance_ids": {
-        "idemix": "d52d4c734bb244f92cc6590c95405de681f6bf93fff8df00a77f75856533bf70"
+        "idemix": "43654624778a6db759182a10d44a9e291205381d2b864cd4975bdfe8226681ec"
       },
       "batch_instance_counts_remaining": {
         "idemix": null
@@ -240,8 +240,8 @@
           }
         }
       ],
-      "issuance_date": 1783555200,
-      "expiry_date": 1799280000,
+      "issuance_date": 1790208000,
+      "expiry_date": 4102358400,
       "revoked": false,
       "revocation_supported": false,
       "issue_url": null
@@ -312,7 +312,7 @@
           }
         }
       ],
-      "issuance_date": 1783951927,
+      "issuance_date": 1790340581,
       "expiry_date": null,
       "revoked": false,
       "revocation_supported": false,
@@ -604,7 +604,7 @@
           }
         }
       ],
-      "issuance_date": 1783951928,
+      "issuance_date": 1790340581,
       "expiry_date": null,
       "revoked": false,
       "revocation_supported": false,
@@ -615,7 +615,7 @@
   "logs": [
     {
       "type": "removal",
-      "time": "2026-07-13T16:12:13.171514+02:00",
+      "time": "2026-09-25T12:49:46.420201953Z",
       "removal_log": {
         "credentials": [
           {
@@ -680,7 +680,7 @@
                 }
               }
             ],
-            "issuance_date": 1783951928,
+            "issuance_date": 1790340581,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false,
@@ -691,7 +691,7 @@
     },
     {
       "type": "removal",
-      "time": "2026-07-13T16:12:13.169691+02:00",
+      "time": "2026-09-25T12:49:46.415312292Z",
       "removal_log": {
         "credentials": [
           {
@@ -756,7 +756,7 @@
                 }
               }
             ],
-            "issuance_date": 1783951927,
+            "issuance_date": 1790340581,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false,
@@ -767,7 +767,7 @@
     },
     {
       "type": "removal",
-      "time": "2026-07-13T16:12:13.161668+02:00",
+      "time": "2026-09-25T12:49:46.414146886Z",
       "removal_log": {
         "credentials": [
           {
@@ -888,7 +888,7 @@
     },
     {
       "type": "disclosure",
-      "time": "2026-07-13T16:12:13.153481+02:00",
+      "time": "2026-09-25T12:49:46.411511467Z",
       "disclosure_log": {
         "protocol": "openid4vp",
         "credentials": [
@@ -952,7 +952,7 @@
                 }
               }
             ],
-            "issuance_date": 1783951928,
+            "issuance_date": 1790340581,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false,
@@ -972,7 +972,7 @@
     },
     {
       "type": "disclosure",
-      "time": "2026-07-13T16:12:13.112552+02:00",
+      "time": "2026-09-25T12:49:46.377593987Z",
       "disclosure_log": {
         "protocol": "openid4vp",
         "credentials": [
@@ -1025,7 +1025,7 @@
                 }
               }
             ],
-            "issuance_date": 1783951927,
+            "issuance_date": 1790340581,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false,
@@ -1045,7 +1045,7 @@
     },
     {
       "type": "disclosure",
-      "time": "2026-07-13T16:12:12.996899+02:00",
+      "time": "2026-09-25T12:49:46.270085675Z",
       "disclosure_log": {
         "protocol": "irma",
         "credentials": [
@@ -1102,7 +1102,7 @@
                 }
               }
             ],
-            "issuance_date": 1783555200,
+            "issuance_date": 1790208000,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false
@@ -1160,7 +1160,7 @@
                 }
               }
             ],
-            "issuance_date": 1783555200,
+            "issuance_date": 1790208000,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false
@@ -1218,7 +1218,7 @@
                 }
               }
             ],
-            "issuance_date": 1783555200,
+            "issuance_date": 1790208000,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false,
@@ -1245,7 +1245,7 @@
     },
     {
       "type": "disclosure",
-      "time": "2026-07-13T16:12:12.977134+02:00",
+      "time": "2026-09-25T12:49:46.259272922Z",
       "disclosure_log": {
         "protocol": "irma",
         "credentials": [
@@ -1302,7 +1302,7 @@
                 }
               }
             ],
-            "issuance_date": 1783555200,
+            "issuance_date": 1790208000,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false
@@ -1325,7 +1325,7 @@
     },
     {
       "type": "disclosure",
-      "time": "2026-07-13T16:12:12.95331+02:00",
+      "time": "2026-09-25T12:49:46.252099858Z",
       "disclosure_log": {
         "protocol": "irma",
         "credentials": [
@@ -1382,7 +1382,7 @@
                 }
               }
             ],
-            "issuance_date": 1783555200,
+            "issuance_date": 1790208000,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false
@@ -1405,7 +1405,7 @@
     },
     {
       "type": "disclosure",
-      "time": "2026-07-13T16:12:12.934456+02:00",
+      "time": "2026-09-25T12:49:46.237281902Z",
       "disclosure_log": {
         "protocol": "openid4vp",
         "credentials": [
@@ -1453,8 +1453,8 @@
                 }
               }
             ],
-            "issuance_date": 1783951927,
-            "expiry_date": 1799853127,
+            "issuance_date": 1790340581,
+            "expiry_date": 4102444800,
             "revoked": false,
             "revocation_supported": false,
             "issue_url": {
@@ -1480,7 +1480,7 @@
     },
     {
       "type": "disclosure",
-      "time": "2026-07-13T16:12:09.597237+02:00",
+      "time": "2026-09-25T12:49:44.360124875Z",
       "disclosure_log": {
         "protocol": "openid4vp",
         "credentials": [
@@ -1528,8 +1528,8 @@
                 }
               }
             ],
-            "issuance_date": 1783951927,
-            "expiry_date": 1799853127,
+            "issuance_date": 1790340581,
+            "expiry_date": 4102444800,
             "revoked": false,
             "revocation_supported": false,
             "issue_url": {
@@ -1555,7 +1555,7 @@
     },
     {
       "type": "signature",
-      "time": "2026-07-13T16:12:08.742797+02:00",
+      "time": "2026-09-25T12:49:42.0974039Z",
       "signed_message_log": {
         "protocol": "irma",
         "credentials": [
@@ -1612,7 +1612,7 @@
                 }
               }
             ],
-            "issuance_date": 1783555200,
+            "issuance_date": 1790208000,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false,
@@ -1640,7 +1640,7 @@
     },
     {
       "type": "disclosure",
-      "time": "2026-07-13T16:12:08.588219+02:00",
+      "time": "2026-09-25T12:49:41.935181716Z",
       "disclosure_log": {
         "protocol": "irma",
         "credentials": [
@@ -1697,7 +1697,7 @@
                 }
               }
             ],
-            "issuance_date": 1783555200,
+            "issuance_date": 1790208000,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false,
@@ -1724,7 +1724,7 @@
     },
     {
       "type": "issuance",
-      "time": "2026-07-13T16:12:08.542121+02:00",
+      "time": "2026-09-25T12:49:41.92234452Z",
       "issuance_log": {
         "protocol": "openid4vci",
         "credentials": [
@@ -2010,7 +2010,7 @@
                 }
               }
             ],
-            "issuance_date": 1783951928,
+            "issuance_date": 1790340581,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false,
@@ -2035,7 +2035,7 @@
     },
     {
       "type": "issuance",
-      "time": "2026-07-13T16:12:08.236355+02:00",
+      "time": "2026-09-25T12:49:41.879158133Z",
       "issuance_log": {
         "protocol": "openid4vci",
         "credentials": [
@@ -2101,7 +2101,7 @@
                 }
               }
             ],
-            "issuance_date": 1783951928,
+            "issuance_date": 1790340581,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false,
@@ -2126,7 +2126,7 @@
     },
     {
       "type": "issuance",
-      "time": "2026-07-13T16:12:08.001299+02:00",
+      "time": "2026-09-25T12:49:41.839617473Z",
       "issuance_log": {
         "protocol": "openid4vci",
         "credentials": [
@@ -2192,7 +2192,7 @@
                 }
               }
             ],
-            "issuance_date": 1783951927,
+            "issuance_date": 1790340581,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false,
@@ -2217,7 +2217,7 @@
     },
     {
       "type": "issuance",
-      "time": "2026-07-13T16:12:07.805053+02:00",
+      "time": "2026-09-25T12:49:41.766226489Z",
       "issuance_log": {
         "protocol": "irma",
         "credentials": [
@@ -2325,8 +2325,8 @@
                 }
               }
             ],
-            "issuance_date": 1783555200,
-            "expiry_date": 1799280000,
+            "issuance_date": 1790208000,
+            "expiry_date": 4102358400,
             "revoked": false,
             "revocation_supported": false,
             "issue_url": {
@@ -2353,7 +2353,7 @@
     },
     {
       "type": "issuance",
-      "time": "2026-07-13T16:12:07.785123+02:00",
+      "time": "2026-09-25T12:49:41.761374393Z",
       "issuance_log": {
         "protocol": "openid4vci",
         "credentials": [
@@ -2419,7 +2419,7 @@
                 }
               }
             ],
-            "issuance_date": 1783951927,
+            "issuance_date": 1790340581,
             "expiry_date": null,
             "revoked": false,
             "revocation_supported": false,
@@ -2444,7 +2444,7 @@
     },
     {
       "type": "issuance",
-      "time": "2026-07-13T16:12:07.28233+02:00",
+      "time": "2026-09-25T12:49:41.624061292Z",
       "issuance_log": {
         "protocol": "irma",
         "credentials": [
@@ -2501,8 +2501,8 @@
                 }
               }
             ],
-            "issuance_date": 1783555200,
-            "expiry_date": 1799280000,
+            "issuance_date": 1790208000,
+            "expiry_date": 4102358400,
             "revoked": false,
             "revocation_supported": false
           }
@@ -2525,7 +2525,7 @@
     },
     {
       "type": "issuance",
-      "time": "2026-07-13T16:12:07.163484+02:00",
+      "time": "2026-09-25T12:49:41.583752462Z",
       "issuance_log": {
         "protocol": "irma",
         "credentials": [
@@ -2583,8 +2583,8 @@
                 }
               }
             ],
-            "issuance_date": 1783555200,
-            "expiry_date": 1799280000,
+            "issuance_date": 1790208000,
+            "expiry_date": 4102358400,
             "revoked": false,
             "revocation_supported": false,
             "issue_url": {
@@ -2611,7 +2611,7 @@
     },
     {
       "type": "issuance",
-      "time": "2026-07-13T16:12:07.050873+02:00",
+      "time": "2026-09-25T12:49:41.550972244Z",
       "issuance_log": {
         "protocol": "irma",
         "credentials": [
@@ -2719,8 +2719,8 @@
                 }
               }
             ],
-            "issuance_date": 1783555200,
-            "expiry_date": 1799280000,
+            "issuance_date": 1790208000,
+            "expiry_date": 4102358400,
             "revoked": false,
             "revocation_supported": false
           }
@@ -2743,7 +2743,7 @@
     },
     {
       "type": "issuance",
-      "time": "2026-07-13T16:12:06.943545+02:00",
+      "time": "2026-09-25T12:49:41.501171676Z",
       "issuance_log": {
         "protocol": "irma",
         "credentials": [
@@ -2796,12 +2796,12 @@
                 },
                 "value": {
                   "type": "string",
-                  "string": "YL0IyyGMtwro"
+                  "string": "0umUKIuyb7Do"
                 }
               }
             ],
-            "issuance_date": 1783555200,
-            "expiry_date": 1815004800,
+            "issuance_date": 1790208000,
+            "expiry_date": 1821657600,
             "revoked": false,
             "revocation_supported": false,
             "issue_url": {

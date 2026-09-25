@@ -4,6 +4,12 @@ Client storage generated at the `v0.19.2` tag, loaded and verified by
 `TestClientStorageRegressionV0_19_2`. This snapshot predates the EUDI SQLCipher
 storage, so it contains only the IRMA client (bbolt) database.
 
+Generated from commit `9f866ac6` (`v0.19.2` plus the generator), with every
+issuance request given a validity of 2100-01-01. The original snapshot used the
+server default of 6 months, so its credentials expired and the regression test
+started failing. The `test.test.mijnirma` keyshare-enrollment credential is issued
+by the keyshare server itself and still expires on 2027-09-23. It is never disclosed.
+
 ## Files
 
 | File | Description |

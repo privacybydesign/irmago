@@ -3,12 +3,18 @@
 Client storage generated at the `v1.0.0` tag, loaded and verified by
 `TestClientStorageRegressionV1_0_0`.
 
-> **Do not regenerate or encrypt this snapshot.** v1.0.0/v1.1.0 shipped a bug that
-> opened the EUDI database without its AES key, so `eudi_client_db` here is genuinely
-> **plaintext** — exactly what those releases wrote to disk. It is the input for the
-> plaintext→encrypted migration regression test (fixed in v1.1.1): loading it must
-> trigger `sqlcipher.EncryptInPlace` and still read every credential back. The
+> **Do not encrypt this snapshot, and only regenerate it from v1.0.0 code.** v1.0.0/v1.1.0
+> shipped a bug that opened the EUDI database without its AES key, so `eudi_client_db`
+> here is genuinely **plaintext** — exactly what those releases wrote to disk. It is the
+> input for the plaintext→encrypted migration regression test (fixed in v1.1.1): loading
+> it must trigger `sqlcipher.EncryptInPlace` and still read every credential back. The
 > born-encrypted steady state is covered separately by the `v1.1.1` snapshot.
+
+Generated from commit `d5d0260e` (the `v1.0.0` tag plus the generator), with every
+IRMA issuance request given a validity of 2100-01-01 so the credentials don't expire.
+Regenerating from that commit keeps `eudi_client_db` plaintext. The `test.test.mijnirma`
+keyshare-enrollment credential is issued by the keyshare server itself and still
+expires on 2027-09-23. It is never disclosed.
 
 ## Files
 
