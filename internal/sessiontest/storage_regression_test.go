@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago/client"
@@ -845,11 +846,71 @@ func performDisclosureSessionForAttribute(t *testing.T, c *client.Client, sessio
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	options := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
+	cred, ok := pickUnexpiredOption(options, time.Now())
+	require.True(t, ok, "no unexpired disclosure option for %s", attribute)
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status)
+}
+
+// pickUnexpiredOption returns the first option none of whose credentials have
+// expired as of now, or false if every option has an expired credential. A
+// stale fixture credential can sit in OwnedOptions alongside a freshly issued
+// one of the same type; index 0 is not necessarily the usable one.
+func pickUnexpiredOption(options []*clientmodels.DisclosureBundle, now time.Time) (*clientmodels.DisclosureBundle, bool) {
+	for _, option := range options {
+		expired := false
+		for _, cred := range option.Credentials {
+			if cred.ExpiryDate != nil && *cred.ExpiryDate <= now.Unix() {
+				expired = true
+				break
+			}
+		}
+		if !expired {
+			return option, true
+		}
+	}
+	return nil, false
+}
+
+// TestPickUnexpiredOption pins the selection behaviour that
+// performDisclosureSessionForAttribute relies on: a stale fixture credential
+// can sit in OwnedOptions ahead of a freshly issued one of the same type, so
+// picking index 0 blindly can hand back an expired credential (which then
+// fails server-side disclosure).
+func TestPickUnexpiredOption(t *testing.T) {
+	now := time.Now()
+	expired := now.Add(-time.Hour).Unix()
+	valid := now.Add(time.Hour).Unix()
+
+	expiredOption := &clientmodels.DisclosureBundle{
+		Credentials: []*clientmodels.SelectableCredentialInstance{{ExpiryDate: &expired}},
+	}
+	validOption := &clientmodels.DisclosureBundle{
+		Credentials: []*clientmodels.SelectableCredentialInstance{{ExpiryDate: &valid}},
+	}
+	noExpiryOption := &clientmodels.DisclosureBundle{
+		Credentials: []*clientmodels.SelectableCredentialInstance{{ExpiryDate: nil}},
+	}
+
+	t.Run("skips an expired option ahead of a valid one", func(t *testing.T) {
+		picked, ok := pickUnexpiredOption([]*clientmodels.DisclosureBundle{expiredOption, validOption}, now)
+		require.True(t, ok)
+		require.Same(t, validOption, picked)
+	})
+
+	t.Run("a nil expiry date never counts as expired", func(t *testing.T) {
+		picked, ok := pickUnexpiredOption([]*clientmodels.DisclosureBundle{noExpiryOption}, now)
+		require.True(t, ok)
+		require.Same(t, noExpiryOption, picked)
+	})
+
+	t.Run("false when every option has expired", func(t *testing.T) {
+		_, ok := pickUnexpiredOption([]*clientmodels.DisclosureBundle{expiredOption}, now)
+		require.False(t, ok)
+	})
 }
 
 // performKeyshareDisclosureSession performs an IRMA disclosure of a keyshare-protected attribute.
