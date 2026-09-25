@@ -2,24 +2,14 @@ package sessiontest
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 
-	"github.com/privacybydesign/gabi/signed"
 	rootpkg "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/client"
-	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/storage"
-	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/privacybydesign/irmago/internal/crypto/encryption"
-	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -62,8 +52,6 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	if os.Getenv("GENERATE_STORAGE") == "" {
 		t.Skip("GENERATE_STORAGE not set, skipping storage generation")
 	}
-	outputDir := filepath.Join(test.FindTestdataFolder(t), storageRegressionFixtureDir)
-
 	// Start infrastructure
 	conf := irmaServerConfWithSdJwtEnabled(t)
 	irmaServer := StartIrmaServer(t, conf)
@@ -72,7 +60,10 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServerWithDB(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	c, storagePath, sessionHandler := createClientWithStoragePath(t)
+	storagePath := newSnapshotWallet(t)
+	c, clientHandler, sessionHandler := openSnapshotWallet(t, storagePath)
+	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
+	require.NoError(t, clientHandler.AwaitEnrollmentResult())
 
 	// 1. Issue idemix-only credential (MijnOverheid.fullName)
 	issue(t, irmaServer, c, sessionHandler, 1, createMijnOverheidIssuanceRequest())
@@ -277,85 +268,9 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	// Close client to flush database
 	require.NoError(t, c.Close())
 
-	// Copy the storage to a versioned subdirectory
-	versionDir := filepath.Join(outputDir, "v"+rootpkg.Version)
-	require.NoError(t, common.EnsureDirectoryExists(versionDir))
-
-	copyFile(t, filepath.Join(storagePath, "db2"), filepath.Join(versionDir, "bbolt_client_db"))
-	copyFile(t, filepath.Join(storagePath, "eudi", storage.DbFilename), filepath.Join(versionDir, "eudi_client_db"))
-	copyFile(t, filepath.Join(storagePath, "ecdsa_sk.pem"), filepath.Join(versionDir, "ecdsa_sk.pem"))
-	copyEudiLogos(t, filepath.Join(storagePath, "eudi"), filepath.Join(versionDir, eudiLogosFixtureDir))
-
-	// Save the keyshare server's user database so the regression test can
-	// start a keyshare server that recognizes the enrolled user.
-	keyshareUsers := keyshareServer.DB.DumpUsers()
-	keyshareUsersBts, err := json.Marshal(keyshareUsers)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(versionDir, "keyshare_users.json"), keyshareUsersBts, 0644))
-
-	fmt.Printf("Storage written to %s\n", versionDir)
-}
-
-func createClientWithStoragePath(t *testing.T) (*client.Client, string, *MockSessionHandler) {
-	var aesKey [32]byte
-	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-
-	path := test.FindTestdataFolder(t)
-	storageFolder := test.CreateTestStorage(t)
-	storagePath := filepath.Join(storageFolder, "client")
-	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
-	eudiAppDataPath := filepath.Join(storagePath, "eudi")
-
-	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
-	require.NoError(t, common.EnsureDirectoryExists(eudiAppDataPath))
-
-	// Install issuer + verifier trust anchors (encrypted, matching how the
-	// regression reader loads them) so OpenID4VCI issuance and OpenID4VP
-	// disclosure can verify the issuer/relying-party certificate chains.
-	encMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
-
-	issuerCertsPath := filepath.Join(storagePath, "eudi", "issuers", "certificates")
-	require.NoError(t, common.EnsureDirectoryExists(issuerCertsPath))
-	encIssuer, err := encMiddleware.Encrypt(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
-	require.NoError(t, err)
-	require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), encIssuer))
-	installPidIssuerTrustAnchor(t, encMiddleware, issuerCertsPath)
-
-	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
-	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))
-	encVerifierCA, err := encMiddleware.Encrypt(testdata.VerifierCACertBytes)
-	require.NoError(t, err)
-	require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encVerifierCA))
-
-	// Generate signer key and persist it so the regression test can reload it
-	privateKey, err := signed.GenerateKey()
-	require.NoError(t, err)
-	pemBts, err := signed.MarshalPemPrivateKey(privateKey)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(storagePath, "ecdsa_sk.pem"), pemBts, 0644))
-	signer := test.LoadSigner(t, privateKey)
-
-	clientHandler := irmaclient.NewMockClientHandler()
-	sessionHandler := &MockSessionHandler{
-		SessionChan: make(chan clientmodels.SessionState, 10),
-	}
-	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, aesKey, "en")
-	require.NoError(t, err)
-
-	c.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
-	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
-	require.NoError(t, clientHandler.AwaitEnrollmentResult())
-
-	return c, storagePath, sessionHandler
-}
-
-// installPidIssuerTrustAnchor trusts the Python PID issuer's CA, next to the
-// staging issuer certificate, so the wallet accepts the mdoc it issues.
-func installPidIssuerTrustAnchor(t *testing.T, encMiddleware encryption.EncryptionMiddleware, issuerCertsPath string) {
-	t.Helper()
-	encCA, err := encMiddleware.Encrypt(readEudiPidIssuerPyCA(t))
-	require.NoError(t, err)
-	require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "eudi_pid_issuer_py_ca.pem"), encCA))
+	dir := snapshotDir(t, "v"+rootpkg.Version)
+	saveSnapshot(t, storagePath, dir, keyshareServer.DB)
+	fmt.Printf("Storage written to %s\n", dir)
 }
 
 // credentialAttrValue returns the string value of a top-level attribute, or ""
@@ -367,35 +282,4 @@ func credentialAttrValue(cred *clientmodels.Credential, key string) string {
 		}
 	}
 	return ""
-}
-
-// eudiLogosFixtureDir holds a fixture's EUDI logo files, one subdirectory per
-// filesystem container (credentials, issuers, verifiers).
-const eudiLogosFixtureDir = "eudi_logos"
-
-// eudiLogoContainers are the EUDI filesystem containers that keep logos.
-var eudiLogoContainers = []string{"credentials", "issuers", "verifiers"}
-
-// copyEudiLogos copies the logos directory of each EUDI filesystem container
-// from src/<container>/logos to dst/<container>. The databases store only a
-// logo's key; the bytes are these encrypted files, named by an HMAC of the key.
-func copyEudiLogos(t *testing.T, src, dst string) {
-	t.Helper()
-	for _, container := range eudiLogoContainers {
-		from := filepath.Join(src, container, "logos")
-		if _, err := os.Stat(from); os.IsNotExist(err) {
-			continue
-		}
-		require.NoError(t, common.CopyDirectory(from, filepath.Join(dst, container)))
-	}
-}
-
-func copyFile(t *testing.T, src, dst string) {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		t.Logf("Warning: could not read %s: %v", src, err)
-		return
-	}
-	require.NoError(t, os.WriteFile(dst, data, 0644))
-	t.Logf("Copied %s -> %s (%d bytes)", src, dst, len(data))
 }
