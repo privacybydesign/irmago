@@ -5,6 +5,12 @@ Token Status List support. Loaded and verified by `TestClientStorageRegressionV1
 Regenerate with `TestGenerateClientStorageForRegressionTests` (`GENERATE_STORAGE=1`)
 while `version.go` reads `1.3.0`.
 
+Generated from commit `6fe0d585` (`v1.3.0` plus the status-list additions to the
+generator), with every IRMA issuance request given a validity of 2100-01-01 so the
+credentials don't expire. The `test.test.mijnirma` keyshare-enrollment credential is
+issued by the keyshare server itself and still expires on 2027-09-23. It is never
+disclosed.
+
 This is the first snapshot written *after* the locale rewrite, which is what it exists
 to pin. Three storage-visible changes distinguish it from the `v1.0.0` and `v1.1.1`
 snapshots:
