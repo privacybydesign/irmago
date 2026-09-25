@@ -18,7 +18,6 @@ Client storage generated at the `v1.0.0` tag, loaded and verified by
 | `eudi_client_db` | EUDI SQLCipher database (`yivi-eudi.db`): OpenID4VCI credentials. **Intentionally plaintext** (see note above); do not encrypt or regenerate. |
 | `ecdsa_sk.pem` | Client signer key. |
 | `keyshare_users.json` | Keyshare users preloaded into the test keyshare server. |
-| `metadata.json` | Human-readable dump of the stored credentials and logs. |
 
 ## Sessions performed
 

@@ -11,7 +11,6 @@ storage, so it contains only the IRMA client (bbolt) database.
 | `bbolt_client_db` | IRMA client bbolt database (idemix credentials, IRMA-issued SD-JWTs, logs). Copied to `db2` on load. |
 | `ecdsa_sk.pem` | Client signer key. |
 | `keyshare_users.json` | Keyshare users preloaded into the test keyshare server. |
-| `metadata.json` | Human-readable dump of the stored credentials and logs. |
 
 There is no `eudi_client_db`: OpenID4VCI / EUDI credentials did not exist yet at
 this version.
