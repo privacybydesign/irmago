@@ -7,6 +7,7 @@ import (
 	"image"
 	_ "image/png" // register PNG decoder for requireValidImage
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -347,11 +348,39 @@ func assertFreshIrmaSessionsWork(t *testing.T, c *client.Client, sessionHandler 
 
 	performStoredDisclosureSession(t, c, 1, sessionHandler, irmaServer, "irma-demo.MijnOverheid.fullName.familyname", false)
 	performStoredDisclosureSession(t, c, 2, sessionHandler, irmaServer, "test.test.email.email", true)
+	replaceExpiredEmailSdJwts(t, c, sessionHandler, irmaServer)
 	discloseOverOpenID4VP(t, c, 3, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
 
 	issue(t, irmaServer, c, sessionHandler, 4, createMijnOverheidIssuanceRequest())
 	issued := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, issued.Status)
+}
+
+// replaceExpiredEmailSdJwts swaps the stored test.test.email credential for a
+// fresh one when its SD-JWTs have expired or are about to. An IRMA-issued
+// SD-JWT carries the IRMA credential's expiry as exp, and the OpenID4VP
+// verifier rejects it after that, with no way to skip the check. Snapshots up
+// to v1.4.0 were made with IRMA's default validity of 6 months, so theirs run
+// out; later ones are issued with a long validity (see withSnapshotValidity).
+// Once a snapshot falls back, its stored SD-JWT keys are no longer disclosed.
+func replaceExpiredEmailSdJwts(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
+	t.Helper()
+	creds, _, err := c.GetCredentials()
+	require.NoError(t, err)
+	email := findCredentialById(creds, "test.test.email")
+	require.NotNil(t, email, "expected test.test.email")
+	require.NotNil(t, email.ExpiryDate, "test.test.email should have an expiry date")
+
+	// A day of margin, so a run close to the expiry does not fail on it.
+	expiry := time.Unix(*email.ExpiryDate, 0)
+	if expiry.After(time.Now().AddDate(0, 0, 1)) {
+		return
+	}
+	t.Logf("stored test.test.email SD-JWTs expire %s; disclosing fresh ones over OpenID4VP", expiry.Format(time.DateOnly))
+	require.NoError(t, c.RemoveCredentialsByHash(email.CredentialInstanceIds))
+	issue(t, irmaServer, c, sessionHandler, 21, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issued := awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Success, issued.Status, "session error: %+v", issued.Error)
 }
 
 // assertStoredTestCredentialDisclosable discloses the stored "Test Credential

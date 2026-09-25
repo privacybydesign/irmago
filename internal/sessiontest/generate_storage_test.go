@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	rootpkg "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -66,15 +67,15 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
 
 	// 1. Issue idemix-only credential (MijnOverheid.fullName)
-	issue(t, irmaServer, c, sessionHandler, 1, createMijnOverheidIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 1, withSnapshotValidity(createMijnOverheidIssuanceRequest()))
 	awaitSessionState(t, sessionHandler)
 
 	// 2. Issue combined idemix + sd-jwt credential (test.test.email)
-	issue(t, irmaServer, c, sessionHandler, 2, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 2, withSnapshotValidity(createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
 	awaitSessionState(t, sessionHandler)
 
 	// 3. Issue singleton credential
-	issue(t, irmaServer, c, sessionHandler, 3, &irma.IssuanceRequest{
+	issue(t, irmaServer, c, sessionHandler, 3, withSnapshotValidity(&irma.IssuanceRequest{
 		LDContext: irma.LDContextIssuanceRequest,
 		Credentials: []*irma.CredentialRequest{
 			{
@@ -84,7 +85,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 				},
 			},
 		},
-	})
+	}))
 	awaitSessionState(t, sessionHandler)
 
 	// 3b. Issue an OpenID4VCI SD-JWT credential so the EUDI (sqlcipher) DB is
@@ -94,7 +95,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 		`{"given_name": "Test", "family_name": "User", "email": "test@example.com"}`)
 
 	// 3c. Issue an idemix-only student card (another credential type).
-	issue(t, irmaServer, c, sessionHandler, 9, createStudentCardIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 9, withSnapshotValidity(createStudentCardIssuanceRequest()))
 	awaitSessionState(t, sessionHandler)
 
 	// 3d. Issue two more OpenID4VCI credentials (more EUDI data, and spare
@@ -271,6 +272,21 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	dir := snapshotDir(t, "v"+rootpkg.Version)
 	saveSnapshot(t, storagePath, dir, keyshareServer.DB)
 	fmt.Printf("Storage written to %s\n", dir)
+}
+
+// withSnapshotValidity makes every credential in req valid for 20 years. With
+// IRMA's default of 6 months, a snapshot's IRMA credentials would expire long
+// before the snapshot stops mattering. The IRMA server's expiry check can be
+// skipped, but an IRMA-issued SD-JWT carries the same expiry as exp, and an
+// external OpenID4VP verifier rejects it once that has passed. Snapshots up to
+// v1.4.0 predate this and fall back to fresh credentials (see
+// replaceExpiredEmailSdJwts).
+func withSnapshotValidity(req *irma.IssuanceRequest) *irma.IssuanceRequest {
+	validity := irma.Timestamp(time.Now().AddDate(20, 0, 0))
+	for _, cred := range req.Credentials {
+		cred.Validity = &validity
+	}
+	return req
 }
 
 // credentialAttrValue returns the string value of a top-level attribute, or ""
