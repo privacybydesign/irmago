@@ -155,8 +155,10 @@ func TestClientStorageRegressionV1_3_0(t *testing.T) {
 //   - The veramo issuer is stored under its URL rather than a did:web id.
 //
 // The stored mdoc is not disclosed again: it is valid for 90 days from when
-// the snapshot was made, so that would start failing on its own. The fresh
-// mdoc session in assertLoadedClientUsable covers disclosure.
+// the snapshot was made, so that would start failing on its own. Instead its
+// stored device keys sign, and are verified, with the verifier's clock inside
+// that validity. The fresh mdoc session in assertLoadedClientUsable covers the
+// rest of disclosure.
 func TestClientStorageRegressionV1_4_0(t *testing.T) {
 	c, sessionHandler, irmaServer := setupStorageRegressionClient(t, "v1.4.0")
 
@@ -185,6 +187,7 @@ func TestClientStorageRegressionV1_4_0(t *testing.T) {
 	remaining := mdoc.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_MsoMdoc)]
 	require.NotNil(t, remaining, "a batched mdoc credential must carry a remaining count")
 	require.Equal(t, uint(29), *remaining)
+	requireStoredMdocDeviceKeysSign(t, "v1.4.0", 30, 1)
 
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)

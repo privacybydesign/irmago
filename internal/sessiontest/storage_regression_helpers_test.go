@@ -3,14 +3,22 @@ package sessiontest
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"image"
 	_ "image/png" // register PNG decoder for requireValidImage
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
@@ -111,6 +119,65 @@ func requireRevokedStatusListCredential(t *testing.T, creds []*clientmodels.Cred
 		expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal(statusListCredentialEmail)},
 	)
 	return statusList
+}
+
+// requireStoredMdocDeviceKeysSign checks that every instance of the stored
+// age-verification mdoc can still sign with its stored device key, and that the
+// signature verifies against the device key its MSO was issued for. This is
+// what a disclosure of the stored mdoc would depend on, checked without one:
+// the MSO expires 90 days after the snapshot was made, and a verifier would
+// then refuse it before looking at the device signature. Here the verifier's
+// clock is pinned inside the MSO's validity instead.
+//
+// It opens a copy of the snapshot's EUDI database directly, with the same
+// storage and key lookup the wallet uses when it presents an mdoc (the
+// PrepareDisclosure path in mdoc_dcql), so the wallet under test is not
+// touched. want is the number of instances the snapshot stored and spent is
+// how many of them a disclosure used.
+func requireStoredMdocDeviceKeysSign(t *testing.T, version string, want, spent int) {
+	t.Helper()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, storage.DbFilename)
+	copyIfExists(t, filepath.Join(snapshotDir(t, version), "eudi_client_db"), dbPath)
+	eudiStorage, err := sqlcipherstorage.New(testAESKey(), dbPath, dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = eudiStorage.Close() })
+
+	batches, err := db.NewMdocStore(eudiStorage.Db()).GetBatchesByDocType(avDocType)
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+	batch := batches[0]
+
+	var instances []models.MdocBatchInstance
+	require.NoError(t, eudiStorage.Db().Where("mdoc_batch_id = ?", batch.ID).Find(&instances).Error)
+	require.Len(t, instances, want)
+
+	binder := services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(eudiStorage.Db()))
+	verifier := stdmdoc.NewVerifierWithClock([]*x509.Certificate{eudiPidIssuerPyCACert(t)},
+		batch.ValidFrom.Add(batch.ValidUntil.Sub(batch.ValidFrom)/2))
+	transcript := stdmdoc.SessionTranscript{Handover: []any{"storage regression", version}}
+
+	used := 0
+	for _, instance := range instances {
+		if instance.Used {
+			used++
+		}
+		var doc stdmdoc.MDoc
+		require.NoError(t, stdmdoc.Unmarshal(instance.IssuerSigned, &doc))
+		deviceKey, err := stdmdoc.DeviceKeyFromIssuerAuth(doc.IssuerSigned.IssuerAuth)
+		require.NoError(t, err)
+		signer, err := binder.SignerForDeviceKey(deviceKey)
+		require.NoError(t, err, "instance %s: no stored device key for its MSO", instance.ID)
+		deviceAuth, err := signer.SignDeviceAuth(batch.DocType, transcript)
+		require.NoError(t, err)
+		presented, err := stdmdoc.AttachDeviceSigned(&doc, deviceAuth)
+		require.NoError(t, err)
+
+		result := verifier.VerifyWithDeviceAuth(presented, avDocType, batch.DocType, transcript, deviceAuth)
+		require.True(t, result.Valid, "instance %s: %s", instance.ID, result.Error)
+		require.True(t, result.DeviceAuthValid, "instance %s: device signature did not verify", instance.ID)
+	}
+	require.Equal(t, spent, used)
 }
 
 // requireEudiCredentialMeta checks the metadata common to the snapshots'

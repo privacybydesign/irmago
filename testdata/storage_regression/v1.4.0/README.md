@@ -71,6 +71,8 @@ The same session script as the `v1.3.0` snapshot, plus two mdoc steps:
 - the mdoc credential: docType, name, issuer id and name, issuer verified, MSO validity
   dates, not revoked and not revocation-supporting, the `age_over_18` attribute, and
   29 remaining instances (a spent instance stays spent after a reload);
+- that every stored mdoc instance still has its device key, and that the key signs a
+  device authentication that verifies against the MSO;
 - the mdoc issuance and disclosure log entries: credential, format, names, attribute,
   dates;
 - log count, types and order;
@@ -83,5 +85,7 @@ The same session script as the `v1.3.0` snapshot, plus two mdoc steps:
   mdoc issuance and disclosure.
 
 The stored mdoc is **not** disclosed again. Its MSO is valid for 90 days from generation
-(until 2026-12-22), so a disclosure of it would start failing on its own. The test removes
-it, and the stored status-list credential, before the fresh-session check.
+(until 2026-12-22), so a disclosure of it would start failing on its own. Instead, each of
+its 30 instances signs with its stored device key, and the signature is verified against
+the MSO's device key with the verifier's clock set inside that validity. The test then
+removes the mdoc, and the stored status-list credential, before the fresh-session check.
