@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/privacybydesign/gabi/signed"
@@ -102,13 +103,12 @@ func saveSnapshot(t *testing.T, storagePath, dir string, keyshareDB *keyshareser
 }
 
 // setupStorageRegressionClient starts the test servers and opens a wallet
-// loaded from the given version's snapshot. Skips when the snapshot is absent.
+// loaded from the given version's snapshot. Fails when the snapshot is absent:
+// skipping would let a lost snapshot pass unnoticed.
 func setupStorageRegressionClient(t *testing.T, version string) (*client.Client, *MockSessionHandler, *IrmaServer) {
 	t.Helper()
 	dir := snapshotDir(t, version)
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		t.Skipf("snapshot %s not found; run TestGenerateClientStorageForRegressionTests first", dir)
-	}
+	require.DirExists(t, dir, "snapshot not found; run TestGenerateClientStorageForRegressionTests at %s", version)
 
 	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
 	t.Cleanup(func() { irmaServer.Stop() })
@@ -121,8 +121,8 @@ func setupStorageRegressionClient(t *testing.T, version string) (*client.Client,
 	for _, p := range snapshotPaths {
 		copyIfExists(t, filepath.Join(dir, p.snapshot), filepath.Join(storagePath, p.wallet))
 	}
-	c, _, sessionHandler := openSnapshotWallet(t, storagePath)
-	t.Cleanup(func() { _ = c.Close() })
+	first, _, _ := openSnapshotWallet(t, storagePath)
+	require.NoError(t, first.Close())
 
 	// Opening the wallet encrypts a plaintext EUDI database (v1.0.0) in place,
 	// and creates an encrypted one when the snapshot has none (v0.19.2). Either
@@ -131,7 +131,34 @@ func setupStorageRegressionClient(t *testing.T, version string) (*client.Client,
 	require.NoError(t, err)
 	require.False(t, plaintext, "EUDI database must be encrypted at rest after loading")
 
+	// Open it a second time, so the checks run against what the first open
+	// wrote to disk (migrations included), not what it held in memory.
+	c, _, sessionHandler := openSnapshotWallet(t, storagePath)
+	t.Cleanup(func() { _ = c.Close() })
+
 	return c, sessionHandler, irmaServer
+}
+
+// TestEveryStorageSnapshotHasATest fails when a snapshot folder has no
+// TestClientStorageRegression test, so a snapshot cannot sit unused. The other
+// direction, a test whose snapshot is gone, fails in
+// setupStorageRegressionClient.
+func TestEveryStorageSnapshotHasATest(t *testing.T) {
+	src, err := os.ReadFile("storage_regression_test.go")
+	require.NoError(t, err)
+
+	entries, err := os.ReadDir(filepath.Join(test.FindTestdataFolder(t), storageRegressionFixtureDir))
+	require.NoError(t, err)
+	require.NotEmpty(t, entries)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		// v1.4.0 -> TestClientStorageRegressionV1_4_0
+		name := "TestClientStorageRegression" + strings.ToUpper(strings.ReplaceAll(e.Name(), ".", "_"))
+		require.True(t, strings.Contains(string(src), "func "+name+"(t *testing.T)"),
+			"snapshot %s has no %s in storage_regression_test.go", e.Name(), name)
+	}
 }
 
 func loadKeyshareUsers(t *testing.T, db *keyshareserver.MemoryDB, dir string) {

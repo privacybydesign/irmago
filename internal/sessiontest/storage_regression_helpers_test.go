@@ -337,19 +337,50 @@ func assertLoadedClientUsable(t *testing.T, c *client.Client, sessionHandler *Mo
 	assertFreshMdocSessionsWork(t, c, sessionHandler)
 }
 
-// assertFreshIrmaSessionsWork runs a fresh IRMA issuance, non-keyshare and
-// keyshare disclosures, and an OpenID4VP disclosure of an IRMA-issued SD-JWT
-// (served from bbolt).
+// assertFreshIrmaSessionsWork runs non-keyshare and keyshare disclosures and an
+// OpenID4VP disclosure of an IRMA-issued SD-JWT (served from bbolt), then a
+// fresh IRMA issuance. The disclosures come first, while the stored
+// credentials are the only candidates, so they prove the stored signatures and
+// keys still work.
 func assertFreshIrmaSessionsWork(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
 	t.Helper()
 
-	issue(t, irmaServer, c, sessionHandler, 1, createMijnOverheidIssuanceRequest())
+	performStoredDisclosureSession(t, c, 1, sessionHandler, irmaServer, "irma-demo.MijnOverheid.fullName.familyname", false)
+	performStoredDisclosureSession(t, c, 2, sessionHandler, irmaServer, "test.test.email.email", true)
+	discloseOverOpenID4VP(t, c, 3, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
+
+	issue(t, irmaServer, c, sessionHandler, 4, createMijnOverheidIssuanceRequest())
 	issued := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, issued.Status)
+}
 
-	performDisclosureSessionForAttribute(t, c, 2, sessionHandler, irmaServer, "irma-demo.MijnOverheid.fullName.familyname")
-	performKeyshareDisclosureSession(t, c, 3, sessionHandler, irmaServer, "test.test.email.email")
-	discloseOverOpenID4VP(t, c, 4, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
+// assertStoredTestCredentialDisclosable discloses the stored "Test Credential
+// (SD-JWT)" over OpenID4VP (veramo verifier), which signs with its stored
+// holder-binding key. Call it before assertLoadedClientUsable: that issues a
+// second credential of the same vct, and then either could be disclosed.
+func assertStoredTestCredentialDisclosable(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler) {
+	t.Helper()
+	session := awaitDisclosurePermission(t, c, 20, sessionHandler, `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "test-cred",
+					"format": "dc+sd-jwt",
+					"meta": { "vct_values": ["https://localhost:8443/vct/test"] },
+					"claims": [ { "path": ["email"] } ]
+				}
+			]
+		}
+	}`)
+	options := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
+	require.Len(t, options, 1, "the stored credential should be the only candidate")
+	require.Len(t, options[0].Credentials, 1)
+	requireAttrsInOrder(t, options[0].Credentials[0].Attributes,
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("test@example.com")})
+
+	grantPermission(t, c, session.Id, makeDisclosureChoice(options[0]))
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Success, session.Status)
 }
 
 // assertFreshOpenID4VCISessionsWork runs a fresh OpenID4VCI issuance (veramo
@@ -443,28 +474,23 @@ func awaitDisclosurePermission(t *testing.T, c *client.Client, sessionId int, se
 
 // performDisclosureSessionForAttribute performs an IRMA disclosure of a non-keyshare attribute.
 func performDisclosureSessionForAttribute(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, irmaServer *IrmaServer, attribute string) {
-	req := irma.NewDisclosureRequest()
-	req.Disclose = irma.AttributeConDisCon{
-		irma.AttributeDisCon{
-			irma.AttributeCon{
-				irma.NewAttributeRequest(attribute),
-			},
-		},
-	}
-	c.NewSession(sessionId, startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
-	session := awaitSessionState(t, sessionHandler)
-	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
-
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
-
-	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, clientmodels.Status_Success, session.Status)
+	t.Helper()
+	performIrmaDisclosure(t, c, sessionId, sessionHandler, irmaServer, attributeDisclosureRequest(attribute), false)
 }
 
-// performKeyshareDisclosureSession performs an IRMA disclosure of a keyshare-protected attribute.
-// The reloaded client doesn't have the keyshare auth token cached, so a PIN is requested.
-func performKeyshareDisclosureSession(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, irmaServer *IrmaServer, attribute string) {
+// performStoredDisclosureSession performs an IRMA disclosure of an attribute
+// from a credential stored in a snapshot. A snapshot's IRMA credentials expire
+// some months after it was made, so the request skips the expiry check: what
+// is tested is that the stored signature and keys still produce a valid proof.
+// keyshare says whether the attribute is keyshare-protected.
+func performStoredDisclosureSession(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, irmaServer *IrmaServer, attribute string, keyshare bool) {
+	t.Helper()
+	req := attributeDisclosureRequest(attribute)
+	req.SkipExpiryCheck = []irma.CredentialTypeIdentifier{irma.NewAttributeTypeIdentifier(attribute).CredentialTypeIdentifier()}
+	performIrmaDisclosure(t, c, sessionId, sessionHandler, irmaServer, req, keyshare)
+}
+
+func attributeDisclosureRequest(attribute string) *irma.DisclosureRequest {
 	req := irma.NewDisclosureRequest()
 	req.Disclose = irma.AttributeConDisCon{
 		irma.AttributeDisCon{
@@ -473,23 +499,32 @@ func performKeyshareDisclosureSession(t *testing.T, c *client.Client, sessionId 
 			},
 		},
 	}
+	return req
+}
+
+// performIrmaDisclosure runs an IRMA disclosure of a single attribute that one
+// credential holds. For a keyshare-protected attribute it enters the PIN: a
+// reloaded client has no keyshare auth token cached, so a PIN is requested.
+func performIrmaDisclosure(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, irmaServer *IrmaServer, req *irma.DisclosureRequest, keyshare bool) {
+	t.Helper()
 	c.NewSession(sessionId, startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+	options := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
+	require.Len(t, options, 1, "expected exactly one candidate credential")
+	grantPermission(t, c, session.Id, makeDisclosureChoice(options[0]))
 
-	// The reloaded client needs to authenticate with the keyshare server.
+	if keyshare {
+		session = awaitSessionState(t, sessionHandler)
+		require.Equal(t, clientmodels.Status_RequestPin, session.Status)
+		userInteraction(t, c, clientmodels.SessionUserInteraction{
+			SessionId: session.Id,
+			Type:      clientmodels.UI_EnteredPin,
+			Payload:   clientmodels.PinInteractionPayload{Pin: "12345", Proceed: true},
+		})
+	}
+
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, clientmodels.Status_RequestPin, session.Status)
-
-	userInteraction(t, c, clientmodels.SessionUserInteraction{
-		SessionId: session.Id,
-		Type:      clientmodels.UI_EnteredPin,
-		Payload:   clientmodels.PinInteractionPayload{Pin: "12345", Proceed: true},
-	})
-
-	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, clientmodels.Status_Success, session.Status)
+	require.Equal(t, clientmodels.Status_Success, session.Status, "session error: %+v", session.Error)
 }

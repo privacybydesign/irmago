@@ -74,6 +74,7 @@ func TestClientStorageRegressionV1_0_0(t *testing.T) {
 	})
 	requireEudiDisclosureLog(t, logs)
 
+	assertStoredTestCredentialDisclosable(t, c, sessionHandler)
 	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
 }
 
@@ -94,6 +95,7 @@ func TestClientStorageRegressionV1_1_1(t *testing.T) {
 	require.NoError(t, err)
 	requireLogSummary(t, logs, logSummary{total: 21, openID4VPDisclosures: 4, irmaDisclosures: 4, newestRemovals: 3})
 
+	assertStoredTestCredentialDisclosable(t, c, sessionHandler)
 	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
 }
 
@@ -140,6 +142,7 @@ func TestClientStorageRegressionV1_3_0(t *testing.T) {
 	// credential; the stored revoked one would be a second candidate.
 	require.NoError(t, c.RemoveCredentialsByHash(statusList.CredentialInstanceIds))
 
+	assertStoredTestCredentialDisclosable(t, c, sessionHandler)
 	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
 }
 
@@ -236,6 +239,7 @@ func TestClientStorageRegressionV1_4_0(t *testing.T) {
 	require.NoError(t, c.RemoveCredentialsByHash(statusList.CredentialInstanceIds))
 	require.NoError(t, c.RemoveCredentialsByHash(mdoc.CredentialInstanceIds))
 
+	assertStoredTestCredentialDisclosable(t, c, sessionHandler)
 	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
 }
 
