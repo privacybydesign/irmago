@@ -35,6 +35,7 @@ func TestDcqlCandidateSelection(t *testing.T) {
 	t.Run("unsatisfiable predefined value", testUnsatisfiablePredefinedValue)
 	t.Run("multiple allowed values single match", testMultipleAllowedValuesSingleMatch)
 	t.Run("multiple allowed values multiple matches", testMultipleAllowedValuesMultipleMatches)
+	t.Run("multiple allowed values surface on obtainable descriptor", testMultipleAllowedValuesOnObtainableDescriptor)
 	t.Run("claim sets one option satisfiable", testClaimSetsOneOptionSatisfiable)
 	t.Run("claim sets both satisfiable picks first", testClaimSetsBothSatisfiablePicksFirst)
 	t.Run("claim sets both satisfiable by different instances", testClaimSetsBothSatisfiableByDifferentInstances)
@@ -457,6 +458,36 @@ func testMultipleAllowedValuesMultipleMatches(t *testing.T) {
 	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 1})
+}
+
+func testMultipleAllowedValuesOnObtainableDescriptor(t *testing.T) {
+	h, _ := createTestDcqlHandler(t)
+
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [{
+				"path": ["email"],
+				"values": ["test@gmail.com", "test@hotmail.com"]
+			}]
+		}]
+	}`)
+
+	requireUnsatisfiable(t, plan, 1)
+	attr := plan.IssueDuringDisclosure.Steps[0].Options[0].Credentials[0].Attributes[0]
+
+	// All accepted values are surfaced, in the verifier's order, so the
+	// frontend can offer a choice between them in the obtain flow.
+	require.Len(t, attr.RequestedValues, 2)
+	assert.Equal(t, "test@gmail.com", *attr.RequestedValues[0].String)
+	assert.Equal(t, "test@hotmail.com", *attr.RequestedValues[1].String)
+
+	// RequestedValue duplicates the first accepted value for backwards
+	// compatibility with frontends that predate RequestedValues.
+	require.NotNil(t, attr.RequestedValue)
+	assert.Equal(t, "test@gmail.com", *attr.RequestedValue.String)
 }
 
 func testClaimSetsOneOptionSatisfiable(t *testing.T) {
