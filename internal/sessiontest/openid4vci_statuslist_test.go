@@ -43,6 +43,7 @@ import (
 func testSessionHandlerForOpenID4VCIStatusList(t *testing.T) {
 	t.Run("issuance accepts a valid status and refresh runs", testOpenID4VCIStatusListIssuanceAcceptsValid)
 	t.Run("revoked credential is surfaced in the disclosure plan", testOpenID4VPStatusListRevokedSurfacedInPlan)
+	t.Run("a revoked credential is recorded as revoked in the disclosure log", testOpenID4VPStatusListRevokedRecordedInLog)
 	t.Run("revocation found by the sweep notifies the app", testOpenID4VCIStatusListRevocationNotifiesApp)
 }
 
@@ -184,19 +185,7 @@ func testOpenID4VPStatusListRevokedSurfacedInPlan(t *testing.T) {
 
 	// Start an OpenID4VP disclosure that requests the status-list credential by
 	// its vct.
-	dcqlQuery := `{
-		"dcql": {
-			"credentials": [
-				{
-					"id": "statuslist-cred",
-					"format": "dc+sd-jwt",
-					"meta": { "vct_values": ["https://localhost:8443/vct/statuslist"] },
-					"claims": [ { "path": ["email"] } ]
-				}
-			]
-		}
-	}`
-	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, statusListDisclosureDcql)
 	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
@@ -211,6 +200,68 @@ func testOpenID4VPStatusListRevokedSurfacedInPlan(t *testing.T) {
 	require.NotEmpty(t, owned[0].Credentials, "bundle must hold the credential instance")
 	require.True(t, owned[0].Credentials[0].Revoked,
 		"revoked instance must be surfaced to the frontend with Revoked=true")
+}
+
+// statusListCredentialVct is the vct the test issuer mints the status-list
+// credential under.
+const statusListCredentialVct = "https://localhost:8443/vct/statuslist"
+
+// statusListDisclosureDcql asks for the status-list credential's email.
+const statusListDisclosureDcql = `{
+	"dcql": {
+		"credentials": [
+			{
+				"id": "statuslist-cred",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["` + statusListCredentialVct + `"] },
+				"claims": [ { "path": ["email"] } ]
+			}
+		]
+	}
+}`
+
+// testOpenID4VPStatusListRevokedRecordedInLog follows the plan test above through
+// to the activity log.
+//
+// The permission screen says the credential is revoked and that its status can be
+// checked at all, and the user discloses anyway, as IRMA parity allows. The log
+// entry has to carry the same two facts: it is the only record the user has
+// afterwards of having shared a credential the issuer had already withdrawn, and
+// an entry that reads as a clean disclosure would hide that.
+func testOpenID4VPStatusListRevokedRecordedInLog(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueStatusListCredential(t, c, sessionHandler, 1)
+	revokeStatusListCredentialViaVeramo(t, statusListCredentialEmail)
+	require.NoError(t, c.RefreshStatuses(context.Background()))
+
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, statusListDisclosureDcql)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	owned := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
+	require.NotEmpty(t, owned, "revoked instance still expected in the plan")
+	requirePlanCredentialDetails(t, owned[0].Credentials[0], expectedPlanCredential{
+		Revoked:             new(true),
+		RevocationSupported: new(true),
+	}, "revoked candidate")
+
+	grantPermission(t, c, 2, makeDisclosureChoice(owned[0]))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	disclosureLog := requireSingleDisclosureLog(t, c)
+	require.Len(t, disclosureLog.Credentials, 1)
+	requireLogCredential(t, disclosureLog.Credentials[0], expectedLogCredential{
+		CredentialId:        statusListCredentialVct,
+		Formats:             []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
+		Revoked:             new(true),
+		RevocationSupported: new(true),
+	}, "revoked entry")
 }
 
 // revokeStatusListCredentialViaVeramo revokes every issued status-list

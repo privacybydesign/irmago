@@ -112,6 +112,25 @@ func testDcApiUnsignedDisclosure(
 	// Appendix A.4: the presentation is bound to origin:<origin>, never to a
 	// client identifier, and it carries the request nonce.
 	requireKeyBindingBoundToOrigin(t, presentation, openid4vp.OriginAudience(dcApiOrigin), dcApiNonce)
+
+	// A DC API session leaves the same activity log a link-invoked one does. The
+	// verifier is filed under the one fact the platform authenticated, its origin,
+	// and as unverified, matching the permission screen above.
+	disclosureLog := requireSingleDisclosureLog(t, c)
+	require.Equal(t, clientmodels.Protocol_OpenID4VP, disclosureLog.Protocol)
+	require.NotNil(t, disclosureLog.Verifier)
+	require.Equal(t, dcApiOrigin, disclosureLog.Verifier.Name)
+	require.False(t, disclosureLog.Verifier.Verified)
+	require.Len(t, disclosureLog.Credentials, 1)
+	requireLogCredential(t, disclosureLog.Credentials[0], expectedLogCredential{
+		CredentialId: "test.test.email",
+		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
+		Attributes: []expectedAttr{{
+			Path:        []any{"email"},
+			DisplayName: new("Email address"),
+			Value:       strVal("test@gmail.com"),
+		}},
+	}, "dc api entry")
 }
 
 // testDcApiEncryptedDisclosure runs the response_mode dc_api.jwt path: the
@@ -316,6 +335,9 @@ func testDcApiDismisserCancelsSession(
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, 1, session.Id)
 	require.Equal(t, clientmodels.Status_Dismissed, session.Status)
+
+	// Nothing was disclosed, so nothing may be filed as a disclosure.
+	requireNoDisclosureLog(t, c)
 }
 
 // ========================================================================
