@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/server/keyshare/keyshareserver"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -58,7 +59,10 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
-	keyshareServer := testkeyshare.StartKeyshareServerWithDB(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	keyshareServer := testkeyshare.StartKeyshareServerWithDB(t, logger, irma.NewSchemeManagerIdentifier("test"), 0,
+		func(conf *keyshareserver.Configuration) {
+			conf.KeyshareAttributeValidity = int(time.Until(time.Now().AddDate(20, 0, 0)).Hours() / 24)
+		})
 	defer keyshareServer.Stop()
 
 	storagePath := newSnapshotWallet(t)
