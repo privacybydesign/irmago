@@ -55,7 +55,7 @@ func statusRevoked(s statuslist.Status) bool {
 	return s != statuslist.StatusValid && s != statuslist.StatusUnknown
 }
 
-// IsRevoked reports whether the entry ref points at reads revoked according to
+// IsRevoked reports whether the entry ref points at is revoked according to
 // the locally cached Token Status List -- no network fetch. A nil ref (an
 // instance without a status_list reference) is never revoked. A missing or
 // undeterminable cached status reads as NOT revoked: the flag is advisory, the
