@@ -73,14 +73,26 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 		}
 	}
 
-	// Try to get verifier metadata in order:
-	// 1. From the verifier metadata in the authorization request (if present)
-	// 2. From the certificate OID (if it's a Yivi issued certificate)
+	// How the verifier is displayed comes from the certificate when we issued it,
+	// and only otherwise from the request:
+	// 1. From the certificate OID (if it's a Yivi issued certificate)
+	// 2. From the verifier metadata in the authorization request (third party certificates)
 	// 3. Use the CN from the certificate, without a logo, as a fallback (if all else fails)
+	//
+	// client_metadata is self-asserted: the verifier signs it itself, and nothing binds
+	// it to the certificate it authenticated with. Letting it win over a Yivi issued
+	// certificate would let any verifier we certified put another organisation's name
+	// and logo on the consent screen, under the styling the wallet reserves for a party
+	// it recognizes. For a certificate we issued, the certificate decides.
 	requestorInfo := &scheme.RelyingPartyRequestor{}
 
 	switch {
+	case certSchemeErr == nil:
+		requestorInfo = certRequestorInfo
+
 	case authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil:
+		// Not a Yivi issued certificate, so there is no name of ours to contradict and
+		// the self-asserted metadata is the only description of the verifier we have.
 		requestorInfo.Organization.LegalName = map[string]string{"en": *authRequest.ClientMetadata.ClientName}
 
 		if authRequest.ClientMetadata.LogoUri != nil {
@@ -95,9 +107,6 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 				}
 			}
 		}
-
-	case certSchemeErr == nil:
-		requestorInfo = certRequestorInfo
 
 	default:
 		// Reading the requestor info from the certificate failed, so most likely it is

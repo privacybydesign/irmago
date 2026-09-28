@@ -47,7 +47,8 @@ func TestVerifierValidator(t *testing.T) {
 	// client_metadata (nil-pointer) tests
 	t.Run("ParseAndVerifyAuthorizationRequest falls back to certificate scheme data when client_metadata is absent", testParseAndVerifyAuthorizationRequestNilClientMetadata_FallsBackToCertificateSchemeData)
 	t.Run("ParseAndVerifyAuthorizationRequest falls back to certificate scheme data when client_metadata has no client_name", testParseAndVerifyAuthorizationRequestClientMetadataWithoutClientName_FallsBackToCertificateSchemeData)
-	t.Run("ParseAndVerifyAuthorizationRequest uses client_metadata client_name when present", testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_UsesClientMetadataName)
+	t.Run("ParseAndVerifyAuthorizationRequest ignores client_metadata client_name for a Yivi issued certificate", testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_YiviCertificateWins)
+	t.Run("ParseAndVerifyAuthorizationRequest uses client_metadata client_name for a third party certificate", testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_ThirdPartyCertificate_UsesClientMetadataName)
 	t.Run("ParseAndVerifyAuthorizationRequest downloads the logo referenced in client_metadata", testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLogo)
 	t.Run("ParseAndVerifyAuthorizationRequest continues without a logo when it fails to download", testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_ContinuesWithoutLogo)
 
@@ -298,13 +299,37 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithoutClientName_Falls
 	require.Equal(t, "Yivi B.V.", requestorInfo.Organization.LegalName["en"])
 }
 
-func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_UsesClientMetadataName(t *testing.T) {
-	// Setup test data with client_metadata.client_name set, and no logo_uri.
+func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_YiviCertificateWins(t *testing.T) {
+	// Setup test data with a Yivi issued certificate and a client_metadata object that
+	// tries to present the verifier as someone else. The certificate is ours, so it
+	// decides how the verifier is displayed and the self-asserted name is ignored.
+	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+			"client_name": "Impersonated Verifier",
+			"logo_uri":    "data:image/png;base64,aGVsbG8=",
+		}
+	}, testdata.PkiOption_None)
+
+	// Parse and verify the authorization request
+	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.NoError(t, err)
+	require.Equal(t, "Yivi B.V.", requestorInfo.Organization.LegalName["en"])
+	require.Equal(t, "Yivi B.V.", requestorInfo.Organization.LegalName["nl"])
+
+	// The logo is the one from the certificate scheme data, not the one the request asked for.
+	require.NotNil(t, requestorInfo.Organization.Logo)
+	require.NotEqual(t, []byte("hello"), requestorInfo.Organization.Logo.Data)
+}
+
+func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_ThirdPartyCertificate_UsesClientMetadataName(t *testing.T) {
+	// Setup test data with a third party certificate, which carries no scheme data of
+	// ours, so the self-asserted client_metadata is the only description available.
 	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
 		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
 			"client_name": "Acme Verifier",
 		}
-	}, testdata.PkiOption_None)
+	}, testdata.PkiOption_MissingSchemeData)
 
 	// Parse and verify the authorization request
 	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -322,7 +347,7 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLo
 			"client_name": "Acme Verifier",
 			"logo_uri":    "data:image/png;base64,aGVsbG8=",
 		}
-	}, testdata.PkiOption_None)
+	}, testdata.PkiOption_MissingSchemeData)
 
 	// Parse and verify the authorization request
 	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -342,7 +367,7 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_Cont
 			"client_name": "Acme Verifier",
 			"logo_uri":    "data:image/png;base64",
 		}
-	}, testdata.PkiOption_None)
+	}, testdata.PkiOption_MissingSchemeData)
 
 	// Parse and verify the authorization request
 	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
