@@ -12,9 +12,8 @@ Client storage generated at the `v1.0.0` tag, loaded and verified by
 
 Generated from commit `d5d0260e` (the `v1.0.0` tag plus the generator), with every
 IRMA issuance request given a validity of 2100-01-01 so the credentials don't expire.
-Regenerating from that commit keeps `eudi_client_db` plaintext. The `test.test.mijnirma`
-keyshare-enrollment credential is issued by the keyshare server itself and still
-expires on 2027-09-23. It is never disclosed.
+Regenerating from that commit keeps `eudi_client_db` plaintext. The in-process keyshare server was patched the same way, so the `test.test.mijnirma`
+keyshare-enrollment credential it issues is valid until 2100 too.
 
 ## Files
 

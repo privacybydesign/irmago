@@ -7,8 +7,8 @@ storage, so it contains only the IRMA client (bbolt) database.
 Generated from commit `9f866ac6` (`v0.19.2` plus the generator), with every
 issuance request given a validity of 2100-01-01. The original snapshot used the
 server default of 6 months, so its credentials expired and the regression test
-started failing. The `test.test.mijnirma` keyshare-enrollment credential is issued
-by the keyshare server itself and still expires on 2027-09-23. It is never disclosed.
+started failing. The in-process keyshare server was patched the same way, so the `test.test.mijnirma`
+keyshare-enrollment credential it issues is valid until 2100 too.
 
 ## Files
 

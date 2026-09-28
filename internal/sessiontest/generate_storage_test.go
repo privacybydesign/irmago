@@ -21,6 +21,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/irma/server/keyshare/keyshareserver"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -67,7 +68,10 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
-	keyshareServer := testkeyshare.StartKeyshareServerWithDB(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	keyshareServer := testkeyshare.StartKeyshareServerWithDB(t, logger, irma.NewSchemeManagerIdentifier("test"), 0,
+		func(conf *keyshareserver.Configuration) {
+			conf.KeyshareAttributeValidity = int(time.Until(time.Time(fixtureValidity)).Hours() / 24)
+		})
 	defer keyshareServer.Stop()
 
 	c, storagePath, sessionHandler := createClientWithStoragePath(t)
@@ -367,7 +371,8 @@ func copyFile(t *testing.T, src, dst string) {
 }
 
 // fixtureValidity is far in the future so the fixture's IRMA credentials don't expire
-// and break the regression tests (the server default is 6 months).
+// and break the regression tests (the IRMA server default is 6 months, the keyshare
+// server's default for its keyshare attribute is 1 year).
 var fixtureValidity = irma.Timestamp(time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC))
 
 func withLongValidity(req *irma.IssuanceRequest) *irma.IssuanceRequest {

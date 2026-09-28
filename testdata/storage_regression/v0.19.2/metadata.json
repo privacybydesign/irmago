@@ -5,7 +5,7 @@
       "ID": "email",
       "IssuerID": "test",
       "SchemeManagerID": "test",
-      "SignedOn": 1790337385,
+      "SignedOn": 1790580241,
       "Expires": 4102444800,
       "Attributes": {
         "test.test.email.email": {
@@ -25,15 +25,15 @@
       "IssuerID": "test",
       "SchemeManagerID": "test",
       "SignedOn": 1790208000,
-      "Expires": 1821657600,
+      "Expires": 4102358400,
       "Attributes": {
         "test.test.mijnirma.email": {
-          "": "zlr8Zz2YV4JH",
-          "en": "zlr8Zz2YV4JH",
-          "nl": "zlr8Zz2YV4JH"
+          "": "Bbp9s3XxziM8",
+          "en": "Bbp9s3XxziM8",
+          "nl": "Bbp9s3XxziM8"
         }
       },
-      "Hash": "62d14eb9d9cd0d6d321048e32812c15eec5fa9e8b0541bf3da23c9c65364f73d",
+      "Hash": "adfee3349ee81143cecbc6311d32fdf62c05e565db39a459763bebdf0ee9708e",
       "Revoked": false,
       "RevocationSupported": false,
       "CredentialFormat": "idemix",
@@ -117,7 +117,7 @@
     {
       "ID": 8,
       "Type": "disclosure",
-      "Time": 1790337388,
+      "Time": 1790580245,
       "DisclosureLog": {
         "Protocol": "openid4vp",
         "Credentials": [
@@ -143,47 +143,7 @@
             "localhost"
           ],
           "logo": "551457292725140545526920589625581952473600958670.png",
-          "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/eudi_configuration/verifiers/logos/551457292725140545526920589625581952473600958670.png",
-          "valid_until": 1826452690,
-          "unverified": false,
-          "languages": [
-            "nl",
-            "en"
-          ],
-          "wizards": {}
-        }
-      }
-    },
-    {
-      "ID": 7,
-      "Type": "disclosure",
-      "Time": 1790337387,
-      "DisclosureLog": {
-        "Protocol": "openid4vp",
-        "Credentials": [
-          {
-            "Formats": [
-              "dc+sd-jwt"
-            ],
-            "CredentialType": "test.test.email",
-            "Attributes": {
-              "email": "test@gmail.com"
-            }
-          }
-        ],
-        "Verifier": {
-          "id": "",
-          "scheme": "",
-          "name": {
-            "en": "Yivi B.V.",
-            "nl": "Yivi B.V."
-          },
-          "industry": {},
-          "hostnames": [
-            "localhost"
-          ],
-          "logo": "551457292725140545526920589625581952473600958670.png",
-          "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/eudi_configuration/verifiers/logos/551457292725140545526920589625581952473600958670.png",
+          "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/eudi_configuration/verifiers/logos/551457292725140545526920589625581952473600958670.png",
           "valid_until": 1826452690,
           "unverified": false,
           "languages": [
@@ -195,9 +155,49 @@
       }
     },
     {
+      "ID": 7,
+      "Type": "disclosure",
+      "Time": 1790580243,
+      "DisclosureLog": {
+        "Protocol": "openid4vp",
+        "Credentials": [
+          {
+            "Formats": [
+              "dc+sd-jwt"
+            ],
+            "CredentialType": "test.test.email",
+            "Attributes": {
+              "email": "test@gmail.com"
+            }
+          }
+        ],
+        "Verifier": {
+          "id": "",
+          "scheme": "",
+          "name": {
+            "en": "Yivi B.V.",
+            "nl": "Yivi B.V."
+          },
+          "industry": {},
+          "hostnames": [
+            "localhost"
+          ],
+          "logo": "551457292725140545526920589625581952473600958670.png",
+          "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/eudi_configuration/verifiers/logos/551457292725140545526920589625581952473600958670.png",
+          "valid_until": 1826452690,
+          "unverified": false,
+          "languages": [
+            "nl",
+            "en"
+          ],
+          "wizards": {}
+        }
+      }
+    },
+    {
       "ID": 6,
       "Type": "signature",
-      "Time": 1790337385,
+      "Time": 1790580241,
       "SignedMessageLog": {
         "Protocol": "irma",
         "Credentials": [
@@ -223,7 +223,7 @@
             "localhost"
           ],
           "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
-          "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+          "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
           "valid_until": null,
           "unverified": false,
           "languages": [
@@ -238,7 +238,7 @@
                 "nl": "Test"
               },
               "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
-              "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+              "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
               "allowOtherRequestors": false,
               "languages": [
                 "en",
@@ -382,7 +382,7 @@
     {
       "ID": 5,
       "Type": "disclosure",
-      "Time": 1790337385,
+      "Time": 1790580241,
       "DisclosureLog": {
         "Protocol": "irma",
         "Credentials": [
@@ -408,7 +408,7 @@
             "localhost"
           ],
           "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
-          "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+          "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
           "valid_until": null,
           "unverified": false,
           "languages": [
@@ -423,7 +423,7 @@
                 "nl": "Test"
               },
               "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
-              "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+              "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
               "allowOtherRequestors": false,
               "languages": [
                 "en",
@@ -566,7 +566,7 @@
     {
       "ID": 4,
       "Type": "issuance",
-      "Time": 1790337385,
+      "Time": 1790580241,
       "IssuanceLog": {
         "Protocol": "irma",
         "Credentials": [
@@ -593,7 +593,7 @@
             "localhost"
           ],
           "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
-          "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+          "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
           "valid_until": null,
           "unverified": false,
           "languages": [
@@ -608,7 +608,7 @@
                 "nl": "Test"
               },
               "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
-              "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+              "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
               "allowOtherRequestors": false,
               "languages": [
                 "en",
@@ -751,7 +751,7 @@
     {
       "ID": 3,
       "Type": "issuance",
-      "Time": 1790337385,
+      "Time": 1790580241,
       "IssuanceLog": {
         "Protocol": "irma",
         "Credentials": [
@@ -779,7 +779,7 @@
             "localhost"
           ],
           "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
-          "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+          "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
           "valid_until": null,
           "unverified": false,
           "languages": [
@@ -794,7 +794,7 @@
                 "nl": "Test"
               },
               "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
-              "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+              "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
               "allowOtherRequestors": false,
               "languages": [
                 "en",
@@ -937,7 +937,7 @@
     {
       "ID": 2,
       "Type": "issuance",
-      "Time": 1790337385,
+      "Time": 1790580241,
       "IssuanceLog": {
         "Protocol": "irma",
         "Credentials": [
@@ -967,7 +967,7 @@
             "localhost"
           ],
           "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
-          "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+          "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
           "valid_until": null,
           "unverified": false,
           "languages": [
@@ -982,7 +982,7 @@
                 "nl": "Test"
               },
               "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
-              "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+              "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
               "allowOtherRequestors": false,
               "languages": [
                 "en",
@@ -1125,7 +1125,7 @@
     {
       "ID": 1,
       "Type": "issuance",
-      "Time": 1790337385,
+      "Time": 1790580241,
       "IssuanceLog": {
         "Protocol": "irma",
         "Credentials": [
@@ -1135,7 +1135,7 @@
             ],
             "CredentialType": "test.test.mijnirma",
             "Attributes": {
-              "email": "zlr8Zz2YV4JH"
+              "email": "Bbp9s3XxziM8"
             }
           }
         ],
@@ -1152,7 +1152,7 @@
             "localhost"
           ],
           "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
-          "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+          "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
           "valid_until": null,
           "unverified": false,
           "languages": [
@@ -1167,7 +1167,7 @@
                 "nl": "Test"
               },
               "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
-              "logoPath": "/var/folders/r4/_p_k761x7mz3vqw15vh55tkw0000gn/T/TestGenerateClientStorageForRegressionTests3537974011/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+              "logoPath": "/tmp/TestGenerateClientStorageForRegressionTests743338864/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
               "allowOtherRequestors": false,
               "languages": [
                 "en",

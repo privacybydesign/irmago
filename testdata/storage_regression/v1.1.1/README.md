@@ -7,9 +7,8 @@ being opened without its AES key. Loaded and verified by
 `version.go` reads `1.1.1`.
 
 Generated from the `v1.1.1` tag with every IRMA issuance request given a validity of
-2100-01-01 so the credentials don't expire. The `test.test.mijnirma`
-keyshare-enrollment credential is issued by the keyshare server itself and still
-expires on 2027-09-23. It is never disclosed.
+2100-01-01 so the credentials don't expire. The in-process keyshare server was patched the same way, so the `test.test.mijnirma`
+keyshare-enrollment credential it issues is valid until 2100 too.
 
 Unlike the `v1.0.0` snapshot (whose `eudi_client_db` is intentionally plaintext to
 exercise the migration), this snapshot's `eudi_client_db` is **born encrypted** — it
