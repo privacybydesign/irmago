@@ -7,8 +7,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/privacybydesign/gabi/signed"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/sirupsen/logrus"
@@ -101,9 +102,9 @@ func TestUnversionedServerHandleRegister(t *testing.T) {
 		require.NoError(t, err)
 		data.PublicKey = pkbts
 
-		j, err = jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareEnrollmentClaims{
+		j, err = jose.Sign(irma.KeyshareEnrollmentClaims{
 			KeyshareEnrollmentData: data,
-		}).SignedString(sk)
+		}, jwa.ES256(), sk, nil)
 		require.NoError(t, err)
 
 		msg, err := json.Marshal(irma.KeyshareEnrollment{EnrollmentJWT: j})
@@ -448,11 +449,11 @@ func doUnversionedChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey, username
 	require.Contains(t, auth.Candidates, irma.KeyshareAuthMethodChallengeResponse)
 	require.NotEmpty(t, auth.Challenge)
 
-	jwtt, err := jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareAuthResponseClaims{
+	jwtt, err := jose.Sign(irma.KeyshareAuthResponseClaims{
 		Username:  username,
 		Pin:       pin,
 		Challenge: auth.Challenge,
-	}).SignedString(sk)
+	}, jwa.ES256(), sk, nil)
 	require.NoError(t, err)
 
 	return jwtt

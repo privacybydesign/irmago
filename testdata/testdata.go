@@ -21,8 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/stretchr/testify/require"
 )
 
@@ -148,12 +149,28 @@ func CreateTestAuthorizationRequestRequest(issuerCert []byte) string {
 	)
 }
 
-func CreateTestAuthorizationRequestJWT(hostname string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *jwt.Token)) string {
+// Why Claims below is a map rather than a jwx jwt.Token, unlike the EUDI packages that build
+// their tokens with jwt.NewBuilder.
+//
+// A jwt.Token would not remove a conversion, since both forms marshal the payload exactly once. It
+// would also sign "aud" as an array unless FlattenAudience were enabled on it, where the map keeps
+// the plain string these tests send, and openid4vp.AuthorizationRequest declares Audience as a
+// string. The map keeps the wire shape without a second thing to remember.
+
+// AuthorizationRequestToken holds the header and the claims of a test authorization request
+// JWT, so that a test can change either of them before the token is signed. Setting a header
+// field to nil leaves it out of the signed token.
+type AuthorizationRequestToken struct {
+	Header map[string]any
+	Claims map[string]any
+}
+
+func CreateTestAuthorizationRequestJWT(hostname string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *AuthorizationRequestToken)) string {
 	return CreateTestAuthorizationRequestJWTWithClientId("x509_san_dns:"+hostname, verifierKey, verifierCert, modifyTokenFunc)
 }
 
-func CreateTestAuthorizationRequestJWTWithClientId(clientId string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *jwt.Token)) string {
-	claims := jwt.MapClaims{
+func CreateTestAuthorizationRequestJWTWithClientId(clientId string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *AuthorizationRequestToken)) string {
+	claims := map[string]any{
 		// OpenID4VP § 5.8: a statically discovered wallet — one publishing no issuer
 		// identifier, as this one does not — is addressed as this symbolic value.
 		// A placeholder here made every fixture request non-conformant.
@@ -178,15 +195,18 @@ func CreateTestAuthorizationRequestJWTWithClientId(clientId string, verifierKey 
 		"state":         "state",
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
-	token.Header["typ"] = "oauth-authz-req+jwt"
-	token.Header["x5c"] = []string{base64.StdEncoding.EncodeToString(verifierCert.Raw)}
+	token := &AuthorizationRequestToken{
+		Header: map[string]any{
+			"typ": "oauth-authz-req+jwt",
+			"x5c": []string{base64.StdEncoding.EncodeToString(verifierCert.Raw)},
+		},
+		Claims: claims,
+	}
 
 	if modifyTokenFunc != nil {
 		modifyTokenFunc(token)
 	}
-
-	authRequestJwt, _ := token.SignedString(verifierKey)
+	authRequestJwt, _ := jose.Sign(token.Claims, jwa.ES256(), verifierKey, token.Header)
 	return authRequestJwt
 }
 

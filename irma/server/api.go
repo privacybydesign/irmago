@@ -19,8 +19,9 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
@@ -326,29 +327,29 @@ func TypeString(x any) string {
 }
 
 func ResultJwt(sessionresult *SessionResult, issuer string, validity int, privatekey *rsa.PrivateKey) (string, error) {
-	standardclaims := jwt.StandardClaims{
-		Issuer:   issuer,
-		IssuedAt: time.Now().Unix(),
-		Subject:  string(sessionresult.Type) + "_result",
+	issuedAt := time.Now()
+	registeredClaims := irma.RegisteredClaims{
+		Issuer:    issuer,
+		IssuedAt:  irma.NewNumericDate(issuedAt),
+		ExpiresAt: irma.NewNumericDate(issuedAt.Add(time.Duration(validity) * time.Second)),
+		Subject:   string(sessionresult.Type) + "_result",
 	}
-	standardclaims.ExpiresAt = standardclaims.IssuedAt + int64(validity)
 
-	var claims jwt.Claims
+	var claims any
 	if sessionresult.LegacySession {
 		claims = struct {
-			jwt.StandardClaims
+			irma.RegisteredClaims
 			*LegacySessionResult
-		}{standardclaims, sessionresult.Legacy()}
+		}{registeredClaims, sessionresult.Legacy()}
 	} else {
 		claims = struct {
-			jwt.StandardClaims
+			irma.RegisteredClaims
 			*SessionResult
-		}{standardclaims, sessionresult}
+		}{registeredClaims, sessionresult}
 	}
 
 	// Sign the jwt and return it
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	return token.SignedString(privatekey)
+	return jose.Sign(claims, jwa.RS256(), privatekey, nil)
 }
 
 func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, validity int, privatekey *rsa.PrivateKey) {

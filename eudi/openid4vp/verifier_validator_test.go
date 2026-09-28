@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
@@ -58,7 +57,7 @@ func TestVerifierValidator(t *testing.T) {
 
 func testParseAndVerifyAuthorizationRequestFailureEmptyX5cArray(t *testing.T) {
 	// Setup test data
-	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+	authRequestJwt, verifierValidator := setupTest(t, func(token *testdata.AuthorizationRequestToken) {
 		token.Header["x5c"] = []string{}
 	}, testdata.PkiOption_None)
 
@@ -66,7 +65,7 @@ func testParseAndVerifyAuthorizationRequestFailureEmptyX5cArray(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to get end-entity certificate from x5c header: auth request token contains empty x5c array in the header")
+	require.Contains(t, err.Error(), "failed to get end-entity certificate from x5c header: auth request token contains empty x5c array in the header")
 }
 
 func testParseAndVerifyAuthorizationRequestSuccess(t *testing.T) {
@@ -104,21 +103,21 @@ func testParseAndVerifyAuthorizationRequestSuccess(t *testing.T) {
 
 func testParseAndVerifyAuthorizationRequestFailureForInvalidClientID(t *testing.T) {
 	// Setup test data
-	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+	authRequestJwt, verifierValidator := setupTest(t, func(token *testdata.AuthorizationRequestToken) {
 		// Modify the client_id to an invalid value
-		token.Claims.(jwt.MapClaims)["client_id"] = "invalid_client_id"
+		token.Claims["client_id"] = "invalid_client_id"
 	}, testdata.PkiOption_None)
 
 	// Parse and verify the authorization request
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: client_id expected to start with 'x509_san_dns:' or 'x509_hash:' but doesn't (invalid_client_id)")
+	require.Contains(t, err.Error(), "client_id expected to start with 'x509_san_dns:' or 'x509_hash:' but doesn't (invalid_client_id)")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureMissingX5C(t *testing.T) {
 	// Setup test data
-	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+	authRequestJwt, verifierValidator := setupTest(t, func(token *testdata.AuthorizationRequestToken) {
 		token.Header["x5c"] = nil // Remove x5c header
 	}, testdata.PkiOption_None)
 
@@ -126,12 +125,12 @@ func testParseAndVerifyAuthorizationRequestFailureMissingX5C(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to get end-entity certificate from x5c header: auth request token doesn't contain valid x5c field in the header")
+	require.Contains(t, err.Error(), "failed to get end-entity certificate from x5c header: auth request token doesn't contain x5c field in the header")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredX5C(t *testing.T) {
 	// Setup test data
-	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+	authRequestJwt, verifierValidator := setupTest(t, func(token *testdata.AuthorizationRequestToken) {
 		token.Header["x5c"] = nil // Remove x5c header
 	}, testdata.PkiOption_ExpiredEndEntity)
 
@@ -139,7 +138,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredX5C(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to get end-entity certificate from x5c header: auth request token doesn't contain valid x5c field in the header")
+	require.Contains(t, err.Error(), "failed to get end-entity certificate from x5c header: auth request token doesn't contain x5c field in the header")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureRevokedX5C(t *testing.T) {
@@ -150,7 +149,7 @@ func testParseAndVerifyAuthorizationRequestFailureRevokedX5C(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate against revocation lists: certificate is revoked by issuer CN=CA CERT 0,OU=Test Unit,O=Test Organization,C=NL in revocation list with number 1")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate against revocation lists: certificate is revoked by issuer CN=CA CERT 0,OU=Test Unit,O=Test Organization,C=NL in revocation list with number 1")
 }
 
 func testParseAndVerifyAuthorizationRequestMissingSchemeData_AssumesThirdPartyCertificate_ReturnsCertificateCommonName(t *testing.T) {
@@ -199,7 +198,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingRoot(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredRoot(t *testing.T) {
@@ -210,7 +209,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredRoot(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: current time ")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: current time ")
 }
 
 // This function implicitly also tests the case where an intermediate certificate is revoked, because it will be 'missing'
@@ -228,7 +227,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingIntermediate(t *testing
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing.T) {
@@ -239,7 +238,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: ")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: ")
 }
 
 func testParseAndVerifyAuthorizationRequestSuccessX509Hash(t *testing.T) {
@@ -257,8 +256,8 @@ func testParseAndVerifyAuthorizationRequestSuccessX509Hash(t *testing.T) {
 
 func testParseAndVerifyAuthorizationRequestFailureX509HashMismatch(t *testing.T) {
 	// Setup test data with a client_id hash that doesn't match the leaf certificate
-	authRequestJwt, verifierValidator := setupHashTest(t, func(token *jwt.Token) {
-		token.Claims.(jwt.MapClaims)["client_id"] = "x509_hash:" + base64.RawURLEncoding.EncodeToString(sha256.New().Sum(nil))
+	authRequestJwt, verifierValidator := setupHashTest(t, func(token *testdata.AuthorizationRequestToken) {
+		token.Claims["client_id"] = "x509_hash:" + base64.RawURLEncoding.EncodeToString(sha256.New().Sum(nil))
 	}, testdata.PkiOption_None)
 
 	// Parse and verify the authorization request
@@ -283,8 +282,8 @@ func testParseAndVerifyAuthorizationRequestNilClientMetadata_FallsBackToCertific
 
 func testParseAndVerifyAuthorizationRequestClientMetadataWithoutClientName_FallsBackToCertificateSchemeData(t *testing.T) {
 	// Setup test data with a client_metadata object present, but without a client_name.
-	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
-		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+	authRequestJwt, verifierValidator := setupTest(t, func(token *testdata.AuthorizationRequestToken) {
+		token.Claims["client_metadata"] = map[string]any{
 			"client_uri": "https://verifier.example.com",
 		}
 	}, testdata.PkiOption_None)
@@ -300,8 +299,8 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithoutClientName_Falls
 
 func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_UsesClientMetadataName(t *testing.T) {
 	// Setup test data with client_metadata.client_name set, and no logo_uri.
-	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
-		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+	authRequestJwt, verifierValidator := setupTest(t, func(token *testdata.AuthorizationRequestToken) {
+		token.Claims["client_metadata"] = map[string]any{
 			"client_name": "Acme Verifier",
 		}
 	}, testdata.PkiOption_None)
@@ -317,8 +316,8 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_UsesClie
 func testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLogo(t *testing.T) {
 	// Setup test data with client_metadata.client_name and a data-uri logo_uri, so the
 	// logo can be "downloaded" without a real network call.
-	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
-		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+	authRequestJwt, verifierValidator := setupTest(t, func(token *testdata.AuthorizationRequestToken) {
+		token.Claims["client_metadata"] = map[string]any{
 			"client_name": "Acme Verifier",
 			"logo_uri":    "data:image/png;base64,aGVsbG8=",
 		}
@@ -337,8 +336,8 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLo
 func testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_ContinuesWithoutLogo(t *testing.T) {
 	// Setup test data with client_metadata.client_name and a malformed logo_uri (missing
 	// the comma separator), so downloading the logo fails.
-	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
-		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+	authRequestJwt, verifierValidator := setupTest(t, func(token *testdata.AuthorizationRequestToken) {
+		token.Claims["client_metadata"] = map[string]any{
 			"client_name": "Acme Verifier",
 			"logo_uri":    "data:image/png;base64",
 		}
@@ -359,8 +358,8 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_Cont
 func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_StillValidatesCertificateAuthorization(t *testing.T) {
 	// Setup test data with client_metadata.client_name set, on a certificate that does
 	// carry scheme data (PkiOption_None) and so has an authorized set to check against.
-	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
-		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+	authRequestJwt, verifierValidator := setupTest(t, func(token *testdata.AuthorizationRequestToken) {
+		token.Claims["client_metadata"] = map[string]any{
 			"client_name": "Acme Verifier",
 		}
 	}, testdata.PkiOption_None)
@@ -394,7 +393,7 @@ func testParseAndVerifyAuthorizationRequestThirdPartyCertificate_SkipsQueryValid
 	require.Equal(t, EndEntityCN, requestorInfo.Organization.LegalName["en"])
 }
 
-func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
+func setupTest(t *testing.T, tokenModifier func(token *testdata.AuthorizationRequestToken), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
 	tempDir := t.TempDir()
 
 	// Setup PKI
@@ -444,7 +443,7 @@ func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata
 
 // setupHashTest mirrors setupTest, but builds an x509_hash: client_id from the leaf
 // certificate's hash instead of an x509_san_dns: client_id built from its hostname.
-func setupHashTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
+func setupHashTest(t *testing.T, tokenModifier func(token *testdata.AuthorizationRequestToken), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
 	tempDir := t.TempDir()
 
 	// Setup PKI

@@ -14,10 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/internal/testhelpers"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -1393,9 +1394,9 @@ func TestRequestorHostPermissions(t *testing.T) {
 func signSessionRequest(t *testing.T, req irma.SessionRequest) string {
 	skbts, err := os.ReadFile(filepath.Join(testdataFolder, "jwtkeys", "requestor1-sk.pem"))
 	require.NoError(t, err)
-	sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
+	sk, err := jose.ParseRSAPrivateKeyFromPEM(skbts)
 	require.NoError(t, err)
-	j, err := irma.SignSessionRequest(req, jwt.SigningMethodRS256, sk, "requestor1")
+	j, err := irma.SignSessionRequest(req, jwa.RS256(), sk, "requestor1")
 	require.NoError(t, err)
 	return j
 }

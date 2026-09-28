@@ -9,9 +9,10 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/mdp/qrterminal"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/privacybydesign/irmago/yivi/cli/internal/clihelpers"
@@ -46,11 +47,11 @@ var requestCmd = &cobra.Command{
 	},
 }
 
-func configureJWTKey(authmethod, key string) (any, jwt.SigningMethod, error) {
+func configureJWTKey(authmethod, key string) (any, jwa.SignatureAlgorithm, error) {
 	var (
 		err    error
 		sk     any
-		jwtalg jwt.SigningMethod
+		jwtalg jwa.SignatureAlgorithm
 		bts    []byte
 	)
 	// If the key refers to an existing file, use contents of the file as key
@@ -59,17 +60,17 @@ func configureJWTKey(authmethod, key string) (any, jwt.SigningMethod, error) {
 	}
 	switch authmethod {
 	case "hmac":
-		jwtalg = jwt.SigningMethodHS256
+		jwtalg = jwa.HS256()
 		if sk, err = common.Base64Decode(bts); err != nil {
-			return nil, nil, err
+			return nil, jwa.EmptySignatureAlgorithm(), err
 		}
 	case "rsa":
-		jwtalg = jwt.SigningMethodRS256
-		if sk, err = jwt.ParseRSAPrivateKeyFromPEM(bts); err != nil {
-			return nil, nil, err
+		jwtalg = jwa.RS256()
+		if sk, err = jose.ParseRSAPrivateKeyFromPEM(bts); err != nil {
+			return nil, jwa.EmptySignatureAlgorithm(), err
 		}
 	default:
-		return nil, nil, errors.Errorf("Unsupported signing algorithm: '%s'", authmethod)
+		return nil, jwa.EmptySignatureAlgorithm(), errors.Errorf("Unsupported signing algorithm: '%s'", authmethod)
 	}
 
 	return sk, jwtalg, nil
