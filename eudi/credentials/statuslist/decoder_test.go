@@ -26,19 +26,19 @@ func encodeLst(t *testing.T, raw []byte) string {
 func Test_DecodeBits_RoundTrip(t *testing.T) {
 	raw := []byte{0x55, 0xAA, 0xF0, 0x0F}
 	lst := encodeLst(t, raw)
-	out, err := decodeBits(lst, 0)
+	out, err := decodeBitsBase64(lst, 0)
 	require.NoError(t, err)
 	require.Equal(t, raw, out)
 }
 
 func Test_DecodeBits_InvalidBase64_ReturnsErrDecode(t *testing.T) {
-	_, err := decodeBits("not_base64!!!", 0)
+	_, err := decodeBitsBase64("not_base64!!!", 0)
 	require.ErrorIs(t, err, ErrDecode)
 }
 
 func Test_DecodeBits_InvalidZlib_ReturnsErrDecode(t *testing.T) {
 	bogus := base64.RawURLEncoding.EncodeToString([]byte("not-zlib"))
-	_, err := decodeBits(bogus, 0)
+	_, err := decodeBitsBase64(bogus, 0)
 	require.ErrorIs(t, err, ErrDecode)
 }
 
@@ -47,7 +47,7 @@ func Test_DecodeBits_PostDecompressionCap_ReturnsErrDecode(t *testing.T) {
 	// against a cap of 100 bytes.
 	raw := bytes.Repeat([]byte{0x00}, 10000)
 	lst := encodeLst(t, raw)
-	_, err := decodeBits(lst, 100)
+	_, err := decodeBitsBase64(lst, 100)
 	require.ErrorIs(t, err, ErrDecode)
 	require.True(t, strings.Contains(err.Error(), "exceeds cap"))
 }

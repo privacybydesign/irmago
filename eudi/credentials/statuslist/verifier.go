@@ -14,9 +14,9 @@ import (
 // avoid an import cycle between statuslist and sdjwtvc.
 const ClockSkewSeconds = 180
 
-// statusListClaim mirrors the inner `status_list` object of a Status
+// jwtStatusListClaim mirrors the inner `status_list` object of a Status
 // List Token payload (draft-ietf-oauth-status-list-15 §6).
-type statusListClaim struct {
+type jwtStatusListClaim struct {
 	Bits int    `json:"bits"`
 	Lst  string `json:"lst"`
 	// AggregationURI is intentionally not parsed. Aggregation lets a *relying
@@ -25,46 +25,75 @@ type statusListClaim struct {
 	// aggregated lists would pull in lists we hold no credentials for).
 }
 
-// statusListPayload mirrors the verified Status List Token payload
+// jwtStatusListPayload mirrors the verified Status List Token payload
 // (draft-ietf-oauth-status-list-15 §6). Only fields v1 acts on are
 // captured; unknown fields are tolerated.
-type statusListPayload struct {
-	Issuer     string          `json:"iss"`
-	Subject    string          `json:"sub"`
-	IssuedAt   int64           `json:"iat"`
-	Expiry     int64           `json:"exp,omitempty"`
-	TTLSeconds int64           `json:"ttl,omitempty"`
-	StatusList statusListClaim `json:"status_list"`
+type jwtStatusListPayload struct {
+	Issuer     string             `json:"iss"`
+	Subject    string             `json:"sub"`
+	IssuedAt   int64              `json:"iat"`
+	Expiry     int64              `json:"exp,omitempty"`
+	TTLSeconds int64              `json:"ttl,omitempty"`
+	StatusList jwtStatusListClaim `json:"status_list"`
 }
 
-// verifiedStatusList holds a Status List Token whose signature, typ,
+// verifiedStatusListToken is what Checker acts on once a Status List Token
+// (JWT or CWT) has been signature/typ/iss/time-bounds verified: enough to
+// decide caching lifetime and to read the status bit at an index. Checker is
+// deliberately encoding-agnostic beyond this point — see verifyStatusList (in
+// cwt.go), which dispatches to whichever of *verifiedStatusListJWT (this file's
+// verifyStatusListTokenJWT) or *verifiedStatusListCWT (cwt.go's
+// verifyStatusListTokenCWT) matches the fetched bytes.
+type verifiedStatusListToken interface {
+	// ttlSignal reports the caching lifetime the token itself advertises (its
+	// `ttl` claim, or the remaining `exp - now`), and whether it advertised
+	// one at all.
+	ttlSignal() (time.Duration, bool)
+
+	// statusAt decompresses the token's bit array (capped at maxBytes) and
+	// returns the status at ref.Index.
+	statusAt(ref Reference, maxBytes int64) (Status, error)
+}
+
+// verifiedStatusListJWT holds a JWT Status List Token whose signature, typ,
 // iss, and time bounds have been validated. The lst field is still
-// base64url-encoded and zlib-compressed; the decoder consumes it.
-type verifiedStatusList struct {
-	payload statusListPayload
-	rawJwt  []byte // original signed JWT bytes — kept for caching
+// base64url-encoded and zlib-compressed; statusAt consumes it.
+type verifiedStatusListJWT struct {
+	payload jwtStatusListPayload
 }
 
-// payloadTTLSignal reports the caching lifetime advertised by the
-// Status List Token itself — the `ttl` claim if present, otherwise the
-// remaining `exp - now` — together with whether the token advertised
-// one at all. draft-ietf-oauth-status-list-15 §8.2 requires the `ttl`
-// and `exp` claims to take priority over HTTP caching headers, so the
-// caller must distinguish "token said nothing" (fall back to the HTTP
-// header) from "token advertised a lifetime".
-func (v *verifiedStatusList) payloadTTLSignal() (time.Duration, bool) {
-	if v.payload.TTLSeconds > 0 {
-		return time.Duration(v.payload.TTLSeconds) * time.Second, true
+func (v *verifiedStatusListJWT) ttlSignal() (time.Duration, bool) {
+	return ttlFromClaims(v.payload.TTLSeconds, v.payload.Expiry)
+}
+
+func (v *verifiedStatusListJWT) statusAt(ref Reference, maxBytes int64) (Status, error) {
+	bits, err := decodeBitsBase64(v.payload.StatusList.Lst, maxBytes)
+	if err != nil {
+		return StatusUnknown, err
 	}
-	if v.payload.Expiry > 0 {
-		if remaining := time.Until(time.Unix(v.payload.Expiry, 0)); remaining > 0 {
+	return statusAtIndex(bits, v.payload.StatusList.Bits, ref.Index)
+}
+
+// ttlFromClaims reports the caching lifetime advertised by the Status List
+// Token itself — the `ttl` claim if present, otherwise the remaining
+// `exp - now` — together with whether the token advertised one at all. Shared
+// by both encodings. draft-ietf-oauth-status-list-15 §8.2 requires the `ttl`
+// and `exp` claims to take priority over HTTP caching headers, so the caller
+// must distinguish "token said nothing" (fall back to the HTTP header) from
+// "token advertised a lifetime".
+func ttlFromClaims(ttlSeconds, expiry int64) (time.Duration, bool) {
+	if ttlSeconds > 0 {
+		return time.Duration(ttlSeconds) * time.Second, true
+	}
+	if expiry > 0 {
+		if remaining := time.Until(time.Unix(expiry, 0)); remaining > 0 {
 			return remaining, true
 		}
 	}
 	return 0, false
 }
 
-// verifyStatusListToken parses, signature-verifies, and time-checks a
+// verifyStatusListTokenJWT parses, signature-verifies, and time-checks a
 // Status List Token.
 //
 // expectedURI MUST equal the sub claim — the spec's anti-substitution
@@ -73,9 +102,9 @@ func (v *verifiedStatusList) payloadTTLSignal() (time.Duration, bool) {
 // issuer alignment to the trust model (§11.3), so a delegated Status
 // Issuer signing with its own key is accepted as long as the signature
 // is trusted and sub matches.
-func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedURI string, now time.Time) (*verifiedStatusList, error) {
-	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{StatusListTokenTyp}, ctx.AllowInsecureDidWeb)
-	oauthDiscoveryKeyProvider := eudi_jwt.NewOAuthDiscoveryJwkKeyProvider([]string{StatusListTokenTyp}, &http.Client{Timeout: 10 * time.Second})
+func verifyStatusListTokenJWT(rawJwt []byte, ctx VerificationContext, expectedURI string, now time.Time) (*verifiedStatusListJWT, error) {
+	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{StatusListTokenJWTTyp}, ctx.AllowInsecureDidWeb)
+	oauthDiscoveryKeyProvider := eudi_jwt.NewOAuthDiscoveryJwkKeyProvider([]string{StatusListTokenJWTTyp}, &http.Client{Timeout: 10 * time.Second})
 
 	clock := ctx.Clock
 	if clock == nil {
@@ -138,7 +167,7 @@ func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedURI s
 		return nil, fmt.Errorf("%w: empty status_list.lst", ErrUnauthorized)
 	}
 
-	return &verifiedStatusList{payload: payload, rawJwt: rawJwt}, nil
+	return &verifiedStatusListJWT{payload: payload}, nil
 }
 
 // validBitSize matches RFC §6.1 — `bits` must be 1, 2, 4, or 8.
@@ -147,7 +176,7 @@ func validBitSize(b int) bool {
 }
 
 // staticClock is the default clock used when VerificationContext.Clock
-// is nil. It is **only** used inside verifyStatusListToken; the
+// is nil. It is **only** used inside verifyStatusListTokenJWT; the
 // Checker calls verify with a concrete "now" so cache decisions are
 // monotonic with verification.
 type staticClock struct{ t time.Time }
@@ -160,8 +189,8 @@ func (s staticClock) Now() time.Time { return s.t }
 // names (iat/exp marshal as Unix seconds, status_list as a nested
 // object). Returns an error if the mandatory status_list claim is
 // missing or a claim is shaped wrong for its struct field.
-func payloadFromToken(token jwt.Token) (statusListPayload, error) {
-	var out statusListPayload
+func payloadFromToken(token jwt.Token) (jwtStatusListPayload, error) {
+	var out jwtStatusListPayload
 	if !token.Has("status_list") {
 		return out, fmt.Errorf("missing status_list claim")
 	}

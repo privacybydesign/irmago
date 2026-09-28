@@ -2,27 +2,38 @@ package statuslist
 
 import "errors"
 
-// StatusListTokenTyp is the JOSE 'typ' header value mandated by the spec
+// StatusListTokenJWTTyp is the JOSE 'typ' header value mandated by the spec
 // for the JWT encoding (draft-ietf-oauth-status-list-15 §5.1; the media
 // type itself is registered in §8.2).
-const StatusListTokenTyp = "statuslist+jwt"
+const StatusListTokenJWTTyp = "statuslist+jwt"
 
-// StatusListTokenContentType is the HTTP Content-Type value for the JWT
+// StatusListTokenJWTContentType is the HTTP Content-Type value for the JWT
 // encoding (draft-ietf-oauth-status-list-15 §8.2).
-const StatusListTokenContentType = "application/statuslist+jwt"
+const StatusListTokenJWTContentType = "application/statuslist+jwt"
 
-// StatusClaim is the JSON shape of the `status` claim on a referenced
-// token (e.g. an SD-JWT VC). The spec allows multiple sibling status
-// mechanisms under `status`; v1 only supports `status_list`.
+// StatusListTokenCWTContentType is both the HTTP Content-Type value (§8.2)
+// and the value of the COSE protected header "type" (label 16, registered by
+// RFC 9596) for the CWT encoding (draft-ietf-oauth-status-list-15 §5.2).
+// Unlike the JWT encoding's `typ` (a bare "statuslist+jwt", by JOSE
+// convention), the CWT "type" header carries the full media type string, so
+// one constant serves both checks.
+const StatusListTokenCWTContentType = "application/statuslist+cwt"
+
+// StatusClaim is the shape of the `status` claim on a referenced token (an
+// SD-JWT VC's JSON claim, or an mdoc MSO's CBOR field — see
+// draft-ietf-oauth-status-list-15 §6.2/§6.3.2). The spec allows multiple
+// sibling status mechanisms under `status`; v1 only supports `status_list`.
 type StatusClaim struct {
-	StatusList *Reference `json:"status_list,omitempty"`
+	StatusList *Reference `json:"status_list,omitempty" cbor:"status_list,omitempty"`
 }
 
 // Reference identifies a single entry in a Status List Token:
-// `idx` selects the bit-position, `uri` locates the token.
+// `idx` selects the bit-position, `uri` locates the token. The cbor tags
+// are what let an mdoc MSO (which carries this as a CBOR map, §6.3.2) decode
+// directly into the same type the JWT/SD-JWT VC path uses.
 type Reference struct {
-	Index uint64 `json:"idx"`
-	URI   string `json:"uri"`
+	Index uint64 `json:"idx" cbor:"idx"`
+	URI   string `json:"uri" cbor:"uri"`
 }
 
 // Status is the typed value returned by Checker.Check.

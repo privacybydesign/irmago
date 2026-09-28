@@ -37,23 +37,23 @@ func (s *statusListCacheStore) Get(uri string) ([]byte, time.Time, bool) {
 		// through the interface contract here.
 		return nil, time.Time{}, false
 	}
-	return row.RawJwt, row.ExpiresAt, true
+	return row.RawToken, row.ExpiresAt, true
 }
 
-func (s *statusListCacheStore) Put(uri string, rawJwt []byte, expiresAt time.Time) error {
+func (s *statusListCacheStore) Put(uri string, rawToken []byte, expiresAt time.Time) error {
 	if uri == "" {
 		return fmt.Errorf("status_list_cache: empty uri")
 	}
-	if len(rawJwt) == 0 {
-		return fmt.Errorf("status_list_cache: empty rawJwt")
+	if len(rawToken) == 0 {
+		return fmt.Errorf("status_list_cache: empty rawToken")
 	}
 	row := models.StatusListCacheEntry{
 		URI:       uri,
-		RawJwt:    rawJwt,
+		RawToken:  rawToken,
 		ExpiresAt: expiresAt,
 		FetchedAt: time.Now(),
 	}
-	// Upsert: if the URI exists, overwrite RawJwt/ExpiresAt/FetchedAt.
+	// Upsert: if the URI exists, overwrite RawToken/ExpiresAt/FetchedAt.
 	return s.db.Save(&row).Error
 }
 

@@ -13,8 +13,8 @@ import (
 // newIsRevokedFixture wires a RevocationService to a bits-wide status list
 // serving value at index 3 via a freshly-signed test token, and returns an
 // instance pointing at that index. The cache starts cold; call warmCache to
-// populate it. IsRevoked reads the cache only (never the network), and does not
-// touch the store, so it is left nil.
+// populate it. IsRevoked reads the cache only (never the network), and
+// does not touch the store, so it is left nil.
 func newIsRevokedFixture(t *testing.T, bits int, value uint8) (*RevocationService, *statuslist.TestStatusListServer, *models.SdJwtVcBatchInstance) {
 	t.Helper()
 	signer := statuslist.NewTestStatusListSigner(t)
@@ -44,25 +44,25 @@ func warmCache(t *testing.T, rc *RevocationService, inst *models.SdJwtVcBatchIns
 func Test_RevocationService_IsRevoked_InvalidBit(t *testing.T) {
 	rc, _, inst := newIsRevokedFixture(t, 1, 1) // idx 3 -> invalid
 	warmCache(t, rc, inst)
-	assert.True(t, rc.IsRevoked(inst))
+	assert.True(t, rc.IsRevoked(inst.StatusReference()))
 }
 
 func Test_RevocationService_IsRevoked_ValidBit(t *testing.T) {
 	rc, _, inst := newIsRevokedFixture(t, 1, 0) // idx 3 -> valid
 	warmCache(t, rc, inst)
-	assert.False(t, rc.IsRevoked(inst))
+	assert.False(t, rc.IsRevoked(inst.StatusReference()))
 }
 
 func Test_RevocationService_IsRevoked_Suspended(t *testing.T) {
 	rc, _, inst := newIsRevokedFixture(t, 2, 2) // idx 3 -> suspended
 	warmCache(t, rc, inst)
-	assert.True(t, rc.IsRevoked(inst), "suspended is not a usable candidate")
+	assert.True(t, rc.IsRevoked(inst.StatusReference()), "suspended is not a usable candidate")
 }
 
 func Test_RevocationService_IsRevoked_ApplicationSpecific(t *testing.T) {
 	rc, _, inst := newIsRevokedFixture(t, 2, 3) // idx 3 -> application-specific
 	warmCache(t, rc, inst)
-	assert.True(t, rc.IsRevoked(inst), "anything other than valid is revoked")
+	assert.True(t, rc.IsRevoked(inst.StatusReference()), "anything other than valid is revoked")
 }
 
 // IsRevoked reads the cache only: once warm, a broken/unreachable server does
@@ -72,26 +72,26 @@ func Test_RevocationService_IsRevoked_NoLiveFetch(t *testing.T) {
 	warmCache(t, rc, inst)
 	hitsAfterWarm := srv.Hits()
 	srv.SetBody([]byte("not-a-status-list-jwt")) // any live fetch would now fail
-	assert.True(t, rc.IsRevoked(inst), "served from warm cache")
+	assert.True(t, rc.IsRevoked(inst.StatusReference()), "served from warm cache")
 	assert.Equal(t, hitsAfterWarm, srv.Hits(), "IsRevoked must not fetch")
 }
 
 // Cold cache (never refreshed) -> advisory not-revoked, and no fetch attempted.
 func Test_RevocationService_IsRevoked_ColdCache_NotRevoked(t *testing.T) {
 	rc, srv, inst := newIsRevokedFixture(t, 1, 1) // would read invalid if fetched
-	assert.False(t, rc.IsRevoked(inst), "cold cache -> advisory not revoked")
+	assert.False(t, rc.IsRevoked(inst.StatusReference()), "cold cache -> advisory not revoked")
 	assert.Zero(t, srv.Hits(), "IsRevoked must not fetch")
 }
 
 func Test_RevocationService_IsRevoked_NoStatusReference(t *testing.T) {
 	rc, _, _ := newIsRevokedFixture(t, 1, 1)
-	require.False(t, rc.IsRevoked(&models.SdJwtVcBatchInstance{}), "no status_list reference -> never revoked")
+	require.False(t, rc.IsRevoked(nil), "no status_list reference -> never revoked")
 }
 
 func Test_RevocationService_IsRevoked_NilChecker(t *testing.T) {
 	uri := "https://issuer.example/sl"
 	idx := uint64(0)
 	rc := NewRevocationService(nil, nil)
-	require.False(t, rc.IsRevoked(&models.SdJwtVcBatchInstance{StatusListURI: &uri, StatusListIdx: &idx}),
+	require.False(t, rc.IsRevoked(&statuslist.Reference{URI: uri, Index: idx}),
 		"disabled (nil checker) -> not revoked")
 }

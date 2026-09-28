@@ -11,6 +11,8 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	cose "github.com/veraison/go-cose"
+
+	"github.com/privacybydesign/irmago/eudi/credentials/coseutil"
 )
 
 // ============================================================
@@ -32,7 +34,7 @@ import (
 //
 // The clause's companion rule about definite lengths is deliberately not
 // enforced; see indefLengthMode.
-var mdocDecMode = mustDecMode(cbor.DecOptions{
+var mdocDecMode = coseutil.MustDecMode(cbor.DecOptions{
 	DupMapKey:   cbor.DupMapKeyEnforcedAPF,
 	IndefLength: indefLengthMode,
 })
@@ -54,16 +56,6 @@ var mdocDecMode = mustDecMode(cbor.DecOptions{
 // cause. Flip it once staging is settled — the constant exists so that is a
 // one-line change with a test run behind it.
 const indefLengthMode = cbor.IndefLengthAllowed
-
-// mustDecMode panics on options this package itself wrote, which can only be
-// wrong at build time.
-func mustDecMode(opts cbor.DecOptions) cbor.DecMode {
-	mode, err := opts.DecMode()
-	if err != nil {
-		panic(fmt.Sprintf("mdoc: invalid CBOR decoder options: %v", err))
-	}
-	return mode
-}
 
 // Unmarshal decodes CBOR under the rules ISO/IEC 18013-5 8.1 places on mdoc
 // structures rather than fxamacker's defaults.

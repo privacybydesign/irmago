@@ -401,6 +401,11 @@ services:
   # TLS reverse proxy for the veramo issuer/verifier services and the EUDI Python issuer.
   tls_proxy:
     image: nginx:alpine
+    # Reaches the status list server the mdoc status list tests run in the Go
+    # test process (see /mdoc-status-list/ in nginx-tls-proxy.conf). Docker
+    # Desktop defines this name already; Linux needs it spelled out.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       veramo_openid4vci:
         condition: service_started

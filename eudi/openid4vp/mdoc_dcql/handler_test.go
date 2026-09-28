@@ -15,6 +15,7 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -114,6 +115,62 @@ func TestFindCandidatesAndPrepareDisclosureRoundTrip(t *testing.T) {
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc}, logEntry.Formats)
 	require.Len(t, logEntry.Attributes, 1)
 	require.Equal(t, []any{testNamespace, "age_over_18"}, logEntry.Attributes[0].ClaimPath)
+}
+
+// stubRevocation is an injectable RevocationChecker, so these tests exercise
+// the handler's use of the flag without any Token Status List machinery (that
+// lives with services.RevocationService).
+type stubRevocation struct{ revoked bool }
+
+func (s stubRevocation) IsRevoked(*statuslist.Reference) bool { return s.revoked }
+
+// TestRevokedMdocIsOfferedAndLoggedAsRevoked pins the IRMA-parity contract for
+// mso_mdoc, as eudi_sdjwt_dcql does for SD-JWT VC: a revoked credential is not
+// dropped from the plan. It is offered with Revoked=true, so the frontend can
+// decide, and the log records that what was shared had been revoked.
+func TestRevokedMdocIsOfferedAndLoggedAsRevoked(t *testing.T) {
+	env := newTestEnv(t)
+	env.handler.revocation = stubRevocation{revoked: true}
+
+	query := dcql.CredentialQuery{
+		Id:     "av",
+		Format: string(clientmodels.Format_MsoMdoc),
+		Meta:   &dcql.Meta{DocTypeValue: testDocType},
+		Claims: []dcql.Claim{{Path: []any{testNamespace, "age_over_18"}}},
+	}
+	result, err := env.handler.FindCandidates(query)
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1, "a revoked credential is still offered")
+	require.True(t, result.OwnedCandidates[0].Revoked)
+
+	prepared, err := env.handler.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:              query.Id,
+		CredentialHash:       env.hash,
+		ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},
+		RequireHolderBinding: true,
+		ResponseUri:          testResponseU,
+	}}, testNonce, testClientId)
+	require.NoError(t, err)
+	require.Len(t, prepared.CredentialLogs, 1)
+	require.True(t, prepared.CredentialLogs[0].Revoked, "the log must record that the credential was revoked")
+}
+
+// TestMdocWithoutRevocationCheckerIsNeverRevoked covers the nil checker the
+// constructor allows, and a credential without a status reference.
+func TestMdocWithoutRevocationCheckerIsNeverRevoked(t *testing.T) {
+	env := newTestEnv(t)
+
+	result, err := env.handler.FindCandidates(dcql.CredentialQuery{
+		Id:     "av",
+		Format: string(clientmodels.Format_MsoMdoc),
+		Meta:   &dcql.Meta{DocTypeValue: testDocType},
+		Claims: []dcql.Claim{{Path: []any{testNamespace, "age_over_18"}}},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+	require.False(t, result.OwnedCandidates[0].Revoked)
+	require.False(t, result.OwnedCandidates[0].RevocationSupported,
+		"this credential carries no status reference")
 }
 
 // TestPrepareDisclosureRejectsUndisclosedElement pins that an element the DCQL
@@ -575,7 +632,7 @@ type testEnv struct {
 // this process cannot extract.
 func (e *testEnv) withDeviceKeyBinder(binder DeviceKeyBinder) *testEnv {
 	withBinder := *e
-	withBinder.handler = NewMdocDcqlHandler(e.eudiStorage, clientmodels.NewCurrentLocale("en"), binder)
+	withBinder.handler = NewMdocDcqlHandler(e.eudiStorage, e.store, clientmodels.NewCurrentLocale("en"), binder, nil)
 	return &withBinder
 }
 
@@ -683,8 +740,8 @@ func newTestEnvWithExpiry(t *testing.T, batchSize uint, expiresAt *time.Time) *t
 	return &testEnv{
 		// The production binder, wired as client.New wires it, so every test that
 		// does not substitute one is covering the real path.
-		handler: NewMdocDcqlHandler(eudiStorage, clientmodels.NewCurrentLocale("en"),
-			services.NewMdocDeviceKeyBinder(keyStore)),
+		handler: NewMdocDcqlHandler(eudiStorage, store, clientmodels.NewCurrentLocale("en"),
+			services.NewMdocDeviceKeyBinder(keyStore), nil),
 		verifier:    verifier,
 		store:       store,
 		hash:        hash,
