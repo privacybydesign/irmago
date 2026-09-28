@@ -374,6 +374,13 @@ func (session *session) processSessionInfo() {
 	if session.Action == irma.ActionIssuing {
 		ir := session.request.(*irma.IssuanceRequest)
 		issuedAt := time.Now()
+		// Verify, before the session, that client and server agree on which attributes are random
+		// blind. Done here (the live session path) rather than in GetCredentialInfoList, which is
+		// also used to render stored logs.
+		if err := ir.CheckRandomBlindConsistency(session.client.Configuration, session.Version); err != nil {
+			session.fail(err.(*irma.SessionError))
+			return
+		}
 		_, err := ir.GetCredentialInfoList(session.client.Configuration, session.Version, issuedAt)
 		if err != nil {
 			if serr, ok := err.(*irma.SessionError); ok {
