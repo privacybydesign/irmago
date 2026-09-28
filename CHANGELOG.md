@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Added
+- `clientmodels.CredentialDescriptor` now carries the credential type's FAQ texts (`faq`, optional), populated by every scheme-backed descriptor builder (credential store, issuance-during-disclosure bundles, wrong-credential templates, OpenID4VP DCQL obtainable descriptors). Frontends can show the credential-specific explanation content in flows that only receive a descriptor, instead of falling back to a generic text (privacybydesign/irmamobile#668). `CredentialStoreItem.Faq` is unchanged and now redundant.
 - In `keyshareserver`, `KeyshareAttributeValidity` (`--keyshare-attribute-validity`) configures how many days the keyshare attribute issued during registration is valid. It defaults to 365, the validity that was previously hardcoded.
 
 ### Internal
