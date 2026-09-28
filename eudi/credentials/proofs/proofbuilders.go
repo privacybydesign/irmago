@@ -134,22 +134,55 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (any, error) {
 	return string(serializedJwt), nil
 }
 
+// ExternalProofBuilder builds proofs of possession whose signature is made
+// elsewhere: it hands out the exact bytes to sign for a public key, and the
+// caller assembles the proof once it has the signature (AssembleCompactJws).
+// Splitting the two lets a whole batch of proofs be signed in one round trip
+// to a wallet provider, instead of one per key.
+type ExternalProofBuilder interface {
+	SigningInput(pub *ecdsa.PublicKey) ([]byte, error)
+	// Audience is who the proofs are for: the credential issuer.
+	Audience() string
+}
+
+var _ ExternalProofBuilder = (*JwtProofBuilder)(nil)
+
+// Audience returns the credential issuer the proofs are addressed to.
+func (b *JwtProofBuilder) Audience() string {
+	return b.audience
+}
+
 // BuildWithES256Signer assembles the same openid4vci-proof+jwt as Build but signs
 // it through an external ES256 signer, given only the holder public key. This is
 // the path used when the holder private key lives in a WSCA/HSM and never enters
 // this process. Only ES256 is supported (b.alg must be ES256).
 func (b *JwtProofBuilder) BuildWithES256Signer(pub *ecdsa.PublicKey, sign ES256SignFunc) (string, error) {
+	signingInput, err := b.SigningInput(pub)
+	if err != nil {
+		return "", err
+	}
+	sig, err := sign(signingInput)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign proof jwt: %v", err)
+	}
+	return AssembleCompactJws(signingInput, sig), nil
+}
+
+// SigningInput returns the JWS signing input ("base64url(header).base64url(payload)")
+// of the openid4vci-proof+jwt for the holder public key pub: the same header and
+// claims Build produces. Only ES256 is supported (b.alg must be ES256).
+func (b *JwtProofBuilder) SigningInput(pub *ecdsa.PublicKey) ([]byte, error) {
 	if b.alg.String() != "ES256" {
-		return "", fmt.Errorf("BuildWithES256Signer only supports ES256, got %s", b.alg.String())
+		return nil, fmt.Errorf("external proof signing only supports ES256, got %s", b.alg.String())
 	}
 
 	// Public JWK, marked for signature use (mirrors Build).
 	pubJwk, err := jwk.Import[jwk.Key](pub)
 	if err != nil {
-		return "", fmt.Errorf("failed to import holder public key: %v", err)
+		return nil, fmt.Errorf("failed to import holder public key: %v", err)
 	}
 	if err := pubJwk.Set(jwk.KeyUsageKey, jwk.ForSignature); err != nil {
-		return "", fmt.Errorf("failed to set key usage on pub jwk: %v", err)
+		return nil, fmt.Errorf("failed to set key usage on pub jwk: %v", err)
 	}
 
 	// Header — identical fields to Build, per cryptographic binding method.
@@ -161,23 +194,23 @@ func (b *JwtProofBuilder) BuildWithES256Signer(pub *ecdsa.PublicKey, sign ES256S
 	case CryptographicBindingMethod_JWK, CryptographicBindingMethod_COSE:
 		header["jwk"] = pubJwk
 	case CryptographicBindingMethod_DID_KEY:
-		did, err := didkey.Create(*pub)
+		did, err := didkey.CreateWithVerificationMethodIdentifier(*pub)
 		if err != nil {
-			return "", fmt.Errorf("failed to create did:key from public key: %v", err)
+			return nil, fmt.Errorf("failed to create did:key from public key: %v", err)
 		}
 		header["kid"] = did
 	case CryptographicBindingMethod_DID_JWK:
 		didBuilder := didjwk.DocumentBuilder{}
 		did, err := didBuilder.FromJwk(pubJwk)
 		if err != nil {
-			return "", fmt.Errorf("failed to create did from jwk: %v", err)
+			return nil, fmt.Errorf("failed to create did from jwk: %v", err)
 		}
 		if len(did.AssertionMethod) == 0 {
-			return "", fmt.Errorf("did created from jwk does not contain an assertion method")
+			return nil, fmt.Errorf("did created from jwk does not contain an assertion method")
 		}
 		header["kid"] = did.AssertionMethod[0]
 	default:
-		return "", fmt.Errorf("unsupported cryptographic binding method: %s", b.method)
+		return nil, fmt.Errorf("unsupported cryptographic binding method: %s", b.method)
 	}
 
 	// Payload — aud flattened to a single string, matching Build's FlattenAudience.
@@ -190,17 +223,17 @@ func (b *JwtProofBuilder) BuildWithES256Signer(pub *ecdsa.PublicKey, sign ES256S
 		payload["nonce"] = *b.nonce
 	}
 
-	signingInput, err := jwsSigningInput(header, payload)
-	if err != nil {
-		return "", err
-	}
-	sig, err := sign(signingInput)
-	if err != nil {
-		return "", fmt.Errorf("failed to sign proof jwt: %v", err)
-	}
-	jws := append(signingInput, '.')
-	jws = append(jws, []byte(base64.RawURLEncoding.EncodeToString(sig))...)
-	return string(jws), nil
+	return jwsSigningInput(header, payload)
+}
+
+// AssembleCompactJws appends the raw signature to a JWS signing input,
+// yielding the compact serialization.
+func AssembleCompactJws(signingInput []byte, sig []byte) string {
+	out := make([]byte, 0, len(signingInput)+1+base64.RawURLEncoding.EncodedLen(len(sig)))
+	out = append(out, signingInput...)
+	out = append(out, '.')
+	out = append(out, base64.RawURLEncoding.EncodeToString(sig)...)
+	return string(out)
 }
 
 // jwsSigningInput returns "base64url(header).base64url(payload)" for a compact JWS.

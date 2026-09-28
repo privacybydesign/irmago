@@ -14,32 +14,29 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/holdersigning"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"gorm.io/datatypes"
 )
 
-// DeviceKeyBinder resolves the device key an mdoc presentation must be signed
+// DeviceKeys resolves the device key an mdoc presentation must be signed
 // with, given the device public key the credential's own MSO is bound to -- the
 // same key the verifier will check the resulting signature against.
 //
 // It exists so the device private key does not have to reach this package, and
-// need not exist in this process at all. The wallet's default implementation
-// (services.NewMdocDeviceKeyBinder) reads the stored PKCS#8 key, which is
-// software all the way down; an implementation backed by a WSCA/HSM or by
-// StrongBox / TrustZone / the Secure Enclave returns a mdoc.DeviceSigner built
-// on a platform key handle instead (mdoc.DeviceSignerFromSigner), and nothing
-// here changes. This mirrors sdjwt.KeyBinder, which eudi_sdjwt_dcql is handed
-// for the same reason -- and which is why that handler never touches key
-// material either.
-//
-// The two are not the same shape, which is why the mdoc side is two types where
-// SD-JWT has one: sdjwt.KeyBinder owns the key lifecycle and signs, while this
-// only looks a key up and hands back a mdoc.DeviceSigner bound to it.
-type DeviceKeyBinder interface {
-	SignerForDeviceKey(deviceKey *ecdsa.PublicKey) (stdmdoc.DeviceSigner, error)
+// need not exist in this process at all. The wallet's implementation
+// (services.NewMdocDeviceKeyResolver) resolves a software key to its private
+// key and a key in a wallet provider's HSM to the provider's reference; either
+// way this handler only sees a holdersigning.Key, and the DeviceAuthentication
+// is signed through the disclosure's holdersigning.Signer. This mirrors
+// eudi_sdjwt_dcql.HolderKeys, which is why neither handler touches key
+// material.
+type DeviceKeys interface {
+	ResolveDeviceKey(deviceKey *ecdsa.PublicKey) (holdersigning.Key, error)
 }
 
 // MdocDcqlHandler implements dcql.DcqlCredentialQueryHandler for mso_mdoc
@@ -47,20 +44,19 @@ type DeviceKeyBinder interface {
 type MdocDcqlHandler struct {
 	storage       storage.Storage
 	store         db.MdocStore
-	deviceKeys    DeviceKeyBinder
+	deviceKeys    DeviceKeys
 	currentLocale *clientmodels.CurrentLocale
 }
 
 // NewMdocDcqlHandler creates a new handler.
 //
-// deviceKeys signs the DeviceAuthentication of every presentation this handler
-// prepares. Pass services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(
-// eudiStorage.Db())) for the default software, storage-backed signer, or a
-// hardware-backed implementation to keep the device private key out of process.
+// deviceKeys resolves the key the DeviceAuthentication of every presentation
+// this handler prepares is signed with. Pass
+// services.NewMdocDeviceKeyResolver(db.NewMdocDeviceKeyStore(eudiStorage.Db())).
 func NewMdocDcqlHandler(
 	eudiStorage storage.Storage,
 	currentLocale *clientmodels.CurrentLocale,
-	deviceKeys DeviceKeyBinder,
+	deviceKeys DeviceKeys,
 ) *MdocDcqlHandler {
 	return &MdocDcqlHandler{
 		storage:       eudiStorage,
@@ -179,11 +175,23 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 	return result, nil
 }
 
-// PrepareDisclosure builds a device-signed presentation per selection. The audience is the
-// value the presentation is bound to, which for a URL-invoked session is the verifier's
-// client identifier -- the value the OpenID4VP session transcript signs over.
-func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
-	result := &dcql.PreparedDisclosure{}
+// PrepareDisclosure builds a presentation per selection, up to its device
+// signature. The audience is the value the presentation is bound to, which for
+// a URL-invoked session is the verifier's client identifier -- the value the
+// OpenID4VP session transcript signs over.
+func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PendingDisclosure, error) {
+	// One pending presentation per selection, whole once its DeviceAuth is
+	// signed.
+	type pendingPresentation struct {
+		sel       dcql.DisclosureSelection
+		batch     *models.MdocBatch
+		instance  *models.MdocBatchInstance
+		disclosed *stdmdoc.MDoc
+		finish    func(sig []byte) ([]byte, error)
+	}
+	pending := make([]pendingPresentation, 0, len(selections))
+	requests := make([]holdersigning.Request, 0, len(selections))
+	picked := map[datatypes.UUID][]datatypes.UUID{}
 
 	for _, sel := range selections {
 		batch, err := h.store.GetBatchByHash(sel.CredentialHash)
@@ -191,10 +199,13 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 			return nil, fmt.Errorf("batch not found for hash %s: %w", sel.CredentialHash, err)
 		}
 
-		instance, err := h.store.GetUnusedInstance(batch.ID)
+		// Instances are only marked used once the disclosure is signed, so a
+		// batch selected twice has to be kept from handing out one instance twice.
+		instance, err := h.store.GetUnusedInstance(batch.ID, picked[batch.ID]...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
 		}
+		picked[batch.ID] = append(picked[batch.ID], instance.ID)
 
 		var doc stdmdoc.MDoc
 		if err := stdmdoc.Unmarshal(instance.IssuerSigned, &doc); err != nil {
@@ -216,15 +227,15 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 		// Which key must sign is asked of the credential, not of the key record
 		// joined to it: the MSO's deviceKeyInfo is what the issuer bound this
 		// credential to and what the verifier checks the device signature
-		// against, so a signer resolved from it is the only one that can produce
-		// a presentation that verifies. The private half stays behind the binder,
-		// which is what allows it to live in hardware -- see DeviceKeyBinder.
+		// against, so a key resolved from it is the only one that can produce
+		// a presentation that verifies. The private half stays behind the
+		// resolver, which is what allows it to live in hardware -- see DeviceKeys.
 		deviceKey, err := stdmdoc.DeviceKeyFromIssuerAuth(doc.IssuerSigned.IssuerAuth)
 		if err != nil {
 			return nil, fmt.Errorf("read device key of stored mdoc instance %s: %w", instance.ID, err)
 		}
 
-		deviceSigner, err := h.deviceKeys.SignerForDeviceKey(deviceKey)
+		key, err := h.deviceKeys.ResolveDeviceKey(deviceKey)
 		if err != nil {
 			return nil, fmt.Errorf("no device key available to sign for credential instance %s: %w", instance.ID, err)
 		}
@@ -240,45 +251,61 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 			return nil, fmt.Errorf("build session transcript: %w", err)
 		}
 
-		deviceAuthBytes, err := deviceSigner.SignDeviceAuth(batch.DocType, transcript)
+		toBeSigned, finish, err := stdmdoc.PrepareDeviceAuth(deviceKey, batch.DocType, transcript)
 		if err != nil {
-			return nil, fmt.Errorf("sign device auth: %w", err)
+			return nil, fmt.Errorf("prepare device auth: %w", err)
 		}
 
-		presented, err := stdmdoc.AttachDeviceSigned(disclosed, deviceAuthBytes)
-		if err != nil {
-			return nil, fmt.Errorf("attach device signed: %w", err)
-		}
-
-		deviceResponse := stdmdoc.NewDeviceResponse(*presented)
-		encoded, err := cbor.Marshal(deviceResponse)
-		if err != nil {
-			return nil, fmt.Errorf("marshal device response: %w", err)
-		}
-
-		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
-			QueryId:     sel.QueryId,
-			Credentials: []string{base64.RawURLEncoding.EncodeToString(encoded)},
+		pending = append(pending, pendingPresentation{
+			sel: sel, batch: batch, instance: instance, disclosed: disclosed, finish: finish,
 		})
+		requests = append(requests, holdersigning.Request{Key: key, Input: toBeSigned})
+	}
 
-		// Everything that can fail for this selection happens before the instance is
-		// burned: a failure after MarkInstanceUsed would consume a single-use instance
-		// on a disclosure that then returned an error and never reached the verifier,
-		// and the credential would silently lose a use. eudi_sdjwt_dcql has nothing
-		// fallible after its own MarkInstanceUsed for the same reason.
+	complete := func(signatures [][]byte) (*dcql.PreparedDisclosure, error) {
+		result := &dcql.PreparedDisclosure{}
+		for i, p := range pending {
+			deviceAuthBytes, err := p.finish(signatures[i])
+			if err != nil {
+				return nil, fmt.Errorf("sign device auth: %w", err)
+			}
+
+			presented, err := stdmdoc.AttachDeviceSigned(p.disclosed, deviceAuthBytes)
+			if err != nil {
+				return nil, fmt.Errorf("attach device signed: %w", err)
+			}
+
+			deviceResponse := stdmdoc.NewDeviceResponse(*presented)
+			encoded, err := cbor.Marshal(deviceResponse)
+			if err != nil {
+				return nil, fmt.Errorf("marshal device response: %w", err)
+			}
+
+			result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
+				QueryId:     p.sel.QueryId,
+				Credentials: []string{base64.RawURLEncoding.EncodeToString(encoded)},
+			})
+		}
+
+		// Everything that can fail happens before any instance is burned: a
+		// failure after MarkInstanceUsed would consume a single-use instance on a
+		// disclosure that then returned an error and never reached the verifier,
+		// and the credential would silently lose a use.
 		//
 		// Only mark the instance as used when the original batch had multiple instances.
 		// A batch of 1 keeps its single instance reusable, mirroring eudi_sdjwt_dcql.
-		if batch.BatchSize > 1 {
-			if err := h.store.MarkInstanceUsed(instance.ID); err != nil {
-				return nil, fmt.Errorf("failed to mark instance as used: %w", err)
+		for _, p := range pending {
+			if p.batch.BatchSize > 1 {
+				if err := h.store.MarkInstanceUsed(p.instance.ID); err != nil {
+					return nil, fmt.Errorf("failed to mark instance as used: %w", err)
+				}
 			}
+			result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(p.batch, p.sel.ClaimPaths, p.sel.Claims))
 		}
-
-		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths, sel.Claims))
+		return result, nil
 	}
 
-	return result, nil
+	return &dcql.PendingDisclosure{Signatures: requests, Complete: complete}, nil
 }
 
 // sessionTranscript picks the handover variant the transport requires and

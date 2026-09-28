@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
@@ -17,8 +19,11 @@ import (
 //
 // The returned publicKeyIdentifiers are what the format's store matches each
 // issued credential against to link it to its stored key.
+//
+// ctx is the issuance session's: a binder that has to ask the user something
+// before it can mint keys (a wallet provider's PIN) finds the means to in it.
 type HolderKeyBinder interface {
-	CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofsOut []string, err error)
+	CreateKeyPairsWithProofs(ctx context.Context, num uint, proofBuilder proofs.ProofBuilder) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofsOut []string, err error)
 
 	// RemoveKeys deletes previously created keys by their storage IDs. Used to
 	// roll back generated keys when an issuance session fails.

@@ -1,6 +1,9 @@
 package dcql
 
-import "github.com/privacybydesign/irmago/common/clientmodels"
+import (
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/holdersigning"
+)
 
 // CredentialQueryResult contains the results of finding credentials that match a DCQL credential query.
 type CredentialQueryResult struct {
@@ -99,6 +102,18 @@ type PreparedDisclosure struct {
 	CredentialLogs []clientmodels.LogCredential
 }
 
+// PendingDisclosure is a format's disclosure prepared up to its holder binding
+// signatures. The signatures of every format in a disclosure are made in one
+// call, so a signer that has to ask the user something first asks once.
+type PendingDisclosure struct {
+	// Signatures are the holder binding signatures the disclosure needs; none
+	// when it needs none, or makes its own.
+	Signatures []holdersigning.Request
+	// Complete assembles the disclosure from the signatures, one per request
+	// in Signatures, in order.
+	Complete func(signatures [][]byte) (*PreparedDisclosure, error)
+}
+
 // DcqlCredentialQueryHandler handles DCQL credential queries for a specific credential format.
 type DcqlCredentialQueryHandler interface {
 	// CanHandleCredentialQuery returns true if this handler can process the given credential query.
@@ -107,6 +122,7 @@ type DcqlCredentialQueryHandler interface {
 	// FindCandidates finds all credential instances that match the given DCQL credential query.
 	FindCandidates(query CredentialQuery) (*CredentialQueryResult, error)
 
-	// PrepareDisclosure prepares the selected credentials for inclusion in the VP token.
-	PrepareDisclosure(selections []DisclosureSelection, nonce string, audience string) (*PreparedDisclosure, error)
+	// PrepareDisclosure prepares the selected credentials for inclusion in the
+	// VP token, up to the holder binding signatures they need.
+	PrepareDisclosure(selections []DisclosureSelection, nonce string, audience string) (*PendingDisclosure, error)
 }

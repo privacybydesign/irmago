@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/walletunit"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
@@ -33,6 +34,16 @@ type session struct {
 	preExistingCredentialHashes map[string]struct{}
 	// Terminal state finish last dispatched, so a repeat of it can be dropped.
 	dispatched clientmodels.SessionStatus
+	// walletUnit is the session's wallet unit session, set by context for an
+	// OpenID4VC session of a wallet with a wallet provider. Closed by finish.
+	walletUnit *walletunit.Session
+	// cancelPinRequest answers a pending wallet unit PIN prompt with a refusal,
+	// so a dismissal unblocks the session waiting on it. Nil when none pends.
+	cancelPinRequest func()
+	// endedByWalletUnit is set once the wallet unit ended the session towards
+	// the app (PIN declined or blocked); the protocol's own report of the same
+	// ending is then not shown.
+	endedByWalletUnit bool
 	// IRMA disclosure/signature request we're currently asking the user to satisfy.
 	// Held so choicesToAnswer can re-sort the user's selected AttributePaths back into
 	// the order the request asked for (the IRMA proof verifier matches j-th disclosed
@@ -77,6 +88,9 @@ func (s *session) error(err error) {
 // and stores the credential. Swallowing that Success would tell the user their
 // wallet did nothing.
 func (s *session) finish() {
+	if s.walletUnit != nil {
+		s.walletUnit.Close()
+	}
 	if s.dispatched == s.State.Status {
 		return
 	}
@@ -751,6 +765,9 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 		payload := userInteraction.Payload.(clientmodels.PinInteractionPayload)
 		session.pinHandler(payload.Proceed, payload.Pin)
 	case clientmodels.UI_DismissSession:
+		if cancel := session.cancelPinRequest; cancel != nil {
+			cancel()
+		}
 		session.dismisser.Dismiss()
 		// Mark dismissed regardless of protocol: OpenID4VCI's Dismiss does not report
 		// it at all, OpenID4VP's only once its goroutine unwinds. finish drops the repeat.
@@ -799,16 +816,16 @@ func (client *Client) NewSession(id int, sessionrequest string) {
 	switch sessionReq.Protocol {
 	case clientmodels.Protocol_OpenID4VP:
 		if sessionReq.DcApi != nil {
-			session.dismisser = client.openid4vpClient.NewDcApiSession(sessionReq.DcApi, &openid4vpSessionAdapter{session: session})
+			session.dismisser = client.openid4vpClient.NewDcApiSession(session.context(), sessionReq.DcApi, &openid4vpSessionAdapter{session: session})
 		} else {
-			session.dismisser = client.openid4vpClient.NewSession(sessionReq.URL, &openid4vpSessionAdapter{session: session})
+			session.dismisser = client.openid4vpClient.NewSession(session.context(), sessionReq.URL, &openid4vpSessionAdapter{session: session})
 		}
 	case clientmodels.Protocol_OpenID4VCI:
 		if sessionReq.OpenID4VCIRedirectUri == "" {
 			session.error(fmt.Errorf("OpenID4VCI session request is missing openid4vci_redirect_uri"))
 			return
 		}
-		session.dismisser = client.openid4vciClient.NewSession(id, sessionReq.URL, sessionReq.OpenID4VCIRedirectUri, &openid4vciSessionAdapter{session: session})
+		session.dismisser = client.openid4vciClient.NewSession(session.context(), id, sessionReq.URL, sessionReq.OpenID4VCIRedirectUri, &openid4vciSessionAdapter{session: session})
 	default:
 		session.dismisser = client.irmaClient.NewSession(sessionrequest, &irmaSessionAdapter{session: session})
 	}

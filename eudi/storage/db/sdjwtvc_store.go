@@ -48,8 +48,9 @@ type SdJwtVcStore interface {
 
 	// GetUnusedInstance returns one SdJwtVcBatchInstance from the given batch that has
 	// not yet been marked as used, with its holder binding key (and algorithm-specific
-	// metadata) preloaded. Returns ErrNotFound if all instances are used.
-	GetUnusedInstance(batchID datatypes.UUID) (*models.SdJwtVcBatchInstance, error)
+	// metadata) preloaded, skipping the instances in excluding. Returns
+	// ErrNotFound if all instances are used or excluded.
+	GetUnusedInstance(batchID datatypes.UUID, excluding ...datatypes.UUID) (*models.SdJwtVcBatchInstance, error)
 
 	// MarkInstanceUsed sets Used = true on the given instance and decrements RemainingCount
 	// on its parent batch. Both updates run in the same statement group; callers should wrap
@@ -155,18 +156,20 @@ func (s *sdJwtVcStore) GetBatchByHash(hash string) (*models.SdJwtVcBatch, error)
 	return &batch, nil
 }
 
-func (s *sdJwtVcStore) GetUnusedInstance(batchID datatypes.UUID) (*models.SdJwtVcBatchInstance, error) {
+func (s *sdJwtVcStore) GetUnusedInstance(batchID datatypes.UUID, excluding ...datatypes.UUID) (*models.SdJwtVcBatchInstance, error) {
 	if batchID.IsNil() {
 		return nil, fmt.Errorf("batchID is required")
 	}
 
 	var instance models.SdJwtVcBatchInstance
-	err := s.db.
+	query := s.db.
 		Preload("HolderBindingKey").
 		Preload("HolderBindingKey.ECDSA").
-		Where("credential_batch_id = ? AND used = ?", batchID, false).
-		First(&instance).
-		Error
+		Where("credential_batch_id = ? AND used = ?", batchID, false)
+	if len(excluding) > 0 {
+		query = query.Where("id NOT IN ?", excluding)
+	}
+	err := query.First(&instance).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound

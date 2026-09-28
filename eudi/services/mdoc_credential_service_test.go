@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -53,7 +54,7 @@ func newMdocTestEnv(t *testing.T) *mdocTestEnv {
 		store:   store,
 		keys:    keys,
 		service: NewMdocCredentialService(store, keys, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()), clientmodels.NewCurrentLocale("en")),
-		keyMint: NewMdocKeyService(keys),
+		keyMint: NewMdocKeyService(keys, nil),
 		issuer:  issuer,
 		parser:  NewMdocCredentialFormatParser(stdmdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})),
 		metadata: metadata.CredentialIssuerMetadata{
@@ -110,7 +111,7 @@ func TestMdocCredentialService_StoreLinksDeviceKeysByThumbprint(t *testing.T) {
 	} {
 		t.Run(string(method), func(t *testing.T) {
 			env := newMdocTestEnv(t)
-			identifiers, _, err := env.keyMint.CreateKeyPairsWithProofs(2, testProofBuilder(method))
+			identifiers, _, err := env.keyMint.CreateKeyPairsWithProofs(context.Background(), 2, testProofBuilder(method))
 			require.NoError(t, err)
 
 			parsed := []*ParsedCredential{
@@ -149,7 +150,7 @@ func TestMdocCredentialService_StoreLinksDeviceKeysByThumbprint(t *testing.T) {
 // the keys that were minted for it are removed rather than left orphaned.
 func TestMdocCredentialService_StoreRefusesUnmatchedDeviceKeyAndCleansUp(t *testing.T) {
 	env := newMdocTestEnv(t)
-	identifiers, _, err := env.keyMint.CreateKeyPairsWithProofs(1, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
+	identifiers, _, err := env.keyMint.CreateKeyPairsWithProofs(context.Background(), 1, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
 	require.NoError(t, err)
 
 	stranger, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -179,7 +180,7 @@ func TestMdocCredentialService_StoreRejectsOtherFormats(t *testing.T) {
 // into the credential list: name, issuer name, claim labels.
 func TestMdocCredentialService_StoreSnapshotsDisplayMetadataAndListRendersIt(t *testing.T) {
 	env := newMdocTestEnv(t)
-	identifiers, _, err := env.keyMint.CreateKeyPairsWithProofs(1, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
+	identifiers, _, err := env.keyMint.CreateKeyPairsWithProofs(context.Background(), 1, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
 	require.NoError(t, err)
 	parsed := []*ParsedCredential{env.issueBoundTo(t, *identifiers[0].PublicKeyThumbprint, map[string]any{"age_over_18": true, "age_over_21": false})}
 	require.NoError(t, env.service.Store(parsed, "proof_of_age", env.metadata, true, identifiers))
@@ -219,7 +220,7 @@ func TestMdocCredentialService_StoreSnapshotsDisplayMetadataAndListRendersIt(t *
 
 func TestMdocCredentialService_DeleteByHash(t *testing.T) {
 	env := newMdocTestEnv(t)
-	ids, _, err := env.keyMint.CreateKeyPairsWithProofs(1, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
+	ids, _, err := env.keyMint.CreateKeyPairsWithProofs(context.Background(), 1, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
 	require.NoError(t, err)
 	require.NoError(t, env.service.Store([]*ParsedCredential{env.issueBoundTo(t, *ids[0].PublicKeyThumbprint, map[string]any{"age_over_18": true})}, "proof_of_age", env.metadata, true, ids))
 

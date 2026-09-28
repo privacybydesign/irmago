@@ -37,6 +37,7 @@ import (
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/walletprovider"
 )
 
 type Client struct {
@@ -53,6 +54,11 @@ type Client struct {
 	sessionManager    sessionManager
 	credentialFormats services.CredentialFormats
 	revocationService *services.RevocationService
+
+	// walletProvider is the wallet's wallet provider, nil when it has none.
+	// Every OpenID4VC session gets its own wallet unit session over it; see
+	// session.context.
+	walletProvider walletprovider.WalletProvider
 
 	// handler is how the wallet wakes the app when what it has already rendered
 	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
@@ -71,36 +77,61 @@ type Client struct {
 	//Preferences      clientsettings.Preferences
 }
 
-func New(
-	storagePath string,
-	irmaConfigurationPath string,
-	eudiAppDataPath string,
-	handler ClientHandler,
-	sessionHandler clientmodels.SessionHandler,
-	signer irmaclient.Signer,
-	aesKey [32]byte,
-	locale string,
-) (*Client, error) {
+// Config is everything a wallet needs to exist. Named rather than positional
+// because three of the paths are plain strings, and transposing two would build a
+// wallet that looks fine and stores its data in the wrong place. Every zero value
+// takes the documented default.
+type Config struct {
+	// StoragePath and IrmaConfigurationPath must exist; EudiAppDataPath is created.
+	StoragePath           string
+	IrmaConfigurationPath string
+	EudiAppDataPath       string
+
+	// How the wallet wakes the app when what it rendered went stale. Required:
+	// background jobs call it without a nil guard.
+	Handler        ClientHandler
+	SessionHandler clientmodels.SessionHandler
+	Signer         irmaclient.Signer
+	AesKey         [32]byte
+
+	// Locale is the initial current locale; see SetLocale.
+	Locale string
+
+	// WalletProvider gives the wallet a wallet provider: OpenID4VC credentials
+	// are then bound to keys in the provider's HSM, unlocked with the PIN. Nil
+	// means none, and credentials are bound with software keys. The app gives
+	// the provider its possession key itself, when it builds the factory.
+	WalletProvider walletprovider.Factory
+}
+
+// walletProviderHost is what the wallet offers its wallet provider.
+type walletProviderHost struct {
+	storage walletprovider.Storage
+}
+
+func (h walletProviderHost) Storage() walletprovider.Storage { return h.storage }
+
+func New(cfg Config) (*Client, error) {
 	// Required: the wallet calls it from background jobs and from IrmaClient
 	// without a nil guard, so a nil one would panic on a goroutine no caller
 	// can recover from. Fail here instead, where the app can see it.
-	if handler == nil {
+	if cfg.Handler == nil {
 		return nil, fmt.Errorf("handler is required")
 	}
-	if err := common.AssertPathExists(storagePath); err != nil {
+	if err := common.AssertPathExists(cfg.StoragePath); err != nil {
 		return nil, err
 	}
-	if err := common.AssertPathExists(irmaConfigurationPath); err != nil {
+	if err := common.AssertPathExists(cfg.IrmaConfigurationPath); err != nil {
 		return nil, err
 	}
-	if err := common.EnsureDirectoryExists(eudiAppDataPath); err != nil {
+	if err := common.EnsureDirectoryExists(cfg.EudiAppDataPath); err != nil {
 		return nil, err
 	}
 
 	// Load IRMA + EUDI configuration
 	irmaConf, err := irma.NewConfiguration(
-		filepath.Join(storagePath, "irma_configuration"),
-		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
+		filepath.Join(cfg.StoragePath, "irma_configuration"),
+		irma.ConfigurationOptions{Assets: cfg.IrmaConfigurationPath, IgnorePrivateKeys: true},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating configuration failed: %v", err)
@@ -108,15 +139,15 @@ func New(
 
 	eudi.Logger = irma.Logger
 
-	currentLocale := clientmodels.NewCurrentLocale(locale)
+	currentLocale := clientmodels.NewCurrentLocale(cfg.Locale)
 
 	// Create the encryption middleware, used by the IRMA classic clientstorage so all data is encrypted at rest.
 	// The EUDI storage layer derives its own AES middleware (and a separate filename-MAC sub-key) directly from the aesKey.
-	encryptionMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
+	encryptionMiddleware := encryption.NewAESEncryptionMiddleware(cfg.AesKey)
 
 	// Create the EUDI storage (will be used by both the OpenID4VP and OpenID4VCI clients later)
-	dbPath := filepath.Join(eudiAppDataPath, storage.DbFilename)
-	eudiStorage, err := sqlcipherstorage.New(aesKey, dbPath, eudiAppDataPath)
+	dbPath := filepath.Join(cfg.EudiAppDataPath, storage.DbFilename)
+	eudiStorage, err := sqlcipherstorage.New(cfg.AesKey, dbPath, cfg.EudiAppDataPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate eudi storage: %v", err)
 	}
@@ -126,8 +157,20 @@ func New(
 		return nil, fmt.Errorf("instantiating eudi configuration failed: %v", err)
 	}
 
+	// The wallet provider is built as soon as the storage it keeps its state
+	// in exists.
+	var walletProvider walletprovider.WalletProvider
+	if cfg.WalletProvider != nil {
+		walletProvider, err = cfg.WalletProvider(walletProviderHost{
+			storage: db.NewWalletProviderStorage(eudiStorage.Db()),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to instantiate wallet provider: %v", err)
+		}
+	}
+
 	// Initialize DB storage
-	s := clientstorage.NewStorage(storagePath, encryptionMiddleware)
+	s := clientstorage.NewStorage(cfg.StoragePath, encryptionMiddleware)
 	irmaStorage := irmaclient.NewIrmaStorage(s, irmaConf)
 
 	// Ensure storage path exists, and populate it with necessary files
@@ -177,7 +220,7 @@ func New(
 		credStore,
 		typemetadata.NewDefaultVctFetcher(nil),
 		typemetadata.NewDefaultIssuerFetcher(nil),
-		sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
+		services.NewHolderBindingKeyService(eudiStorage.Db(), walletProvider),
 		currentLocale,
 		revocationService,
 	)
@@ -187,13 +230,18 @@ func New(
 	// Blueprint's proof_of_age credential). No fetchers here (unlike the SD-JWT
 	// handler above): there's no standardized online discovery document for an mdoc
 	// doctype to describe credentials the wallet has never seen.
-	// The device key binder is the software one: it reads the PKCS#8 key issuance
-	// stored. Replacing it with a StrongBox / Secure Enclave implementation is the
-	// one change needed to keep mdoc device keys out of this process.
+	// The device key resolver hands back the stored software key, or the wallet
+	// provider's reference to a key in its HSM; the holder signer signs either.
 	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, currentLocale,
-		services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(eudiStorage.Db())))
+		services.NewMdocDeviceKeyResolver(db.NewMdocDeviceKeyStore(eudiStorage.Db())))
 
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler, mdocDcqlHandler}, verifierValidator, currentLocale)
+	openid4vpClient, err := openid4vp.NewClient(
+		eudiConf,
+		[]dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler, mdocDcqlHandler},
+		services.NewHolderSigner(walletProvider),
+		verifierValidator,
+		currentLocale,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -207,7 +255,7 @@ func New(
 		StatusChecker: statusChecker,
 	}
 
-	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, newIrmaHandler(handler), signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
+	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, newIrmaHandler(cfg.Handler), cfg.Signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
@@ -244,7 +292,7 @@ func New(
 	// (services.NewCredentialFormats), so adding a format is one entry there and
 	// nothing to register here.
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI)
-	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, currentLocale)
+	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, currentLocale, walletProvider)
 	openid4vciClient, err := openid4vci.NewClient(
 		common.HTTPClient,
 		eudiConf,
@@ -275,13 +323,14 @@ func New(
 		keyBinder:         irmaKeyBinder,
 		didValidator:      didValidator,
 		scheduler:         scheduler,
-		handler:           handler,
+		handler:           cfg.Handler,
 		currentLocale:     currentLocale,
 		credentialFormats: credentialFormats,
 		revocationService: revocationService,
+		walletProvider:    walletProvider,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
-			SessionHandler: sessionHandler,
+			SessionHandler: cfg.SessionHandler,
 		},
 	}
 

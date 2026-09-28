@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/walletprovider"
 	"gorm.io/gorm"
 )
 
@@ -87,6 +88,10 @@ type CredentialFormats map[models.CredentialFormat]CredentialFormatSupport
 // model is passed as a live lookup, not as the pool it currently holds: the
 // trust models are rebuilt whenever developer mode is toggled, and the registry
 // outlives that.
+//
+// provider is the wallet's wallet provider, or nil. With one, every format
+// mints its keys in the provider's HSM, unlocking it through the issuance
+// session's context; without one, keys are software keys.
 func NewCredentialFormats(
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
@@ -94,6 +99,7 @@ func NewCredentialFormats(
 	fs filesystem.FileSystemStorage,
 	revocation *RevocationService,
 	currentLocale *clientmodels.CurrentLocale,
+	provider walletprovider.WalletProvider,
 ) CredentialFormats {
 	sdJwtVcStore := db.NewSdJwtVcStore(d)
 	mdocStore := db.NewMdocStore(d)
@@ -102,12 +108,12 @@ func NewCredentialFormats(
 	return CredentialFormats{
 		models.CredentialFormatSdJwtVc: {
 			Parser: NewSdJwtVcCredentialFormatParser(holderVerifier),
-			Keys:   NewHolderBindingKeyService(d),
+			Keys:   NewHolderBindingKeyService(d, provider),
 			Store:  NewSdJwtVcCredentialService(sdJwtVcStore, db.NewHolderBindingKeyStore(d), fs, revocation, currentLocale),
 		},
 		models.CredentialFormatMsoMdoc: {
 			Parser: NewMdocCredentialFormatParser(mdoc.NewVerifierFromTrustSource(&config.Issuers)),
-			Keys:   NewMdocKeyService(mdocKeys),
+			Keys:   NewMdocKeyService(mdocKeys, provider),
 			Store:  NewMdocCredentialService(mdocStore, mdocKeys, fs, currentLocale),
 		},
 	}

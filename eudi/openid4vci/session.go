@@ -30,6 +30,9 @@ import (
 )
 
 type session struct {
+	// ctx is the session's context, which the key binders need when minting
+	// holder keys takes asking the user something first.
+	ctx                      context.Context
 	id                       int
 	credentialOffer          *CredentialOffer
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata
@@ -794,7 +797,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		var proofs []string
 		var err error
 
-		publicKeyIdentifiers, proofs, err = support.Keys.CreateKeyPairsWithProofs(num, proofBuilder)
+		publicKeyIdentifiers, proofs, err = support.Keys.CreateKeyPairsWithProofs(s.ctx, num, proofBuilder)
 		if err != nil {
 			return nil, fmt.Errorf("could not create key pairs: %v", err)
 		}

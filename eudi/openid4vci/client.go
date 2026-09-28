@@ -91,12 +91,12 @@ func (client *Client) SetAllowInsecureHttp(allow bool) {
 // (both auth-code and pre-authorized-code flows). The mobile wallet derives it
 // from the host of the inbound universal link that started the session, so
 // staging-host offers result in staging-host callbacks.
-func (client *Client) NewSession(sessionId int, credentialOfferEndpointUrl string, redirectUri string, handler Handler) SessionDismisser {
-	client.handleSessionAsync(sessionId, credentialOfferEndpointUrl, redirectUri, handler)
+func (client *Client) NewSession(ctx context.Context, sessionId int, credentialOfferEndpointUrl string, redirectUri string, handler Handler) SessionDismisser {
+	client.handleSessionAsync(ctx, sessionId, credentialOfferEndpointUrl, redirectUri, handler)
 	return client
 }
 
-func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointUrl string, redirectUri string, handler Handler) {
+func (client *Client) handleSessionAsync(ctx context.Context, sessionId int, credentialOfferEndpointUrl string, redirectUri string, handler Handler) {
 	go func() {
 		// This goroutine is owned by irmago, so the app bridge's own recover
 		// does not cover it: an unrecovered panic here aborts the whole host
@@ -110,7 +110,6 @@ func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointU
 		// downloaded for one locale but looked up for another. Read it once here
 		// and thread it through — this is the only currentLocale read in the file.
 		locale := client.currentLocale.Get()
-		ctx := context.Background()
 
 		credentialOfferJson, err := client.validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialOfferEndpointUrl)
 		if err != nil {
@@ -148,7 +147,7 @@ func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointU
 		client.downloadLogos(ctx, credentialOffer, credentialIssuerMetadata, locale)
 
 		// Everything looks in order; handle the session by starting the Authorization flow (e.g. show UI to user, obtain authorization, etc)
-		err = client.handleCredentialOffer(sessionId, credentialOffer, credentialIssuerMetadata, baseline, resolver, redirectUri, locale, handler)
+		err = client.handleCredentialOffer(ctx, sessionId, credentialOffer, credentialIssuerMetadata, baseline, resolver, redirectUri, locale, handler)
 
 		if err != nil {
 			handleFailure(handler, "failed to handle credential offer: %v", err)
@@ -157,6 +156,7 @@ func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointU
 }
 
 func (client *Client) handleCredentialOffer(
+	ctx context.Context,
 	sessionId int,
 	credentialOffer *CredentialOffer,
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
@@ -173,6 +173,7 @@ func (client *Client) handleCredentialOffer(
 	}
 
 	client.currentSession = &session{
+		ctx:                        ctx,
 		id:                         sessionId,
 		credentialOffer:            credentialOffer,
 		credentialIssuerMetadata:   credentialIssuerMetadata,

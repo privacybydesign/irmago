@@ -204,9 +204,13 @@ type MdocDeviceKey struct {
 	// public key.
 	PublicKeyThumbprint string `gorm:"uniqueIndex;not null"`
 
-	// PrivateKey is the PKCS#8-encoded private key. The SQLCipher layer encrypts
-	// it at rest. A hardware-backed device key would store a handle here instead;
-	// see mdoc_dcql.DeviceKeyBinder.
+	// KeyBackend says where the private key lives, and so what PrivateKey
+	// holds. Fixed when the key is created.
+	KeyBackend KeyBackend `gorm:"type:text;not null;default:'software'"`
+
+	// PrivateKey is the PKCS#8-encoded private key of a software key, which
+	// the SQLCipher layer encrypts at rest, or the wallet provider's reference
+	// to a key in its HSM; see KeyBackend and mdoc_dcql.DeviceKeyBinder.
 	PrivateKey []byte `gorm:"type:bytea;not null"`
 
 	// Curve names the elliptic curve, e.g. P-256 (the one ISO 18013-5 profiles
@@ -223,7 +227,16 @@ func (k *MdocDeviceKey) BeforeCreate(tx *gorm.DB) error {
 		k.ID = datatypes.NewUUIDv4()
 	}
 	k.CreatedAt = time.Now().UTC()
+	if k.KeyBackend == "" {
+		k.KeyBackend = KeyBackendSoftware
+	}
 	return k.validate()
+}
+
+// ProviderKeyRef returns the wallet provider's reference to the key, or ""
+// for a software key.
+func (k *MdocDeviceKey) ProviderKeyRef() string {
+	return providerKeyRef(k.KeyBackend, k.PrivateKey)
 }
 
 func (k *MdocDeviceKey) validate() error {
