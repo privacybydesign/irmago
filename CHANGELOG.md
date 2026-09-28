@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Added
+- A session request that chains into another one can now set its own `nextSession.timeout`, in seconds, bounding the `/commitments` or `/proofs` handler that fetches the next request from the requestor while the client waits. Those two endpoints were bounded by the server-wide `WriteTimeout` of 4 seconds, which is not enough for a requestor that has to make a round trip of its own — asking a browser, a wallet or another backend what to issue next — before it can compose that request, especially while the user is on a slow mobile connection. The new `max_next_session_timeout` server option is the upper bound, defaulting to 15 seconds: a request asking for more is refused when the session is started rather than silently shortened, so the requestor learns which timeout it is actually going to get. 15 keeps that ceiling under the 20 second deadline `irma.HTTPTransport` puts on a request of its own, which bounds both the IRMA app waiting on `/proofs` and the server's own POST to the `nextSession` URL, so a higher maximum could not be honoured anyway. Sessions that do not chain are unaffected, as is a timeout below `WriteTimeout`: the timeout only ever lengthens the handler, never shortens it.
 - In `keyshareserver`, `KeyshareAttributeValidity` (`--keyshare-attribute-validity`) configures how many days the keyshare attribute issued during registration is valid. It defaults to 365, the validity that was previously hardcoded.
 
 ### Internal

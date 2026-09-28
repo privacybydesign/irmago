@@ -68,6 +68,8 @@ type Configuration struct {
 	MaxSessionLifetime int `json:"max_session_lifetime" mapstructure:"max_session_lifetime"`
 	// Determines how long a session result is preserved in minutes (default value 0 means 5)
 	SessionResultLifetime int `json:"session_result_lifetime" mapstructure:"session_result_lifetime"`
+	// Upper bound in seconds on the nextSession.timeout a requestor may ask for
+	MaxNextSessionTimeout int `json:"max_next_session_timeout" mapstructure:"max_next_session_timeout"`
 
 	// Used in the "iss" field of result JWTs from /result-jwt and /getproof
 	JwtIssuer string `json:"jwt_issuer" mapstructure:"jwt_issuer"`
@@ -174,6 +176,9 @@ func (conf *Configuration) Check() error {
 	}
 	if conf.SessionResultLifetime == 0 {
 		conf.SessionResultLifetime = 5
+	}
+	if conf.MaxNextSessionTimeout == 0 {
+		conf.MaxNextSessionTimeout = DefaultMaxNextSessionTimeout
 	}
 
 	// loop to avoid repetetive err != nil line triplets
