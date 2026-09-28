@@ -18,12 +18,12 @@ import (
 
 // newRefreshService builds a RevocationService for the status-refresh tests.
 func newRefreshService(db *gorm.DB, checker *statuslist.Checker) *RevocationService {
-	return NewRevocationService(checker, dbpkg.NewCredentialStore(db))
+	return NewRevocationService(checker, dbpkg.NewSdJwtVcStore(db))
 }
 
-func seedBatch(t *testing.T, db *gorm.DB, hash, issuer string, instances []models.IssuedCredentialInstance) *models.CredentialBatch {
+func seedBatch(t *testing.T, db *gorm.DB, hash, issuer string, instances []models.SdJwtVcBatchInstance) *models.SdJwtVcBatch {
 	t.Helper()
-	batch := &models.CredentialBatch{
+	batch := &models.SdJwtVcBatch{
 		IssuerIdentifier:           issuer,
 		VerifiableCredentialType:   "https://vct.example/x",
 		Format:                     models.CredentialFormatSdJwtVc,
@@ -47,10 +47,10 @@ func refresh(t *testing.T, svc *RevocationService) int {
 	return changed
 }
 
-func instanceWithStatus(uri string, idx uint64) models.IssuedCredentialInstance {
+func instanceWithStatus(uri string, idx uint64) models.SdJwtVcBatchInstance {
 	u := uri
 	i := idx
-	return models.IssuedCredentialInstance{
+	return models.SdJwtVcBatchInstance{
 		RawCredential: []byte("raw"),
 		StatusListURI: &u,
 		StatusListIdx: &i,
@@ -70,7 +70,7 @@ func Test_RefreshStatuses_NoInstancesWithStatus_NoOp(t *testing.T) {
 		X509Context: signer.X509VerificationContext(),
 	}, statuslist.NewInMemoryCache())
 	// Seed a batch but no status references.
-	seedBatch(t, db, "h1", "https://issuer.example", []models.IssuedCredentialInstance{
+	seedBatch(t, db, "h1", "https://issuer.example", []models.SdJwtVcBatchInstance{
 		{RawCredential: []byte("raw")},
 	})
 
@@ -94,11 +94,11 @@ func Test_RefreshStatuses_OneFetchPerSharedURI_OneRepresentativePerBatch(t *test
 	// Two batches sharing one status list URI: batch A has two instances
 	// (idx 0,1), batch B one (idx 2). The sweep must fetch the shared URI once
 	// and refresh exactly one representative per batch.
-	batchA := seedBatch(t, db, "hA", "https://issuer.example", []models.IssuedCredentialInstance{
+	batchA := seedBatch(t, db, "hA", "https://issuer.example", []models.SdJwtVcBatchInstance{
 		instanceWithStatus(srv.URL(), 0),
 		instanceWithStatus(srv.URL(), 1),
 	})
-	seedBatch(t, db, "hB", "https://issuer.example", []models.IssuedCredentialInstance{
+	seedBatch(t, db, "hB", "https://issuer.example", []models.SdJwtVcBatchInstance{
 		instanceWithStatus(srv.URL(), 2),
 	})
 
@@ -113,7 +113,7 @@ func Test_RefreshStatuses_OneFetchPerSharedURI_OneRepresentativePerBatch(t *test
 
 	// Exactly one instance per batch was refreshed (LastStatusCheckAt set),
 	// i.e. two across the two batches, each reading Valid.
-	var all []models.IssuedCredentialInstance
+	var all []models.SdJwtVcBatchInstance
 	require.NoError(t, db.Find(&all).Error)
 	checked := 0
 	for _, r := range all {
@@ -125,7 +125,7 @@ func Test_RefreshStatuses_OneFetchPerSharedURI_OneRepresentativePerBatch(t *test
 	require.Equal(t, 2, checked, "one representative per batch (2 batches)")
 
 	// The multi-instance batch A had only one of its two instances refreshed.
-	var batchARows []models.IssuedCredentialInstance
+	var batchARows []models.SdJwtVcBatchInstance
 	require.NoError(t, db.Where("credential_batch_id = ?", batchA.ID).Find(&batchARows).Error)
 	require.Len(t, batchARows, 2)
 	batchAChecked := 0
@@ -155,7 +155,7 @@ func Test_RefreshStatuses_MultiInstanceBatch_OneRepresentativeDrivesRevocation(t
 		X509Context: signer.X509VerificationContext(),
 	}, statuslist.NewInMemoryCache())
 
-	seedBatch(t, db, "h1", "https://issuer.example", []models.IssuedCredentialInstance{
+	seedBatch(t, db, "h1", "https://issuer.example", []models.SdJwtVcBatchInstance{
 		instanceWithStatus(srv.URL(), 0),
 		instanceWithStatus(srv.URL(), 1),
 		instanceWithStatus(srv.URL(), 2),
@@ -168,7 +168,7 @@ func Test_RefreshStatuses_MultiInstanceBatch_OneRepresentativeDrivesRevocation(t
 
 	// Only one representative was checked and flipped to Invalid; the others
 	// keep their default status.
-	var rows []models.IssuedCredentialInstance
+	var rows []models.SdJwtVcBatchInstance
 	require.NoError(t, db.Find(&rows).Error)
 	checked, invalid := 0, 0
 	for _, r := range rows {
@@ -184,7 +184,7 @@ func Test_RefreshStatuses_MultiInstanceBatch_OneRepresentativeDrivesRevocation(t
 
 	// The batch's derived revocation ("any status-referenced instance Invalid")
 	// is still true from the single representative.
-	statuses, err := dbpkg.NewCredentialStore(db).ListStatusReferencedInstanceStatuses()
+	statuses, err := dbpkg.NewSdJwtVcStore(db).ListStatusReferencedInstanceStatuses()
 	require.NoError(t, err)
 	revoked := false
 	for _, st := range statuses {
@@ -215,14 +215,14 @@ func Test_RefreshStatuses_DetectsRevocationTransition(t *testing.T) {
 		X509Context: signer.X509VerificationContext(),
 	}, statuslist.NewInMemoryCache())
 
-	seedBatch(t, db, "h1", "https://issuer.example", []models.IssuedCredentialInstance{
+	seedBatch(t, db, "h1", "https://issuer.example", []models.SdJwtVcBatchInstance{
 		instanceWithStatus(srv.URL(), 4),
 	})
 	svc := newRefreshService(db, checker)
 
 	// First sweep: the wallet records the credential as Valid.
 	require.Equal(t, 1, refresh(t, svc), "moving off the seeded default is a change")
-	var row models.IssuedCredentialInstance
+	var row models.SdJwtVcBatchInstance
 	require.NoError(t, db.First(&row, "status_list_uri = ?", srv.URL()).Error)
 	require.Equal(t, uint8(statuslist.StatusValid), row.LastKnownStatus)
 
@@ -262,10 +262,10 @@ func Test_RefreshStatuses_OneURIFailure_DoesNotAbortSweep(t *testing.T) {
 	// One representative per batch is checked, so put the failing and the good
 	// URI in SEPARATE batches to prove one batch's failure doesn't abort the
 	// sweep for the other.
-	seedBatch(t, db, "hbad", "https://issuer.example", []models.IssuedCredentialInstance{
+	seedBatch(t, db, "hbad", "https://issuer.example", []models.SdJwtVcBatchInstance{
 		instanceWithStatus("http://127.0.0.1:0/nope", 0), // unreachable
 	})
-	seedBatch(t, db, "hgood", "https://issuer.example", []models.IssuedCredentialInstance{
+	seedBatch(t, db, "hgood", "https://issuer.example", []models.SdJwtVcBatchInstance{
 		instanceWithStatus(good.URL(), 0), // good
 	})
 
@@ -276,7 +276,7 @@ func Test_RefreshStatuses_OneURIFailure_DoesNotAbortSweep(t *testing.T) {
 
 	// The good one should be updated to Valid; the failing one
 	// should remain at default (Unknown == 0).
-	var rows []models.IssuedCredentialInstance
+	var rows []models.SdJwtVcBatchInstance
 	require.NoError(t, db.Find(&rows).Error)
 	statusesByURI := map[string]uint8{}
 	for _, r := range rows {
@@ -309,7 +309,7 @@ func Test_RefreshStatuses_CancelledFetch_ReportsCancellation(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	seedBatch(t, db, "h1", "https://issuer.example", []models.IssuedCredentialInstance{
+	seedBatch(t, db, "h1", "https://issuer.example", []models.SdJwtVcBatchInstance{
 		instanceWithStatus(srv.URL, 0),
 	})
 
@@ -319,7 +319,7 @@ func Test_RefreshStatuses_CancelledFetch_ReportsCancellation(t *testing.T) {
 	require.Zero(t, changed)
 
 	// And nothing was written back, so the change is still there to find.
-	var row models.IssuedCredentialInstance
+	var row models.SdJwtVcBatchInstance
 	require.NoError(t, db.First(&row, "status_list_uri = ?", srv.URL).Error)
 	require.Nil(t, row.LastStatusCheckAt)
 }
@@ -337,20 +337,20 @@ func Test_RefreshStatuses_OnlyUpdatesOnSuccess(t *testing.T) {
 	uri := "http://127.0.0.1:0/nope"
 	idx := uint64(0)
 	checked := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
-	inst := models.IssuedCredentialInstance{
+	inst := models.SdJwtVcBatchInstance{
 		RawCredential:     []byte("raw"),
 		StatusListURI:     &uri,
 		StatusListIdx:     &idx,
 		LastKnownStatus:   uint8(statuslist.StatusSuspended),
 		LastStatusCheckAt: &checked,
 	}
-	seedBatch(t, db, "h1", "https://issuer.example", []models.IssuedCredentialInstance{inst})
+	seedBatch(t, db, "h1", "https://issuer.example", []models.SdJwtVcBatchInstance{inst})
 
 	svc := newRefreshService(db, checker)
 	// A sweep whose every fetch failed changed nothing, so it reports nothing.
 	require.Zero(t, refresh(t, svc), "a failed refresh is not a status change")
 
-	var row models.IssuedCredentialInstance
+	var row models.SdJwtVcBatchInstance
 	require.NoError(t, db.First(&row, "status_list_uri = ?", uri).Error)
 	require.Equal(t, uint8(statuslist.StatusSuspended), row.LastKnownStatus, "failed refresh must not overwrite previous status")
 	require.WithinDuration(t, checked, row.LastStatusCheckAt.UTC(), time.Second)
@@ -380,7 +380,7 @@ func Test_ScheduledRefresh_PicksUpRevocation(t *testing.T) {
 		X509Context: signer.X509VerificationContext(),
 	}, statuslist.NewInMemoryCache())
 
-	seedBatch(t, db, "h1", "https://issuer.example", []models.IssuedCredentialInstance{
+	seedBatch(t, db, "h1", "https://issuer.example", []models.SdJwtVcBatchInstance{
 		instanceWithStatus(srv.URL(), 9),
 	})
 	svc := newRefreshService(db, checker)
@@ -398,7 +398,7 @@ func Test_ScheduledRefresh_PicksUpRevocation(t *testing.T) {
 	t.Cleanup(func() { _ = scheduler.Shutdown() })
 
 	statusOf := func() uint8 {
-		var row models.IssuedCredentialInstance
+		var row models.SdJwtVcBatchInstance
 		require.NoError(t, db.First(&row, "status_list_uri = ?", srv.URL()).Error)
 		return row.LastKnownStatus
 	}

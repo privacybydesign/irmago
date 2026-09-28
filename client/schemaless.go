@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -360,7 +361,7 @@ func (client *Client) GetCredentials() ([]*clientmodels.Credential, []*clientmod
 	irmaCreds, problematic := credentialInfoListToSchemaless(client.irmaClient.Configuration, creds, client.locale())
 
 	// Get EUDI credentials and convert to the same format, then combine with IRMA credentials.
-	oidCreds, err := client.credentialService.GetCredentialMetadataList()
+	oidCreds, err := client.listEudiCredentials()
 	if err != nil {
 		return irmaCreds, problematic, fmt.Errorf("failed to get OID4VCI credentials from storage: %v", err)
 	}
@@ -378,7 +379,7 @@ func (client *Client) getCredentialsIncludingKeyshare() ([]*clientmodels.Credent
 
 	irmaCreds, _ := credentialInfoListToSchemaless(client.irmaClient.Configuration, creds, client.locale())
 
-	oidCreds, err := client.credentialService.GetCredentialMetadataList()
+	oidCreds, err := client.listEudiCredentials()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get OID4VCI credentials from storage: %v", err)
 	}
@@ -581,4 +582,20 @@ func sortedAttributeTypes(attrs []*irma.AttributeType) []*irma.AttributeType {
 		return 0
 	})
 	return sorted
+}
+
+// listEudiCredentials renders every stored OpenID4VC credential, across formats.
+// Each format lists its own storage; the union is ordered by format so the
+// result is stable across calls.
+func (client *Client) listEudiCredentials() ([]*clientmodels.Credential, error) {
+	formats := slices.Sorted(maps.Keys(client.credentialFormats))
+	var result []*clientmodels.Credential
+	for _, format := range formats {
+		creds, err := client.credentialFormats[format].Store.List()
+		if err != nil {
+			return nil, fmt.Errorf("failed to list %s credentials: %w", format, err)
+		}
+		result = append(result, creds...)
+	}
+	return result, nil
 }

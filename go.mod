@@ -10,6 +10,7 @@ require (
 	github.com/bwesterb/go-atum v1.1.5
 	github.com/eknkc/basex v1.0.1
 	github.com/fxamacker/cbor v1.5.1
+	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-chi/cors v1.2.2
 	github.com/go-co-op/gocron v1.37.0
@@ -34,6 +35,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.0
+	github.com/veraison/go-cose v1.3.0
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2
 	go.etcd.io/bbolt v1.4.3
 	golang.org/x/crypto v0.55.0

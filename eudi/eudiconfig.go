@@ -162,6 +162,11 @@ func (c *Configuration) addStagingTrustAnchors() error {
 		return fmt.Errorf("failed to add Ver.iD development verifier trust anchors: %v", err)
 	}
 
+	// Kiwa's acceptance root only signs issuer certificates
+	if err := c.Issuers.addTrustAnchors([]byte(Development_Kiwa_IssuerTrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Kiwa development issuer trust anchors: %v", err)
+	}
+
 	return nil
 }
 

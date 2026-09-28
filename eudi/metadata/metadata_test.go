@@ -190,6 +190,79 @@ func TestCredentialRequestEncryption_UnmarshalJSON_UnparseableKeyInJwks_ReturnsE
 	}
 }
 
+// OpenID4VCI v1.0 (draft 16) nests a configuration's display metadata in
+// credential_metadata; earlier drafts put display and claims on the configuration
+// itself. Reading only the nested object left a credential from such an issuer
+// nameless, and indistinguishable from an issuer that publishes no display text at
+// all — the failure missingDisplayMetadataReason was written to explain.
+func TestCredentialConfiguration_UnmarshalJSON_ReadsPreV1DisplayPlacement(t *testing.T) {
+	raw := `{
+		"format": "mso_mdoc",
+		"display": [{"locale": "en", "name": "Proof of Age"}],
+		"claims": [{
+			"path": ["eu.europa.ec.av.1", "age_over_18"],
+			"display": [{"locale": "en", "name": "Age Over 18"}]
+		}]
+	}`
+
+	var config CredentialConfiguration
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if config.CredentialMetadata == nil {
+		t.Fatal("display and claims on the configuration should normalise into credential_metadata")
+	}
+	if got := len(config.CredentialMetadata.Display); got != 1 {
+		t.Fatalf("expected 1 credential display entry, got %d", got)
+	}
+	if got := config.CredentialMetadata.Display[0].Name; got != "Proof of Age" {
+		t.Errorf("credential display name = %q, want %q", got, "Proof of Age")
+	}
+	if got := len(config.CredentialMetadata.Claims); got != 1 {
+		t.Fatalf("expected 1 claim, got %d", got)
+	}
+	// The claim path is what joins a label to the value it names, so it has to
+	// survive the move verbatim.
+	wantPath := ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_18"}
+	if got := config.CredentialMetadata.Claims[0].Path; !reflect.DeepEqual(got, wantPath) {
+		t.Errorf("claim path = %#v, want %#v", got, wantPath)
+	}
+	if got := config.CredentialMetadata.Claims[0].Display[0].Name; got != "Age Over 18" {
+		t.Errorf("claim display name = %q, want %q", got, "Age Over 18")
+	}
+	// The format field must survive alongside the promoted fields, since the
+	// embedded-struct trick that reads both placements is where it would get lost.
+	if config.Format != CredentialFormatIdentifier_MsoMdoc {
+		t.Errorf("format = %q, want %q", config.Format, CredentialFormatIdentifier_MsoMdoc)
+	}
+}
+
+// An issuer publishing credential_metadata is speaking the current version, so
+// what it says there wins and stray legacy fields are a leftover. Asserted with an
+// *empty* credential_metadata because that is the case where the two rules differ:
+// preferring the non-empty source would resurrect the leftover.
+func TestCredentialConfiguration_UnmarshalJSON_NestedMetadataWinsEvenWhenEmpty(t *testing.T) {
+	raw := `{
+		"format": "dc+sd-jwt",
+		"vct": "https://vct.example.com/MyCredential",
+		"credential_metadata": {},
+		"display": [{"locale": "en", "name": "Leftover"}]
+	}`
+
+	var config CredentialConfiguration
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if config.CredentialMetadata == nil {
+		t.Fatal("an explicit credential_metadata object should be kept")
+	}
+	if got := len(config.CredentialMetadata.Display); got != 0 {
+		t.Errorf("expected the legacy display to be ignored, got %d entries", got)
+	}
+}
+
 // Pre-1.0 OpenID4VCI issuers place credential display and claims directly on the
 // credential configuration, with no credential_metadata object. UnmarshalJSON
 // must synthesize CredentialMetadata from them so downstream display resolution,
