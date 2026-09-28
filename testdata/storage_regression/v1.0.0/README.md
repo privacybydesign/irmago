@@ -23,7 +23,6 @@ keyshare-enrollment credential it issues is valid until 2100 too.
 | `eudi_client_db` | EUDI SQLCipher database (`yivi-eudi.db`): OpenID4VCI credentials. **Intentionally plaintext** (see note above); do not encrypt or regenerate. |
 | `ecdsa_sk.pem` | Client signer key. |
 | `keyshare_users.json` | Keyshare users preloaded into the test keyshare server. |
-| `metadata.json` | Human-readable dump of the stored credentials and logs. |
 
 ## Sessions performed
 
