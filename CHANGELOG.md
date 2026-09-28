@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- In `keyshareserver`, `KeyshareAttributeValidity` (`--keyshare-attribute-validity`) configures how many days the keyshare attribute issued during registration is valid. It defaults to 365, the validity that was previously hardcoded.
 
 ## [1.4.0] - 2026-09-21
 ### Added

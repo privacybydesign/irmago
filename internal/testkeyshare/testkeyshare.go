@@ -30,7 +30,10 @@ func KeyshareServerHandler(t *testing.T, l *logrus.Logger, schemeID irma.SchemeM
 	return handler, host
 }
 
-func KeyshareServerHandlerWithDB(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier, jwtKeyID uint32) (db *keyshareserver.MemoryDB, handler http.Handler, host string) {
+// ConfigOption adjusts the keyshare server configuration before the server is created.
+type ConfigOption func(*keyshareserver.Configuration)
+
+func KeyshareServerHandlerWithDB(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier, jwtKeyID uint32, opts ...ConfigOption) (db *keyshareserver.MemoryDB, handler http.Handler, host string) {
 	db = keyshareserver.NewMemoryDB()
 	err := db.AddUser(context.Background(), &keyshareserver.User{
 		Username: "",
@@ -63,7 +66,7 @@ func KeyshareServerHandlerWithDB(t *testing.T, l *logrus.Logger, schemeID irma.S
 	require.NoError(t, err)
 
 	keyshareAttr := irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.test.mijnirma.email", schemeID))
-	s, err := keyshareserver.New(&keyshareserver.Configuration{
+	ksConf := &keyshareserver.Configuration{
 		Configuration: &server.Configuration{
 			IrmaConfiguration:     conf,
 			IssuerPrivateKeysPath: filepath.Join(testdataPath, "privatekeys"),
@@ -76,7 +79,11 @@ func KeyshareServerHandlerWithDB(t *testing.T, l *logrus.Logger, schemeID irma.S
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", fmt.Sprintf("%s-kss-sk-%d.pem", schemeID, jwtKeyID)),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareAttribute:     keyshareAttr,
-	})
+	}
+	for _, opt := range opts {
+		opt(ksConf)
+	}
+	s, err := keyshareserver.New(ksConf)
 	require.NoError(t, err)
 	return db, s.Handler(), parsedURL.Host
 }
@@ -86,8 +93,8 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeMan
 	return startKeyshareServerOnHost(t, handler, host, nil)
 }
 
-func StartKeyshareServerWithDB(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier, jwtKeyID uint32) *KeyshareServer {
-	db, handler, host := KeyshareServerHandlerWithDB(t, l, schemeID, jwtKeyID)
+func StartKeyshareServerWithDB(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier, jwtKeyID uint32, opts ...ConfigOption) *KeyshareServer {
+	db, handler, host := KeyshareServerHandlerWithDB(t, l, schemeID, jwtKeyID, opts...)
 	return startKeyshareServerOnHost(t, handler, host, db)
 }
 
