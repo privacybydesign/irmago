@@ -73,6 +73,14 @@ type session struct {
 	redirectUri string
 
 	issuerSettings openid4vciSessionIssuerSettings
+
+	// dpop binds this session's access token to a key of its own, when the
+	// authorization server supports DPoP; nil otherwise. See oauth2.DPoP for
+	// why the key is a fresh software key per session.
+	dpop *oauth2.DPoP
+	// accessTokenType is the token_type of the session's access token, which
+	// decides how the credential endpoint is presented with it.
+	accessTokenType string
 }
 
 // openid4vciSessionIssuerSettings contains all settings related to the Credential Issuer and Credential Offer that are required to perform the session, extracted from the Credential Offer and Credential Issuer metadata
@@ -157,6 +165,7 @@ func (s *session) perform() {
 	case GrantType_AuthorizationCode:
 		grantHandler = &AuthorizationCodeFlowHandler{
 			httpClient: s.httpClient,
+			dpop:       s.dpop,
 		}
 	case GrantType_PreAuthorizedCode:
 		grantHandler = &PreAuthorizedCodeFlowHandler{}
@@ -184,6 +193,7 @@ func (s *session) perform() {
 	}
 
 	// Fetch and verify credentials (but do not store yet).
+	s.accessTokenType = permission.GetTokenType()
 	fetched, err := s.obtainCredentials(permission.GetAccessToken())
 	if err != nil {
 		eudi.Logger.Infof("error obtaining credentials: %v", err)
@@ -642,6 +652,13 @@ func (s *session) configureIssuerSettings() error {
 
 	// TODO: verify AS supports the required features and to extract endpoints
 
+	if asMetadata.SupportsDPoP() {
+		s.dpop, err = oauth2.NewDPoP()
+		if err != nil {
+			return err
+		}
+	}
+
 	// Determine if we need to use Credential Request Encryption
 	s.issuerSettings.useCredentialRequestEncryption = false
 	if s.credentialIssuerMetadata.CredentialRequestEncryption != nil {
@@ -848,15 +865,22 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		requestBody = jsonRequest
 	}
 
-	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewBuffer(requestBody))
-	if err != nil {
-		return nil, err
+	// A DPoP-bound token is presented with the DPoP scheme and a proof over
+	// it; a bearer token without one, even in a session that sent proofs to
+	// the authorization server.
+	scheme, dpop := "Bearer", (*oauth2.DPoP)(nil)
+	if strings.EqualFold(s.accessTokenType, oauth2.TokenTypeDPoP) {
+		scheme, dpop = oauth2.TokenTypeDPoP, s.dpop
 	}
-
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Content-Type", contentType)
-
-	resp, err := s.httpClient.Do(req)
+	resp, err := dpop.Do(s.httpClient, accessToken, func() (*http.Request, error) {
+		req, err := http.NewRequest("POST", s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewBuffer(requestBody))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", scheme+" "+accessToken)
+		req.Header.Set("Content-Type", contentType)
+		return req, nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -1070,9 +1094,10 @@ func requireMandatoryMdocElements(config *metadata.CredentialConfiguration, pars
 	return nil
 }
 
-// requestNonce requests a fresh nonce from the issuer's nonce endpoint
+// requestNonce requests a fresh nonce from the issuer's nonce endpoint. The
+// request carries no DPoP proof, since the endpoint takes no access token, but
+// its response may hand out the DPoP nonce for the credential endpoint.
 func (s *session) requestNonce() (string, error) {
-	// TODO: implement use of DPoP nonce
 	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.NonceEndpoint, bytes.NewBuffer([]byte{}))
 	if err != nil {
 		return "", err
@@ -1083,6 +1108,7 @@ func (s *session) requestNonce() (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
+	s.dpop.ObserveNonce(resp)
 
 	if !(resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK) {
 		return "", fmt.Errorf("nonce request failed: %s", resp.Status)

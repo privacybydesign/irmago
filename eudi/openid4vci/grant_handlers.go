@@ -41,6 +41,9 @@ type AccessTokenResponse interface {
 	PermissionGranted() bool
 	GetAccessToken() string
 	GetRefreshToken() *string
+	// GetTokenType is the token_type: "Bearer", or "DPoP" for a token bound to
+	// the session's DPoP key.
+	GetTokenType() string
 }
 
 type preAuthPermissionResponse struct {
@@ -65,8 +68,15 @@ func (r *authTokenResponse) GetRefreshToken() *string {
 	return r.token.RefreshToken
 }
 
+func (r *authTokenResponse) GetTokenType() string {
+	return r.token.TokenType
+}
+
 type AuthorizationCodeFlowHandler struct {
 	httpClient *http.Client
+	// dpop is the session's DPoP state, nil when the authorization server does
+	// not support DPoP.
+	dpop *oauth2.DPoP
 }
 
 type pkceParameters struct {
@@ -158,6 +168,15 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	// If the AS supports PAR, we should always use it, regardless of wether the issuer requires it or not, since it is more secure. If the AS does not support PAR, we will just use the normal authorization endpoint.
 	// From here, we can only provide the authorization request endpoint to the client, but the client should be able to figure out itself whether it needs to use PAR or not based on the AS metadata that we provide to it, and then use the correct endpoint accordingly.
 	parEndpoint := s.issuerSettings.authorizationServerMetadata.PushedAuthorizationRequestEndpoint
+	if parEndpoint == nil && h.dpop != nil {
+		// Without a PAR request to carry a DPoP proof, the thumbprint binds the
+		// authorization code to the DPoP key (RFC 9449 §10).
+		jkt, err := h.dpop.Thumbprint()
+		if err != nil {
+			return nil, err
+		}
+		authRequest.Add("dpop_jkt", jkt)
+	}
 	if parEndpoint != nil {
 		parResponse, err := h.pushAuthorizationRequest(*parEndpoint, authRequest)
 		if err != nil {
@@ -300,13 +319,9 @@ func buildAuthorizationRequestValues(
 }
 
 func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint string, payload url.Values) (*oauth2.PushedAuthorizationResponse, error) {
-	req, err := http.NewRequest(http.MethodPost, parEndpoint, bytes.NewBufferString(payload.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Pushed Authorization Request: %v", err)
-	}
-
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := h.httpClient.Do(req)
+	response, err := h.dpop.Do(h.httpClient, "", func() (*http.Request, error) {
+		return newFormRequest(parEndpoint, payload)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute Pushed Authorization Request: %v", err)
 	}
@@ -364,19 +379,26 @@ func (h *AuthorizationCodeFlowHandler) doTokenRequest(
 		payload.Add("code_verifier", pkce.CodeVerifier)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, tokenEndpoint, bytes.NewBufferString(payload.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request for Token Request: %v", err)
-	}
-
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := h.httpClient.Do(req)
+	response, err := h.dpop.Do(h.httpClient, "", func() (*http.Request, error) {
+		return newFormRequest(tokenEndpoint, payload)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute Token Request: %v", err)
 	}
 	defer response.Body.Close()
 
-	return handleTokenResponse(response)
+	return handleTokenResponse(response, h.dpop != nil)
+}
+
+// newFormRequest builds a form-encoded POST to an authorization server
+// endpoint.
+func newFormRequest(endpoint string, values url.Values) (*http.Request, error) {
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewBufferString(values.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for %s: %v", endpoint, err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return req, nil
 }
 
 type PreAuthorizedCodeFlowHandler struct {
@@ -485,23 +507,23 @@ func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, grant *PreAuth
 		values.Add("tx_code", *transactionCode)
 	}
 
-	// Initiate request
-	req, err := http.NewRequest(http.MethodPost, s.issuerSettings.authorizationServerMetadata.TokenEndpoint, bytes.NewBufferString(values.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request for Token Request: %v", err)
-	}
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-
-	response, err := s.httpClient.Do(req)
+	tokenEndpoint := s.issuerSettings.authorizationServerMetadata.TokenEndpoint
+	response, err := s.dpop.Do(s.httpClient, "", func() (*http.Request, error) {
+		return newFormRequest(tokenEndpoint, values)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute Token Request: %v", err)
 	}
 	defer response.Body.Close()
 
-	return handleTokenResponse(response)
+	return handleTokenResponse(response, s.dpop != nil)
 }
 
-func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
+// handleTokenResponse parses a token response. dpopSent says whether the
+// request carried a DPoP proof: only then may the token be DPoP-bound. An
+// authorization server that got a proof may still issue a bearer token (RFC
+// 9449 §5), which is then used as one.
+func handleTokenResponse(response *http.Response, dpopSent bool) (*authTokenResponse, error) {
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read Token Response body: %v", err)
@@ -535,7 +557,10 @@ func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 	if tokenResponse.AccessToken == "" {
 		return nil, fmt.Errorf("token response did not contain an access token")
 	}
-	if strings.ToLower(tokenResponse.TokenType) != "bearer" {
+	switch {
+	case strings.EqualFold(tokenResponse.TokenType, "bearer"):
+	case dpopSent && strings.EqualFold(tokenResponse.TokenType, oauth2.TokenTypeDPoP):
+	default:
 		return nil, fmt.Errorf("token response did not contain a valid token type: %q", tokenResponse.TokenType)
 	}
 

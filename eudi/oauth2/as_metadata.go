@@ -50,6 +50,9 @@ type AuthorizationServerMetadata struct {
 	// RFC 9396 extension for OAuth 2.0 Rich Authorization Requests
 	AuthorizationDetailsTypesSupported []string `json:"authorization_details_types_supported,omitempty"`
 
+	// RFC 9449 DPoP
+	DPoPSigningAlgValuesSupported []string `json:"dpop_signing_alg_values_supported,omitempty"`
+
 	// Non-standard fields that might be used in practice
 	Jwks jwk.Set `json:"jwks,omitempty"`
 }
