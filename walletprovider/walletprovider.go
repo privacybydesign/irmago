@@ -97,6 +97,13 @@ type WalletProvider interface {
 	// Unlock presents the PIN for one session, scoped to one purpose. Returns
 	// ErrNotActivated, *PinIncorrectError or *PinBlockedError when the PIN
 	// cannot be used.
+	//
+	// Unlock must check the PIN with the provider before it returns, so that a
+	// wrong or blocked PIN is reported here, where the wallet asks for it,
+	// rather than by the first key generation or signature of the session.
+	// Where the provider checks the PIN on every operation (SECDSA does), the
+	// unlocked wallet unit keeps what it needs of the PIN — for SECDSA the
+	// PIN-derived key, never the PIN itself — until Close.
 	Unlock(ctx context.Context, pin string, scope Scope) (UnlockedWalletUnit, error)
 	// RemoveKeys deletes holder keys. It needs no PIN: the possession key
 	// suffices to delete what is the wallet's own. Refs the provider does not
@@ -178,11 +185,15 @@ func (e *PinIncorrectError) Error() string {
 }
 
 // PinBlockedError reports that too many wrong PINs were entered. Duration is
-// how long until the PIN can be tried again.
+// how long until the PIN can be tried again, or zero when the block is
+// permanent and the wallet unit can only be revoked and activated anew.
 type PinBlockedError struct {
 	Duration time.Duration
 }
 
 func (e *PinBlockedError) Error() string {
+	if e.Duration == 0 {
+		return "walletprovider: PIN blocked permanently"
+	}
 	return fmt.Sprintf("walletprovider: PIN blocked for %s", e.Duration)
 }

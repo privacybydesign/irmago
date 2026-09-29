@@ -74,7 +74,7 @@ func Run(t *testing.T, newProvider walletprovider.Factory, pin, wrongPin string)
 		}
 	})
 
-	t.Run("a wrong PIN is reported with the attempts remaining", func(t *testing.T) {
+	t.Run("a wrong PIN is reported by Unlock with the attempts remaining", func(t *testing.T) {
 		p := activated(t)
 		_, err := p.Unlock(ctx, wrongPin, walletprovider.Scope{Purpose: walletprovider.PurposeDisclosureKB})
 		incorrect, ok := errors.AsType[*walletprovider.PinIncorrectError](err)
@@ -93,7 +93,7 @@ func Run(t *testing.T, newProvider walletprovider.Factory, pin, wrongPin string)
 		for range 100 {
 			_, err := p.Unlock(ctx, wrongPin, walletprovider.Scope{Purpose: walletprovider.PurposeDisclosureKB})
 			if blocked, ok := errors.AsType[*walletprovider.PinBlockedError](err); ok {
-				if blocked.Duration <= 0 {
+				if blocked.Duration < 0 {
 					t.Fatalf("blocked for %s", blocked.Duration)
 				}
 				_, err = p.Unlock(ctx, pin, walletprovider.Scope{Purpose: walletprovider.PurposeDisclosureKB})
