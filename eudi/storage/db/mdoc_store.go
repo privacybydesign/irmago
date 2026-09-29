@@ -50,6 +50,10 @@ type MdocStore interface {
 	// DeleteBatchByHash deletes the batch with the given content hash, with the
 	// same cascade. Returns ErrNotFound if none matches.
 	DeleteBatchByHash(hash string) error
+
+	// KeyIDsByBatchHash returns the IDs of the keys the batch's instances are
+	// bound to, so they can be removed where they live before the batch is.
+	KeyIDsByBatchHash(hash string) ([]datatypes.UUID, error)
 }
 
 type mdocStore struct {
@@ -157,6 +161,29 @@ func (s *mdocStore) DeleteBatch(batchID datatypes.UUID) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// KeyIDsByBatchHash returns the IDs of the device keys the instances of the
+// batch with the given hash are bound to.
+func (s *mdocStore) KeyIDsByBatchHash(hash string) ([]datatypes.UUID, error) {
+	batch, err := s.GetBatchByHash(hash)
+	if err != nil {
+		return nil, err
+	}
+	var instanceIDs []datatypes.UUID
+	if err := s.db.Model(&models.MdocBatchInstance{}).
+		Where("mdoc_batch_id = ?", batch.ID).
+		Pluck("id", &instanceIDs).Error; err != nil {
+		return nil, err
+	}
+	var ids []datatypes.UUID
+	if len(instanceIDs) == 0 {
+		return ids, nil
+	}
+	err = s.db.Model(&models.MdocDeviceKey{}).
+		Where("mdoc_batch_instance_id IN ?", instanceIDs).
+		Pluck("id", &ids).Error
+	return ids, err
 }
 
 func (s *mdocStore) DeleteBatchByHash(hash string) error {

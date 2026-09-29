@@ -55,10 +55,14 @@ type Client struct {
 	credentialFormats services.CredentialFormats
 	revocationService *services.RevocationService
 
-	// walletProvider is the wallet's wallet provider, nil when it has none.
-	// Every OpenID4VC session gets its own wallet unit session over it; see
-	// session.context.
+	// walletProvider is the wallet's wallet provider, nil when it has none,
+	// behind an activationGuard. Every OpenID4VC session gets its own wallet
+	// unit session over it; see session.context.
 	walletProvider walletprovider.WalletProvider
+	// enrollmentPin holds the PIN of a keyshare enrollment in progress.
+	enrollmentPin enrollmentPin
+	// pinChange holds the PINs of a PIN change in flight.
+	pinChange pinChange
 
 	// handler is how the wallet wakes the app when what it has already rendered
 	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
@@ -167,6 +171,7 @@ func New(cfg Config) (*Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to instantiate wallet provider: %v", err)
 		}
+		walletProvider = &activationGuard{WalletProvider: walletProvider, handler: cfg.Handler}
 	}
 
 	// Initialize DB storage
@@ -255,7 +260,8 @@ func New(cfg Config) (*Client, error) {
 		StatusChecker: statusChecker,
 	}
 
-	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, newIrmaHandler(cfg.Handler), cfg.Signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
+	irmaHandler := newIrmaHandler(cfg.Handler)
+	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, irmaHandler, cfg.Signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
@@ -335,6 +341,14 @@ func New(cfg Config) (*Client, error) {
 	}
 
 	client.sessionManager.Client = client
+	// Enrollment activates the wallet unit with the PIN just enrolled with;
+	// either way the PIN is not kept.
+	irmaHandler.pinChangeEnded = client.keysharePinChangeEnded
+	irmaHandler.enrollmentEnded = func(success bool) {
+		if pin := client.enrollmentPin.take(); success && pin != "" {
+			client.activateWalletUnitInBackground(pin)
+		}
+	}
 	client.logoBackfill = services.NewLogoBackfiller(eudiStorage, common.HTTPClient, func(cached int) {
 		// Re-read the credentials the app has already rendered, but only when
 		// the sweep put new logos on disk — nothing new, nothing to redraw.
@@ -486,18 +500,28 @@ func (client *Client) getIrmaCredentialInfoList() irma.CredentialInfoList {
 	return result
 }
 
+// KeyshareVerifyPin verifies the PIN at the keyshare server. A verified PIN
+// also activates a wallet unit that is still pending activation, which is how
+// wallets enrolled before they had a wallet provider get one.
 func (client *Client) KeyshareVerifyPin(
 	pin string,
 	schemeid irma.SchemeManagerIdentifier,
 ) (success bool, triesRemaing int, blockedSecs int, err error) {
-	return client.irmaClient.KeyshareVerifyPin(pin, schemeid)
+	success, triesRemaing, blockedSecs, err = client.irmaClient.KeyshareVerifyPin(pin, schemeid)
+	if success && err == nil {
+		client.activateWalletUnitInBackground(pin)
+	}
+	return
 }
 
-func (client *Client) KeyshareChangePin(oldPin, newPin string) {
-	client.irmaClient.KeyshareChangePin(oldPin, newPin)
-}
-
+// KeyshareEnroll enrolls at the keyshare server. With a wallet provider, a
+// successful enrollment then activates the wallet unit with the same PIN, in
+// the background; the app hears of it through WalletUnitActivated or
+// WalletUnitActivationPending, after EnrollmentSuccess.
 func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email *string, pin string, lang string) {
+	if client.walletProvider != nil {
+		client.enrollmentPin.set(pin)
+	}
 	client.irmaClient.KeyshareEnroll(manager, email, pin, lang)
 }
 
@@ -627,6 +651,19 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 			if !ok {
 				return fmt.Errorf("error while deleting eudi credential: no storage for format %q", format)
 			}
+			// The batch's keys go first, through the key binder, which removes
+			// them where they live — a wallet provider's HSM among them — and
+			// then their rows. A key the provider failed to remove is
+			// unreachable from this wallet either way, so it does not block the
+			// deletion.
+			keyIds, err := support.Store.KeyIDsByHash(hash)
+			if err != nil {
+				irma.Logger.Warnf("could not look up the keys of eudi credential %s: %v", hash, err)
+			} else if len(keyIds) > 0 {
+				if err := support.Keys.RemoveKeys(keyIds); err != nil {
+					irma.Logger.Warnf("could not remove all keys of eudi credential %s: %v", hash, err)
+				}
+			}
 			if err := support.Store.DeleteByHash(hash); err != nil {
 				return fmt.Errorf("error while deleting eudi credential: %v", err)
 			}
@@ -692,7 +729,23 @@ func (client *Client) InstallScheme(url string, publickey []byte) error {
 	return client.irmaClient.Configuration.InstallScheme(url, publickey)
 }
 
+// walletUnitRevokeTimeout bounds how long RemoveStorage waits for the wallet
+// provider to revoke the wallet unit before wiping the wallet regardless.
+const walletUnitRevokeTimeout = 10 * time.Second
+
 func (client *Client) RemoveStorage() error {
+	// The wallet unit is revoked first, so its keys do not outlive the wallet
+	// in the provider's HSM. Best effort: a reset that refuses to reset because
+	// the device is offline is worse than an account the provider cleans up
+	// on its own (docs/plans/wallet-provider-integration.md, decision 14).
+	if client.walletProvider != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), walletUnitRevokeTimeout)
+		if err := client.walletProvider.Revoke(ctx); err != nil {
+			irma.Logger.Warnf("could not revoke the wallet unit; wiping the wallet anyway: %v", err)
+		}
+		cancel()
+	}
+
 	if err := client.sdjwtvcStorage.RemoveAll(); err != nil {
 		return fmt.Errorf("failed to remove sdjwtvc storage: %v", err)
 	}

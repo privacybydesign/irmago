@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/walletprovider"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -41,6 +42,12 @@ type CredentialFormatStore interface {
 	// DeleteByHash deletes the stored batch with the given content hash.
 	// Returns db.ErrNotFound if none matches.
 	DeleteByHash(hash string) error
+
+	// KeyIDsByHash returns the IDs of the holder keys the stored batch with
+	// the given content hash is bound to, for the format's HolderKeyBinder to
+	// remove where they live (a wallet provider's HSM) before the batch is
+	// deleted: deleting the batch only removes the local key rows.
+	KeyIDsByHash(hash string) ([]datatypes.UUID, error)
 
 	CredentialDisplaySource
 }

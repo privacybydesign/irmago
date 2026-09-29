@@ -2,10 +2,12 @@ package client
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/walletunit"
+	"github.com/privacybydesign/irmago/walletprovider"
 )
 
 // context returns the context an OpenID4VC session runs in. With a wallet
@@ -69,4 +71,43 @@ func (p *sessionPinPrompter) PinBlocked(duration time.Duration) {
 	s.State.PinBlockedTimeSeconds = &seconds
 	s.pinHandler = func(bool, string) {}
 	s.dispatchState()
+}
+
+// ErrNoWalletProvider is returned by operations of a wallet provider the
+// wallet does not have.
+var ErrNoWalletProvider = errors.New("the wallet has no wallet provider")
+
+// WalletProviderTransactions returns the wallet provider transaction log,
+// newest first: at most max entries, and only those before the given time
+// unless it is zero. Reading it takes the PIN; a wrong or blocked PIN is
+// returned as *walletprovider.PinIncorrectError or
+// *walletprovider.PinBlockedError.
+func (client *Client) WalletProviderTransactions(pin string, before time.Time, max int) ([]clientmodels.WalletProviderTransaction, error) {
+	if client.walletProvider == nil {
+		return nil, ErrNoWalletProvider
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	u, err := client.walletProvider.Unlock(ctx, pin, walletprovider.Scope{Purpose: walletprovider.PurposeTransactionLog})
+	if err != nil {
+		return nil, err
+	}
+	defer u.Close()
+	txs, err := u.Transactions(ctx, before, max)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]clientmodels.WalletProviderTransaction, len(txs))
+	for i, tx := range txs {
+		out[i] = clientmodels.WalletProviderTransaction{
+			ID:             tx.ID,
+			Time:           tx.Time,
+			Operation:      string(tx.Operation),
+			Purpose:        string(tx.Purpose),
+			Counterparty:   tx.Counterparty,
+			CredentialType: tx.CredentialType,
+			Succeeded:      tx.Succeeded,
+		}
+	}
+	return out, nil
 }

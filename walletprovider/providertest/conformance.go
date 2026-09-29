@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/walletprovider"
 )
@@ -38,9 +39,13 @@ func Run(t *testing.T, newProvider walletprovider.Factory, pin, wrongPin string)
 		}
 		return p
 	}
-	unlock := func(t *testing.T, p walletprovider.WalletProvider, purpose walletprovider.Purpose) walletprovider.UnlockedWalletUnit {
+	unlock := func(t *testing.T, p walletprovider.WalletProvider, purpose walletprovider.Purpose, withPin ...string) walletprovider.UnlockedWalletUnit {
 		t.Helper()
-		u, err := p.Unlock(ctx, pin, walletprovider.Scope{Purpose: purpose, Counterparty: "https://issuer.example"})
+		usePin := pin
+		if len(withPin) > 0 {
+			usePin = withPin[0]
+		}
+		u, err := p.Unlock(ctx, usePin, walletprovider.Scope{Purpose: purpose, Counterparty: "https://issuer.example"})
 		if err != nil {
 			t.Fatalf("unlock: %v", err)
 		}
@@ -183,6 +188,105 @@ func Run(t *testing.T, newProvider walletprovider.Factory, pin, wrongPin string)
 		_, err = unlock(t, p, walletprovider.PurposeDisclosureKB).Sign(ctx, []walletprovider.SignRequest{{Ref: keys[0].Ref, SigningInput: []byte("x")}})
 		if err == nil {
 			t.Fatal("signing with a removed key succeeded")
+		}
+	})
+
+	t.Run("a PIN change is in the transaction log", func(t *testing.T) {
+		p := activated(t)
+		u, err := p.Unlock(ctx, pin, walletprovider.Scope{Purpose: walletprovider.PurposePinChange})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := u.ChangePin(ctx, wrongPin); err != nil {
+			t.Fatal(err)
+		}
+		log, err := unlock(t, p, walletprovider.PurposeTransactionLog, wrongPin).Transactions(ctx, time.Time{}, 50)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tx := range log {
+			if tx.Operation == walletprovider.OperationChangePin && tx.Succeeded {
+				return
+			}
+		}
+		t.Fatalf("no PIN change in %+v", log)
+	})
+
+	t.Run("a changed PIN replaces the old one and keeps the keys", func(t *testing.T) {
+		p := activated(t)
+		keys, err := unlock(t, p, walletprovider.PurposeIssuancePoP).GenerateKeys(ctx, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		u, err := p.Unlock(ctx, pin, walletprovider.Scope{Purpose: walletprovider.PurposePinChange})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := u.ChangePin(ctx, wrongPin); err != nil {
+			t.Fatalf("change PIN: %v", err)
+		}
+		if _, err := u.GenerateKeys(ctx, 1); !errors.Is(err, walletprovider.ErrUnlockExpired) {
+			t.Fatalf("unlock after a PIN change: got %v, want ErrUnlockExpired", err)
+		}
+		if _, err := p.Unlock(ctx, pin, walletprovider.Scope{Purpose: walletprovider.PurposeDisclosureKB}); err == nil {
+			t.Fatal("the old PIN still unlocks")
+		}
+		input := []byte("after the change")
+		sigs, err := unlock(t, p, walletprovider.PurposeDisclosureKB, wrongPin).Sign(ctx, []walletprovider.SignRequest{{Ref: keys[0].Ref, SigningInput: input}})
+		if err != nil {
+			t.Fatalf("sign with the new PIN: %v", err)
+		}
+		if !verifyES256(keys[0].Public, input, sigs[0]) {
+			t.Fatal("a key from before the change does not sign under the new PIN")
+		}
+	})
+
+	t.Run("the transaction log records activation, a refused PIN, key generation and signing, newest first", func(t *testing.T) {
+		p := activated(t)
+		if _, err := p.Unlock(ctx, wrongPin, walletprovider.Scope{Purpose: walletprovider.PurposeDisclosureKB}); err == nil {
+			t.Fatal("a wrong PIN unlocked")
+		}
+		u := unlock(t, p, walletprovider.PurposeIssuancePoP)
+		keys, err := u.GenerateKeys(ctx, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := u.Sign(ctx, []walletprovider.SignRequest{{Ref: keys[0].Ref, SigningInput: []byte("proof")}}); err != nil {
+			t.Fatal(err)
+		}
+
+		log, err := unlock(t, p, walletprovider.PurposeTransactionLog).Transactions(ctx, time.Time{}, 50)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var activation, rejected, generated, signed bool
+		for i, tx := range log {
+			if i > 0 && tx.Time.After(log[i-1].Time) {
+				t.Fatalf("transaction %d is newer than the one before it", i)
+			}
+			if tx.ID == "" {
+				t.Fatalf("transaction %d has no ID", i)
+			}
+			switch tx.Operation {
+			case walletprovider.OperationActivate:
+				activation = activation || tx.Succeeded
+			case walletprovider.OperationRejected:
+				rejected = rejected || !tx.Succeeded
+			case walletprovider.OperationGenerateKeys:
+				generated = generated || tx.Succeeded
+			case walletprovider.OperationSign:
+				if tx.Purpose == walletprovider.PurposeIssuancePoP && tx.Counterparty == "https://issuer.example" && tx.Succeeded {
+					signed = true
+				}
+			}
+		}
+		if !activation || !rejected || !generated || !signed {
+			t.Fatalf("log does not record the activation (%v), the refused PIN (%v), the key generation (%v) and the issuance signature (%v): %+v",
+				activation, rejected, generated, signed, log)
+		}
+
+		if short, err := unlock(t, p, walletprovider.PurposeTransactionLog).Transactions(ctx, time.Time{}, 1); err != nil || len(short) != 1 {
+			t.Fatalf("a page of one: %d entries, %v", len(short), err)
 		}
 	})
 

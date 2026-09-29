@@ -123,7 +123,47 @@ const (
 	PurposeIssuancePoP Purpose = "issuance-pop"
 	// PurposeDisclosureKB: signing key binding JWTs and mdoc DeviceAuth.
 	PurposeDisclosureKB Purpose = "disclosure-kb"
+	// PurposePinChange: changing the PIN; see UnlockedWalletUnit.ChangePin.
+	PurposePinChange Purpose = "pin-change"
+	// PurposeTransactionLog: reading the wallet provider transaction log.
+	PurposeTransactionLog Purpose = "transaction-log"
 )
+
+// Operation is what the provider did in a logged transaction.
+type Operation string
+
+const (
+	OperationActivate     Operation = "activate"
+	OperationUnlock       Operation = "unlock"
+	OperationGenerateKeys Operation = "generate-keys"
+	OperationSign         Operation = "sign"
+	OperationRemoveKeys   Operation = "remove-keys"
+	OperationChangePin    Operation = "change-pin"
+	// OperationRejected is a request the provider refused for a wrong or
+	// blocked PIN, before it could tell what was asked. Its entries are how
+	// the user sees someone trying their PIN.
+	OperationRejected Operation = "rejected"
+	// OperationOther is any operation without a name of its own here.
+	OperationOther Operation = "other"
+)
+
+// Transaction is one entry of the wallet provider transaction log: what the
+// provider did for this wallet unit (CONTEXT.md, "Wallet provider transaction
+// log"). It never names the verifier of a disclosure; the provider is never
+// told.
+type Transaction struct {
+	ID        string
+	Time      time.Time
+	Operation Operation
+	// Purpose is the declared purpose of a signature, when the provider
+	// records one.
+	Purpose Purpose
+	// Counterparty and CredentialType are the issuer and credential type of an
+	// issuance signature, when recorded.
+	Counterparty   string
+	CredentialType string
+	Succeeded      bool
+}
 
 // Scope is what an unlock is for. The provider forwards it to its server,
 // which records it in the wallet provider transaction log.
@@ -162,6 +202,14 @@ type UnlockedWalletUnit interface {
 	// Sign makes one signature per request, in order, each a raw 64-byte r‖s
 	// ES256 signature as a JWS carries it.
 	Sign(ctx context.Context, reqs []SignRequest) ([][]byte, error)
+	// Transactions returns the wallet unit's transaction log, newest first:
+	// at most max entries, and only those before the given time unless it is
+	// zero.
+	Transactions(ctx context.Context, before time.Time, max int) ([]Transaction, error)
+	// ChangePin replaces the PIN the wallet unit was unlocked with by newPin.
+	// The holder keys stay. The unlocked wallet unit is closed afterwards:
+	// what it kept of the old PIN no longer works.
+	ChangePin(ctx context.Context, newPin string) error
 	// Close ends the unlock. Calling it more than once is harmless.
 	Close()
 }

@@ -64,6 +64,10 @@ type SdJwtVcStore interface {
 	// along with all its instances (via CASCADE). Returns ErrNotFound if no batch exists with that hash.
 	DeleteBatchByHash(hash string) error
 
+	// KeyIDsByBatchHash returns the IDs of the keys the batch's instances are
+	// bound to, so they can be removed where they live before the batch is.
+	KeyIDsByBatchHash(hash string) ([]datatypes.UUID, error)
+
 	// ListInstancesWithStatusReference returns every SdJwtVcBatchInstance
 	// with a (status_list.uri, status_list.idx) pair, along with the status the
 	// wallet last recorded for it.
@@ -203,6 +207,29 @@ func (s *sdJwtVcStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 		Where("id = (SELECT credential_batch_id FROM issued_credential_instances WHERE id = ?) AND remaining_count > 0", instanceID).
 		UpdateColumn("remaining_count", gorm.Expr("remaining_count - 1")).
 		Error
+}
+
+// KeyIDsByBatchHash returns the IDs of the holder binding keys the instances
+// of the batch with the given hash are bound to.
+func (s *sdJwtVcStore) KeyIDsByBatchHash(hash string) ([]datatypes.UUID, error) {
+	batch, err := s.GetBatchByHash(hash)
+	if err != nil {
+		return nil, err
+	}
+	var instanceIDs []datatypes.UUID
+	if err := s.db.Model(&models.SdJwtVcBatchInstance{}).
+		Where("credential_batch_id = ?", batch.ID).
+		Pluck("id", &instanceIDs).Error; err != nil {
+		return nil, err
+	}
+	var ids []datatypes.UUID
+	if len(instanceIDs) == 0 {
+		return ids, nil
+	}
+	err = s.db.Model(&models.HolderBindingKey{}).
+		Where("issued_credential_instance_id IN ?", instanceIDs).
+		Pluck("id", &ids).Error
+	return ids, err
 }
 
 func (s *sdJwtVcStore) DeleteBatchByHash(hash string) error {

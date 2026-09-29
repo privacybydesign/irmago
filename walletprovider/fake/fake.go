@@ -50,9 +50,10 @@ type Provider struct {
 	possessionKey walletprovider.PossessionKey
 	opts          Options
 
-	mu      sync.Mutex
-	unlocks []walletprovider.Scope
-	signs   int
+	mu          sync.Mutex
+	unlocks     []walletprovider.Scope
+	signs       int
+	revocations int
 }
 
 var _ walletprovider.WalletProvider = (*Provider)(nil)
@@ -96,6 +97,14 @@ func (p *Provider) SignCount() int {
 	return p.signs
 }
 
+// Revocations returns how often Revoke was called. Unlike the provider's
+// state, it survives the wallet wiping the storage the fake keeps it in.
+func (p *Provider) Revocations() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.revocations
+}
+
 // KeyCount returns how many holder keys the provider holds.
 func (p *Provider) KeyCount() (int, error) {
 	st, err := p.load()
@@ -118,6 +127,32 @@ type state struct {
 	BlockedUntil  time.Time         `json:"blocked_until"`
 	Keys          map[string][]byte `json:"keys"` // ref → SEC 1 private key
 	NextKeyNumber int               `json:"next_key_number"`
+	Log           []logEntry        `json:"log"` // oldest first
+}
+
+type logEntry struct {
+	Operation    walletprovider.Operation `json:"operation"`
+	Failed       bool                     `json:"failed,omitempty"`
+	Purpose      walletprovider.Purpose   `json:"purpose,omitempty"`
+	Counterparty string                   `json:"counterparty,omitempty"`
+	Time         time.Time                `json:"time"`
+}
+
+// logFailure appends a failed operation to the transaction log.
+func (p *Provider) logFailure(st *state, op walletprovider.Operation) {
+	st.Log = append(st.Log, logEntry{Operation: op, Failed: true, Time: p.opts.Now()})
+}
+
+// logOperation appends to the transaction log.
+func (p *Provider) logOperation(st *state, op walletprovider.Operation, scope walletprovider.Scope) {
+	entry := logEntry{Operation: op, Time: p.opts.Now()}
+	if op == walletprovider.OperationSign {
+		entry.Purpose = scope.Purpose
+		if scope.Purpose == walletprovider.PurposeIssuancePoP {
+			entry.Counterparty = scope.Counterparty
+		}
+	}
+	st.Log = append(st.Log, entry)
 }
 
 func (p *Provider) load() (*state, error) {
@@ -220,6 +255,7 @@ func (p *Provider) Activate(ctx context.Context, pin string) error {
 			Possession: pkix,
 			Keys:       map[string][]byte{},
 		}
+		p.logOperation(st, walletprovider.OperationActivate, walletprovider.Scope{})
 		return nil
 	})
 }
@@ -263,6 +299,7 @@ func (p *Provider) Unlock(_ context.Context, pin string, scope walletprovider.Sc
 		if subtle.ConstantTimeCompare(hashPin(st.PinSalt, pin), st.PinHash) != 1 {
 			// Persist the failed attempt, so the error is reported after the
 			// update commits rather than aborting it.
+			p.logFailure(st, walletprovider.OperationRejected)
 			st.FailedPins++
 			if st.FailedPins >= p.opts.MaxAttempts {
 				st.FailedPins = 0
@@ -274,6 +311,7 @@ func (p *Provider) Unlock(_ context.Context, pin string, scope walletprovider.Sc
 			return nil
 		}
 		st.FailedPins = 0
+		p.logOperation(st, walletprovider.OperationUnlock, scope)
 		return nil
 	})
 	if err != nil {
@@ -292,13 +330,19 @@ func (p *Provider) Unlock(_ context.Context, pin string, scope walletprovider.Sc
 func (p *Provider) RemoveKeys(_ context.Context, refs []string) error {
 	return p.update(func(st *state) error {
 		for _, ref := range refs {
-			delete(st.Keys, ref)
+			if _, ok := st.Keys[ref]; ok {
+				delete(st.Keys, ref)
+				p.logOperation(st, walletprovider.OperationRemoveKeys, walletprovider.Scope{})
+			}
 		}
 		return nil
 	})
 }
 
 func (p *Provider) Revoke(context.Context) error {
+	p.mu.Lock()
+	p.revocations++
+	p.mu.Unlock()
 	return p.update(func(st *state) error {
 		*st = state{Revoked: true, Keys: map[string][]byte{}}
 		return nil
@@ -353,6 +397,7 @@ func (u *unlocked) GenerateKeys(_ context.Context, n int) ([]walletprovider.Hold
 			ref := fmt.Sprintf("fake-key-%d-%s", st.NextKeyNumber, randomHex(4))
 			st.Keys[ref] = der
 			keys = append(keys, walletprovider.HolderKey{Ref: ref, Public: &priv.PublicKey})
+			u.provider.logOperation(st, walletprovider.OperationGenerateKeys, u.scope)
 		}
 		return nil
 	})
@@ -393,7 +438,63 @@ func (u *unlocked) Sign(_ context.Context, reqs []walletprovider.SignRequest) ([
 	u.provider.mu.Lock()
 	u.provider.signs += len(reqs)
 	u.provider.mu.Unlock()
+	if err := u.provider.update(func(st *state) error {
+		for range reqs {
+			u.provider.logOperation(st, walletprovider.OperationSign, u.scope)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
 	return sigs, nil
+}
+
+func (u *unlocked) Transactions(_ context.Context, before time.Time, max int) ([]walletprovider.Transaction, error) {
+	if err := u.use(); err != nil {
+		return nil, err
+	}
+	st, err := u.provider.load()
+	if err != nil {
+		return nil, err
+	}
+	var out []walletprovider.Transaction
+	for i := len(st.Log) - 1; i >= 0 && len(out) < max; i-- {
+		e := st.Log[i]
+		if !before.IsZero() && !e.Time.Before(before) {
+			continue
+		}
+		out = append(out, walletprovider.Transaction{
+			ID:           fmt.Sprintf("fake-tx-%d", i),
+			Time:         e.Time,
+			Operation:    e.Operation,
+			Purpose:      e.Purpose,
+			Counterparty: e.Counterparty,
+			Succeeded:    !e.Failed,
+		})
+	}
+	return out, nil
+}
+
+func (u *unlocked) ChangePin(_ context.Context, newPin string) error {
+	if err := u.use(); err != nil {
+		return err
+	}
+	if newPin == "" {
+		return errors.New("fake wallet provider: empty PIN")
+	}
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return err
+	}
+	err := u.provider.update(func(st *state) error {
+		st.PinSalt = salt
+		st.PinHash = hashPin(salt, newPin)
+		st.FailedPins = 0
+		u.provider.logOperation(st, walletprovider.OperationChangePin, walletprovider.Scope{})
+		return nil
+	})
+	u.Close()
+	return err
 }
 
 func (u *unlocked) Close() {
