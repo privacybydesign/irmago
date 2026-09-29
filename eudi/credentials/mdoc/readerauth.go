@@ -251,29 +251,20 @@ var ErrNoReaderAuth = fmt.Errorf("DocRequest carries no readerAuth")
 // proximity reader that cannot be identified gets the same treatment, terminating
 // the session (Table 20) before any consent screen is built.
 //
-// # The mDL carve-out, which the policy above must not run over
+// # No mDL carve-out on this transport
 //
-// 7.2.1, immediately after Table 5: "An mDL may require mdoc reader
-// authentication (see 9.1.4) before releasing data elements not marked as
-// mandatory in Table 5. An mDL shall not require mdoc reader authentication as a
-// precondition for the release of any of the mandatory data elements." NOTE 3
-// gives the intent — the holder is "always able to use the mDL as a driving
-// licence", "including if an mDL reader does not use mdoc reader
-// authentication".
+// 18013-5 7.2.1 says an mDL "shall not require mdoc reader authentication as a
+// precondition for the release of any of the mandatory data elements". ISO/IEC
+// TS 18013-7:2025 Clause 7 lifts that for the transports it defines, which
+// includes the DC API this package answers over — see ReleasableWithoutReaderAuth
+// for the clause text. So the hard-fail above applies to the mDL the same as any
+// other docType: an unauthenticated reader is released nothing, mandatory
+// elements included.
 //
-// Read the granularity carefully: the prohibition is **per data element**, not
-// per session. A hard-fail wallet policy applied to docType
-// org.iso.18013.5.1.mDL would breach it, because terminating the session makes
-// reader authentication a precondition for the mandatory elements too. The
-// compliant behaviour is to release the mandatory elements (subject to holder
-// consent, which is never in question) and withhold the optional ones — which
-// 8.3.2.1.2.3 already has a vocabulary for: the withheld elements come back as
-// ErrorCodeDataNotReturned at status 0, alongside a document.
-//
-// ReleasableWithoutReaderAuth performs that split, so the caller applies the
-// policy to what it returns rather than to the request as a whole. For every
-// docType other than the mDL it returns nothing releasable, which is the
-// hard-fail above.
+// ReleasableWithoutReaderAuth still reports what was withheld rather than just
+// refusing the request outright — 8.3.2.1.2.3 has a vocabulary for that, the
+// withheld elements coming back as ErrorCodeDataNotReturned at status 0,
+// alongside a document.
 func (v *Verifier) VerifyReaderAuth(docRequest DocRequest, transcript SessionTranscript) (*ReaderAuthResult, error) {
 	if len(docRequest.ReaderAuth) == 0 {
 		return nil, ErrNoReaderAuth
