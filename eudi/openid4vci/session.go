@@ -81,6 +81,11 @@ type session struct {
 	// accessTokenType is the token_type of the session's access token, which
 	// decides how the credential endpoint is presented with it.
 	accessTokenType string
+
+	// clientAttester gets the wallet instance attestation, and
+	// clientAttestation holds it once the session has one.
+	clientAttester    ClientAttester
+	clientAttestation *clientAttestation
 }
 
 // openid4vciSessionIssuerSettings contains all settings related to the Credential Issuer and Credential Offer that are required to perform the session, extracted from the Credential Offer and Credential Issuer metadata
@@ -88,6 +93,10 @@ type openid4vciSessionIssuerSettings struct {
 	grantType                   Grant
 	authorizationServer         string
 	authorizationServerMetadata *oauth2.AuthorizationServerMetadata
+
+	// useClientAttestation: the session authenticates to the authorization
+	// server with a wallet instance attestation.
+	useClientAttestation bool
 
 	useCredentialRequestEncryption        bool
 	credentialRequestContentEncryptionAlg *jwa.ContentEncryptionAlgorithm
@@ -651,6 +660,10 @@ func (s *session) configureIssuerSettings() error {
 	}
 
 	// TODO: verify AS supports the required features and to extract endpoints
+
+	if err := s.configureClientAttestation(); err != nil {
+		return err
+	}
 
 	if asMetadata.SupportsDPoP() {
 		s.dpop, err = oauth2.NewDPoP()

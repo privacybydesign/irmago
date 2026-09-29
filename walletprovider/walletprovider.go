@@ -112,6 +112,18 @@ type WalletProvider interface {
 	// Revoke deletes the wallet unit and every key in it, with the possession
 	// key only.
 	Revoke(ctx context.Context) error
+	// InstanceAttestation returns a wallet instance attestation (WIA, TS3)
+	// binding key: the provider's statement that the wallet holding key is a
+	// genuine wallet whose wallet unit is not revoked, as an OAuth client
+	// attestation JWT (oauth-client-attestation+jwt) for the wallet to
+	// authenticate itself to an authorization server with. It needs no PIN:
+	// the possession key proves the wallet unit. The wallet asks for one per
+	// issuance session, and only from an authorization server that asks for
+	// client attestation.
+	//
+	// Returns ErrNotActivated without an active wallet unit, and
+	// ErrAttestationRefused when the provider will not vouch for this one.
+	InstanceAttestation(ctx context.Context, key *ecdsa.PublicKey) ([]byte, error)
 }
 
 // Purpose is what an unlocked wallet unit may be used for.
@@ -139,6 +151,8 @@ const (
 	OperationSign         Operation = "sign"
 	OperationRemoveKeys   Operation = "remove-keys"
 	OperationChangePin    Operation = "change-pin"
+	// OperationAttestInstance is issuing a wallet instance attestation.
+	OperationAttestInstance Operation = "attest-instance"
 	// OperationRejected is a request the provider refused for a wrong or
 	// blocked PIN, before it could tell what was asked. Its entries are how
 	// the user sees someone trying their PIN.
@@ -220,6 +234,10 @@ var (
 	// ErrUnlockExpired: the unlocked wallet unit was closed or timed out; the
 	// PIN must be asked for again.
 	ErrUnlockExpired = errors.New("walletprovider: unlock expired")
+	// ErrAttestationRefused: the provider will not vouch for this wallet unit
+	// now, for instance while its PIN is blocked or when its device could not
+	// be attested at activation.
+	ErrAttestationRefused = errors.New("walletprovider: attestation refused")
 )
 
 // PinIncorrectError reports a wrong PIN. Remaining is how many attempts are

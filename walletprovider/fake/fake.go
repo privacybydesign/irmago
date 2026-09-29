@@ -42,6 +42,12 @@ type Options struct {
 	// NewPossessionKey makes the possession key of each provider the factory
 	// builds. Default a fresh providertest.SoftwarePossessionKey.
 	NewPossessionKey func() walletprovider.PossessionKey
+	// AttestationCA signs the wallet instance attestations. Default a CA of
+	// the factory's own; pass one to trust its root in a test issuer.
+	AttestationCA *AttestationCA
+	// ClientID is the sub of the wallet instance attestations. Default
+	// "yivi-wallet".
+	ClientID string
 }
 
 // Provider is the fake wallet provider.
@@ -50,10 +56,11 @@ type Provider struct {
 	possessionKey walletprovider.PossessionKey
 	opts          Options
 
-	mu          sync.Mutex
-	unlocks     []walletprovider.Scope
-	signs       int
-	revocations int
+	mu                   sync.Mutex
+	unlocks              []walletprovider.Scope
+	signs                int
+	revocations          int
+	instanceAttestations int
 }
 
 var _ walletprovider.WalletProvider = (*Provider)(nil)
@@ -75,7 +82,17 @@ func New(opts Options) walletprovider.Factory {
 	if opts.NewPossessionKey == nil {
 		opts.NewPossessionKey = func() walletprovider.PossessionKey { return &providertest.SoftwarePossessionKey{} }
 	}
+	if opts.ClientID == "" {
+		opts.ClientID = "yivi-wallet"
+	}
+	var caErr error
+	if opts.AttestationCA == nil {
+		opts.AttestationCA, caErr = NewAttestationCA()
+	}
 	return func(host walletprovider.Host) (walletprovider.WalletProvider, error) {
+		if caErr != nil {
+			return nil, caErr
+		}
 		if host == nil || host.Storage() == nil {
 			return nil, errors.New("fake wallet provider: host needs storage")
 		}
@@ -103,6 +120,14 @@ func (p *Provider) Revocations() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.revocations
+}
+
+// InstanceAttestations returns how many wallet instance attestations the
+// provider has issued.
+func (p *Provider) InstanceAttestations() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.instanceAttestations
 }
 
 // KeyCount returns how many holder keys the provider holds.
@@ -347,6 +372,52 @@ func (p *Provider) Revoke(context.Context) error {
 		*st = state{Revoked: true, Keys: map[string][]byte{}}
 		return nil
 	})
+}
+
+func (p *Provider) InstanceAttestation(_ context.Context, key *ecdsa.PublicKey) ([]byte, error) {
+	if key == nil || key.Curve != elliptic.P256() {
+		return nil, errors.New("fake wallet provider: an instance attestation binds a P-256 key")
+	}
+	err := p.update(func(st *state) error {
+		if !st.Activated || st.Revoked {
+			return walletprovider.ErrNotActivated
+		}
+		if p.opts.Now().Before(st.BlockedUntil) {
+			return walletprovider.ErrAttestationRefused
+		}
+		if err := p.proveVerifyPossession(st); err != nil {
+			return err
+		}
+		p.logOperation(st, walletprovider.OperationAttestInstance, walletprovider.Scope{})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	now := p.opts.Now()
+	wia, err := p.opts.AttestationCA.sign(providertest.InstanceAttestationType, map[string]any{
+		"iss":         "https://fake-wallet-provider.invalid",
+		"sub":         p.opts.ClientID,
+		"iat":         now.Unix(),
+		"exp":         now.Add(time.Hour).Unix(),
+		"cnf":         map[string]any{"jwk": providertest.JWK(key)},
+		"wallet_name": "Yivi",
+		"wallet_link": "https://yivi.app",
+		"client_status": map[string]any{
+			"status": map[string]any{"status_list": map[string]any{
+				"idx": randomIndex(),
+				"uri": "https://fake-wallet-provider.invalid/status/wia",
+			}},
+			"exp": now.Add(31 * 24 * time.Hour).Unix(),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	p.instanceAttestations++
+	p.mu.Unlock()
+	return []byte(wia), nil
 }
 
 // unlocked is the fake's unlocked wallet unit.

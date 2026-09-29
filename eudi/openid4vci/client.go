@@ -42,6 +42,11 @@ type Client struct {
 	// start, so a mid-flow locale change does not affect a running session.
 	currentLocale *clientmodels.CurrentLocale
 
+	// clientAttester gets wallet instance attestations for authorization
+	// servers that authenticate clients with one; nil when the wallet has no
+	// way to get one.
+	clientAttester ClientAttester
+
 	// Allow non-HTTPS for testing purposes
 	allowInsecureHttp bool
 }
@@ -55,6 +60,7 @@ func NewClient(httpClient *http.Client,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 	formats services.CredentialFormats,
 	currentLocale *clientmodels.CurrentLocale,
+	clientAttester ClientAttester,
 ) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
@@ -73,6 +79,7 @@ func NewClient(httpClient *http.Client,
 		holderVerifier: holderVerifier,
 		formats:        formats,
 		currentLocale:  currentLocale,
+		clientAttester: clientAttester,
 	}, nil
 }
 
@@ -189,6 +196,7 @@ func (client *Client) handleCredentialOffer(
 		originalCredentialMetadata: originalCredentialMetadata,
 		locale:                     locale,
 		redirectUri:                redirectUri,
+		clientAttester:             client.clientAttester,
 	}
 	defer func() {
 		client.currentSession = nil

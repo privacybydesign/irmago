@@ -77,6 +77,10 @@ type AuthorizationCodeFlowHandler struct {
 	// dpop is the session's DPoP state, nil when the authorization server does
 	// not support DPoP.
 	dpop *oauth2.DPoP
+	// clientAttestation authenticates the PAR and token requests; nil when
+	// the session does not use client attestation.
+	clientAttestation *clientAttestation
+	challengeEndpoint *string
 }
 
 type pkceParameters struct {
@@ -133,8 +137,21 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	// Entra: '65d1d280-0f23-4763-bf41-ea4c17cde792'
 	// Auth0: 'FiEH7ZmdnrDphzAjvdk9scynlm0A1XV9',
 	// Keycloak: 'eudiw'
-	//clientId := "eudiw" // TODO: replace with Client Attestation once we have that, and fetch the client_id from the AS metadata instead of hardcoding it here
+	//clientId := "eudiw"
 	clientId := YiviClientId
+	// With client attestation, the client_id is the WIA's sub. The WIA is
+	// fetched here, before PAR: the PAR request is authenticated with it, and
+	// the authorization request names the client_id it is for. In this flow
+	// that comes before the user is asked to continue to the browser.
+	ca, err := s.ensureClientAttestation()
+	if err != nil {
+		return nil, err
+	}
+	if ca != nil {
+		clientId = ca.clientID
+	}
+	h.clientAttestation = ca
+	h.challengeEndpoint = s.issuerSettings.authorizationServerMetadata.ChallengeEndpoint
 
 	// Build the authorization request parameters
 	state := s.generatePseudoRandomOpenIdState()
@@ -232,7 +249,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 
 	// Exchange of code for token and return token response
 	return h.doTokenRequest(s.issuerSettings.authorizationServerMetadata.TokenEndpoint,
-		code, pkce, scopes, authDetails, s.redirectUri)
+		clientId, code, pkce, scopes, authDetails, s.redirectUri)
 }
 
 // verifyAuthorizationState checks that the state returned by the authorization server matches
@@ -319,9 +336,7 @@ func buildAuthorizationRequestValues(
 }
 
 func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint string, payload url.Values) (*oauth2.PushedAuthorizationResponse, error) {
-	response, err := h.dpop.Do(h.httpClient, "", func() (*http.Request, error) {
-		return newFormRequest(parEndpoint, payload)
-	})
+	response, err := postToAuthorizationServer(h.httpClient, h.dpop, h.clientAttestation, h.challengeEndpoint, parEndpoint, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute Pushed Authorization Request: %v", err)
 	}
@@ -362,6 +377,7 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 
 func (h *AuthorizationCodeFlowHandler) doTokenRequest(
 	tokenEndpoint string,
+	clientId string,
 	code string,
 	pkce *pkceParameters,
 	scopes []string,
@@ -372,16 +388,14 @@ func (h *AuthorizationCodeFlowHandler) doTokenRequest(
 
 	payload.Add("grant_type", "authorization_code")
 	payload.Add("code", code)
-	payload.Add("client_id", YiviClientId)
+	payload.Add("client_id", clientId)
 	payload.Add("redirect_uri", redirectUri)
 
 	if pkce != nil {
 		payload.Add("code_verifier", pkce.CodeVerifier)
 	}
 
-	response, err := h.dpop.Do(h.httpClient, "", func() (*http.Request, error) {
-		return newFormRequest(tokenEndpoint, payload)
-	})
+	response, err := postToAuthorizationServer(h.httpClient, h.dpop, h.clientAttestation, h.challengeEndpoint, tokenEndpoint, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute Token Request: %v", err)
 	}
@@ -507,10 +521,14 @@ func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, grant *PreAuth
 		values.Add("tx_code", *transactionCode)
 	}
 
-	tokenEndpoint := s.issuerSettings.authorizationServerMetadata.TokenEndpoint
-	response, err := s.dpop.Do(s.httpClient, "", func() (*http.Request, error) {
-		return newFormRequest(tokenEndpoint, values)
-	})
+	// The WIA is fetched at the first token request, after the user agreed;
+	// a retry with another tx_code reuses it.
+	ca, err := s.ensureClientAttestation()
+	if err != nil {
+		return nil, err
+	}
+	asMetadata := s.issuerSettings.authorizationServerMetadata
+	response, err := postToAuthorizationServer(s.httpClient, s.dpop, ca, asMetadata.ChallengeEndpoint, asMetadata.TokenEndpoint, values)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute Token Request: %v", err)
 	}

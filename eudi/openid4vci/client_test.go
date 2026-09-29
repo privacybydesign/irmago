@@ -68,7 +68,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 
 	credStore := db.NewSdJwtVcStore(s.Db())
 	formats := services.NewCredentialFormats(conf, holderVerifier, s.Db(), s.FileSystem(), services.NewRevocationService(nil, credStore), nil, nil)
-	client, err := NewClient(&http.Client{}, conf, holderVerifier, formats, nil)
+	client, err := NewClient(&http.Client{}, conf, holderVerifier, formats, nil, nil)
 	require.NoError(t, err)
 	client.SetAllowInsecureHttp(true)
 
@@ -103,12 +103,12 @@ func TestNewClientRegistersEveryCredentialFormat(t *testing.T) {
 // NewClient refuses a registry that would fail at runtime: none at all, or a
 // format missing one of its three parts.
 func TestNewClientRefusesIncompleteRegistry(t *testing.T) {
-	_, err := NewClient(&http.Client{}, &eudi.Configuration{}, nil, nil, nil)
+	_, err := NewClient(&http.Client{}, &eudi.Configuration{}, nil, nil, nil, nil)
 	require.Error(t, err)
 
 	_, err = NewClient(&http.Client{}, &eudi.Configuration{}, nil, services.CredentialFormats{
 		models.CredentialFormatSdJwtVc: {Parser: services.NewSdJwtVcCredentialFormatParser(nil)},
-	}, nil)
+	}, nil, nil)
 	require.Error(t, err)
 }
 

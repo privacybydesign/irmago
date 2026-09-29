@@ -305,6 +305,7 @@ func New(cfg Config) (*Client, error) {
 		holderVerifier,
 		credentialFormats,
 		currentLocale,
+		services.NewClientAttester(walletProvider),
 	)
 
 	if err != nil {

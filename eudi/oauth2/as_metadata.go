@@ -53,6 +53,11 @@ type AuthorizationServerMetadata struct {
 	// RFC 9449 DPoP
 	DPoPSigningAlgValuesSupported []string `json:"dpop_signing_alg_values_supported,omitempty"`
 
+	// draft-ietf-oauth-attestation-based-client-auth
+	ChallengeEndpoint                             *string  `json:"challenge_endpoint,omitempty"`
+	ClientAttestationSigningAlgValuesSupported    []string `json:"client_attestation_signing_alg_values_supported,omitempty"`
+	ClientAttestationPopSigningAlgValuesSupported []string `json:"client_attestation_pop_signing_alg_values_supported,omitempty"`
+
 	// Non-standard fields that might be used in practice
 	Jwks jwk.Set `json:"jwks,omitempty"`
 }
