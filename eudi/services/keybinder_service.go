@@ -159,7 +159,7 @@ func generateProviderProofKeys(ctx context.Context, unlocked walletprovider.Unlo
 		if attest.AsProof {
 			return attestedKeyTuples(holderKeys, string(keyAttestation))
 		}
-		external = external.WithKeyAttestation(string(keyAttestation))
+		return attestedKeyTuplesWithProof(ctx, unlocked, holderKeys, external.WithKeyAttestation(string(keyAttestation)))
 	}
 
 	requests := make([]walletprovider.SignRequest, num)
@@ -208,6 +208,28 @@ func attestedKeyTuples(holderKeys []walletprovider.HolderKey, keyAttestation str
 		keyTuples[i] = keyTuple{ref: key.Ref, pub: key.Public, jwkPubKey: jwkPubKey}
 	}
 	return keyTuples, []string{keyAttestation}, nil
+}
+
+// attestedKeyTuplesWithProof is the result for jwt proofs with a key
+// attestation: the keys, and one proof, by the first key, carrying the
+// attestation that covers them all.
+func attestedKeyTuplesWithProof(ctx context.Context, unlocked walletprovider.UnlockedWalletUnit, holderKeys []walletprovider.HolderKey, external proofs.ExternalProofBuilder) ([]keyTuple, []string, error) {
+	input, err := external.SigningInput(holderKeys[0].Public)
+	if err != nil {
+		return nil, nil, err
+	}
+	sigs, err := unlocked.Sign(ctx, []walletprovider.SignRequest{{Ref: holderKeys[0].Ref, SigningInput: input}})
+	if err != nil {
+		return nil, nil, fmt.Errorf("wallet provider failed to sign the proof: %w", err)
+	}
+	if len(sigs) != 1 {
+		return nil, nil, fmt.Errorf("wallet provider made %d signatures, want 1", len(sigs))
+	}
+	keyTuples, _, err := attestedKeyTuples(holderKeys, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	return keyTuples, []string{proofs.AssembleCompactJws(input, sigs[0])}, nil
 }
 
 // signingJwk returns pub as a JWK marked for signature use.

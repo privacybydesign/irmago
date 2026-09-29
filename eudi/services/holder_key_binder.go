@@ -49,8 +49,12 @@ type KeyAttestationOptions struct {
 	// Nonce is the issuer's c_nonce, empty without a nonce endpoint.
 	Nonce string
 	// AsProof sends the key attestation as the proof (the attestation proof
-	// type, OpenID4VCI 1.0 Appendix F.3): the keys then sign nothing. Otherwise
-	// every jwt proof carries it in its key_attestation header.
+	// type, OpenID4VCI 1.0 Appendix F.3): the keys then sign nothing.
+	// Otherwise one jwt proof, signed by the first attested key, carries it in
+	// its key_attestation header. One, not one per key: an issuer issues a
+	// credential for every key in attested_keys (Appendix F.1), so a proof per
+	// key would have it issue the whole batch once for every proof, as the EUDI
+	// reference issuer does.
 	AsProof bool
 }
 

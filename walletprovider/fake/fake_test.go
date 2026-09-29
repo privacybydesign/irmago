@@ -7,6 +7,8 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -84,4 +86,31 @@ func TestFakeRefusesInstanceAttestationWhileBlocked(t *testing.T) {
 	require.NoError(t, err)
 	_, err = p.InstanceAttestation(ctx, &key.PublicKey)
 	require.ErrorIs(t, err, walletprovider.ErrAttestationRefused)
+}
+
+func TestLoadAttestationCA(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "eudi-pid-issuer-py", "wallet-attestation")
+	read := func(name string) []byte {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		require.NoError(t, err)
+		return data
+	}
+	ca, err := fake.LoadAttestationCA(read("ca.pem"), read("signer.pem"), read("signer.key"))
+	require.NoError(t, err)
+
+	p, err := fake.New(fake.Options{AttestationCA: ca})(providertest.NewHost())
+	require.NoError(t, err)
+	ctx := context.Background()
+	require.NoError(t, p.Activate(ctx, "12345"))
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	wia, err := p.InstanceAttestation(ctx, &key.PublicKey)
+	require.NoError(t, err)
+	a, err := providertest.ParseInstanceAttestation(wia)
+	require.NoError(t, err)
+	_, err = a.Chain[0].Verify(x509.VerifyOptions{Roots: ca.Roots()})
+	require.NoError(t, err)
+
+	_, err = fake.LoadAttestationCA(read("ca.pem"), read("signer.pem"), read("ca.key"))
+	require.Error(t, err, "a key that is not the signer's")
 }

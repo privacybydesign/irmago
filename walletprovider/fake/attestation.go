@@ -9,6 +9,8 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -58,6 +60,48 @@ func NewAttestationCA() (*AttestationCA, error) {
 		return nil, err
 	}
 	return &AttestationCA{Root: root, leaf: leaf, key: key}, nil
+}
+
+// LoadAttestationCA builds a CA from PEM files: the root certificate, the
+// signing certificate it issued, and the signing key (SEC 1 or PKCS #8). For
+// tests against an issuer that has to be told in advance which attester to
+// trust.
+func LoadAttestationCA(rootPEM, signerPEM, signerKeyPEM []byte) (*AttestationCA, error) {
+	root, err := parseCertificatePEM(rootPEM)
+	if err != nil {
+		return nil, fmt.Errorf("root: %w", err)
+	}
+	leaf, err := parseCertificatePEM(signerPEM)
+	if err != nil {
+		return nil, fmt.Errorf("signer: %w", err)
+	}
+	block, _ := pem.Decode(signerKeyPEM)
+	if block == nil {
+		return nil, errors.New("signer key: no PEM block")
+	}
+	var key *ecdsa.PrivateKey
+	if key, err = x509.ParseECPrivateKey(block.Bytes); err != nil {
+		parsed, err8 := x509.ParsePKCS8PrivateKey(block.Bytes)
+		var ok bool
+		if key, ok = parsed.(*ecdsa.PrivateKey); err8 != nil || !ok {
+			return nil, fmt.Errorf("signer key: %w", err)
+		}
+	}
+	if !key.PublicKey.Equal(leaf.PublicKey) {
+		return nil, errors.New("the signer key is not the signer certificate's")
+	}
+	if err := leaf.CheckSignatureFrom(root); err != nil {
+		return nil, fmt.Errorf("the signer certificate is not issued by the root: %w", err)
+	}
+	return &AttestationCA{Root: root, leaf: leaf, key: key}, nil
+}
+
+func parseCertificatePEM(data []byte) (*x509.Certificate, error) {
+	block, _ := pem.Decode(data)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, errors.New("no CERTIFICATE PEM block")
+	}
+	return x509.ParseCertificate(block.Bytes)
 }
 
 // Roots is a pool holding the CA's root, for a test issuer's trust store.

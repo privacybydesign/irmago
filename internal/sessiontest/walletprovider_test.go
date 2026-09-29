@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -38,6 +40,106 @@ func testSessionHandlerForWalletProvider(t *testing.T) {
 	t.Run("a PIN the wallet unit refuses changes nothing", testWalletProviderPinChangeRefusedByWalletUnit)
 	t.Run("an unfinished PIN change is finished with both PINs", testWalletProviderPinChangeRecovery)
 	t.Run("the wallet provider transaction log shows issuance and disclosure", testWalletProviderTransactionLog)
+	t.Run("the EUDI issuer gets a WIA and a key attestation proof", func(t *testing.T) {
+		testWalletProviderKeyAttestationAtEudiIssuer(t, eudiPidIssuerPyAvKaConfigID)
+	})
+	t.Run("the EUDI issuer gets a WIA and jwt proofs with a key attestation", func(t *testing.T) {
+		testWalletProviderKeyAttestationAtEudiIssuer(t, eudiPidIssuerPyAvKaJwtConfigID)
+	})
+	t.Run("the EUDI AS refuses a WIA from an attester it does not trust", testWalletProviderUntrustedWiaRefused)
+}
+
+// The age-verification configurations of the Python issuer that require a key
+// attestation (testdata/eudi-pid-issuer-py/metadata/age_verification_mdoc_ka*.json):
+// one offering the attestation proof type, one only jwt proofs.
+const (
+	eudiPidIssuerPyAvKaConfigID    = "eu.europa.ec.eudi.age_verification_mdoc_ka"
+	eudiPidIssuerPyAvKaJwtConfigID = "eu.europa.ec.eudi.age_verification_mdoc_ka_jwt"
+)
+
+// testAttestationCA is the test wallet provider's attestation PKI, whose
+// signing certificate the EUDI Python AS trusts
+// (testdata/eudi-pid-issuer-py/trusted-attesters).
+func testAttestationCA(t *testing.T) *fake.AttestationCA {
+	t.Helper()
+	dir := filepath.Join(testdataFolder, "eudi-pid-issuer-py", "wallet-attestation")
+	read := func(name string) []byte {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		require.NoError(t, err)
+		return data
+	}
+	ca, err := fake.LoadAttestationCA(read("ca.pem"), read("signer.pem"), read("signer.key"))
+	require.NoError(t, err)
+	return ca
+}
+
+// issueAvMdocWithWalletProvider runs a pre-authorized issuance of the Python
+// issuer's age-verification mdoc under configuration configID, answering the
+// transaction code, the PIN and the permission, and returns the final state.
+func issueAvMdocWithWalletProvider(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, configID string) clientmodels.SessionState {
+	t.Helper()
+	offerJSON := createAvMdocOfferJsonWithElementsViaPythonIssuer(t, configID, map[string]bool{avMandatoryElement: true})
+	txCode := extractTxCodeValue(t, offerJSON)
+
+	startOpenID4VCISession(t, c, 1, offerUriFromJson(t, offerJSON))
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: 1,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true, TransactionCode: &txCode},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	if session.Status != clientmodels.Status_RequestPin {
+		return session
+	}
+	enterPin(t, c, 1, walletProviderPin)
+	session = awaitSessionState(t, sessionHandler)
+	if session.Status != clientmodels.Status_RequestPermission {
+		return session
+	}
+	grantPermission(t, c, 1)
+	return awaitSessionState(t, sessionHandler)
+}
+
+// testWalletProviderKeyAttestationAtEudiIssuer issues from the EUDI reference
+// issuer with both attestations: its AS authenticates the token request with
+// the WIA (it advertises attest_jwt_client_auth and trusts the test attester),
+// and its credential endpoint gets the key attestation the configuration
+// requires.
+func testWalletProviderKeyAttestationAtEudiIssuer(t *testing.T, configID string) {
+	c, provider, sessionHandler := createWalletProviderClient(t, readEudiPidIssuerPyCA(t), true)
+	defer c.Close()
+
+	session := issueAvMdocWithWalletProvider(t, c, sessionHandler, configID)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+	require.Equal(t, 1, provider.InstanceAttestations(), "the token request was authenticated with one WIA")
+	require.Equal(t, 1, provider.KeyAttestations(), "one key attestation over the batch")
+	keys, err := provider.KeyCount()
+	require.NoError(t, err)
+	require.Positive(t, keys)
+}
+
+// testWalletProviderUntrustedWiaRefused pins that the EUDI AS really checks
+// the WIA: from an attester it was not told to trust, the issuance fails.
+func testWalletProviderUntrustedWiaRefused(t *testing.T) {
+	untrusted, err := fake.NewAttestationCA()
+	require.NoError(t, err)
+	c, provider, sessionHandler, _ := newWalletProviderClientWithCA(t, readEudiPidIssuerPyCA(t), true, 0, untrusted)
+	defer c.Close()
+
+	// The AS refuses with invalid_request ("WIA signature verification
+	// failed"), which OpenID4VCI also allows for a wrong transaction code, so
+	// the wallet cannot tell the two apart and asks for the code again. What
+	// matters is that nothing was issued.
+	session := issueAvMdocWithWalletProvider(t, c, sessionHandler, eudiPidIssuerPyAvCredentialConfigID)
+	require.NotEqual(t, clientmodels.Status_Success, session.Status)
+	require.Equal(t, 1, provider.InstanceAttestations())
+	keys, err := provider.KeyCount()
+	require.NoError(t, err)
+	require.Zero(t, keys, "no keys minted: the token request was refused")
+	require.Zero(t, provider.KeyAttestations())
 }
 
 const newWalletProviderPin = "67890"
@@ -52,7 +154,7 @@ func enrolledWalletProviderClient(t *testing.T, failPinChangeAfter bool) (*clien
 	var wrapper *failingActivation
 	var provider *fake.Provider
 	factory := func(host walletprovider.Host) (walletprovider.WalletProvider, error) {
-		p, err := fake.New(fake.Options{MaxAttempts: 5})(host)
+		p, err := fake.New(fake.Options{MaxAttempts: 5, AttestationCA: testAttestationCA(t)})(host)
 		if err != nil {
 			return nil, err
 		}
@@ -147,10 +249,16 @@ func createWalletProviderClient(t *testing.T, issuerChain []byte, activate bool)
 // client handler, and whose provider refuses the first failActivations
 // activations.
 func newWalletProviderClient(t *testing.T, issuerChain []byte, activate bool, failActivations int) (*client.Client, *fake.Provider, *MockSessionHandler, *irmaclient.MockClientHandler) {
+	return newWalletProviderClientWithCA(t, issuerChain, activate, failActivations, testAttestationCA(t))
+}
+
+// newWalletProviderClientWithCA is newWalletProviderClient whose provider signs
+// its attestations with attestationCA.
+func newWalletProviderClientWithCA(t *testing.T, issuerChain []byte, activate bool, failActivations int, attestationCA *fake.AttestationCA) (*client.Client, *fake.Provider, *MockSessionHandler, *irmaclient.MockClientHandler) {
 	t.Helper()
 	var provider *fake.Provider
 	factory := func(host walletprovider.Host) (walletprovider.WalletProvider, error) {
-		p, err := fake.New(fake.Options{})(host)
+		p, err := fake.New(fake.Options{AttestationCA: attestationCA})(host)
 		if err != nil {
 			return nil, err
 		}

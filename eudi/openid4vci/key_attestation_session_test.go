@@ -77,7 +77,7 @@ func strictKeyAttestationEndpoint(t *testing.T, ca **fake.AttestationCA, found c
 			kaRaw = list[0].(string)
 		} else {
 			jwtProofs := (*req.Proofs)[metadata.ProofTypeIdentifier_JWT]
-			require.NotEmpty(t, jwtProofs)
+			require.Len(t, jwtProofs, 1, "one jwt proof carries the key attestation for the whole batch")
 			for _, p := range jwtProofs {
 				raw := []byte(p.(string))
 				header := proofHeader(t, p.(string))
