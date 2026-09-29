@@ -83,7 +83,7 @@ func TestDisclosureLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T)
 		Name: "Test Verifier",
 	}
 
-	require.NoError(t, svc.AddDisclosureLog(verifier, input))
+	require.NoError(t, svc.AddDisclosureLog(clientmodels.Protocol_OpenID4VP, verifier, input))
 
 	logs, err := svc.GetNewestLogs(10)
 	require.NoError(t, err)
@@ -352,7 +352,7 @@ func TestLogReadReResolvesTextFromLiveMetadata(t *testing.T) {
 	newLiveBatch(t, svc, vct, issuer)
 
 	emailName := "Email"
-	require.NoError(t, svc.AddDisclosureLog(
+	require.NoError(t, svc.AddDisclosureLog(clientmodels.Protocol_OpenID4VP,
 		clientmodels.TrustedParty{Id: "https://verifier.example.com", Name: "Test Verifier"},
 		[]clientmodels.LogCredential{{
 			CredentialId: vct,
@@ -416,7 +416,7 @@ func TestLogReadDoesNotBorrowIssuerNameFromDifferentIssuer(t *testing.T) {
 	otherIssuer := "https://other-issuer.example.com"
 	newLiveBatch(t, svc, vct, otherIssuer)
 
-	require.NoError(t, svc.AddDisclosureLog(
+	require.NoError(t, svc.AddDisclosureLog(clientmodels.Protocol_OpenID4VP,
 		clientmodels.TrustedParty{Id: "https://verifier.example.com", Name: "Test Verifier"},
 		[]clientmodels.LogCredential{{
 			CredentialId: vct,
@@ -534,7 +534,7 @@ func TestDisclosureLogRoundTrip_PreservesVerifierVerifiedFlag(t *testing.T) {
 		Name:     "Yivi B.V.",
 		Verified: true,
 	}
-	require.NoError(t, svc.AddDisclosureLog(verified, nil))
+	require.NoError(t, svc.AddDisclosureLog(clientmodels.Protocol_OpenID4VP, verified, nil))
 
 	logs, err := svc.GetNewestLogs(10)
 	require.NoError(t, err)
@@ -551,7 +551,7 @@ func TestDisclosureLogRoundTrip_PreservesVerifierVerifiedFlag(t *testing.T) {
 func TestDisclosureLogRoundTrip_KeepsUnverifiedVerifierUnverified(t *testing.T) {
 	svc := newTestLogService(t)
 
-	require.NoError(t, svc.AddDisclosureLog(clientmodels.TrustedParty{
+	require.NoError(t, svc.AddDisclosureLog(clientmodels.Protocol_OpenID4VP, clientmodels.TrustedParty{
 		Id:   "https://verifier.example.com",
 		Name: "Some Verifier",
 	}, nil))
@@ -579,4 +579,33 @@ func TestIssuanceLogRoundTrip_PreservesIssuerVerifiedFlag(t *testing.T) {
 	require.Len(t, logs, 1)
 	require.NotNil(t, logs[0].IssuanceLog)
 	require.True(t, logs[0].IssuanceLog.Issuer.Verified)
+}
+
+// TestDisclosureLogKeepsAnonymityAndOrigin covers what the activity list shows
+// for an org-iso-mdoc session. The requestor has no name by design, so the
+// origin is the only thing there is to show -- and anonymity is stored apart
+// from verification because the two answer different questions.
+func TestDisclosureLogKeepsAnonymityAndOrigin(t *testing.T) {
+	svc := newTestLogService(t)
+
+	origin := "https://verifier.example.com"
+	require.NoError(t, svc.AddDisclosureLog(
+		clientmodels.Protocol_ISO18013_5,
+		clientmodels.TrustedParty{Anonymous: true, Origin: &origin},
+		nil,
+	))
+
+	logs, err := svc.GetNewestLogs(1)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+
+	require.Equal(t, clientmodels.Protocol_ISO18013_5, logs[0].DisclosureLog.Protocol,
+		"an org-iso-mdoc session logged as OpenID4VP would misreport every ZK disclosure")
+
+	verifier := logs[0].DisclosureLog.Verifier
+	require.NotNil(t, verifier)
+	require.True(t, verifier.Anonymous, "the entry must remember that nothing identified itself")
+	require.False(t, verifier.Verified, "anonymous is not the same as unverified")
+	require.NotNil(t, verifier.Origin)
+	require.Equal(t, origin, *verifier.Origin)
 }

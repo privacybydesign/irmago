@@ -19,3 +19,4 @@ irma/irma
 # entries needed on one machine (e.g. an msys64 install on Windows) are wrong on
 # every other one.
 .vscode/
+iso18013-5.txt

@@ -38,10 +38,21 @@ type MdocStore interface {
 	// instance is used.
 	GetUnusedInstance(batchID datatypes.UUID) (*models.MdocBatchInstance, error)
 
+	// GetUnusedInstanceExcluding is GetUnusedInstance restricted to instances
+	// whose id is not in excluded, so a caller holding instances it has chosen
+	// but not yet spent can ask for a different one. Returns ErrNotFound when
+	// every unused instance is excluded.
+	GetUnusedInstanceExcluding(batchID datatypes.UUID, excluded []datatypes.UUID) (*models.MdocBatchInstance, error)
+
 	// MarkInstanceUsed sets Used on the instance and decrements the parent
 	// batch's RemainingCount, in one transaction. Returns ErrNotFound if the
 	// instance does not exist or is already used.
 	MarkInstanceUsed(instanceID datatypes.UUID) error
+
+	// MarkInstancesUsed does the same for several instances in ONE transaction,
+	// so a multi-credential disclosure cannot spend some and fail on the rest.
+	// Every id must name an unused instance; if any does not, none are marked.
+	MarkInstancesUsed(instanceIDs []datatypes.UUID) error
 
 	// DeleteBatch deletes a batch; the cascade removes its instances and their
 	// device keys. Returns ErrNotFound if no batch has that id.
@@ -102,14 +113,22 @@ func (s *mdocStore) GetBatchesByDocType(docType string) ([]*models.MdocBatch, er
 }
 
 func (s *mdocStore) GetUnusedInstance(batchID datatypes.UUID) (*models.MdocBatchInstance, error) {
+	return s.GetUnusedInstanceExcluding(batchID, nil)
+}
+
+func (s *mdocStore) GetUnusedInstanceExcluding(batchID datatypes.UUID, excluded []datatypes.UUID) (*models.MdocBatchInstance, error) {
 	if batchID.IsNil() {
 		return nil, fmt.Errorf("batchID is required")
 	}
-	var instance models.MdocBatchInstance
-	err := s.db.
+	query := s.db.
 		Preload("DeviceKey").
-		Where("mdoc_batch_id = ? AND used = ?", batchID, false).
-		First(&instance).Error
+		Where("mdoc_batch_id = ? AND used = ?", batchID, false)
+	if len(excluded) > 0 {
+		query = query.Where("id NOT IN ?", excluded)
+	}
+
+	var instance models.MdocBatchInstance
+	err := query.First(&instance).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
@@ -162,4 +181,48 @@ func (s *mdocStore) DeleteBatchByHash(hash string) error {
 		return err
 	}
 	return s.DeleteBatch(batch.ID)
+}
+
+// MarkInstancesUsed marks every named instance used inside a single transaction.
+//
+// One transaction, not a loop of MarkInstanceUsed, because a disclosure that
+// answers two credential queries spends two instances for one response: if the
+// second fails after the first is committed, that first single-use instance is
+// gone and the response the verifier would have received was discarded. A use
+// lost with nothing to show for it is exactly what single-use accounting exists
+// to prevent.
+//
+// Each row carries the same `used = false` guard the single-row version does, so
+// an instance already spent by a concurrent disclosure fails the whole batch
+// rather than being double-counted.
+func (s *mdocStore) MarkInstancesUsed(instanceIDs []datatypes.UUID) error {
+	if len(instanceIDs) == 0 {
+		return nil
+	}
+	for _, id := range instanceIDs {
+		if id.IsNil() {
+			return fmt.Errorf("instanceID is required")
+		}
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		for _, instanceID := range instanceIDs {
+			res := tx.Model(&models.MdocBatchInstance{}).
+				Where("id = ? AND used = ?", instanceID, false).
+				Update("used", true)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return ErrNotFound
+			}
+			// Floor at zero, as above: a batch already reading 0 is left alone.
+			if err := tx.Model(&models.MdocBatch{}).
+				Where("id = (SELECT mdoc_batch_id FROM mdoc_batch_instances WHERE id = ?) AND remaining_count > 0", instanceID).
+				UpdateColumn("remaining_count", gorm.Expr("remaining_count - 1")).
+				Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

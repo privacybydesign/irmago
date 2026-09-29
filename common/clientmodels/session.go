@@ -64,6 +64,17 @@ type SessionState struct {
 	// that reaches Status_Success; empty for every other session.
 	DcApiResponse string `json:"dc_api_response,omitempty"`
 
+	// ZeroKnowledge reports that the disclosure was made as a zero-knowledge
+	// proof rather than as a signed disclosure. Set on the state that reaches
+	// Status_Success, and only for org-iso-mdoc, which is the one transport that
+	// can produce one.
+	//
+	// The app needs this to tell the user what happened, and cannot derive it:
+	// the protocol name does not imply a proof, since a reader that leaves
+	// zkRequired unset gets the plain ISO presentation whenever no offered circuit
+	// matches, and the response the app hands back is sealed to the reader.
+	ZeroKnowledge bool `json:"zero_knowledge,omitempty"`
+
 	// OID4VCI specific fields
 	OfferedCredentialTypes []*CredentialDescriptor `json:"offered_credential_types"`
 

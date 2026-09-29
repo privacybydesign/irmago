@@ -70,9 +70,10 @@ var mdocDocumentSignerEKUs = []asn1.ObjectIdentifier{
 }
 
 // mdocSignatureAlgorithms are the algorithms ISO/IEC 18013-5 permits for the two
-// signatures this package verifies. 9.1.2.4 obliges a reader to handle the whole
-// set when verifying, not a subset of its choosing — ES256, ES384, ES512 and
-// EdDSA — and 9.1.3.6 restates the same list for device authentication.
+// signatures this package verifies, and which 9.1.2.4 obliges a reader to
+// support: "For verifying the signature, the mdoc reader shall support all of
+// these signature algorithms and curves" — ES256, ES384, ES512 and EdDSA. 9.1.3.6
+// restates the same list for device authentication.
 //
 // cose.AlgorithmEdDSA and the deprecated cose.AlgorithmEd25519 are the same value
 // (-8), so EdDSA appears once.
@@ -120,14 +121,59 @@ func coseVerifierFor(msg *cose.Sign1Message, key crypto.PublicKey, what string) 
 // message type.
 //
 // ISO 18013-5 puts the bare four-element array at issuerAuth and
-// deviceSignature, which is what this package now writes (see
-// issuer_testonly.go and devicesigner.go). Reading is deliberately more
-// permissive than writing: go-cose's
+// deviceSignature, which is what this package now writes (see issuer.go and
+// holder.go). Reading is deliberately more permissive than writing: go-cose's
 // Sign1Message insists on the tag-18 prefix and UntaggedSign1Message refuses
 // it, so accepting only one form would make the verifier reject real documents
 // from whichever party disagrees with us. The tag is outside Sig_structure and
 // carries no security meaning, so accepting both costs nothing — everything
 // that matters is still checked against the signature afterwards.
+// certificateChainFromHeaders parses the x5chain out of a COSE_Sign1's
+// unprotected headers: header 33, holding [DS cert DER, IACA cert DER, ...].
+//
+// certs[0] is the leaf — the document signer — and certs[1:] are whatever
+// intermediates the credential carried with it.
+//
+// The single-certificate fallback is not decoration. RFC 9360 lets x5chain be
+// one bstr rather than an array when the chain has one element, and go-cose
+// decodes an array of bstr into []any, so both shapes have to be handled here
+// or a conformant credential is refused for the wrong reason.
+//
+// Error strings are the verification path's, verbatim, because that path
+// surfaces them to callers as result.Error.
+func certificateChainFromHeaders(unprotected cose.UnprotectedHeader) ([]*x509.Certificate, error) {
+	rawVal, exists := unprotected[int64(33)]
+	if !exists {
+		return nil, fmt.Errorf("no x5chain in issuerAuth header 33")
+	}
+
+	chainRaw, ok := rawVal.([]any)
+	if !ok {
+		single, isSingle := rawVal.([]byte)
+		if !isSingle {
+			return nil, fmt.Errorf("x5chain wrong type: %T", rawVal)
+		}
+		chainRaw = []any{single}
+	}
+	if len(chainRaw) == 0 {
+		return nil, fmt.Errorf("x5chain is empty")
+	}
+
+	certs := make([]*x509.Certificate, 0, len(chainRaw))
+	for i, raw := range chainRaw {
+		der, ok := raw.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("x5chain[%d] wrong type: %T", i, raw)
+		}
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, fmt.Errorf("parse x5chain[%d]: %v", i, err)
+		}
+		certs = append(certs, cert)
+	}
+	return certs, nil
+}
+
 func decodeCoseSign1(data []byte) (*cose.Sign1Message, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("empty COSE_Sign1")
@@ -371,6 +417,14 @@ func NewVerifierWithClock(rootCerts []*x509.Certificate, clock time.Time) *Verif
 // A Verifier built without a trust source has no lists and checks nothing,
 // which is what every constructor did before NewVerifierFromTrustSource.
 func (v *Verifier) checkChainRevocation(chains [][]*x509.Certificate) error {
+	return v.checkChainRevocationFor(chains, "document signer's")
+}
+
+// checkChainRevocationFor is checkChainRevocation with the role of the chain
+// named, so reader authentication (9.1.4) can reuse the same walk without
+// reporting a revoked reader certificate as a revoked document signer. whose is
+// a possessive phrase, e.g. "document signer's".
+func (v *Verifier) checkChainRevocationFor(chains [][]*x509.Certificate, whose string) error {
 	if v.revocationLists == nil {
 		return nil
 	}
@@ -391,8 +445,8 @@ func (v *Verifier) checkChainRevocation(chains [][]*x509.Certificate) error {
 					// the subject alone does not distinguish a re-issued certificate
 					// from the revoked one it replaced.
 					firstFailure = fmt.Errorf(
-						"certificate in the document signer's chain is revoked: %v (subject %q, serial %X, issued by %q)",
-						err, cert.Subject.String(), cert.SerialNumber, cert.Issuer.String())
+						"certificate in the %s chain is revoked: %v (subject %q, serial %X, issued by %q)",
+						whose, err, cert.Subject.String(), cert.SerialNumber, cert.Issuer.String())
 				}
 				break
 			}
@@ -444,33 +498,6 @@ type VerificationResult struct {
 	// result can carry an authentic issuer identity and still be Valid == false.
 	// Callers decide on Valid, as everywhere else here.
 	IssuerIdentifier string
-}
-
-// issuerIdentifierFromDocumentSigner names the issuer behind a document signer
-// certificate.
-//
-// The SAN first, via the same utils.ObtainIssuerFromCert the SD-JWT VC path uses
-// when a credential carries no `iss` (sdjwtvc's parseAndVerifyIssuerSignedJwt).
-// One helper for both formats on purpose: this value ends up in the credential's
-// storage hash, so the two formats disagreeing about what an issuer is called
-// would show up as a wallet holding the same credential twice.
-//
-// Falling back to the subject DN, because a document signer is not required to
-// carry a SAN. ISO/IEC 18013-5 mandates one on a reader certificate, where it
-// binds the client_id; Annex B.1.4's document signer profile does not, and it
-// does populate the subject (country and common name are mandatory there). A
-// SAN-less issuer is therefore conformant, and refusing its credentials over a
-// naming question would be this package inventing a rule again.
-//
-// Both forms are stable across the rotation that matters: a document signer is
-// re-keyed often, and it is the serial and public key that change, not the
-// issuer's name. That is the property credentialHash depends on — a re-issuance
-// has to hash to what the wallet already stored.
-func issuerIdentifierFromDocumentSigner(cert *x509.Certificate) string {
-	if identifier, err := utils.ObtainIssuerFromCert(cert); err == nil {
-		return identifier
-	}
-	return cert.Subject.String()
 }
 
 // RequireElements checks that every element the verifier asked for is actually
@@ -540,44 +567,10 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	}
 
 	// Step 2: extract x5chain from unprotected header 33
-	// x5chain = [DS cert DER, IACA cert DER]
-	// go-cose decodes [][]byte as []any where each element is []byte
-	rawVal, exists := msg.Headers.Unprotected[int64(33)]
-	if !exists {
-		result.Error = "no x5chain in issuerAuth header 33"
+	certs, err := certificateChainFromHeaders(msg.Headers.Unprotected)
+	if err != nil {
+		result.Error = err.Error()
 		return nil, result
-	}
-
-	chainRaw, ok := rawVal.([]any)
-	if !ok {
-		// fallback: single cert
-		single, ok2 := rawVal.([]byte)
-		if !ok2 {
-			result.Error = fmt.Sprintf("x5chain wrong type: %T", rawVal)
-			return nil, result
-		}
-		chainRaw = []any{single}
-	}
-
-	if len(chainRaw) == 0 {
-		result.Error = "x5chain is empty"
-		return nil, result
-	}
-
-	// parse all certs: certs[0] = DS cert (leaf), certs[1..] = intermediates (IACA cert)
-	certs := make([]*x509.Certificate, 0, len(chainRaw))
-	for i, raw := range chainRaw {
-		b, ok := raw.([]byte)
-		if !ok {
-			result.Error = fmt.Sprintf("x5chain[%d] wrong type: %T", i, raw)
-			return nil, result
-		}
-		c, err := x509.ParseCertificate(b)
-		if err != nil {
-			result.Error = fmt.Sprintf("parse x5chain[%d]: %v", i, err)
-			return nil, result
-		}
-		certs = append(certs, c)
 	}
 
 	dsCert := certs[0]
@@ -628,9 +621,8 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 		return nil, result
 	}
 
-	// Step 3c: revocation. 9.3.3 requires whoever performs path validation to be
-	// able to reach revocation data for the certificates involved, and Annex B.1.4
-	// makes
+	// Step 3c: revocation. 9.3.3 requires a party performing path validation to
+	// have "access to certificate revocation information", and Annex B.1.4 makes
 	// a CRL distribution point mandatory on a document signer precisely so this
 	// is possible. Chain validity is a statement about dates and signatures; it
 	// says nothing about a key that was compromised and withdrawn yesterday.
@@ -651,6 +643,14 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 		result.Error = fmt.Sprintf("MSO signature invalid: %v", err)
 		return nil, result
 	}
+
+	// Safe here and not before, and the position is the whole point. The chain
+	// verified, no certificate in it is revoked, and this MSO carries a signature
+	// that certificate actually made. Setting it earlier -- which it was, briefly
+	// -- left a revoked signer or an invalid signature producing Valid == false
+	// alongside a populated, authenticated-looking IssuerIdentifier, which is
+	// exactly the pair a caller reading one field without the other misreads.
+	result.IssuerIdentifier = issuerIdentifierFromDocumentSigner(dsCert)
 
 	// Step 5: decode MSO from payload. Payload is Tag24-wrapped (see
 	// issuer.go's Issue) — must unwrap that layer before decoding the MSO
@@ -722,11 +722,6 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	result.DocType = mso.DocType
 
 	result.ValidityInfo = mso.ValidityInfo
-
-	// Safe here and not before: the chain verified in step 3, so this certificate
-	// is one a trusted IACA issued as a document signer rather than a name the
-	// document asserted about itself.
-	result.IssuerIdentifier = issuerIdentifierFromDocumentSigner(dsCert)
 
 	// Best-effort: reconstruct the device public key embedded in the MSO.
 	// Left nil on failure rather than failing verification outright — see
@@ -830,9 +825,9 @@ func verifyNamespaceDigests(items []Tag24Item, nsDigests map[uint64][]byte, dige
 				item.ElementIdentifier, len(item.Random), minSaltLength)
 		}
 
-		// ISO/IEC 18013-5 8.3.2.1.2.2 lets a data element identifier appear at most
-		// once per namespace within a document — no two IssuerSignedItem entries in
-		// one namespace may name the same element.
+		// ISO/IEC 18013-5 8.3.2.1.2.2: "The mdoc shall not include two or more
+		// IssuerSignedItem elements with the same DataElementIdentifier in a single
+		// NameSpace and Document."
 		//
 		// Nothing else here catches it. The two copies carry different digestIDs, the
 		// MSO commits to both, and both pass the digest check below — so without this
@@ -891,8 +886,8 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 	// Every namespace the document carries is verified, not only the one the
 	// caller asked about.
 	//
-	// 9.3.1 step 3 has the reader digest every IssuerSignedItem the DeviceResponse
-	// returns, without qualification. Verifying one
+	// 9.3.1 step 3 is "calculate the digest value for every IssuerSignedItem
+	// returned in the DeviceResponse", without qualification. Verifying one
 	// namespace and ignoring the rest left items in any other namespace neither
 	// checked nor refused: their values never reached result.Attributes, which is
 	// what kept it from being exploitable, but the document still came back Valid
@@ -905,6 +900,7 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 		return result
 	}
 
+	// A profile with a closed attribute set refuses elements outside it. Keyed on
 	// Only the requested namespace's attributes are returned, as before. An empty
 	// map rather than nil when the namespace is in the MSO but discloses nothing,
 	// so callers can index it without a nil check; RequireElements is what turns
@@ -924,9 +920,9 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 // Shared by Verify and VerifyAllDisclosedNamespaces so the two cannot drift
 // over what "verified" covers.
 func verifyAllNamespaces(mdoc *MDoc, mso *MSO) (DisclosedNamespaces, error) {
-	// Resolved once for the whole document: 9.1.2.5 ties every data element in a
-	// document to a single digest algorithm, so a per-namespace lookup would imply
-	// a freedom the clause does not give.
+	// Resolved once for the whole document: 9.1.2.5 requires "the same digest
+	// algorithm shall be used for all data elements", so a per-namespace lookup
+	// would imply a freedom the clause does not give.
 	digest, err := digestFuncFor(mso.DigestAlgorithm)
 	if err != nil {
 		return nil, err
@@ -983,50 +979,15 @@ func (v *Verifier) VerifyAllDisclosedNamespaces(mdoc *MDoc) (DisclosedNamespaces
 // touches deviceAuth or deviceKeyInfo, so a cloned mdoc — issuerSigned copied
 // to another device — passes it.
 func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType string, transcript SessionTranscript, deviceAuthBytes []byte) VerificationResult {
-	result := v.Verify(mdoc, namespace)
-	if !result.Valid {
+	prepared, result := v.prepareDeviceAuth(mdoc, namespace, docType)
+	if prepared == nil {
 		return result
 	}
+	devicePub, deviceNameSpaces, deviceNameSpaceMap := prepared.devicePub, prepared.deviceNameSpaces, prepared.nameSpaceMap
 
-	// The docType the verifier asked for must be the one the issuer signed.
-	// Verify() has already established that result.DocType is MSO.docType, so
-	// this compares against the signed value rather than the envelope. Without
-	// it a caller-supplied docType would still be caught — the reconstructed
-	// DeviceAuthentication payload below would not match the signature — but
-	// only as an opaque "deviceAuth signature invalid".
-	if docType != result.DocType {
-		result.Valid = false
-		result.Error = fmt.Sprintf(
-			"docType mismatch: verifier requested %q but the signed MSO says %q",
-			docType, result.DocType,
-		)
-		return result
-	}
-
-	// Re-decode the MSO for deviceKeyInfo. Safe: Verify() already checked this
-	// payload's signature and chain.
-	msg, err := decodeCoseSign1(mdoc.IssuerSigned.IssuerAuth)
-	if err != nil {
-		result.Valid = false
-		result.Error = fmt.Sprintf("decode cose (deviceAuth phase): %v", err)
-		return result
-	}
-	mso, err := tag24Unwrap[MSO](msg.Payload)
-	if err != nil {
-		result.Valid = false
-		result.Error = fmt.Sprintf("decode mso (deviceAuth phase): %v", err)
-		return result
-	}
-
-	devicePub, err := ecdsaPublicKeyFromCOSE(mso.DeviceKeyInfo.DeviceKey)
-	if err != nil {
-		result.Valid = false
-		result.Error = fmt.Sprintf("reconstruct deviceKey: %v", err)
-		return result
-	}
-
-	// Payload is nil on the wire: SignDeviceAuth detaches it, per the AV
-	// Blueprint's worked example. It is rebuilt below.
+	// Decode the deviceAuth COSE_Sign1. Its transmitted Payload is nil —
+	// SignDeviceAuth detaches it before returning, matching the AV
+	// Blueprint spec's own example (deviceSignature payload: null).
 	deviceMsg, err := decodeCoseSign1(deviceAuthBytes)
 	if err != nil {
 		result.Valid = false
@@ -1034,24 +995,29 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
-	// The transcript below is the verifier's own, which is what defeats replay;
-	// the nameSpaces are the received bytes, which the signature covers.
-	deviceNameSpaces, err := deviceNameSpacesForVerification(mdoc)
-	if err != nil {
-		result.Valid = false
-		result.Error = err.Error()
-		return result
-	}
-
-	// Well-formedness only; whether the contents are authorized is asked below,
-	// once the signature over them has verified.
-	deviceNameSpaceMap, err := decodeDeviceNameSpaces(deviceNameSpaces)
-	if err != nil {
-		result.Valid = false
-		result.Error = fmt.Sprintf("malformed deviceSigned.nameSpaces: %v", err)
-		return result
-	}
-
+	// Rebuild the DeviceAuthentication payload the holder signed. Two of its four
+	// elements come from deliberately different places:
+	//
+	//   - SessionTranscript is the verifier's OWN. The verifier is the authority on
+	//     the session, so substituting its own copy is what defeats replay: a
+	//     signature produced over a different transcript (a different session, or
+	//     replayed from elsewhere) hashes differently and fails below. Since the
+	//     transmitted COSE_Sign1 has a detached (null) payload, this reconstruction
+	//     is the only source of the bytes fed into Sig_structure, which collapses
+	//     "content matches" and "signature valid" into a single check.
+	//
+	//   - DeviceNameSpaces are the RECEIVED bytes. ISO 18013-5 transmits
+	//     DeviceNameSpacesBytes at deviceSigned.nameSpaces precisely so a verifier
+	//     can rebuild this structure, and taking them from the wire is not a
+	//     relaxation — the signature covers them, so substituted bytes can only
+	//     make a valid signature fail. Reconstructing tag24(empty map) here
+	//     instead conflated the two cases above: a conformant holder that encoded
+	//     its empty map any other way (indefinite-length, say) was rejected with
+	//     "signature invalid", which was not what had gone wrong, and the received
+	//     field was left neither verified nor rejected.
+	//
+	// Whether any device-signed namespaces are ACCEPTABLE is a separate question,
+	// answered by the profile check after the signature has been verified.
 	expectedDeviceAuth := DeviceAuthentication{
 		Context:           "DeviceAuthentication",
 		SessionTranscript: transcript,
@@ -1078,11 +1044,180 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
-	// DeviceAuthValid stays false on refusal even though the signature verified,
-	// so a caller reading it without checking Valid cannot mistake this for
-	// acceptance.
+	// Whether the holder-asserted elements are acceptable, judged on authenticated
+	// content now that the signature over them has verified.
+	//
+	// The rule is ISO/IEC 18013-5 9.1.3.4's keyAuthorizations check, applied to
+	// every docType -- see checkDeviceSignedNameSpaces. The docType is carried
+	// only so a refusal can name it, and is the one from the signed MSO.
+	//
+	// It used to be a blanket refusal applied to every docType, which rejected
+	// conformant general mdocs and reported it as though the presentation were
+	// untrustworthy. The per-docType policy that replaced it lived in profile.go,
+	// which is gone; what an issuer authorized a device key to assert is stated by
+	// the MSO rather than by a profile this package hardcodes.
+	//
+	// DeviceAuthValid stays false even though the signature verified, so a caller
+	// that reads it without checking Valid cannot mistake this for acceptance.
 	if err := checkDeviceSignedNameSpaces(
-		result.DocType, deviceNameSpaceMap, mso.DeviceKeyInfo.KeyAuthorizations,
+		result.DocType,
+		deviceNameSpaceMap, prepared.keyAuthorizations,
+	); err != nil {
+		result.Valid = false
+		result.Error = err.Error()
+		return result
+	}
+
+	result.DeviceAuthValid = true
+	return result
+}
+
+// preparedDeviceAuth is everything checking the holder's half of a document
+// needs, gathered once because 9.1.3.4 offers the mdoc two ways to authenticate
+// and they differ only in the last step.
+type preparedDeviceAuth struct {
+	// devicePub is SDeviceKey.Pub, read from the now-trusted MSO: the key a
+	// deviceSignature is checked against, and the peer key a deviceMac's ECDH is
+	// run against. One field because it is one key either way — which is the
+	// whole reason 9.1.3.4 forbids using it for both purposes in one session.
+	devicePub *ecdsa.PublicKey
+
+	// deviceNameSpaces is the DeviceNameSpacesBytes the holder authenticated,
+	// taken from the wire — see deviceNameSpacesForVerification.
+	deviceNameSpaces cbor.RawMessage
+
+	// nameSpaceMap is the same bytes decoded, for the profile check that may run
+	// only after they have been authenticated.
+	nameSpaceMap map[string]map[string]cbor.RawMessage
+
+	// keyAuthorizations is what the issuer permitted this device key to assert.
+	keyAuthorizations *KeyAuthorizations
+}
+
+// prepareDeviceAuth establishes the issuer's half of a document and gathers what
+// the holder's half will be checked with, for either branch of DeviceAuth.
+//
+// A nil first return means the document never got that far; the accompanying
+// result carries the reason. Callers branch on the pointer rather than on
+// result.Valid, so there is one way to be told.
+func (v *Verifier) prepareDeviceAuth(mdoc *MDoc, namespace string, docType string) (*preparedDeviceAuth, VerificationResult) {
+	result := v.Verify(mdoc, namespace)
+	if !result.Valid {
+		return nil, result
+	}
+
+	// The docType the verifier asked for must be the one the issuer signed.
+	// Verify() has already established that result.DocType is MSO.docType, so
+	// this compares against the signed value rather than the envelope. Without
+	// it a caller-supplied docType would still be caught — the reconstructed
+	// DeviceAuthentication payload would not match — but only as an opaque
+	// "deviceAuth signature invalid".
+	if docType != result.DocType {
+		result.Valid = false
+		result.Error = fmt.Sprintf(
+			"docType mismatch: verifier requested %q but the signed MSO says %q",
+			docType, result.DocType,
+		)
+		return nil, result
+	}
+
+	// Re-decode the MSO to get deviceKeyInfo. Verify() already proved
+	// msg.Payload is authentic (signature + chain checked), so this is safe.
+	msg, err := decodeCoseSign1(mdoc.IssuerSigned.IssuerAuth)
+	if err != nil {
+		result.Valid = false
+		result.Error = fmt.Sprintf("decode cose (deviceAuth phase): %v", err)
+		return nil, result
+	}
+	mso, err := tag24Unwrap[MSO](msg.Payload)
+	if err != nil {
+		result.Valid = false
+		result.Error = fmt.Sprintf("decode mso (deviceAuth phase): %v", err)
+		return nil, result
+	}
+
+	devicePub, err := ecdsaPublicKeyFromCOSE(mso.DeviceKeyInfo.DeviceKey)
+	if err != nil {
+		result.Valid = false
+		result.Error = fmt.Sprintf("reconstruct deviceKey: %v", err)
+		return nil, result
+	}
+
+	// The RECEIVED bytes. ISO 18013-5 transmits DeviceNameSpacesBytes at
+	// deviceSigned.nameSpaces precisely so a verifier can rebuild the structure
+	// the holder authenticated, and taking them from the wire is not a
+	// relaxation: they are covered, so substituted bytes can only make a valid
+	// document fail. Reconstructing tag24(empty map) here instead rejected a
+	// conformant holder that encoded its empty map any other way, and reported it
+	// as a bad signature, which was not what had gone wrong.
+	deviceNameSpaces, err := deviceNameSpacesForVerification(mdoc)
+	if err != nil {
+		result.Valid = false
+		result.Error = err.Error()
+		return nil, result
+	}
+
+	// Decoded now only to establish that what is about to be authenticated is
+	// well-formed; its contents are judged afterwards, since a rule enforced on
+	// unauthenticated bytes proves nothing about the holder.
+	nameSpaceMap, err := decodeDeviceNameSpaces(deviceNameSpaces)
+	if err != nil {
+		result.Valid = false
+		result.Error = fmt.Sprintf("malformed deviceSigned.nameSpaces: %v", err)
+		return nil, result
+	}
+
+	return &preparedDeviceAuth{
+		devicePub:         devicePub,
+		deviceNameSpaces:  deviceNameSpaces,
+		nameSpaceMap:      nameSpaceMap,
+		keyAuthorizations: mso.DeviceKeyInfo.KeyAuthorizations,
+	}, result
+}
+
+// VerifyWithDeviceMac is VerifyWithDeviceAuth for the other branch of 9.1.3.4:
+// a document whose DeviceAuth carries a deviceMac instead of a deviceSignature.
+//
+// Which branch a document uses is the MDOC's choice — 9.1.3.4 offers it both and
+// obliges it to pick exactly one — so a reader implementing only the signature
+// branch cannot verify a conformant subset of documents at all. This wallet
+// signs on every transport (see the deviceAuth branch decision), but what it
+// produces has no bearing on what a reader it drives must accept.
+//
+// The reader's ephemeral private key is a parameter because it is the only thing
+// that can produce EMacKey: the MAC is keyed on ECDH(EReaderKey.Priv,
+// SDeviceKey.Pub), so unlike the signature branch there is nothing in the
+// document alone to check it against.
+func (v *Verifier) VerifyWithDeviceMac(mdoc *MDoc, namespace string, docType string, transcript SessionTranscript, deviceMacBytes []byte, eReaderKey *ecdsa.PrivateKey) VerificationResult {
+	prepared, result := v.prepareDeviceAuth(mdoc, namespace, docType)
+	if prepared == nil {
+		return result
+	}
+
+	if eReaderKey == nil {
+		result.Valid = false
+		result.Error = "document authenticates with deviceMac, which cannot be checked without the reader's ephemeral private key: verify it through VerifyDeviceResponseAsReader"
+		return result
+	}
+
+	emacKey, err := DeriveEMacKeyAsReader(eReaderKey, prepared.devicePub, transcript)
+	if err != nil {
+		result.Valid = false
+		result.Error = fmt.Sprintf("derive EMacKey as reader: %v", err)
+		return result
+	}
+
+	if err := verifyDeviceMacOver(deviceMacBytes, emacKey, result.DocType, transcript, prepared.deviceNameSpaces); err != nil {
+		result.Valid = false
+		result.Error = err.Error()
+		return result
+	}
+
+	// The same question the signature branch asks once the bytes are
+	// authenticated, and for the same reason: see the profile check there.
+	if err := checkDeviceSignedNameSpaces(
+		result.DocType,
+		prepared.nameSpaceMap, prepared.keyAuthorizations,
 	); err != nil {
 		result.Valid = false
 		result.Error = err.Error()
@@ -1122,11 +1257,10 @@ func deviceNameSpacesForVerification(mdoc *MDoc) (cbor.RawMessage, error) {
 // `DeviceNameSpacesBytes = #6.24(bstr .cbor DeviceNameSpaces)` and returns the
 // namespaces it wraps, their contents left undecoded.
 //
-// The emptiness of the result is what checkDeviceSignedNameSpaces tests, rather
-// than a byte comparison against tag24Wrap(map[string]any{}): CBOR admits more
-// than one encoding of an empty map, and comparing bytes would reject a
-// conformant holder for choosing a different one — the very brittleness this
-// replaced.
+// The emptiness of the result is what the profile check tests, rather than a byte
+// comparison against tag24Wrap(map[string]any{}): CBOR admits more than one
+// encoding of an empty map, and comparing bytes would reject a conformant holder
+// for choosing a different one — the very brittleness this replaced.
 func decodeDeviceNameSpaces(raw cbor.RawMessage) (DeviceNameSpaces, error) {
 	var rawTag cbor.RawTag
 	if err := mdocDecMode.Unmarshal(raw, &rawTag); err != nil {
@@ -1141,14 +1275,67 @@ func decodeDeviceNameSpaces(raw cbor.RawMessage) (DeviceNameSpaces, error) {
 	}
 	// Decoded two levels deep rather than one: `DeviceNameSpaces = {* NameSpace
 	// => DeviceSignedItems}` and `DeviceSignedItems = {+ DataElementIdentifier =>
-	// DataElementValue}`, and checkDeviceSignedNameSpaces authorizes per element,
-	// not per namespace. The values stay raw — nothing here interprets them, and
-	// a caller that wanted to would decode them itself.
+	// DataElementValue}`, and checkDeviceSignedNameSpaces is per element, not per
+	// namespace. The values stay raw -- nothing here interprets them, and a caller
+	// that wanted to would decode them itself.
 	var namespaces DeviceNameSpaces
 	if err := mdocDecMode.Unmarshal(inner, &namespaces); err != nil {
 		return nil, fmt.Errorf("embedded DeviceNameSpaces is not a map of namespaces to data elements: %w", err)
 	}
 	return namespaces, nil
+}
+
+// VerifyDeviceResponse verifies every document in a DeviceResponse, extracting
+// deviceAuth from each document's DeviceSigned field instead of requiring it as
+// a separate parameter — this is the entry point a verifier that actually
+// received a DeviceResponse (rather than calling Issue/SelectiveDisclose
+// directly, as the tests/demo do) would use.
+//
+// Documents authenticated with deviceMac are reported invalid, naming what is
+// missing: checking one needs the reader's ephemeral private key, which this
+// signature has nowhere to take it from. Every reader that established the
+// session holds one and should call VerifyDeviceResponseAsReader instead.
+func (v *Verifier) VerifyDeviceResponse(resp DeviceResponse, namespace string, docType string, transcript SessionTranscript) ([]VerificationResult, error) {
+	return v.VerifyDeviceResponseAsReader(resp, namespace, docType, transcript, nil)
+}
+
+// VerifyDeviceResponseAsReader is VerifyDeviceResponse with the ephemeral key
+// the reader established the session with, which is what a deviceMac needs.
+//
+// Each document is verified through whichever branch of DeviceAuth it actually
+// used. Reading only deviceSignature — as this did — meant a fully conformant
+// deviceMac document arrived with empty signature bytes and was rejected as a
+// bad signature, blaming the holder for a branch the reader had not implemented.
+// The exclusive choice is enforced first: a DeviceAuth carrying both makes two
+// claims with nothing to say which governs, and one carrying neither is a
+// document nothing authenticates.
+func (v *Verifier) VerifyDeviceResponseAsReader(
+	resp DeviceResponse,
+	namespace string,
+	docType string,
+	transcript SessionTranscript,
+	eReaderKey *ecdsa.PrivateKey,
+) ([]VerificationResult, error) {
+	results := make([]VerificationResult, 0, len(resp.Documents))
+	for i := range resp.Documents {
+		doc := resp.Documents[i]
+		if doc.DeviceSigned == nil {
+			return nil, fmt.Errorf("document %d: missing deviceSigned", i)
+		}
+		deviceAuth := doc.DeviceSigned.DeviceAuth
+		if err := deviceAuth.validate(); err != nil {
+			return nil, fmt.Errorf("document %d: %w", i, err)
+		}
+
+		if len(deviceAuth.DeviceSignature) > 0 {
+			results = append(results, v.VerifyWithDeviceAuth(
+				&doc, namespace, docType, transcript, []byte(deviceAuth.DeviceSignature)))
+			continue
+		}
+		results = append(results, v.VerifyWithDeviceMac(
+			&doc, namespace, docType, transcript, []byte(deviceAuth.DeviceMac), eReaderKey))
+	}
+	return results, nil
 }
 
 // checkDeviceSignedNameSpaces decides whether the holder-asserted elements in a
@@ -1218,21 +1405,29 @@ func checkDeviceSignedNameSpaces(
 	return nil
 }
 
-// VerifyDeviceResponse verifies every document in a DeviceResponse via
-// VerifyWithDeviceAuth, extracting deviceAuth from each document's
-// DeviceSigned field instead of requiring it as a separate parameter —
-// this is the entry point a verifier that actually received a
-// DeviceResponse (rather than calling Issue/SelectiveDisclose directly,
-// as the tests/demo do) would use.
-func (v *Verifier) VerifyDeviceResponse(resp DeviceResponse, namespace string, docType string, transcript SessionTranscript) ([]VerificationResult, error) {
-	results := make([]VerificationResult, 0, len(resp.Documents))
-	for i := range resp.Documents {
-		doc := resp.Documents[i]
-		if doc.DeviceSigned == nil {
-			return nil, fmt.Errorf("document %d: missing deviceSigned", i)
-		}
-		deviceAuthBytes := []byte(doc.DeviceSigned.DeviceAuth.DeviceSignature)
-		results = append(results, v.VerifyWithDeviceAuth(&doc, namespace, docType, transcript, deviceAuthBytes))
+// issuerIdentifierFromDocumentSigner names the issuer behind a document signer
+// certificate.
+//
+// The SAN first, via the same utils.ObtainIssuerFromCert the SD-JWT VC path uses
+// when a credential carries no `iss` (sdjwtvc's parseAndVerifyIssuerSignedJwt).
+// One helper for both formats on purpose: this value ends up in the credential's
+// storage hash, so the two formats disagreeing about what an issuer is called
+// would show up as a wallet holding the same credential twice.
+//
+// Falling back to the subject DN, because a document signer is not required to
+// carry a SAN. ISO/IEC 18013-5 mandates one on a reader certificate, where it
+// binds the client_id; Annex B.1.4's document signer profile does not, and it
+// does populate the subject (country and common name are mandatory there). A
+// SAN-less issuer is therefore conformant, and refusing its credentials over a
+// naming question would be this package inventing a rule again.
+//
+// Both forms are stable across the rotation that matters: a document signer is
+// re-keyed often, and it is the serial and public key that change, not the
+// issuer's name. That is the property credentialHash depends on — a re-issuance
+// has to hash to what the wallet already stored.
+func issuerIdentifierFromDocumentSigner(cert *x509.Certificate) string {
+	if identifier, err := utils.ObtainIssuerFromCert(cert); err == nil {
+		return identifier
 	}
-	return results, nil
+	return cert.Subject.String()
 }

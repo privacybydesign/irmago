@@ -15,6 +15,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
@@ -749,7 +750,7 @@ func (s *session) getAuthorizationServer() (string, error) {
 
 // obtainCredential requests and verifies a credential for a given configuration
 // ID without storing it. The caller stores via storeCredentials or cleans up via cleanupKeys.
-func (s *session) obtainCredential(credentialConfigurationId string, cNonce *string, accessToken string) (*fetchedCredential, error) {
+func (s *session) obtainCredential(credentialConfigurationId string, cNonce *string, accessToken string) (fetched *fetchedCredential, retErr error) {
 	if s.credentialIssuerMetadata.NonceEndpoint != "" && cNonce == nil {
 		return nil, fmt.Errorf("credential request requires nonce but none was provided")
 	}
@@ -798,6 +799,28 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		if err != nil {
 			return nil, fmt.Errorf("could not create key pairs: %v", err)
 		}
+
+		// Every error return below this point leaves freshly minted device keys
+		// in storage that no credential will ever bind to. There are around
+		// twenty of them -- the credential request itself, its HTTP status, the
+		// response decode, and each per-credential check -- so the cleanup is a
+		// defer rather than a line repeated at each: a return added later is
+		// covered without anyone remembering to, which is how this leak got here.
+		//
+		// Only on failure. On success the keys belong to the fetchedCredential
+		// returned, which stores them or calls cleanupKeys itself.
+		defer func() {
+			if retErr == nil || len(publicKeyIdentifiers) == 0 || support.Keys == nil {
+				return
+			}
+			keyIds := make([]datatypes.UUID, len(publicKeyIdentifiers))
+			for i, key := range publicKeyIdentifiers {
+				keyIds[i] = key.ID
+			}
+			if err := support.Keys.RemoveKeys(keyIds); err != nil {
+				eudi.Logger.Warnf("failed to remove holder binding keys after a failed credential request: %v", err)
+			}
+		}()
 
 		x := make([]any, len(proofs))
 		for i, v := range proofs {
@@ -940,6 +963,9 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		if err := requireMandatoryMdocElements(&credentialConfig, parsed); err != nil {
 			return nil, fmt.Errorf("credential %d of configuration %q: %v", i+1, credentialConfigurationId, err)
 		}
+		if err := requireAgeVerificationBaseline(parsed); err != nil {
+			return nil, fmt.Errorf("credential %d of configuration %q: %v", i+1, credentialConfigurationId, err)
+		}
 		parsedCredentials[i] = parsed
 	}
 
@@ -1005,12 +1031,18 @@ func requireMdocDocTypeMatchesMetadata(config *metadata.CredentialConfiguration,
 // without it, and the wallet would store an age-verification attestation that
 // verifies nobody's age.
 //
-// Keyed on the metadata rather than on the docType on purpose. Reading
-// "docType == eu.europa.ec.av.1 therefore age_over_18" would be the first
-// docType-specific rule in a package that is deliberately general mso_mdoc, and
-// it would cover exactly one profile. The issuer already states which elements
-// it considers mandatory; taking it at its word covers PID, mDL and every
-// docType nobody has minted yet, and says the same thing for AV.
+// Keyed on the metadata rather than on the docType on purpose. The issuer
+// already states which elements it considers mandatory; taking it at its word
+// covers PID, mDL and every docType nobody has minted yet, and says the same
+// thing for AV, where eu.europa.ec.av.1 marks age_over_18 mandatory. Writing
+// "docType == eu.europa.ec.av.1 therefore age_over_18" here instead would put
+// one profile's rules into a package that is deliberately general mso_mdoc.
+//
+// That rule does now exist, in requireAgeVerificationBaseline below, because
+// this check has a floor it cannot reach: it can only enforce what the issuer
+// promised, so an AP that advertises nothing escapes it entirely. The two are
+// kept apart rather than merged so that the general mechanism stays free of
+// profile knowledge and the profile rule stays visible as such.
 //
 // Silent for issuers that publish no mandatory claims: the field defaults to
 // false (see CredentialConfigurationValidator), so this rejects nothing an
@@ -1131,4 +1163,44 @@ func (s *session) extractAuthorizationDetailsJson() (*string, error) {
 
 	authDetailsJson := string(authDetailsJsonBytes)
 	return &authDetailsJson, nil
+}
+
+// requireAgeVerificationBaseline refuses an eu.europa.ec.av.1 attestation that
+// does not contain age_over_18.
+//
+// AV Annex A §A.4.2 gives age_over_18 "Presence in issuance: Mandatory" and
+// states it "is present in all Proof of Age attestations"; every other
+// age_over_NN is Optional. An attestation without it is non-conformant at the
+// moment it is signed.
+//
+// This is deliberately a docType rule, and it is the exception to the reasoning
+// in requireMandatoryMdocElements above, which is keyed on the issuer's
+// advertised metadata precisely so as not to hardcode one profile. That
+// mechanism is still the general one and still runs first; it cannot cover this
+// case, because it can only enforce what the issuer itself promised. An
+// Attestation Provider that neither mints age_over_18 nor advertises it as
+// mandatory violates §A.4.2 and there is nothing in its metadata to catch it
+// with. So the profile rule is written out here, scoped to the one docType it
+// comes from and to the one element the profile makes unconditional, rather
+// than weakening the general check to guess at profiles.
+//
+// Keyed on the signed MSO docType rather than the advertised one:
+// requireMdocDocTypeMatchesMetadata has already established the two agree, and
+// the signed value is what the credential is stored and later matched as.
+//
+// Presence only. §A.4.2's encoding is bool and the attribute is mandatory in an
+// attestation issued to a minor as well, so age_over_18 = false is conformant
+// issuance; what a wallet should do with a false value at disclosure is a
+// separate question and is not decided here.
+func requireAgeVerificationBaseline(parsed *services.ParsedCredential) error {
+	if parsed.Mdoc == nil || parsed.Mdoc.DocType != mdoc.AgeVerificationDocType {
+		return nil
+	}
+	if _, ok := parsed.Mdoc.Namespaces[mdoc.AgeVerificationNameSpace][mdoc.AgeOver18Element]; !ok {
+		return fmt.Errorf(
+			"docType %q requires %s/%s in every attestation (Age Verification profile Annex A §A.4.2), but the credential the issuer signed does not contain it",
+			mdoc.AgeVerificationDocType, mdoc.AgeVerificationNameSpace, mdoc.AgeOver18Element,
+		)
+	}
+	return nil
 }

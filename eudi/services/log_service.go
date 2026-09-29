@@ -18,7 +18,15 @@ import (
 // EudiLogService creates and retrieves EUDI activity log entries.
 type EudiLogService interface {
 	AddIssuanceLog(protocol clientmodels.Protocol, issuer clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error
-	AddDisclosureLog(verifier clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error
+	// AddDisclosureLog records a disclosure. The protocol is a parameter because
+	// the same wallet discloses over more than one, and a log that named them all
+	// OpenID4VP would misreport every org-iso-mdoc session -- including the
+	// zero-knowledge ones, where this entry is the only record there is.
+	AddDisclosureLog(
+		protocol clientmodels.Protocol,
+		verifier clientmodels.TrustedParty,
+		credentials []clientmodels.LogCredential,
+	) error
 	AddRemovalLog(credentials []clientmodels.LogCredential) error
 	GetNewestLogs(max int) ([]clientmodels.LogInfo, error)
 	GetLogsBefore(before time.Time, max int) ([]clientmodels.LogInfo, error)
@@ -52,12 +60,16 @@ func (s *eudiLogService) AddIssuanceLog(protocol clientmodels.Protocol, issuer c
 	return s.addSessionLog(clientmodels.LogType_Issuance, protocol, issuer, creds)
 }
 
-func (s *eudiLogService) AddDisclosureLog(verifier clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error {
+func (s *eudiLogService) AddDisclosureLog(
+	protocol clientmodels.Protocol,
+	verifier clientmodels.TrustedParty,
+	credentials []clientmodels.LogCredential,
+) error {
 	creds, err := s.logCredentialsToModelCredentials(credentials)
 	if err != nil {
 		return err
 	}
-	return s.addSessionLog(clientmodels.LogType_Disclosure, clientmodels.Protocol_OpenID4VP, verifier, creds)
+	return s.addSessionLog(clientmodels.LogType_Disclosure, protocol, verifier, creds)
 }
 
 func (s *eudiLogService) addSessionLog(logType clientmodels.LogType, protocol clientmodels.Protocol, requestor clientmodels.TrustedParty, creds []models.EudiLogCredential) error {
@@ -67,14 +79,16 @@ func (s *eudiLogService) addSessionLog(logType clientmodels.LogType, protocol cl
 	}
 	saveLogoFromBase64(s.verifierLogoManager, requestor.Id, requestor.Image)
 	entry := &models.EudiLogEntry{
-		ID:                datatypes.NewUUIDv4(),
-		Type:              string(logType),
-		Protocol:          string(protocol),
-		CreatedAt:         time.Now(),
-		RequestorId:       requestor.Id,
-		RequestorName:     requestorName,
-		RequestorVerified: requestor.Verified,
-		Credentials:       creds,
+		ID:                 datatypes.NewUUIDv4(),
+		Type:               string(logType),
+		Protocol:           string(protocol),
+		CreatedAt:          time.Now(),
+		RequestorId:        requestor.Id,
+		RequestorName:      requestorName,
+		RequestorVerified:  requestor.Verified,
+		RequestorAnonymous: requestor.Anonymous,
+		RequestorOrigin:    originOf(requestor),
+		Credentials:        creds,
 	}
 	return s.store.AddLog(entry)
 }
@@ -207,10 +221,12 @@ func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry, displayByVct map
 	requestorName := decodeStoredText(e.RequestorName, s.locale)
 	requestorImage := eudi.LoadLogoImage(s.verifierLogoManager, e.RequestorId)
 	requestor := &clientmodels.TrustedParty{
-		Id:       e.RequestorId,
-		Name:     requestorName,
-		Image:    requestorImage,
-		Verified: e.RequestorVerified,
+		Id:        e.RequestorId,
+		Name:      requestorName,
+		Image:     requestorImage,
+		Verified:  e.RequestorVerified,
+		Anonymous: e.RequestorAnonymous,
+		Origin:    originPointer(e.RequestorOrigin),
 	}
 
 	switch clientmodels.LogType(e.Type) {
@@ -416,4 +432,22 @@ func saveLogoFromBase64(manager filesystem.LogoManager, key string, image *clien
 	if err := manager.Save(key, rawBytes, mimeType); err != nil {
 		eudi.Logger.Warnf("failed to cache logo for key %q: %v", key, err)
 	}
+}
+
+// originOf flattens the optional origin for storage. Empty means the session had
+// none, which is every transport but the Digital Credentials API.
+func originOf(requestor clientmodels.TrustedParty) string {
+	if requestor.Origin == nil {
+		return ""
+	}
+	return *requestor.Origin
+}
+
+// originPointer restores it, keeping empty distinct from present-but-empty so a
+// reader can tell a session that had no origin from one that had a blank one.
+func originPointer(origin string) *string {
+	if origin == "" {
+		return nil
+	}
+	return &origin
 }

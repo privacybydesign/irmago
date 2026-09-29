@@ -706,3 +706,15 @@ func logMarshalled(message string, value any) {
 		eudi.Logger.Infof("\n%s\n%s\n", message, string(jsonBytes))
 	}
 }
+
+// DcqlHandler returns the credential query handler this client searches with.
+//
+// Exposed so ISO 18013-5 proximity can answer a DeviceRequest from the SAME view
+// of the wallet's credentials an OpenID4VP request sees. Constructing a second
+// DcqlHandler over the same format handlers would work and would be wrong: the
+// two would be separate objects whose candidate results, and any state they come
+// to keep, could diverge — a credential offered over one transport and not the
+// other, with nothing to explain it.
+func (client *Client) DcqlHandler() *dcql.DcqlHandler {
+	return client.dcqlHandler
+}
