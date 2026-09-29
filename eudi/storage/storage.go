@@ -87,6 +87,7 @@ func autoMigrateHolderModels(db *gorm.DB) error {
 		&models.MdocBatch{},
 		&models.MdocBatchInstance{},
 		&models.MdocDeviceKey{},
+		&models.WalletProviderValue{},
 	); err != nil {
 		return fmt.Errorf("auto-migrate database failed: %w", err)
 	}
@@ -123,6 +124,9 @@ func (s *storage) RemoveAll() error {
 		// Device keys minted for an issuance that never completed are bound to no
 		// instance, so the cascade above does not reach them.
 		if err := session.Delete(&models.MdocDeviceKey{}).Error; err != nil {
+			return err
+		}
+		if err := session.Delete(&models.WalletProviderValue{}).Error; err != nil {
 			return err
 		}
 		return session.Delete(&models.EudiLogEntry{}).Error

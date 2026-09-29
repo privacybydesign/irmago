@@ -55,6 +55,10 @@ func NewSdJwtVcCredentialService(
 
 var _ CredentialFormatStore = (*sdJwtVcCredentialService)(nil)
 
+func (s *sdJwtVcCredentialService) KeyIDsByHash(hash string) ([]datatypes.UUID, error) {
+	return s.store.KeyIDsByBatchHash(hash)
+}
+
 func (s *sdJwtVcCredentialService) DeleteByHash(hash string) error {
 	return s.store.DeleteBatchByHash(hash)
 }
