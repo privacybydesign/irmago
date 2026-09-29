@@ -154,6 +154,11 @@ func batchInstancesToRequest(advertised uint) uint {
 type sessionCredentialRequestPreferences struct {
 	cryptographicBindingMethod *proofs.CryptographicBindingMethod
 	proofSigningAlg            jwa.SignatureAlgorithm
+	// proofType is the proof type the request sends.
+	proofType metadata.ProofTypeIdentifier
+	// keyAttestation is the issuer's key attestation requirement for that
+	// proof type, nil when no key attestation is sent.
+	keyAttestation *metadata.KeyAttestationRequirement
 }
 
 func (s *session) perform() {
@@ -162,6 +167,15 @@ func (s *session) perform() {
 	// Determine all settings for the session based on the Credential Offer and Credential Issuer metadata
 	err := s.configureIssuerSettings()
 	if err != nil {
+		s.handler.Failure(&clientmodels.SessionError{
+			WrappedError: fmt.Sprintf("could not configure the session: %v", err),
+		})
+		return
+	}
+
+	// Before the user is asked anything: can the keys be attested the way the
+	// issuer requires?
+	if err := s.checkKeyAttestations(); err != nil {
 		s.handler.Failure(&clientmodels.SessionError{
 			WrappedError: fmt.Sprintf("could not configure the session: %v", err),
 		})
@@ -827,7 +841,21 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		var proofs []string
 		var err error
 
-		publicKeyIdentifiers, proofs, err = support.Keys.CreateKeyPairsWithProofs(s.ctx, num, proofBuilder)
+		// A key attestation is only asked for when the issuer requires one
+		// (checked before consent, in checkKeyAttestations): the wallet
+		// provider signs it with a status index of its own, which it keeps
+		// for a year.
+		var attest *services.KeyAttestationOptions
+		if credentialRequestPreferences.keyAttestation != nil {
+			attest = &services.KeyAttestationOptions{
+				AsProof: credentialRequestPreferences.proofType == metadata.ProofTypeIdentifier_Attestation,
+			}
+			if cNonce != nil {
+				attest.Nonce = *cNonce
+			}
+		}
+
+		publicKeyIdentifiers, proofs, err = support.Keys.CreateKeyPairsWithProofs(s.ctx, num, proofBuilder, attest)
 		if err != nil {
 			return nil, fmt.Errorf("could not create key pairs: %v", err)
 		}
@@ -838,7 +866,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		}
 
 		request.Proofs = &metadata.Proofs{
-			metadata.ProofTypeIdentifier_JWT: x,
+			credentialRequestPreferences.proofType: x,
 		}
 	}
 
@@ -1173,4 +1201,37 @@ func (s *session) extractAuthorizationDetailsJson() (*string, error) {
 
 	authDetailsJson := string(authDetailsJsonBytes)
 	return &authDetailsJson, nil
+}
+
+// checkKeyAttestations checks, before the user is asked anything, that every
+// offered credential whose proof type requires a key attestation can get one
+// that meets the requirement: its keys are minted by a wallet provider with an
+// active wallet unit, whose key attestations claim a protection level the
+// issuer accepts. A configuration this wallet cannot request for another
+// reason is left for obtainCredential to report, as before.
+func (s *session) checkKeyAttestations() error {
+	validator := CredentialConfigurationValidator{}
+	for _, id := range s.credentialOffer.CredentialConfigurationIds {
+		config, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[id]
+		if !ok {
+			continue
+		}
+		preferences, err := validator.ValidateAndGetSupportedFeatures(&config)
+		if err != nil || preferences.keyAttestation == nil {
+			continue
+		}
+		support, ok := s.formats[models.CredentialFormat(config.Format)]
+		if !ok || support.Keys == nil {
+			continue
+		}
+		protection, ok := support.Keys.KeyProtection(s.ctx)
+		if !ok {
+			return fmt.Errorf("credential %q requires a key attestation, which only keys held by an active wallet unit can have", id)
+		}
+		if !satisfiesKeyAttestationRequirement(preferences.keyAttestation, protection.KeyStorage, protection.UserAuthentication) {
+			return fmt.Errorf("credential %q requires key storage %v and user authentication %v, and this wallet's keys are attested as %v and %v",
+				id, preferences.keyAttestation.KeyStorage, preferences.keyAttestation.UserAuthentication, protection.KeyStorage, protection.UserAuthentication)
+		}
+	}
+	return nil
 }

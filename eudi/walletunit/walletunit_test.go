@@ -82,7 +82,7 @@ func TestCloseEndsTheUnlock(t *testing.T) {
 	u, err := s.Unlocked(context.Background(), walletprovider.Scope{Purpose: walletprovider.PurposeIssuancePoP}, false)
 	require.NoError(t, err)
 	s.Close()
-	_, err = u.GenerateKeys(context.Background(), 1)
+	_, _, err = u.GenerateKeys(context.Background(), 1, nil)
 	require.ErrorIs(t, err, walletprovider.ErrUnlockExpired)
 }
 

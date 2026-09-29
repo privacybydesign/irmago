@@ -39,8 +39,12 @@ func NewMdocKeyService(store db.MdocDeviceKeyStore, provider walletprovider.Wall
 
 var _ HolderKeyBinder = (*MdocKeyService)(nil)
 
-func (s *MdocKeyService) CreateKeyPairsWithProofs(ctx context.Context, num uint, proofBuilder proofs.ProofBuilder) ([]models.PublicHolderBindingKey, []string, error) {
-	keys, proofStrings, err := mintProofKeys(ctx, s.provider, num, proofBuilder)
+func (s *MdocKeyService) KeyProtection(ctx context.Context) (walletprovider.KeyProtection, bool) {
+	return providerKeyProtection(ctx, s.provider)
+}
+
+func (s *MdocKeyService) CreateKeyPairsWithProofs(ctx context.Context, num uint, proofBuilder proofs.ProofBuilder, attest *KeyAttestationOptions) ([]models.PublicHolderBindingKey, []string, error) {
+	keys, proofStrings, err := mintProofKeys(ctx, s.provider, num, proofBuilder, attest)
 	if err != nil {
 		return nil, nil, err
 	}

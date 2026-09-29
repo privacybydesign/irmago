@@ -131,7 +131,7 @@ func Run(t *testing.T, newProvider walletprovider.Factory, pin, wrongPin string)
 	t.Run("generated keys sign ES256 over the exact signing input", func(t *testing.T) {
 		p := activated(t)
 		u := unlock(t, p, walletprovider.PurposeIssuancePoP)
-		keys, err := u.GenerateKeys(ctx, 3)
+		keys, _, err := u.GenerateKeys(ctx, 3, nil)
 		require.NoError(t, err)
 		require.Len(t, keys, 3)
 		reqs := make([]walletprovider.SignRequest, len(keys))
@@ -151,9 +151,41 @@ func Run(t *testing.T, newProvider walletprovider.Factory, pin, wrongPin string)
 		}
 	})
 
+	t.Run("key generation without a request gives no key attestation", func(t *testing.T) {
+		p := activated(t)
+		_, ka, err := unlock(t, p, walletprovider.PurposeIssuancePoP).GenerateKeys(ctx, 2, nil)
+		require.NoError(t, err)
+		require.Nil(t, ka)
+	})
+
+	t.Run("a key attestation covers exactly the generated keys, with the nonce and the protection the provider reports", func(t *testing.T) {
+		p := activated(t)
+		protection, err := p.KeyProtection(ctx)
+		require.NoError(t, err)
+		u := unlock(t, p, walletprovider.PurposeIssuancePoP)
+
+		var indices []int
+		for _, nonce := range []string{"c-nonce-1", ""} {
+			keys, raw, err := u.GenerateKeys(ctx, 3, &walletprovider.KeyAttestationRequest{Nonce: nonce})
+			require.NoError(t, err)
+			ka, err := ParseKeyAttestation(raw)
+			require.NoError(t, err, "key attestation")
+			require.Len(t, ka.AttestedKeys, len(keys))
+			for i, k := range keys {
+				require.True(t, ka.AttestedKeys[i].Equal(k.Public), "attested key %d is generated key %d", i, i)
+			}
+			require.Equal(t, nonce, ka.Nonce)
+			require.ElementsMatch(t, protection.KeyStorage, ka.KeyStorage)
+			require.ElementsMatch(t, protection.UserAuthentication, ka.UserAuthentication)
+			indices = append(indices, ka.StatusIndex)
+		}
+		// As for instance attestations: never one index for two attestations.
+		require.NotEqual(t, indices[0], indices[1], "two key attestations share a status index")
+	})
+
 	t.Run("keys survive into a later unlock for disclosure", func(t *testing.T) {
 		p := activated(t)
-		keys, err := unlock(t, p, walletprovider.PurposeIssuancePoP).GenerateKeys(ctx, 1)
+		keys, _, err := unlock(t, p, walletprovider.PurposeIssuancePoP).GenerateKeys(ctx, 1, nil)
 		require.NoError(t, err)
 		input := []byte("kb-jwt signing input")
 		sigs, err := unlock(t, p, walletprovider.PurposeDisclosureKB).Sign(ctx, []walletprovider.SignRequest{{Ref: keys[0].Ref, SigningInput: input}})
@@ -166,13 +198,13 @@ func Run(t *testing.T, newProvider walletprovider.Factory, pin, wrongPin string)
 		u := unlock(t, p, walletprovider.PurposeIssuancePoP)
 		u.Close()
 		u.Close()
-		_, err := u.GenerateKeys(ctx, 1)
+		_, _, err := u.GenerateKeys(ctx, 1, nil)
 		require.ErrorIs(t, err, walletprovider.ErrUnlockExpired)
 	})
 
 	t.Run("removed keys can no longer sign", func(t *testing.T) {
 		p := activated(t)
-		keys, err := unlock(t, p, walletprovider.PurposeIssuancePoP).GenerateKeys(ctx, 1)
+		keys, _, err := unlock(t, p, walletprovider.PurposeIssuancePoP).GenerateKeys(ctx, 1, nil)
 		require.NoError(t, err)
 		require.NoError(t, p.RemoveKeys(ctx, []string{keys[0].Ref, "unknown-ref"}))
 		_, err = unlock(t, p, walletprovider.PurposeDisclosureKB).Sign(ctx, []walletprovider.SignRequest{{Ref: keys[0].Ref, SigningInput: []byte("x")}})
@@ -196,12 +228,12 @@ func Run(t *testing.T, newProvider walletprovider.Factory, pin, wrongPin string)
 
 	t.Run("a changed PIN replaces the old one and keeps the keys", func(t *testing.T) {
 		p := activated(t)
-		keys, err := unlock(t, p, walletprovider.PurposeIssuancePoP).GenerateKeys(ctx, 1)
+		keys, _, err := unlock(t, p, walletprovider.PurposeIssuancePoP).GenerateKeys(ctx, 1, nil)
 		require.NoError(t, err)
 		u, err := p.Unlock(ctx, pin, walletprovider.Scope{Purpose: walletprovider.PurposePinChange})
 		require.NoError(t, err)
 		require.NoError(t, u.ChangePin(ctx, wrongPin), "change PIN")
-		_, err = u.GenerateKeys(ctx, 1)
+		_, _, err = u.GenerateKeys(ctx, 1, nil)
 		require.ErrorIs(t, err, walletprovider.ErrUnlockExpired, "unlock after a PIN change")
 		_, err = p.Unlock(ctx, pin, walletprovider.Scope{Purpose: walletprovider.PurposeDisclosureKB})
 		require.Error(t, err, "the old PIN still unlocks")
@@ -216,7 +248,7 @@ func Run(t *testing.T, newProvider walletprovider.Factory, pin, wrongPin string)
 		_, err := p.Unlock(ctx, wrongPin, walletprovider.Scope{Purpose: walletprovider.PurposeDisclosureKB})
 		require.Error(t, err, "a wrong PIN unlocked")
 		u := unlock(t, p, walletprovider.PurposeIssuancePoP)
-		keys, err := u.GenerateKeys(ctx, 1)
+		keys, _, err := u.GenerateKeys(ctx, 1, nil)
 		require.NoError(t, err)
 		_, err = u.Sign(ctx, []walletprovider.SignRequest{{Ref: keys[0].Ref, SigningInput: []byte("proof")}})
 		require.NoError(t, err)

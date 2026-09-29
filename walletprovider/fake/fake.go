@@ -48,6 +48,9 @@ type Options struct {
 	// ClientID is the sub of the wallet instance attestations. Default
 	// "yivi-wallet".
 	ClientID string
+	// KeyProtection is what the key attestations claim. Default
+	// iso_18045_high for both.
+	KeyProtection *walletprovider.KeyProtection
 }
 
 // Provider is the fake wallet provider.
@@ -61,6 +64,7 @@ type Provider struct {
 	signs                int
 	revocations          int
 	instanceAttestations int
+	keyAttestations      int
 }
 
 var _ walletprovider.WalletProvider = (*Provider)(nil)
@@ -84,6 +88,12 @@ func New(opts Options) walletprovider.Factory {
 	}
 	if opts.ClientID == "" {
 		opts.ClientID = "yivi-wallet"
+	}
+	if opts.KeyProtection == nil {
+		opts.KeyProtection = &walletprovider.KeyProtection{
+			KeyStorage:         []string{"iso_18045_high"},
+			UserAuthentication: []string{"iso_18045_high"},
+		}
 	}
 	var caErr error
 	if opts.AttestationCA == nil {
@@ -128,6 +138,13 @@ func (p *Provider) InstanceAttestations() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.instanceAttestations
+}
+
+// KeyAttestations returns how many key attestations the provider has issued.
+func (p *Provider) KeyAttestations() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.keyAttestations
 }
 
 // KeyCount returns how many holder keys the provider holds.
@@ -420,6 +437,48 @@ func (p *Provider) InstanceAttestation(_ context.Context, key *ecdsa.PublicKey) 
 	return []byte(wia), nil
 }
 
+func (p *Provider) KeyProtection(context.Context) (walletprovider.KeyProtection, error) {
+	return *p.opts.KeyProtection, nil
+}
+
+// keyAttestation is a KA over keys, as a real provider's would be: the keys,
+// the nonce, the claimed protection and a status reference.
+func (p *Provider) keyAttestation(keys []walletprovider.HolderKey, nonce string) ([]byte, error) {
+	now := p.opts.Now()
+	attested := make([]any, len(keys))
+	for i, k := range keys {
+		attested[i] = providertest.JWK(k.Public)
+	}
+	status := map[string]any{"status_list": map[string]any{
+		"idx": randomIndex(),
+		"uri": "https://fake-wallet-provider.invalid/status/ka",
+	}}
+	claims := map[string]any{
+		"iat":           now.Unix(),
+		"exp":           now.Add(time.Hour).Unix(),
+		"attested_keys": attested,
+		"status":        status,
+		"key_storage_status": map[string]any{
+			"status": status,
+			"exp":    now.Add(365 * 24 * time.Hour).Unix(),
+		},
+	}
+	if nonce != "" {
+		claims["nonce"] = nonce
+	}
+	if levels := p.opts.KeyProtection.KeyStorage; len(levels) > 0 {
+		claims["key_storage"] = levels
+	}
+	if levels := p.opts.KeyProtection.UserAuthentication; len(levels) > 0 {
+		claims["user_authentication"] = levels
+	}
+	ka, err := p.opts.AttestationCA.sign(providertest.KeyAttestationType, claims)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(ka), nil
+}
+
 // unlocked is the fake's unlocked wallet unit.
 type unlocked struct {
 	provider *Provider
@@ -443,15 +502,15 @@ func (u *unlocked) use() error {
 	return nil
 }
 
-func (u *unlocked) GenerateKeys(_ context.Context, n int) ([]walletprovider.HolderKey, error) {
+func (u *unlocked) GenerateKeys(_ context.Context, n int, attest *walletprovider.KeyAttestationRequest) ([]walletprovider.HolderKey, []byte, error) {
 	if err := u.use(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if u.scope.Purpose != walletprovider.PurposeIssuancePoP {
-		return nil, fmt.Errorf("fake wallet provider: key generation is not allowed for purpose %q", u.scope.Purpose)
+		return nil, nil, fmt.Errorf("fake wallet provider: key generation is not allowed for purpose %q", u.scope.Purpose)
 	}
 	if n < 1 {
-		return nil, fmt.Errorf("fake wallet provider: cannot generate %d keys", n)
+		return nil, nil, fmt.Errorf("fake wallet provider: cannot generate %d keys", n)
 	}
 	keys := make([]walletprovider.HolderKey, 0, n)
 	err := u.provider.update(func(st *state) error {
@@ -473,9 +532,19 @@ func (u *unlocked) GenerateKeys(_ context.Context, n int) ([]walletprovider.Hold
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return keys, nil
+	if attest == nil {
+		return keys, nil, nil
+	}
+	ka, err := u.provider.keyAttestation(keys, attest.Nonce)
+	if err != nil {
+		return nil, nil, err
+	}
+	u.provider.mu.Lock()
+	u.provider.keyAttestations++
+	u.provider.mu.Unlock()
+	return keys, ka, nil
 }
 
 func (u *unlocked) Sign(_ context.Context, reqs []walletprovider.SignRequest) ([][]byte, error) {

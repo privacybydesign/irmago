@@ -43,6 +43,8 @@ type JwtProofBuilder struct {
 	alg      jwa.SignatureAlgorithm
 	clock    jwt.Clock
 	method   CryptographicBindingMethod
+	// keyAttestation, when set, goes in every proof's key_attestation header.
+	keyAttestation string
 }
 
 func NewJwtProofBuilder(issuer string, audience string, alg jwa.SignatureAlgorithm, nonce *string, clock jwt.Clock, method CryptographicBindingMethod) *JwtProofBuilder {
@@ -143,6 +145,10 @@ type ExternalProofBuilder interface {
 	SigningInput(pub *ecdsa.PublicKey) ([]byte, error)
 	// Audience is who the proofs are for: the credential issuer.
 	Audience() string
+	// WithKeyAttestation returns a builder whose proofs carry the given key
+	// attestation in their key_attestation header (OpenID4VCI 1.0 Appendix
+	// F.1), for keys that attestation covers.
+	WithKeyAttestation(keyAttestation string) ExternalProofBuilder
 }
 
 var _ ExternalProofBuilder = (*JwtProofBuilder)(nil)
@@ -150,6 +156,14 @@ var _ ExternalProofBuilder = (*JwtProofBuilder)(nil)
 // Audience returns the credential issuer the proofs are addressed to.
 func (b *JwtProofBuilder) Audience() string {
 	return b.audience
+}
+
+// WithKeyAttestation returns a copy of b whose proofs carry keyAttestation in
+// their key_attestation header.
+func (b *JwtProofBuilder) WithKeyAttestation(keyAttestation string) ExternalProofBuilder {
+	c := *b
+	c.keyAttestation = keyAttestation
+	return &c
 }
 
 // BuildWithES256Signer assembles the same openid4vci-proof+jwt as Build but signs
@@ -189,6 +203,9 @@ func (b *JwtProofBuilder) SigningInput(pub *ecdsa.PublicKey) ([]byte, error) {
 	header := map[string]any{
 		"alg": "ES256",
 		"typ": "openid4vci-proof+jwt",
+	}
+	if b.keyAttestation != "" {
+		header["key_attestation"] = b.keyAttestation
 	}
 	switch b.method {
 	case CryptographicBindingMethod_JWK, CryptographicBindingMethod_COSE:

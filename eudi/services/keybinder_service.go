@@ -29,7 +29,8 @@ import (
 // (CreateKeyPairsWithProofs) and disclosure (ResolveHolderKey).
 type HolderBindingKeyService interface {
 	sdjwt.KeyBindingStorage
-	CreateKeyPairsWithProofs(ctx context.Context, num uint, proofBuilder proofs.ProofBuilder) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofs []string, err error)
+	CreateKeyPairsWithProofs(ctx context.Context, num uint, proofBuilder proofs.ProofBuilder, attest *KeyAttestationOptions) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofs []string, err error)
+	KeyProtection(ctx context.Context) (walletprovider.KeyProtection, bool)
 	RemoveKeys(ids []datatypes.UUID) error
 	ResolveHolderKey(pubKey jwk.Key) (holdersigning.Key, error)
 }
@@ -85,8 +86,8 @@ func NewHolderBindingKeyService(d *gorm.DB, provider walletprovider.WalletProvid
 // CreateKeyPairsWithProofs creates the specified number of ECDSA key pairs, stores the private keys, and returns the corresponding proofs built using the provided proof builder.
 // The publicKeyIdentifiers are the public identifiers (either DIDs or JWK thumbprints) that can be used in the credential's proof configuration to link the credential to the correct holder binding key.
 // The proofs are the cryptographic proofs (e.g. JWTs) that the holder can present alongside the credential to prove possession of the private keys.
-func (s *holderBindingKeyService) CreateKeyPairsWithProofs(ctx context.Context, num uint, proofBuilder proofs.ProofBuilder) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofs []string, err error) {
-	keyTuples, proofs, err := mintProofKeys(ctx, s.provider, num, proofBuilder)
+func (s *holderBindingKeyService) CreateKeyPairsWithProofs(ctx context.Context, num uint, proofBuilder proofs.ProofBuilder, attest *KeyAttestationOptions) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofs []string, err error) {
+	keyTuples, proofs, err := mintProofKeys(ctx, s.provider, num, proofBuilder, attest)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -99,14 +100,21 @@ func (s *holderBindingKeyService) CreateKeyPairsWithProofs(ctx context.Context, 
 	return
 }
 
+func (s *holderBindingKeyService) KeyProtection(ctx context.Context) (walletprovider.KeyProtection, bool) {
+	return providerKeyProtection(ctx, s.provider)
+}
+
 // mintProofKeys mints num holder keys with their proofs: in the wallet
 // provider's HSM when the wallet has one, in software otherwise. With a
 // provider present, keys are never silently minted in software instead.
 //
 // The provider is unlocked through the session in ctx, which asks for the PIN
 // the first time and activates the wallet unit if it never was.
-func mintProofKeys(ctx context.Context, provider walletprovider.WalletProvider, num uint, proofBuilder proofs.ProofBuilder) ([]keyTuple, []string, error) {
+func mintProofKeys(ctx context.Context, provider walletprovider.WalletProvider, num uint, proofBuilder proofs.ProofBuilder, attest *KeyAttestationOptions) ([]keyTuple, []string, error) {
 	if provider == nil {
+		if attest != nil {
+			return nil, nil, errors.New("software keys cannot be attested; the issuer requires a key attestation")
+		}
 		return generateProofKeys(num, proofBuilder)
 	}
 	external, ok := proofBuilder.(proofs.ExternalProofBuilder)
@@ -124,20 +132,34 @@ func mintProofKeys(ctx context.Context, provider walletprovider.WalletProvider, 
 	if err != nil {
 		return nil, nil, err
 	}
-	return generateProviderProofKeys(ctx, unlocked, num, external)
+	return generateProviderProofKeys(ctx, unlocked, num, external, attest)
 }
 
 // generateProviderProofKeys mints num keys in the wallet provider's HSM and
 // signs their proofs in one batch: the signing inputs of all proofs are built
 // first, then signed with one call, so a batch costs one round trip to the
-// provider rather than one per key.
-func generateProviderProofKeys(ctx context.Context, unlocked walletprovider.UnlockedWalletUnit, num uint, external proofs.ExternalProofBuilder) ([]keyTuple, []string, error) {
-	holderKeys, err := unlocked.GenerateKeys(ctx, int(num))
+// provider rather than one per key. With attest, the provider attests the
+// keys as it mints them; as a proof, the attestation replaces the signatures.
+func generateProviderProofKeys(ctx context.Context, unlocked walletprovider.UnlockedWalletUnit, num uint, external proofs.ExternalProofBuilder, attest *KeyAttestationOptions) ([]keyTuple, []string, error) {
+	var request *walletprovider.KeyAttestationRequest
+	if attest != nil {
+		request = &walletprovider.KeyAttestationRequest{Nonce: attest.Nonce}
+	}
+	holderKeys, keyAttestation, err := unlocked.GenerateKeys(ctx, int(num), request)
 	if err != nil {
 		return nil, nil, fmt.Errorf("wallet provider failed to generate holder keys: %w", err)
 	}
 	if len(holderKeys) != int(num) {
 		return nil, nil, fmt.Errorf("wallet provider generated %d holder keys, want %d", len(holderKeys), num)
+	}
+	if attest != nil {
+		if len(keyAttestation) == 0 {
+			return nil, nil, errors.New("wallet provider returned no key attestation")
+		}
+		if attest.AsProof {
+			return attestedKeyTuples(holderKeys, string(keyAttestation))
+		}
+		external = external.WithKeyAttestation(string(keyAttestation))
 	}
 
 	requests := make([]walletprovider.SignRequest, num)
@@ -172,6 +194,20 @@ func generateProviderProofKeys(ctx context.Context, unlocked walletprovider.Unlo
 		}
 	}
 	return keyTuples, proofStrings, nil
+}
+
+// attestedKeyTuples is the result for the attestation proof type: the keys,
+// and the key attestation as the one proof.
+func attestedKeyTuples(holderKeys []walletprovider.HolderKey, keyAttestation string) ([]keyTuple, []string, error) {
+	keyTuples := make([]keyTuple, len(holderKeys))
+	for i, key := range holderKeys {
+		jwkPubKey, err := signingJwk(key.Public)
+		if err != nil {
+			return nil, nil, err
+		}
+		keyTuples[i] = keyTuple{ref: key.Ref, pub: key.Public, jwkPubKey: jwkPubKey}
+	}
+	return keyTuples, []string{keyAttestation}, nil
 }
 
 // signingJwk returns pub as a JWK marked for signature use.

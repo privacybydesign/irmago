@@ -30,7 +30,7 @@ func TestFakeUnlockExpiresWhenIdle(t *testing.T) {
 	u, err := p.Unlock(ctx, "12345", walletprovider.Scope{Purpose: walletprovider.PurposeIssuancePoP})
 	require.NoError(t, err)
 	now = now.Add(2 * time.Minute)
-	_, err = u.GenerateKeys(ctx, 1)
+	_, _, err = u.GenerateKeys(ctx, 1, nil)
 	require.ErrorIs(t, err, walletprovider.ErrUnlockExpired)
 }
 

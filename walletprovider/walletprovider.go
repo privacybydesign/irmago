@@ -124,6 +124,32 @@ type WalletProvider interface {
 	// Returns ErrNotActivated without an active wallet unit, and
 	// ErrAttestationRefused when the provider will not vouch for this one.
 	InstanceAttestation(ctx context.Context, key *ecdsa.PublicKey) ([]byte, error)
+	// KeyProtection is what the provider's key attestations say about how its
+	// holder keys are protected, known without the PIN, so the wallet can tell
+	// before asking the user anything whether an issuer's requirements can be
+	// met.
+	KeyProtection(ctx context.Context) (KeyProtection, error)
+}
+
+// KeyProtection is how strongly holder keys are protected, as ISO 18045
+// attack potential resistance levels ("iso_18045_high", "iso_18045_moderate",
+// "iso_18045_enhanced-basic", "iso_18045_basic"; OpenID4VCI 1.0 Appendix
+// D.2). Each is what the key attestation claims (key_storage,
+// user_authentication), empty when it claims nothing.
+type KeyProtection struct {
+	// KeyStorage is the resistance of the key storage component and its keys.
+	KeyStorage []string
+	// UserAuthentication is the resistance of the user authentication needed
+	// to use the keys.
+	UserAuthentication []string
+}
+
+// KeyAttestationRequest asks GenerateKeys for a key attestation over the keys
+// it generates.
+type KeyAttestationRequest struct {
+	// Nonce is the credential issuer's c_nonce, which the attestation carries
+	// to show it is fresh; empty when the issuer has no nonce endpoint.
+	Nonce string
 }
 
 // Purpose is what an unlocked wallet unit may be used for.
@@ -211,8 +237,12 @@ type SignRequest struct {
 // the session ends; the provider may also expire it after a period without
 // use, after which every call returns ErrUnlockExpired.
 type UnlockedWalletUnit interface {
-	// GenerateKeys creates n holder keys in the HSM.
-	GenerateKeys(ctx context.Context, n int) ([]HolderKey, error)
+	// GenerateKeys creates n holder keys in the HSM. With attest non-nil it
+	// also returns one key attestation (KA, a key-attestation+jwt as in
+	// OpenID4VCI 1.0 Appendix D) over exactly those keys, claiming the
+	// protection KeyProtection reports; otherwise keyAttestation is nil. A key
+	// attestation only ever covers keys generated in the same call.
+	GenerateKeys(ctx context.Context, n int, attest *KeyAttestationRequest) (keys []HolderKey, keyAttestation []byte, err error)
 	// Sign makes one signature per request, in order, each a raw 64-byte r‖s
 	// ES256 signature as a JWS carries it.
 	Sign(ctx context.Context, reqs []SignRequest) ([][]byte, error)

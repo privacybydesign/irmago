@@ -207,3 +207,130 @@ func numericDate(v any) (time.Time, bool) {
 	}
 	return time.Unix(int64(f), 0), true
 }
+
+// KeyAttestationType is the typ of a key attestation (OpenID4VCI 1.0
+// Appendix D).
+const KeyAttestationType = "key-attestation+jwt"
+
+// KeyAttestation is what ParseKeyAttestation found in a KA.
+type KeyAttestation struct {
+	AttestedKeys []*ecdsa.PublicKey
+	// Nonce is the issuer's c_nonce, empty when the KA carries none.
+	Nonce  string
+	Expiry time.Time
+	// KeyStorage and UserAuthentication are the claimed attack potential
+	// resistance levels, empty when not claimed.
+	KeyStorage         []string
+	UserAuthentication []string
+	// StatusIndex and StatusURI locate the KA in its Token Status List, which
+	// the provider maintains until StatusExpiry (TS3 key_storage_status).
+	StatusIndex  int
+	StatusURI    string
+	StatusExpiry time.Time
+	Chain        []*x509.Certificate
+	Claims       map[string]any
+}
+
+// ParseKeyAttestation checks a KA's shape and signature: an ES256 JWS with
+// typ key-attestation+jwt, signed by the leaf of its x5c chain (as for
+// ParseInstanceAttestation); an iat; an exp in the future, which a KA used
+// with the jwt proof type must have; a non-empty attested_keys of P-256
+// public JWKs; key_storage and user_authentication, when present, as
+// non-empty string arrays; a nonce, when present, as a string; and a status
+// reference both as Appendix D's status and as TS3's key_storage_status,
+// naming the same entry, maintained no shorter than the KA is valid. It does
+// not decide whether the chain's root is trusted.
+func ParseKeyAttestation(ka []byte) (*KeyAttestation, error) {
+	header, claims, chain, err := parseSignedJWT(string(ka))
+	if err != nil {
+		return nil, err
+	}
+	if header["typ"] != KeyAttestationType {
+		return nil, fmt.Errorf("typ is %v, want %s", header["typ"], KeyAttestationType)
+	}
+	a := &KeyAttestation{Chain: chain, Claims: claims}
+	if _, ok := numericDate(claims["iat"]); !ok {
+		return nil, errors.New("no iat")
+	}
+	exp, ok := numericDate(claims["exp"])
+	if !ok || !exp.After(time.Now()) {
+		return nil, fmt.Errorf("exp %v is missing or passed", exp)
+	}
+	a.Expiry = exp
+
+	keys, _ := claims["attested_keys"].([]any)
+	if len(keys) == 0 {
+		return nil, errors.New("no attested_keys")
+	}
+	for i, k := range keys {
+		jwk, _ := k.(map[string]any)
+		pub, err := PublicKeyFromJWK(jwk)
+		if err != nil {
+			return nil, fmt.Errorf("attested_keys[%d]: %w", i, err)
+		}
+		a.AttestedKeys = append(a.AttestedKeys, pub)
+	}
+
+	for name, dst := range map[string]*[]string{"key_storage": &a.KeyStorage, "user_authentication": &a.UserAuthentication} {
+		v, present := claims[name]
+		if !present {
+			continue
+		}
+		list, _ := v.([]any)
+		if len(list) == 0 {
+			return nil, fmt.Errorf("%s is not a non-empty array", name)
+		}
+		for _, entry := range list {
+			s, ok := entry.(string)
+			if !ok || s == "" {
+				return nil, fmt.Errorf("%s holds a non-string", name)
+			}
+			*dst = append(*dst, s)
+		}
+	}
+	if v, present := claims["nonce"]; present {
+		if a.Nonce, ok = v.(string); !ok || a.Nonce == "" {
+			return nil, errors.New("nonce is not a string")
+		}
+	}
+
+	status, _ := claims["status"].(map[string]any)
+	idx, uri, err := statusListReference(status)
+	if err != nil {
+		return nil, fmt.Errorf("status: %w", err)
+	}
+	keyStorageStatus, _ := claims["key_storage_status"].(map[string]any)
+	inner, _ := keyStorageStatus["status"].(map[string]any)
+	idx2, uri2, err := statusListReference(inner)
+	if err != nil {
+		return nil, fmt.Errorf("key_storage_status: %w", err)
+	}
+	if idx != idx2 || uri != uri2 {
+		return nil, errors.New("status and key_storage_status name different entries")
+	}
+	a.StatusIndex, a.StatusURI = idx, uri
+	if a.StatusExpiry, ok = numericDate(keyStorageStatus["exp"]); !ok {
+		return nil, errors.New("key_storage_status has no exp")
+	}
+	if a.StatusExpiry.Before(a.Expiry) {
+		return nil, errors.New("the status is maintained for less long than the KA is valid")
+	}
+	return a, nil
+}
+
+// statusListReference reads {"status_list": {"idx": …, "uri": …}}.
+func statusListReference(status map[string]any) (int, string, error) {
+	ref, _ := status["status_list"].(map[string]any)
+	if ref == nil {
+		return 0, "", errors.New("no status_list")
+	}
+	idx, ok := ref["idx"].(float64)
+	if !ok || idx < 0 || idx != float64(int(idx)) {
+		return 0, "", errors.New("no valid idx")
+	}
+	uri, _ := ref["uri"].(string)
+	if uri == "" {
+		return 0, "", errors.New("no uri")
+	}
+	return int(idx), uri, nil
+}
