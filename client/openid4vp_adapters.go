@@ -38,7 +38,8 @@ func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []client
 	// no credentials were shared (all-optional sets skipped by the user) so the
 	// user can still see which verifier they had a session with.
 	logService := services.NewEudiLogService(a.session.client.eudiStorage, a.session.client.locale())
-	if err := logService.AddDisclosureLog(a.session.State.Requestor, credentialLogs); err != nil {
+	if err := logService.AddDisclosureLog(
+		clientmodels.Protocol_OpenID4VP, a.session.State.Requestor, credentialLogs); err != nil {
 		eudi.Logger.Errorf("failed to store openid4vp disclosure log: %v", err)
 	}
 
@@ -69,39 +70,16 @@ func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 	a.session.dispatchState()
 }
 
-// disclosureChoicesToOpenID4VPSelections converts UI disclosure choices to OpenID4VP selections.
+// disclosureChoicesToOpenID4VPSelections converts UI disclosure choices to
+// OpenID4VP selections.
 //
-// The choices arrive in the order of the plan's pick-ones, one entry each, so a
-// choice's position is what narrows down which DCQL query it answers, and the
-// selected credential and its paths pick the candidate within that choice. A
-// credential hash alone cannot do it: one credential can answer several queries,
-// and looking the query up by hash across the whole request routed every
-// presentation to whichever query was seen last.
+// The logic moved to dcql.SelectionsFromChoices when ISO 18013-5 proximity became
+// a second caller: it answers "which DCQL query does this user choice satisfy",
+// which is neither OpenID4VP-specific nor client-specific, and getting it wrong
+// has a history (see that function). This wrapper stays so the call sites below
+// read unchanged.
 func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDisconSelection, queryIds []dcql.ChoiceQueryIds) []dcql.DisclosureSelection {
-	var selections []dcql.DisclosureSelection
-	for i, discon := range choices {
-		// A choice with no matching entry leaves the query id empty, which
-		// PrepareDisclosure reports as an unknown query rather than guessing.
-		var choiceQueryIds dcql.ChoiceQueryIds
-		if i < len(queryIds) {
-			choiceQueryIds = queryIds[i]
-		}
-		for _, cred := range discon.Credentials {
-			claimPaths := make([][]any, 0, len(cred.AttributePaths))
-			for _, path := range cred.AttributePaths {
-				if len(path) > 0 {
-					claimPaths = append(claimPaths, path)
-				}
-			}
-			queryId := choiceQueryIds.QueryIdFor(cred.CredentialHash, cred.AttributePaths)
-			selections = append(selections, dcql.DisclosureSelection{
-				QueryId:        queryId,
-				CredentialHash: cred.CredentialHash,
-				ClaimPaths:     claimPaths,
-			})
-		}
-	}
-	return selections
+	return dcql.SelectionsFromChoices(choices, queryIds)
 }
 
 // detectWrongCredentialIssued checks if any newly issued credential matches a required

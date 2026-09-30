@@ -30,6 +30,20 @@ type EudiLogEntry struct {
 	// existed read back false, which is the pre-existing behaviour.
 	RequestorVerified bool
 
+	// RequestorAnonymous records that nothing identified itself: the session had
+	// an address the platform vouched for and no name at all. Stored separately
+	// from RequestorVerified because the two answer different questions -- one
+	// asks whether a name was authenticated, the other whether there was a name
+	// -- and collapsing them would make a stranger indistinguishable in the log
+	// from an issuer whose real metadata merely was not signed.
+	RequestorAnonymous bool
+
+	// RequestorOrigin is the web origin the platform authenticated, when the
+	// session arrived through the Digital Credentials API. For an anonymous
+	// requestor it is the only identity there is, so an entry without it is an
+	// entry the user cannot act on.
+	RequestorOrigin string
+
 	// Logged credentials.
 	Credentials []EudiLogCredential `gorm:"foreignKey:EudiLogEntryID;constraint:OnDelete:CASCADE"`
 }

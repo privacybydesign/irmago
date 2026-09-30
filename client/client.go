@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
@@ -43,6 +45,7 @@ type Client struct {
 	storage           *clientstorage.Storage
 	eudiStorage       storage.Storage
 	sdjwtvcStorage    irmaclient.SdJwtVcStorage
+	eudiConf          *eudi.Configuration
 	openid4vpClient   *openid4vp.Client
 	openid4vciClient  *openid4vci.Client
 	irmaClient        *irmaclient.IrmaClient
@@ -53,6 +56,11 @@ type Client struct {
 	sessionManager    sessionManager
 	credentialFormats services.CredentialFormats
 	revocationService *services.RevocationService
+
+	// zkSystems are the zero-knowledge systems this build has, or nil. Nil is the
+	// ordinary state rather than an error, and routes an AV request to the plain
+	// presentation instead of failing it — see WithZkProver.
+	zkSystems *mdoc.ZkSystemRepository
 
 	// handler is how the wallet wakes the app when what it has already rendered
 	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
@@ -80,6 +88,10 @@ func New(
 	signer irmaclient.Signer,
 	aesKey [32]byte,
 	locale string,
+
+	// options carry the capabilities only some builds have — a native ZK prover,
+	// today. Empty is a complete wallet; see options.go.
+	options ...Option,
 ) (*Client, error) {
 	// Required: the wallet calls it from background jobs and from IrmaClient
 	// without a nil guard, so a nil one would panic on a goroutine no caller
@@ -268,6 +280,7 @@ func New(
 		storage:           s,
 		sdjwtvcStorage:    sdjwtvcStorage,
 		eudiStorage:       eudiStorage,
+		eudiConf:          eudiConf,
 		openid4vpClient:   openid4vpClient,
 		openid4vciClient:  openid4vciClient,
 		irmaClient:        irmaClient,
@@ -298,6 +311,12 @@ func New(
 	// are missing from the cache (credentials issued before the wallet became
 	// locale-aware, or whose issuance-time download failed).
 	client.logoBackfill.Request(currentLocale.Get())
+
+	// Last, so an option can read whatever New assembled, and so ordering among
+	// options is the caller's rather than a side effect of where they run.
+	for _, option := range options {
+		option(client)
+	}
 
 	return client, nil
 }
@@ -578,11 +597,42 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 			if !ok {
 				return fmt.Errorf("error while deleting eudi credential: no storage for format %q", format)
 			}
+			// Already gone is the outcome the caller asked for. An app holding a
+			// stale list -- one it could not redraw, or one read before another
+			// deletion -- would otherwise get an error for a credential that is
+			// absent precisely because removing it worked, and the signal below
+			// is what lets it recover. Skipped rather than returned early for a
+			// second reason: a credential stored in more than one format is one
+			// entry to the user, and aborting on the first missing format would
+			// leave the formats after it behind.
 			if err := support.Store.DeleteByHash(hash); err != nil {
-				return fmt.Errorf("error while deleting eudi credential: %v", err)
+				if !errors.Is(err, db.ErrNotFound) {
+					return fmt.Errorf("error while deleting eudi credential: %v", err)
+				}
+				// Logged, never silent. If this fires for a credential the app is
+				// still showing, the list and storage disagree about the hash and
+				// the card can never be removed -- a zombie that reports success
+				// on every tap. That is worth a line in the log, and is a
+				// different fault from the stale-list case this tolerates.
+				irma.Logger.Warnf(
+					"eudi credential of format %q with hash %s was already gone; treating removal as done",
+					format, hash)
 			}
 		}
 	}
+
+	// Every other mutation of the credential list signals this -- issuance
+	// through UpdateAttributes, revocation through Revoked, the status sweep and
+	// the logo backfill -- and removal is the one that did not, so the app kept
+	// rendering credentials the wallet no longer had. Signalled here rather than
+	// per branch so it covers an IRMA removal, a EUDI removal and a request
+	// naming both.
+	//
+	// Before the log write, not after: the credentials are already gone by this
+	// point, and a failed log entry must not cost the app the redraw. It is also
+	// why this is not deferred -- an early return above means nothing was
+	// deleted, and signalling then would make the app re-read for nothing.
+	client.handler.CredentialsChanged()
 
 	// Create removal log for IRMA credentials.
 	if len(irmaRelevantCreds) > 0 {

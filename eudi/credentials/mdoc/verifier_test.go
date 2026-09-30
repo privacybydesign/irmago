@@ -657,8 +657,8 @@ func TestDeviceAuthWrongSessionIsRejected(t *testing.T) {
 	// transcript than the one the verifier actually used. Simulates a
 	// replayed deviceAuth from an earlier/different session.
 	otherTranscript := SessionTranscript{
-		DeviceEngagementBytes: []byte("different-engagement"),
-		EReaderKeyBytes:       []byte("different-reader-key"),
+		DeviceEngagementBytes: testTag24("different-engagement"),
+		EReaderKeyBytes:       testTag24("different-reader-key"),
 		Handover:              "different-handover",
 	}
 	replayedDeviceAuth, err := deviceSigner.SignDeviceAuth(docType, otherTranscript)
@@ -843,6 +843,125 @@ func TestVerifyDeviceResponseRejectsMissingDeviceSigned(t *testing.T) {
 
 	_, err := verifier.VerifyDeviceResponse(resp, namespace, docType, transcript)
 	require.Error(t, err, "expected error for document missing DeviceSigned, got none")
+}
+
+// TestVerifyDeviceResponseAcceptsDeviceMac runs a document authenticated the
+// other way 9.1.3.4 allows through the same entry point.
+//
+// Which branch of DeviceAuth a document uses is the mdoc's choice, so a reader
+// implementing only deviceSignature rejects conformant responses — and rejects
+// them as bad signatures, since the signature field it read was simply empty.
+// That the wallet in this repository always signs is beside the point: what it
+// produces does not limit what a reader it drives has to accept.
+func TestVerifyDeviceResponseAcceptsDeviceMac(t *testing.T) {
+	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
+
+	eReaderKey := testEphemeralKey(t)
+	deviceMac, err := MacDeviceAuth(holder, docType, transcript, &eReaderKey.PublicKey)
+	if err != nil {
+		t.Fatalf("MacDeviceAuth: %v", err)
+	}
+	attached, err := AttachDeviceMac(presented, deviceMac)
+	if err != nil {
+		t.Fatalf("AttachDeviceMac: %v", err)
+	}
+
+	results, err := verifier.VerifyDeviceResponseAsReader(
+		NewDeviceResponse(*attached), namespace, docType, transcript, eReaderKey)
+	if err != nil {
+		t.Fatalf("VerifyDeviceResponseAsReader: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Valid {
+		t.Fatalf("expected a valid result, got error: %s", results[0].Error)
+	}
+	if !results[0].DeviceAuthValid {
+		t.Fatalf("expected deviceAuth to verify, got error: %s", results[0].Error)
+	}
+}
+
+// TestVerifyDeviceResponseRejectsDeviceMacFromAnotherSession is the other half
+// of the test above: accepting a MAC is only worth anything if the wrong key
+// still fails. EMacKey is ECDH(EReaderKey.Priv, SDeviceKey.Pub), so a reader
+// holding a different ephemeral key derives a different key entirely.
+func TestVerifyDeviceResponseRejectsDeviceMacFromAnotherSession(t *testing.T) {
+	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
+
+	eReaderKey := testEphemeralKey(t)
+	otherReaderKey := testEphemeralKey(t)
+	deviceMac, err := MacDeviceAuth(holder, docType, transcript, &eReaderKey.PublicKey)
+	if err != nil {
+		t.Fatalf("MacDeviceAuth: %v", err)
+	}
+	attached, err := AttachDeviceMac(presented, deviceMac)
+	if err != nil {
+		t.Fatalf("AttachDeviceMac: %v", err)
+	}
+
+	results, err := verifier.VerifyDeviceResponseAsReader(
+		NewDeviceResponse(*attached), namespace, docType, transcript, otherReaderKey)
+	if err != nil {
+		t.Fatalf("VerifyDeviceResponseAsReader: %v", err)
+	}
+	if results[0].Valid || results[0].DeviceAuthValid {
+		t.Fatal("a deviceMac keyed to another reader's ephemeral key must not verify")
+	}
+}
+
+// TestVerifyDeviceResponseNamesTheMissingReaderKey covers the entry point that
+// has no ephemeral key to offer. A deviceMac cannot be checked without one, and
+// saying so is the point: reported as a bad signature, as it was, this looks
+// like a holder at fault for a branch the caller never supplied the key for.
+func TestVerifyDeviceResponseNamesTheMissingReaderKey(t *testing.T) {
+	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
+
+	eReaderKey := testEphemeralKey(t)
+	deviceMac, err := MacDeviceAuth(holder, docType, transcript, &eReaderKey.PublicKey)
+	if err != nil {
+		t.Fatalf("MacDeviceAuth: %v", err)
+	}
+	attached, err := AttachDeviceMac(presented, deviceMac)
+	if err != nil {
+		t.Fatalf("AttachDeviceMac: %v", err)
+	}
+
+	results, err := verifier.VerifyDeviceResponse(NewDeviceResponse(*attached), namespace, docType, transcript)
+	if err != nil {
+		t.Fatalf("VerifyDeviceResponse: %v", err)
+	}
+	if results[0].Valid {
+		t.Fatal("a deviceMac must not be accepted without the key that checks it")
+	}
+	if !strings.Contains(results[0].Error, "ephemeral private key") {
+		t.Errorf("the refusal should name what is missing, got: %s", results[0].Error)
+	}
+}
+
+// TestVerifyDeviceResponseRejectsBothBranches pins the CDDL's exclusive choice
+// at the entry point that reads it off the wire. A DeviceAuth carrying both
+// makes two claims with nothing to say which governs; previously only the
+// signature was read, so the deviceMac rode along unexamined.
+func TestVerifyDeviceResponseRejectsBothBranches(t *testing.T) {
+	_, holder, verifier, presented, transcript, deviceAuthBytes, docType, namespace := buildHappyPathMDoc(t)
+
+	eReaderKey := testEphemeralKey(t)
+	deviceMac, err := MacDeviceAuth(holder, docType, transcript, &eReaderKey.PublicKey)
+	if err != nil {
+		t.Fatalf("MacDeviceAuth: %v", err)
+	}
+	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
+	if err != nil {
+		t.Fatalf("AttachDeviceSigned: %v", err)
+	}
+	attached.DeviceSigned.DeviceAuth.DeviceMac = deviceMac
+
+	_, err = verifier.VerifyDeviceResponseAsReader(
+		NewDeviceResponse(*attached), namespace, docType, transcript, eReaderKey)
+	if err == nil {
+		t.Fatal("a DeviceAuth carrying both branches must be refused")
+	}
 }
 
 // TestVerifierAcceptsTaggedCoseSign1 pins the deliberate asymmetry in
@@ -1101,4 +1220,30 @@ func TestKeyAuthorizationsRoundTripDoesNotChangeSignedBytes(t *testing.T) {
 	require.NoError(t, err, "unmarshal: %v", err)
 	require.Nil(t, round.KeyAuthorizations, "absent optional fields should decode to nil")
 	require.Nil(t, round.KeyInfo, "absent optional fields should decode to nil")
+}
+
+// TestVerifyDeviceResponseRefusesZkDocuments: this entry point walks Documents,
+// so a response whose content is all proofs came back as an empty slice and a
+// nil error -- which a caller checking only the error reads as a verified
+// presentation over proofs nothing looked at.
+//
+// Refusing is the fix rather than verifying them here: the ZK path needs a
+// circuit repository, an accepted-circuit set and a clock, none of which this
+// signature carries. What matters is that the response cannot pass silently.
+func TestVerifyDeviceResponseRefusesZkDocuments(t *testing.T) {
+	verifier := NewVerifier(nil)
+
+	zkOnly := NewDeviceResponse().WithZkDocuments(ZkDocument{
+		DocumentData: NewZkDocumentData("spec", "eu.europa.ec.av.1", time.Now(), nil, nil),
+		Proof:        []byte{0x01},
+	})
+
+	results, err := verifier.VerifyDeviceResponse(
+		zkOnly, "eu.europa.ec.av.1", "eu.europa.ec.av.1", SessionTranscript{})
+
+	require.Error(t, err, "a response carrying proofs must not verify as though it carried none")
+	require.Empty(t, results)
+	require.Contains(t, err.Error(), "zkDocuments")
+	require.Contains(t, err.Error(), "VerifyZkDocument",
+		"the error has to name what does verify them, or the caller has nowhere to go")
 }
