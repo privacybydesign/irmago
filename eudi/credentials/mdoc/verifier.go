@@ -549,6 +549,100 @@ func (r VerificationResult) RequireElements(elements ...string) error {
 // VerifyAllDisclosedNamespaces for every namespace present). Returns a nil
 // *MSO alongside a result with Error set on any failure; result.DocType,
 // result.DeviceKey, and result.ValidityInfo are always populated on success.
+// verifyDocumentSignerChain establishes that a document signer belongs to a
+// trusted attestation provider: that its certificate chains to a pinned root,
+// that it was issued as a document signer rather than for some other role
+// beneath the same root, and that nothing in the chain has been revoked.
+//
+// certs is an x5chain, leaf first. Intermediates come from two places -- the
+// credential's own chain (certs[1:], typically the IACA) and the trust model,
+// which may carry the CA that signs document signers beneath a self-signed
+// root. Both are needed: an issuer that ships only its DS certificate cannot be
+// verified without the pinned intermediate. The pool is cloned rather than added
+// to, because the trust model's own is shared with every other verification.
+//
+// Shared by the ordinary and the zero-knowledge presentation paths. A proof
+// establishes that SOME key signed the attestation; it says nothing about whose
+// key it is, and answering that is this function, unchanged. Keeping one copy is
+// deliberate -- the halves that are easy to drop are the EKU and the revocation
+// check, and a second copy is where they get dropped.
+func (v *Verifier) verifyDocumentSignerChain(certs []*x509.Certificate) (*x509.Certificate, error) {
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("x5chain is empty: there is no document signer to verify")
+	}
+	dsCert := certs[0]
+
+	opts := v.verificationOptions()
+	intermediates := x509.NewCertPool()
+	if opts.Intermediates != nil {
+		intermediates = opts.Intermediates.Clone()
+	}
+	for _, c := range certs[1:] {
+		intermediates.AddCert(c)
+	}
+
+	// x509.Verify walks: DS cert -> intermediates -> trusted root. This is what
+	// prevents a chain attack: an attacker's root is not in Roots.
+	chains, err := dsCert.Verify(x509.VerifyOptions{
+		Roots:         opts.Roots,
+		Intermediates: intermediates,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		CurrentTime:   v.currentTime(),
+	})
+	if err != nil {
+		// Name the document signer. The two usual causes -- an issuer whose CA is
+		// not pinned at all, and one whose chain needs an intermediate that neither
+		// x5chain nor the trust model carries -- are indistinguishable from the bare
+		// x509 error.
+		return nil, fmt.Errorf(
+			"chain verification failed: %v (document signer subject %q, serial %X, issued by %q, x5chain length %d)",
+			err, dsCert.Subject.String(), dsCert.SerialNumber, dsCert.Issuer.String(), len(certs))
+	}
+
+	// The chain above proves the DS cert descends from a trusted IACA root. This
+	// proves it was issued *as a document signer*.
+	if err := checkDocumentSignerEKU(dsCert); err != nil {
+		return nil, err
+	}
+
+	// Revocation. 9.3.3 requires a party performing path validation to have
+	// "access to certificate revocation information", and Annex B.1.4 makes a CRL
+	// distribution point mandatory on a document signer precisely so this is
+	// possible. Chain validity is a statement about dates and signatures; it says
+	// nothing about a key that was compromised and withdrawn yesterday.
+	if err := v.checkChainRevocation(chains); err != nil {
+		return nil, err
+	}
+
+	return dsCert, nil
+}
+
+// VerifyZkIssuer establishes that a zero-knowledge presentation came from a
+// trusted attestation provider, and returns the document signer it came from.
+//
+// This is the half VerifyZkDocument deliberately does not do. A proof
+// establishes that the attestation it is about was signed by the key its
+// statement is relative to; it establishes nothing whatsoever about whose key
+// that is. Without this call a wallet can mint its own IACA, issue itself an
+// attestation saying it is over eighteen, and produce a proof that verifies
+// perfectly -- the cryptography is sound and the answer is a lie.
+//
+// Call it for every zkDocument, and call it BEFORE reading anything out of
+// DocumentData: every field there is attacker-controlled until both this and
+// the proof have returned nil.
+func (v *Verifier) VerifyZkIssuer(document ZkDocument) (*x509.Certificate, error) {
+	if len(document.DocumentData.MsoX5Chain) == 0 {
+		return nil, fmt.Errorf(
+			"zkDocument for docType %q carries no msoX5chain: the proof is relative to an issuer key, and without the chain there is nothing to say the key is an issuer's",
+			document.DocumentData.DocType)
+	}
+	dsCert, err := v.verifyDocumentSignerChain(document.DocumentData.MsoX5Chain)
+	if err != nil {
+		return nil, fmt.Errorf("zkDocument for docType %q: %w", document.DocumentData.DocType, err)
+	}
+	return dsCert, nil
+}
+
 func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult) {
 	// DocType is deliberately left empty until the MSO has been decoded and its
 	// docType matched against the envelope's (step 5c). Seeding it from
@@ -573,60 +667,12 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 		return nil, result
 	}
 
-	dsCert := certs[0]
-
-	// build intermediate pool from certs[1..n] (the IACA cert)
-	// Intermediates come from two places: the credential's own x5chain
-	// (certs[1:], typically the IACA) and the trust model, which may carry
-	// the CA that signs document signers as an intermediate beneath a
-	// self-signed root. Both are needed — an issuer that ships only its DS
-	// certificate cannot be verified without the pinned intermediate. Clone
-	// rather than add to the trust model's pool, which is shared with every
-	// other verification.
-	opts := v.verificationOptions()
-	intermediates := x509.NewCertPool()
-	if opts.Intermediates != nil {
-		intermediates = opts.Intermediates.Clone()
-	}
-	for _, c := range certs[1:] {
-		intermediates.AddCert(c)
-	}
-
-	// Step 3: verify the full chain
-	// x509.Verify walks: DS cert → intermediates → trusted root
-	// This is what prevents a chain attack — attacker's root won't be in Roots
-	chains, err := dsCert.Verify(x509.VerifyOptions{
-		Roots:         opts.Roots,
-		Intermediates: intermediates,
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-		CurrentTime:   v.currentTime(),
-	})
+	// Steps 3, 3b and 3c. Shared with the zero-knowledge path, which has to
+	// establish exactly the same thing about exactly the same chain: see
+	// VerifyZkIssuer. Two copies of this would be two places to forget the
+	// revocation check.
+	dsCert, err := v.verifyDocumentSignerChain(certs)
 	if err != nil {
-		// Name the document signer. The two usual causes — an issuer whose CA
-		// is not pinned at all, and one whose chain needs an intermediate that
-		// neither x5chain nor the trust model carries — are indistinguishable
-		// from the bare x509 error.
-		result.Error = fmt.Sprintf(
-			"chain verification failed: %v (document signer subject %q, serial %X, issued by %q, x5chain length %d)",
-			err, dsCert.Subject.String(), dsCert.SerialNumber, dsCert.Issuer.String(), len(certs),
-		)
-		return nil, result
-	}
-
-	// Step 3b: the chain above proves the DS cert descends from a trusted IACA
-	// root. This proves it was issued *as a document signer*, rather than for
-	// some other role beneath the same root.
-	if err := checkDocumentSignerEKU(dsCert); err != nil {
-		result.Error = err.Error()
-		return nil, result
-	}
-
-	// Step 3c: revocation. 9.3.3 requires a party performing path validation to
-	// have "access to certificate revocation information", and Annex B.1.4 makes
-	// a CRL distribution point mandatory on a document signer precisely so this
-	// is possible. Chain validity is a statement about dates and signatures; it
-	// says nothing about a key that was compromised and withdrawn yesterday.
-	if err := v.checkChainRevocation(chains); err != nil {
 		result.Error = err.Error()
 		return nil, result
 	}
@@ -1316,6 +1362,22 @@ func (v *Verifier) VerifyDeviceResponseAsReader(
 	transcript SessionTranscript,
 	eReaderKey *ecdsa.PrivateKey,
 ) ([]VerificationResult, error) {
+	// Refused rather than skipped. This walks resp.Documents, so a response whose
+	// content is all in zkDocuments used to come back as an empty slice and a nil
+	// error -- which a caller checking only the error reads as a verified
+	// presentation, over proofs nothing looked at. Silently ignoring content is
+	// how a verifier ends up reporting success for a document it never saw.
+	//
+	// A caller that does handle proofs verifies them with VerifyZkDocument and
+	// VerifyZkIssuer, then clears the field before calling this for whatever
+	// plain documents remain. That makes "these are handled" something the caller
+	// has to say, rather than something this assumes.
+	if len(resp.ZkDocuments) > 0 {
+		return nil, fmt.Errorf(
+			"DeviceResponse carries %d zkDocuments, which this does not verify: use VerifyZkDocument and VerifyZkIssuer for those, or eudi/isomdoc/reader.Builder.Verify for a whole response",
+			len(resp.ZkDocuments))
+	}
+
 	results := make([]VerificationResult, 0, len(resp.Documents))
 	for i := range resp.Documents {
 		doc := resp.Documents[i]

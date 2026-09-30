@@ -75,6 +75,20 @@ type SessionState struct {
 	// matches, and the response the app hands back is sealed to the reader.
 	ZeroKnowledge bool `json:"zero_knowledge,omitempty"`
 
+	// DisclosureDurationMs is how long the wallet worked after the user agreed,
+	// in milliseconds: candidate selection, deviceAuth, any zero-knowledge proof
+	// and the seal. Set alongside ZeroKnowledge, on org-iso-mdoc only.
+	//
+	// It deliberately excludes the time the consent screen was on display. That
+	// is the user reading rather than the wallet working, and it is the dominant
+	// term, so including it would drown the number the app wants to show.
+	//
+	// Reported because a zero-knowledge proof is the one disclosure whose cost is
+	// worth naming: it is seconds rather than milliseconds, the app makes the user
+	// wait through it, and saying how long it took is the difference between a
+	// wallet that felt slow and one that did visible work.
+	DisclosureDurationMs int64 `json:"disclosure_duration_ms,omitempty"`
+
 	// OID4VCI specific fields
 	OfferedCredentialTypes []*CredentialDescriptor `json:"offered_credential_types"`
 

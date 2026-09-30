@@ -249,7 +249,7 @@ func (s *Session) Respond(request Request) (mdoc.DCAPIEncryptedResponse, error) 
 		return empty, fmt.Errorf("invalid deviceRequest: %w", err)
 	}
 
-	documents, err := s.evaluate(deviceRequest, transcript)
+	documents, err := s.evaluate(deviceRequest, transcript, request.Origin)
 	if err != nil {
 		return empty, err
 	}
@@ -356,7 +356,7 @@ func recipientKeyFrom(encoded string) (*ecdsa.PublicKey, error) {
 // This was once the other way round -- the 7.2.1 carve-out applied here as
 // written for 18013-5, with the tightening recorded as a decision not yet taken.
 // It has since been taken.
-func (s *Session) evaluate(request mdoc.DeviceRequest, transcript mdoc.SessionTranscript) ([]RequestedDocument, error) {
+func (s *Session) evaluate(request mdoc.DeviceRequest, transcript mdoc.SessionTranscript, origin string) ([]RequestedDocument, error) {
 	documents := make([]RequestedDocument, 0, len(request.DocRequests))
 
 	for i, docRequest := range request.DocRequests {
@@ -383,8 +383,19 @@ func (s *Session) evaluate(request mdoc.DeviceRequest, transcript mdoc.SessionTr
 				// this request and the signature does not stand up, so serving even
 				// the 7.2.1 minimum would be answering a request whose origin is in
 				// doubt.
-				return nil, fmt.Errorf("docRequest %d (%s): reader authentication failed: %w",
-					i, items.DocType, err)
+				//
+				// The origin is named because it is the likeliest reason and the
+				// only one invisible from the message otherwise. readerAuth signs
+				// the session transcript, and this wallet rebuilds that transcript
+				// from the origin the platform reported — so a reader that signed
+				// for "https://example.com" and a browser that reported
+				// "http://example.com:8080" produce exactly this failure, with
+				// nothing in it suggesting the two ever differed. Everything else
+				// the signature covers travels in the request itself and is
+				// therefore the same on both sides by construction.
+				return nil, fmt.Errorf(
+					"docRequest %d (%s): reader authentication failed: %w (this wallet built the session transcript for origin %q; a reader that signed for a different one fails here)",
+					i, items.DocType, err, origin)
 			}
 		}
 

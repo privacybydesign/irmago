@@ -206,3 +206,40 @@ func TestRefusalIsNotReportedAsSuccess(t *testing.T) {
 	require.NotEqual(t, clientmodels.Status_Success, outcomeOf(0),
 		"run logs the disclosure only when this says Success")
 }
+
+// TestConsentStampsWhenTheUserAnswered: the duration the app shows on the
+// zero-knowledge feedback screen is measured from this stamp, so a granted
+// consent that fails to set it reports a proof that took no time at all.
+func TestConsentStampsWhenTheUserAnswered(t *testing.T) {
+	iso, _ := newIsoMdocTestSession()
+	require.True(t, iso.consentAt.IsZero(), "nothing has been answered yet")
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = iso.RequestConsent(consentRequest())
+		close(done)
+	}()
+
+	require.Eventually(t, iso.awaiting.Load, testTimeout, testPoll)
+	require.True(t, iso.answer(consentGranted, nil))
+	<-done
+
+	require.False(t, iso.consentAt.IsZero(),
+		"the stamp the reported disclosure duration is measured from")
+	require.WithinDuration(t, time.Now(), iso.consentAt, testTimeout)
+}
+
+// TestDisclosureDurationOmittedWhenUnmeasured: omitempty has to drop an unset
+// duration rather than hand the app a zero, which it would render as a proof
+// that took no time. A disclosure genuinely completing inside a millisecond is
+// not a case this transport has: the proof alone is seconds.
+func TestDisclosureDurationOmittedWhenUnmeasured(t *testing.T) {
+	measured, err := json.Marshal(clientmodels.SessionState{DisclosureDurationMs: 1234})
+	require.NoError(t, err)
+	require.Contains(t, string(measured), `"disclosure_duration_ms":1234`)
+
+	unmeasured, err := json.Marshal(clientmodels.SessionState{})
+	require.NoError(t, err)
+	require.NotContains(t, string(unmeasured), "disclosure_duration_ms",
+		"a zero must not reach the app as a measurement")
+}

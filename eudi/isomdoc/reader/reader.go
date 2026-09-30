@@ -73,6 +73,20 @@ type Builder struct {
 	// request.
 	Specs []mdoc.ZkSystemSpec
 
+	// Verifier is the trust model a response is checked against: which attestation
+	// providers are pinned, and which certificates are revoked. Required by Verify,
+	// and the half a proof cannot supply -- a proof establishes that some key signed
+	// the attestation, never whose key it is, so without this a wallet that minted
+	// its own IACA produces proofs that verify perfectly and mean nothing.
+	Verifier *mdoc.Verifier
+
+	// ZkSystems are the zero-knowledge systems this relying party can verify
+	// under. Distinct from Specs, which says which circuits are OFFERED and
+	// ACCEPTED: this says which implementations exist to run them. A spec offered
+	// with no system behind it is refused at verification rather than at build,
+	// because a build-time check would not survive a system being unregistered.
+	ZkSystems *mdoc.ZkSystemRepository
+
 	// ZkRequired refuses a plain presentation. Left false by age-verification
 	// deployments on purpose: A.6 mandates the fallback and requires the relying
 	// party to verify both paths, so forbidding the alternative would put us

@@ -206,6 +206,12 @@ func (iso *isoMdocSession) run(client *Client, data []byte, origin string) {
 		// from the session rather than inferred from the request: a reader that
 		// offers circuits still gets the plain fallback when none of them matches.
 		iso.session.State.ZeroKnowledge = mdocSession.ZeroKnowledge
+		// The same span the line below logs, handed to the app so it can say how
+		// long the proof took on the screen that follows. Zero when the consent
+		// callback never ran, which omitempty then drops.
+		if !iso.consentAt.IsZero() {
+			iso.session.State.DisclosureDurationMs = time.Since(iso.consentAt).Milliseconds()
+		}
 		iso.session.State.Status = clientmodels.Status_Success
 	} else {
 		iso.session.State.Status = clientmodels.Status_Dismissed

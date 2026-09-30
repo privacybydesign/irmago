@@ -333,3 +333,33 @@ func TestFalseThresholdWithASecondCredentialHoldingTrue(t *testing.T) {
 		}
 	}
 }
+
+// TestFourElementsWithTwoUndisclosable is the shape reported from a device: four
+// elements asked for, two of which the wallet cannot answer -- one held false,
+// one not held at all.
+//
+// It exists because that shape was reported as failing reader authentication
+// while an all-true request of the same form succeeded, which should not be
+// possible: readerAuth signs ["ReaderAuthentication", SessionTranscript,
+// ItemsRequestBytes], and no credential value appears in any of the three. The
+// claim is worth a test rather than an argument -- if dropping elements can
+// reach the signature, the drop is running somewhere it must not.
+func TestFourElementsWithTwoUndisclosable(t *testing.T) {
+	env := newEnv(t, 1)
+
+	// age_over_18 and age_over_16 are held true; age_over_21 is held false;
+	// age_over_65 is not held at all. Two answerable, two not.
+	sealed, err := env.respond(t, env.reader.request(t, true, avDocType, avNameSpace,
+		"age_over_18", "age_over_16", "age_over_21", "age_over_65"))
+	require.NoError(t, err,
+		"reader authentication is verified against the ItemsRequest as received, so what the "+
+			"wallet can or cannot answer must not reach it")
+
+	response := env.reader.open(t, sealed)
+	require.Len(t, response.Documents, 1)
+
+	disclosed, err := response.Documents[0].DisclosedElements()
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"age_over_18", "age_over_16"}, disclosed[avNameSpace],
+		"the two answerable elements travel; the false one and the absent one do not")
+}

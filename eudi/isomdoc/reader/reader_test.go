@@ -53,7 +53,7 @@ func testSpecs() []mdoc.ZkSystemSpec {
 // Self-signed is enough here because no trust store is consulted: these tests
 // are about what gets assembled, not about whether a wallet would trust it,
 // which readerauth_test.go already covers in the package that owns it.
-func testBuilder(t *testing.T) reader.Builder {
+func testBuilder(t testing.TB) reader.Builder {
 	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

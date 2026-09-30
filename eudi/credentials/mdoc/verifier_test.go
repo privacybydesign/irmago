@@ -1221,3 +1221,29 @@ func TestKeyAuthorizationsRoundTripDoesNotChangeSignedBytes(t *testing.T) {
 	require.Nil(t, round.KeyAuthorizations, "absent optional fields should decode to nil")
 	require.Nil(t, round.KeyInfo, "absent optional fields should decode to nil")
 }
+
+// TestVerifyDeviceResponseRefusesZkDocuments: this entry point walks Documents,
+// so a response whose content is all proofs came back as an empty slice and a
+// nil error -- which a caller checking only the error reads as a verified
+// presentation over proofs nothing looked at.
+//
+// Refusing is the fix rather than verifying them here: the ZK path needs a
+// circuit repository, an accepted-circuit set and a clock, none of which this
+// signature carries. What matters is that the response cannot pass silently.
+func TestVerifyDeviceResponseRefusesZkDocuments(t *testing.T) {
+	verifier := NewVerifier(nil)
+
+	zkOnly := NewDeviceResponse().WithZkDocuments(ZkDocument{
+		DocumentData: NewZkDocumentData("spec", "eu.europa.ec.av.1", time.Now(), nil, nil),
+		Proof:        []byte{0x01},
+	})
+
+	results, err := verifier.VerifyDeviceResponse(
+		zkOnly, "eu.europa.ec.av.1", "eu.europa.ec.av.1", SessionTranscript{})
+
+	require.Error(t, err, "a response carrying proofs must not verify as though it carried none")
+	require.Empty(t, results)
+	require.Contains(t, err.Error(), "zkDocuments")
+	require.Contains(t, err.Error(), "VerifyZkDocument",
+		"the error has to name what does verify them, or the caller has nowhere to go")
+}
