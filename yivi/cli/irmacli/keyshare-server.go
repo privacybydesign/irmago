@@ -89,6 +89,7 @@ func init() {
 
 	headers["keyshare-attribute"] = "Keyshare server attribute issued during registration"
 	flags.String("keyshare-attribute", "", "Attribute identifier that contains username")
+	flags.Int("keyshare-attribute-validity", 365, "Validity of the keyshare attribute in days")
 
 	headers["email-server"] = "Email configuration (leave empty to disable sending emails)"
 	flags.String("email-server", "", "Email server to use for sending email address confirmation emails")
@@ -144,7 +145,8 @@ func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration,
 		StoragePrimaryKeyFile:  viper.GetString("storage_primary_key_file"),
 		StorageFallbackKeysDir: viper.GetString("storage_fallback_keys_dir"),
 
-		KeyshareAttribute: irma.NewAttributeTypeIdentifier(viper.GetString("keyshare_attribute")),
+		KeyshareAttribute:         irma.NewAttributeTypeIdentifier(viper.GetString("keyshare_attribute")),
+		KeyshareAttributeValidity: viper.GetInt("keyshare_attribute_validity"),
 
 		RegistrationEmailSubjects: viper.GetStringMapString("registration_email_subjects"),
 		RegistrationEmailFiles:    viper.GetStringMapString("registration_email_files"),

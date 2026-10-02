@@ -49,7 +49,7 @@ func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []client
 func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 	disclosurePlan *clientmodels.DisclosurePlan,
 	requestor *clientmodels.TrustedParty,
-	hashToQueryId map[string]string,
+	queryIds []dcql.ChoiceQueryIds,
 	callback openid4vp.PermissionHandler,
 ) {
 	a.session.State.Status = clientmodels.Status_RequestPermission
@@ -65,14 +65,27 @@ func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 
 	a.session.State.DisclosurePlan = disclosurePlan
 	a.session.openid4vpPermissionHandler = callback
-	a.session.openid4vpHashToQueryId = hashToQueryId
+	a.session.openid4vpQueryIds = queryIds
 	a.session.dispatchState()
 }
 
 // disclosureChoicesToOpenID4VPSelections converts UI disclosure choices to OpenID4VP selections.
-func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDisconSelection, hashToQueryId map[string]string) []dcql.DisclosureSelection {
+//
+// The choices arrive in the order of the plan's pick-ones, one entry each, so a
+// choice's position is what narrows down which DCQL query it answers, and the
+// selected credential and its paths pick the candidate within that choice. A
+// credential hash alone cannot do it: one credential can answer several queries,
+// and looking the query up by hash across the whole request routed every
+// presentation to whichever query was seen last.
+func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDisconSelection, queryIds []dcql.ChoiceQueryIds) []dcql.DisclosureSelection {
 	var selections []dcql.DisclosureSelection
-	for _, discon := range choices {
+	for i, discon := range choices {
+		// A choice with no matching entry leaves the query id empty, which
+		// PrepareDisclosure reports as an unknown query rather than guessing.
+		var choiceQueryIds dcql.ChoiceQueryIds
+		if i < len(queryIds) {
+			choiceQueryIds = queryIds[i]
+		}
 		for _, cred := range discon.Credentials {
 			claimPaths := make([][]any, 0, len(cred.AttributePaths))
 			for _, path := range cred.AttributePaths {
@@ -80,7 +93,7 @@ func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDis
 					claimPaths = append(claimPaths, path)
 				}
 			}
-			queryId := hashToQueryId[cred.CredentialHash]
+			queryId := choiceQueryIds.QueryIdFor(cred.CredentialHash, cred.AttributePaths)
 			selections = append(selections, dcql.DisclosureSelection{
 				QueryId:        queryId,
 				CredentialHash: cred.CredentialHash,

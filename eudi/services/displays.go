@@ -132,7 +132,7 @@ type ResolvedBatchDisplay struct {
 // that callers can tell "no live name" apart from a real one — the activity log
 // relies on this to keep its persisted snapshot. The credential list applies
 // its own fallback label at its call site.
-func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedBatchDisplay {
+func ResolveBatchDisplay(batch *models.SdJwtVcBatch, locale string) ResolvedBatchDisplay {
 	d := ResolvedBatchDisplay{
 		IssuerId:    batch.CredentialIssuerIdentifier,
 		IssuerNames: IssuerNamesByLanguage(batch.IssuerDisplay),

@@ -320,6 +320,11 @@ type expectedAttr struct {
 	Description    *string                      // nil to skip description check
 	Value          *clientmodels.AttributeValue // nil means section header (asserts actual is nil)
 	RequestedValue *clientmodels.AttributeValue // nil to skip check
+	// IntentToRetain pins the verifier's retention declaration for this attribute.
+	// Nil skips the check. The wallet sets the flag on every mso_mdoc attribute
+	// and on no other format, so a test about the flag names it on every mdoc
+	// attribute it lists rather than only on the ones declared true.
+	IntentToRetain *bool
 }
 
 // strVal creates a string AttributeValue.
@@ -330,6 +335,12 @@ func strVal(s string) *clientmodels.AttributeValue {
 // boolVal creates a boolean AttributeValue.
 func boolVal(b bool) *clientmodels.AttributeValue {
 	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Bool, Bool: &b}
+}
+
+// imgVal creates a base64 image AttributeValue, the shape a byte-string
+// element the wallet recognises as a picture takes.
+func imgVal(base64Png string) *clientmodels.AttributeValue {
+	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Base64Image, Base64Image: &base64Png}
 }
 
 // intVal creates an integer AttributeValue.
@@ -389,7 +400,177 @@ func requireAttrsInOrder(t testingT, attrs []clientmodels.Attribute, expected ..
 			require.Equal(t, exp.RequestedValue, actual.RequestedValue,
 				"attribute %d (%s) requested value mismatch", i, pathKey)
 		}
+		if exp.IntentToRetain != nil {
+			require.NotNil(t, actual.IntentToRetain,
+				"attribute %d (%s) should carry an intent_to_retain flag", i, pathKey)
+			require.Equal(t, *exp.IntentToRetain, *actual.IntentToRetain,
+				"attribute %d (%s) intent_to_retain mismatch", i, pathKey)
+		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Activity log assertion helpers
+// ---------------------------------------------------------------------------
+
+// expectedLogCredential describes one credential entry of a disclosure or
+// issuance log. Every field except CredentialId is opt-in: a nil pointer or an
+// empty slice skips that check, so a test pins only what it is about.
+type expectedLogCredential struct {
+	CredentialId string
+	Formats      []clientmodels.CredentialFormat
+	Name         *string
+	IssuerName   *string
+	// IssuerVerified is whether the credential's chain verified at issuance.
+	// The log snapshots it, so it must equal what the permission screen showed.
+	IssuerVerified *bool
+	// HasImage and HasIssuerImage assert presence, not bytes: a logo is fetched
+	// from the issuer's metadata at issuance and a change in the PNG is not a
+	// wallet change.
+	HasImage       *bool
+	HasIssuerImage *bool
+	Attributes     []expectedAttr
+	// IssuanceDate and ExpiryDate pin the timestamps to the ones the credential
+	// list reports, since the log is what dates the entry in the activity UI.
+	IssuanceDate        *int64
+	ExpiryDate          *int64
+	Revoked             *bool
+	RevocationSupported *bool
+}
+
+// requireLogCredential asserts one log credential against the expectation.
+// context names the entry in failure messages.
+func requireLogCredential(
+	t testingT,
+	actual clientmodels.LogCredential,
+	expected expectedLogCredential,
+	context string,
+) {
+	t.Helper()
+
+	require.Equal(t, expected.CredentialId, actual.CredentialId, "%s: credential id mismatch", context)
+	if expected.Formats != nil {
+		require.Equal(t, expected.Formats, actual.Formats, "%s: formats mismatch", context)
+	}
+	if expected.Name != nil {
+		require.Equal(t, *expected.Name, actual.Name, "%s: name mismatch", context)
+	}
+	if expected.IssuerName != nil {
+		require.Equal(t, *expected.IssuerName, actual.Issuer.Name, "%s: issuer name mismatch", context)
+	}
+	if expected.IssuerVerified != nil {
+		require.Equal(t, *expected.IssuerVerified, actual.Issuer.Verified, "%s: issuer verified mismatch", context)
+	}
+	if expected.HasImage != nil {
+		requireImagePresence(t, actual.Image, *expected.HasImage, context+": credential image")
+	}
+	if expected.HasIssuerImage != nil {
+		requireImagePresence(t, actual.Issuer.Image, *expected.HasIssuerImage, context+": issuer image")
+	}
+	if len(expected.Attributes) > 0 {
+		requireAttrsInOrder(t, actual.Attributes, expected.Attributes...)
+	}
+	if expected.IssuanceDate != nil {
+		require.NotNil(t, actual.IssuanceDate, "%s: issuance date missing", context)
+		require.Equal(t, *expected.IssuanceDate, *actual.IssuanceDate, "%s: issuance date mismatch", context)
+	}
+	if expected.ExpiryDate != nil {
+		require.NotNil(t, actual.ExpiryDate, "%s: expiry date missing", context)
+		require.Equal(t, *expected.ExpiryDate, *actual.ExpiryDate, "%s: expiry date mismatch", context)
+	}
+	if expected.Revoked != nil {
+		require.Equal(t, *expected.Revoked, actual.Revoked, "%s: revoked mismatch", context)
+	}
+	if expected.RevocationSupported != nil {
+		require.Equal(t, *expected.RevocationSupported, actual.RevocationSupported,
+			"%s: revocation supported mismatch", context)
+	}
+}
+
+// requireImagePresence asserts an image is there (with bytes) or absent.
+func requireImagePresence(t testingT, image *clientmodels.Image, present bool, context string) {
+	t.Helper()
+	if !present {
+		require.Nil(t, image, "%s: expected no image", context)
+		return
+	}
+	require.NotNil(t, image, "%s: expected an image", context)
+	require.NotEmpty(t, image.Base64, "%s: image carries no bytes", context)
+}
+
+// disclosureLogs returns every disclosure entry, newest first.
+func disclosureLogs(logs []clientmodels.LogInfo) []*clientmodels.LogInfo {
+	var out []*clientmodels.LogInfo
+	for i := range logs {
+		if logs[i].Type == clientmodels.LogType_Disclosure {
+			out = append(out, &logs[i])
+		}
+	}
+	return out
+}
+
+// requireSingleDisclosureLog asserts the wallet holds exactly one disclosure
+// entry and returns it. Counting matters: the merged read across the two log
+// stores makes logging a session twice possible, and "at least one" would not
+// catch it.
+func requireSingleDisclosureLog(t testingT, c *client.Client) *clientmodels.DisclosureLog {
+	t.Helper()
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	entries := disclosureLogs(logs)
+	require.Len(t, entries, 1, "expected exactly one disclosure log entry")
+	require.NotNil(t, entries[0].DisclosureLog)
+	return entries[0].DisclosureLog
+}
+
+// requireNoDisclosureLog asserts no disclosure was recorded. Used after a
+// refused, denied or dismissed session: nothing was disclosed, so nothing may be
+// filed as a disclosure.
+func requireNoDisclosureLog(t testingT, c *client.Client) {
+	t.Helper()
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Empty(t, disclosureLogs(logs), "a session that disclosed nothing must not be logged as a disclosure")
+}
+
+// findLogCredential returns the log credential with the given id. A disclosure of
+// several credentials does not guarantee their order in the entry.
+func findLogCredential(
+	t testingT,
+	creds []clientmodels.LogCredential,
+	credentialId string,
+) clientmodels.LogCredential {
+	t.Helper()
+	for _, cred := range creds {
+		if cred.CredentialId == credentialId {
+			return cred
+		}
+	}
+	var seen []string
+	for _, cred := range creds {
+		seen = append(seen, cred.CredentialId)
+	}
+	require.Failf(t, "log credential not found", "no log credential with id %q; found %v", credentialId, seen)
+	return clientmodels.LogCredential{}
+}
+
+// credentialListEntry returns the credential list item with the given id, which
+// is what the activity log's dates and issuer are compared against.
+func credentialListEntry(t testingT, c *client.Client, credentialId string) *clientmodels.Credential {
+	t.Helper()
+	creds, _, err := c.GetCredentials()
+	require.NoError(t, err)
+	for _, cred := range creds {
+		if cred.CredentialId == credentialId {
+			return cred
+		}
+	}
+	var seen []string
+	for _, cred := range creds {
+		seen = append(seen, cred.CredentialId)
+	}
+	require.Failf(t, "credential not in wallet", "no credential with id %q; found %v", credentialId, seen)
+	return nil
 }
 
 // requireNewestDisclosureLogAttrs loads the newest logs and asserts that the
