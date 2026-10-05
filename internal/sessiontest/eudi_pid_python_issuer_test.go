@@ -63,7 +63,7 @@ func testEudiPidPythonIssuerIssuesPidWithNonUrlVct(t *testing.T) {
 
 	issuePidViaPythonIssuer(t, c, 1, sessionHandler, samplePidUserData())
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	cred := findCredentialByName(t, creds, eudiPidIssuerPyDisplayNameEN)

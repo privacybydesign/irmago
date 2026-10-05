@@ -3,7 +3,7 @@ package eudi_jwt
 import (
 	"slices"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 )
 
 // supportedSignatureAlgorithms is the single allow-list of JWS signature algorithms this
@@ -15,7 +15,12 @@ import (
 //   - HS256, HS384, HS512: symmetric, so verifying would mean sharing the signing secret with
 //     every verifier. Nothing in this module has such a shared secret with an issuer.
 //   - none: unsigned.
-//   - Ed448: not registered by jwx v3, and the Go standard library has no Ed448 implementation.
+//   - Ed448: not registered by jwx, and the Go standard library has no Ed448 implementation.
+//   - ML-DSA-44, ML-DSA-65, ML-DSA-87: jwx registers these from v4.4.0 on and can verify them
+//     against `crypto/mldsa`, so unlike the entries above this is a policy choice rather than a
+//     capability limit. No OpenID4VC or EUDI profile specifies post-quantum issuer signatures yet,
+//     and their `AKP` key type is not one the holder binding or DID resolution paths produce, so
+//     accepting them would widen what this module trusts ahead of any issuer using it.
 //
 // EdDSA is accepted alongside Ed25519. RFC 9864 deprecates the EdDSA name in favour of the
 // curve-specific Ed25519 and Ed448 ones, but it remains what issuers publish and sign with in

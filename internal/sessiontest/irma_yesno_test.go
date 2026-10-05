@@ -81,7 +81,7 @@ func TestYesnoAttributeBecomesBoolean(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// 2. GetCredentials() must expose yesno attrs as Bool.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	var stored *clientmodels.Credential
 	for _, cred := range creds {

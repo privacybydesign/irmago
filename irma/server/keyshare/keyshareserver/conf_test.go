@@ -3,11 +3,13 @@ package keyshareserver
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func validConf(t *testing.T) *Configuration {
@@ -72,4 +74,35 @@ func TestConf(t *testing.T) {
 	conf.IssuerPrivateKeysPath = testdataPath // no private keys here
 	_, err = New(conf)
 	assert.Error(t, err)
+}
+
+func TestKeyshareAttributeValidity(t *testing.T) {
+	issuedValidity := func(t *testing.T, s *Server) time.Time {
+		req := s.keyshareAttributeIssuanceRequest("username")
+		require.Len(t, req.Credentials, 1)
+		require.NotNil(t, req.Credentials[0].Validity)
+		return time.Time(*req.Credentials[0].Validity)
+	}
+
+	t.Run("defaults to one year", func(t *testing.T) {
+		s, err := New(validConf(t))
+		require.NoError(t, err)
+		assert.Equal(t, 365, s.conf.KeyshareAttributeValidity)
+		assert.WithinDuration(t, time.Now().AddDate(0, 0, 365), issuedValidity(t, s), time.Minute)
+	})
+
+	t.Run("configured number of days", func(t *testing.T) {
+		conf := validConf(t)
+		conf.KeyshareAttributeValidity = 30
+		s, err := New(conf)
+		require.NoError(t, err)
+		assert.WithinDuration(t, time.Now().AddDate(0, 0, 30), issuedValidity(t, s), time.Minute)
+	})
+
+	t.Run("negative is rejected", func(t *testing.T) {
+		conf := validConf(t)
+		conf.KeyshareAttributeValidity = -1
+		_, err := New(conf)
+		assert.Error(t, err)
+	})
 }

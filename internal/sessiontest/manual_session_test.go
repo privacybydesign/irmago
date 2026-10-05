@@ -15,11 +15,9 @@ import (
 // Create a ManualTestHandler for unit tests
 func createManualSessionHandler(t *testing.T, client *irmaclient.IrmaClient) *testhelpers.ManualTestHandler {
 	return &testhelpers.ManualTestHandler{
-		TestHandler: testhelpers.TestHandler{
-			T:      t,
-			C:      make(chan *testhelpers.SessionResult),
-			Client: client,
-		},
+		T:      t,
+		C:      make(chan *testhelpers.SessionResult),
+		Client: client,
 	}
 }
 

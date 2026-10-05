@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/mr-tron/base58/base58"
 )
 
@@ -178,7 +178,7 @@ func (v *VerificationMethod) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("failed to decode publicKeyMultibase: %w", err)
 		}
-		key, err := jwk.Import(rawKey)
+		key, err := jwk.Import[jwk.Key](rawKey)
 		if err != nil {
 			return fmt.Errorf("failed to convert publicKeyMultibase to JWK: %w", err)
 		}
@@ -192,7 +192,7 @@ func (v *VerificationMethod) UnmarshalJSON(data []byte) error {
 		}
 		switch v.Type {
 		case VerificationMethodType_Ed25519VerificationKey2018:
-			key, err := jwk.Import(ed25519.PublicKey(decodedBytes))
+			key, err := jwk.Import[jwk.Key](ed25519.PublicKey(decodedBytes))
 			if err != nil {
 				return fmt.Errorf("failed to convert publicKeyBase58 to JWK: %w", err)
 			}

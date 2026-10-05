@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/stretchr/testify/require"
 )
@@ -61,14 +61,14 @@ func TestSignerKeyBinder_ProducesVerifiableKbJwt(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sig, 64, "ES256 raw signature must be 64 bytes (r||s)")
 
-	var pub ecdsa.PublicKey
-	require.NoError(t, jwk.Export(holderKey, &pub))
+	pub, err := jwk.Export[*ecdsa.PublicKey](holderKey)
+	require.NoError(t, err)
 
 	signingInput := []byte(parts[0] + "." + parts[1])
 	digest := sha256.Sum256(signingInput)
 	r := new(big.Int).SetBytes(sig[:32])
 	s := new(big.Int).SetBytes(sig[32:])
-	require.True(t, ecdsa.Verify(&pub, digest[:], r, s), "KB-JWT signature must verify against the holder key")
+	require.True(t, ecdsa.Verify(pub, digest[:], r, s), "KB-JWT signature must verify against the holder key")
 }
 
 // TestSoftwareHolderSigner_ReferenceRoundTrip checks that a generated key's
@@ -81,7 +81,7 @@ func TestSoftwareHolderSigner_ReferenceRoundTrip(t *testing.T) {
 	require.Len(t, refs, 2)
 
 	for i, pub := range pubs {
-		k, err := jwk.Import(pub)
+		k, err := jwk.Import[jwk.Key](pub)
 		require.NoError(t, err)
 		pubJwk, err := k.PublicKey()
 		require.NoError(t, err)

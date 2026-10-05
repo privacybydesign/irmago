@@ -6,7 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"go.etcd.io/bbolt"
@@ -38,7 +38,7 @@ func (s *BboltKeyBindingStorage) StorePrivateKeys(keys []*ecdsa.PrivateKey) erro
 		}
 
 		for _, privKey := range keys {
-			privJwk, err := jwk.Import(privKey)
+			privJwk, err := jwk.Import[jwk.Key](privKey)
 			if err != nil {
 				return fmt.Errorf("failed to convert ecdsa priv key to jwk: %v", err)
 			}

@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -153,8 +152,14 @@ func SaveFile(fpath string, content []byte) (err error) {
 	}
 	tempfilename := hex.EncodeToString(randBytes)
 
-	// Create temp file
-	dir := path.Dir(fpath)
+	// Create temp file in the destination's own directory. This must be
+	// filepath.Dir, not path.Dir: fpath was converted to OS separators above, so
+	// on Windows path.Dir finds no '/' and returns ".", which puts the temp file
+	// in the working directory instead. The rename below then crosses volumes
+	// whenever the destination is on another drive (a temp dir on C: while the
+	// working directory is on D:), which Windows refuses -- leaving the temp file
+	// orphaned in the working directory.
+	dir := filepath.Dir(fpath)
 	err = os.WriteFile(filepath.Join(dir, tempfilename), content, 0600)
 	if err != nil {
 		return

@@ -1,24 +1,17 @@
 package sessiontest
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
+	"time"
 
-	"github.com/privacybydesign/gabi/signed"
 	rootpkg "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/client"
-	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/storage"
-	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/privacybydesign/irmago/internal/crypto/encryption"
-	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/irma/server/keyshare/keyshareserver"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -40,45 +33,54 @@ import (
 //   - OpenID4VP disclosures: test.test.email (x2, served from bbolt) plus
 //     https://localhost:8443/vct/test and https://localhost:8443/vct/organization
 //     (served from the EUDI DB, via the veramo verifier).
+//   - Status list: 1x StatusListCredentialSdJwt (vct https://localhost:8443/vct/statuslist),
+//     revoked at the issuer and then refreshed, so it is stored as revoked.
+//   - mdoc: 1x age-verification mdoc (docType eu.europa.ec.av.1) issued over OpenID4VCI by
+//     the Python PID issuer, then disclosed once over OpenID4VP to the EUDI reference verifier.
 //   - Removals, as the final actions: irma-demo.RU.studentCard + 2 spare https://localhost:8443/vct/test.
 //
 // Resulting database state:
 //   - bbolt (bbolt_client_db): irma-demo.MijnOverheid.fullName, irma-demo.MijnOverheid.singleton
 //     and test.test.email; the test.test.email SD-JWT retains 8 of 10 instances (2 consumed by
 //     OpenID4VP disclosure); irma-demo.RU.studentCard removed.
-//   - EUDI sqlcipher (eudi_client_db): one https://localhost:8443/vct/test and one
-//     https://localhost:8443/vct/organization batch remaining.
+//   - EUDI sqlcipher (eudi_client_db): one https://localhost:8443/vct/test, one
+//     https://localhost:8443/vct/organization and one https://localhost:8443/vct/statuslist
+//     batch remaining; the status-list batch carries a status.status_list reference with a
+//     LastKnownStatus of INVALID, alongside a cached Status List Token; plus one
+//     eu.europa.ec.av.1 mdoc batch with one instance spent by the disclosure.
 //   - Activity logs (merged from both stores): all four types — issuance, disclosure, signature,
 //     removal — returned newest-first, ending with the three removals.
 func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	if os.Getenv("GENERATE_STORAGE") == "" {
 		t.Skip("GENERATE_STORAGE not set, skipping storage generation")
 	}
-	outputDir := filepath.Join(test.FindTestdataFolder(t), storageRegressionFixtureDir)
-
 	// Start infrastructure
 	conf := irmaServerConfWithSdJwtEnabled(t)
 	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
-	keyshareServer := testkeyshare.StartKeyshareServerWithDB(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	keyshareServer := testkeyshare.StartKeyshareServerWithDB(t, logger, irma.NewSchemeManagerIdentifier("test"), 0,
+		func(conf *keyshareserver.Configuration) {
+			conf.KeyshareAttributeValidity = int(time.Until(time.Now().AddDate(20, 0, 0)).Hours() / 24)
+		})
 	defer keyshareServer.Stop()
 
-	c, storagePath, sessionHandler := createClientWithStoragePath(t)
+	storagePath := newSnapshotWallet(t)
+	c, clientHandler, sessionHandler := openSnapshotWallet(t, storagePath)
+	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
+	require.NoError(t, clientHandler.AwaitEnrollmentResult())
 
 	// 1. Issue idemix-only credential (MijnOverheid.fullName)
-	issue(t, irmaServer, c, sessionHandler, 1, createMijnOverheidIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 1, withSnapshotValidity(createMijnOverheidIssuanceRequest()))
 	awaitSessionState(t, sessionHandler)
 
 	// 2. Issue combined idemix + sd-jwt credential (test.test.email)
-	issue(t, irmaServer, c, sessionHandler, 2, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 2, withSnapshotValidity(createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
 	awaitSessionState(t, sessionHandler)
 
 	// 3. Issue singleton credential
-	issue(t, irmaServer, c, sessionHandler, 3, &irma.IssuanceRequest{
-		DisclosureRequest: irma.DisclosureRequest{
-			BaseRequest: irma.BaseRequest{LDContext: irma.LDContextIssuanceRequest},
-		},
+	issue(t, irmaServer, c, sessionHandler, 3, withSnapshotValidity(&irma.IssuanceRequest{
+		LDContext: irma.LDContextIssuanceRequest,
 		Credentials: []*irma.CredentialRequest{
 			{
 				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.singleton"),
@@ -87,7 +89,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 				},
 			},
 		},
-	})
+	}))
 	awaitSessionState(t, sessionHandler)
 
 	// 3b. Issue an OpenID4VCI SD-JWT credential so the EUDI (sqlcipher) DB is
@@ -97,7 +99,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 		`{"given_name": "Test", "family_name": "User", "email": "test@example.com"}`)
 
 	// 3c. Issue an idemix-only student card (another credential type).
-	issue(t, irmaServer, c, sessionHandler, 9, createStudentCardIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 9, withSnapshotValidity(createStudentCardIssuanceRequest()))
 	awaitSessionState(t, sessionHandler)
 
 	// 3d. Issue two more OpenID4VCI credentials (more EUDI data, and spare
@@ -111,8 +113,26 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	// (organizational credential: university -> faculties -> departments -> courses).
 	issueCredentialViaOpenID4VCI(t, c, 16, sessionHandler, "OrganizationCredentialSdJwt", organizationClaimsJSON)
 
+	// 3f. Issue a status-list credential and then revoke it, so the snapshot
+	// carries Token Status List state at rest: instances with a
+	// status.status_list{uri,idx} reference, a LastKnownStatus of INVALID, and a
+	// cached Status List Token. Revoking is what makes this worth storing — a
+	// non-revoked instance's LastKnownStatus is the zero value, so a snapshot of
+	// one would still read correctly if status storage broke entirely.
+	//
+	// RefreshStatuses is what writes the new status to storage; without it the
+	// wallet would still hold the VALID reading taken at issuance.
+	issueStatusListCredential(t, c, sessionHandler, 18)
+	revokeStatusListCredentialViaVeramo(t, statusListCredentialEmail)
+	require.NoError(t, c.RefreshStatuses(context.Background()))
+
+	// 3g. Issue an age-verification mdoc from the Python PID issuer, so the
+	// snapshot holds an mso_mdoc batch: per-instance device keys, the issuer
+	// signed MSO, and the issuer's display metadata.
+	issueAvMdocViaPythonIssuer(t, c, 19, sessionHandler)
+
 	// Verify credentials are present
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	t.Logf("Credentials after issuance: %d", len(creds))
 	for _, cred := range creds {
@@ -202,6 +222,10 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	orgVpSession = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, orgVpSession.Status)
 
+	// 7g. Disclose the mdoc to the EUDI reference verifier, which spends one
+	// batch instance and writes an mdoc disclosure log.
+	discloseAvMdocOnce(t, c, sessionHandler, 20)
+
 	// 8. Remove several credentials as the final actions, so the newest activity
 	// logs are an ordered run of removals. Keep the credentials the regression
 	// test asserts on: fullName, singleton, email, and one OpenID4VCI credential.
@@ -210,8 +234,10 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 		"irma-demo.MijnOverheid.singleton":        true,
 		"test.test.email":                         true,
 		"https://localhost:8443/vct/organization": true, // keep the deeply nested credential
+		"https://localhost:8443/vct/statuslist":   true, // keep the revoked status-list credential
+		eudiPidIssuerPyAvDocType:                  true, // keep the mdoc
 	}
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	removals := 0
 	for _, cred := range creds {
@@ -237,7 +263,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 		t.Logf("  - type=%s", log.Type)
 	}
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	t.Logf("Final credentials: %d", len(creds))
 	for _, cred := range creds {
@@ -247,84 +273,24 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	// Close client to flush database
 	require.NoError(t, c.Close())
 
-	// Copy the storage to a versioned subdirectory
-	versionDir := filepath.Join(outputDir, "v"+rootpkg.Version)
-	require.NoError(t, common.EnsureDirectoryExists(versionDir))
-
-	copyFile(t, filepath.Join(storagePath, "db2"), filepath.Join(versionDir, "bbolt_client_db"))
-	copyFile(t, filepath.Join(storagePath, "eudi", storage.DbFilename), filepath.Join(versionDir, "eudi_client_db"))
-	copyFile(t, filepath.Join(storagePath, "ecdsa_sk.pem"), filepath.Join(versionDir, "ecdsa_sk.pem"))
-
-	// Save the keyshare server's user database so the regression test can
-	// start a keyshare server that recognizes the enrolled user.
-	keyshareUsers := keyshareServer.DB.DumpUsers()
-	keyshareUsersBts, err := json.Marshal(keyshareUsers)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(versionDir, "keyshare_users.json"), keyshareUsersBts, 0644))
-
-	metadata := map[string]any{
-		"description": "Client storage generated for regression testing",
-		"credentials": creds,
-		"logs":        logs,
-		"aes_key":     "asdfasdfasdfasdfasdfasdfasdfasdf",
-	}
-	metadataBts, err := json.MarshalIndent(metadata, "", "  ")
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(versionDir, "metadata.json"), metadataBts, 0644))
-
-	fmt.Printf("Storage written to %s\n", versionDir)
+	dir := snapshotDir(t, "v"+rootpkg.Version)
+	saveSnapshot(t, storagePath, dir, keyshareServer.DB)
+	fmt.Printf("Storage written to %s\n", dir)
 }
 
-func createClientWithStoragePath(t *testing.T) (*client.Client, string, *MockSessionHandler) {
-	var aesKey [32]byte
-	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-
-	path := test.FindTestdataFolder(t)
-	storageFolder := test.CreateTestStorage(t)
-	storagePath := filepath.Join(storageFolder, "client")
-	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
-	eudiAppDataPath := filepath.Join(storagePath, "eudi")
-
-	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
-	require.NoError(t, common.EnsureDirectoryExists(eudiAppDataPath))
-
-	// Install issuer + verifier trust anchors (encrypted, matching how the
-	// regression reader loads them) so OpenID4VCI issuance and OpenID4VP
-	// disclosure can verify the issuer/relying-party certificate chains.
-	encMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
-
-	issuerCertsPath := filepath.Join(storagePath, "eudi", "issuers", "certificates")
-	require.NoError(t, common.EnsureDirectoryExists(issuerCertsPath))
-	encIssuer, err := encMiddleware.Encrypt(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
-	require.NoError(t, err)
-	require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), encIssuer))
-
-	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
-	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))
-	encVerifierCA, err := encMiddleware.Encrypt(testdata.VerifierCACertBytes)
-	require.NoError(t, err)
-	require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encVerifierCA))
-
-	// Generate signer key and persist it so the regression test can reload it
-	privateKey, err := signed.GenerateKey()
-	require.NoError(t, err)
-	pemBts, err := signed.MarshalPemPrivateKey(privateKey)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(storagePath, "ecdsa_sk.pem"), pemBts, 0644))
-	signer := test.LoadSigner(t, privateKey)
-
-	clientHandler := irmaclient.NewMockClientHandler()
-	sessionHandler := &MockSessionHandler{
-		SessionChan: make(chan clientmodels.SessionState, 10),
+// withSnapshotValidity makes every credential in req valid for 20 years. With
+// IRMA's default of 6 months, a snapshot's IRMA credentials would expire long
+// before the snapshot stops mattering. The IRMA server's expiry check can be
+// skipped, but an IRMA-issued SD-JWT carries the same expiry as exp, and an
+// external OpenID4VP verifier rejects it once that has passed. Snapshots up to
+// v1.4.0 predate this and fall back to fresh credentials (see
+// replaceExpiredEmailSdJwts).
+func withSnapshotValidity(req *irma.IssuanceRequest) *irma.IssuanceRequest {
+	validity := irma.Timestamp(time.Now().AddDate(20, 0, 0))
+	for _, cred := range req.Credentials {
+		cred.Validity = &validity
 	}
-	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, aesKey, "en")
-	require.NoError(t, err)
-
-	c.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
-	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
-	require.NoError(t, clientHandler.AwaitEnrollmentResult())
-
-	return c, storagePath, sessionHandler
+	return req
 }
 
 // credentialAttrValue returns the string value of a top-level attribute, or ""
@@ -336,14 +302,4 @@ func credentialAttrValue(cred *clientmodels.Credential, key string) string {
 		}
 	}
 	return ""
-}
-
-func copyFile(t *testing.T, src, dst string) {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		t.Logf("Warning: could not read %s: %v", src, err)
-		return
-	}
-	require.NoError(t, os.WriteFile(dst, data, 0644))
-	t.Logf("Copied %s -> %s (%d bytes)", src, dst, len(data))
 }

@@ -5,11 +5,9 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/storage"
-	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 )
 
@@ -109,12 +107,6 @@ func (b *LogoBackfiller) Close() {
 // Cancelling ctx aborts the sweep: the download in flight returns immediately
 // and the loop stops at the next batch.
 func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Client, locale string) int {
-	batches, err := db.NewCredentialStore(s.Db()).GetCredentialBatchList()
-	if err != nil {
-		eudi.Logger.Warnf("logo backfill: failed to list credential batches: %v", err)
-		return 0
-	}
-
 	credentialLogos := s.FileSystem().Credentials().LogoManager()
 	issuerLogos := s.FileSystem().Issuers().LogoManager()
 
@@ -135,13 +127,19 @@ func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Clie
 	}
 
 	added := 0
-	for _, batch := range batches {
-		if ctx.Err() != nil {
-			break
+	for _, source := range NewCredentialDisplaySources(s.Db()) {
+		issuerURIs, credentialURIs := source.LogoURIs(locale)
+		for _, uri := range issuerURIs {
+			if ctx.Err() != nil {
+				return added
+			}
+			added += fetchOnce(seenIssuer, issuerLogos, uri)
 		}
-		added += fetchOnce(seenIssuer, issuerLogos, clientmodels.Resolve(IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale))
-		if batch.CredentialMetadata != nil {
-			added += fetchOnce(seenCredential, credentialLogos, clientmodels.Resolve(CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale))
+		for _, uri := range credentialURIs {
+			if ctx.Err() != nil {
+				return added
+			}
+			added += fetchOnce(seenCredential, credentialLogos, uri)
 		}
 	}
 	return added

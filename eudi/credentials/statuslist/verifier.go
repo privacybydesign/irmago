@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 )
 
@@ -98,11 +98,14 @@ func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedURI s
 	// did:jwk resolution, which carries its own trust assumptions
 	// (HTTPS for did:web, key-binding-by-construction for did:jwk).
 	if x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider); ok {
-		cert := x509KeyProvider.GetCert()
+		certs, err := x509KeyProvider.GetChain()
+		if err != nil {
+			return nil, fmt.Errorf("%w: failed to get certificate chain: %v", ErrUnauthorized, err)
+		}
 		if ctx.X509Context == nil {
 			return nil, fmt.Errorf("%w: x5c chain present but no X509VerificationContext configured", ErrUnauthorized)
 		}
-		if err := eudi_jwt.VerifyCertificate(ctx.X509Context, cert, nil); err != nil {
+		if err := eudi_jwt.VerifyCertificateChain(ctx.X509Context, certs, nil); err != nil {
 			return nil, fmt.Errorf("%w: certificate validation: %v", ErrUnauthorized, err)
 		}
 	}

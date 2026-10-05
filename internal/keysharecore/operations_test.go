@@ -520,17 +520,15 @@ func doChallengeResponse(t *testing.T, c *Core, signer irmaclient.Signer, secret
 	}
 
 	jwtt, err := irmaclient.SignerCreateJWT(signer, "", irma.KeyshareAuthRequestClaims{
-		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(3 * time.Minute))},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(3 * time.Minute)),
 	})
 	require.NoError(t, err)
 	challenge, err := c.GenerateChallenge(secrets, jwtt)
 	require.NoError(t, err)
 
 	jwtt, err = irmaclient.SignerCreateJWT(signer, "", irma.KeyshareAuthResponseClaims{
-		KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
-			Pin:       pin,
-			Challenge: challenge,
-		},
+		Pin:       pin,
+		Challenge: challenge,
 	})
 	require.NoError(t, err)
 
@@ -545,10 +543,8 @@ func changePin(t *testing.T, c *Core, signer irmaclient.Signer, secrets UserSecr
 	} else {
 		var jwtt string
 		jwtt, err = irmaclient.SignerCreateJWT(signer, "", irma.KeyshareChangePinClaims{
-			KeyshareChangePinData: irma.KeyshareChangePinData{
-				OldPin: old,
-				NewPin: new,
-			},
+			OldPin: old,
+			NewPin: new,
 		})
 		require.NoError(t, err)
 		secrets, err = c.ChangePin(secrets, jwtt)

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -301,7 +301,7 @@ type testJwksIssuerServer struct {
 func newTestJwksIssuerServer(t *testing.T, signer *TestStatusListSigner, kid string) *testJwksIssuerServer {
 	t.Helper()
 
-	key, err := jwk.Import(signer.PrivKey.Public())
+	key, err := jwk.Import[jwk.Key](signer.PrivKey.Public())
 	require.NoError(t, err)
 	require.NoError(t, key.Set(jwk.KeyIDKey, kid))
 	set := jwk.NewSet()

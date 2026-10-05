@@ -9,9 +9,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/scheme"
@@ -59,6 +59,18 @@ type SdJwtVcVerificationContext struct {
 	// Used to verify both JWT components of an SD-JWT VC (issuer signed jwt and kbjwt).
 	JwtVerifier sdjwt.JwtVerifier
 
+	// VerifyVerifiableCredentialTypeInRequestorInfo does not currently do what
+	// its name says. The VCT-against-requestor check it is named for is
+	// commented out (see the TODO in ProcessAndVerifySdJwtVc, pending SD-JWT VCs
+	// that fit the scheme), and the requestorInfo it produces is discarded.
+	//
+	// What it still does, and what callers are really selecting, is require the
+	// issuer's certificate to carry parseable Yivi attestation-provider
+	// requestor info: when set, decodeJwtAndVerifyFromX5cHeader extracts it and
+	// fails verification if it cannot. That is why the IRMA path sets it and the
+	// OpenID4VCI path does not — a third-party issuer's certificate carries no
+	// such extension. Re-enabling the real check should make this comment
+	// unnecessary rather than need updating.
 	VerifyVerifiableCredentialTypeInRequestorInfo bool
 
 	// ExpectedNonce is the nonce from the OpenID4VP authorization request that the KB-JWT nonce
@@ -224,8 +236,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 		return issuerIdentifier, nil, nil, nil, nil, err
 	}
 
-	var vct string
-	err = token.Get(VerifiableCredentialTypeKey, &vct)
+	vct, err := jwt.Get[string](token, VerifiableCredentialTypeKey)
 	if err != nil {
 		return issuerIdentifier, nil, nil, nil, nil, errors.New("missing vct field")
 	}
@@ -247,10 +258,8 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 		}
 	}
 
-	var sdRaw, cnfRaw any
-
 	var sd []sdjwt.HashedDisclosure
-	err = token.Get(sdjwt.SdKey, &sdRaw)
+	sdRaw, err := jwt.Get[any](token, sdjwt.SdKey)
 	if err == nil {
 		sd, err = sdjwt.ParseSdField(sdRaw)
 		if err != nil {
@@ -259,7 +268,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	}
 
 	var cnf *sdjwt.CnfField
-	err = token.Get(sdjwt.ConfirmationKey, &cnfRaw)
+	cnfRaw, err := jwt.Get[any](token, sdjwt.ConfirmationKey)
 	if err == nil {
 		cnf, err = sdjwt.ParseConfirmField(cnfRaw)
 		if err != nil {
@@ -285,11 +294,9 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 
 	// Construct payload — use 0 for missing time claims instead of time.Time{}.Unix()
 	payload := &IssuerSignedJwtPayload{
-		RegisteredClaims: sdjwt.RegisteredClaims{
-			Sd:      sd,
-			SdAlg:   iana.HashingAlgorithm(sdAlg),
-			Confirm: cnf,
-		},
+		Sd:                       sd,
+		SdAlg:                    iana.HashingAlgorithm(sdAlg),
+		Confirm:                  cnf,
 		VerifiableCredentialType: vct,
 		Status:                   status,
 	}
@@ -385,8 +392,8 @@ func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *IssuerSigned
 // pipeline. Only the `status_list` member is parsed in v1; other
 // sibling members defined by future specs are silently ignored.
 func parseStatusClaim(token jwt.Token) (*statuslist.StatusClaim, error) {
-	var raw map[string]any
-	if err := token.Get(StatusKey, &raw); err != nil {
+	raw, err := jwt.Get[map[string]any](token, StatusKey)
+	if err != nil {
 		return nil, fmt.Errorf("status claim is not an object: %v", err)
 	}
 	slRaw, ok := raw["status_list"]
@@ -457,8 +464,13 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 
 	// If the key provider used was a X509KeyProvider, we can get the certificate and verify it against the trusted roots/intermediates and CRLs.
 	if x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider); ok {
-		cert := x509KeyProvider.GetCert()
-		err = eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil)
+		leafCert := x509KeyProvider.GetLeafCert()
+		chain, err := x509KeyProvider.GetChain()
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to get certificate chain from provider: %v", err)
+		}
+
+		err = eudi_jwt.VerifyCertificateChain(v.verificationContext, chain, nil)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to verify certificate: %v", err)
 		}
@@ -467,14 +479,14 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 		// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
 		// until we can issue SD-JWT VCs that fit our scheme
 		if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
-			requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert)
+			requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](leafCert)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
 			}
-			return token, cert, requestorInfo, nil
+			return token, leafCert, requestorInfo, nil
 		}
 
-		return token, cert, nil, nil
+		return token, leafCert, nil, nil
 	}
 
 	return token, nil, nil, nil
@@ -681,8 +693,7 @@ func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (
 // ====== Utils ======
 
 func getOptional[T any](token jwt.Token, key string) T {
-	var value T
-	err := token.Get(key, &value)
+	value, err := jwt.Get[T](token, key)
 	if err != nil {
 		return *new(T)
 	}

@@ -2,14 +2,12 @@
 
 package eudi_jwt
 
-import "github.com/lestrrat-go/jwx/v3/jwa"
+import "github.com/lestrrat-go/jwx/v4/jwa"
 
 // es256kEnabled reports whether this build can sign and verify with ES256K.
 const es256kEnabled = false
 
-// secp256k1SignatureAlgorithms is empty without the `jwx_es256k` build tag: jwx compiles no
-// secp256k1 support in this build, so a signature using ES256K could never be verified.
-// jwa.LookupSignatureAlgorithm resolves the name regardless of the tag, so accepting it here
-// would let a credential configuration through validation only for verification to fail later
-// as an opaque signature error rather than an algorithm error.
+// secp256k1SignatureAlgorithms is empty without the `jwx_es256k` build tag: the
+// github.com/jwx-go/es256k/v4 companion package that registers ES256K support is never
+// imported in this build, so the algorithm is not even known to jwx here, let alone verifiable.
 var secp256k1SignatureAlgorithms []jwa.SignatureAlgorithm

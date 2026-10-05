@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwe"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwe"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/scheme"
@@ -94,6 +94,10 @@ type testHandler struct {
 	// grant answers the permission request with these selections. When nil, the
 	// permission request is left unanswered.
 	grant []dcql.DisclosureSelection
+
+	// requestorCh receives the party the client asked permission for, so a test
+	// can assert what the user would be shown about the verifier.
+	requestorCh chan *clientmodels.TrustedParty
 }
 
 func (h *testHandler) Failure(err *clientmodels.SessionError) {
@@ -120,10 +124,13 @@ func (h *testHandler) DeliverDcApiResponse(response string) {
 
 func (h *testHandler) RequestVerificationPermission(
 	_ *clientmodels.DisclosurePlan,
-	_ *clientmodels.TrustedParty,
-	_ map[string]string,
+	requestor *clientmodels.TrustedParty,
+	_ []dcql.ChoiceQueryIds,
 	callback PermissionHandler,
 ) {
+	if h.requestorCh != nil {
+		h.requestorCh <- requestor
+	}
 	if h.grant != nil {
 		callback(true, h.grant)
 	}
@@ -513,11 +520,13 @@ func TestCreateDcApiResponse_DcApi(t *testing.T) {
 
 func TestCreateDcApiResponse_DcApiJwt(t *testing.T) {
 	privateKey, jwks := testEncryptionKeys(t)
+	encryptionKey, _, err := selectResponseEncryptionKey(jwks)
+	require.NoError(t, err)
 
 	response, err := createDcApiResponse(authorizationResponseConfig{
-		ResponseMode:   ResponseMode_DcApiJwt,
-		State:          "should-not-appear",
-		EncryptionKeys: &jwks,
+		ResponseMode:  ResponseMode_DcApiJwt,
+		State:         "should-not-appear",
+		EncryptionKey: encryptionKey,
 		QueryResponses: []dcql.QueryResponse{{
 			QueryId:     testDcqlQueryId,
 			Credentials: []string{"presented~sd~jwt"},
@@ -558,12 +567,14 @@ func TestCreateDcApiResponse_RejectsNonDcApiResponseMode(t *testing.T) {
 // direct_post.jwt keeps carrying state, which the DC API response modes drop.
 func TestCreateAuthorizationResponseHttpRequest_DirectPostJwtKeepsState(t *testing.T) {
 	privateKey, jwks := testEncryptionKeys(t)
+	encryptionKey, _, err := selectResponseEncryptionKey(jwks)
+	require.NoError(t, err)
 
 	request, err := createAuthorizationResponseHttpRequest(authorizationResponseConfig{
-		ResponseMode:   ResponseMode_DirectPostJwt,
-		ResponseUri:    "https://verifier.example.com/response",
-		State:          "the-state",
-		EncryptionKeys: &jwks,
+		ResponseMode:  ResponseMode_DirectPostJwt,
+		ResponseUri:   "https://verifier.example.com/response",
+		State:         "the-state",
+		EncryptionKey: encryptionKey,
 		QueryResponses: []dcql.QueryResponse{{
 			QueryId:     testDcqlQueryId,
 			Credentials: []string{"presented~sd~jwt"},
@@ -586,7 +597,7 @@ func testEncryptionKeys(t *testing.T) (jwk.Key, jwk.Set) {
 	ecPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
-	privateKey, err := jwk.Import(ecPrivateKey)
+	privateKey, err := jwk.Import[jwk.Key](ecPrivateKey)
 	require.NoError(t, err)
 	require.NoError(t, privateKey.Set(jwk.AlgorithmKey, jwa.ECDH_ES()))
 	require.NoError(t, privateKey.Set(jwk.KeyUsageKey, "enc"))

@@ -6,8 +6,8 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
@@ -250,8 +250,8 @@ func processSdClaim(claims *map[string]any, decodedDisclosures map[HashedDisclos
 func ExtractClaimsAndDisclosureDigestsFromToken(token jwt.Token) (map[string]any, error) {
 	issuerSignedJwtClaims := map[string]any{}
 	for _, key := range token.Keys() {
-		var value any
-		if err := token.Get(key, &value); err != nil {
+		value, err := jwt.Get[any](token, key)
+		if err != nil {
 			return nil, fmt.Errorf("failed to get extra claim %s: %v", key, err)
 		}
 

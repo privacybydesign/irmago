@@ -262,10 +262,8 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 
 func newRevocationJwt(servername string, rr *irma.RevocationRequest) *irma.RevocationJwt {
 	return &irma.RevocationJwt{
-		ServerJwt: irma.ServerJwt{
-			ServerName: servername,
-			IssuedAt:   irma.Timestamp(time.Now()),
-		},
-		Request: rr,
+		ServerName: servername,
+		IssuedAt:   irma.Timestamp(time.Now()),
+		Request:    rr,
 	}
 }

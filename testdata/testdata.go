@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,10 +80,11 @@ const (
 	PkiOption_InvalidJsonSchemeData PkiGenerationOptions = 256
 	PkiOption_MissingUriSan         PkiGenerationOptions = 512
 	PkiOption_MissingDnsSan         PkiGenerationOptions = 1024
+	PkiOption_MultiCertX5cHeader    PkiGenerationOptions = 2048
 
 	// PkiOption_NoEndEntityDigitalSignatureKeyUsage omits the keyUsage extension from the
-	// end-entity certificate, which VerifyCertificate rejects.
-	PkiOption_NoEndEntityDigitalSignatureKeyUsage PkiGenerationOptions = 2048
+	// end-entity certificate, which VerifyCertificateChain rejects.
+	PkiOption_NoEndEntityDigitalSignatureKeyUsage PkiGenerationOptions = 4096
 )
 
 func ParseHolderPubJwk() jwk.Key {
@@ -152,13 +153,16 @@ func CreateTestAuthorizationRequestRequest(issuerCert []byte) string {
 	)
 }
 
-func CreateTestAuthorizationRequestJWT(hostname string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *jwt.Token)) string {
-	return CreateTestAuthorizationRequestJWTWithClientId("x509_san_dns:"+hostname, verifierKey, verifierCert, modifyTokenFunc)
+func CreateTestAuthorizationRequestJWT(hostname string, verifierKey *ecdsa.PrivateKey, x5cCerts []*x509.Certificate, modifyTokenFunc func(token *jwt.Token)) string {
+	return CreateTestAuthorizationRequestJWTWithClientId("x509_san_dns:"+hostname, verifierKey, x5cCerts, modifyTokenFunc)
 }
 
-func CreateTestAuthorizationRequestJWTWithClientId(clientId string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *jwt.Token)) string {
+func CreateTestAuthorizationRequestJWTWithClientId(clientId string, verifierKey *ecdsa.PrivateKey, x5cCerts []*x509.Certificate, modifyTokenFunc func(token *jwt.Token)) string {
 	claims := jwt.MapClaims{
-		"aud":       "https://audience",
+		// OpenID4VP § 5.8: a statically discovered wallet — one publishing no issuer
+		// identifier, as this one does not — is addressed as this symbolic value.
+		// A placeholder here made every fixture request non-conformant.
+		"aud":       "https://self-issued.me/v2",
 		"client_id": clientId,
 		"dcql_query": map[string]any{
 			"credentials": []map[string]any{
@@ -179,9 +183,15 @@ func CreateTestAuthorizationRequestJWTWithClientId(clientId string, verifierKey 
 		"state":         "state",
 	}
 
+	// Convert certs to x5c
+	x5c := []string{}
+	for _, c := range x5cCerts {
+		x5c = append(x5c, base64.StdEncoding.EncodeToString(c.Raw))
+	}
+
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
 	token.Header["typ"] = "oauth-authz-req+jwt"
-	token.Header["x5c"] = []string{base64.StdEncoding.EncodeToString(verifierCert.Raw)}
+	token.Header["x5c"] = x5c
 
 	if modifyTokenFunc != nil {
 		modifyTokenFunc(token)

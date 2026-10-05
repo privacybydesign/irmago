@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/cert"
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jws"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/cert"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/stretchr/testify/require"
 )

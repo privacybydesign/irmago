@@ -569,8 +569,8 @@ func (dr *DisclosureRequest) AddSingle(attr AttributeTypeIdentifier, value *stri
 
 func NewDisclosureRequest(attrs ...AttributeTypeIdentifier) *DisclosureRequest {
 	request := &DisclosureRequest{
-		BaseRequest: BaseRequest{LDContext: LDContextDisclosureRequest},
-		Labels:      map[int]TranslatedString{},
+		LDContext: LDContextDisclosureRequest,
+		Labels:    map[int]TranslatedString{},
 	}
 	for _, attr := range attrs {
 		request.AddSingle(attr, nil, nil)
@@ -989,14 +989,12 @@ func parseTimestamp(bts []byte) (*Timestamp, error) {
 // NewServiceProviderJwt returns a new ServiceProviderJwt.
 func NewServiceProviderJwt(servername string, dr *DisclosureRequest) *ServiceProviderJwt {
 	return &ServiceProviderJwt{
-		ServerJwt: ServerJwt{
-			ServerName: servername,
-			IssuedAt:   Timestamp(time.Now()),
-			Type:       "verification_request",
-		},
+		ServerName: servername,
+		IssuedAt:   Timestamp(time.Now()),
+		Type:       "verification_request",
 		Request: &ServiceProviderRequest{
-			RequestorBaseRequest: RequestorBaseRequest{ResultJwtValidity: DefaultJwtValidity},
-			Request:              dr,
+			ResultJwtValidity: DefaultJwtValidity,
+			Request:           dr,
 		},
 	}
 }
@@ -1004,14 +1002,12 @@ func NewServiceProviderJwt(servername string, dr *DisclosureRequest) *ServicePro
 // NewSignatureRequestorJwt returns a new SignatureRequestorJwt.
 func NewSignatureRequestorJwt(servername string, sr *SignatureRequest) *SignatureRequestorJwt {
 	return &SignatureRequestorJwt{
-		ServerJwt: ServerJwt{
-			ServerName: servername,
-			IssuedAt:   Timestamp(time.Now()),
-			Type:       "signature_request",
-		},
+		ServerName: servername,
+		IssuedAt:   Timestamp(time.Now()),
+		Type:       "signature_request",
 		Request: &SignatureRequestorRequest{
-			RequestorBaseRequest: RequestorBaseRequest{ResultJwtValidity: DefaultJwtValidity},
-			Request:              sr,
+			ResultJwtValidity: DefaultJwtValidity,
+			Request:           sr,
 		},
 	}
 }
@@ -1019,14 +1015,12 @@ func NewSignatureRequestorJwt(servername string, sr *SignatureRequest) *Signatur
 // NewIdentityProviderJwt returns a new IdentityProviderJwt.
 func NewIdentityProviderJwt(servername string, ir *IssuanceRequest) *IdentityProviderJwt {
 	return &IdentityProviderJwt{
-		ServerJwt: ServerJwt{
-			ServerName: servername,
-			IssuedAt:   Timestamp(time.Now()),
-			Type:       "issue_request",
-		},
+		ServerName: servername,
+		IssuedAt:   Timestamp(time.Now()),
+		Type:       "issue_request",
 		Request: &IdentityProviderRequest{
-			RequestorBaseRequest: RequestorBaseRequest{ResultJwtValidity: DefaultJwtValidity},
-			Request:              ir,
+			ResultJwtValidity: DefaultJwtValidity,
+			Request:           ir,
 		},
 	}
 }

@@ -40,26 +40,51 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	error,
 ) {
 	var authRequest AuthorizationRequest
-	token, err := jwt.ParseWithClaims(requestJwt, &authRequest, v.createAuthRequestVerifier())
+	token, err := jwt.ParseWithClaims(requestJwt, &authRequest, v.createAuthRequestVerifier(),
+		authRequestParserOptions()...)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
 	}
 
-	leafCert, err := getEndEntityCertFromX5cHeader(token)
+	certs, err := getCertsFromX5cHeader(token)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to get certificates from x5c header: %v", err)
+	}
+	if len(certs) == 0 {
+		return nil, nil, nil, fmt.Errorf("no certificates found in x5c header")
+	}
+	leafCert := certs[0]
+
+	// What the verifier is authorized to ask for comes from its certificate
+	// alone, and is decided independently of how the verifier is displayed.
+	//
+	// A Yivi issued certificate carries the relying party's authorized attribute
+	// sets in its scheme extension, and a query outside those sets has to be
+	// refused however the verifier chooses to present itself. This check used to
+	// share one if/else-if chain with the display name below, which made it
+	// skippable: a request carrying client_metadata.client_name took the first
+	// branch, so the certificate's authorization was never read and every query
+	// was accepted — a verifier could widen its own authorization just by naming
+	// itself in the request it signs.
+	//
+	// TODO: we'll need to figure out if/how we want to authorize on attribute level when we're dealing with a non-Yivi issued certificate. For now, we only support that functionality for Yivi issued certificates, and we authorize all attribute for certificates issued by third parties.
+	certRequestorInfo, certSchemeErr := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leafCert)
+	if certSchemeErr == nil {
+		queryValidator := v.validatorFactory.CreateQueryValidator(&certRequestorInfo.RelyingParty)
+		credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
+		if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
+		}
 	}
 
 	// Try to get verifier metadata in order:
 	// 1. From the verifier metadata in the authorization request (if present)
 	// 2. From the certificate OID (if it's a Yivi issued certificate)
 	// 3. Use the CN from the certificate, without a logo, as a fallback (if all else fails)
-
 	requestorInfo := &scheme.RelyingPartyRequestor{}
 
-	// TODO: we'll need to figure out if/how we want to authorize on attribute level when we're dealing with a non-Yivi issued certificate. For now, we only support that functionality for Yivi issued certificates, and we authorize all attribute for certificates issued by third parties.
-
-	if authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil {
+	switch {
+	case authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil:
 		requestorInfo.Organization.LegalName = map[string]string{"en": *authRequest.ClientMetadata.ClientName}
 
 		if authRequest.ClientMetadata.LogoUri != nil {
@@ -74,17 +99,13 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 				}
 			}
 		}
-	} else if info, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leafCert); err == nil {
-		// Try to get the requestor info from the certificate. If this fails, most likely the certificate is not a Yivi issued certificate, and we'll fall back to the CN in the certificate
-		requestorInfo = info
 
-		// If the certificate is a Yivi issued certificate, we also validate the credential queries in the authorization request against the requestor's allowed queries in the certificate. This ensures that the verifier is only requesting credentials that it is authorized to request.
-		queryValidator := v.validatorFactory.CreateQueryValidator(&requestorInfo.RelyingParty)
-		credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
-		if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
-		}
-	} else {
+	case certSchemeErr == nil:
+		requestorInfo = certRequestorInfo
+
+	default:
+		// Reading the requestor info from the certificate failed, so most likely it is
+		// not a Yivi issued certificate and we fall back to the CN in the certificate.
 		requestorInfo.Organization.LegalName = map[string]string{"en": leafCert.Subject.CommonName}
 	}
 
@@ -103,10 +124,14 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 
 		request := token.Claims.(*AuthorizationRequest)
 
-		parsedCert, err := getEndEntityCertFromX5cHeader(token)
+		parsedCerts, err := getCertsFromX5cHeader(token)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
+			return nil, fmt.Errorf("failed to get certificates from x5c header: %v", err)
 		}
+		if len(parsedCerts) == 0 {
+			return nil, fmt.Errorf("no certificates found in x5c header")
+		}
+		leafCert := parsedCerts[0]
 
 		var hostname *string = nil
 
@@ -119,7 +144,7 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 			// x509_hash authenticates via the certificate hash rather than a DNS name,
 			// so the chain/revocation check is done without a hostname/SAN check and we leave `hostname` as nil.
 			expectedHash := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509Hash))
-			hash := sha256.Sum256(parsedCert.Raw)
+			hash := sha256.Sum256(leafCert.Raw)
 			actualHash := base64.RawURLEncoding.EncodeToString(hash[:])
 			if actualHash != expectedHash {
 				return nil, fmt.Errorf("client_id certificate hash %q does not match leaf certificate hash %q", expectedHash, actualHash)
@@ -129,17 +154,16 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 			return nil, fmt.Errorf("client_id expected to start with '%s' or '%s' but doesn't (%s)", ClientIdentifierPrefix_X509SanDns, ClientIdentifierPrefix_X509Hash, request.ClientId)
 		}
 
-		// Verify the certificate against the trusted chains and revocation lists, using the hostname if applicable.
-		if err := eudi_jwt.VerifyCertificate(v.verificationContext, parsedCert, hostname); err != nil {
+		if err := eudi_jwt.VerifyCertificateChain(v.verificationContext, parsedCerts, hostname); err != nil {
 			return nil, fmt.Errorf("failed to verify relying party certificate: %v", err)
 		}
 
-		return parsedCert.PublicKey, nil
+		return leafCert.PublicKey, nil
 	}
 }
 
-// getEndEntityCertFromX5cHeader extracts the end-entity certificate from the x5c JWT header.
-func getEndEntityCertFromX5cHeader(token *jwt.Token) (*x509.Certificate, error) {
+// getCertsFromX5cHeader extracts the certificates from the x5c JWT header.
+func getCertsFromX5cHeader(token *jwt.Token) ([]*x509.Certificate, error) {
 	x5c, ok := token.Header["x5c"]
 	if !ok {
 		return nil, fmt.Errorf("auth request token doesn't contain x5c field in the header")
@@ -154,35 +178,45 @@ func getEndEntityCertFromX5cHeader(token *jwt.Token) (*x509.Certificate, error) 
 		return nil, fmt.Errorf("auth request token contains empty x5c array in the header")
 	}
 
-	endEntityString, ok := certs[0].(string)
-	if !ok {
-		return nil, fmt.Errorf("failed to convert end-entity to string: %v", certs[0])
+	certificates := []*x509.Certificate{}
+	for _, c := range certs {
+		certString, ok := c.(string)
+		if !ok {
+			return nil, fmt.Errorf("failed to convert certificate to string: %v", c)
+		}
+
+		der, err := base64.StdEncoding.DecodeString(certString)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode base64 encoded der: %v", err)
+		}
+
+		parsedCert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse x.509 certificate: %v", err)
+		}
+		certificates = append(certificates, parsedCert)
 	}
 
-	der, err := base64.StdEncoding.DecodeString(endEntityString)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode end-entity base64 encoded der: %v", err)
-	}
-
-	parsedCert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse x.509 certificate: %v", err)
-	}
-	return parsedCert, nil
+	return certificates, nil
 }
 
 // dcqlQueryToCredentialQueryInfos converts a DcqlQuery's credential queries
 // into the scheme-level CredentialQueryInfo representation.
+//
+// Both the credential type and the attribute names have to be read in a
+// format-aware way. mso_mdoc names its credential type with doctype_value
+// rather than vct_values, and its claim paths carry a namespace component that
+// is not an attribute — so copying only vct_values and flattening every path
+// component (as this did) made the validator reject every mdoc query outright:
+// first for a missing vct, and had that been supplied, for requesting the
+// namespace as though it were an unregistered attribute.
 func dcqlQueryToCredentialQueryInfos(query dcql.DcqlQuery) []scheme.CredentialQueryInfo {
 	result := make([]scheme.CredentialQueryInfo, len(query.Credentials))
 	for i, cq := range query.Credentials {
-		var paths []string
-		for path := range cq.AllClaimPaths() {
-			paths = append(paths, path)
-		}
 		result[i] = scheme.CredentialQueryInfo{
-			VctValues:  cq.VctValues(),
-			ClaimPaths: paths,
+			VctValues:      cq.VctValues(),
+			DocTypeValue:   cq.DocTypeValue(),
+			AttributeNames: cq.AuthorizationAttributeNames(),
 		}
 	}
 	return result

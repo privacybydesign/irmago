@@ -5,20 +5,28 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/cert"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/cert"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
 )
+
+// maxJwksBytes caps the JWKS response body. jwks_uri is reached through the
+// unverified `iss` claim of the JWT being verified, so the endpoint is
+// attacker-chosen and an unbounded io.ReadAll would let it exhaust memory.
+// jwk.Fetch capped this at 10 MB before jwx v4 removed it; 1 MiB matches the
+// other remote-document fetches in eudi/ and is far above any real JWKS.
+const maxJwksBytes = 1 << 20 // 1 MiB
 
 // JwtKeyProvider validates the 'typ' header against a configured allow-list,
 // then dispatches signature key resolution to either X509KeyProvider (when the
@@ -96,8 +104,32 @@ func NewX509KeyProvider(x5cHeader *cert.Chain) *X509KeyProvider {
 	}
 }
 
-func (p *X509KeyProvider) GetCert() *x509.Certificate {
+func (p *X509KeyProvider) GetLeafCert() *x509.Certificate {
 	return p.cert
+}
+
+func (p *X509KeyProvider) GetChain() ([]*x509.Certificate, error) {
+	if p.x5cHeader == nil || p.x5cHeader.Len() == 0 {
+		return nil, fmt.Errorf("expected x5c header, but is empty")
+	}
+
+	chain := make([]*x509.Certificate, p.x5cHeader.Len())
+
+	for i := 0; i < p.x5cHeader.Len(); i++ {
+		c, present := p.x5cHeader.Get(i)
+		if !present {
+			return nil, fmt.Errorf("certificate could not be found")
+		}
+
+		cert, err := decodeCertificate(c)
+		if err != nil {
+			return nil, fmt.Errorf("could not parse certificate in chain: %v", err)
+		}
+
+		chain[i] = cert
+	}
+
+	return chain, nil
 }
 
 func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
@@ -106,13 +138,8 @@ func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *
 		return fmt.Errorf("expected x5c header, but is empty")
 	}
 
-	firstCert, _ := p.x5cHeader.Get(0)
-	der, err := base64.StdEncoding.DecodeString(string(firstCert))
-	if err != nil {
-		return fmt.Errorf("failed to decode end-entity base64 encoded der: %v", err)
-	}
-
-	cert, err := x509.ParseCertificate(der)
+	certBytes, _ := p.x5cHeader.Get(0)
+	cert, err := decodeCertificate(certBytes)
 	if err != nil {
 		return fmt.Errorf("failed to parse end-entity certificate: %v", err)
 	}
@@ -138,6 +165,15 @@ func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *
 	sink.Key(alg, cert.PublicKey)
 
 	return nil
+}
+
+func decodeCertificate(derBytes []byte) (*x509.Certificate, error) {
+	der, err := base64.StdEncoding.DecodeString(string(derBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode base64 encoded der: %v", err)
+	}
+
+	return x509.ParseCertificate(der)
 }
 
 type DidKeyProvider struct {
@@ -318,14 +354,51 @@ func (p *OAuthDiscoveryJwkKeyProvider) FetchKeys(ctx context.Context, sink jws.K
 	}
 
 	if metadata.JwksUri == nil {
-		// If the discovery metadata does not contain a jwks_uri, we cannot resolve the key identifier using OAuth2 discovery. We return without setting a key on the sink, so that the signature verification will fail later.
+		// If the discovery metadata does not contain a jwks_uri, try checking the "jwks" claim in the metadata. This is a non-standard extension, but some issuers may provide it.
+		if metadata.Jwks != nil {
+			// If the discovery metadata contains a jwks member (and there is no jwks_uri present), we should resolve the key identifier directly using that.
+			key, ok := metadata.Jwks.LookupKeyID(kid)
+			if !ok {
+				return fmt.Errorf("no key found in jwks member of discovery metadata for issuer %s with kid %s", iss, kid)
+			}
+			sink.Key(alg, key)
+		}
+
+		// Either the key was found in the jwks member, or it was not. In either case, we return here, since there is no jwks_uri to fetch from.
 		return nil
 	}
 
-	// Fetch the JWKS from the jwks_uri
-	jwks, err := jwk.Fetch(ctx, *metadata.JwksUri, jwk.WithHTTPClient(p.httpClient))
+	// Fetch the JWKS from the jwks_uri. jwx v4 dropped jwk.Fetch, so fetch and parse it ourselves,
+	// keeping the body cap and the strict set parsing that jwk.Fetch applied for us.
+	// We fail explicitly on any error here, since the JWT might actually be signed with a key
+	// that is currently not resolvable because of network issues.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, *metadata.JwksUri, nil)
 	if err != nil {
-		// We fail explicitly here, since the JWT might actually be signed with a key that is not resolvable because of network issues.
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: %v", *metadata.JwksUri, err)
+	}
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: %v", *metadata.JwksUri, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: unexpected HTTP status %d", *metadata.JwksUri, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxJwksBytes+1))
+	if err != nil {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: %v", *metadata.JwksUri, err)
+	}
+	if len(body) > maxJwksBytes {
+		return fmt.Errorf("failed to fetch or parse JWKS from %s: response exceeds %d bytes", *metadata.JwksUri, maxJwksBytes)
+	}
+
+	// Strict parsing rejects the whole set when any entry is unparseable. jwx v4
+	// instead keeps such an entry as a placeholder key that retains its own kid,
+	// which LookupKeyID below would hand to the sink.
+	jwks, err := jwk.Parse(body, jwk.WithStrictKeySetParsing(true))
+	if err != nil {
 		return fmt.Errorf("failed to fetch or parse JWKS from %s: %v", *metadata.JwksUri, err)
 	}
 

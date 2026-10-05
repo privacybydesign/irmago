@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -49,8 +49,25 @@ func NewHolderBindingKeyService(d *gorm.DB) *holderBindingKeyService {
 // The publicKeyIdentifiers are the public identifiers (either DIDs or JWK thumbprints) that can be used in the credential's proof configuration to link the credential to the correct holder binding key.
 // The proofs are the cryptographic proofs (e.g. JWTs) that the holder can present alongside the credential to prove possession of the private keys.
 func (s *holderBindingKeyService) CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofs []string, err error) {
-	proofs = make([]string, num)
+	keyTuples, proofs, err := generateProofKeys(num, proofBuilder)
+	if err != nil {
+		return nil, nil, err
+	}
 
+	publicKeyIdentifiers, err = s.storePrivateKeys(keyTuples)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to storage private keys: %v", err)
+	}
+
+	return
+}
+
+// generateProofKeys mints num fresh P-256 key pairs and builds one OpenID4VCI
+// proof of possession per key with the given builder. Shared by every format's
+// HolderKeyBinder: the keys and proofs are the same whatever table the private
+// half ends up in.
+func generateProofKeys(num uint, proofBuilder proofs.ProofBuilder) ([]keyTuple, []string, error) {
+	proofStrings := make([]string, num)
 	keyTuples := make([]keyTuple, num)
 
 	for i := range num {
@@ -61,7 +78,7 @@ func (s *holderBindingKeyService) CreateKeyPairsWithProofs(num uint, proofBuilde
 		}
 
 		// Create JWK for the key, which we'll use both in storage and in the proof builder
-		jwkPrivKey, err := jwk.Import(privKey)
+		jwkPrivKey, err := jwk.Import[jwk.Key](privKey)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to convert ecdsa priv key to jwk: %v", err)
 		}
@@ -90,7 +107,7 @@ func (s *holderBindingKeyService) CreateKeyPairsWithProofs(num uint, proofBuilde
 
 		// TODO: this currently only supports the proof builder returning a string (which is the case for the JwtProofBuilder), but we need to support other types of proof in the future
 		if proofStr, ok := proof.(string); ok {
-			proofs[i] = proofStr
+			proofStrings[i] = proofStr
 
 			// Extract the DID URL (if any)
 			keyTuples[i].didUrl = extractDidUrlFromProof(&proofStr)
@@ -99,12 +116,7 @@ func (s *holderBindingKeyService) CreateKeyPairsWithProofs(num uint, proofBuilde
 		}
 	}
 
-	publicKeyIdentifiers, err = s.storePrivateKeys(keyTuples)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to storage private keys: %v", err)
-	}
-
-	return
+	return keyTuples, proofStrings, nil
 }
 
 func (s *holderBindingKeyService) storePrivateKeys(keys []keyTuple) (publicKeyIdentifiers []models.PublicHolderBindingKey, err error) {
