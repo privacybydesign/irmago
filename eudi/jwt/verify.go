@@ -37,12 +37,12 @@ func verifyCertificate(opts x509.VerifyOptions, clrs []*x509.RevocationList, cer
 	// Verify the end-entity cert against the trusted chains
 	_, err := cert.Verify(opts)
 	if err != nil {
-		return fmt.Errorf("failed to verify x5c end-entity certificate: %v", err)
+		return fmt.Errorf("failed to verify x5c certificate: %v", err)
 	}
 
-	// Check the end-entity cert against all revocation lists from the issuing cert
+	// Check the cert against all revocation lists from the issuing cert
 	if err := utils.VerifyCertificateAgainstIssuerRevocationLists(cert, clrs); err != nil {
-		return fmt.Errorf("failed to verify x5c end-entity certificate against revocation lists: %v", err)
+		return fmt.Errorf("failed to verify x5c certificate against revocation lists: %v", err)
 	}
 
 	// Cert is valid, no error returned
@@ -55,6 +55,10 @@ func verifyCertificate(opts x509.VerifyOptions, clrs []*x509.RevocationList, cer
 func VerifyCertificateChain(context X509VerificationContext, certs []*x509.Certificate, hostname *string) error {
 	// First, copy the root and intermediate certificate pool, in case we want to add certs to it, and not have any unwanted side-effects
 	opts := context.GetVerificationOptionsTemplate()
+
+	if len(certs) == 0 {
+		return fmt.Errorf("no certificates provided in x5c header, expected at least one certificate")
+	}
 
 	if opts.Intermediates == nil {
 		opts.Intermediates = x509.NewCertPool()

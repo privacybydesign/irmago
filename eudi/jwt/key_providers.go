@@ -93,7 +93,7 @@ func (p *JwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 type X509KeyProvider struct {
 	x5cHeader *cert.Chain
 
-	// Stores the validated end-leaf certificate.
+	// Stores the validated certificate.
 	// Note: the cert might be validated correctly (against CRL etc), but it is only valid for the JWT, if jwt.Parse(...) does not return an error (indicating a signature mismatch)!
 	cert *x509.Certificate
 }
@@ -109,6 +109,10 @@ func (p *X509KeyProvider) GetLeafCert() *x509.Certificate {
 }
 
 func (p *X509KeyProvider) GetChain() ([]*x509.Certificate, error) {
+	if p.x5cHeader == nil || p.x5cHeader.Len() == 0 {
+		return nil, fmt.Errorf("expected x5c header, but is empty")
+	}
+
 	chain := make([]*x509.Certificate, p.x5cHeader.Len())
 
 	for i := 0; i < p.x5cHeader.Len(); i++ {

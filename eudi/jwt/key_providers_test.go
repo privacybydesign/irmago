@@ -11,6 +11,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -255,6 +256,86 @@ func Test_X509KeyProvider_FetchKeys_ECDSACert_GetCertMatchesParsedCert(t *testin
 
 	require.Equal(t, parsed.SerialNumber, p.GetLeafCert().SerialNumber)
 	require.Equal(t, parsed.Subject, p.GetLeafCert().Subject)
+}
+
+func Test_X509KeyProvider_GetChain_NilChain_ReturnsError(t *testing.T) {
+	p := NewX509KeyProvider(nil)
+	chain, err := p.GetChain()
+	require.ErrorContains(t, err, "expected x5c header, but is empty")
+	require.Nil(t, chain)
+}
+
+func Test_X509KeyProvider_GetChain_EmptyChain_ReturnsError(t *testing.T) {
+	p := NewX509KeyProvider(&cert.Chain{})
+	chain, err := p.GetChain()
+	require.ErrorContains(t, err, "expected x5c header, but is empty")
+	require.Nil(t, chain)
+}
+
+func Test_X509KeyProvider_GetChain_SingleCert_ReturnsParsedCert(t *testing.T) {
+	derBytes, _, parsed := newTestECDSACert(t)
+	p := NewX509KeyProvider(newTestCertChain(t, derBytes))
+
+	chain, err := p.GetChain()
+
+	require.NoError(t, err)
+	require.Len(t, chain, 1)
+	require.Equal(t, parsed.Raw, chain[0].Raw)
+}
+
+func Test_X509KeyProvider_GetChain_MultipleCerts_ReturnsAllInHeaderOrder(t *testing.T) {
+	der1, _, parsed1 := newTestECDSACert(t)
+	der2, _, parsed2 := newTestECDSACert(t)
+	der3, _, parsed3 := newTestECDSACert(t)
+
+	x5c := &cert.Chain{}
+	for _, der := range [][]byte{der1, der2, der3} {
+		require.NoError(t, x5c.Add([]byte(base64.StdEncoding.EncodeToString(der))))
+	}
+	p := NewX509KeyProvider(x5c)
+
+	chain, err := p.GetChain()
+
+	require.NoError(t, err)
+	require.Len(t, chain, 3)
+	require.Equal(t, parsed1.Raw, chain[0].Raw)
+	require.Equal(t, parsed2.Raw, chain[1].Raw)
+	require.Equal(t, parsed3.Raw, chain[2].Raw)
+}
+
+func Test_X509KeyProvider_GetChain_PEMAddedCert_ReturnsParsedCert(t *testing.T) {
+	// cert.Chain.Add converts a PEM block to base64(DER); GetChain must decode that stored form.
+	derBytes, _, parsed := newTestECDSACert(t)
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+
+	x5c := &cert.Chain{}
+	require.NoError(t, x5c.Add(pemBytes))
+	p := NewX509KeyProvider(x5c)
+
+	chain, err := p.GetChain()
+
+	require.NoError(t, err)
+	require.Len(t, chain, 1)
+	require.Equal(t, parsed.Raw, chain[0].Raw)
+}
+
+func Test_X509KeyProvider_GetChain_FirstCertMatchesLeafAfterFetchKeys(t *testing.T) {
+	leafDer, leafKey, _ := newTestECDSACert(t)
+	otherDer, _, _ := newTestECDSACert(t)
+
+	x5c := &cert.Chain{}
+	require.NoError(t, x5c.Add([]byte(base64.StdEncoding.EncodeToString(leafDer))))
+	require.NoError(t, x5c.Add([]byte(base64.StdEncoding.EncodeToString(otherDer))))
+	p := NewX509KeyProvider(x5c)
+
+	msg := newTestJWSMessageSigned(t, "test", leafKey, jwa.ES256())
+	require.NoError(t, p.FetchKeys(context.Background(), &testKeySink{}, msg.Signatures()[0], msg))
+
+	chain, err := p.GetChain()
+
+	require.NoError(t, err)
+	require.Len(t, chain, 2)
+	require.Equal(t, p.GetLeafCert().Raw, chain[0].Raw)
 }
 
 // ─── DidKeyProvider ──────────────────────────────────────────────────────────

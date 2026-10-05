@@ -71,6 +71,31 @@ func newTestLeafCert(t *testing.T, cn string, parent *testCertAndKey) *testCertA
 	return newTestChainCert(t, cn, parent, testCertOptions{keyUsage: x509.KeyUsageDigitalSignature, dnsNames: []string{testChainHostname}})
 }
 
+// newTestRevocationList creates a revocation list, signed by issuer, that revokes the given certs.
+func newTestRevocationList(t *testing.T, issuer *testCertAndKey, revoked ...*x509.Certificate) *x509.RevocationList {
+	t.Helper()
+
+	entries := make([]x509.RevocationListEntry, len(revoked))
+	for i, c := range revoked {
+		entries[i] = x509.RevocationListEntry{SerialNumber: c.SerialNumber, RevocationTime: time.Now().Add(-time.Minute)}
+	}
+
+	template := &x509.RevocationList{
+		Number:                    big.NewInt(1),
+		ThisUpdate:                time.Now().Add(-time.Hour),
+		NextUpdate:                time.Now().Add(time.Hour),
+		RevokedCertificateEntries: entries,
+	}
+
+	der, err := x509.CreateRevocationList(rand.Reader, template, issuer.cert, issuer.key)
+	require.NoError(t, err)
+
+	crl, err := x509.ParseRevocationList(der)
+	require.NoError(t, err)
+
+	return crl
+}
+
 // newTestChainVerificationContext trusts only the given root, with an empty intermediate pool.
 func newTestChainVerificationContext(root *x509.Certificate) *StaticVerificationContext {
 	roots := x509.NewCertPool()
@@ -212,4 +237,16 @@ func Test_VerifyCertificateChain_HostnameDoesNotRelaxExtKeyUsage(t *testing.T) {
 	hostname := testChainHostname
 	err = VerifyCertificateChain(context, chain, &hostname)
 	require.ErrorContains(t, err, "incompatible key usage")
+}
+
+func Test_VerifyCertificateChain_IntermediateRevoked_ReturnsError(t *testing.T) {
+	root := newTestCaCert(t, "root", nil)
+	sub := newTestCaCert(t, "sub", root)
+	leaf := newTestLeafCert(t, "leaf", sub)
+
+	context := newTestChainVerificationContext(root.cert)
+	context.RevocationLists = []*x509.RevocationList{newTestRevocationList(t, root, sub.cert)}
+
+	err := VerifyCertificateChain(context, []*x509.Certificate{leaf.cert, sub.cert}, nil)
+	require.ErrorContains(t, err, "certificate is revoked by issuer")
 }
