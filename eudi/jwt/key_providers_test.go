@@ -140,7 +140,7 @@ func newTestDIDDocument(t *testing.T, didID, keyID string, pubKey jwk.Key) []byt
 
 func Test_X509KeyProvider_GetCert_InitiallyNil(t *testing.T) {
 	p := NewX509KeyProvider(&cert.Chain{})
-	require.Nil(t, p.GetCert())
+	require.Nil(t, p.GetLeafCert())
 }
 
 func Test_X509KeyProvider_FetchKeys_NilChain_ReturnsError(t *testing.T) {
@@ -253,8 +253,8 @@ func Test_X509KeyProvider_FetchKeys_ECDSACert_GetCertMatchesParsedCert(t *testin
 	err = p.FetchKeys(context.Background(), &testKeySink{}, msg.Signatures()[0], msg)
 	require.NoError(t, err)
 
-	require.Equal(t, parsed.SerialNumber, p.GetCert().SerialNumber)
-	require.Equal(t, parsed.Subject, p.GetCert().Subject)
+	require.Equal(t, parsed.SerialNumber, p.GetLeafCert().SerialNumber)
+	require.Equal(t, parsed.Subject, p.GetLeafCert().Subject)
 }
 
 // ─── DidKeyProvider ──────────────────────────────────────────────────────────
