@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redis session operations are retried when the connection they run on breaks or Redis refuses writes during a failover, so a Redis Sentinel failover no longer fails the session requests that run during it. A session handler is never executed twice and a concurrent update is never overwritten
 - New `redis_settings.retry_budget` setting (`--redis-retry-budget`) controls how long such retries continue; defaults to 3 seconds
 - go-redis's own diagnostics now go through the server's logger (`component=go-redis`) instead of straight to stderr
+- OpenID4VP authorization requests, SD-JWT VCs and Status List Tokens whose `x5c` header includes intermediate CA certificates are now accepted, instead of only accepting the end-entity certificate, as long as the chain leads to a trusted root.
 
 ### Added
 - In `keyshareserver`, `KeyshareAttributeValidity` (`--keyshare-attribute-validity`) configures how many days the keyshare attribute issued during registration is valid. It defaults to 365, the validity that was previously hardcoded.
