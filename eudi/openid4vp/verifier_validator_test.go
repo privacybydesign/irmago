@@ -1,6 +1,7 @@
 package openid4vp
 
 import (
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -19,6 +20,7 @@ const EndEntityCN = "END ENTITY CERT"
 func TestVerifierValidator(t *testing.T) {
 	// Happy flow tests
 	t.Run("ParseAndVerifyAuthorizationRequest validates a JWT successfully", testParseAndVerifyAuthorizationRequestSuccess)
+	t.Run("ParseAndVerifyAuthorizationRequest validates a JWT with multiple certs in x5c header successfully", testParseAndVerifyAuthorizationRequestWithMultipleCertsInHeaderSuccess)
 	t.Run("ParseAndVerifyAuthorizationRequest returns certificate CN as requestorInfo when missing scheme data in x5c", testParseAndVerifyAuthorizationRequestMissingSchemeData_AssumesThirdPartyCertificate_ReturnsCertificateCommonName)
 	t.Run("ParseAndVerifyAuthorizationRequest returns certificate CN as requestorInfo when invalid ASN scheme data in x5c", testParseAndVerifyAuthorizationRequestInvalidAsnSchemeData_AssumesThirdPartyCertificate_ReturnsCertificateCommonName)
 	t.Run("ParseAndVerifyAuthorizationRequest returns certificate CN as requestorInfo when invalid JSON scheme data in x5c", testParseAndVerifyAuthorizationRequestInvalidJsonSchemeData_AssumesThirdPartyCertificate_ReturnsCertificateCommonName)
@@ -65,12 +67,45 @@ func testParseAndVerifyAuthorizationRequestFailureEmptyX5cArray(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to get end-entity certificate from x5c header: auth request token contains empty x5c array in the header")
+	require.Contains(t, err.Error(), "failed to get certificates from x5c header: auth request token contains empty x5c array in the header")
 }
 
 func testParseAndVerifyAuthorizationRequestSuccess(t *testing.T) {
 	// Setup test data
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_None)
+
+	// Parse and verify the authorization request
+	claims, endEntityCert, requestorSchemeData, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.NoError(t, err)
+	require.NotNil(t, claims)
+	require.NotNil(t, endEntityCert)
+	require.NotNil(t, requestorSchemeData)
+
+	// Assert requestor data
+	require.Equal(t, "https://portal.yivi.app/organizations/yivi", requestorSchemeData.Registration)
+
+	require.NotEmpty(t, requestorSchemeData.Organization.LegalName)
+	require.Equal(t, "Yivi B.V.", requestorSchemeData.Organization.LegalName["en"])
+	require.Equal(t, "Yivi B.V.", requestorSchemeData.Organization.LegalName["nl"])
+
+	require.Equal(t, "image/png", requestorSchemeData.Organization.Logo.MimeType)
+	require.NotEmpty(t, requestorSchemeData.Organization.Logo.Data)
+
+	require.NotEmpty(t, requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets)
+	require.Equal(t, "test.test.email", requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Credential)
+	require.NotEmpty(t, requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Attributes)
+	require.Equal(t, "email", requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Attributes[0])
+	require.Equal(t, "domain", requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Attributes[1])
+
+	require.NotEmpty(t, requestorSchemeData.RelyingParty.RequestPurpose)
+	require.Equal(t, "Unit testing", requestorSchemeData.RelyingParty.RequestPurpose["en"])
+	require.Equal(t, "Unit testen", requestorSchemeData.RelyingParty.RequestPurpose["nl"])
+}
+
+func testParseAndVerifyAuthorizationRequestWithMultipleCertsInHeaderSuccess(t *testing.T) {
+	// Setup test data
+	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_MultiCertX5cHeader)
 
 	// Parse and verify the authorization request
 	claims, endEntityCert, requestorSchemeData, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -125,7 +160,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingX5C(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to get end-entity certificate from x5c header: auth request token doesn't contain x5c field in the header")
+	require.Contains(t, err.Error(), "failed to get certificates from x5c header: auth request token doesn't contain x5c field in the header")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredX5C(t *testing.T) {
@@ -138,7 +173,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredX5C(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to get end-entity certificate from x5c header: auth request token doesn't contain x5c field in the header")
+	require.Contains(t, err.Error(), "failed to get certificates from x5c header: auth request token doesn't contain x5c field in the header")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureRevokedX5C(t *testing.T) {
@@ -149,7 +184,7 @@ func testParseAndVerifyAuthorizationRequestFailureRevokedX5C(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate against revocation lists: certificate is revoked by issuer CN=CA CERT 0,OU=Test Unit,O=Test Organization,C=NL in revocation list with number 1")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c certificate against revocation lists: certificate is revoked by issuer CN=CA CERT 0,OU=Test Unit,O=Test Organization,C=NL in revocation list with number 1")
 }
 
 func testParseAndVerifyAuthorizationRequestMissingSchemeData_AssumesThirdPartyCertificate_ReturnsCertificateCommonName(t *testing.T) {
@@ -198,7 +233,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingRoot(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c certificate: x509: certificate signed by unknown authority")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredRoot(t *testing.T) {
@@ -209,7 +244,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredRoot(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: current time ")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c certificate: x509: certificate has expired or is not yet valid: current time ")
 }
 
 // This function implicitly also tests the case where an intermediate certificate is revoked, because it will be 'missing'
@@ -227,7 +262,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingIntermediate(t *testing
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c certificate: x509: certificate signed by unknown authority")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing.T) {
@@ -238,7 +273,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: ")
+	require.Contains(t, err.Error(), "failed to verify relying party certificate: failed to verify x5c certificate: x509: certificate has expired or is not yet valid: ")
 }
 
 func testParseAndVerifyAuthorizationRequestSuccessX509Hash(t *testing.T) {
@@ -400,7 +435,19 @@ func setupTest(t *testing.T, tokenModifier func(token *testdata.AuthorizationReq
 	hostname := "example.com"
 	crlDistPoint := "https://yivi.app/crl.crl"
 	_, rootCert, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT CERT 1"), 1, opts, &crlDistPoint)
-	verifierKey, verifierCert, _ := testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName(EndEntityCN), hostname, caCerts[0], caKeys[0], testdata.VerifierCertSchemeData, opts)
+
+	x5c := []*x509.Certificate{}
+	var verifierKey *ecdsa.PrivateKey
+	var verifierCert *x509.Certificate
+	if opts&testdata.PkiOption_MultiCertX5cHeader != 0 {
+		imKey, imCert, _ := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("SUB-CA CERT"), caCerts[0], caKeys[0], opts, nil)
+		verifierKey, verifierCert, _ = testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName(EndEntityCN), hostname, imCert, imKey, testdata.VerifierCertSchemeData, opts)
+
+		x5c = append(x5c, verifierCert, imCert)
+	} else {
+		verifierKey, verifierCert, _ = testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName(EndEntityCN), hostname, caCerts[0], caKeys[0], testdata.VerifierCertSchemeData, opts)
+		x5c = append(x5c, verifierCert)
+	}
 
 	// Setup VerifierValidator with PKI
 	rootPool := x509.NewCertPool()
@@ -437,7 +484,7 @@ func setupTest(t *testing.T, tokenModifier func(token *testdata.AuthorizationReq
 	verifierValidator = NewRequestorCertificateStoreVerifierValidator(trustModel, &MockQueryValidatorFactory{})
 
 	// Create an authorization request JWT
-	authRequestJwt = testdata.CreateTestAuthorizationRequestJWT(hostname, verifierKey, verifierCert, tokenModifier)
+	authRequestJwt = testdata.CreateTestAuthorizationRequestJWT(hostname, verifierKey, x5c, tokenModifier)
 	return
 }
 
@@ -450,7 +497,21 @@ func setupHashTest(t *testing.T, tokenModifier func(token *testdata.Authorizatio
 	hostname := "example.com"
 	crlDistPoint := "https://yivi.app/crl.crl"
 	_, rootCert, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT CERT 1"), 1, opts, &crlDistPoint)
-	verifierKey, verifierCert, certDerBytes := testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName("END ENTITY CERT"), hostname, caCerts[0], caKeys[0], testdata.VerifierCertSchemeData, opts)
+
+	x5c := []*x509.Certificate{}
+	var verifierKey *ecdsa.PrivateKey
+	var verifierCert *x509.Certificate
+	var certDerBytes []byte
+	if opts&testdata.PkiOption_MultiCertX5cHeader != 0 {
+		imKey, imCert, _ := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("SUB-CA CERT"), caCerts[0], caKeys[0], opts, nil)
+		verifierKey, verifierCert, certDerBytes = testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName(EndEntityCN), hostname, imCert, imKey, testdata.VerifierCertSchemeData, opts)
+
+		x5c = append(x5c, verifierCert)
+		x5c = append(x5c, imCert)
+	} else {
+		verifierKey, verifierCert, certDerBytes = testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName(EndEntityCN), hostname, caCerts[0], caKeys[0], testdata.VerifierCertSchemeData, opts)
+		x5c = append(x5c, verifierCert)
+	}
 
 	// Setup VerifierValidator with PKI
 	rootPool := x509.NewCertPool()
@@ -489,6 +550,6 @@ func setupHashTest(t *testing.T, tokenModifier func(token *testdata.Authorizatio
 	// Create an authorization request JWT with an x509_hash: client_id matching the leaf certificate
 	hash := sha256.Sum256(certDerBytes)
 	clientId := "x509_hash:" + base64.RawURLEncoding.EncodeToString(hash[:])
-	authRequestJwt = testdata.CreateTestAuthorizationRequestJWTWithClientId(clientId, verifierKey, verifierCert, tokenModifier)
+	authRequestJwt = testdata.CreateTestAuthorizationRequestJWTWithClientId(clientId, verifierKey, x5c, tokenModifier)
 	return
 }

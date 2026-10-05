@@ -139,10 +139,14 @@ func (v *RequestorCertificateStoreVerifierValidator) authorizeAuthRequestSigner(
 		return jwa.EmptySignatureAlgorithm(), nil, err
 	}
 
-	parsedCert, err := getEndEntityCertFromX5cHeader(headers)
+	parsedCerts, err := getCertsFromX5cHeader(headers)
 	if err != nil {
-		return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
+		return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("failed to get certificates from x5c header: %v", err)
 	}
+	if len(parsedCerts) == 0 {
+		return jwa.EmptySignatureAlgorithm(), nil, errors.New("no certificates found in x5c header")
+	}
+	leafCert := parsedCerts[0]
 
 	var hostname *string = nil
 
@@ -155,7 +159,7 @@ func (v *RequestorCertificateStoreVerifierValidator) authorizeAuthRequestSigner(
 		// x509_hash authenticates via the certificate hash rather than a DNS name,
 		// so the chain/revocation check is done without a hostname/SAN check and we leave `hostname` as nil.
 		expectedHash := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509Hash))
-		hash := sha256.Sum256(parsedCert.Raw)
+		hash := sha256.Sum256(leafCert.Raw)
 		actualHash := base64.RawURLEncoding.EncodeToString(hash[:])
 		if actualHash != expectedHash {
 			return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("client_id certificate hash %q does not match leaf certificate hash %q", expectedHash, actualHash)
@@ -166,15 +170,15 @@ func (v *RequestorCertificateStoreVerifierValidator) authorizeAuthRequestSigner(
 	}
 
 	// Verify the certificate against the trusted chains and revocation lists, using the hostname if applicable.
-	if err := eudi_jwt.VerifyCertificate(v.verificationContext, parsedCert, hostname); err != nil {
+	if err := eudi_jwt.VerifyCertificateChain(v.verificationContext, parsedCerts, hostname); err != nil {
 		return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("failed to verify relying party certificate: %v", err)
 	}
 
-	return alg, parsedCert, nil
+	return alg, leafCert, nil
 }
 
-// getEndEntityCertFromX5cHeader extracts the end-entity certificate from the x5c JWT header.
-func getEndEntityCertFromX5cHeader(headers jws.Headers) (*x509.Certificate, error) {
+// getCertsFromX5cHeader extracts the certificates from the x5c JWT header.
+func getCertsFromX5cHeader(headers jws.Headers) ([]*x509.Certificate, error) {
 	chain, ok := headers.X509CertChain()
 	if !ok {
 		return nil, errors.New("auth request token doesn't contain x5c field in the header")
@@ -183,17 +187,22 @@ func getEndEntityCertFromX5cHeader(headers jws.Headers) (*x509.Certificate, erro
 		return nil, errors.New("auth request token contains empty x5c array in the header")
 	}
 
-	endEntity, _ := chain.Get(0)
-	der, err := base64.StdEncoding.DecodeString(string(endEntity))
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode end-entity base64 encoded der: %v", err)
+	certificates := make([]*x509.Certificate, 0, chain.Len())
+	for i := 0; i < chain.Len(); i++ {
+		certBytes, _ := chain.Get(i)
+		der, err := base64.StdEncoding.DecodeString(string(certBytes))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode base64 encoded der: %v", err)
+		}
+
+		parsedCert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse x.509 certificate: %v", err)
+		}
+		certificates = append(certificates, parsedCert)
 	}
 
-	parsedCert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse x.509 certificate: %v", err)
-	}
-	return parsedCert, nil
+	return certificates, nil
 }
 
 // dcqlQueryToCredentialQueryInfos converts a DcqlQuery's credential queries

@@ -108,6 +108,11 @@ type Configuration struct {
 type RedisClient struct {
 	*redis.Client
 	KeyPrefix string
+
+	// RetryBudget is how long an operation keeps being retried while it fails on a
+	// connection that went away. Zero means DefaultRedisRetryBudget, negative means no
+	// retrying at all.
+	RetryBudget time.Duration
 }
 
 type RedisSettings struct {
@@ -115,6 +120,13 @@ type RedisSettings struct {
 	SentinelAddrs           []string `json:"sentinel_addresses,omitempty" mapstructure:"sentinel_addresses"`
 	SentinelMasterName      string   `json:"sentinel_master_name,omitempty" mapstructure:"sentinel_master_name"`
 	AcceptInconsistencyRisk bool     `json:"accept_inconsistency_risk,omitempty" mapstructure:"accept_inconsistency_risk"`
+
+	// RetryBudget is how long a Redis operation keeps being retried while it fails on a
+	// connection that went away, as happens while Redis Sentinel is promoting a new master.
+	// It does not apply to errors Redis itself returned. Defaults to DefaultRedisRetryBudget;
+	// set a negative value to not retry at all. It cannot bridge a failover that takes longer
+	// than this, which is bounded from below by the sentinels' own down-after-milliseconds.
+	RetryBudget time.Duration `json:"retry_budget,omitempty" mapstructure:"retry_budget"`
 
 	// Username for Redis authentication. If username is empty, the default user is used.
 	Username string `json:"username,omitempty" mapstructure:"username"`
@@ -455,6 +467,10 @@ func (conf *Configuration) RedisClient() (*RedisClient, error) {
 		return nil, err
 	}
 
+	// go-redis prints its own diagnostics, such as a lost Sentinel subscription or a master
+	// switch, straight to stderr; route them through our logger instead.
+	redis.SetLogger(redisLogger{conf.Logger})
+
 	// setup client
 	var cl *redis.Client
 	if len(conf.RedisSettings.SentinelAddrs) > 0 {
@@ -496,10 +512,22 @@ func (conf *Configuration) RedisClient() (*RedisClient, error) {
 		keyPrefix = conf.RedisSettings.Username + ":"
 	}
 	conf.redisClient = &RedisClient{
-		Client:    cl,
-		KeyPrefix: keyPrefix,
+		Client:      cl,
+		KeyPrefix:   keyPrefix,
+		RetryBudget: conf.RedisSettings.RetryBudget,
 	}
 	return conf.redisClient, nil
+}
+
+// redisLogger adapts a logrus logger to the logger interface go-redis takes. Everything
+// go-redis logs is a connectivity event worth an operator's attention, from a connection it
+// discarded to a Sentinel it could not reach or a new master it switched to.
+type redisLogger struct {
+	logger *logrus.Logger
+}
+
+func (l redisLogger) Printf(_ context.Context, format string, v ...any) {
+	l.logger.WithField("component", "go-redis").Warnf(format, v...)
 }
 
 func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {

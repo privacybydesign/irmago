@@ -81,6 +81,7 @@ const (
 	PkiOption_InvalidJsonSchemeData PkiGenerationOptions = 256
 	PkiOption_MissingUriSan         PkiGenerationOptions = 512
 	PkiOption_MissingDnsSan         PkiGenerationOptions = 1024
+	PkiOption_MultiCertX5cHeader    PkiGenerationOptions = 2048
 )
 
 func ParseHolderPubJwk() jwk.Key {
@@ -165,11 +166,11 @@ type AuthorizationRequestToken struct {
 	Claims map[string]any
 }
 
-func CreateTestAuthorizationRequestJWT(hostname string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *AuthorizationRequestToken)) string {
-	return CreateTestAuthorizationRequestJWTWithClientId("x509_san_dns:"+hostname, verifierKey, verifierCert, modifyTokenFunc)
+func CreateTestAuthorizationRequestJWT(hostname string, verifierKey *ecdsa.PrivateKey, x5cCerts []*x509.Certificate, modifyTokenFunc func(token *AuthorizationRequestToken)) string {
+	return CreateTestAuthorizationRequestJWTWithClientId("x509_san_dns:"+hostname, verifierKey, x5cCerts, modifyTokenFunc)
 }
 
-func CreateTestAuthorizationRequestJWTWithClientId(clientId string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *AuthorizationRequestToken)) string {
+func CreateTestAuthorizationRequestJWTWithClientId(clientId string, verifierKey *ecdsa.PrivateKey, x5cCerts []*x509.Certificate, modifyTokenFunc func(token *AuthorizationRequestToken)) string {
 	claims := map[string]any{
 		// OpenID4VP § 5.8: a statically discovered wallet — one publishing no issuer
 		// identifier, as this one does not — is addressed as this symbolic value.
@@ -195,10 +196,16 @@ func CreateTestAuthorizationRequestJWTWithClientId(clientId string, verifierKey 
 		"state":         "state",
 	}
 
+	// Convert certs to x5c
+	x5c := []string{}
+	for _, c := range x5cCerts {
+		x5c = append(x5c, base64.StdEncoding.EncodeToString(c.Raw))
+	}
+
 	token := &AuthorizationRequestToken{
 		Header: map[string]any{
 			"typ": "oauth-authz-req+jwt",
-			"x5c": []string{base64.StdEncoding.EncodeToString(verifierCert.Raw)},
+			"x5c": x5c,
 		},
 		Claims: claims,
 	}
