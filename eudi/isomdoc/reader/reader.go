@@ -47,6 +47,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/isomdoc"
 	"github.com/veraison/go-cose"
 )
 
@@ -156,7 +157,7 @@ func (b Builder) Build(origin, docType string, elements mdoc.DataElements) (*Req
 		return nil, fmt.Errorf("reader: generate the nonce: %w", err)
 	}
 
-	info, err := mdoc.NewDCAPIEncryptionInfo(nonce, &recipient.PublicKey)
+	info, err := isomdoc.NewDCAPIEncryptionInfo(nonce, &recipient.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("reader: build encryptionInfo: %w", err)
 	}
@@ -274,12 +275,12 @@ func (b Builder) AcceptedCircuits() *mdoc.AcceptedCircuits {
 // origin, or an encryptionInfo that was re-encoded somewhere along the way. It
 // does not mean the proof is bad, and reporting it as a bad proof sends whoever
 // reads the log looking in the wrong place.
-func (r *Request) Open(sealed mdoc.DCAPIEncryptedResponse) ([]byte, error) {
+func (r *Request) Open(sealed isomdoc.DCAPIEncryptedResponse) ([]byte, error) {
 	if r.Recipient == nil {
 		return nil, fmt.Errorf(
 			"reader: no recipient key for this request; it was not carried from the session that built it")
 	}
-	plaintext, err := mdoc.OpenDCAPIResponse(sealed, r.Recipient, r.Transcript)
+	plaintext, err := isomdoc.OpenDCAPIResponse(sealed, r.Recipient, r.Transcript)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"reader: decrypt the response (the transcripts differed; this is not a failed proof): %w", err)
@@ -294,7 +295,7 @@ func (r *Request) OpenBase64(sealed string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reader: response is not base64url: %w", err)
 	}
-	var envelope mdoc.DCAPIEncryptedResponse
+	var envelope isomdoc.DCAPIEncryptedResponse
 	if err := cbor.Unmarshal(raw, &envelope); err != nil {
 		return nil, fmt.Errorf("reader: decode the response envelope: %w", err)
 	}

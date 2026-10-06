@@ -207,7 +207,7 @@ func mustMarshal(v any) []byte {
 //     as a device authentication key.
 //
 // An unlisted curve is refused by name rather than silently mishandled; see
-// ecdsaPublicKeyFromCOSE.
+// ECDSAPublicKeyFromCOSE.
 var coseCurves = map[cose.Curve]elliptic.Curve{
 	cose.CurveP256: elliptic.P256(),
 	cose.CurveP384: elliptic.P384(),
@@ -224,7 +224,7 @@ func coseCurveIDFor(curve elliptic.Curve) (cose.Curve, bool) {
 	return 0, false
 }
 
-// coseKeyFromECDSA converts an ECDSA public key into the COSE_Key (RFC 9053)
+// COSEKeyFromECDSA converts an ECDSA public key into the COSE_Key (RFC 9053)
 // structure ISO/IEC 18013-5 embeds in the MSO as deviceKey. Factored out so
 // both the issuer (embedding) and verifier (deviceAuth check) build the exact
 // same structure from the exact same logic.
@@ -233,7 +233,7 @@ func coseCurveIDFor(curve elliptic.Curve) (cose.Curve, bool) {
 // Algorithm and therefore emits COSE label 3 (alg). deviceKey sits inside the
 // signed MSO, so an extra label changes the bytes the issuer signs; the four
 // labels below are what this package has always emitted.
-func coseKeyFromECDSA(pub *ecdsa.PublicKey) (*cose.Key, error) {
+func COSEKeyFromECDSA(pub *ecdsa.PublicKey) (*cose.Key, error) {
 	// The curve decides both the label and the coordinate width, so it has to be
 	// resolved before the coordinates are sliced rather than assumed afterwards.
 	// This slicing used to assume P-256's 65-byte uncompressed encoding: handed a
@@ -270,7 +270,7 @@ func coordinateLen(curve elliptic.Curve) int {
 	return (curve.Params().BitSize + 7) / 8
 }
 
-// ecdsaPublicKeyFromCOSE reconstructs a *ecdsa.PublicKey from a COSE_Key.
+// ECDSAPublicKeyFromCOSE reconstructs a *ecdsa.PublicKey from a COSE_Key.
 // Used by the verifier to check deviceAuth against the deviceKey embedded
 // in the (already-verified) MSO.
 //
@@ -278,7 +278,7 @@ func coordinateLen(curve elliptic.Curve) int {
 // coordinates without checking the point is on the curve — it returns a usable
 // *ecdsa.PublicKey for an off-curve point. These coordinates come off the wire,
 // so the validation in ecdsaPublicKeyFromCoordinates stays load-bearing.
-func ecdsaPublicKeyFromCOSE(k *cose.Key) (*ecdsa.PublicKey, error) {
+func ECDSAPublicKeyFromCOSE(k *cose.Key) (*ecdsa.PublicKey, error) {
 	if k == nil {
 		return nil, fmt.Errorf("MSO carries no deviceKey")
 	}
@@ -305,7 +305,7 @@ func ecdsaPublicKeyFromCOSE(k *cose.Key) (*ecdsa.PublicKey, error) {
 // ecdsaPublicKeyFromCoordinates builds a *ecdsa.PublicKey from raw P-256
 // x/y coordinates, validating the point actually lies on the curve. It
 // rebuilds a public key from an untrusted wire encoding, so that check is
-// load-bearing. Called only by ecdsaPublicKeyFromCOSE, above.
+// load-bearing. Called only by ECDSAPublicKeyFromCOSE, above.
 //
 // elliptic.Curve.IsOnCurve is deprecated ("low-level unsafe API"); the Go
 // team's own recommendation in that deprecation notice is to validate via

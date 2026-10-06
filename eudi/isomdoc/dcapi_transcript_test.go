@@ -1,4 +1,4 @@
-package mdoc
+package isomdoc
 
 import (
 	"crypto/sha256"
@@ -7,7 +7,23 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
+
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 )
+
+// testTag24 wraps a value in the #6.24(bstr .cbor ...) form the ISO handover
+// constructors take, mirroring the helper of the same name in the mdoc package.
+func testTag24(v any) cbor.RawMessage {
+	inner, err := cbor.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	wrapped, err := cbor.Marshal(cbor.Tag{Number: 24, Content: inner})
+	if err != nil {
+		panic(err)
+	}
+	return wrapped
+}
 
 // The org-iso-mdoc handover:
 //
@@ -28,8 +44,6 @@ import (
 // These tests still recompute the digest independently rather than calling that
 // helper, so a change to either side shows up as a disagreement.
 
-const testOrigin = "https://verifier.example.com"
-
 func testEncryptionInfoBase64(t *testing.T) string {
 	t.Helper()
 	return base64.RawURLEncoding.EncodeToString(mustDCAPIHex(t, capturedEncryptionInfoHex))
@@ -40,7 +54,7 @@ func testEncryptionInfoBase64(t *testing.T) string {
 func TestDCAPISessionTranscriptShape(t *testing.T) {
 	encryptionInfo := testEncryptionInfoBase64(t)
 
-	transcript, err := NewDCAPISessionTranscript(encryptionInfo, testOrigin)
+	transcript, err := mdoc.NewDCAPISessionTranscript(encryptionInfo, testOrigin)
 	require.NoError(t, err)
 
 	// Both leading slots are null: there is no engagement to bind.
@@ -63,7 +77,7 @@ func TestDCAPISessionTranscriptShape(t *testing.T) {
 // nil cbor.RawMessage has to encode as CBOR null and not vanish or become an
 // empty byte string, either of which is a different transcript.
 func TestDCAPISessionTranscriptEncodesWithNullSlots(t *testing.T) {
-	transcript, err := NewDCAPISessionTranscript(testEncryptionInfoBase64(t), testOrigin)
+	transcript, err := mdoc.NewDCAPISessionTranscript(testEncryptionInfoBase64(t), testOrigin)
 	require.NoError(t, err)
 
 	encoded, err := cbor.Marshal(transcript)
@@ -87,7 +101,7 @@ func TestDCAPISessionTranscriptBindsEveryInput(t *testing.T) {
 
 	digestOf := func(t *testing.T, info, origin string) []byte {
 		t.Helper()
-		transcript, err := NewDCAPISessionTranscript(info, origin)
+		transcript, err := mdoc.NewDCAPISessionTranscript(info, origin)
 		require.NoError(t, err)
 		return transcript.Handover.([]any)[1].([]byte)
 	}
@@ -108,7 +122,7 @@ func TestDCAPISessionTranscriptBindsEveryInput(t *testing.T) {
 }
 
 // TestDCAPISessionTranscriptHashesTheStringAsReceived is the re-encoding hazard
-// from dcapi.go, stated as a test.
+// from dcapi_encryption.go, stated as a test.
 //
 // Base64url admits padded and unpadded spellings of the same bytes. The digest is
 // over the text, so the two are different transcripts — and a wallet that
@@ -121,9 +135,9 @@ func TestDCAPISessionTranscriptHashesTheStringAsReceived(t *testing.T) {
 	padded := base64.URLEncoding.EncodeToString(raw)
 	require.NotEqual(t, unpadded, padded, "the fixture must actually need padding for this to test anything")
 
-	a, err := NewDCAPISessionTranscript(unpadded, testOrigin)
+	a, err := mdoc.NewDCAPISessionTranscript(unpadded, testOrigin)
 	require.NoError(t, err)
-	b, err := NewDCAPISessionTranscript(padded, testOrigin)
+	b, err := mdoc.NewDCAPISessionTranscript(padded, testOrigin)
 	require.NoError(t, err)
 
 	require.NotEqual(t, a.Handover.([]any)[1], b.Handover.([]any)[1],
@@ -135,17 +149,17 @@ func TestDCAPISessionTranscriptHashesTheStringAsReceived(t *testing.T) {
 // share a transport, so a document signed under one must not verify under
 // another.
 func TestDCAPISessionTranscriptNeverCollidesWithOtherHandovers(t *testing.T) {
-	dcapi, err := NewDCAPISessionTranscript(testEncryptionInfoBase64(t), testOrigin)
+	dcapi, err := mdoc.NewDCAPISessionTranscript(testEncryptionInfoBase64(t), testOrigin)
 	require.NoError(t, err)
 
-	qr, err := NewQRSessionTranscript(testTag24("device-engagement"), testTag24("ereader-key"))
+	qr, err := mdoc.NewQRSessionTranscript(testTag24("device-engagement"), testTag24("ereader-key"))
 	require.NoError(t, err)
 
-	nfc, err := NewNFCSessionTranscript(
+	nfc, err := mdoc.NewNFCSessionTranscript(
 		testTag24("device-engagement"), testTag24("ereader-key"), []byte("handover-select"), nil)
 	require.NoError(t, err)
 
-	encode := func(t *testing.T, transcript SessionTranscript) string {
+	encode := func(t *testing.T, transcript mdoc.SessionTranscript) string {
 		t.Helper()
 		b, err := cbor.Marshal(transcript)
 		require.NoError(t, err)
@@ -153,7 +167,7 @@ func TestDCAPISessionTranscriptNeverCollidesWithOtherHandovers(t *testing.T) {
 	}
 
 	seen := map[string]string{}
-	for name, transcript := range map[string]SessionTranscript{
+	for name, transcript := range map[string]mdoc.SessionTranscript{
 		"dcapi": dcapi, "qr": qr, "nfc": nfc,
 	} {
 		encoded := encode(t, transcript)
@@ -167,14 +181,14 @@ func TestDCAPISessionTranscriptNeverCollidesWithOtherHandovers(t *testing.T) {
 func TestDCAPISessionTranscriptRejectsBadInput(t *testing.T) {
 	encryptionInfo := testEncryptionInfoBase64(t)
 
-	_, err := NewDCAPISessionTranscript("", testOrigin)
+	_, err := mdoc.NewDCAPISessionTranscript("", testOrigin)
 	require.ErrorContains(t, err, "requires the base64url EncryptionInfo")
 
-	_, err = NewDCAPISessionTranscript(encryptionInfo, "")
+	_, err = mdoc.NewDCAPISessionTranscript(encryptionInfo, "")
 	require.ErrorContains(t, err, "requires an origin")
 
 	// The decoded CBOR where the encoded string belongs: well-formed input that
 	// would otherwise yield a transcript disagreeing with the reader's.
-	_, err = NewDCAPISessionTranscript(string(mustDCAPIHex(t, capturedEncryptionInfoHex)), testOrigin)
+	_, err = mdoc.NewDCAPISessionTranscript(string(mustDCAPIHex(t, capturedEncryptionInfoHex)), testOrigin)
 	require.ErrorContains(t, err, "not base64url text")
 }

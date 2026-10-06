@@ -60,8 +60,8 @@ func baseMSO(t *testing.T, namespace string, digests map[uint64][]byte) MSO {
 	t.Helper()
 	deviceSigner, err := GenerateDeviceSigner()
 	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
-	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
-	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
+	deviceKey, err := COSEKeyFromECDSA(deviceSigner.PublicKey())
+	require.NoError(t, err, "COSEKeyFromECDSA: %v", err)
 	now := time.Now().UTC()
 	return MSO{
 		Version:         "1.0",

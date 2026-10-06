@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc/zk"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
@@ -59,7 +60,7 @@ type Client struct {
 
 	// zkSystems are the zero-knowledge systems this build has, or nil. Nil is the
 	// ordinary state rather than an error, and routes an AV request to the plain
-	// presentation instead of failing it — see WithZkProver.
+	// presentation instead of failing it — see registerZkProver.
 	zkSystems *mdoc.ZkSystemRepository
 
 	// handler is how the wallet wakes the app when what it has already rendered
@@ -89,9 +90,12 @@ func New(
 	aesKey [32]byte,
 	locale string,
 
-	// options carry the capabilities only some builds have — a native ZK prover,
-	// today. Empty is a complete wallet; see options.go.
-	options ...Option,
+	// zkProver is the zero-knowledge proof system this build carries, or nil.
+	// Nil is the ordinary wallet, not a degraded one: AV Annex A §A.8 has a
+	// device without ZK support fall back to the plain ISO mDoc presentation,
+	// so a session with no system registered takes the fallback rather than
+	// failing — see registerZkProver.
+	zkProver zk.System,
 ) (*Client, error) {
 	// Required: the wallet calls it from background jobs and from IrmaClient
 	// without a nil guard, so a nil one would panic on a goroutine no caller
@@ -312,13 +316,35 @@ func New(
 	// locale-aware, or whose issuance-time download failed).
 	client.logoBackfill.Request(currentLocale.Get())
 
-	// Last, so an option can read whatever New assembled, and so ordering among
-	// options is the caller's rather than a side effect of where they run.
-	for _, option := range options {
-		option(client)
-	}
+	client.registerZkProver(zkProver)
 
 	return client, nil
+}
+
+// registerZkProver registers a zero-knowledge proof system for the wallet to
+// use when a reader asks for one. A nil system registers nothing, which routes
+// an AV request to the plain presentation instead of failing it.
+//
+// This is the seam the native prover arrives through. irmago cannot implement
+// a ZK system itself — the only one in scope is a C++ library, and irmago
+// deliberately does not compile C++ — so the implementation lives in a module
+// of its own and the application passes it to New:
+//
+//	client.New(..., longfellow.OpenDir(circuitDir))
+//
+// The parameter is zk.System, irmago's own stdlib-only interface, never a type
+// from the prover's module: the prover module imports irmago, irmago never
+// imports it. The system is wrapped in mdoc.ProverSystem here rather than by
+// the caller, because that adapter between the byte-oriented boundary and this
+// package's domain types is not something an application should know exists.
+func (client *Client) registerZkProver(system zk.System) {
+	if system == nil {
+		return
+	}
+	if client.zkSystems == nil {
+		client.zkSystems = mdoc.NewZkSystemRepository()
+	}
+	client.zkSystems.Add(mdoc.NewProverSystem(system))
 }
 
 // SetLocale changes the locale used to resolve all app-facing text and logos.

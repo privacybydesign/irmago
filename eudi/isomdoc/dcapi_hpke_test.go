@@ -1,4 +1,4 @@
-package mdoc
+package isomdoc
 
 import (
 	"crypto/ecdsa"
@@ -9,15 +9,17 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
+
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 )
 
 // HPKE for org-iso-mdoc: DHKEM(P-256, HKDF-SHA256), HKDF-SHA256, AES-128-GCM,
-// with `info` the encoded SessionTranscript and empty `aad`.
+// with `info` the encoded mdoc.SessionTranscript and empty `aad`.
 //
 // The suite is no longer guesswork. ISO/IEC TS 18013-7:2025 Table C.1 fixes all
 // four parameters — Mode Base, KEM DHKEM_P256, KDF HKDF_SHA256, AEAD
 // AES_128_GCM — and Tables C.2/C.3 fix `info` as the CBOR-encoded
-// SessionTranscript and `aad` as empty. That is what dcapiSuite returns.
+// mdoc.SessionTranscript and `aad` as empty. That is what dcapiSuite returns.
 //
 // What is still missing is test VECTORS. The captured exchange cannot be
 // decrypted — the reader's private key was never on the wire — and none are
@@ -32,7 +34,7 @@ import (
 type dcapiSession struct {
 	readerKey      *ecdsa.PrivateKey
 	encryptionInfo string
-	transcript     SessionTranscript
+	transcript     mdoc.SessionTranscript
 }
 
 func newDCAPISession(t *testing.T, origin string) dcapiSession {
@@ -51,7 +53,7 @@ func newDCAPISession(t *testing.T, origin string) dcapiSession {
 	require.NoError(t, err)
 	encryptionInfo := base64.RawURLEncoding.EncodeToString(encoded)
 
-	transcript, err := NewDCAPISessionTranscript(encryptionInfo, origin)
+	transcript, err := mdoc.NewDCAPISessionTranscript(encryptionInfo, origin)
 	require.NoError(t, err)
 
 	return dcapiSession{readerKey: readerKey, encryptionInfo: encryptionInfo, transcript: transcript}
@@ -113,7 +115,7 @@ func TestDCAPIResponseIsBoundToTheTranscript(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("a different origin cannot open it", func(t *testing.T) {
-		other, err := NewDCAPISessionTranscript(session.encryptionInfo, "https://attacker.example.com")
+		other, err := mdoc.NewDCAPISessionTranscript(session.encryptionInfo, "https://attacker.example.com")
 		require.NoError(t, err)
 		_, err = OpenDCAPIResponse(sealed, session.readerKey, other)
 		require.ErrorContains(t, err, "decryption failed")
@@ -121,14 +123,14 @@ func TestDCAPIResponseIsBoundToTheTranscript(t *testing.T) {
 
 	t.Run("a different EncryptionInfo cannot open it", func(t *testing.T) {
 		elsewhere := newDCAPISession(t, testOrigin)
-		other, err := NewDCAPISessionTranscript(elsewhere.encryptionInfo, testOrigin)
+		other, err := mdoc.NewDCAPISessionTranscript(elsewhere.encryptionInfo, testOrigin)
 		require.NoError(t, err)
 		_, err = OpenDCAPIResponse(sealed, session.readerKey, other)
 		require.ErrorContains(t, err, "decryption failed")
 	})
 
 	t.Run("a QR transcript cannot open it", func(t *testing.T) {
-		qr, err := NewQRSessionTranscript(testTag24("device-engagement"), testTag24("ereader-key"))
+		qr, err := mdoc.NewQRSessionTranscript(testTag24("device-engagement"), testTag24("ereader-key"))
 		require.NoError(t, err)
 		_, err = OpenDCAPIResponse(sealed, session.readerKey, qr)
 		require.ErrorContains(t, err, "decryption failed")
@@ -177,7 +179,7 @@ func TestDCAPIResponseRejectsTampering(t *testing.T) {
 }
 
 // TestDCAPIHPKEInfoIsTheBareTranscript pins the one detail most likely to be got
-// wrong by analogy: `info` is the encoded SessionTranscript, not 9.1.5.1's
+// wrong by analogy: `info` is the encoded mdoc.SessionTranscript, not 9.1.5.1's
 // tag-24 SessionTranscriptBytes. Both are plausible, only one interoperates, and
 // choosing the other fails as an AEAD error that names nothing.
 func TestDCAPIHPKEInfoIsTheBareTranscript(t *testing.T) {

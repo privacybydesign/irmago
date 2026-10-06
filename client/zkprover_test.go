@@ -9,7 +9,7 @@ import (
 )
 
 // fakeZkSystem stands in for the native prover, which lives in a module this
-// build does not link — which is the whole point of the option taking zk.System
+// build does not link — which is the whole point of New taking zk.System
 // rather than a concrete type.
 type fakeZkSystem struct{ circuits []zk.Circuit }
 
@@ -37,9 +37,9 @@ func TestWithoutZkProverThereIsNoRepository(t *testing.T) {
 	require.Empty(t, client.zkSystems.AllSpecs())
 }
 
-func TestWithZkProverRegistersTheSystem(t *testing.T) {
+func TestRegisterZkProverRegistersTheSystem(t *testing.T) {
 	client := &Client{}
-	WithZkProver(&fakeZkSystem{circuits: []zk.Circuit{avCircuit(1, "aa")}})(client)
+	client.registerZkProver(&fakeZkSystem{circuits: []zk.Circuit{avCircuit(1, "aa")}})
 
 	require.NotNil(t, client.zkSystems)
 	require.NotNil(t, client.zkSystems.Lookup(mdoc.ZkSystemLongfellowV1),
@@ -48,23 +48,23 @@ func TestWithZkProverRegistersTheSystem(t *testing.T) {
 	specs := client.zkSystems.AllSpecs()
 	require.Len(t, specs, 1)
 	require.Equal(t, mdoc.ZkSystemLongfellowV1+"_6_1_4096_2945_aa", specs[0].ID,
-		"the option wraps the byte-oriented system in the adapter, so specs come out profile-shaped")
+		"registerZkProver wraps the byte-oriented system in the adapter, so specs come out profile-shaped")
 }
 
-// Repeatable, because a build may hold more than one system and the option is
+// Repeatable, because a build may hold more than one system and this is
 // the only way to register any of them.
-func TestWithZkProverIsRepeatable(t *testing.T) {
+func TestRegisterZkProverIsRepeatable(t *testing.T) {
 	client := &Client{}
-	WithZkProver(&fakeZkSystem{circuits: []zk.Circuit{avCircuit(1, "aa")}})(client)
-	WithZkProver(&fakeZkSystem{circuits: []zk.Circuit{avCircuit(2, "bb")}})(client)
+	client.registerZkProver(&fakeZkSystem{circuits: []zk.Circuit{avCircuit(1, "aa")}})
+	client.registerZkProver(&fakeZkSystem{circuits: []zk.Circuit{avCircuit(2, "bb")}})
 
 	require.Len(t, client.zkSystems.AllSpecs(), 2)
 }
 
 // A nil system is a caller mistake that must not become a repository holding a
 // nil, which would panic later on a goroutine nobody can recover.
-func TestWithZkProverIgnoresNil(t *testing.T) {
+func TestRegisterZkProverIgnoresNil(t *testing.T) {
 	client := &Client{}
-	WithZkProver(nil)(client)
+	client.registerZkProver(nil)
 	require.Nil(t, client.zkSystems)
 }

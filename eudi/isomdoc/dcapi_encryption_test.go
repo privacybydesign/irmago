@@ -1,4 +1,4 @@
-package mdoc
+package isomdoc
 
 import (
 	"crypto/ecdsa"
@@ -111,7 +111,7 @@ func TestDCAPIEncryptionInfoRoundTripsToCapturedBytes(t *testing.T) {
 // TestNewDCAPIEncryptionInfoReproducesCapture builds the reader's half from
 // scratch — a nonce and an *ecdsa.PublicKey — and lands on the captured bytes.
 //
-// This exercises coseKeyFromECDSA against a real reader's output rather than
+// This exercises COSEKeyFromECDSA against a real reader's output rather than
 // against our own decoder, which is the only way to catch a COSE_Key we encode
 // self-consistently but differently from everyone else.
 func TestNewDCAPIEncryptionInfoReproducesCapture(t *testing.T) {

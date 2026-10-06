@@ -130,7 +130,7 @@ func newReader(t *testing.T) *reader {
 	nonce := make([]byte, 16)
 	_, err = rand.Read(nonce)
 	require.NoError(t, err)
-	info, err := mdoc.NewDCAPIEncryptionInfo(nonce, &ephemeral.PublicKey)
+	info, err := isomdoc.NewDCAPIEncryptionInfo(nonce, &ephemeral.PublicKey)
 	require.NoError(t, err)
 	encoded, err := cbor.Marshal(info)
 	require.NoError(t, err)
@@ -211,10 +211,10 @@ func (r *reader) request(t *testing.T, signed bool, docType, namespace string, e
 
 // open is what the verifier does with the answer: unseal against its own
 // transcript and decode.
-func (r *reader) open(t *testing.T, sealed mdoc.DCAPIEncryptedResponse) mdoc.DeviceResponse {
+func (r *reader) open(t *testing.T, sealed isomdoc.DCAPIEncryptedResponse) mdoc.DeviceResponse {
 	t.Helper()
 
-	plaintext, err := mdoc.OpenDCAPIResponse(sealed, r.ephemeral, r.transcript(t))
+	plaintext, err := isomdoc.OpenDCAPIResponse(sealed, r.ephemeral, r.transcript(t))
 	require.NoError(t, err)
 
 	var response mdoc.DeviceResponse
@@ -437,7 +437,7 @@ func (e *env) realBinder() isomdoc.DeviceKeyBinder {
 
 // respond drives one whole exchange the way client.isoMdocSession does: parse
 // the DC API data member, answer it, and hand back the sealed response.
-func (e *env) respond(t *testing.T, data []byte) (mdoc.DCAPIEncryptedResponse, error) {
+func (e *env) respond(t *testing.T, data []byte) (isomdoc.DCAPIEncryptedResponse, error) {
 	t.Helper()
 
 	// Released on every path out, as the client does. Respond releases too; this

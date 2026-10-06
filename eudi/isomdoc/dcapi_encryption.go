@@ -1,4 +1,4 @@
-package mdoc
+package isomdoc
 
 import (
 	"crypto/ecdsa"
@@ -7,6 +7,8 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	cose "github.com/veraison/go-cose"
+
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 )
 
 // ============================================================
@@ -17,8 +19,11 @@ import (
 // `org-iso-mdoc` is the protocol identifier a relying party puts in a W3C
 // Digital Credentials API request to say "answer me in ISO 18013-5, not
 // OpenID4VP". The payload it selects is the ordinary DeviceRequest and
-// DeviceResponse this package already speaks; what this file adds is the thin
-// envelope either side is wrapped in, and nothing more:
+// DeviceResponse the mdoc package speaks; what this file adds is the thin
+// protocol envelope either side is wrapped in, and nothing more — which is why
+// it lives here with the rest of the DC API protocol handling rather than in
+// eudi/credentials/mdoc, whose business is the credential and its transcript
+// (mdoc.NewDCAPISessionTranscript stays there, beside the other ISO handovers):
 //
 //	request data       = {"deviceRequest": base64url, "encryptionInfo": base64url}
 //	EncryptionInfo     = ["dcapi", {"nonce": bstr, "recipientPublicKey": COSE_Key}]
@@ -85,14 +90,14 @@ var dcapiEncMode, _ = cbor.EncOptions{
 // further in.
 func decodeDCAPIEnvelope(data []byte, what string) (cbor.RawMessage, error) {
 	var envelope []cbor.RawMessage
-	if err := Unmarshal(data, &envelope); err != nil {
+	if err := mdoc.Unmarshal(data, &envelope); err != nil {
 		return nil, fmt.Errorf("decode %s: not a CBOR array: %w", what, err)
 	}
 	if len(envelope) != 2 {
 		return nil, fmt.Errorf("decode %s: want a 2-element array, got %d", what, len(envelope))
 	}
 	var tag string
-	if err := Unmarshal(envelope[0], &tag); err != nil {
+	if err := mdoc.Unmarshal(envelope[0], &tag); err != nil {
 		return nil, fmt.Errorf("decode %s: first element is not a text string: %w", what, err)
 	}
 	if tag != dcapiEnvelopeTag {
@@ -130,7 +135,7 @@ func NewDCAPIEncryptionInfo(nonce []byte, recipient *ecdsa.PublicKey) (DCAPIEncr
 	if recipient == nil {
 		return DCAPIEncryptionInfo{}, fmt.Errorf("build EncryptionInfo: recipient key is nil")
 	}
-	key, err := coseKeyFromECDSA(recipient)
+	key, err := mdoc.COSEKeyFromECDSA(recipient)
 	if err != nil {
 		return DCAPIEncryptionInfo{}, fmt.Errorf("build EncryptionInfo: %w", err)
 	}
@@ -162,7 +167,7 @@ func (e *DCAPIEncryptionInfo) UnmarshalCBOR(data []byte) error {
 		return err
 	}
 	var wire dcapiEncryptionInfoWire
-	if err := Unmarshal(body, &wire); err != nil {
+	if err := mdoc.Unmarshal(body, &wire); err != nil {
 		return fmt.Errorf("decode EncryptionInfo: %w", err)
 	}
 	if len(wire.Nonce) == 0 {
@@ -178,7 +183,7 @@ func (e *DCAPIEncryptionInfo) UnmarshalCBOR(data []byte) error {
 
 // RecipientKey decodes recipientPublicKey into the key HPKE seals to.
 //
-// It routes through ecdsaPublicKeyFromCOSE rather than cose.Key.PublicKey for
+// It routes through mdoc.ECDSAPublicKeyFromCOSE rather than cose.Key.PublicKey for
 // the reason given there: these coordinates come off the wire and the on-curve
 // check stays load-bearing.
 func (e DCAPIEncryptionInfo) RecipientKey() (*ecdsa.PublicKey, error) {
@@ -186,10 +191,10 @@ func (e DCAPIEncryptionInfo) RecipientKey() (*ecdsa.PublicKey, error) {
 		return nil, fmt.Errorf("EncryptionInfo carries no recipientPublicKey")
 	}
 	var key cose.Key
-	if err := Unmarshal(e.RecipientPublicKey, &key); err != nil {
+	if err := mdoc.Unmarshal(e.RecipientPublicKey, &key); err != nil {
 		return nil, fmt.Errorf("decode recipientPublicKey as COSE_Key: %w", err)
 	}
-	return ecdsaPublicKeyFromCOSE(&key)
+	return mdoc.ECDSAPublicKeyFromCOSE(&key)
 }
 
 // ============================================================
@@ -239,7 +244,7 @@ func (r *DCAPIEncryptedResponse) UnmarshalCBOR(data []byte) error {
 		return err
 	}
 	var wire dcapiEncryptedResponseWire
-	if err := Unmarshal(body, &wire); err != nil {
+	if err := mdoc.Unmarshal(body, &wire); err != nil {
 		return fmt.Errorf("decode encrypted response: %w", err)
 	}
 	if len(wire.Enc) == 0 {
@@ -291,7 +296,7 @@ func dcapiSuite() (hpke.KDF, hpke.AEAD) {
 // form here would produce a context neither Multipaz nor the reference
 // implementation shares, and the symptom would be an AEAD authentication failure
 // with nothing to say why.
-func dcapiHPKEInfo(transcript SessionTranscript) ([]byte, error) {
+func dcapiHPKEInfo(transcript mdoc.SessionTranscript) ([]byte, error) {
 	encoded, err := dcapiEncMode.Marshal(transcript)
 	if err != nil {
 		return nil, fmt.Errorf("encode session transcript for HPKE info: %w", err)
@@ -311,7 +316,7 @@ func dcapiHPKEInfo(transcript SessionTranscript) ([]byte, error) {
 //
 // aad is empty. The profile puts everything that would otherwise be associated
 // data into the transcript, and so into `info`.
-func SealDCAPIResponse(deviceResponse []byte, recipient *ecdsa.PublicKey, transcript SessionTranscript) (DCAPIEncryptedResponse, error) {
+func SealDCAPIResponse(deviceResponse []byte, recipient *ecdsa.PublicKey, transcript mdoc.SessionTranscript) (DCAPIEncryptedResponse, error) {
 	if len(deviceResponse) == 0 {
 		return DCAPIEncryptedResponse{}, fmt.Errorf("seal response: nothing to seal")
 	}
@@ -356,7 +361,7 @@ func SealDCAPIResponse(deviceResponse []byte, recipient *ecdsa.PublicKey, transc
 // EncryptionInfo re-encoded rather than passed through), the wrong private key,
 // or a tampered response; none of them can be told apart from the ciphertext,
 // and guessing in the error message would mislead more often than help.
-func OpenDCAPIResponse(response DCAPIEncryptedResponse, recipient *ecdsa.PrivateKey, transcript SessionTranscript) ([]byte, error) {
+func OpenDCAPIResponse(response DCAPIEncryptedResponse, recipient *ecdsa.PrivateKey, transcript mdoc.SessionTranscript) ([]byte, error) {
 	if len(response.Enc) == 0 || len(response.CipherText) == 0 {
 		return nil, fmt.Errorf("open response: envelope is missing enc or cipherText")
 	}

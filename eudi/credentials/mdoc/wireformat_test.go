@@ -240,7 +240,7 @@ func TestTag24WrapWithModeUsesGivenEncMode(t *testing.T) {
 // The count is as load-bearing as the types. deviceKey is covered by the
 // signed MSO digest, so any extra label changes what the issuer signs:
 // cose.NewKeyFromPublic, for one, also sets Algorithm and would emit label 3.
-// coseKeyFromECDSA builds the key label by label to avoid exactly that.
+// COSEKeyFromECDSA builds the key label by label to avoid exactly that.
 func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
 	issuer, deviceSigner, _, _, _, _, _, _ := buildHappyPathMDoc(t)
 	_ = deviceSigner

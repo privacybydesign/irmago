@@ -8,7 +8,6 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/isomdoc"
 	"github.com/stretchr/testify/require"
 )
@@ -48,7 +47,7 @@ func consentRequest() isomdoc.ConsentRequest {
 // JSON `data` member for OpenID4VP. Handing back a bare string here would make the
 // app branch on protocol to return it.
 func TestDcApiResponseDataIsAJsonObject(t *testing.T) {
-	sealed := mdoc.DCAPIEncryptedResponse{
+	sealed := isomdoc.DCAPIEncryptedResponse{
 		Enc:        []byte{0x04, 0x01, 0x02},
 		CipherText: []byte{0xaa, 0xbb},
 	}
@@ -67,7 +66,7 @@ func TestDcApiResponseDataIsAJsonObject(t *testing.T) {
 
 	// It must be the ["dcapi", {...}] envelope, not a bare struct encode: a
 	// verifier decoding the envelope would reject the latter.
-	var roundTripped mdoc.DCAPIEncryptedResponse
+	var roundTripped isomdoc.DCAPIEncryptedResponse
 	require.NoError(t, cbor.Unmarshal(raw, &roundTripped))
 	require.Equal(t, sealed.Enc, roundTripped.Enc)
 	require.Equal(t, sealed.CipherText, roundTripped.CipherText)
@@ -98,14 +97,12 @@ func TestRequestConsentParksAndReturnsTheAnswer(t *testing.T) {
 	require.Equal(t, []clientmodels.SessionStatus{clientmodels.Status_RequestPermission}, spy.statuses)
 	require.Equal(t, clientmodels.Protocol_ISO18013_5, iso.session.State.Protocol,
 		"the app is told which exchange it is showing")
-	// #724 O1: nothing in an org-iso-mdoc request names the caller, so the wallet
-	// reports no party rather than dressing the origin up as one. The UI owes this
-	// case a different screen, and can only know to show one if the model says so.
+	// Nothing in an org-iso-mdoc request names the caller, so the authenticated
+	// origin stands in as an unverified name — the same rendering the OpenID4VP
+	// DC API path gives an unsigned request.
 	requestor := iso.session.State.Requestor
-	require.True(t, requestor.Anonymous,
-		"an org-iso-mdoc request carries no verifier identity at all")
-	require.Empty(t, requestor.Name,
-		"an origin is an address, not a name; putting it in Name is what O1 rejects")
+	require.Equal(t, "https://verifier.example.com", requestor.Name,
+		"the origin is the one fact there is to show, and an unverified name beats no name")
 	require.NotNil(t, requestor.Origin)
 	require.Equal(t, "https://verifier.example.com", *requestor.Origin,
 		"the origin is still shown — it is the one fact the platform authenticated")

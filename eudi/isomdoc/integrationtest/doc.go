@@ -23,7 +23,7 @@
 //	  -> dcql.DcqlHandler
 //	  -> isomdoc.WalletDiscloser      real instance selector, real device-key binder
 //	  -> isomdoc.Session
-//	  -> mdoc.OpenDCAPIResponse           opened and verified as the reader would
+//	  -> isomdoc.OpenDCAPIResponse           opened and verified as the reader would
 //
 // The only fake left is the consent handler, which stands in for a human.
 //

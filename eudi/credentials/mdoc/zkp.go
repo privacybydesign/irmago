@@ -19,6 +19,14 @@ import (
 // ZkSystem interface in zkp_system.go, because it needs a native library this
 // module deliberately does not link (see that file).
 //
+// Relation to the mdoc/zk subpackage: that package is the module boundary the
+// native longfellow prover arrives through — stdlib-only types (bytes, strings,
+// time.Time) so the cgo prover module can implement its interfaces without
+// importing irmago. This file knows the ISO/Multipaz byte shapes and nothing
+// about proving; mdoc/zk knows the native ABI and nothing about mdoc. The
+// adapter speaking both languages is ProverSystem in zkp_prover.go, which
+// implements this package's ZkSystem over a zk.System.
+//
 // Why this exists at all: the EUDI Age Verification Blueprint Annex A 8 makes a
 // zero-knowledge proof the *preferred* way to present a Proof of Age
 // attestation — "the AVI SHALL support the generation of Zero-Knowledge Proofs"
@@ -495,6 +503,9 @@ func encodeCertChain(chain []*x509.Certificate) (cbor.RawMessage, error) {
 	}
 }
 
+// decodeCertChain is the inverse of encodeCertChain. It cannot reuse
+// certificatesFromX5Chain wholesale — that reads a decoded go-cose header value,
+// this reads raw CBOR out of a map of our own — but the DER parsing is shared.
 func decodeCertChain(raw cbor.RawMessage) ([]*x509.Certificate, error) {
 	if len(raw) == 0 {
 		return nil, nil
@@ -502,26 +513,14 @@ func decodeCertChain(raw cbor.RawMessage) ([]*x509.Certificate, error) {
 
 	var single []byte
 	if err := Unmarshal(raw, &single); err == nil {
-		cert, err := x509.ParseCertificate(single)
-		if err != nil {
-			return nil, fmt.Errorf("parse msoX5chain certificate: %w", err)
-		}
-		return []*x509.Certificate{cert}, nil
+		return parseCertificateChain([][]byte{single}, "msoX5chain")
 	}
 
 	var multiple [][]byte
 	if err := Unmarshal(raw, &multiple); err != nil {
 		return nil, fmt.Errorf("decode msoX5chain: %w", err)
 	}
-	chain := make([]*x509.Certificate, 0, len(multiple))
-	for i, der := range multiple {
-		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, fmt.Errorf("parse msoX5chain[%d]: %w", i, err)
-		}
-		chain = append(chain, cert)
-	}
-	return chain, nil
+	return parseCertificateChain(multiple, "msoX5chain")
 }
 
 // MarshalCBOR encodes the cleartext half of a presentation, or returns the

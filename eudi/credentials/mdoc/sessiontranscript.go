@@ -206,7 +206,9 @@ func validateTag24Slot(name string, raw cbor.RawMessage) error {
 // not a re-encoding of its contents — so this takes the string and never the
 // structure. Rebuilding it would be correct for every canonical reader and wrong
 // for any other, and the symptom would be a deviceAuth signature that does not
-// verify, pointing at the signature rather than at the encoder. See dcapi.go.
+// verify, pointing at the signature rather than at the encoder. See
+// eudi/isomdoc/dcapi_encryption.go, which carries the EncryptionInfo structure
+// and the HPKE sealing this transcript binds.
 //
 // origin is the web origin the request was mediated for (say
 // "https://verifier.example.com"). It reaches the wallet from the browser or OS
@@ -236,6 +238,12 @@ func NewDCAPISessionTranscript(encryptionInfoBase64Url, origin string) (SessionT
 	digest := sha256.Sum256(handoverInfo)
 
 	return SessionTranscript{
-		Handover: []any{dcapiEnvelopeTag, digest[:]},
+		Handover: []any{dcapiHandoverIdentifier, digest[:]},
 	}, nil
 }
+
+// dcapiHandoverIdentifier labels the DC API handover per 18013-7 C.5. The same
+// string tags the EncryptionInfo/EncryptedResponse envelopes of C.2/C.3, but
+// those are a different structure in a different package (eudi/isomdoc); the
+// two constants sharing a value is the spec's doing, not a dependency.
+const dcapiHandoverIdentifier = "dcapi"

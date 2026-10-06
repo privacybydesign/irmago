@@ -67,7 +67,7 @@ func mdocFromItems(
 		valueDigests[item.DigestID] = digest
 	}
 
-	deviceKey, err := coseKeyFromECDSA(holderPub)
+	deviceKey, err := COSEKeyFromECDSA(holderPub)
 	require.NoError(t, err, "convert holder public key: %v", err)
 
 	now := time.Now().UTC().Truncate(24 * time.Hour)

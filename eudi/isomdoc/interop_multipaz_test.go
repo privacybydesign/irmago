@@ -31,6 +31,10 @@ import (
 // The server is a Ktor app in the multipaz checkout:
 //
 //	./gradlew :multipaz-verifier-server:run      # listens on 127.0.0.1:8006
+//
+// or, once multipaz/server-bundle:latest has been built (see docker-compose.yml):
+//
+//	docker compose --profile interop up multipaz-verifier
 
 const multipazVerifierRequest = "testdata/multipaz_verifier_dcbegin.json"
 

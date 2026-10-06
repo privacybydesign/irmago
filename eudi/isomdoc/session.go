@@ -216,8 +216,8 @@ func (s *Session) now() time.Time {
 }
 
 // Respond runs the whole exchange and returns the sealed response.
-func (s *Session) Respond(request Request) (mdoc.DCAPIEncryptedResponse, error) {
-	var empty mdoc.DCAPIEncryptedResponse
+func (s *Session) Respond(request Request) (DCAPIEncryptedResponse, error) {
+	var empty DCAPIEncryptedResponse
 
 	if s.Discloser == nil {
 		return empty, fmt.Errorf("session has no discloser: nothing can be presented")
@@ -287,7 +287,7 @@ func (s *Session) Respond(request Request) (mdoc.DCAPIEncryptedResponse, error) 
 		return empty, fmt.Errorf("encode deviceResponse: %w", err)
 	}
 
-	sealed, err := mdoc.SealDCAPIResponse(encoded, recipient, transcript)
+	sealed, err := SealDCAPIResponse(encoded, recipient, transcript)
 	if err != nil {
 		return empty, err
 	}
@@ -314,7 +314,7 @@ func recipientKeyFrom(encoded string) (*ecdsa.PublicKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encryptionInfo is not base64url: %w", err)
 	}
-	var info mdoc.DCAPIEncryptionInfo
+	var info DCAPIEncryptionInfo
 	if err := cbor.Unmarshal(raw, &info); err != nil {
 		return nil, fmt.Errorf("decode encryptionInfo: %w", err)
 	}

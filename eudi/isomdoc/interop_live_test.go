@@ -22,10 +22,11 @@ import (
 // against multipaz-verifier-server". This is that round trip — their request in,
 // our sealed response back, decrypted by them.
 //
-// SKIPPED unless the server is listening. It is not a CI test: it needs a Ktor
-// app from the multipaz checkout on 127.0.0.1:8006.
+// SKIPPED unless the server is listening on 127.0.0.1:8006. It is not a CI
+// test. Two ways to stand the server up:
 //
-//	cd D:/Yivi/multipaz && ./gradlew :multipaz-verifier-server:run
+//	docker compose --profile interop up multipaz-verifier   # see docker-compose.yml
+//	./gradlew :multipaz-verifier-server:run                 # in the multipaz checkout
 //
 // What it actually proves, and why that is the interesting part: the verifier
 // does NOT decrypt with the encryptionInfo it sent. It REBUILDS that text from
@@ -78,10 +79,16 @@ func TestLiveRoundTripAgainstMultipazVerifier(t *testing.T) {
 	// ---- their request ----------------------------------------------------
 	var begin dcBeginResponse
 	postJSON(t, "/verifier/dcBegin", map[string]any{
-		"format": "mdoc", "docType": "eu.europa.ec.av.1", "requestId": "age_over_18",
-		"rawDcql": "", "multiDocumentRequestId": "",
-		"protocol": "w3c_dc_mdoc_api", "origin": origin, "host": "127.0.0.1:8006",
-		"signRequest": false, "encryptResponse": true,
+		"format":                 "mdoc",
+		"docType":                "eu.europa.ec.av.1",
+		"requestId":              "age_over_18",
+		"rawDcql":                "",
+		"multiDocumentRequestId": "",
+		"protocol":               "w3c_dc_mdoc_api",
+		"origin":                 origin,
+		"host":                   "127.0.0.1:8006",
+		"signRequest":            false,
+		"encryptResponse":        true,
 	}, &begin)
 
 	require.Equal(t, DcApiProtocolIsoMdoc, begin.DcRequestProtocol)

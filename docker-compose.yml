@@ -64,6 +64,26 @@ services:
       - 1025:1025
       - 8025:8025 # Port of the web interface
 
+  # Third-party org-iso-mdoc verifier, for the live interop tests in
+  # eudi/isomdoc (interop_live_test.go); those tests skip themselves when
+  # nothing listens on 127.0.0.1:8006, so this service is opt-in.
+  #
+  # Multipaz publishes no image, but its repository builds one: in a checkout of
+  # https://github.com/openwallet-foundation-labs/identity-credential run
+  #
+  #   ./gradlew :multipaz-server-deployment:buildDockerImage
+  #
+  # which produces multipaz/server-bundle:latest locally (all reference servers
+  # in one image; the verifier listens on 8006). Then:
+  #
+  #   docker compose --profile interop up multipaz-verifier
+  multipaz-verifier:
+    image: multipaz/server-bundle:latest
+    profiles:
+      - interop
+    ports:
+      - 8006:8006
+
   # Frontend of 'irma keyshare myirmaserver'
   webclient:
     image: privacybydesign/irma_keyshare_webclient

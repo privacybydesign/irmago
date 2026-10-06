@@ -54,10 +54,10 @@ type VerifiedDocument struct {
 // This is the entry point a relying party should use. It exists because the
 // obvious alternatives are each wrong in a way that does not announce itself:
 //
-//   - mdoc.Verifier.VerifyDeviceResponseAsReader walks documents only, so a
-//     response whose content is all proofs used to come back as an empty slice
-//     and a nil error. It now refuses such a response outright, and this is what
-//     handles it instead.
+//   - mdoc.Verifier.VerifyDeviceResponse walks documents only, so a response
+//     whose content is all proofs used to come back as an empty slice and a nil
+//     error. It now refuses such a response outright, and this is what handles
+//     it instead.
 //   - mdoc.VerifyZkDocument resolves the circuit, applies the accepted set,
 //     checks the timestamp against the clock and verifies the proof — and
 //     deliberately does not decide whether the issuer is trusted. A caller that
@@ -164,8 +164,7 @@ func (b Builder) Verify(
 	plain := response
 	plain.ZkDocuments = nil
 
-	results, err := b.Verifier.VerifyDeviceResponseAsReader(
-		plain, docType, docType, request.Transcript, request.Recipient)
+	results, err := b.Verifier.VerifyDeviceResponse(plain, docType, docType, request.Transcript)
 	if err != nil {
 		return nil, fmt.Errorf("reader: verify the plain documents: %w", err)
 	}

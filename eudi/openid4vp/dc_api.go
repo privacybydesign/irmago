@@ -105,7 +105,7 @@ func (client *Client) parseDcApiRequest(request *DcApiRequest) (*AuthorizationRe
 			return nil, nil, err
 		}
 		authRequest = parsed
-		requestor = unsignedDcApiRequestor(request.Origin)
+		requestor = UnsignedDcApiRequestor(request.Origin)
 
 	case DcApiProtocolSigned:
 		var data dcApiSignedRequestData
@@ -248,7 +248,7 @@ func originHostPort(u *url.URL) string {
 	return u.Host
 }
 
-// unsignedDcApiRequestor builds the requestor to show for an unsigned request.
+// UnsignedDcApiRequestor builds the requestor to show for an unsigned request.
 // There is no trust framework backing an unsigned request, so the verifier is
 // never presented as verified: all the wallet knows is the origin the platform
 // authenticated.
@@ -264,7 +264,7 @@ func originHostPort(u *url.URL) string {
 // http://example.com, https://example.com and https://example.com:8443 under one
 // name, while the response is bound to exactly one of them. A default port
 // written out explicitly is normalised away, matching sameOrigin.
-func unsignedDcApiRequestor(origin string) *clientmodels.TrustedParty {
+func UnsignedDcApiRequestor(origin string) *clientmodels.TrustedParty {
 	displayName := origin
 	if u, err := url.Parse(origin); err == nil && u.Scheme != "" && u.Hostname() != "" {
 		displayName = u.Scheme + "://" + originHostPort(u)

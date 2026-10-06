@@ -155,7 +155,7 @@ func TestSealedResponseRoundTrips(t *testing.T) {
 	require.NoError(t, err)
 
 	payload := []byte("a DeviceResponse would be here")
-	sealed, err := mdoc.SealDCAPIResponse(payload, &request.Recipient.PublicKey, request.Transcript)
+	sealed, err := isomdoc.SealDCAPIResponse(payload, &request.Recipient.PublicKey, request.Transcript)
 	require.NoError(t, err)
 	encoded, err := cbor.Marshal(sealed)
 	require.NoError(t, err)
@@ -176,7 +176,7 @@ func TestOpenRefusesAResponseSealedToAnotherRequest(t *testing.T) {
 	second, err := builder.Build("https://elsewhere.example.com", testDocType, testElements())
 	require.NoError(t, err)
 
-	sealed, err := mdoc.SealDCAPIResponse([]byte("for the first"), &first.Recipient.PublicKey, first.Transcript)
+	sealed, err := isomdoc.SealDCAPIResponse([]byte("for the first"), &first.Recipient.PublicKey, first.Transcript)
 	require.NoError(t, err)
 
 	_, err = second.Open(sealed)
@@ -194,7 +194,7 @@ func TestRestoreOpensWhatTheBuilderSealed(t *testing.T) {
 	require.NoError(t, err)
 
 	payload := []byte("a DeviceResponse would be here")
-	sealed, err := mdoc.SealDCAPIResponse(payload, &built.Recipient.PublicKey, built.Transcript)
+	sealed, err := isomdoc.SealDCAPIResponse(payload, &built.Recipient.PublicKey, built.Transcript)
 	require.NoError(t, err)
 	encoded, err := cbor.Marshal(sealed)
 	require.NoError(t, err)

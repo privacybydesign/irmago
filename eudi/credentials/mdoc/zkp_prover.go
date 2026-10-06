@@ -382,7 +382,7 @@ func issuerChain(document MDoc) ([]*x509.Certificate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode issuerAuth of %s: %w", document.DocType, err)
 	}
-	return certificateChainFromHeaders(message.Headers.Unprotected)
+	return certificatesFromX5Chain(message.Headers.Unprotected, "issuerAuth")
 }
 
 // issuerKeyCoordinates renders the leaf certificate's P-256 public key the way

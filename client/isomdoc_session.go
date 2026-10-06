@@ -159,7 +159,7 @@ func (iso *isoMdocSession) run(client *Client, data []byte, origin string) {
 	// authorization request whose verifier cannot be authenticated never reaches
 	// a consent screen, and it is the wallet's own choice rather than something
 	// 18013-5 requires. See mdoc.VerifyReaderAuth.
-	// ZkSystems is whatever the application registered with client.WithZkProver,
+	// ZkSystems is whatever the application passed to client.New,
 	// and nil when it registered nothing. Nil is the ordinary case, not an error:
 	// it routes an AV request to the plain A.6 presentation instead of failing
 	// it. The session reads the reader's zkRequest either way and takes the ZK
@@ -296,7 +296,7 @@ func (iso *isoMdocSession) logDisclosure(client *Client) {
 //
 // "Where Base64EncryptedResponse contains the cbor encoded EncryptedResponse […]
 // as a base64-url-without-padding string." Which is what RawURLEncoding emits.
-func dcApiResponseData(sealed mdoc.DCAPIEncryptedResponse) (string, error) {
+func dcApiResponseData(sealed isomdoc.DCAPIEncryptedResponse) (string, error) {
 	// MarshalCBOR is DCAPIEncryptedResponse's own and writes the envelope; this is
 	// not a struct encode.
 	encoded, err := cbor.Marshal(sealed)
@@ -377,33 +377,23 @@ func (iso *isoMdocSession) RequestConsent(
 	return answer.choices, nil
 }
 
-// requestor is who the user is being told is asking — which, here, is nobody.
+// requestor is who the user is being told is asking.
 //
-// An org-iso-mdoc request carries no client_id and no verifier metadata. Nothing
-// in it names the caller, so the wallet has an address and no identity, and it
-// says so: Anonymous, with the origin in Origin and Name left empty.
+// An org-iso-mdoc request carries no client_id and no verifier metadata, so the
+// one thing there is to show is the origin the platform authenticated. It goes
+// in Name, unverified, through the same helper the OpenID4VP DC API path uses
+// for an unsigned request — an unverified name beats showing no name at all,
+// and the two unsigned-DC-API flows should read the same on screen.
 //
-// The alternative was to put the origin in Name and mark it unverified, which is
-// what this did first and what the OpenID4VP DC API path still does. It reads as
-// a party whose name we could not check. But there is no name to check, and that
-// rank already holds an OpenID4VCI issuer whose genuine metadata merely is not
-// signed. Making those two indistinguishable is worst in exactly this flow,
-// where the question in front of the user is whether to prove their age to a
-// stranger. irmago #724 O1 settles it this way; the UI owes an anonymous
-// requestor a different screen, not a different badge.
-//
-// Verified stays false even when readerAuth succeeded, and the reason is
-// unchanged by any of the above: reader authentication proves that some
-// certificate chained to a trusted anchor, never that it belongs to this origin.
-// Conflating the two would let a trusted reader lend its badge to any origin that
-// replayed its request.
+// Verified stays false even when readerAuth succeeded: reader authentication
+// proves that some certificate chained to a trusted anchor, never that it
+// belongs to this origin. Conflating the two would let a trusted reader lend
+// its badge to any origin that replayed its request.
 func (iso *isoMdocSession) requestor(request isomdoc.ConsentRequest) clientmodels.TrustedParty {
 	origin := request.Origin
-	return clientmodels.TrustedParty{
-		Anonymous: true,
-		Origin:    &origin,
-		Verified:  false,
-	}
+	party := *openid4vp.UnsignedDcApiRequestor(origin)
+	party.Origin = &origin
+	return party
 }
 
 // answer delivers the user's verdict, exactly once.

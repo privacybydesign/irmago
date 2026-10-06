@@ -79,16 +79,15 @@ func (s *eudiLogService) addSessionLog(logType clientmodels.LogType, protocol cl
 	}
 	saveLogoFromBase64(s.verifierLogoManager, requestor.Id, requestor.Image)
 	entry := &models.EudiLogEntry{
-		ID:                 datatypes.NewUUIDv4(),
-		Type:               string(logType),
-		Protocol:           string(protocol),
-		CreatedAt:          time.Now(),
-		RequestorId:        requestor.Id,
-		RequestorName:      requestorName,
-		RequestorVerified:  requestor.Verified,
-		RequestorAnonymous: requestor.Anonymous,
-		RequestorOrigin:    originOf(requestor),
-		Credentials:        creds,
+		ID:                datatypes.NewUUIDv4(),
+		Type:              string(logType),
+		Protocol:          string(protocol),
+		CreatedAt:         time.Now(),
+		RequestorId:       requestor.Id,
+		RequestorName:     requestorName,
+		RequestorVerified: requestor.Verified,
+		RequestorOrigin:   originOf(requestor),
+		Credentials:       creds,
 	}
 	return s.store.AddLog(entry)
 }
@@ -221,12 +220,11 @@ func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry, displayByVct map
 	requestorName := decodeStoredText(e.RequestorName, s.locale)
 	requestorImage := eudi.LoadLogoImage(s.verifierLogoManager, e.RequestorId)
 	requestor := &clientmodels.TrustedParty{
-		Id:        e.RequestorId,
-		Name:      requestorName,
-		Image:     requestorImage,
-		Verified:  e.RequestorVerified,
-		Anonymous: e.RequestorAnonymous,
-		Origin:    originPointer(e.RequestorOrigin),
+		Id:       e.RequestorId,
+		Name:     requestorName,
+		Image:    requestorImage,
+		Verified: e.RequestorVerified,
+		Origin:   originPointer(e.RequestorOrigin),
 	}
 
 	switch clientmodels.LogType(e.Type) {

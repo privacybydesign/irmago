@@ -117,6 +117,65 @@ func coseVerifierFor(msg *cose.Sign1Message, key crypto.PublicKey, what string) 
 	return verifier, nil
 }
 
+// certificatesFromX5Chain reads the x5chain of COSE header 33, leaf first:
+// [DS cert DER, IACA cert DER, ...] for issuerAuth (Annex B), the reader's
+// chain for readerAuth (9.1.4.4). what names the structure in errors, which the
+// verification path surfaces to callers as result.Error.
+//
+// certs[0] is the leaf and certs[1:] are whatever intermediates were carried.
+//
+// The single-certificate fallback is not decoration. RFC 9360 lets x5chain be
+// one bstr rather than an array when the chain has one element, and go-cose
+// decodes an array of bstr into []any, so both shapes have to be handled here
+// or a conformant credential is refused for the wrong reason.
+//
+// SD-JWT's x5c header serves the same purpose in JOSE — base64 strings in JSON,
+// decoded in eudi/jwt — and shares nothing below the x509.ParseCertificate
+// call, so the two are deliberately not merged.
+func certificatesFromX5Chain(unprotected cose.UnprotectedHeader, what string) ([]*x509.Certificate, error) {
+	rawVal, exists := unprotected[int64(33)]
+	if !exists {
+		return nil, fmt.Errorf("no x5chain in %s header 33", what)
+	}
+
+	chainRaw, ok := rawVal.([]any)
+	if !ok {
+		single, isSingle := rawVal.([]byte)
+		if !isSingle {
+			return nil, fmt.Errorf("%s x5chain wrong type: %T", what, rawVal)
+		}
+		chainRaw = []any{single}
+	}
+	if len(chainRaw) == 0 {
+		return nil, fmt.Errorf("%s x5chain is empty", what)
+	}
+
+	ders := make([][]byte, 0, len(chainRaw))
+	for i, raw := range chainRaw {
+		der, isDER := raw.([]byte)
+		if !isDER {
+			return nil, fmt.Errorf("%s x5chain[%d] wrong type: %T", what, i, raw)
+		}
+		ders = append(ders, der)
+	}
+	return parseCertificateChain(ders, what+" x5chain")
+}
+
+// parseCertificateChain parses a leaf-first list of DER certificates. Shared by
+// the COSE x5chain above and the zkDocument's msoX5chain (zkp.go), which carry
+// the same content in different envelopes.
+func parseCertificateChain(ders [][]byte, what string) ([]*x509.Certificate, error) {
+	certs := make([]*x509.Certificate, 0, len(ders))
+	for i, der := range ders {
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, fmt.Errorf("parse %s[%d]: %v", what, i, err)
+		}
+		certs = append(certs, cert)
+	}
+	return certs, nil
+}
+
 // decodeCoseSign1 decodes either COSE_Sign1 serialization into the same
 // message type.
 //
@@ -128,52 +187,6 @@ func coseVerifierFor(msg *cose.Sign1Message, key crypto.PublicKey, what string) 
 // from whichever party disagrees with us. The tag is outside Sig_structure and
 // carries no security meaning, so accepting both costs nothing — everything
 // that matters is still checked against the signature afterwards.
-// certificateChainFromHeaders parses the x5chain out of a COSE_Sign1's
-// unprotected headers: header 33, holding [DS cert DER, IACA cert DER, ...].
-//
-// certs[0] is the leaf — the document signer — and certs[1:] are whatever
-// intermediates the credential carried with it.
-//
-// The single-certificate fallback is not decoration. RFC 9360 lets x5chain be
-// one bstr rather than an array when the chain has one element, and go-cose
-// decodes an array of bstr into []any, so both shapes have to be handled here
-// or a conformant credential is refused for the wrong reason.
-//
-// Error strings are the verification path's, verbatim, because that path
-// surfaces them to callers as result.Error.
-func certificateChainFromHeaders(unprotected cose.UnprotectedHeader) ([]*x509.Certificate, error) {
-	rawVal, exists := unprotected[int64(33)]
-	if !exists {
-		return nil, fmt.Errorf("no x5chain in issuerAuth header 33")
-	}
-
-	chainRaw, ok := rawVal.([]any)
-	if !ok {
-		single, isSingle := rawVal.([]byte)
-		if !isSingle {
-			return nil, fmt.Errorf("x5chain wrong type: %T", rawVal)
-		}
-		chainRaw = []any{single}
-	}
-	if len(chainRaw) == 0 {
-		return nil, fmt.Errorf("x5chain is empty")
-	}
-
-	certs := make([]*x509.Certificate, 0, len(chainRaw))
-	for i, raw := range chainRaw {
-		der, ok := raw.([]byte)
-		if !ok {
-			return nil, fmt.Errorf("x5chain[%d] wrong type: %T", i, raw)
-		}
-		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, fmt.Errorf("parse x5chain[%d]: %v", i, err)
-		}
-		certs = append(certs, cert)
-	}
-	return certs, nil
-}
-
 func decodeCoseSign1(data []byte) (*cose.Sign1Message, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("empty COSE_Sign1")
@@ -661,7 +674,7 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	}
 
 	// Step 2: extract x5chain from unprotected header 33
-	certs, err := certificateChainFromHeaders(msg.Headers.Unprotected)
+	certs, err := certificatesFromX5Chain(msg.Headers.Unprotected, "issuerAuth")
 	if err != nil {
 		result.Error = err.Error()
 		return nil, result
@@ -772,7 +785,7 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	// Best-effort: reconstruct the device public key embedded in the MSO.
 	// Left nil on failure rather than failing verification outright — see
 	// VerificationResult.DeviceKey's doc comment.
-	if devicePub, err := ecdsaPublicKeyFromCOSE(mso.DeviceKeyInfo.DeviceKey); err == nil {
+	if devicePub, err := ECDSAPublicKeyFromCOSE(mso.DeviceKeyInfo.DeviceKey); err == nil {
 		result.DeviceKey = devicePub
 	}
 
@@ -824,7 +837,7 @@ func DeviceKeyFromIssuerAuth(issuerAuth cbor.RawMessage) (*ecdsa.PublicKey, erro
 	if err != nil {
 		return nil, fmt.Errorf("decode mso: %w", err)
 	}
-	deviceKey, err := ecdsaPublicKeyFromCOSE(mso.DeviceKeyInfo.DeviceKey)
+	deviceKey, err := ECDSAPublicKeyFromCOSE(mso.DeviceKeyInfo.DeviceKey)
 	if err != nil {
 		return nil, fmt.Errorf("decode deviceKey: %w", err)
 	}
@@ -1182,7 +1195,7 @@ func (v *Verifier) prepareDeviceAuth(mdoc *MDoc, namespace string, docType strin
 		return nil, result
 	}
 
-	devicePub, err := ecdsaPublicKeyFromCOSE(mso.DeviceKeyInfo.DeviceKey)
+	devicePub, err := ECDSAPublicKeyFromCOSE(mso.DeviceKeyInfo.DeviceKey)
 	if err != nil {
 		result.Valid = false
 		result.Error = fmt.Sprintf("reconstruct deviceKey: %v", err)
@@ -1219,59 +1232,6 @@ func (v *Verifier) prepareDeviceAuth(mdoc *MDoc, namespace string, docType strin
 		nameSpaceMap:      nameSpaceMap,
 		keyAuthorizations: mso.DeviceKeyInfo.KeyAuthorizations,
 	}, result
-}
-
-// VerifyWithDeviceMac is VerifyWithDeviceAuth for the other branch of 9.1.3.4:
-// a document whose DeviceAuth carries a deviceMac instead of a deviceSignature.
-//
-// Which branch a document uses is the MDOC's choice — 9.1.3.4 offers it both and
-// obliges it to pick exactly one — so a reader implementing only the signature
-// branch cannot verify a conformant subset of documents at all. This wallet
-// signs on every transport (see the deviceAuth branch decision), but what it
-// produces has no bearing on what a reader it drives must accept.
-//
-// The reader's ephemeral private key is a parameter because it is the only thing
-// that can produce EMacKey: the MAC is keyed on ECDH(EReaderKey.Priv,
-// SDeviceKey.Pub), so unlike the signature branch there is nothing in the
-// document alone to check it against.
-func (v *Verifier) VerifyWithDeviceMac(mdoc *MDoc, namespace string, docType string, transcript SessionTranscript, deviceMacBytes []byte, eReaderKey *ecdsa.PrivateKey) VerificationResult {
-	prepared, result := v.prepareDeviceAuth(mdoc, namespace, docType)
-	if prepared == nil {
-		return result
-	}
-
-	if eReaderKey == nil {
-		result.Valid = false
-		result.Error = "document authenticates with deviceMac, which cannot be checked without the reader's ephemeral private key: verify it through VerifyDeviceResponseAsReader"
-		return result
-	}
-
-	emacKey, err := DeriveEMacKeyAsReader(eReaderKey, prepared.devicePub, transcript)
-	if err != nil {
-		result.Valid = false
-		result.Error = fmt.Sprintf("derive EMacKey as reader: %v", err)
-		return result
-	}
-
-	if err := verifyDeviceMacOver(deviceMacBytes, emacKey, result.DocType, transcript, prepared.deviceNameSpaces); err != nil {
-		result.Valid = false
-		result.Error = err.Error()
-		return result
-	}
-
-	// The same question the signature branch asks once the bytes are
-	// authenticated, and for the same reason: see the profile check there.
-	if err := checkDeviceSignedNameSpaces(
-		result.DocType,
-		prepared.nameSpaceMap, prepared.keyAuthorizations,
-	); err != nil {
-		result.Valid = false
-		result.Error = err.Error()
-		return result
-	}
-
-	result.DeviceAuthValid = true
-	return result
 }
 
 // deviceNameSpacesForVerification returns the DeviceNameSpacesBytes to rebuild
@@ -1337,31 +1297,21 @@ func decodeDeviceNameSpaces(raw cbor.RawMessage) (DeviceNameSpaces, error) {
 // received a DeviceResponse (rather than calling Issue/SelectiveDisclose
 // directly, as the tests/demo do) would use.
 //
-// Documents authenticated with deviceMac are reported invalid, naming what is
-// missing: checking one needs the reader's ephemeral private key, which this
-// signature has nowhere to take it from. Every reader that established the
-// session holds one and should call VerifyDeviceResponseAsReader instead.
-func (v *Verifier) VerifyDeviceResponse(resp DeviceResponse, namespace string, docType string, transcript SessionTranscript) ([]VerificationResult, error) {
-	return v.VerifyDeviceResponseAsReader(resp, namespace, docType, transcript, nil)
-}
-
-// VerifyDeviceResponseAsReader is VerifyDeviceResponse with the ephemeral key
-// the reader established the session with, which is what a deviceMac needs.
+// Documents authenticated with deviceMac (the other branch of 9.1.3.4) are
+// reported invalid, naming why. The MAC's EMacKey is ECDH(EReaderKey.Priv,
+// SDeviceKey.Pub) per 9.1.3.5, and EReaderKey only exists where 9.1.1's session
+// establishment ran — proximity, which this tree does not implement. Both
+// transports it does implement null that slot out of the SessionTranscript
+// (OpenID4VP per 18013-7 B.4.4, the DC API per C.5), so over them no conformant
+// deviceMac can exist and there is no key to check one against. If proximity
+// ever lands, MAC verification belongs to its session layer; git history has a
+// complete, tested implementation (devicemac.go, removed with this comment as
+// its forwarding address).
 //
-// Each document is verified through whichever branch of DeviceAuth it actually
-// used. Reading only deviceSignature — as this did — meant a fully conformant
-// deviceMac document arrived with empty signature bytes and was rejected as a
-// bad signature, blaming the holder for a branch the reader had not implemented.
-// The exclusive choice is enforced first: a DeviceAuth carrying both makes two
-// claims with nothing to say which governs, and one carrying neither is a
-// document nothing authenticates.
-func (v *Verifier) VerifyDeviceResponseAsReader(
-	resp DeviceResponse,
-	namespace string,
-	docType string,
-	transcript SessionTranscript,
-	eReaderKey *ecdsa.PrivateKey,
-) ([]VerificationResult, error) {
+// The exclusive choice is enforced first: a DeviceAuth carrying both branches
+// makes two claims with nothing to say which governs, and one carrying neither
+// is a document nothing authenticates.
+func (v *Verifier) VerifyDeviceResponse(resp DeviceResponse, namespace string, docType string, transcript SessionTranscript) ([]VerificationResult, error) {
 	// Refused rather than skipped. This walks resp.Documents, so a response whose
 	// content is all in zkDocuments used to come back as an empty slice and a nil
 	// error -- which a caller checking only the error reads as a verified
@@ -1394,8 +1344,13 @@ func (v *Verifier) VerifyDeviceResponseAsReader(
 				&doc, namespace, docType, transcript, []byte(deviceAuth.DeviceSignature)))
 			continue
 		}
-		results = append(results, v.VerifyWithDeviceMac(
-			&doc, namespace, docType, transcript, []byte(deviceAuth.DeviceMac), eReaderKey))
+		results = append(results, VerificationResult{
+			DocType: docType,
+			Valid:   false,
+			Error: "document authenticates with deviceMac, which cannot exist over this transport: " +
+				"EMacKey needs the EReaderKey of 9.1.1's session establishment, and 18013-7 B.4.4/C.5 " +
+				"replace EReaderKeyBytes with null in the SessionTranscript",
+		})
 	}
 	return results, nil
 }

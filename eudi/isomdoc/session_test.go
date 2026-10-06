@@ -102,7 +102,7 @@ func newReaderSide(t *testing.T) readerSide {
 	_, err = rand.Read(nonce)
 	require.NoError(t, err)
 
-	info, err := mdoc.NewDCAPIEncryptionInfo(nonce, &key.PublicKey)
+	info, err := NewDCAPIEncryptionInfo(nonce, &key.PublicKey)
 	require.NoError(t, err)
 	encoded, err := cbor.Marshal(info)
 	require.NoError(t, err)
@@ -111,13 +111,13 @@ func newReaderSide(t *testing.T) readerSide {
 }
 
 // open is what the reader does with the answer.
-func (r readerSide) open(t *testing.T, sealed mdoc.DCAPIEncryptedResponse) mdoc.DeviceResponse {
+func (r readerSide) open(t *testing.T, sealed DCAPIEncryptedResponse) mdoc.DeviceResponse {
 	t.Helper()
 
 	transcript, err := mdoc.NewDCAPISessionTranscript(r.encryptionInfo, testOrigin)
 	require.NoError(t, err)
 
-	plaintext, err := mdoc.OpenDCAPIResponse(sealed, r.key, transcript)
+	plaintext, err := OpenDCAPIResponse(sealed, r.key, transcript)
 	require.NoError(t, err)
 
 	var response mdoc.DeviceResponse
@@ -360,7 +360,7 @@ func TestSessionBindsTheResponseToItsOwnOrigin(t *testing.T) {
 
 	elsewhere, err := mdoc.NewDCAPISessionTranscript(reader.encryptionInfo, "https://attacker.example.com")
 	require.NoError(t, err)
-	_, err = mdoc.OpenDCAPIResponse(sealed, reader.key, elsewhere)
+	_, err = OpenDCAPIResponse(sealed, reader.key, elsewhere)
 	require.Error(t, err, "a response sealed for one origin must not open under another")
 }
 

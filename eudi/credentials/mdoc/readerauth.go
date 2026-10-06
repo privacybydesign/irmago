@@ -284,7 +284,7 @@ func (v *Verifier) VerifyReaderAuth(docRequest DocRequest, transcript SessionTra
 			"readerAuth carries a payload: 9.1.4.4 requires a null payload with ReaderAuthenticationBytes as detached content")
 	}
 
-	certs, err := certificatesFromX5Chain(msg, "readerAuth")
+	certs, err := certificatesFromX5Chain(msg.Headers.Unprotected, "readerAuth")
 	if err != nil {
 		return nil, err
 	}
@@ -408,70 +408,22 @@ func checkReaderAuthEKU(cert *x509.Certificate) error {
 }
 
 // ReleasableWithoutReaderAuth splits an ItemsRequest into the elements the mdoc
-// may still release to a reader that did not authenticate itself, and the
-// elements it withholds. On this transport the first set is always empty; see
-// the body for why, and read the rest of this comment as the reason the split
-// exists at all rather than as a description of a live decision.
+// may release to a reader that did not authenticate itself — always empty on
+// this transport — and the elements it withholds, which the caller reports back
+// as ErrorCodeDataNotReturned (Table 9) at status 0.
 //
-// It exists for one clause: 18013-5 7.2.1's "An mDL shall not require mdoc
-// reader authentication as a precondition for the release of any of the
-// mandatory data elements", quoted in full at VerifyReaderAuth. Because that
-// prohibition is per element rather than per request, a caller could not honour
-// it by deciding whether to continue — it had to decide what to continue *with*,
-// which is why this returns a split and not a bool. 18013-7 Clause 7 then lifts
-// the prohibition for the DC API, so the split survives with one side empty.
+// The split exists for 18013-5 7.2.1, which forbids an mDL from gating its
+// mandatory elements on reader auth; that prohibition is per element, which is
+// why this returns a split and not a bool. 18013-7 Clause 7 lifts it for the DC
+// API — the only transport this tree implements — so the wallet applies its own
+// policy: an unauthenticated reader gets nothing. If proximity is unparked and
+// 7.2.1 applies again, reintroduce the per-element decision then.
 //
-// The two return values map onto what the caller does next:
-//
-//   - releasable goes to the consent screen, and to SelectiveDisclose after it.
-//     Empty means the request cannot be served at all, which on this transport
-//     is every request, mDL included.
-//   - withheld is reported back to the reader as ErrorCodeDataNotReturned (Table
-//     9) at status 0, the same channel MDoc.ErrorsForRequest uses for elements
-//     the credential simply does not carry. Sorted, so the response is
-//     deterministic.
-//
-// # Call this for ErrNoReaderAuth only, NOT for a failed verification
-//
-// The clause covers a reader that does not use reader authentication, and says
-// nothing about one that uses it and fails. NOTE 3's wording is exactly that:
-// "including if an mDL reader does not use mdoc reader authentication".
-//
-// Those are different events and 7.2.1 protected only the first. A readerAuth
-// that is present but does not verify — forged signature, untrusted CA, revoked
-// or expired certificate — is a reader actively misrepresenting itself, and
-// extending the carve-out to it would have meant handing family_name, birth_date
-// and the holder's portrait to a reader whose certificate the wallet knows has
-// been withdrawn. Nothing in the standard asks for that, and it is a worse
-// outcome than refusing.
-//
-// So: call this when VerifyReaderAuth returned ErrNoReaderAuth. On any other
-// error, terminate. ErrNoReaderAuth exists as a distinct sentinel to make that
-// distinction cheap at the call site. The distinction still matters even though
-// both now release nothing, because only this path reports the elements back as
-// withheld rather than terminating the session.
-//
-// It also never releases anything on its own, and is not a substitute for
-// verifying reader authentication when the reader did send some.
+// Call this for ErrNoReaderAuth only, NOT for a failed verification: 7.2.1
+// covers a reader that does not use reader authentication (NOTE 3), not one
+// whose readerAuth failed to verify — that reader is misrepresenting itself and
+// the session terminates instead.
 func ReleasableWithoutReaderAuth(items ItemsRequest) (releasable map[string]DataElements, withheld map[string][]string) {
-	// Nothing is releasable. 18013-7 Clause 7 lifts 18013-5 7.2.1 for this
-	// transport -- "an mDL may require mdoc reader authentication as a
-	// precondition for the release of any of the mandatory data elements. NOTE
-	// This differs from the corresponding requirement in ISO/IEC 18013-5." -- and
-	// the DC API is the only transport this tree implements, proximity being
-	// parked. So the wallet applies its own policy, which is that an
-	// unauthenticated reader gets nothing.
-	//
-	// Both return values are still needed. releasable is empty, which is what
-	// makes the document unservable at the caller; withheld names every element
-	// the reader asked for, reported back as ErrorCodeDataNotReturned, which is
-	// what tells it the request was understood and refused rather than malformed.
-	//
-	// There is deliberately no per-element hook here. One existed while 7.2.1
-	// applied, and once the answer became "nothing, always" it survived as a nil
-	// function variable guarding a branch that could not run -- code that read
-	// like a policy decision and was not one. If proximity is unparked and 7.2.1
-	// applies again, reintroduce it then, against the clause as it reads then.
 	releasable = map[string]DataElements{}
 	withheld = map[string][]string{}
 
@@ -487,43 +439,4 @@ func ReleasableWithoutReaderAuth(items ItemsRequest) (releasable map[string]Data
 		slices.Sort(withheld[namespace])
 	}
 	return releasable, withheld
-}
-
-// certificatesFromX5Chain reads the x5chain of COSE header 33, leaf first.
-//
-// 9.1.4.4 for readerAuth and Annex B for issuerAuth both put the signing
-// certificate here, so the decoding quirks are shared: go-cose surfaces a CBOR
-// array of byte strings as []any, and a single certificate may legitimately arrive
-// unwrapped rather than as a one-element array.
-func certificatesFromX5Chain(msg *cose.Sign1Message, what string) ([]*x509.Certificate, error) {
-	rawVal, exists := msg.Headers.Unprotected[int64(33)]
-	if !exists {
-		return nil, fmt.Errorf("no x5chain in %s header 33", what)
-	}
-
-	chainRaw, ok := rawVal.([]any)
-	if !ok {
-		single, isSingle := rawVal.([]byte)
-		if !isSingle {
-			return nil, fmt.Errorf("%s x5chain wrong type: %T", what, rawVal)
-		}
-		chainRaw = []any{single}
-	}
-	if len(chainRaw) == 0 {
-		return nil, fmt.Errorf("%s x5chain is empty: 9.1.4.4 requires at least one certificate", what)
-	}
-
-	certs := make([]*x509.Certificate, 0, len(chainRaw))
-	for i, raw := range chainRaw {
-		der, isDER := raw.([]byte)
-		if !isDER {
-			return nil, fmt.Errorf("%s x5chain[%d] wrong type: %T", what, i, raw)
-		}
-		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s x5chain[%d]: %v", what, i, err)
-		}
-		certs = append(certs, cert)
-	}
-	return certs, nil
 }

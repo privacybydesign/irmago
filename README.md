@@ -184,6 +184,51 @@ rather than being skipped; the whole `TestSessionHandler/openid4vp/sdjwtvc` grou
 this way. Running the tests in Docker (`docker-compose run test`, below) needs no setup:
 that service installs the certificate into its own trust store before running.
 
+### Testing on a device against the local stack
+
+Running the Yivi app on a physical phone against this repository's `docker-compose` stack
+needs **three independent trust additions** in the app build, because the stack's
+certificates are self-signed test CAs that nothing ships trusting. They fail one at a
+time, in this order, and every stage reports the same generic
+`x509: certificate signed by unknown authority` — so read **which stage** the error
+names, not the error text:
+
+| # | Store | Authenticates | Certificate | Error appears while |
+|---|---|---|---|---|
+| 1 | Go's x509 system pool | the TLS certificate of `tls_proxy` (ports 8443–8445) | `testdata/configurations/certs/localhost.crt` | fetching credential issuer metadata |
+| 2 | `eudi.Configuration.Issuers` | the issuer's document signer inside the MSO | `testdata/eudi-pid-issuer-py/certs/ca.pem` | storing a fetched credential (`mdoc verification failed: chain verification failed`) |
+| 3 | `eudi.Configuration.Verifiers` | the relying party's request-signing certificate | `testdata/eudi/verifier/ca.crt` | presenting, naming the relying party |
+
+None of these certificates may ever be committed as trusted — the wallet would ship
+trusting self-signed test CAs. Add them locally, marked clearly, and strip before
+committing:
+
+* **Store 1** cannot be fixed on the phone: Go's `crypto/x509` reads the system
+  certificate directories, not the user store Android Settings writes to, so installing
+  the CA through Settings is invisible to a gomobile build. It has to be compiled in — a
+  local-only file in `client/` with an `init()` that appends `localhost.crt` to the pool —
+  so it is unconditional and cannot be missed by a session that starts early.
+* **Stores 2 and 3** belong next to the staging anchors in `eudi/eudiconfig.go`
+  (`addStagingTrustAnchors`), each as its **own** `addTrustAnchors` call: that function
+  treats the last certificate of a chain as the root, so appending a test CA to an
+  existing chain silently replaces that chain's root.
+* **Stores 2 and 3 load only when developer mode is ON** in the app
+  (`useStagingTrustAnchors`). With it off, the credential downloads fine over TLS and is
+  then refused at `failed to verify credential` — which proves store 1 is in the build
+  and means "developer mode is off", **not** "the trust addition is missing".
+* The issuer anchor must not authenticate a relying party, or vice versa — the stores are
+  separate on purpose, and a request signed with the issuer's certificate must stay
+  refused. Don't collapse them into one addition.
+
+Two more preconditions that look like trust failures and aren't:
+
+* The phone must reach the stack **as `localhost`** (`adb reverse`), because the TLS
+  certificate's SAN is `DNS:localhost` — a LAN IP fails hostname verification no matter
+  what is trusted.
+* With the anchors applied, `testEudiPidPythonIssuerUntrustedIssuerIsRejected` and other
+  untrusted-party tests fail for reasons unrelated to the code under test — strip the
+  additions before a full test run, and before every commit.
+
 ### Running without Docker
 
 If installing Docker or Docker alternatives is not an option for you, then you can exclude all tests that use those by additionally passing `--tags=local_tests`:

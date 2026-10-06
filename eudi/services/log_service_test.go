@@ -581,17 +581,16 @@ func TestIssuanceLogRoundTrip_PreservesIssuerVerifiedFlag(t *testing.T) {
 	require.True(t, logs[0].IssuanceLog.Issuer.Verified)
 }
 
-// TestDisclosureLogKeepsAnonymityAndOrigin covers what the activity list shows
-// for an org-iso-mdoc session. The requestor has no name by design, so the
-// origin is the only thing there is to show -- and anonymity is stored apart
-// from verification because the two answer different questions.
-func TestDisclosureLogKeepsAnonymityAndOrigin(t *testing.T) {
+// TestDisclosureLogKeepsOrigin covers what the activity list shows for an
+// org-iso-mdoc session: the requestor never named itself, so the authenticated
+// origin stands in as its unverified name and is kept alongside it.
+func TestDisclosureLogKeepsOrigin(t *testing.T) {
 	svc := newTestLogService(t)
 
 	origin := "https://verifier.example.com"
 	require.NoError(t, svc.AddDisclosureLog(
 		clientmodels.Protocol_ISO18013_5,
-		clientmodels.TrustedParty{Anonymous: true, Origin: &origin},
+		clientmodels.TrustedParty{Name: origin, Origin: &origin},
 		nil,
 	))
 
@@ -604,8 +603,8 @@ func TestDisclosureLogKeepsAnonymityAndOrigin(t *testing.T) {
 
 	verifier := logs[0].DisclosureLog.Verifier
 	require.NotNil(t, verifier)
-	require.True(t, verifier.Anonymous, "the entry must remember that nothing identified itself")
-	require.False(t, verifier.Verified, "anonymous is not the same as unverified")
+	require.Equal(t, origin, verifier.Name)
+	require.False(t, verifier.Verified, "an origin is authenticated by the platform, not a verified name")
 	require.NotNil(t, verifier.Origin)
 	require.Equal(t, origin, *verifier.Origin)
 }

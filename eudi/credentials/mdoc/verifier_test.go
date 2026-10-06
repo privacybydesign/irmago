@@ -83,8 +83,8 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 	// one namespace is enough for verifyIssuerAuthAndMSO to run end to end.
 	deviceSigner, err := GenerateDeviceSigner()
 	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
-	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
-	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
+	deviceKey, err := COSEKeyFromECDSA(deviceSigner.PublicKey())
+	require.NoError(t, err, "COSEKeyFromECDSA: %v", err)
 	const docType = "eu.europa.ec.av.1"
 	item := IssuerSignedItem{DigestID: 0, Random: make([]byte, 16), ElementIdentifier: "age_over_18", ElementValue: true}
 	digest, err := hashTag24Item(item)
@@ -845,98 +845,28 @@ func TestVerifyDeviceResponseRejectsMissingDeviceSigned(t *testing.T) {
 	require.Error(t, err, "expected error for document missing DeviceSigned, got none")
 }
 
-// TestVerifyDeviceResponseAcceptsDeviceMac runs a document authenticated the
-// other way 9.1.3.4 allows through the same entry point.
-//
-// Which branch of DeviceAuth a document uses is the mdoc's choice, so a reader
-// implementing only deviceSignature rejects conformant responses — and rejects
-// them as bad signatures, since the signature field it read was simply empty.
-// That the wallet in this repository always signs is beside the point: what it
-// produces does not limit what a reader it drives has to accept.
-func TestVerifyDeviceResponseAcceptsDeviceMac(t *testing.T) {
-	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
+// TestVerifyDeviceResponseRejectsDeviceMac pins the refusal of the MAC branch
+// of 9.1.3.4. Over the transports this tree implements no conformant deviceMac
+// can exist — 18013-7 B.4.4 and C.5 null EReaderKeyBytes out of the
+// SessionTranscript, and without an EReaderKey there is no EMacKey — so a
+// document carrying one is reported invalid, naming the transport as the
+// reason rather than blaming the holder for a bad signature.
+func TestVerifyDeviceResponseRejectsDeviceMac(t *testing.T) {
+	_, _, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
 
-	eReaderKey := testEphemeralKey(t)
-	deviceMac, err := MacDeviceAuth(holder, docType, transcript, &eReaderKey.PublicKey)
-	if err != nil {
-		t.Fatalf("MacDeviceAuth: %v", err)
-	}
-	attached, err := AttachDeviceMac(presented, deviceMac)
-	if err != nil {
-		t.Fatalf("AttachDeviceMac: %v", err)
+	attached := *presented
+	emptyNS, err := tag24Wrap(map[string]any{})
+	require.NoError(t, err)
+	attached.DeviceSigned = &DeviceSigned{
+		NameSpaces: emptyNS,
+		DeviceAuth: DeviceAuth{DeviceMac: cbor.RawMessage{0x80}}, // any non-empty value: rejected before it is read
 	}
 
-	results, err := verifier.VerifyDeviceResponseAsReader(
-		NewDeviceResponse(*attached), namespace, docType, transcript, eReaderKey)
-	if err != nil {
-		t.Fatalf("VerifyDeviceResponseAsReader: %v", err)
-	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if !results[0].Valid {
-		t.Fatalf("expected a valid result, got error: %s", results[0].Error)
-	}
-	if !results[0].DeviceAuthValid {
-		t.Fatalf("expected deviceAuth to verify, got error: %s", results[0].Error)
-	}
-}
-
-// TestVerifyDeviceResponseRejectsDeviceMacFromAnotherSession is the other half
-// of the test above: accepting a MAC is only worth anything if the wrong key
-// still fails. EMacKey is ECDH(EReaderKey.Priv, SDeviceKey.Pub), so a reader
-// holding a different ephemeral key derives a different key entirely.
-func TestVerifyDeviceResponseRejectsDeviceMacFromAnotherSession(t *testing.T) {
-	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
-
-	eReaderKey := testEphemeralKey(t)
-	otherReaderKey := testEphemeralKey(t)
-	deviceMac, err := MacDeviceAuth(holder, docType, transcript, &eReaderKey.PublicKey)
-	if err != nil {
-		t.Fatalf("MacDeviceAuth: %v", err)
-	}
-	attached, err := AttachDeviceMac(presented, deviceMac)
-	if err != nil {
-		t.Fatalf("AttachDeviceMac: %v", err)
-	}
-
-	results, err := verifier.VerifyDeviceResponseAsReader(
-		NewDeviceResponse(*attached), namespace, docType, transcript, otherReaderKey)
-	if err != nil {
-		t.Fatalf("VerifyDeviceResponseAsReader: %v", err)
-	}
-	if results[0].Valid || results[0].DeviceAuthValid {
-		t.Fatal("a deviceMac keyed to another reader's ephemeral key must not verify")
-	}
-}
-
-// TestVerifyDeviceResponseNamesTheMissingReaderKey covers the entry point that
-// has no ephemeral key to offer. A deviceMac cannot be checked without one, and
-// saying so is the point: reported as a bad signature, as it was, this looks
-// like a holder at fault for a branch the caller never supplied the key for.
-func TestVerifyDeviceResponseNamesTheMissingReaderKey(t *testing.T) {
-	_, holder, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
-
-	eReaderKey := testEphemeralKey(t)
-	deviceMac, err := MacDeviceAuth(holder, docType, transcript, &eReaderKey.PublicKey)
-	if err != nil {
-		t.Fatalf("MacDeviceAuth: %v", err)
-	}
-	attached, err := AttachDeviceMac(presented, deviceMac)
-	if err != nil {
-		t.Fatalf("AttachDeviceMac: %v", err)
-	}
-
-	results, err := verifier.VerifyDeviceResponse(NewDeviceResponse(*attached), namespace, docType, transcript)
-	if err != nil {
-		t.Fatalf("VerifyDeviceResponse: %v", err)
-	}
-	if results[0].Valid {
-		t.Fatal("a deviceMac must not be accepted without the key that checks it")
-	}
-	if !strings.Contains(results[0].Error, "ephemeral private key") {
-		t.Errorf("the refusal should name what is missing, got: %s", results[0].Error)
-	}
+	results, err := verifier.VerifyDeviceResponse(NewDeviceResponse(attached), namespace, docType, transcript)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.False(t, results[0].Valid, "a deviceMac must not be accepted on a transport that cannot carry one")
+	require.Contains(t, results[0].Error, "deviceMac", "the refusal should name the branch, got: %s", results[0].Error)
 }
 
 // TestVerifyDeviceResponseRejectsBothBranches pins the CDDL's exclusive choice
@@ -944,21 +874,15 @@ func TestVerifyDeviceResponseNamesTheMissingReaderKey(t *testing.T) {
 // makes two claims with nothing to say which governs; previously only the
 // signature was read, so the deviceMac rode along unexamined.
 func TestVerifyDeviceResponseRejectsBothBranches(t *testing.T) {
-	_, holder, verifier, presented, transcript, deviceAuthBytes, docType, namespace := buildHappyPathMDoc(t)
+	_, _, verifier, presented, transcript, deviceAuthBytes, docType, namespace := buildHappyPathMDoc(t)
 
-	eReaderKey := testEphemeralKey(t)
-	deviceMac, err := MacDeviceAuth(holder, docType, transcript, &eReaderKey.PublicKey)
-	if err != nil {
-		t.Fatalf("MacDeviceAuth: %v", err)
-	}
 	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
 	if err != nil {
 		t.Fatalf("AttachDeviceSigned: %v", err)
 	}
-	attached.DeviceSigned.DeviceAuth.DeviceMac = deviceMac
+	attached.DeviceSigned.DeviceAuth.DeviceMac = cbor.RawMessage{0x80}
 
-	_, err = verifier.VerifyDeviceResponseAsReader(
-		NewDeviceResponse(*attached), namespace, docType, transcript, eReaderKey)
+	_, err = verifier.VerifyDeviceResponse(NewDeviceResponse(*attached), namespace, docType, transcript)
 	if err == nil {
 		t.Fatal("a DeviceAuth carrying both branches must be refused")
 	}
@@ -1036,8 +960,8 @@ func issueWithValidity(t *testing.T, issuer *TestIssuer, validFrom, validUntil t
 
 	deviceSigner, err := GenerateDeviceSigner()
 	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
-	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
-	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
+	deviceKey, err := COSEKeyFromECDSA(deviceSigner.PublicKey())
+	require.NoError(t, err, "COSEKeyFromECDSA: %v", err)
 
 	const docType = "eu.europa.ec.av.1"
 	item := IssuerSignedItem{DigestID: 0, Random: make([]byte, 16), ElementIdentifier: "age_over_18", ElementValue: true}
@@ -1204,8 +1128,8 @@ func TestHolderAssertedClaimsFollowKeyAuthorizations(t *testing.T) {
 func TestKeyAuthorizationsRoundTripDoesNotChangeSignedBytes(t *testing.T) {
 	deviceSigner, err := GenerateDeviceSigner()
 	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
-	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
-	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
+	deviceKey, err := COSEKeyFromECDSA(deviceSigner.PublicKey())
+	require.NoError(t, err, "COSEKeyFromECDSA: %v", err)
 
 	encoded, err := cbor.Marshal(DeviceKeyInfo{DeviceKey: deviceKey})
 	require.NoError(t, err, "marshal: %v", err)
