@@ -6,10 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [1.4.1] - 2026-10-05
 ### Fixed
 - Redis session operations are retried when the connection they run on breaks or Redis refuses writes during a failover, so a Redis Sentinel failover no longer fails the session requests that run during it. A session handler is never executed twice and a concurrent update is never overwritten
 - New `redis_settings.retry_budget` setting (`--redis-retry-budget`) controls how long such retries continue; defaults to 3 seconds
 - go-redis's own diagnostics now go through the server's logger (`component=go-redis`) instead of straight to stderr
+- OpenID4VP authorization requests, SD-JWT VCs and Status List Tokens whose `x5c` header includes intermediate CA certificates are now accepted, instead of only accepting the end-entity certificate, as long as the chain leads to a trusted root.
 
 ### Added
 - `eudi/credman` builds the credential database Android's Credential Manager hands to a wallet's matcher, and `Client.CredentialManagerDatabase` renders the wallet's mdoc credentials into it. Registering as a Digital Credentials API provider is a push: the app gives the platform a matcher and a snapshot of what it holds, and the platform runs that matcher in its own process, with the wallet not running, to decide whether this wallet is offered at all. So the snapshot has to be produced here even though nothing in this module talks to the platform, and producing it here is what makes its shape testable off a phone rather than by installing an app. The format is not a specification's: it is the private contract of the matcher binary that ships alongside it, reproduced in the package comment because nothing else documents it. Two things in it are load-bearing and neither is obvious. The encoding is canonical, because the Android layer skips re-registration when the digest is unchanged and a map whose order drifted would re-push the whole wallet on every session. And no element VALUE is registered: the picker draws those strings before the wallet has asked for a PIN, so a value there is readable by anyone holding the phone, and for an age credential that is the entire ladder including the thresholds answered false that this wallet refuses to disclose over the wire: refusing on one channel while volunteering on the other is not a privacy position. Element names and labels are still registered, which is what the picker needs to say what is being asked for, and matching on this transport never consults a value anyway: an ISO `itemsRequest` carries element identifiers and `intentToRetain` and nothing else, so the DCQL built from it has no constraint to compare against. `CredentialManagerProtocols` offers `org-iso-mdoc` alone, because the OpenID4VP protocols are answered over this transport too, but no browser has driven them against this wallet, and registering for both would make the first browser request a test of two things at once
@@ -915,6 +917,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[1.4.1]: https://github.com/privacybydesign/irmago/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/privacybydesign/irmago/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/privacybydesign/irmago/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/privacybydesign/irmago/compare/v1.2.0...v1.3.0
