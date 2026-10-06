@@ -5,8 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -25,7 +27,7 @@ import (
 // SKIPPED unless the server is listening on 127.0.0.1:8006. It is not a CI
 // test. Two ways to stand the server up:
 //
-//	docker compose --profile interop up multipaz-verifier   # see docker-compose.yml
+//	docker compose --profile interop up --build -d multipaz-verifier
 //	./gradlew :multipaz-verifier-server:run                 # in the multipaz checkout
 //
 // What it actually proves, and why that is the interesting part: the verifier
@@ -46,8 +48,11 @@ func skipUnlessVerifierRunning(t *testing.T) {
 	t.Helper()
 	conn, err := net.DialTimeout("tcp", "127.0.0.1:8006", 750*time.Millisecond)
 	if err != nil {
+		// Nothing here knows or cares what serves 8006 — this test is about the
+		// protocol, not about who hosts it. The compose service is simply the
+		// one way to get a verifier that needs no multipaz checkout.
 		t.Skip("multipaz-verifier-server not listening on 127.0.0.1:8006; " +
-			"start it with ./gradlew :multipaz-verifier-server:run in the multipaz checkout")
+			"start it with: docker compose --profile interop up --build -d multipaz-verifier")
 	}
 	_ = conn.Close()
 }
@@ -68,28 +73,88 @@ func postJSON(t *testing.T, path string, body any, into any) {
 	require.NoError(t, json.Unmarshal(raw, into))
 }
 
-// TestLiveRoundTripAgainstMultipazVerifier drives the whole exchange.
-func TestLiveRoundTripAgainstMultipazVerifier(t *testing.T) {
-	skipUnlessVerifierRunning(t)
+// liveOrigin is what we claim to the verifier. It binds its transcript to this,
+// so the same value has to reach both calls and Respond.
+const liveOrigin = "https://verifier.example.com"
 
-	// The origin we claim here is the one the verifier binds its transcript to,
-	// so it has to be the same value in both calls and in Respond.
-	const origin = "https://verifier.example.com"
-
-	// ---- their request ----------------------------------------------------
-	var begin dcBeginResponse
-	postJSON(t, "/verifier/dcBegin", map[string]any{
+// dcBeginBody is the request that asks multipaz-verifier-server to mint an
+// org-iso-mdoc exchange.
+//
+// One definition, two users: the round trip below sends it, and the fixture
+// regeneration sends exactly the same thing. That is the point of extracting it
+// — testdata/multipaz_verifier_dcbegin.json was originally captured by hand, so
+// nothing tied the stored response to the request the live test makes, and the
+// two could drift apart without either failing.
+func dcBeginBody() map[string]any {
+	return map[string]any{
 		"format":                 "mdoc",
 		"docType":                "eu.europa.ec.av.1",
 		"requestId":              "age_over_18",
 		"rawDcql":                "",
 		"multiDocumentRequestId": "",
 		"protocol":               "w3c_dc_mdoc_api",
-		"origin":                 origin,
+		"origin":                 liveOrigin,
 		"host":                   "127.0.0.1:8006",
 		"signRequest":            false,
 		"encryptResponse":        true,
-	}, &begin)
+	}
+}
+
+// TestRegenerateMultipazFixture rewrites the captured dcBegin response that
+// interop_multipaz_test.go asserts against, from the server actually running.
+//
+// Opt-in, and deliberately not part of any ordinary run: a test that rewrites
+// its own fixture cannot fail, and one that did so automatically would turn a
+// genuine disagreement with upstream into a silent update. Run it when the
+// pinned MULTIPAZ_REF in docker-compose moves, then read the diff:
+//
+//	docker compose --profile interop up --build -d multipaz-verifier
+//	REGENERATE_MULTIPAZ_FIXTURE=1 go test ./eudi/isomdoc -run TestRegenerateMultipazFixture
+//	git diff eudi/isomdoc/testdata/multipaz_verifier_dcbegin.json
+//
+// A diff here is information, not a chore: it is upstream changing the shape of
+// a request we parse.
+func TestRegenerateMultipazFixture(t *testing.T) {
+	if os.Getenv("REGENERATE_MULTIPAZ_FIXTURE") == "" {
+		t.Skip("set REGENERATE_MULTIPAZ_FIXTURE=1 to rewrite the captured dcBegin response")
+	}
+	skipUnlessVerifierRunning(t)
+
+	encoded, err := json.Marshal(dcBeginBody())
+	require.NoError(t, err)
+
+	response, err := http.Post(verifierBase+"/verifier/dcBegin", "application/json", bytes.NewReader(encoded))
+	require.NoError(t, err)
+	defer response.Body.Close()
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	// Stored verbatim, not re-encoded from a decoded structure: the fixture's
+	// job is to be what the server really sent, down to key order and spacing.
+	// Re-marshalling it would make the tests assert our own encoder's output.
+	raw, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.NotEmpty(t, raw)
+
+	// Parses as the real thing before it replaces the fixture, so a server that
+	// answers 200 with something unusable cannot quietly become the baseline.
+	var sanity dcBeginResponse
+	require.NoError(t, json.Unmarshal(raw, &sanity))
+	require.Equal(t, DcApiProtocolIsoMdoc, sanity.DcRequestProtocol)
+	require.NotEmpty(t, sanity.DcRequestString)
+
+	require.NoError(t, os.WriteFile(multipazVerifierRequest, raw, 0o644))
+	t.Logf("rewrote %s (%d bytes)", multipazVerifierRequest, len(raw))
+}
+
+// TestLiveRoundTripAgainstMultipazVerifier drives the whole exchange.
+func TestLiveRoundTripAgainstMultipazVerifier(t *testing.T) {
+	skipUnlessVerifierRunning(t)
+
+	const origin = liveOrigin
+
+	// ---- their request ----------------------------------------------------
+	var begin dcBeginResponse
+	postJSON(t, "/verifier/dcBegin", dcBeginBody(), &begin)
 
 	require.Equal(t, DcApiProtocolIsoMdoc, begin.DcRequestProtocol)
 	require.NotEmpty(t, begin.SessionID)

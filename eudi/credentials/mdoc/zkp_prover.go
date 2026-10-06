@@ -22,7 +22,10 @@ import (
 // rest of this package and the presentation session are written in. On the
 // other it is a caller of zk.System, which knows only bytes.
 //
-// The split exists so the native prover module never has to import irmago.
+// The split exists so the native prover module imports only zk, a leaf package
+// with no dependencies of its own, rather than this one and the tree behind it.
+// (irmago is never the importer: the prover module depends on irmago, never the
+// reverse — that is what keeps a plain `go build ./...` free of a C++ toolchain.)
 // Everything domain-shaped stops here: the CBOR encoding, the certificate
 // parsing, the AV profile's identifier convention, the ordering rules. What
 // crosses into zk is encoded bytes and strings.

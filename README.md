@@ -157,7 +157,9 @@ We recommend you to use the [latest release](https://github.com/privacybydesign/
 
 ## Running the unit tests
 
-Some of the unit tests connect to locally running external services, namely PostgreSQL, MySQL, Microsoft SQL Server and an SMTP server running at port 1025. These need to be up and running before these tests can be executed. This can be done using `docker-compose`.
+Some of the unit tests connect to locally running external services: PostgreSQL, MySQL, Microsoft SQL Server, an SMTP server on port 1025, and the EUDI containers the `test` service declares as dependencies (the OpenID4VP verifiers, the status-list agent and the TLS proxy). These need to be up and running before these tests can be executed. This can be done using `docker-compose`, which starts them for you — see the `test` service's `depends_on` in `docker-compose.yml` for the authoritative list.
+
+One service is deliberately left out of that set: `multipaz-verifier` sits behind the `interop` profile, so `docker compose up` does not start it and the live interop test skips. It is a third-party `org-iso-mdoc` verifier built from Multipaz's source, and the first build is slow; start it explicitly with `docker compose --profile interop up --build -d multipaz-verifier` when you want that test to run.
 
 ### Running the tests
 
