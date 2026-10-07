@@ -180,13 +180,14 @@ func parseCertificateChain(ders [][]byte, what string) ([]*x509.Certificate, err
 // message type.
 //
 // ISO 18013-5 puts the bare four-element array at issuerAuth and
-// deviceSignature, which is what this package now writes (see issuer.go and
-// holder.go). Reading is deliberately more permissive than writing: go-cose's
-// Sign1Message insists on the tag-18 prefix and UntaggedSign1Message refuses
-// it, so accepting only one form would make the verifier reject real documents
-// from whichever party disagrees with us. The tag is outside Sig_structure and
-// carries no security meaning, so accepting both costs nothing — everything
-// that matters is still checked against the signature afterwards.
+// deviceSignature, which is what this package now writes (see
+// issuer_testonly.go and devicesigner.go). Reading is deliberately more
+// permissive than writing: go-cose's Sign1Message insists on the tag-18 prefix
+// and UntaggedSign1Message refuses it, so accepting only one form would make
+// the verifier reject real documents from whichever party disagrees with us.
+// The tag is outside Sig_structure and carries no security meaning, so
+// accepting both costs nothing — everything that matters is still checked
+// against the signature afterwards.
 func decodeCoseSign1(data []byte) (*cose.Sign1Message, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("empty COSE_Sign1")

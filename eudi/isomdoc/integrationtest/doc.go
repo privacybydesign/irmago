@@ -33,7 +33,7 @@
 // that way: SQLCipher needs cgo, which needs a C toolchain that is not present on
 // every machine this package is developed on. Putting these tests in
 // eudi/isomdoc would make that whole package unbuildable without gcc for the
-// sake of four tests. A sibling directory keeps the cost where the benefit is —
+// sake of these tests. A sibling directory keeps the cost where the benefit is —
 // `go test ./eudi/isomdoc` stays toolchain-free, `go test ./eudi/...` runs
 // both.
 package integrationtest

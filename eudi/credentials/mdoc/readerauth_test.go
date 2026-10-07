@@ -940,7 +940,7 @@ func TestReaderAuthRejectsExpiredCertificate(t *testing.T) {
 	}
 }
 
-// TestReaderAuthRejectsRevokedReader is the 9.1.4 half of the 9.3.3 requirement
+// TestReaderAuthRevocation is the 9.1.4 half of the 9.3.3 requirement
 // that a party performing path validation have "access to certificate revocation
 // information". The reader is entirely genuine — real chain, valid dates, real
 // signature — and has simply been withdrawn.

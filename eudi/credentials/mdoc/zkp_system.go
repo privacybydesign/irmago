@@ -22,8 +22,9 @@ import (
 // plans for exactly this — "where the User's device does not support
 // Zero-Knowledge Proof generation, the AVI SHALL fall back to the plain ISO
 // mDoc presentation defined in Section A.6" — so absence has to route to the
-// fallback, never to a failed session. Every method here is nil-safe for that
-// reason.
+// fallback, never to a failed session. Every method that READS a repository is
+// nil-safe for that reason. Add is the exception and deliberately so: putting a
+// system into nothing is a programming error, not an absent prover.
 
 // ZkSystem is one zero-knowledge proof system: the circuits it holds, and the
 // ability to prove and check statements under them.

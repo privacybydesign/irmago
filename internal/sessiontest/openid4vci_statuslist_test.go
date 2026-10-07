@@ -48,7 +48,7 @@ func testSessionHandlerForOpenID4VCIStatusList(t *testing.T) {
 }
 
 // testOpenID4VCIStatusListRevocationNotifiesApp is the SD-JWT VC counterpart of
-// TestIdemixRevocationNotifiesApp: an issuer revokes a real status-list
+// TestRevocationPostgres/NotifiesApp: an issuer revokes a real status-list
 // credential, and the wallet's status refresh sweep tells the app about it
 // through ClientHandler.CredentialsChanged. It also pins the other half of the
 // contract — a sweep that only re-confirms a status the wallet already had stays
