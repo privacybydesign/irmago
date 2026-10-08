@@ -20,6 +20,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/oauth2/clientattestationtest"
 	"github.com/privacybydesign/irmago/eudi/oauth2/dpoptest"
 	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/walletunit"
 	"github.com/privacybydesign/irmago/walletprovider"
 	"github.com/privacybydesign/irmago/walletprovider/fake"
 	"github.com/privacybydesign/irmago/walletprovider/providertest"
@@ -139,7 +140,9 @@ func (as *attestingAuthorizationServer) results() []*clientattestationtest.Resul
 	return append([]*clientattestationtest.Result(nil), as.verified...)
 }
 
-func newAttestingSession(t *testing.T, as *attestingAuthorizationServer, attester ClientAttester, withPAR bool) *session {
+// newAttestingSession is a session whose WIAs come from attester, over wp, which
+// it unlocks with the PIN 12345.
+func newAttestingSession(t *testing.T, as *attestingAuthorizationServer, attester ClientAttester, wp walletprovider.WalletProvider, withPAR bool) *session {
 	asMetadata := &oauth2.AuthorizationServerMetadata{
 		Issuer:                            as.URL,
 		AuthorizationEndpoint:             as.URL + "/authorize",
@@ -155,7 +158,7 @@ func newAttestingSession(t *testing.T, as *attestingAuthorizationServer, atteste
 		asMetadata.ChallengeEndpoint = &endpoint
 	}
 	s := &session{
-		ctx:             context.Background(),
+		ctx:             walletunit.WithSession(context.Background(), walletunit.NewSession(wp, fixedPin("12345"))),
 		httpClient:      as.Client(),
 		handler:         newMockSessionHandler(t),
 		redirectUri:     "https://open.yivi.app/-/auth-callback",
@@ -260,7 +263,7 @@ func TestPreAuthorizedTokenRequestIsAuthenticatedWithAWIA(t *testing.T) {
 			attester, provider, ca := activeFakeAttester(t)
 			as := newAttestingAuthorizationServer(t, ca, mode, true)
 			defer as.Close()
-			s := newAttestingSession(t, as, attester, false)
+			s := newAttestingSession(t, as, attester, provider, false)
 
 			resp, err := preAuthorizedTokenRequest(s, nil)
 			require.NoError(t, err)
@@ -282,7 +285,7 @@ func TestTheWIAIsFetchedOncePerSession(t *testing.T) {
 	attester, provider, ca := activeFakeAttester(t)
 	as := newAttestingAuthorizationServer(t, ca, noChallenge, false)
 	defer as.Close()
-	s := newAttestingSession(t, as, attester, false)
+	s := newAttestingSession(t, as, attester, provider, false)
 
 	// As after a wrong transaction code: a second token request.
 	for range 2 {
@@ -296,12 +299,12 @@ func TestTheWIAIsFetchedOncePerSession(t *testing.T) {
 }
 
 func TestSessionsDoNotShareAWIAKey(t *testing.T) {
-	attester, _, ca := activeFakeAttester(t)
+	attester, provider, ca := activeFakeAttester(t)
 	as := newAttestingAuthorizationServer(t, ca, noChallenge, false)
 	defer as.Close()
 	var keys []*ecdsa.PublicKey
 	for range 2 {
-		s := newAttestingSession(t, as, attester, false)
+		s := newAttestingSession(t, as, attester, provider, false)
 		_, err := preAuthorizedTokenRequest(s, nil)
 		require.NoError(t, err)
 		keys = append(keys, &s.clientAttestation.key.PublicKey)
@@ -315,7 +318,7 @@ func TestAuthorizationCodeFlowIsAuthenticatedWithAWIA(t *testing.T) {
 			attester, provider, ca := activeFakeAttester(t)
 			as := newAttestingAuthorizationServer(t, ca, challengeEndpoint, true)
 			defer as.Close()
-			s := newAttestingSession(t, as, attester, withPAR)
+			s := newAttestingSession(t, as, attester, provider, withPAR)
 			s.issuerSettings.grantType = &AuthorizationCodeGrant{}
 			h := &AuthorizationCodeFlowHandler{httpClient: s.httpClient, dpop: s.dpop}
 
@@ -352,7 +355,7 @@ func TestARefusedWIAFailsTheTokenRequestBeforeItIsSent(t *testing.T) {
 	as := newAttestingAuthorizationServer(t, ca, noChallenge, false)
 	defer as.Close()
 	require.NoError(t, provider.Revoke(context.Background()))
-	s := newAttestingSession(t, as, attester, false)
+	s := newAttestingSession(t, as, attester, provider, false)
 
 	_, err := preAuthorizedTokenRequest(s, nil)
 	require.ErrorContains(t, err, "wallet instance attestation")

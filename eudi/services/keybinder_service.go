@@ -125,10 +125,7 @@ func mintProofKeys(ctx context.Context, provider walletprovider.WalletProvider, 
 	if session == nil {
 		return nil, nil, walletunit.ErrNoSession
 	}
-	unlocked, err := session.Unlocked(ctx, walletprovider.Scope{
-		Purpose:      walletprovider.PurposeIssuancePoP,
-		Counterparty: external.Audience(),
-	}, true)
+	unlocked, err := session.Unlocked(ctx, IssuanceScope(external.Audience()), true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -382,6 +379,12 @@ func (s *holderBindingKeyService) RemoveKeys(ids []datatypes.UUID) error {
 		}
 	}
 	return providerErr
+}
+
+// IssuanceScope is what an issuance session with credentialIssuer unlocks the
+// wallet unit for: its WIA, and minting and proving its holder keys.
+func IssuanceScope(credentialIssuer string) walletprovider.Scope {
+	return walletprovider.Scope{Purpose: walletprovider.PurposeIssuancePoP, Counterparty: credentialIssuer}
 }
 
 // removeProviderKeys asks the wallet provider to delete the keys with the

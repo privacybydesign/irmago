@@ -67,18 +67,12 @@ func Run(t *testing.T, newProvider walletprovider.Factory, pin, wrongPin string)
 		require.Equal(t, walletprovider.StateActive, state)
 	})
 
-	t.Run("an instance attestation needs an active wallet unit", func(t *testing.T) {
-		p := fresh(t)
-		_, err := p.InstanceAttestation(ctx, &newKey(t).PublicKey)
-		require.ErrorIs(t, err, walletprovider.ErrNotActivated, "before activation")
-	})
-
 	t.Run("an instance attestation binds the given key and has a status of its own", func(t *testing.T) {
 		p := activated(t)
 		var indices []int
 		for range 2 {
 			key := newKey(t)
-			wia, err := p.InstanceAttestation(ctx, &key.PublicKey)
+			wia, err := unlock(t, p, walletprovider.PurposeIssuancePoP).InstanceAttestation(ctx, &key.PublicKey)
 			require.NoError(t, err)
 			a, err := ParseInstanceAttestation(wia)
 			require.NoError(t, err, "instance attestation")
@@ -202,6 +196,8 @@ func Run(t *testing.T, newProvider walletprovider.Factory, pin, wrongPin string)
 		require.ErrorIs(t, err, walletprovider.ErrUnlockExpired)
 	})
 
+	// Removal takes effect no later than the next unlock: a provider may only
+	// record it, so that deleting works offline.
 	t.Run("removed keys can no longer sign", func(t *testing.T) {
 		p := activated(t)
 		keys, _, err := unlock(t, p, walletprovider.PurposeIssuancePoP).GenerateKeys(ctx, 1, nil)
@@ -291,8 +287,6 @@ func Run(t *testing.T, newProvider walletprovider.Factory, pin, wrongPin string)
 		require.Equal(t, walletprovider.StateRevoked, state)
 		_, err = p.Unlock(ctx, pin, walletprovider.Scope{Purpose: walletprovider.PurposeDisclosureKB})
 		require.ErrorIs(t, err, walletprovider.ErrNotActivated)
-		_, err = p.InstanceAttestation(ctx, &newKey(t).PublicKey)
-		require.ErrorIs(t, err, walletprovider.ErrNotActivated, "instance attestation after revocation")
 	})
 }
 

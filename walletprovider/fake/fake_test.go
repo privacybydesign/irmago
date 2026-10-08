@@ -64,7 +64,9 @@ func TestFakeInstanceAttestationChainsToItsCA(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
-	wia, err := p.InstanceAttestation(ctx, &key.PublicKey)
+	u, err := p.Unlock(ctx, "12345", walletprovider.Scope{Purpose: walletprovider.PurposeIssuancePoP})
+	require.NoError(t, err)
+	wia, err := u.InstanceAttestation(ctx, &key.PublicKey)
 	require.NoError(t, err)
 	a, err := providertest.ParseInstanceAttestation(wia)
 	require.NoError(t, err)
@@ -74,7 +76,9 @@ func TestFakeInstanceAttestationChainsToItsCA(t *testing.T) {
 	require.Equal(t, 1, p.(*fake.Provider).InstanceAttestations())
 }
 
-func TestFakeRefusesInstanceAttestationWhileBlocked(t *testing.T) {
+// An instance attestation needs an unlock, which a blocked PIN refuses even
+// with the right PIN.
+func TestFakeGivesNoInstanceAttestationWhileBlocked(t *testing.T) {
 	p, err := fake.New(fake.Options{MaxAttempts: 1})(providertest.NewHost())
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -82,10 +86,8 @@ func TestFakeRefusesInstanceAttestationWhileBlocked(t *testing.T) {
 	_, err = p.Unlock(ctx, "00000", walletprovider.Scope{})
 	require.True(t, isBlocked(err), "got %v, want *PinBlockedError", err)
 
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	require.NoError(t, err)
-	_, err = p.InstanceAttestation(ctx, &key.PublicKey)
-	require.ErrorIs(t, err, walletprovider.ErrAttestationRefused)
+	_, err = p.Unlock(ctx, "12345", walletprovider.Scope{Purpose: walletprovider.PurposeIssuancePoP})
+	require.True(t, isBlocked(err), "got %v, want *PinBlockedError", err)
 }
 
 func TestLoadAttestationCA(t *testing.T) {
@@ -104,7 +106,9 @@ func TestLoadAttestationCA(t *testing.T) {
 	require.NoError(t, p.Activate(ctx, "12345"))
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	wia, err := p.InstanceAttestation(ctx, &key.PublicKey)
+	u, err := p.Unlock(ctx, "12345", walletprovider.Scope{Purpose: walletprovider.PurposeIssuancePoP})
+	require.NoError(t, err)
+	wia, err := u.InstanceAttestation(ctx, &key.PublicKey)
 	require.NoError(t, err)
 	a, err := providertest.ParseInstanceAttestation(wia)
 	require.NoError(t, err)

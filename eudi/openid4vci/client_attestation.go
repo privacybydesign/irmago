@@ -34,8 +34,10 @@ type ClientAttester interface {
 	// Available reports, from local state only, whether a WIA can be had: the
 	// wallet has an active wallet unit. The provider can still refuse Attest.
 	Available(ctx context.Context) bool
-	// Attest returns a WIA (an oauth-client-attestation+jwt) binding key.
-	Attest(ctx context.Context, key *ecdsa.PublicKey) (string, error)
+	// Attest returns a WIA (an oauth-client-attestation+jwt) binding key, for
+	// an issuance session with credentialIssuer. Getting one may ask the user
+	// for the PIN.
+	Attest(ctx context.Context, key *ecdsa.PublicKey, credentialIssuer string) (string, error)
 }
 
 const (
@@ -111,8 +113,8 @@ func (s *session) ensureClientAttestation() (*clientAttestation, error) {
 	//     make every WIA a tracker across issuers, and whose job is proving the
 	//     wallet unit to its provider, not signing OAuth PoPs;
 	//   - an HSM key through the wallet provider, since every PoP would then
-	//     need an unlock, putting the PIN before PAR, before the browser step of
-	//     the authorization code flow;
+	//     need a round trip to the provider (the WIA itself already needs an
+	//     unlock, which puts the PIN before PAR);
 	//   - a key the provider holds and signs the PoPs with (as the NL Wallet
 	//     does), since the provider would then see the audience of every PoP,
 	//     and so learn which issuers the wallet uses.
@@ -125,7 +127,7 @@ func (s *session) ensureClientAttestation() (*clientAttestation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate the client attestation key: %w", err)
 	}
-	wia, err := s.clientAttester.Attest(s.ctx, &key.PublicKey)
+	wia, err := s.clientAttester.Attest(s.ctx, &key.PublicKey, s.credentialIssuerMetadata.CredentialIssuer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get a wallet instance attestation: %w", err)
 	}

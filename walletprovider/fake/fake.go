@@ -391,7 +391,14 @@ func (p *Provider) Revoke(context.Context) error {
 	})
 }
 
-func (p *Provider) InstanceAttestation(_ context.Context, key *ecdsa.PublicKey) ([]byte, error) {
+func (u *unlocked) InstanceAttestation(_ context.Context, key *ecdsa.PublicKey) ([]byte, error) {
+	if err := u.use(); err != nil {
+		return nil, err
+	}
+	return u.provider.instanceAttestation(key)
+}
+
+func (p *Provider) instanceAttestation(key *ecdsa.PublicKey) ([]byte, error) {
 	if key == nil || key.Curve != elliptic.P256() {
 		return nil, errors.New("fake wallet provider: an instance attestation binds a P-256 key")
 	}

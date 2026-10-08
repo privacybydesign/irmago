@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 
+	"github.com/privacybydesign/irmago/eudi/walletunit"
 	"github.com/privacybydesign/irmago/walletprovider"
 )
 
@@ -30,12 +31,22 @@ func (a *WalletProviderClientAttester) Available(ctx context.Context) bool {
 	return err == nil && state == walletprovider.StateActive
 }
 
-// Attest asks the provider for a WIA binding key.
-func (a *WalletProviderClientAttester) Attest(ctx context.Context, key *ecdsa.PublicKey) (string, error) {
+// Attest asks the provider for a WIA binding key. That needs the PIN, so it
+// unlocks through the session in ctx, with the scope the issuance session's
+// key generation unlocks with: the user is asked for the PIN once, for both.
+func (a *WalletProviderClientAttester) Attest(ctx context.Context, key *ecdsa.PublicKey, credentialIssuer string) (string, error) {
 	if a.provider == nil {
 		return "", walletprovider.ErrNotActivated
 	}
-	wia, err := a.provider.InstanceAttestation(ctx, key)
+	session := walletunit.SessionFrom(ctx)
+	if session == nil {
+		return "", walletunit.ErrNoSession
+	}
+	unlocked, err := session.Unlocked(ctx, IssuanceScope(credentialIssuer), false)
+	if err != nil {
+		return "", err
+	}
+	wia, err := unlocked.InstanceAttestation(ctx, key)
 	if err != nil {
 		return "", err
 	}

@@ -105,25 +105,15 @@ type WalletProvider interface {
 	// unlocked wallet unit keeps what it needs of the PIN — for SECDSA the
 	// PIN-derived key, never the PIN itself — until Close.
 	Unlock(ctx context.Context, pin string, scope Scope) (UnlockedWalletUnit, error)
-	// RemoveKeys deletes holder keys. It needs no PIN: the possession key
-	// suffices to delete what is the wallet's own. Refs the provider does not
-	// know are ignored.
+	// RemoveKeys deletes holder keys. It needs neither the PIN nor a
+	// connection: the provider records the refs and removes the keys with the
+	// next unlock, which proves the PIN, so a wallet can delete credentials
+	// offline. Until then the keys are only unreachable, not gone. Refs the
+	// provider does not know are ignored.
 	RemoveKeys(ctx context.Context, refs []string) error
 	// Revoke deletes the wallet unit and every key in it, with the possession
 	// key only.
 	Revoke(ctx context.Context) error
-	// InstanceAttestation returns a wallet instance attestation (WIA, TS3)
-	// binding key: the provider's statement that the wallet holding key is a
-	// genuine wallet whose wallet unit is not revoked, as an OAuth client
-	// attestation JWT (oauth-client-attestation+jwt) for the wallet to
-	// authenticate itself to an authorization server with. It needs no PIN:
-	// the possession key proves the wallet unit. The wallet asks for one per
-	// issuance session, and only from an authorization server that asks for
-	// client attestation.
-	//
-	// Returns ErrNotActivated without an active wallet unit, and
-	// ErrAttestationRefused when the provider will not vouch for this one.
-	InstanceAttestation(ctx context.Context, key *ecdsa.PublicKey) ([]byte, error)
 	// KeyProtection is what the provider's key attestations say about how its
 	// holder keys are protected, known without the PIN, so the wallet can tell
 	// before asking the user anything whether an issuer's requirements can be
@@ -250,6 +240,18 @@ type UnlockedWalletUnit interface {
 	// at most max entries, and only those before the given time unless it is
 	// zero.
 	Transactions(ctx context.Context, before time.Time, max int) ([]Transaction, error)
+	// InstanceAttestation returns a wallet instance attestation (WIA, TS3)
+	// binding key: the provider's statement that the wallet holding key is a
+	// genuine wallet whose wallet unit is not revoked, as an OAuth client
+	// attestation JWT (oauth-client-attestation+jwt) for the wallet to
+	// authenticate itself to an authorization server with. Like every use
+	// of the wallet unit but revoking it, it needs the PIN. The wallet asks
+	// for one per issuance session, and only from an authorization server
+	// that asks for client attestation.
+	//
+	// Returns ErrAttestationRefused when the provider will not vouch for
+	// this wallet unit now.
+	InstanceAttestation(ctx context.Context, key *ecdsa.PublicKey) ([]byte, error)
 	// ChangePin replaces the PIN the wallet unit was unlocked with by newPin.
 	// The holder keys stay. The unlocked wallet unit is closed afterwards:
 	// what it kept of the old PIN no longer works.
