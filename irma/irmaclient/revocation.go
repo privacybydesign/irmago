@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 
-	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -309,7 +308,7 @@ func randomfloat() (float64, error) {
 	b := make([]byte, 4)
 	_, err := rand.Read(b)
 	if err != nil {
-		fmt.Println("error:", err)
+		irma.Logger.Errorf("failed to read random bytes: %v", err)
 		return 0, err
 	}
 	c := float64(binary.BigEndian.Uint32(b)) / float64(^uint32(0)) // random int / max int
