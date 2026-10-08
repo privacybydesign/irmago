@@ -118,15 +118,15 @@ func verifyStatusListTokenCWT(raw []byte, ctx VerificationContext, expectedURI s
 	if ctx.X509Context == nil {
 		return nil, fmt.Errorf("%w: no X509VerificationContext configured", ErrUnauthorized)
 	}
-	// Only the leaf, mirroring the JWT path's eudi_jwt.X509KeyProvider
-	// convention for x5c: trust comes from ctx.X509Context's own configured
-	// intermediates, not from whatever chain the token carried alongside itself.
+	// The whole x5chain is validated, mirroring the JWT path's x5c handling:
+	// intermediates the token carries are accepted, but the chain must still
+	// end in a root from ctx.X509Context.
 	chain, err := coseutil.X5Chain(msg)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnauthorized, err)
 	}
 	cert := chain[0]
-	if err := eudi_jwt.VerifyCertificate(ctx.X509Context, cert, nil); err != nil {
+	if err := eudi_jwt.VerifyCertificateChain(ctx.X509Context, chain, nil); err != nil {
 		return nil, fmt.Errorf("%w: certificate validation: %v", ErrUnauthorized, err)
 	}
 
