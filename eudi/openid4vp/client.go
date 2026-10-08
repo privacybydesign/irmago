@@ -225,7 +225,7 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			return
 		}
 
-		eudi.Logger.Infof("auth request: %#v", request)
+		eudi.Logger.Infof("auth request: %s", authRequestSummary(request))
 
 		// Without the DC API the response is bound to the client identifier.
 		err = client.handleAuthorizationRequest(session, request, requestor, request.ClientId)
@@ -358,7 +358,7 @@ func (client *Client) handleDcApiSessionAsync(request *DcApiRequest, session *op
 			return
 		}
 
-		eudi.Logger.Infof("dc api auth request: %#v", authRequest)
+		eudi.Logger.Infof("dc api auth request: %s", authRequestSummary(authRequest))
 
 		// Over the DC API the response is bound to the origin the platform
 		// authenticated, never to the client identifier (Appendix A.4).
@@ -697,6 +697,25 @@ func (session *openid4vpSession) prepareDisclosures(
 // ========================================================================
 // Helpers
 // ========================================================================
+
+// authRequestSummary describes an Authorization Request for the log without
+// printing the struct itself. A %#v dump grows a field whenever the struct does,
+// so whatever a future verifier gets to send -- the client_metadata it chose,
+// transaction data, a scope -- would start being written out without anyone
+// deciding it should. These are the fields worth reading when a session fails.
+// The nonce is reported by length only: it is the verifier's replay protection,
+// and its value has no diagnostic use the length does not cover.
+func authRequestSummary(request *AuthorizationRequest) string {
+	return fmt.Sprintf(
+		"client_id=%q response_mode=%q response_type=%q response_uri=%q credential_queries=%d nonce_length=%d",
+		common.SanitizeForLog(request.ClientId),
+		common.SanitizeForLog(string(request.ResponseMode)),
+		common.SanitizeForLog(request.ResponseType),
+		common.SanitizeForLog(request.ResponseUri),
+		len(request.DcqlQuery.Credentials),
+		len(request.Nonce),
+	)
+}
 
 func logMarshalled(message string, value any) {
 	jsonBytes, err := json.MarshalIndent(value, "", "   ")
