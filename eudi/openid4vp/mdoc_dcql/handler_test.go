@@ -1,6 +1,7 @@
 package mdoc_dcql
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/holdersigning"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -73,7 +75,7 @@ func TestFindCandidatesAndPrepareDisclosureRoundTrip(t *testing.T) {
 	require.Len(t, candidate.Attributes, 1)
 	require.Equal(t, []any{testNamespace, "age_over_18"}, candidate.Attributes[0].ClaimPath)
 
-	prepared, err := env.handler.PrepareDisclosure([]dcql.DisclosureSelection{{
+	prepared, err := prepareSigned(env.handler, []dcql.DisclosureSelection{{
 		QueryId:              query.Id,
 		CredentialHash:       candidate.Hash,
 		ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},
@@ -561,22 +563,41 @@ type testEnv struct {
 	store    db.MdocStore
 	hash     string
 
-	// eudiStorage and deviceKeys are what withDeviceKeyBinder needs: the storage
+	// eudiStorage and deviceKeys are what withDeviceKeys needs: the storage
 	// to rebuild a handler over, and the device private keys the stored
-	// credentials were issued against, which a substitute binder has to be able
-	// to resolve for the presentation to verify.
+	// credentials were issued against, which a substitute resolver has to be
+	// able to resolve for the presentation to verify.
 	eudiStorage storage.Storage
 	deviceKeys  []*ecdsa.PrivateKey
 }
 
-// withDeviceKeyBinder rebuilds the handler over the same stored credentials with
-// a different device key binder. Substituting the binder is the only way to
-// observe what the handler asks of it, and the only way to exercise a device key
-// this process cannot extract.
-func (e *testEnv) withDeviceKeyBinder(binder DeviceKeyBinder) *testEnv {
-	withBinder := *e
-	withBinder.handler = NewMdocDcqlHandler(e.eudiStorage, clientmodels.NewCurrentLocale("en"), binder)
-	return &withBinder
+// withDeviceKeys rebuilds the handler over the same stored credentials with a
+// different device key resolver. Substituting it is the only way to observe
+// what the handler asks of it, and the only way to exercise a device key this
+// process cannot extract.
+func (e *testEnv) withDeviceKeys(keys DeviceKeys) *testEnv {
+	withKeys := *e
+	withKeys.handler = NewMdocDcqlHandler(e.eudiStorage, clientmodels.NewCurrentLocale("en"), keys)
+	return &withKeys
+}
+
+// prepareSigned runs the handler's two-phase PrepareDisclosure to the end,
+// signing with software keys, the way the dispatcher does with the wallet's
+// signer for a wallet without a wallet provider.
+func prepareSigned(h *MdocDcqlHandler, selections []dcql.DisclosureSelection, nonce, audience string) (*dcql.PreparedDisclosure, error) {
+	return prepareSignedWith(h, services.NewHolderSigner(nil), selections, nonce, audience)
+}
+
+func prepareSignedWith(h *MdocDcqlHandler, signer holdersigning.Signer, selections []dcql.DisclosureSelection, nonce, audience string) (*dcql.PreparedDisclosure, error) {
+	pending, err := h.PrepareDisclosure(selections, nonce, audience)
+	if err != nil {
+		return nil, err
+	}
+	signatures, err := signer.Sign(context.Background(), pending.Signatures)
+	if err != nil {
+		return nil, err
+	}
+	return pending.Complete(signatures)
 }
 
 // newTestEnv stores a batch of one, the reusable case.
@@ -684,7 +705,7 @@ func newTestEnvWithExpiry(t *testing.T, batchSize uint, expiresAt *time.Time) *t
 		// The production binder, wired as client.New wires it, so every test that
 		// does not substitute one is covering the real path.
 		handler: NewMdocDcqlHandler(eudiStorage, clientmodels.NewCurrentLocale("en"),
-			services.NewMdocDeviceKeyBinder(keyStore)),
+			services.NewMdocDeviceKeyResolver(keyStore)),
 		verifier:    verifier,
 		store:       store,
 		hash:        hash,
@@ -707,7 +728,7 @@ func newTestEnvWithExpiry(t *testing.T, batchSize uint, expiresAt *time.Time) *t
 func TestPrepareDisclosureOverDcApiSignsTheDcApiHandover(t *testing.T) {
 	env := newTestEnv(t)
 
-	prepared, err := env.handler.PrepareDisclosure([]dcql.DisclosureSelection{{
+	prepared, err := prepareSigned(env.handler, []dcql.DisclosureSelection{{
 		QueryId:              "av",
 		CredentialHash:       env.hash,
 		ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},
@@ -741,7 +762,7 @@ func TestPrepareDisclosureOverDcApiSignsTheDcApiHandover(t *testing.T) {
 func TestPrepareDisclosureOverDcApiRejectsTheUrlFlowHandover(t *testing.T) {
 	env := newTestEnv(t)
 
-	prepared, err := env.handler.PrepareDisclosure([]dcql.DisclosureSelection{{
+	prepared, err := prepareSigned(env.handler, []dcql.DisclosureSelection{{
 		QueryId:              "av",
 		CredentialHash:       env.hash,
 		ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},
@@ -773,7 +794,7 @@ func TestPrepareDisclosureOverDcApiRejectsTheUrlFlowHandover(t *testing.T) {
 func TestPrepareDisclosureOverDcApiWithoutOriginFails(t *testing.T) {
 	env := newTestEnvWithBatchSize(t, 2)
 
-	_, err := env.handler.PrepareDisclosure([]dcql.DisclosureSelection{{
+	_, err := prepareSigned(env.handler, []dcql.DisclosureSelection{{
 		QueryId:              "av",
 		CredentialHash:       env.hash,
 		ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},
@@ -808,7 +829,13 @@ func expectedDcApiTranscript(t *testing.T, origin, nonce string) stdmdoc.Session
 // disclose runs one age_over_18 presentation through the handler.
 func (e *testEnv) disclose(t *testing.T) (*dcql.PreparedDisclosure, error) {
 	t.Helper()
-	return e.handler.PrepareDisclosure([]dcql.DisclosureSelection{{
+	return e.discloseWith(t, services.NewHolderSigner(nil))
+}
+
+// discloseWith is disclose, signing through signer.
+func (e *testEnv) discloseWith(t *testing.T, signer holdersigning.Signer) (*dcql.PreparedDisclosure, error) {
+	t.Helper()
+	return prepareSignedWith(e.handler, signer, []dcql.DisclosureSelection{{
 		QueryId:              "av",
 		CredentialHash:       e.hash,
 		ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},

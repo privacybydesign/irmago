@@ -739,7 +739,7 @@ func TestCredentialConfiguration_ValidateAndGetSupportedFeatures(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "cryptographic binding method present, proof type JWT, key attestations required - unsupported",
+			name: "cryptographic binding method present, proof type JWT, key attestations required - supported",
 			config: metadata.CredentialConfiguration{
 				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
@@ -756,8 +756,7 @@ func TestCredentialConfiguration_ValidateAndGetSupportedFeatures(t *testing.T) {
 					},
 				},
 			},
-			wantErr:     true,
-			expectedErr: `unsupported 'key_attestations_required' in 'proof_types_supported' for JWT proof type`,
+			wantErr: false,
 		},
 		{
 			name:    "valid credential configuration",

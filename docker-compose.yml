@@ -298,6 +298,11 @@ services:
     volumes:
       - ./testdata/eudi-pid-issuer-py/as-conf/authorization_config.json:/etc/issuer_config/authorization_config.json:ro
       - ./testdata/eudi-pid-issuer-py/as-conf/openid-configuration.json:/app/openid-configuration.json:ro
+      # The attesters whose wallet instance attestations the AS accepts: the
+      # signing certificate of the test wallet provider's attestation PKI
+      # (testdata/eudi-pid-issuer-py/wallet-attestation). This AS checks a
+      # WIA's signature against the keys of these certificates, not a chain.
+      - ./testdata/eudi-pid-issuer-py/trusted-attesters:/etc/issuer_config/trusted-attesters:ro
     networks:
       irma-net:
         aliases:
@@ -351,6 +356,12 @@ services:
       # Note this affects the local container only: staging serves its own copy,
       # so a staging QR is unchanged by anything here.
       - ./testdata/eudi-pid-issuer-py/metadata/age_verification_mdoc.json:/app/app/metadata_config/credentials_supported/age_verification_mdoc.json:ro
+      # Two copies of it that require a key attestation, for the wallet
+      # provider tests: one offering the attestation proof type (which the
+      # wallet then uses) and one offering only jwt proofs, which then carry
+      # the key attestation in their key_attestation header.
+      - ./testdata/eudi-pid-issuer-py/metadata/age_verification_mdoc_ka.json:/app/app/metadata_config/credentials_supported/age_verification_mdoc_ka.json:ro
+      - ./testdata/eudi-pid-issuer-py/metadata/age_verification_mdoc_ka_jwt.json:/app/app/metadata_config/credentials_supported/age_verification_mdoc_ka_jwt.json:ro
       # A patched populate_pdata, so the issuer will mint ANY age_over_NN rather
       # than only the thirteen thresholds it advertises. Upstream walks its own
       # configured claims and copies a value only where the key is in `data`, so

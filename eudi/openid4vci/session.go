@@ -30,6 +30,9 @@ import (
 )
 
 type session struct {
+	// ctx is the session's context, which the key binders need when minting
+	// holder keys takes asking the user something first.
+	ctx                      context.Context
 	id                       int
 	credentialOffer          *CredentialOffer
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata
@@ -70,6 +73,19 @@ type session struct {
 	redirectUri string
 
 	issuerSettings openid4vciSessionIssuerSettings
+
+	// dpop binds this session's access token to a key of its own, when the
+	// authorization server supports DPoP; nil otherwise. See oauth2.DPoP for
+	// why the key is a fresh software key per session.
+	dpop *oauth2.DPoP
+	// accessTokenType is the token_type of the session's access token, which
+	// decides how the credential endpoint is presented with it.
+	accessTokenType string
+
+	// clientAttester gets the wallet instance attestation, and
+	// clientAttestation holds it once the session has one.
+	clientAttester    ClientAttester
+	clientAttestation *clientAttestation
 }
 
 // openid4vciSessionIssuerSettings contains all settings related to the Credential Issuer and Credential Offer that are required to perform the session, extracted from the Credential Offer and Credential Issuer metadata
@@ -77,6 +93,10 @@ type openid4vciSessionIssuerSettings struct {
 	grantType                   Grant
 	authorizationServer         string
 	authorizationServerMetadata *oauth2.AuthorizationServerMetadata
+
+	// useClientAttestation: the session authenticates to the authorization
+	// server with a wallet instance attestation.
+	useClientAttestation bool
 
 	useCredentialRequestEncryption        bool
 	credentialRequestContentEncryptionAlg *jwa.ContentEncryptionAlgorithm
@@ -134,6 +154,11 @@ func batchInstancesToRequest(advertised uint) uint {
 type sessionCredentialRequestPreferences struct {
 	cryptographicBindingMethod *proofs.CryptographicBindingMethod
 	proofSigningAlg            jwa.SignatureAlgorithm
+	// proofType is the proof type the request sends.
+	proofType metadata.ProofTypeIdentifier
+	// keyAttestation is the issuer's key attestation requirement for that
+	// proof type, nil when no key attestation is sent.
+	keyAttestation *metadata.KeyAttestationRequirement
 }
 
 func (s *session) perform() {
@@ -148,12 +173,22 @@ func (s *session) perform() {
 		return
 	}
 
+	// Before the user is asked anything: can the keys be attested the way the
+	// issuer requires?
+	if err := s.checkKeyAttestations(); err != nil {
+		s.handler.Failure(&clientmodels.SessionError{
+			WrappedError: fmt.Sprintf("could not configure the session: %v", err),
+		})
+		return
+	}
+
 	// Based on the grant type, perform the appropriate flow
 	var grantHandler GrantHandler
 	switch s.issuerSettings.grantType.GetGrantType() {
 	case GrantType_AuthorizationCode:
 		grantHandler = &AuthorizationCodeFlowHandler{
 			httpClient: s.httpClient,
+			dpop:       s.dpop,
 		}
 	case GrantType_PreAuthorizedCode:
 		grantHandler = &PreAuthorizedCodeFlowHandler{}
@@ -181,6 +216,7 @@ func (s *session) perform() {
 	}
 
 	// Fetch and verify credentials (but do not store yet).
+	s.accessTokenType = permission.GetTokenType()
 	fetched, err := s.obtainCredentials(permission.GetAccessToken())
 	if err != nil {
 		eudi.Logger.Infof("error obtaining credentials: %v", err)
@@ -639,6 +675,17 @@ func (s *session) configureIssuerSettings() error {
 
 	// TODO: verify AS supports the required features and to extract endpoints
 
+	if err := s.configureClientAttestation(); err != nil {
+		return err
+	}
+
+	if asMetadata.SupportsDPoP() {
+		s.dpop, err = oauth2.NewDPoP()
+		if err != nil {
+			return err
+		}
+	}
+
 	// Determine if we need to use Credential Request Encryption
 	s.issuerSettings.useCredentialRequestEncryption = false
 	if s.credentialIssuerMetadata.CredentialRequestEncryption != nil {
@@ -794,7 +841,21 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		var proofs []string
 		var err error
 
-		publicKeyIdentifiers, proofs, err = support.Keys.CreateKeyPairsWithProofs(num, proofBuilder)
+		// A key attestation is only asked for when the issuer requires one
+		// (checked before consent, in checkKeyAttestations): the wallet
+		// provider signs it with a status index of its own, which it keeps
+		// for a year.
+		var attest *services.KeyAttestationOptions
+		if credentialRequestPreferences.keyAttestation != nil {
+			attest = &services.KeyAttestationOptions{
+				AsProof: credentialRequestPreferences.proofType == metadata.ProofTypeIdentifier_Attestation,
+			}
+			if cNonce != nil {
+				attest.Nonce = *cNonce
+			}
+		}
+
+		publicKeyIdentifiers, proofs, err = support.Keys.CreateKeyPairsWithProofs(s.ctx, num, proofBuilder, attest)
 		if err != nil {
 			return nil, fmt.Errorf("could not create key pairs: %v", err)
 		}
@@ -805,7 +866,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		}
 
 		request.Proofs = &metadata.Proofs{
-			metadata.ProofTypeIdentifier_JWT: x,
+			credentialRequestPreferences.proofType: x,
 		}
 	}
 
@@ -845,15 +906,22 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		requestBody = jsonRequest
 	}
 
-	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewBuffer(requestBody))
-	if err != nil {
-		return nil, err
+	// A DPoP-bound token is presented with the DPoP scheme and a proof over
+	// it; a bearer token without one, even in a session that sent proofs to
+	// the authorization server.
+	scheme, dpop := "Bearer", (*oauth2.DPoP)(nil)
+	if strings.EqualFold(s.accessTokenType, oauth2.TokenTypeDPoP) {
+		scheme, dpop = oauth2.TokenTypeDPoP, s.dpop
 	}
-
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Content-Type", contentType)
-
-	resp, err := s.httpClient.Do(req)
+	resp, err := dpop.Do(s.httpClient, accessToken, func() (*http.Request, error) {
+		req, err := http.NewRequest("POST", s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewBuffer(requestBody))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", scheme+" "+accessToken)
+		req.Header.Set("Content-Type", contentType)
+		return req, nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -1067,9 +1135,10 @@ func requireMandatoryMdocElements(config *metadata.CredentialConfiguration, pars
 	return nil
 }
 
-// requestNonce requests a fresh nonce from the issuer's nonce endpoint
+// requestNonce requests a fresh nonce from the issuer's nonce endpoint. The
+// request carries no DPoP proof, since the endpoint takes no access token, but
+// its response may hand out the DPoP nonce for the credential endpoint.
 func (s *session) requestNonce() (string, error) {
-	// TODO: implement use of DPoP nonce
 	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.NonceEndpoint, bytes.NewBuffer([]byte{}))
 	if err != nil {
 		return "", err
@@ -1080,6 +1149,7 @@ func (s *session) requestNonce() (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
+	s.dpop.ObserveNonce(resp)
 
 	if !(resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK) {
 		return "", fmt.Errorf("nonce request failed: %s", resp.Status)
@@ -1131,4 +1201,37 @@ func (s *session) extractAuthorizationDetailsJson() (*string, error) {
 
 	authDetailsJson := string(authDetailsJsonBytes)
 	return &authDetailsJson, nil
+}
+
+// checkKeyAttestations checks, before the user is asked anything, that every
+// offered credential whose proof type requires a key attestation can get one
+// that meets the requirement: its keys are minted by a wallet provider with an
+// active wallet unit, whose key attestations claim a protection level the
+// issuer accepts. A configuration this wallet cannot request for another
+// reason is left for obtainCredential to report, as before.
+func (s *session) checkKeyAttestations() error {
+	validator := CredentialConfigurationValidator{}
+	for _, id := range s.credentialOffer.CredentialConfigurationIds {
+		config, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[id]
+		if !ok {
+			continue
+		}
+		preferences, err := validator.ValidateAndGetSupportedFeatures(&config)
+		if err != nil || preferences.keyAttestation == nil {
+			continue
+		}
+		support, ok := s.formats[models.CredentialFormat(config.Format)]
+		if !ok || support.Keys == nil {
+			continue
+		}
+		protection, ok := support.Keys.KeyProtection(s.ctx)
+		if !ok {
+			return fmt.Errorf("credential %q requires a key attestation, which only keys held by an active wallet unit can have", id)
+		}
+		if !satisfiesKeyAttestationRequirement(preferences.keyAttestation, protection.KeyStorage, protection.UserAuthentication) {
+			return fmt.Errorf("credential %q requires key storage %v and user authentication %v, and this wallet's keys are attested as %v and %v",
+				id, preferences.keyAttestation.KeyStorage, preferences.keyAttestation.UserAuthentication, protection.KeyStorage, protection.UserAuthentication)
+		}
+	}
+	return nil
 }

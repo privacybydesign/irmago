@@ -1246,6 +1246,13 @@ func createClientWithCustomIssuerTrustChain(
 }
 
 func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	return instantiateClientWithConfig(t, issuerChain, client.Config{Locale: locale})
+}
+
+// instantiateClientWithConfig is instantiateClient for a test that sets
+// optional parts of the client configuration itself. The storage paths,
+// handlers, signer and AES key are always the test wallet's own.
+func instantiateClientWithConfig(t *testing.T, issuerChain []byte, cfg client.Config) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	anchor := stagingIssuerAnchor
 	if issuerChain != nil {
 		anchor = trustAnchor{name: "integrationtest-chain.pem", pem: issuerChain}
@@ -1258,7 +1265,14 @@ func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	client, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, test.NewSigner(t), testAESKey(), locale)
+	cfg.StoragePath = storagePath
+	cfg.IrmaConfigurationPath = irmaConfigurationPath
+	cfg.EudiAppDataPath = eudiAppDataPath
+	cfg.Handler = clientHandler
+	cfg.SessionHandler = sessionHandler
+	cfg.Signer = test.NewSigner(t)
+	cfg.AesKey = testAESKey()
+	client, err := client.New(cfg)
 	require.NoError(t, err)
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
