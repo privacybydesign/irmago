@@ -175,35 +175,54 @@ func stopServer(t *testing.T, server *http.Server) {
 
 func TestFilterHeaders(t *testing.T) {
 	headers := http.Header{
-		"Authorization": []string{"Bearer supersecret-token"},
-		"Cookie":        []string{"session=abc123"},
-		"Set-Cookie":    []string{"session=def456; HttpOnly"},
-		"X-Auth-Token":  []string{"another-secret"},
-		"Content-Type":  []string{"application/json"},
-		"User-Agent":    []string{"irma-test"},
+		"Authorization":            []string{"Bearer supersecret-token"},
+		"Cookie":                   []string{"session=abc123"},
+		"X-Auth-Token":             []string{"another-secret"},
+		"X-Forwarded-For":          []string{"203.0.113.7"},
+		"X-Irma-Keyshare-Username": []string{"alice"},
+		"Content-Type":             []string{"application/json"},
+		"User-Agent":               []string{"irma-test"},
 	}
 
 	filtered := filterHeaders(headers)
 
-	// Sensitive headers must be redacted, regardless of header-name casing.
-	for _, name := range []string{"Authorization", "Cookie", "Set-Cookie", "X-Auth-Token"} {
+	// Allowlisted headers are reported as present, but never with their value —
+	// logging only constants is what clears CodeQL's clear-text-logging finding.
+	require.Equal(t, []string{"<present>"}, filtered["Content-Type"])
+	require.Equal(t, []string{"<present>"}, filtered["User-Agent"])
+
+	// Everything else is redacted — including credentials and PII that a denylist
+	// would not have caught. The allowlist fails closed.
+	for _, name := range []string{"Authorization", "Cookie", "X-Auth-Token", "X-Forwarded-For", "X-Irma-Keyshare-Username"} {
 		require.Equal(t, []string{"[redacted]"}, filtered[name], "header %s should be redacted", name)
 	}
 
-	// Non-sensitive headers must pass through unchanged.
-	require.Equal(t, []string{"application/json"}, filtered["Content-Type"])
-	require.Equal(t, []string{"irma-test"}, filtered["User-Agent"])
+	// No original header value is ever retained, allowlisted or not.
+	originalValues := []string{
+		"application/json", "irma-test", "Bearer supersecret-token",
+		"session=abc123", "another-secret", "203.0.113.7", "alice",
+	}
+	for _, values := range filtered {
+		for _, val := range values {
+			require.NotContains(t, originalValues, val, "no original header value may appear in the filtered output")
+		}
+	}
 
 	// The original headers must not be mutated by filtering.
 	require.Equal(t, []string{"Bearer supersecret-token"}, headers["Authorization"])
 }
 
 func TestFilterHeadersCaseInsensitive(t *testing.T) {
-	// http.Header keys are canonicalized, but verify lookups are case-insensitive
-	// in case headers are constructed directly with lower-case keys.
-	headers := http.Header{"authorization": []string{"secret"}}
+	// Allowlist matching is case-insensitive, in case headers are constructed
+	// directly with lower-case keys rather than canonicalized.
+	headers := http.Header{
+		"content-type":  []string{"application/json"},
+		"authorization": []string{"secret"},
+	}
 	filtered := filterHeaders(headers)
 	// filterHeaders preserves the original (lower-case) key, so look it up via the
 	// underlying map type to avoid http.Header key canonicalization (SA1008).
-	require.Equal(t, []string{"[redacted]"}, map[string][]string(filtered)["authorization"])
+	m := map[string][]string(filtered)
+	require.Equal(t, []string{"<present>"}, m["content-type"])
+	require.Equal(t, []string{"[redacted]"}, m["authorization"])
 }
