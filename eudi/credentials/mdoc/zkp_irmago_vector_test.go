@@ -23,17 +23,33 @@ import (
 //
 // # How testdata/irmago_zk_deviceresponse.cbor was made
 //
-// Three stages, split because cgo must never enter irmago (#724: "irmago never
-// compiles C++ — not even in a tagged job"). Programs live in the longfellow-go
-// scaffolding, not here:
+// Four stages, split because cgo must never enter irmago (#724: "irmago never
+// compiles C++ — not even in a tagged job"). The native half runs in a container
+// built from longfellow-go's Dockerfile; the two halves meet as files on disk:
 //
-//	A. gen   (in irmago)   issues an eu.europa.ec.av.1 credential with
-//	                       NewTestIssuer, signs deviceAuth over a DC API session
-//	                       transcript, emits inputs.json
-//	B. prove (in the container) loads the v6/1-attribute circuit, verifies it with
-//	                       circuit_id, runs run_mdoc_prover, and verifies its own
-//	                       output before writing proof.bin
-//	C. wrap  (in irmago)   builds ZkDocument + DeviceResponse with this package
+//	A. gen    (in irmago)        issues an eu.europa.ec.av.1 credential with
+//	                             NewTestIssuer, builds a DC API session
+//	                             transcript, and signs deviceAuth over it
+//	B. prove  (in the container) loads the v6/1-attribute circuit, checks it
+//	                             against its published circuit_hash, runs
+//	                             run_mdoc_prover, and verifies its own output
+//	C. wrap   (in irmago)        builds ZkDocument + DeviceResponse with this
+//	                             package
+//	D. verify (in the container) hands the result to Google's reference verifier
+//
+// Three files come out of that, and all three are needed for the vector to be
+// checkable by someone other than us:
+//
+//	irmago_zk_deviceresponse.cbor  the presentation — the only one these tests read
+//	irmago_zk_transcript.cbor      the transcript the proof's device signature is
+//	                               bound to
+//	irmago_zk_iaca.pem             the root the issuer chain terminates at, without
+//	                               which a verifier correctly stops at "certificate
+//	                               signed by unknown authority"
+//
+// Nothing in this package reads the latter two. They are committed so that the
+// claim below — that an outside verifier accepted these bytes — can be rechecked
+// by anyone who has a prover, instead of being taken on trust.
 //
 // Two properties of the fixture are deliberate and distinguish it from the
 // Multipaz one:
@@ -53,10 +69,16 @@ import (
 //     proof. That is #724 Phase 1's gate, and it is why these tests may assert
 //     on shape alone without being a decoder that agrees only with its encoder.
 //
-// Regenerate with longfellow-go's verify-zk-pipeline.ps1, which reruns all four
-// stages including that verification. Every run produces a WHOLLY DIFFERENT
-// blob — a fresh issuer key and fresh proof randomness — so refresh the fixture
-// only when the encoding changes, never routinely.
+// Regenerating it is a manual procedure. The driver that ran the four stages was
+// one-off scaffolding and is in neither published repository, so there is no
+// checked-in command to rerun; stage B's v6 circuit cannot be produced by
+// generate_circuit either — that emits only the library's newest version — so it
+// has to come from a copy on disk, checked against its published circuit_hash.
+//
+// Every run produces a WHOLLY DIFFERENT blob, because the issuer key and the
+// proof randomness are both fresh. Refresh the fixture only when the encoding
+// changes, never routinely — and when you do, rerun stage D as well: a fixture
+// no outside verifier has accepted does not carry the claim this file rests on.
 
 const irmagoVector = "testdata/irmago_zk_deviceresponse.cbor"
 
