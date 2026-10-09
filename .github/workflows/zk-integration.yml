@@ -1,0 +1,134 @@
+# Runs longfellow-go's test suite against THIS irmago commit.
+#
+# Why it exists: irmago declares the zero-knowledge boundary
+# (eudi/credentials/mdoc/zk) but never imports the module that implements it.
+# The dependency runs one way only -- longfellow-go imports irmago -- which is
+# what keeps `go build ./...` free of a C++ toolchain and ./yivi free of cgo.
+# The cost of that arrangement is that nothing in this repository's CI compiles
+# the code on the other side of the boundary, so a change here that compiles
+# cleanly can break the only thing that actually proves anything, and stay
+# broken until somebody happens to build longfellow-go by hand. That has already
+# happened: NewHolder -> GenerateDeviceSigner, Holder -> Signer, the DCAPI move
+# into isomdoc and VerifyZkDocument's extra argument were all found weeks late.
+#
+# What this does NOT do is add a module edge. longfellow-go is cloned and given
+# a `replace` pointing at this checkout, which exists only inside the job.
+name: ZK integration
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+  schedule:
+    # Monday 09:00 UTC, matching Status checks, so a week of upstream drift in
+    # the pinned longfellow-zk ref surfaces even with no irmago commits.
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: zk-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zk-integration:
+    runs-on: ubuntu-latest
+    # The C++ library is ~20 minutes when the layer cache misses. It hits for
+    # every run that does not change the pinned ref or the patches, which is
+    # almost all of them.
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out irmago
+        uses: actions/checkout@v6
+        with:
+          path: irmago
+
+      - name: Check out longfellow-go
+        uses: actions/checkout@v6
+        with:
+          repository: privacybydesign/longfellow-go
+          path: longfellow-go
+
+      # The library, the circuits and the cache key all derive from the same
+      # two things: the longfellow-zk commit the Dockerfile pins, and the
+      # patches applied on top of it. Nothing else changes what gets built.
+      - name: Compute the native-build key
+        id: key
+        working-directory: longfellow-go
+        run: echo "value=${{ runner.os }}-$(cat Dockerfile patches/*.patch | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # GitHub Actions cache rather than a registry: no package-write permission
+      # is needed and it works unchanged for pull requests from forks.
+      - name: Build the longfellow image
+        uses: docker/build-push-action@v7
+        with:
+          context: longfellow-go
+          load: true
+          tags: longfellow-build:${{ steps.key.outputs.value }}
+          cache-from: type=gha,scope=${{ steps.key.outputs.value }}
+          cache-to: type=gha,mode=max,scope=${{ steps.key.outputs.value }}
+
+      # Circuits are an input to the proving tests and cannot all be built:
+      # generate_circuit emits only the library's newest revision, so the older
+      # ones deployed readers ask for are unobtainable from source. What CAN be
+      # generated is cached, because it depends on the pinned library alone and
+      # costs about ten seconds per circuit.
+      - name: Restore generated circuits
+        id: circuits
+        uses: actions/cache@v4
+        with:
+          path: circuits
+          key: longfellow-circuits-${{ steps.key.outputs.value }}
+
+      - name: Generate circuits
+        if: steps.circuits.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p circuits
+          docker run --rm \
+            -v "${PWD}/longfellow-go:/work/longfellow-go" \
+            -v "${PWD}/circuits:/circuits" \
+            -w /work/longfellow-go \
+            longfellow-build:${{ steps.key.outputs.value }} \
+            generate-circuits.sh /circuits
+
+      # The replace is the whole point: without it the suite runs against the
+      # released irmago that longfellow-go's go.mod pins, and proves nothing
+      # about this commit. It is made here and never committed anywhere.
+      - name: Point longfellow-go at this irmago
+        run: |
+          docker run --rm \
+            -v "${PWD}/longfellow-go:/work/longfellow-go" \
+            -v "${PWD}/irmago:/work/irmago" \
+            -w /work/longfellow-go \
+            longfellow-build:${{ steps.key.outputs.value }} \
+            go mod edit -replace github.com/privacybydesign/irmago=../irmago
+          grep irmago longfellow-go/go.mod
+
+      # LONGFELLOW_STRICT turns a missing circuit directory into a failure.
+      # Without it an empty mount would skip every proving test and report
+      # green, which reads as coverage and is worse than having no job at all.
+      #
+      # LONGFELLOW_CIRCUITS_GENERATED tells the suite that only the newest
+      # revision is present, so the tests that need an older one skip loudly
+      # instead of failing. Grep the log for NOT COVERED to see what that costs.
+      - name: Run the suite
+        run: |
+          docker run --rm \
+            -v "${PWD}/longfellow-go:/work/longfellow-go" \
+            -v "${PWD}/irmago:/work/irmago" \
+            -v "${PWD}/circuits:/circuits" \
+            -w /work/longfellow-go \
+            -e LONGFELLOW_CIRCUITS=/circuits \
+            -e LONGFELLOW_CIRCUITS_GENERATED=1 \
+            -e LONGFELLOW_STRICT=1 \
+            longfellow-build:${{ steps.key.outputs.value }} \
+            build-module.sh -v
+
+      - name: Report what the generated circuits did not cover
+        if: always()
+        run: |
+          echo "This run proved under the pinned library's newest circuit revision only."
+          echo "Revisions deployed readers ask for cannot be generated from source;"
+          echo "see irmago#724 Phase 0 step 5 for the open question about circuit assets."
