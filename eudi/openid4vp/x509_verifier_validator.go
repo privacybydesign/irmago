@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
@@ -17,6 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/jose"
 )
 
 // RequestorCertificateStoreVerifierValidator validates OpenID4VP authorization
@@ -39,21 +42,27 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	*scheme.RelyingPartyRequestor,
 	error,
 ) {
+	// The certificate the JWT was verified with is kept here by the key function, rather than on
+	// the validator, so that concurrent calls do not overwrite each other's.
+	var leafCert *x509.Certificate
 	var authRequest AuthorizationRequest
-	token, err := jwt.ParseWithClaims(requestJwt, &authRequest, v.createAuthRequestVerifier(),
-		authRequestParserOptions()...)
+	err := jose.Verify(requestJwt, &authRequest, func(headers jws.Headers, payload []byte) (jwa.SignatureAlgorithm, any, error) {
+		// The client_id names the certificate the request must be signed with, so it has to be
+		// read out of the still unverified payload to find the key.
+		var unverified AuthorizationRequest
+		if err := json.Unmarshal(payload, &unverified); err != nil {
+			return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("failed to parse auth request claims: %v", err)
+		}
+		alg, cert, err := v.authorizeAuthRequestSigner(headers, &unverified)
+		if err != nil {
+			return jwa.EmptySignatureAlgorithm(), nil, err
+		}
+		leafCert = cert
+		return alg, cert.PublicKey, nil
+	}, authRequestParserOptions()...)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
 	}
-
-	certs, err := getCertsFromX5cHeader(token)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get certificates from x5c header: %v", err)
-	}
-	if len(certs) == 0 {
-		return nil, nil, nil, fmt.Errorf("no certificates found in x5c header")
-	}
-	leafCert := certs[0]
 
 	// What the verifier is authorized to ask for comes from its certificate
 	// alone, and is decided independently of how the verifier is displayed.
@@ -112,80 +121,76 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	return &authRequest, leafCert, requestorInfo, nil
 }
 
-func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier() jwt.Keyfunc {
-	return func(token *jwt.Token) (any, error) {
-		typ, ok := token.Header["typ"]
-		if !ok {
-			return nil, errors.New("auth request JWT needs to contain 'typ' in header, but doesn't")
-		}
-		if typ != AuthRequestJwtTyp {
-			return nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", AuthRequestJwtTyp, typ)
-		}
-
-		request := token.Claims.(*AuthorizationRequest)
-
-		parsedCerts, err := getCertsFromX5cHeader(token)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get certificates from x5c header: %v", err)
-		}
-		if len(parsedCerts) == 0 {
-			return nil, fmt.Errorf("no certificates found in x5c header")
-		}
-		leafCert := parsedCerts[0]
-
-		var hostname *string = nil
-
-		switch {
-		case strings.HasPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns)):
-			h := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns))
-			hostname = &h
-
-		case strings.HasPrefix(request.ClientId, string(ClientIdentifierPrefix_X509Hash)):
-			// x509_hash authenticates via the certificate hash rather than a DNS name,
-			// so the chain/revocation check is done without a hostname/SAN check and we leave `hostname` as nil.
-			expectedHash := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509Hash))
-			hash := sha256.Sum256(leafCert.Raw)
-			actualHash := base64.RawURLEncoding.EncodeToString(hash[:])
-			if actualHash != expectedHash {
-				return nil, fmt.Errorf("client_id certificate hash %q does not match leaf certificate hash %q", expectedHash, actualHash)
-			}
-
-		default:
-			return nil, fmt.Errorf("client_id expected to start with '%s' or '%s' but doesn't (%s)", ClientIdentifierPrefix_X509SanDns, ClientIdentifierPrefix_X509Hash, request.ClientId)
-		}
-
-		if err := eudi_jwt.VerifyCertificateChain(v.verificationContext, parsedCerts, hostname); err != nil {
-			return nil, fmt.Errorf("failed to verify relying party certificate: %v", err)
-		}
-
-		return leafCert.PublicKey, nil
+// authorizeAuthRequestSigner checks that the JWT declares itself an authorization request, that
+// its x5c certificate is one this verifier trusts, and that the certificate is the one the
+// client_id names. It returns the algorithm to verify the signature with and that certificate.
+func (v *RequestorCertificateStoreVerifierValidator) authorizeAuthRequestSigner(
+	headers jws.Headers, request *AuthorizationRequest,
+) (jwa.SignatureAlgorithm, *x509.Certificate, error) {
+	typ, ok := headers.Type()
+	if !ok {
+		return jwa.EmptySignatureAlgorithm(), nil, errors.New("auth request JWT needs to contain 'typ' in header, but doesn't")
 	}
+	if typ != AuthRequestJwtTyp {
+		return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", AuthRequestJwtTyp, typ)
+	}
+	alg, err := authRequestSignatureAlgorithm(headers)
+	if err != nil {
+		return jwa.EmptySignatureAlgorithm(), nil, err
+	}
+
+	parsedCerts, err := getCertsFromX5cHeader(headers)
+	if err != nil {
+		return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("failed to get certificates from x5c header: %v", err)
+	}
+	if len(parsedCerts) == 0 {
+		return jwa.EmptySignatureAlgorithm(), nil, errors.New("no certificates found in x5c header")
+	}
+	leafCert := parsedCerts[0]
+
+	var hostname *string = nil
+
+	switch {
+	case strings.HasPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns)):
+		h := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns))
+		hostname = &h
+
+	case strings.HasPrefix(request.ClientId, string(ClientIdentifierPrefix_X509Hash)):
+		// x509_hash authenticates via the certificate hash rather than a DNS name,
+		// so the chain/revocation check is done without a hostname/SAN check and we leave `hostname` as nil.
+		expectedHash := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509Hash))
+		hash := sha256.Sum256(leafCert.Raw)
+		actualHash := base64.RawURLEncoding.EncodeToString(hash[:])
+		if actualHash != expectedHash {
+			return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("client_id certificate hash %q does not match leaf certificate hash %q", expectedHash, actualHash)
+		}
+
+	default:
+		return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("client_id expected to start with '%s' or '%s' but doesn't (%s)", ClientIdentifierPrefix_X509SanDns, ClientIdentifierPrefix_X509Hash, request.ClientId)
+	}
+
+	// Verify the certificate against the trusted chains and revocation lists, using the hostname if applicable.
+	if err := eudi_jwt.VerifyCertificateChain(v.verificationContext, parsedCerts, hostname); err != nil {
+		return jwa.EmptySignatureAlgorithm(), nil, fmt.Errorf("failed to verify relying party certificate: %v", err)
+	}
+
+	return alg, leafCert, nil
 }
 
 // getCertsFromX5cHeader extracts the certificates from the x5c JWT header.
-func getCertsFromX5cHeader(token *jwt.Token) ([]*x509.Certificate, error) {
-	x5c, ok := token.Header["x5c"]
+func getCertsFromX5cHeader(headers jws.Headers) ([]*x509.Certificate, error) {
+	chain, ok := headers.X509CertChain()
 	if !ok {
-		return nil, fmt.Errorf("auth request token doesn't contain x5c field in the header")
+		return nil, errors.New("auth request token doesn't contain x5c field in the header")
+	}
+	if chain.Len() == 0 {
+		return nil, errors.New("auth request token contains empty x5c array in the header")
 	}
 
-	certs, ok := x5c.([]any)
-	if !ok {
-		return nil, fmt.Errorf("auth request token doesn't contain valid x5c field in the header")
-	}
-
-	if len(certs) == 0 {
-		return nil, fmt.Errorf("auth request token contains empty x5c array in the header")
-	}
-
-	certificates := []*x509.Certificate{}
-	for _, c := range certs {
-		certString, ok := c.(string)
-		if !ok {
-			return nil, fmt.Errorf("failed to convert certificate to string: %v", c)
-		}
-
-		der, err := base64.StdEncoding.DecodeString(certString)
+	certificates := make([]*x509.Certificate, 0, chain.Len())
+	for i := 0; i < chain.Len(); i++ {
+		certBytes, _ := chain.Get(i)
+		der, err := base64.StdEncoding.DecodeString(string(certBytes))
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode base64 encoded der: %v", err)
 		}

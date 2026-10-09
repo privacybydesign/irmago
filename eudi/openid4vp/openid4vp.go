@@ -7,8 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
@@ -241,48 +244,26 @@ type EncryptedResponsePayload struct {
 // VpToken is a map from dcql query id to a list of credentials (e.g. a list of sd-jwt vc's)
 type VpToken map[string][]string
 
-// implement jwt.Claims interface, so we can decode the auth request JWT
-//
-// These are what the JWT parser validates against, so returning a nil time from
-// all of them — as this type used to — means exp, nbf and iat are carried on the
-// wire and then ignored: a request object stayed usable forever, and one dated
-// in the future was accepted as readily as a current one. Each accessor now
-// reports the claim it has, and leaves nil only where the request genuinely
-// carries no value, which is the case the parser is meant to skip.
-
-func (ar *AuthorizationRequest) GetExpirationTime() (*jwt.NumericDate, error) {
-	return numericDateOrNil(ar.Expiry), nil
-}
-
-func (ar *AuthorizationRequest) GetIssuedAt() (*jwt.NumericDate, error) {
-	return numericDateOrNil(ar.IssuedAt), nil
-}
-
-func (ar *AuthorizationRequest) GetNotBefore() (*jwt.NumericDate, error) {
-	return numericDateOrNil(ar.NotBefore), nil
-}
-
-func (ar *AuthorizationRequest) GetIssuer() (string, error)  { return "", nil }
-func (ar *AuthorizationRequest) GetSubject() (string, error) { return "", nil }
-
-func (ar *AuthorizationRequest) GetAudience() (jwt.ClaimStrings, error) {
-	if ar.Audience == "" {
-		return nil, nil
-	}
-	return jwt.ClaimStrings{ar.Audience}, nil
-}
-
-// numericDateOrNil converts a unix timestamp claim to the parser's type,
-// reporting nil for the zero value so an absent claim stays absent rather than
-// becoming a 1970 deadline that would reject every request.
-func numericDateOrNil(unix int64) *jwt.NumericDate {
-	if unix == 0 {
-		return nil
-	}
-	return jwt.NewNumericDate(time.Unix(unix, 0))
-}
-
 const AuthRequestJwtTyp string = "oauth-authz-req+jwt"
+
+// authRequestSignatureAlgorithm returns the algorithm with which an authorization request JWT
+// is to be verified, taken from its protected header and narrowed to the algorithms this module
+// accepts.
+func authRequestSignatureAlgorithm(headers jws.Headers) (jwa.SignatureAlgorithm, error) {
+	alg, ok := headers.Algorithm()
+	if !ok {
+		return jwa.EmptySignatureAlgorithm(), fmt.Errorf("auth request JWT needs 'alg' in header")
+	}
+	supported, found := eudi_jwt.LookupSupportedSignatureAlgorithm(alg.String())
+	if !found {
+		return jwa.EmptySignatureAlgorithm(), fmt.Errorf("unsupported signing algorithm in auth request JWT header: %s", alg)
+	}
+	return supported, nil
+}
+
+// exp, nbf and iat are validated by jose.Verify itself (see internal/jose), which checks
+// jwx's registered time claims straight off the JSON payload. Nothing here needs to
+// implement a Go-level claims interface for that to happen, unlike with golang-jwt.
 
 // The aud claim is parsed into AuthorizationRequest.Audience but deliberately
 // not validated. OpenID4VP § 5.8 tells a *verifier* what to put there --
@@ -302,14 +283,13 @@ const AuthRequestJwtTyp string = "oauth-authz-req+jwt"
 // authRequestParserOptions are the validations the JWT parser applies to every
 // authorization request object, wherever it arrived from.
 //
-// WithIssuedAt is what makes a future-dated iat an error; the parser ignores the
-// claim otherwise. The leeway absorbs ordinary clock drift between a wallet and
-// a verifier, which is not the same thing as a request being stale by a margin
-// anyone would notice.
-func authRequestParserOptions() []jwt.ParserOption {
-	return []jwt.ParserOption{
-		jwt.WithIssuedAt(),
-		jwt.WithLeeway(2 * time.Minute),
+// jose.Verify already rejects a future-dated iat by default (see internal/jose), so
+// unlike golang-jwt this needs no explicit opt-in for that. The skew absorbs ordinary
+// clock drift between a wallet and a verifier, which is not the same thing as a
+// request being stale by a margin anyone would notice.
+func authRequestParserOptions() []jwt.ParseOption {
+	return []jwt.ParseOption{
+		jwt.WithAcceptableSkew(2 * time.Minute),
 	}
 }
 

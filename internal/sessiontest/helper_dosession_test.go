@@ -15,7 +15,8 @@ import (
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/privacybydesign/irmago/irma/server/requestorserver"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/stretchr/testify/require"
 )
 
@@ -146,9 +147,9 @@ func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request any)
 		if useJWTs {
 			skbts, err := os.ReadFile(filepath.Join(testdataFolder, "jwtkeys", "requestor1-sk.pem"))
 			require.NoError(t, err)
-			sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
+			sk, err := jose.ParseRSAPrivateKeyFromPEM(skbts)
 			require.NoError(t, err)
-			j, err := irma.SignSessionRequest(req, jwt.SigningMethodRS256, sk, "requestor1")
+			j, err := irma.SignSessionRequest(req, jwa.RS256(), sk, "requestor1")
 			require.NoError(t, err)
 			err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, j)
 			require.NoError(t, err)
@@ -186,17 +187,15 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 
 			bts, err := os.ReadFile(jwtPrivkeyPath)
 			require.NoError(t, err)
-			sk, err := jwt.ParseRSAPrivateKeyFromPEM(bts)
+			sk, err := jose.ParseRSAPrivateKeyFromPEM(bts)
 			require.NoError(t, err)
 
 			// Validate JWT
 			claims := struct {
-				jwt.RegisteredClaims
+				irma.RegisteredClaims
 				*server.SessionResult
 			}{}
-			_, err = jwt.ParseWithClaims(res, &claims, func(_ *jwt.Token) (any, error) {
-				return &sk.PublicKey, nil
-			})
+			err = jose.Verify(res, &claims, jose.StaticKey(jwa.RS256(), &sk.PublicKey))
 			require.NoError(t, err)
 
 			// Check default expiration time

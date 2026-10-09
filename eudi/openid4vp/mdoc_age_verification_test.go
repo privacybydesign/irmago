@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 
@@ -398,10 +397,10 @@ func setupMdocAvVerifier(t *testing.T, schemeData string) (string, *RequestorCer
 	validator := NewRequestorCertificateStoreVerifierValidator(trustModel, &DefaultQueryValidatorFactory{})
 
 	x5c := []*x509.Certificate{verifierCert}
-	authRequestJwt := testdata.CreateTestAuthorizationRequestJWT(hostname, verifierKey, x5c, func(token *jwt.Token) {
+	authRequestJwt := testdata.CreateTestAuthorizationRequestJWT(hostname, verifierKey, x5c, func(token *testdata.AuthorizationRequestToken) {
 		// The stock test request asks for an SD-JWT email credential; replace it
 		// with the mdoc age query this file is about.
-		token.Claims.(jwt.MapClaims)["dcql_query"] = map[string]any{
+		token.Claims["dcql_query"] = map[string]any{
 			"credentials": []map[string]any{
 				{
 					"id":     "age",
