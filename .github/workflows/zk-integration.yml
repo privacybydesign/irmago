@@ -70,6 +70,20 @@ jobs:
           cache-from: type=gha,scope=${{ steps.key.outputs.value }}
           cache-to: type=gha,mode=max,scope=${{ steps.key.outputs.value }}
 
+      # Why GOFLAGS=-buildvcs=false appears on every step that builds Go, below.
+      #
+      # The checkouts are bind-mounted into the container owned by the runner
+      # user, which is not the container's. git refuses them outright -- "fatal:
+      # detected dubious ownership", exit 128 -- and Go shells out to git to
+      # stamp VCS metadata into any main package, so the build dies with "error
+      # obtaining VCS status: exit status 128". Nothing built here is released,
+      # so the stamp buys nothing.
+      #
+      # longfellow-go's own scripts set this too, and the duplication is
+      # deliberate: this job checks out that repository's default branch, so it
+      # cannot assume a version carrying the fix. Removing it here makes this
+      # workflow depend on a commit it does not pin.
+
       # Circuits are an input to the proving tests and cannot all be built:
       # generate_circuit emits only the library's newest revision, so the older
       # ones deployed readers ask for are unobtainable from source. What CAN be
@@ -90,6 +104,7 @@ jobs:
             -v "${PWD}/longfellow-go:/work/longfellow-go" \
             -v "${PWD}/circuits:/circuits" \
             -w /work/longfellow-go \
+            -e GOFLAGS=-buildvcs=false \
             longfellow-build:${{ steps.key.outputs.value }} \
             generate-circuits.sh /circuits
 
@@ -123,6 +138,7 @@ jobs:
             -e LONGFELLOW_CIRCUITS=/circuits \
             -e LONGFELLOW_CIRCUITS_GENERATED=1 \
             -e LONGFELLOW_STRICT=1 \
+            -e GOFLAGS=-buildvcs=false \
             longfellow-build:${{ steps.key.outputs.value }} \
             build-module.sh -v
 
