@@ -397,7 +397,8 @@ func setupMdocAvVerifier(t *testing.T, schemeData string) (string, *RequestorCer
 	trustModel := eudi.NewTestTrustModel(t.TempDir(), rootPool, intermediatePool, nil)
 	validator := NewRequestorCertificateStoreVerifierValidator(trustModel, &DefaultQueryValidatorFactory{})
 
-	authRequestJwt := testdata.CreateTestAuthorizationRequestJWT(hostname, verifierKey, verifierCert, func(token *jwt.Token) {
+	x5c := []*x509.Certificate{verifierCert}
+	authRequestJwt := testdata.CreateTestAuthorizationRequestJWT(hostname, verifierKey, x5c, func(token *jwt.Token) {
 		// The stock test request asks for an SD-JWT email credential; replace it
 		// with the mdoc age query this file is about.
 		token.Claims.(jwt.MapClaims)["dcql_query"] = map[string]any{
