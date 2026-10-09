@@ -88,8 +88,8 @@ func buildPinnedChainMDoc(t *testing.T) (doc *MDoc, root, intermediate *x509.Cer
 
 	deviceSigner, err := GenerateDeviceSigner()
 	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
-	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
-	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
+	deviceKey, err := COSEKeyFromECDSA(deviceSigner.PublicKey())
+	require.NoError(t, err, "COSEKeyFromECDSA: %v", err)
 
 	const docType = "eu.europa.ec.av.1"
 	item := IssuerSignedItem{DigestID: 0, Random: make([]byte, saltLength), ElementIdentifier: "age_over_18", ElementValue: true}

@@ -20,6 +20,31 @@ const (
 	// DcApiProtocolMultiSigned is recognized so we can report it as unsupported
 	// instead of failing on a JWS that does not parse as compact serialization.
 	DcApiProtocolMultiSigned = "openid4vp-v1-multisigned"
+
+	// DcApiProtocolIsoMdoc is ISO/IEC 18013-5's own request and response carried
+	// over the same browser API, per ISO/IEC 18013-7 Annex C. The EUDI Age
+	// Verification Blueprint pairs zero-knowledge presentation with this protocol
+	// rather than with OpenID4VP (Annex A §A.8), so a wallet that supports A.8 will
+	// receive it.
+	//
+	// Recognized here but never handled here, and it cannot be handled by adding a
+	// case below: the other three identifiers all select an OpenID4VP
+	// AuthorizationRequest, which is what this function returns. An org-iso-mdoc
+	// request is `{deviceRequest, encryptionInfo}` — an ISO 18013-5 DeviceRequest
+	// and an HPKE recipient key, with no client_id, no nonce, no DCQL query and
+	// no response_mode. It answers to a different session shape, not to a
+	// different branch of this one.
+	//
+	// It IS routed, one layer up: client.NewSession branches on the DC API's own
+	// protocol member before a request reaches this package, and hands an
+	// org-iso-mdoc one to client/isomdoc_session.go, which drives
+	// isomdoc.Session over the same DCQL handlers this client searches with
+	// (see DcqlHandler). A request reaching the case below therefore means the
+	// branch upstream was bypassed, which is worth an error rather than silence.
+	//
+	// Duplicated as isomdoc.DcApiProtocolIsoMdoc, which is the constant that
+	// branch reads; the two are pinned together by a test there.
+	DcApiProtocolIsoMdoc = "org-iso-mdoc"
 )
 
 // DcApiRequest is a request the platform delivered through the Digital
@@ -80,7 +105,7 @@ func (client *Client) parseDcApiRequest(request *DcApiRequest) (*AuthorizationRe
 			return nil, nil, err
 		}
 		authRequest = parsed
-		requestor = unsignedDcApiRequestor(request.Origin)
+		requestor = UnsignedDcApiRequestor(request.Origin)
 
 	case DcApiProtocolSigned:
 		var data dcApiSignedRequestData
@@ -105,6 +130,17 @@ func (client *Client) parseDcApiRequest(request *DcApiRequest) (*AuthorizationRe
 		return nil, nil, fmt.Errorf(
 			"multi-signed digital credentials api requests (%s) are not supported",
 			DcApiProtocolMultiSigned,
+		)
+
+	case DcApiProtocolIsoMdoc:
+		// Named rather than left to the default, because this one is not an
+		// unknown protocol: it is a known one this package is the wrong place for.
+		// Falling through would report it as unsupported alongside genuine
+		// typos, which is the difference between "we do not do that yet" and
+		// "we do not know what that is".
+		return nil, nil, fmt.Errorf(
+			"digital credentials api protocol %q carries ISO/IEC 18013-5 rather than OpenID4VP and is answered by eudi/isomdoc, not by this client: a request reaching here was not routed by client.NewSession",
+			DcApiProtocolIsoMdoc,
 		)
 
 	default:
@@ -212,7 +248,7 @@ func originHostPort(u *url.URL) string {
 	return u.Host
 }
 
-// unsignedDcApiRequestor builds the requestor to show for an unsigned request.
+// UnsignedDcApiRequestor builds the requestor to show for an unsigned request.
 // There is no trust framework backing an unsigned request, so the verifier is
 // never presented as verified: all the wallet knows is the origin the platform
 // authenticated.
@@ -228,7 +264,7 @@ func originHostPort(u *url.URL) string {
 // http://example.com, https://example.com and https://example.com:8443 under one
 // name, while the response is bound to exactly one of them. A default port
 // written out explicitly is normalised away, matching sameOrigin.
-func unsignedDcApiRequestor(origin string) *clientmodels.TrustedParty {
+func UnsignedDcApiRequestor(origin string) *clientmodels.TrustedParty {
 	displayName := origin
 	if u, err := url.Parse(origin); err == nil && u.Scheme != "" && u.Hostname() != "" {
 		displayName = u.Scheme + "://" + originHostPort(u)

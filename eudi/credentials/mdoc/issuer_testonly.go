@@ -94,7 +94,7 @@ const _ = uint(saltLength - minSaltLength)
 //
 // It lives in the production package rather than a mdoctest subpackage only
 // because it needs nine unexported helpers from it (tag24Wrap, tdateEncMode,
-// hashTag24Item, coseKeyFromECDSA, issuedValidityInfo, the EKU check and the
+// hashTag24Item, COSEKeyFromECDSA, issuedValidityInfo, the EKU check and the
 // salt constants). Exporting those to move this out would widen the package's
 // real API to relocate test code, which is the worse trade.
 type TestIssuer struct {
@@ -308,7 +308,7 @@ func (iss *TestIssuer) Issue(docType string, namespace string, claims map[string
 	}
 
 	// ── Embed holder's device public key into MSO ────────────────
-	deviceKey, err := coseKeyFromECDSA(holderPub)
+	deviceKey, err := COSEKeyFromECDSA(holderPub)
 	if err != nil {
 		return nil, fmt.Errorf("convert holder pub key: %w", err)
 	}

@@ -43,6 +43,7 @@ func newClientForStatusRefresh(t *testing.T, signer *statuslist.TestStatusListSi
 		test.NewSigner(t),
 		aesKey,
 		"en",
+		nil,
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
@@ -253,6 +254,7 @@ func TestNewRejectsNilHandler(t *testing.T) {
 		test.NewSigner(t),
 		aesKey,
 		"en",
+		nil,
 	)
 	require.ErrorContains(t, err, "handler is required")
 }

@@ -481,7 +481,7 @@ var mdocAllowedSigningAlgorithms = []int64{
 // EdDSA is deliberately still absent, and this is the one place the two lists
 // are allowed to disagree. The MSO signature would verify: the document signer's
 // key comes from its X.509 certificate, which can perfectly well be Ed25519. The
-// device key cannot — mdoc.ecdsaPublicKeyFromCOSE returns *ecdsa.PublicKey, so
+// device key cannot — mdoc.ECDSAPublicKeyFromCOSE returns *ecdsa.PublicKey, so
 // an OKP deviceKeyInfo is refused, and the credential would be fetched, stored
 // and then fail at first presentation. Refusing the offer is the honest answer
 // until DeviceKey widens to crypto.PublicKey.

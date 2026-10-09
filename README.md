@@ -22,7 +22,8 @@
 
 * **IRMA / Idemix** (`idemix`) — the classic IRMA credential format.
 * **SD-JWT VC** (`dc+sd-jwt`) — [Selective Disclosure JWT Verifiable Credentials](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/), with selectively disclosable nested and array claims, batch issuance over OpenID4VCI and presentation over OpenID4VP. Implemented in `eudi/credentials/sdjwtvc`.
-* **mdoc / mDL** (`mso_mdoc`) — [ISO/IEC 18013-5](https://www.iso.org/standard/69084.html) mobile documents, as profiled by the EU Age Verification Blueprint (docType `eu.europa.ec.av.1`), with selective disclosure of individual namespace elements, single-use attestations issued in batches, and `deviceAuth` signed over the OpenID4VP session transcript for holder binding. Issued over OpenID4VCI and presented over OpenID4VP on either transport. Implemented in `eudi/credentials/mdoc`, with the presentation handler in `eudi/openid4vp/mdoc_dcql`.
+* **mdoc / mDL** (`mso_mdoc`): [ISO/IEC 18013-5](https://www.iso.org/standard/69084.html) mobile documents, as profiled by the EU Age Verification Blueprint (docType `eu.europa.ec.av.1`), with selective disclosure of individual namespace elements, single-use attestations issued in batches, and `deviceAuth` signed over the OpenID4VP session transcript for holder binding. Issued over OpenID4VCI and presented over OpenID4VP on either transport. Implemented in `eudi/credentials/mdoc`, with the presentation handler in `eudi/openid4vp/mdoc_dcql`. The same credentials are also presented over the W3C Digital Credentials API's `org-iso-mdoc` protocol, which carries ISO 18013-5 structures directly rather than inside OpenID4VP: `eudi/isomdoc` runs that exchange end to end, covering the session transcript, mdoc reader authentication (9.1.4), `deviceAuth` and the HPKE-sealed response, with `eudi/isomdoc/reader` providing the relying-party half so the wallet can be exercised against a real request. ISO 18013-5 *device retrieval* (proximity over BLE) is developed on its own branch and lands separately.
+* **Zero-knowledge age proofs**: over `org-iso-mdoc`, an Age Verification credential can be presented as a `longfellow-libzk-v1` proof instead of a signed disclosure, which is what the EU Age Verification Blueprint Annex A §A.8 requires. The response carries the proof and the asserted booleans and no MSO, digest map or issuer signature, so two presentations of the same credential cannot be linked to each other. The reader offers circuits in its request's `zkRequest`; the wallet matches one, or falls back to an ordinary signed presentation unless the reader set `zkRequired`. Implemented in `eudi/credentials/mdoc/zk` (a deliberately byte-oriented prover boundary that knows nothing of mdoc or CBOR) and `eudi/credentials/mdoc/zkp*.go`. The prover itself is deliberately NOT in this repository: `longfellow-libzk-v1` is C++ behind a C ABI, and it lives in [privacybydesign/longfellow-go](https://github.com/privacybydesign/longfellow-go), which imports the `zk` package above and implements its interfaces. The dependency runs one way only — irmago never imports that module — so building and testing this repository needs no C++ toolchain and `./yivi` stays free of cgo; an application that wants a prover imports both and wires them together by passing a `zk.System` to `client.New`. A build with no prover is a complete wallet rather than a broken one, since §A.8 requires falling back to the plain signed presentation. `internal/buildpolicy` holds the tests that enforce both invariants.
 
 ### Cryptographic agility
 
@@ -156,7 +157,9 @@ We recommend you to use the [latest release](https://github.com/privacybydesign/
 
 ## Running the unit tests
 
-Some of the unit tests connect to locally running external services, namely PostgreSQL, MySQL, Microsoft SQL Server and an SMTP server running at port 1025. These need to be up and running before these tests can be executed. This can be done using `docker-compose`.
+Some of the unit tests connect to locally running external services: PostgreSQL, MySQL, Microsoft SQL Server, an SMTP server on port 1025, and the EUDI containers the `test` service declares as dependencies (the OpenID4VP verifiers, the status-list agent and the TLS proxy). These need to be up and running before these tests can be executed. This can be done using `docker-compose`, which starts them for you — see the `test` service's `depends_on` in `docker-compose.yml` for the authoritative list.
+
+One service is deliberately left out of that set: `multipaz-verifier` sits behind the `interop` profile, so `docker compose up` does not start it and the live interop test skips. It is a third-party `org-iso-mdoc` verifier built from Multipaz's source, and the first build is slow; start it explicitly with `docker compose --profile interop up --build -d multipaz-verifier` when you want that test to run.
 
 ### Running the tests
 
@@ -182,6 +185,51 @@ into the platform's own trust store. Without it these tests fail on
 rather than being skipped; the whole `TestSessionHandler/openid4vp/sdjwtvc` group goes red
 this way. Running the tests in Docker (`docker-compose run test`, below) needs no setup:
 that service installs the certificate into its own trust store before running.
+
+### Testing on a device against the local stack
+
+Running the Yivi app on a physical phone against this repository's `docker-compose` stack
+needs **three independent trust additions** in the app build, because the stack's
+certificates are self-signed test CAs that nothing ships trusting. They fail one at a
+time, in this order, and every stage reports the same generic
+`x509: certificate signed by unknown authority` — so read **which stage** the error
+names, not the error text:
+
+| # | Store | Authenticates | Certificate | Error appears while |
+|---|---|---|---|---|
+| 1 | Go's x509 system pool | the TLS certificate of `tls_proxy` (ports 8443–8445) | `testdata/configurations/certs/localhost.crt` | fetching credential issuer metadata |
+| 2 | `eudi.Configuration.Issuers` | the issuer's document signer inside the MSO | `testdata/eudi-pid-issuer-py/certs/ca.pem` | storing a fetched credential (`mdoc verification failed: chain verification failed`) |
+| 3 | `eudi.Configuration.Verifiers` | the relying party's request-signing certificate | `testdata/eudi/verifier/ca.crt` | presenting, naming the relying party |
+
+None of these certificates may ever be committed as trusted — the wallet would ship
+trusting self-signed test CAs. Add them locally, marked clearly, and strip before
+committing:
+
+* **Store 1** cannot be fixed on the phone: Go's `crypto/x509` reads the system
+  certificate directories, not the user store Android Settings writes to, so installing
+  the CA through Settings is invisible to a gomobile build. It has to be compiled in — a
+  local-only file in `client/` with an `init()` that appends `localhost.crt` to the pool —
+  so it is unconditional and cannot be missed by a session that starts early.
+* **Stores 2 and 3** belong next to the staging anchors in `eudi/eudiconfig.go`
+  (`addStagingTrustAnchors`), each as its **own** `addTrustAnchors` call: that function
+  treats the last certificate of a chain as the root, so appending a test CA to an
+  existing chain silently replaces that chain's root.
+* **Stores 2 and 3 load only when developer mode is ON** in the app
+  (`useStagingTrustAnchors`). With it off, the credential downloads fine over TLS and is
+  then refused at `failed to verify credential` — which proves store 1 is in the build
+  and means "developer mode is off", **not** "the trust addition is missing".
+* The issuer anchor must not authenticate a relying party, or vice versa — the stores are
+  separate on purpose, and a request signed with the issuer's certificate must stay
+  refused. Don't collapse them into one addition.
+
+Two more preconditions that look like trust failures and aren't:
+
+* The phone must reach the stack **as `localhost`** (`adb reverse`), because the TLS
+  certificate's SAN is `DNS:localhost` — a LAN IP fails hostname verification no matter
+  what is trusted.
+* With the anchors applied, `testEudiPidPythonIssuerUntrustedIssuerIsRejected` and other
+  untrusted-party tests fail for reasons unrelated to the code under test — strip the
+  additions before a full test run, and before every commit.
 
 ### Running without Docker
 

@@ -101,8 +101,8 @@ func signMSO(t *testing.T, iss *TestIssuer, alg cose.Algorithm, namespace string
 // msoOver is a valid MSO over one digest, bound to holderPub.
 func msoOver(t *testing.T, namespace, digestAlgorithm string, digest []byte, holderPub *ecdsa.PublicKey) MSO {
 	t.Helper()
-	deviceKey, err := coseKeyFromECDSA(holderPub)
-	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
+	deviceKey, err := COSEKeyFromECDSA(holderPub)
+	require.NoError(t, err, "COSEKeyFromECDSA: %v", err)
 	now := time.Now().UTC()
 	return MSO{
 		Version:         "1.0",
@@ -211,7 +211,7 @@ func TestDeviceKeyCurveAgility(t *testing.T) {
 			key, err := ecdsa.GenerateKey(curve, rand.Reader)
 			require.NoError(t, err, "generate: %v", err)
 
-			coseKey, err := coseKeyFromECDSA(&key.PublicKey)
+			coseKey, err := COSEKeyFromECDSA(&key.PublicKey)
 			require.NoError(t, err, "encode: %v", err)
 			// The coordinates must be the curve's own width, not P-256's. This is the
 			// assertion that would have caught the silent truncation.
@@ -221,7 +221,7 @@ func TestDeviceKeyCurveAgility(t *testing.T) {
 				"coordinates are %d/%d bytes, want %d each for %s",
 				len(x), len(y), wantLen, curve.Params().Name)
 
-			back, err := ecdsaPublicKeyFromCOSE(coseKey)
+			back, err := ECDSAPublicKeyFromCOSE(coseKey)
 			require.NoError(t, err, "decode: %v", err)
 			require.True(t, back.Equal(&key.PublicKey), "round trip did not preserve the key — the curve label or the coordinate width is wrong")
 		})
@@ -231,13 +231,13 @@ func TestDeviceKeyCurveAgility(t *testing.T) {
 		// 256 is brainpoolP256r1 in the IANA COSE registry: permitted by Table 22,
 		// absent from the Go standard library, and therefore refused rather than
 		// mis-decoded as something else.
-		_, err := ecdsaPublicKeyFromCOSE(ec2Key(cose.KeyTypeEC2, 256, []byte{1}, []byte{2}))
+		_, err := ECDSAPublicKeyFromCOSE(ec2Key(cose.KeyTypeEC2, 256, []byte{1}, []byte{2}))
 		require.Error(t, err, "an unsupported curve must be refused, not mis-decoded")
 		require.ErrorContains(t, err, "256", "rejection should name the curve identifier, got: %v", err)
 	})
 
 	t.Run("an OKP key is refused with a diagnosis", func(t *testing.T) {
-		_, err := ecdsaPublicKeyFromCOSE(ec2Key(cose.KeyTypeOKP, 6, []byte{1}, nil))
+		_, err := ECDSAPublicKeyFromCOSE(ec2Key(cose.KeyTypeOKP, 6, []byte{1}, nil))
 		require.Error(t, err, "an Ed25519 OKP key must be refused rather than read as EC2")
 		require.ErrorContains(t, err, "OKP", "rejection should say the key is OKP rather than malformed, got: %v", err)
 	})

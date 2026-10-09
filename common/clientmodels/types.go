@@ -43,6 +43,16 @@ type TrustedParty struct {
 	// for anything historical: the certificate that authenticated a past session
 	// is not something the wallet keeps.
 	Verified bool `json:"verified"`
+
+	// Origin is the web origin the platform authenticated for this request, when
+	// the transport has one. It is the caller's address rather than its identity:
+	// nothing about it says who is behind it.
+	//
+	// Worth showing precisely because it is the one fact the wallet did not take
+	// on trust — the platform established it, and the response is
+	// cryptographically bound to it — but it is not a name, which is why it lives
+	// here rather than in Name.
+	Origin *string `json:"origin,omitempty"`
 }
 
 type Image struct {

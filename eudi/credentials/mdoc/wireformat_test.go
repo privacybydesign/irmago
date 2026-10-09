@@ -240,7 +240,7 @@ func TestTag24WrapWithModeUsesGivenEncMode(t *testing.T) {
 // The count is as load-bearing as the types. deviceKey is covered by the
 // signed MSO digest, so any extra label changes what the issuer signs:
 // cose.NewKeyFromPublic, for one, also sets Algorithm and would emit label 3.
-// coseKeyFromECDSA builds the key label by label to avoid exactly that.
+// COSEKeyFromECDSA builds the key label by label to avoid exactly that.
 func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
 	issuer, deviceSigner, _, _, _, _, _, _ := buildHappyPathMDoc(t)
 	_ = deviceSigner
@@ -463,8 +463,8 @@ func TestDeviceAuthPayloadIsDetached(t *testing.T) {
 	deviceSigner, err := GenerateDeviceSigner()
 	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
 	transcript := SessionTranscript{
-		DeviceEngagementBytes: []byte("test-engagement"),
-		EReaderKeyBytes:       []byte("test-reader-key"),
+		DeviceEngagementBytes: testTag24("test-engagement"),
+		EReaderKeyBytes:       testTag24("test-reader-key"),
 		Handover:              "test-handover",
 	}
 	deviceAuthBytes, err := deviceSigner.SignDeviceAuth("eu.europa.ec.av.1", transcript)
@@ -488,8 +488,8 @@ func TestNewDeviceResponseSupportsMultipleDocuments(t *testing.T) {
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
 	transcript := SessionTranscript{
-		DeviceEngagementBytes: []byte("test-engagement"),
-		EReaderKeyBytes:       []byte("test-reader-key"),
+		DeviceEngagementBytes: testTag24("test-engagement"),
+		EReaderKeyBytes:       testTag24("test-reader-key"),
 		Handover:              "test-handover",
 	}
 

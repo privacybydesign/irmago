@@ -31,9 +31,10 @@ func (legacyEudiLogEntry) TableName() string { return "eudi_log_entries" }
 // schema mechanism the holder database has, so a new column arrives as an
 // ALTER TABLE ADD COLUMN, and SQLite refuses that for a NOT NULL column once the
 // table holds rows — which would leave every wallet with an activity log unable
-// to open its database at all. TestAutoMigrateOverPopulatedDatabase pins the
-// same property for credential_batches; this is its counterpart for the table
-// this column was actually added to.
+// to open its database at all.
+// TestAutoMigrateAddsIssuerVerifiedToPopulatedBatchTable pins the same property
+// for credential_batches; this is its counterpart for the table this column was
+// actually added to.
 func TestAutoMigrateAddsRequestorVerifiedToPopulatedLogTable(t *testing.T) {
 	d := openHolderDB(t)
 	require.NoError(t, d.AutoMigrate(&legacyEudiLogEntry{}))

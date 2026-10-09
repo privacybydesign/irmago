@@ -30,6 +30,12 @@ type EudiLogEntry struct {
 	// existed read back false, which is the pre-existing behaviour.
 	RequestorVerified bool
 
+	// RequestorOrigin is the web origin the platform authenticated, when the
+	// session arrived through the Digital Credentials API. For a requestor that
+	// never named itself it is the only identity there is, so an entry without
+	// it is an entry the user cannot act on.
+	RequestorOrigin string
+
 	// Logged credentials.
 	Credentials []EudiLogCredential `gorm:"foreignKey:EudiLogEntryID;constraint:OnDelete:CASCADE"`
 }

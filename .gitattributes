@@ -10,3 +10,13 @@
 *.p12 binary
 testdata/storage_regression/**/bbolt_client_db binary
 testdata/storage_regression/**/eudi_client_db binary
+# CBOR test vectors are raw bytes, and 0x0D appears in them constantly -- a CBOR
+# head byte, a length, a string byte. Under the `* text eol=lf` default above
+# they are normalised on commit exactly as the PKCS#12 keystore was, and land in
+# the repository corrupt: `cbor: invalid UTF-8 string` on a vector that parses
+# perfectly in the working tree, because the working copy was never re-checked
+# out. Found on PR #735 by a reviewer who cloned and ran the tests.
+*.cbor binary
+
+# Same hazard, not yet triggered: a DER certificate is raw bytes too.
+*.der binary

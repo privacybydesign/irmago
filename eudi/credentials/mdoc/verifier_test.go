@@ -83,8 +83,8 @@ func issueWithDSEKU(t *testing.T, eku []x509.ExtKeyUsage, unknownEKU []asn1.Obje
 	// one namespace is enough for verifyIssuerAuthAndMSO to run end to end.
 	deviceSigner, err := GenerateDeviceSigner()
 	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
-	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
-	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
+	deviceKey, err := COSEKeyFromECDSA(deviceSigner.PublicKey())
+	require.NoError(t, err, "COSEKeyFromECDSA: %v", err)
 	const docType = "eu.europa.ec.av.1"
 	item := IssuerSignedItem{DigestID: 0, Random: make([]byte, 16), ElementIdentifier: "age_over_18", ElementValue: true}
 	digest, err := hashTag24Item(item)
@@ -657,8 +657,8 @@ func TestDeviceAuthWrongSessionIsRejected(t *testing.T) {
 	// transcript than the one the verifier actually used. Simulates a
 	// replayed deviceAuth from an earlier/different session.
 	otherTranscript := SessionTranscript{
-		DeviceEngagementBytes: []byte("different-engagement"),
-		EReaderKeyBytes:       []byte("different-reader-key"),
+		DeviceEngagementBytes: testTag24("different-engagement"),
+		EReaderKeyBytes:       testTag24("different-reader-key"),
 		Handover:              "different-handover",
 	}
 	replayedDeviceAuth, err := deviceSigner.SignDeviceAuth(docType, otherTranscript)
@@ -845,6 +845,49 @@ func TestVerifyDeviceResponseRejectsMissingDeviceSigned(t *testing.T) {
 	require.Error(t, err, "expected error for document missing DeviceSigned, got none")
 }
 
+// TestVerifyDeviceResponseRejectsDeviceMac pins the refusal of the MAC branch
+// of 9.1.3.4. Over the transports this tree implements no conformant deviceMac
+// can exist — 18013-7 B.4.4 and C.5 null EReaderKeyBytes out of the
+// SessionTranscript, and without an EReaderKey there is no EMacKey — so a
+// document carrying one is reported invalid, naming the transport as the
+// reason rather than blaming the holder for a bad signature.
+func TestVerifyDeviceResponseRejectsDeviceMac(t *testing.T) {
+	_, _, verifier, presented, transcript, _, docType, namespace := buildHappyPathMDoc(t)
+
+	attached := *presented
+	emptyNS, err := tag24Wrap(map[string]any{})
+	require.NoError(t, err)
+	attached.DeviceSigned = &DeviceSigned{
+		NameSpaces: emptyNS,
+		DeviceAuth: DeviceAuth{DeviceMac: cbor.RawMessage{0x80}}, // any non-empty value: rejected before it is read
+	}
+
+	results, err := verifier.VerifyDeviceResponse(NewDeviceResponse(attached), namespace, docType, transcript)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.False(t, results[0].Valid, "a deviceMac must not be accepted on a transport that cannot carry one")
+	require.Contains(t, results[0].Error, "deviceMac", "the refusal should name the branch, got: %s", results[0].Error)
+}
+
+// TestVerifyDeviceResponseRejectsBothBranches pins the CDDL's exclusive choice
+// at the entry point that reads it off the wire. A DeviceAuth carrying both
+// makes two claims with nothing to say which governs; previously only the
+// signature was read, so the deviceMac rode along unexamined.
+func TestVerifyDeviceResponseRejectsBothBranches(t *testing.T) {
+	_, _, verifier, presented, transcript, deviceAuthBytes, docType, namespace := buildHappyPathMDoc(t)
+
+	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
+	if err != nil {
+		t.Fatalf("AttachDeviceSigned: %v", err)
+	}
+	attached.DeviceSigned.DeviceAuth.DeviceMac = cbor.RawMessage{0x80}
+
+	_, err = verifier.VerifyDeviceResponse(NewDeviceResponse(*attached), namespace, docType, transcript)
+	if err == nil {
+		t.Fatal("a DeviceAuth carrying both branches must be refused")
+	}
+}
+
 // TestVerifierAcceptsTaggedCoseSign1 pins the deliberate asymmetry in
 // decodeCoseSign1: this package writes the bare array ISO 18013-5 specifies,
 // but must keep reading the tag-18 form, since implementations differ on it and
@@ -917,8 +960,8 @@ func issueWithValidity(t *testing.T, issuer *TestIssuer, validFrom, validUntil t
 
 	deviceSigner, err := GenerateDeviceSigner()
 	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
-	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
-	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
+	deviceKey, err := COSEKeyFromECDSA(deviceSigner.PublicKey())
+	require.NoError(t, err, "COSEKeyFromECDSA: %v", err)
 
 	const docType = "eu.europa.ec.av.1"
 	item := IssuerSignedItem{DigestID: 0, Random: make([]byte, 16), ElementIdentifier: "age_over_18", ElementValue: true}
@@ -1085,8 +1128,8 @@ func TestHolderAssertedClaimsFollowKeyAuthorizations(t *testing.T) {
 func TestKeyAuthorizationsRoundTripDoesNotChangeSignedBytes(t *testing.T) {
 	deviceSigner, err := GenerateDeviceSigner()
 	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
-	deviceKey, err := coseKeyFromECDSA(deviceSigner.PublicKey())
-	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
+	deviceKey, err := COSEKeyFromECDSA(deviceSigner.PublicKey())
+	require.NoError(t, err, "COSEKeyFromECDSA: %v", err)
 
 	encoded, err := cbor.Marshal(DeviceKeyInfo{DeviceKey: deviceKey})
 	require.NoError(t, err, "marshal: %v", err)
@@ -1101,4 +1144,30 @@ func TestKeyAuthorizationsRoundTripDoesNotChangeSignedBytes(t *testing.T) {
 	require.NoError(t, err, "unmarshal: %v", err)
 	require.Nil(t, round.KeyAuthorizations, "absent optional fields should decode to nil")
 	require.Nil(t, round.KeyInfo, "absent optional fields should decode to nil")
+}
+
+// TestVerifyDeviceResponseRefusesZkDocuments: this entry point walks Documents,
+// so a response whose content is all proofs came back as an empty slice and a
+// nil error -- which a caller checking only the error reads as a verified
+// presentation over proofs nothing looked at.
+//
+// Refusing is the fix rather than verifying them here: the ZK path needs a
+// circuit repository, an accepted-circuit set and a clock, none of which this
+// signature carries. What matters is that the response cannot pass silently.
+func TestVerifyDeviceResponseRefusesZkDocuments(t *testing.T) {
+	verifier := NewVerifier(nil)
+
+	zkOnly := NewDeviceResponse().WithZkDocuments(ZkDocument{
+		DocumentData: NewZkDocumentData("spec", "eu.europa.ec.av.1", time.Now(), nil, nil),
+		Proof:        []byte{0x01},
+	})
+
+	results, err := verifier.VerifyDeviceResponse(
+		zkOnly, "eu.europa.ec.av.1", "eu.europa.ec.av.1", SessionTranscript{})
+
+	require.Error(t, err, "a response carrying proofs must not verify as though it carried none")
+	require.Empty(t, results)
+	require.Contains(t, err.Error(), "zkDocuments")
+	require.Contains(t, err.Error(), "VerifyZkDocument",
+		"the error has to name what does verify them, or the caller has nowhere to go")
 }

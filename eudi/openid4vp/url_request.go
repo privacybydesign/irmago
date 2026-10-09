@@ -124,7 +124,7 @@ func unsignedResponseLocation(clientId string) string {
 // where the response would go.
 //
 // client_metadata is deliberately not consulted for the display name, for the
-// same reason unsignedDcApiRequestor ignores it -- the caller chose that value
+// same reason UnsignedDcApiRequestor ignores it -- the caller chose that value
 // for itself, and showing it would hide the one thing the request does bind
 // behind a name nobody checked.
 //

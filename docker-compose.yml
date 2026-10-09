@@ -64,6 +64,33 @@ services:
       - 1025:1025
       - 8025:8025 # Port of the web interface
 
+  # Third-party org-iso-mdoc verifier, for the live interop tests in
+  # eudi/isomdoc (interop_live_test.go). A real implementation of the protocol
+  # that is not ours is the only thing that can tell "conformant" apart from
+  # "agrees with itself", which is why the interop test exists at all.
+  #
+  # Built from Multipaz's source at a pinned commit rather than pulled: they
+  # publish no image. See testdata/multipaz-verifier/Dockerfile for why that
+  # build needs an Android SDK to produce a JVM server.
+  #
+  # Opt-in because the first build is slow and the test skips itself when
+  # nothing is listening on 8006:
+  #
+  #   docker compose --profile interop up --build multipaz-verifier
+  multipaz-verifier:
+    build:
+      context: ./testdata/multipaz-verifier
+      # MULTIPAZ_REF is pinned to a commit in the Dockerfile, deliberately; see
+      # the comment there before overriding it.
+    profiles:
+      - interop
+    networks:
+      irma-net:
+        aliases:
+          - multipaz-verifier.localhost
+    ports:
+      - 8006:8006
+
   # Frontend of 'irma keyshare myirmaserver'
   webclient:
     image: privacybydesign/irma_keyshare_webclient

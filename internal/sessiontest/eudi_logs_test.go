@@ -20,6 +20,7 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("openid4vp disclosure log has issuer name and credential image", testOpenID4VPDisclosureLogHasIssuerNameAndImage)
 	t.Run("openid4vp empty optional disclosure creates log", testOpenID4VPEmptyDisclosureCreatesLog)
 	t.Run("eudi credential removal creates log", testEudiCredentialRemovalCreatesLog)
+	t.Run("deleting an already deleted credential succeeds", testDeletingAnAlreadyDeletedCredentialSucceeds)
 	t.Run("eudi credential removal log has attributes", testEudiCredentialRemovalLogHasAttributes)
 	t.Run("mdoc credential removal creates log", testMdocCredentialRemovalCreatesLog)
 	t.Run("deeply nested issuance log", testDeeplyNestedIssuanceLog)
@@ -483,7 +484,7 @@ func requireEmptyDisclosureLog(t *testing.T, c *client.Client) {
 }
 
 func testEudiCredentialRemovalCreatesLog(t *testing.T) {
-	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	c, clientHandler, sessionHandler := instantiateClient(t, nil, "en")
 	defer c.Close()
 
 	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
@@ -509,7 +510,13 @@ func testEudiCredentialRemovalCreatesLog(t *testing.T) {
 	cred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
 	require.NotNil(t, cred)
 
+	// Removal has to tell the app its credential list changed, exactly as issuance
+	// and revocation do. Without it the wallet deletes the credential and writes
+	// the removal log below while the app goes on rendering what is gone.
+	changesBefore := clientHandler.CredentialsChangedCount()
 	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
+	require.Equal(t, changesBefore+1, clientHandler.CredentialsChangedCount(),
+		"removing a credential must signal CredentialsChanged")
 
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -1274,4 +1281,37 @@ func testDutchEudiLogs(t *testing.T) {
 	removal := findLog(logs, clientmodels.LogType_CredentialRemoval)
 	require.NotNil(t, removal)
 	require.Equal(t, "E-mail Credential (SD-JWT)", removal.RemovalLog.Credentials[0].Name)
+}
+
+// testDeletingAnAlreadyDeletedCredentialSucceeds: removing a credential that is
+// already gone is not an error.
+//
+// The app can hold a stale list -- one it failed to redraw, or one read before
+// another deletion -- and deleting from it names a hash the wallet no longer
+// has. Reporting that as a failure gives the user an error for a credential that
+// is absent precisely because removing it worked, and leaves the app with no
+// reason to re-read. The signal it needs to recover is the one this emits.
+func testDeletingAnAlreadyDeletedCredentialSucceeds(t *testing.T) {
+	c, clientHandler, sessionHandler := instantiateClient(t, nil, "en")
+	defer c.Close()
+
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
+		"given_name": "Gone",
+		"family_name": "Already",
+		"email": "gone@example.com"
+	}`)
+
+	creds, _, err := c.GetCredentials()
+	require.NoError(t, err)
+	cred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
+	require.NotNil(t, cred)
+
+	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
+
+	// The same removal again, as a stale list would produce.
+	changesBefore := clientHandler.CredentialsChangedCount()
+	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds),
+		"deleting a credential that is already gone must succeed")
+	require.Equal(t, changesBefore+1, clientHandler.CredentialsChangedCount(),
+		"and must still tell the app to re-read, which is how a stale list heals")
 }

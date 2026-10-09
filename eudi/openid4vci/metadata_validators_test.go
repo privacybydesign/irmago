@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
@@ -1531,5 +1532,65 @@ func TestRequireMdocDocTypeMatchesMetadata(t *testing.T) {
 		}
 		require.NoError(t, requireMdocDocTypeMatchesMetadata(
 			config, &services.ParsedCredential{VerifiableCredentialType: "urn:eudi:pid:1"}))
+	})
+}
+
+// TestRequireAgeVerificationBaseline covers the AV profile rule that refuses an
+// eu.europa.ec.av.1 attestation without age_over_18, whatever the issuer's
+// metadata says.
+//
+// It is the deliberate exception to requireMandatoryMdocElements' metadata-keyed
+// design, so the case that matters most is the one that check cannot reach: an
+// issuer that neither mints age_over_18 nor advertises it as mandatory. The
+// non-AV cases pin the scope, because a docType rule that leaked into other
+// profiles would reject valid PIDs and mDLs.
+func TestRequireAgeVerificationBaseline(t *testing.T) {
+	avCredential := func(elements map[string]any) *services.ParsedCredential {
+		return &services.ParsedCredential{Mdoc: &services.ParsedMdoc{
+			DocType:    mdoc.AgeVerificationDocType,
+			Namespaces: models.MdocNamespaces{mdoc.AgeVerificationNameSpace: elements},
+		}}
+	}
+
+	t.Run("an AV attestation without age_over_18 is refused", func(t *testing.T) {
+		err := requireAgeVerificationBaseline(avCredential(map[string]any{"age_over_65": true}))
+		require.Error(t, err, "Annex A A.4.2 makes age_over_18 mandatory in issuance")
+		require.Contains(t, err.Error(), "age_over_18",
+			"the refusal has to name the element, because it is the issuer that has to act on it")
+	})
+
+	t.Run("no metadata is needed to refuse it", func(t *testing.T) {
+		// The whole point of this rule: requireMandatoryMdocElements can only
+		// enforce what the issuer promised, so an AP that promises nothing
+		// escapes it entirely. This check takes no configuration at all.
+		require.Error(t, requireAgeVerificationBaseline(avCredential(map[string]any{})))
+	})
+
+	t.Run("age_over_18 present is accepted whatever its value", func(t *testing.T) {
+		require.NoError(t, requireAgeVerificationBaseline(avCredential(map[string]any{"age_over_18": true})))
+		require.NoError(t, requireAgeVerificationBaseline(avCredential(map[string]any{"age_over_18": false})),
+			"A.4.2 says the attribute indicates WHETHER the holder is over 18, so an attestation issued to a minor carries false and is conformant")
+	})
+
+	t.Run("it is scoped to the AV docType", func(t *testing.T) {
+		require.NoError(t, requireAgeVerificationBaseline(&services.ParsedCredential{Mdoc: &services.ParsedMdoc{
+			DocType:    "org.iso.18013.5.1.mDL",
+			Namespaces: models.MdocNamespaces{"org.iso.18013.5.1": {"family_name": "Doe"}},
+		}}), "an mDL has no age_over_18 obligation and must not be refused by an AV rule")
+	})
+
+	t.Run("it is scoped to mdocs", func(t *testing.T) {
+		require.NoError(t, requireAgeVerificationBaseline(&services.ParsedCredential{
+			VerifiableCredentialType: mdoc.AgeVerificationDocType,
+		}), "a credential that is not an mdoc has no namespaces to check")
+	})
+
+	t.Run("the AV element lives in the AV namespace", func(t *testing.T) {
+		// age_over_18 under some other namespace is not the profile's element;
+		// A.4.2's attribute set is defined within eu.europa.ec.av.1.
+		require.Error(t, requireAgeVerificationBaseline(&services.ParsedCredential{Mdoc: &services.ParsedMdoc{
+			DocType:    mdoc.AgeVerificationDocType,
+			Namespaces: models.MdocNamespaces{"org.iso.18013.5.1": {"age_over_18": true}},
+		}}))
 	})
 }

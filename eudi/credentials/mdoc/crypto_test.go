@@ -33,8 +33,8 @@ func TestECDSAPublicKeyFromCOSERejectsOverWideCoordinate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			pub, err := ecdsaPublicKeyFromCOSE(tc.key)
-			require.Error(t, err, "ecdsaPublicKeyFromCOSE accepted an over-wide coordinate, got key %v", pub)
+			pub, err := ECDSAPublicKeyFromCOSE(tc.key)
+			require.Error(t, err, "ECDSAPublicKeyFromCOSE accepted an over-wide coordinate, got key %v", pub)
 			require.Nil(t, pub, "expected a nil key alongside the error, got %v", pub)
 		})
 	}
@@ -42,7 +42,7 @@ func TestECDSAPublicKeyFromCOSERejectsOverWideCoordinate(t *testing.T) {
 
 // TestECDSAPublicKeyFromCOSEAcceptsValidKey guards the width check against
 // rejecting the keys it has to keep accepting: a real generated P-256 key,
-// whose coordinates coseKeyFromECDSA encodes at the fixed SEC1 width of 32
+// whose coordinates COSEKeyFromECDSA encodes at the fixed SEC1 width of 32
 // bytes each, round-trips unchanged. A coordinate encoded shorter than 32
 // bytes is not exercised here — nothing in this package produces one — and
 // would be accepted regardless, since the guard only rejects values wider
@@ -50,8 +50,8 @@ func TestECDSAPublicKeyFromCOSERejectsOverWideCoordinate(t *testing.T) {
 func TestECDSAPublicKeyFromCOSEAcceptsValidKey(t *testing.T) {
 	valid := validCOSEKey(t)
 
-	pub, err := ecdsaPublicKeyFromCOSE(valid)
-	require.NoError(t, err, "ecdsaPublicKeyFromCOSE rejected a valid key: %v", err)
+	pub, err := ECDSAPublicKeyFromCOSE(valid)
+	require.NoError(t, err, "ECDSAPublicKeyFromCOSE rejected a valid key: %v", err)
 	require.NotNil(t, pub, "expected a key, got nil")
 
 	_, wantX, wantY, _ := valid.EC2()
@@ -70,8 +70,8 @@ func validCOSEKey(t *testing.T) *cose.Key {
 
 	deviceSigner, err := GenerateDeviceSigner()
 	require.NoError(t, err, "GenerateDeviceSigner: %v", err)
-	key, err := coseKeyFromECDSA(deviceSigner.PublicKey())
-	require.NoError(t, err, "coseKeyFromECDSA: %v", err)
+	key, err := COSEKeyFromECDSA(deviceSigner.PublicKey())
+	require.NoError(t, err, "COSEKeyFromECDSA: %v", err)
 	return key
 }
 
