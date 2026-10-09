@@ -194,7 +194,6 @@ func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
 	)
 	if err != nil {
 		irma.Logger.Info("Keyshare server token invalid or expiring too soon")
-		irma.Logger.Debug("Token: ", kss.token)
 		return false
 	}
 

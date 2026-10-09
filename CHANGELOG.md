@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [1.4.1] - 2026-10-05
 ### Fixed
 - Redis session operations are retried when the connection they run on breaks or Redis refuses writes during a failover, so a Redis Sentinel failover no longer fails the session requests that run during it. A session handler is never executed twice and a concurrent update is never overwritten
 - New `redis_settings.retry_budget` setting (`--redis-retry-budget`) controls how long such retries continue; defaults to 3 seconds
@@ -14,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - In `keyshareserver`, `KeyshareAttributeValidity` (`--keyshare-attribute-validity`) configures how many days the keyshare attribute issued during registration is valid. It defaults to 365, the validity that was previously hardcoded.
+
+### Fixed
+- The holder database no longer writes the wallet's contents to the platform log. GORM's logger was built over `os.Stdout` without `ParameterizedQueries`, so a statement slower than 200ms or one that failed was rendered with its arguments substituted in -- raw SD-JWT VC tokens, the attribute JSON of a log entry, holder binding keys -- and on mobile the gomobile runtime redirects stdout to logcat and the device console, where it landed whatever log level the app had set. GORM's output now goes through irmago's logger, so it falls under that level, and it logs the statement with its placeholders rather than its values. Three smaller paths are covered too: the panic handler in `irma/irmaclient/session.go` and the random-source error in `revocation.go` printed to stdout with `fmt.Print*` instead of the logger, the keyshare session token was logged at debug level, and the two `%#v` dumps of an `AuthorizationRequest` in `eudi/openid4vp/client.go` are now an explicit field summary, so a field added to that struct later is not logged by default ([#730](https://github.com/privacybydesign/irmago/issues/730))
 
 ### Internal
 - Storage regression snapshot for v1.4.0 (`testdata/storage_regression/v1.4.0/`), verified by `TestClientStorageRegressionV1_4_0`. It is the first snapshot that holds an `mso_mdoc` credential: the fixture generator now issues an age-verification mdoc (`eu.europa.ec.av.1`) from the Python PID issuer and discloses it once to the EUDI reference verifier, so the snapshot carries the mdoc tables, a batch with one spent instance, and mdoc issuance and disclosure logs. The shared check that a reloaded client still works now also issues and discloses a fresh mdoc, for every snapshot version.
@@ -883,6 +887,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[1.4.1]: https://github.com/privacybydesign/irmago/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/privacybydesign/irmago/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/privacybydesign/irmago/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/privacybydesign/irmago/compare/v1.2.0...v1.3.0
