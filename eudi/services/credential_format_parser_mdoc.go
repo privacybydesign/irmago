@@ -93,9 +93,10 @@ func (p *mdocCredentialFormatParser) ParseAndVerify(raw, _ string, holderBinding
 		// succeed at all, so this is belt-and-braces — but this value becomes the
 		// credential's type, which DCQL doctype_value matching and relying-party
 		// authorization key off, so it should visibly come from the signed side.
-		DocType:      result.DocType,
-		Namespaces:   namespaces,
-		ValidityInfo: result.ValidityInfo,
+		DocType:         result.DocType,
+		Namespaces:      namespaces,
+		ValidityInfo:    result.ValidityInfo,
+		StatusReference: result.StatusReference,
 	}
 	if result.DeviceKey != nil {
 		thumbprint, err := jwkThumbprintFromECDSAPublicKey(result.DeviceKey)

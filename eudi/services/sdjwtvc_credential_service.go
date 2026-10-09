@@ -68,7 +68,7 @@ func (s *sdJwtVcCredentialService) List() ([]*clientmodels.Credential, error) {
 
 	// Per-credential revocation flags are derived from stored Token Status List
 	// statuses (maintained by RevocationService.RefreshStatuses).
-	revoked, revocable, err := s.revocation.BatchRevocation()
+	revoked, revocable, err := s.revocation.BatchRevocation(s.store)
 	if err != nil {
 		return nil, err
 	}
@@ -323,14 +323,19 @@ func (s *sdJwtVcCredentialService) computeHashAndDeleteExisting(p *ParsedCredent
 	return hash, nil
 }
 
-// statusReferenceOf returns the credential's Token Status List reference, or
-// the zero Reference when it carries none. The zero value (empty URI) is a
-// safe "absent" sentinel because a real reference always has a non-empty URI.
+// statusReferenceOf returns the credential's Token Status List reference, for
+// either format, or the zero Reference when it carries none. The zero value
+// (empty URI) is a safe "absent" sentinel because a real reference always has a
+// non-empty URI.
 func statusReferenceOf(p *ParsedCredential) statuslist.Reference {
-	if p.SdJwtVc == nil || p.SdJwtVc.IssuerSignedJwtPayload.Status == nil || p.SdJwtVc.IssuerSignedJwtPayload.Status.StatusList == nil {
+	switch {
+	case p.SdJwtVc != nil && p.SdJwtVc.IssuerSignedJwtPayload.Status != nil && p.SdJwtVc.IssuerSignedJwtPayload.Status.StatusList != nil:
+		return *p.SdJwtVc.IssuerSignedJwtPayload.Status.StatusList
+	case p.Mdoc != nil && p.Mdoc.StatusReference != nil:
+		return *p.Mdoc.StatusReference
+	default:
 		return statuslist.Reference{}
 	}
-	return *p.SdJwtVc.IssuerSignedJwtPayload.Status.StatusList
 }
 
 // validateStatusReferences enforces the batch's Token Status List invariants from

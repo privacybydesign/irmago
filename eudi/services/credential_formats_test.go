@@ -21,6 +21,7 @@ func TestNewCredentialFormatsRegistersEveryFormat(t *testing.T) {
 	formats := NewCredentialFormats(
 		&eudi.Configuration{},
 		nil,
+		nil,
 		d,
 		filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()),
 		NewRevocationService(nil, nil),
