@@ -1,7 +1,7 @@
 services:
   # Dependencies for running unit tests and for running the 'irma' command line tool using one of the test configurations.
   postgres:
-    image: postgres:15
+    image: postgres:17
     environment:
       POSTGRES_USER: testuser
       POSTGRES_PASSWORD: testpassword
@@ -14,7 +14,7 @@ services:
     ports:
       - 5432:5432
   postgres-init:
-    image: postgres:15
+    image: postgres:17
     environment:
       PGHOST: postgres
       PGUSER: testuser
@@ -174,7 +174,7 @@ services:
   # its own schema (created by the init below), so there are no table
   # collisions in the one `postgres` database.
   veramo_postgres:
-    image: postgres:16-bookworm
+    image: postgres:17-bookworm
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: postgres
@@ -187,7 +187,7 @@ services:
       - 5434:5432
 
   veramo_postgres_init:
-    image: postgres:16-bookworm
+    image: postgres:17-bookworm
     environment:
       PGHOST: veramo-postgres.localhost
       PGUSER: postgres
