@@ -157,8 +157,28 @@ type Discloser interface {
 // instance on a response the verifier never receives: a use lost with nothing to
 // show for it, and precisely the correlation that batch issuance exists to
 // prevent.
+//
+// proved names the queries whose documents left as zero-knowledge proofs, and
+// those instances are NOT spent. The AV technical specification is explicit
+// about the asymmetry, in the bullet that makes single use a SHALL:
+//
+//	Where a Proof of Age attestation is presented as a plain ISO mDoc, the Age
+//	Verification App SHALL use a Proof of Age attestation only once and SHALL
+//	then remove it from the batch of the issued attestations. An attestation
+//	presented as a Zero-Knowledge Proof is not consumed and MAY be reused
+//	within its validity period.
+//
+// The reason is in §3.4.3: a batch exists so that repeated plain presentations
+// cannot be correlated, and a proof is already unlinkable, so spending one buys
+// no privacy and costs the user a scarce credential. A wallet that spent on both
+// paths would exhaust a thirty-attestation batch after thirty age checks and
+// fall back to plain disclosure — the opposite of what the batch is for.
+//
+// It is per query rather than per response because zkRequest is per document:
+// one reader can ask for a proof of one document and a plain disclosure of
+// another in the same request, and only the plain one is consumed.
 type Committer interface {
-	Commit() error
+	Commit(proved []string) error
 }
 
 // Releaser gives back whatever a disclosure reserved and did not spend. Called
@@ -274,7 +294,7 @@ func (s *Session) Respond(request Request) (DCAPIEncryptedResponse, error) {
 		return empty, fmt.Errorf("disclose: %w", err)
 	}
 
-	response, err := s.assemble(documents, selections, transcript)
+	response, proved, err := s.assemble(documents, selections, transcript)
 	if err != nil {
 		return empty, err
 	}
@@ -295,7 +315,7 @@ func (s *Session) Respond(request Request) (DCAPIEncryptedResponse, error) {
 	// Last, when nothing further can fail: the response exists and is sealed, so
 	// an instance spent now is an instance the verifier will actually receive.
 	if committer, ok := s.Discloser.(Committer); ok {
-		if err := committer.Commit(); err != nil {
+		if err := committer.Commit(proved); err != nil {
 			return empty, fmt.Errorf("commit disclosure: %w", err)
 		}
 	}
@@ -435,10 +455,12 @@ func (s *Session) assemble(
 	requested []RequestedDocument,
 	selections []Selection,
 	transcript mdoc.SessionTranscript,
-) (mdoc.DeviceResponse, error) {
+) (mdoc.DeviceResponse, []string, error) {
 	var (
-		documents   = make([]mdoc.MDoc, 0, len(selections))
-		zkDocuments = make([]mdoc.ZkDocument, 0, len(selections))
+		documents = make([]mdoc.MDoc, 0, len(selections))
+		// The queries whose documents left as proofs, which Commit must not spend.
+		provedQueries = make([]string, 0, len(selections))
+		zkDocuments   = make([]mdoc.ZkDocument, 0, len(selections))
 		// Counted, not a flag. Two docRequests may share a docType, so "this
 		// docType was served" cannot say whether BOTH were: answering one of two
 		// left the other with no documentError at all, silently. documentErrors is
@@ -450,7 +472,7 @@ func (s *Session) assemble(
 	for _, selection := range selections {
 		asked, ok := askedFor(requested, selection)
 		if !ok {
-			return mdoc.DeviceResponse{}, fmt.Errorf(
+			return mdoc.DeviceResponse{}, nil, fmt.Errorf(
 				"wallet selected a %s document, which this request did not ask for", selection.DocType)
 		}
 
@@ -462,24 +484,30 @@ func (s *Session) assemble(
 		// MDOC_PROVER_DEVICE_SIGNED_MISSING.
 		document, err := signDocument(selection, asked.Requested, transcript)
 		if err != nil {
-			return mdoc.DeviceResponse{}, err
+			return mdoc.DeviceResponse{}, nil, err
 		}
 		served[selection.DocType]++
 
 		if asked.ZkRequested() {
 			zkDocument, proved, err := s.prove(asked, *document, transcript)
 			if err != nil {
-				return mdoc.DeviceResponse{}, err
+				return mdoc.DeviceResponse{}, nil, err
 			}
 			if proved {
 				// The plain document does NOT also travel. Sending both would
 				// disclose in the clear exactly what the proof exists to keep
 				// hidden, and the reader would have no reason to look at the proof.
 				zkDocuments = append(zkDocuments, *zkDocument)
+				// Recorded here rather than inferred from the response, because
+				// only this branch knows WHICH selection became a proof: a
+				// response carrying one ZkDocument and one plain document says
+				// how many of each, not which query produced which, and
+				// spending the wrong one is indistinguishable afterwards.
+				provedQueries = append(provedQueries, selection.QueryId)
 				continue
 			}
 			if asked.ZkRequired() {
-				return mdoc.DeviceResponse{}, fmt.Errorf(
+				return mdoc.DeviceResponse{}, nil, fmt.Errorf(
 					"reader requires a zero-knowledge proof for %s and this build cannot produce one: "+
 						"answering in the clear would disclose more than the reader asked for", selection.DocType)
 			}
@@ -507,7 +535,7 @@ func (s *Session) assemble(
 		}
 		documentError, err := mdoc.NewDocumentError(document.DocType, mdoc.ErrorCodeDataNotReturned)
 		if err != nil {
-			return mdoc.DeviceResponse{}, fmt.Errorf("build documentError for %s: %w", document.DocType, err)
+			return mdoc.DeviceResponse{}, nil, fmt.Errorf("build documentError for %s: %w", document.DocType, err)
 		}
 		documentErrors = append(documentErrors, documentError)
 	}
@@ -525,7 +553,7 @@ func (s *Session) assemble(
 	if len(documentErrors) > 0 {
 		response = response.WithDocumentErrors(documentErrors...)
 	}
-	return response, nil
+	return response, provedQueries, nil
 }
 
 // checkZkSatisfiable refuses, before the user is asked anything, a request this

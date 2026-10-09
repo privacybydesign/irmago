@@ -451,14 +451,14 @@ func TestWalletDiscloserSpendsOnlyOnCommit(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, env.store.used, "reserving must not consume an instance")
 
-		require.NoError(t, env.discloser.Commit())
+		require.NoError(t, env.discloser.Commit(nil))
 		require.Len(t, env.store.used, 1)
 
 		// A second disclosure gets the other instance, not the spent one.
 		second, err := env.discloser.Disclose(requestFor("age_over_18"))
 		require.NoError(t, err)
 		require.Len(t, second, 1)
-		require.NoError(t, env.discloser.Commit())
+		require.NoError(t, env.discloser.Commit(nil))
 		require.Len(t, env.store.used, 2)
 	})
 

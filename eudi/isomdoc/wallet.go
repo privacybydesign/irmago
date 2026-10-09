@@ -127,7 +127,13 @@ type WalletDiscloser struct {
 
 	// reserved holds the instances chosen for this disclosure, unspent until
 	// Commit. See Committer for why the two are separate.
-	reserved []*services.ReservedInstance
+	//
+	// Each carries the query it answers, because Commit spends only the
+	// instances whose documents left as plain mdoc: an attestation presented as
+	// a zero-knowledge proof is not consumed. Without the query id there is no
+	// way back from "this document was proved" to "this instance", since a
+	// response can carry a proof of one document and a disclosure of another.
+	reserved []reservedFor
 
 	// disclosed records what this disclosure handed over, for the caller to log.
 	// See DisclosedCredential.
@@ -306,7 +312,7 @@ func (w *WalletDiscloser) presentationsFor(
 			return nil, fmt.Errorf("reserve an instance of credential %s: %w", selection.CredentialHash, err)
 		}
 		// Recorded before anything else can fail, so the release below covers it.
-		w.reserved = append(w.reserved, reserved)
+		w.reserved = append(w.reserved, reservedFor{queryID: selection.QueryId, instance: reserved})
 
 		reveal, err := services.RevealFromClaimPaths(selection.ClaimPaths)
 		if err != nil {
@@ -369,12 +375,52 @@ func (w *WalletDiscloser) presentationsFor(
 // Called by Session only once the response is assembled and sealed, which is the
 // first point at which nothing further can fail. Reserving and spending are
 // separate for exactly that reason — see services.MdocInstanceSelector.Spend.
-func (w *WalletDiscloser) Commit() error {
-	if err := w.instances.SpendAll(w.reserved); err != nil {
-		return err
+// reservedFor is one reserved instance and the credential query whose document
+// it answers.
+type reservedFor struct {
+	queryID  string
+	instance *services.ReservedInstance
+}
+
+// Commit spends the instances this disclosure reserved, except those whose
+// documents left as zero-knowledge proofs.
+//
+// The asymmetry is the specification's, not a policy of ours: a plain ISO mdoc
+// presentation SHALL consume its attestation, while "an attestation presented
+// as a Zero-Knowledge Proof is not consumed and MAY be reused within its
+// validity period". Spending on both paths would empty a thirty-attestation
+// batch after thirty age checks and drop the wallet into the fallback it was
+// proving to avoid — paying a scarce credential for privacy the proof had
+// already provided. See Committer.
+//
+// What is kept is not released here. Release runs on every path out of
+// Respond, including this one, and gives the claim back without marking the
+// instance used, which is exactly what an unconsumed attestation needs.
+func (w *WalletDiscloser) Commit(proved []string) error {
+	if w.instances == nil {
+		return nil
 	}
-	w.reserved = nil
-	return nil
+
+	provedQueries := make(map[string]struct{}, len(proved))
+	for _, queryID := range proved {
+		provedQueries[queryID] = struct{}{}
+	}
+
+	spend := make([]*services.ReservedInstance, 0, len(w.reserved))
+	keep := make([]reservedFor, 0, len(proved))
+	for _, reservation := range w.reserved {
+		if _, isProof := provedQueries[reservation.queryID]; isProof {
+			keep = append(keep, reservation)
+			continue
+		}
+		spend = append(spend, reservation.instance)
+	}
+
+	// Assigned before spending, so a SpendAll that fails halfway still leaves
+	// Release the unconsumed set to hand back rather than the whole disclosure.
+	w.reserved = keep
+
+	return w.instances.SpendAll(spend)
 }
 
 // Release gives up every instance this disclosure reserved and did not spend.
@@ -387,7 +433,11 @@ func (w *WalletDiscloser) Release() {
 	if w.instances == nil {
 		return
 	}
-	w.instances.Release(w.reserved...)
+	instances := make([]*services.ReservedInstance, 0, len(w.reserved))
+	for _, reservation := range w.reserved {
+		instances = append(instances, reservation.instance)
+	}
+	w.instances.Release(instances...)
 	w.reserved = nil
 }
 

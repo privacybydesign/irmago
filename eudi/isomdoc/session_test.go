@@ -33,7 +33,10 @@ type fakeDiscloser struct {
 	seen      DisclosureRequest
 	called    bool
 	committed bool
-	released  bool
+	// proved records the queries Session reported as answered with a proof, which
+	// are the instances a real wallet must NOT spend.
+	proved   []string
+	released bool
 
 	// commitErr makes Commit fail, to check the response is not returned when
 	// the wallet could not record what it spent.
@@ -45,8 +48,12 @@ func (f *fakeDiscloser) Disclose(request DisclosureRequest) ([]Selection, error)
 	f.seen = request
 	return f.answer, f.err
 }
-func (f *fakeDiscloser) Commit() error { f.committed = true; return f.commitErr }
-func (f *fakeDiscloser) Release()      { f.released = true }
+func (f *fakeDiscloser) Commit(proved []string) error {
+	f.committed = true
+	f.proved = proved
+	return f.commitErr
+}
+func (f *fakeDiscloser) Release() { f.released = true }
 
 // credential issues a real mdoc bound to a fresh holder key.
 func credential(t *testing.T, docType, namespace string, claims map[string]any) (mdoc.MDoc, mdoc.DeviceSigner) {
