@@ -22,6 +22,13 @@ import (
 	"github.com/privacybydesign/irmago/irma/server/irmaserver"
 )
 
+const (
+	// linkEmailPollInterval is how often a pending link session is checked for completion.
+	linkEmailPollInterval = 5 * time.Second
+	// maxPendingLinkEmails bounds the unauthenticated /email/link sessions waiting for completion.
+	maxPendingLinkEmails = 1000
+)
+
 type Server struct {
 	conf *Configuration
 
@@ -29,6 +36,12 @@ type Server struct {
 	store     sessionStore
 	db        db
 	scheduler *gocron.Scheduler
+
+	// stopCtx is cancelled by Stop, ending the goroutines that wait for link sessions.
+	stopCtx          context.Context
+	stopLinks        context.CancelFunc
+	linkSlots        chan struct{}
+	linkPollInterval time.Duration
 }
 
 var errUnknownEmail = errors.New("Email not associated with account")
@@ -59,12 +72,17 @@ func New(conf *Configuration) (*Server, error) {
 		return nil, err
 	}
 
+	stopCtx, stopLinks := context.WithCancel(context.Background())
 	s := &Server{
-		conf:      conf,
-		irmaserv:  irmaserv,
-		store:     store,
-		db:        conf.DB,
-		scheduler: gocron.NewScheduler(time.UTC),
+		conf:             conf,
+		irmaserv:         irmaserv,
+		store:            store,
+		db:               conf.DB,
+		scheduler:        gocron.NewScheduler(time.UTC),
+		stopCtx:          stopCtx,
+		stopLinks:        stopLinks,
+		linkSlots:        make(chan struct{}, maxPendingLinkEmails),
+		linkPollInterval: linkEmailPollInterval,
 	}
 
 	if _, err := s.scheduler.Every(10).Seconds().Do(s.store.flush); err != nil {
@@ -84,6 +102,7 @@ func New(conf *Configuration) (*Server, error) {
 }
 
 func (s *Server) Stop() {
+	s.stopLinks()
 	s.irmaserv.Stop()
 	s.scheduler.Stop()
 }
@@ -120,6 +139,9 @@ func (s *Server) Handler() http.Handler {
 
 		// Email verification
 		router.Post("/verify", s.handleVerifyEmail)
+
+		// Email address linking by the app, without login
+		router.Post("/email/link", s.handleLinkEmail)
 
 		// Session management
 		router.Post("/checksession", s.handleCheckSession)
@@ -735,6 +757,93 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleLinkEmail starts one disclosure session for a keyshare attribute and an email attribute.
+// Both attributes are disclosed in a single session, so they belong to the same wallet, and
+// the email address is linked to the keyshare user once the session has finished.
+func (s *Server) handleLinkEmail(w http.ResponseWriter, r *http.Request) {
+	select {
+	case s.linkSlots <- struct{}{}:
+	default:
+		s.conf.Logger.Info("Too many pending sessions for linking an email address")
+		server.WriteError(w, server.ErrorTooManyRequests, "")
+		return
+	}
+
+	qr, token, frontendRequest, err := s.irmaserv.StartSession(
+		newIrmaDisclosureRequest(s.conf.KeyshareAttributes, s.conf.EmailAttributes),
+		nil, "",
+	)
+	if err != nil {
+		<-s.linkSlots
+		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for linking email address")
+		keyshare.WriteError(w, err)
+		return
+	}
+
+	go s.awaitLinkEmail(token)
+
+	server.WriteJson(w, server.SessionPackage{
+		SessionPtr:      qr,
+		FrontendRequest: frontendRequest,
+	})
+}
+
+// awaitLinkEmail links the disclosed email address once the session with the given token has
+// finished. It gives up when the session is gone or the server is stopped.
+func (s *Server) awaitLinkEmail(token irma.RequestorToken) {
+	defer func() { <-s.linkSlots }()
+
+	ticker := time.NewTicker(s.linkPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stopCtx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		result, err := s.irmaserv.GetSessionResult(token)
+		if err != nil || result == nil {
+			s.conf.Logger.Info("Session for linking email address is gone")
+			return
+		}
+		if !result.Status.Finished() {
+			continue
+		}
+
+		if err := s.processLinkEmailResult(s.stopCtx, result); err != nil {
+			s.conf.Logger.WithField("error", err).Warn("Could not link email address")
+		}
+		return
+	}
+}
+
+func (s *Server) processLinkEmailResult(ctx context.Context, result *server.SessionResult) error {
+	if result.Status != irma.ServerStatusDone {
+		return nil
+	}
+	if result.ProofStatus != irma.ProofStatusValid {
+		return errors.New("received invalid keyshare or email attribute")
+	}
+	if len(result.Disclosed) != 2 || len(result.Disclosed[0]) != 1 || len(result.Disclosed[1]) != 1 {
+		return errors.New("unexpected disclosure in session for linking email address")
+	}
+
+	username := result.Disclosed[0][0].RawValue
+	email := result.Disclosed[1][0].RawValue
+	if username == nil || email == nil {
+		return errors.New("missing value in session for linking email address")
+	}
+
+	id, err := s.db.userIDByUsername(ctx, *username)
+	if err != nil {
+		return err
+	}
+
+	return s.db.addEmail(ctx, id, *email)
+}
+
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		recorder := server.NewHTTPResponseRecorder(w)
@@ -774,14 +883,18 @@ func (s *Server) sessionFromCookie(r *http.Request, handler func(ses *session) e
 	return s.store.update(r.Context(), token.Value, handler)
 }
 
-// newIrmaDisclosureRequest composes an irma.DisclosureRequest with one attribute disjunction
-// containing every given attribute type identifier as an option in that disjunction.
-func newIrmaDisclosureRequest(attrs []irma.AttributeTypeIdentifier) *irma.DisclosureRequest {
-	discon := irma.AttributeDisCon{}
-	for _, attr := range attrs {
-		discon = append(discon, irma.AttributeCon{irma.NewAttributeRequest(attr.String())})
-	}
+// newIrmaDisclosureRequest composes an irma.DisclosureRequest with one attribute disjunction for
+// each given list, containing every attribute type identifier of that list as an option in that
+// disjunction. The disjunctions together form a conjunction.
+func newIrmaDisclosureRequest(attrLists ...[]irma.AttributeTypeIdentifier) *irma.DisclosureRequest {
 	request := irma.NewDisclosureRequest()
-	request.Disclose = irma.AttributeConDisCon{discon}
+	request.Disclose = irma.AttributeConDisCon{}
+	for _, attrs := range attrLists {
+		discon := irma.AttributeDisCon{}
+		for _, attr := range attrs {
+			discon = append(discon, irma.AttributeCon{irma.NewAttributeRequest(attr.String())})
+		}
+		request.Disclose = append(request.Disclose, discon)
+	}
 	return request
 }
