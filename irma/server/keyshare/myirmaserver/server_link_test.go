@@ -141,8 +141,7 @@ func TestLinkEmailRetriesOnError(t *testing.T) {
 	require.NoError(t, err)
 	defer irmaserv.Stop()
 
-	stopCtx, stop := context.WithCancel(context.Background())
-	defer stop()
+	stopCtx := t.Context()
 	s := &Server{
 		conf:             &Configuration{Configuration: conf},
 		irmaserv:         irmaserv,
