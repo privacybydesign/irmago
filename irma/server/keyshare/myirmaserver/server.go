@@ -803,9 +803,13 @@ func (s *Server) awaitLinkEmail(token irma.RequestorToken) {
 		}
 
 		result, err := s.irmaserv.GetSessionResult(token)
-		if err != nil || result == nil {
+		if _, unknown := err.(*irmaserver.UnknownSessionError); unknown || (err == nil && result == nil) {
 			s.conf.Logger.Info("Session for linking email address is gone")
 			return
+		}
+		if err != nil {
+			s.conf.Logger.WithField("error", err).Warn("Could not get result of session for linking email address")
+			continue
 		}
 		if !result.Status.Finished() {
 			continue

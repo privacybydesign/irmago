@@ -3,12 +3,15 @@ package myirmaserver
 import (
 	"context"
 	"net/url"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
+	"github.com/privacybydesign/irmago/irma/server/irmaserver"
 	"github.com/privacybydesign/irmago/irma/server/keyshare"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -121,6 +124,53 @@ func TestLinkEmailReleasesSlot(t *testing.T) {
 
 	require.NoError(t, myirmaServer.irmaserv.CancelSession(token))
 	require.Eventually(t, func() bool { return len(myirmaServer.linkSlots) == 0 }, 5*time.Second, 10*time.Millisecond)
+}
+
+func TestLinkEmailRetriesOnError(t *testing.T) {
+	mr := miniredis.NewMiniRedis()
+	require.NoError(t, mr.Start())
+	defer mr.Close()
+
+	conf := &server.Configuration{
+		SchemesPath:   filepath.Join(test.FindTestdataFolder(t), "irma_configuration"),
+		Logger:        irma.Logger,
+		StoreType:     "redis",
+		RedisSettings: &server.RedisSettings{Addr: mr.Addr(), DisableTLS: true},
+	}
+	irmaserv, err := irmaserver.New(conf)
+	require.NoError(t, err)
+	defer irmaserv.Stop()
+
+	stopCtx, stop := context.WithCancel(context.Background())
+	defer stop()
+	s := &Server{
+		conf:             &Configuration{Configuration: conf},
+		irmaserv:         irmaserv,
+		db:               newLinkTestDB(),
+		stopCtx:          stopCtx,
+		linkSlots:        make(chan struct{}, 1),
+		linkPollInterval: 10 * time.Millisecond,
+	}
+
+	_, token, _, err := irmaserv.StartSession(
+		newIrmaDisclosureRequest(
+			[]irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},
+			[]irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.email.email")},
+		),
+		nil, "",
+	)
+	require.NoError(t, err)
+	s.linkSlots <- struct{}{}
+	go s.awaitLinkEmail(token)
+
+	// A failing Redis does not mean the session is gone, so the watcher keeps its slot.
+	mr.SetError("redis unavailable")
+	time.Sleep(10 * s.linkPollInterval)
+	assert.Len(t, s.linkSlots, 1)
+
+	mr.SetError("")
+	require.NoError(t, irmaserv.CancelSession(token))
+	require.Eventually(t, func() bool { return len(s.linkSlots) == 0 }, 5*time.Second, 10*time.Millisecond)
 }
 
 func TestLinkEmailStopEndsWatchers(t *testing.T) {
