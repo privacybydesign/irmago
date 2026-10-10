@@ -23,7 +23,6 @@ import (
 )
 
 const (
-	// linkEmailPollInterval is how often a pending link session is checked for completion.
 	linkEmailPollInterval = 5 * time.Second
 	// maxPendingLinkEmails bounds the unauthenticated /email/link sessions waiting for completion.
 	maxPendingLinkEmails = 1000

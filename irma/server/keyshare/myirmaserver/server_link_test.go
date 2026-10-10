@@ -75,7 +75,7 @@ func TestNewIrmaDisclosureRequest(t *testing.T) {
 	}, both.Disclose[1])
 }
 
-func TestServerLinkEmailStartsSession(t *testing.T) {
+func TestLinkEmailStartsSession(t *testing.T) {
 	myirmaServer, httpServer := StartMyIrmaServer(t, newLinkTestDB(), "")
 	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 
@@ -92,7 +92,7 @@ func TestServerLinkEmailStartsSession(t *testing.T) {
 	assert.Empty(t, client.Jar.Cookies(&url.URL{Scheme: "http", Host: "localhost:8081"}))
 }
 
-func TestServerLinkEmailPendingLimit(t *testing.T) {
+func TestLinkEmailPendingLimit(t *testing.T) {
 	myirmaServer, httpServer := StartMyIrmaServer(t, newLinkTestDB(), "")
 	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 
@@ -103,7 +103,7 @@ func TestServerLinkEmailPendingLimit(t *testing.T) {
 	test.HTTPPost(t, nil, "http://localhost:8081/email/link", "", nil, 429, nil)
 }
 
-func TestServerLinkEmailReleasesSlot(t *testing.T) {
+func TestLinkEmailReleasesSlot(t *testing.T) {
 	myirmaServer, httpServer := StartMyIrmaServer(t, newLinkTestDB(), "")
 	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 	restartLinkWatchers(myirmaServer)
@@ -123,7 +123,7 @@ func TestServerLinkEmailReleasesSlot(t *testing.T) {
 	require.Eventually(t, func() bool { return len(myirmaServer.linkSlots) == 0 }, 5*time.Second, 10*time.Millisecond)
 }
 
-func TestServerLinkEmailStopEndsWatchers(t *testing.T) {
+func TestLinkEmailStopEndsWatchers(t *testing.T) {
 	myirmaServer, httpServer := StartMyIrmaServer(t, newLinkTestDB(), "")
 	defer StopMyIrmaServer(t, myirmaServer, httpServer)
 	restartLinkWatchers(myirmaServer)
