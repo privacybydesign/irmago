@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- `POST /email/link` in `myirmaserver` lets the app link an email address to its keyshare account with one disclosure session, without a MyYivi login. The session asks for the keyshare attribute and an email attribute together, and when it has finished the email address is linked to the keyshare user, as `/email/add` does. At most 1000 of these sessions can wait to finish at a time ([#744](https://github.com/privacybydesign/irmago/issues/744))
 
 ## [1.4.1] - 2026-10-05
 ### Fixed
