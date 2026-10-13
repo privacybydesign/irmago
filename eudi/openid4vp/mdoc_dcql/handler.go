@@ -42,9 +42,12 @@ type DeviceKeys interface {
 // MdocDcqlHandler implements dcql.DcqlCredentialQueryHandler for mso_mdoc
 // credentials stored in the eudi storage (SQLite).
 type MdocDcqlHandler struct {
-	storage       storage.Storage
-	store         db.MdocStore
-	deviceKeys    DeviceKeys
+	storage    storage.Storage
+	store      db.MdocStore
+	deviceKeys DeviceKeys
+	// usedKeys removes the device key of an instance a disclosure uses up.
+	// Nil keeps it.
+	usedKeys      services.KeyRemover
 	currentLocale *clientmodels.CurrentLocale
 }
 
@@ -53,15 +56,19 @@ type MdocDcqlHandler struct {
 // deviceKeys resolves the key the DeviceAuthentication of every presentation
 // this handler prepares is signed with. Pass
 // services.NewMdocDeviceKeyResolver(db.NewMdocDeviceKeyStore(eudiStorage.Db())).
+// usedKeys removes the device key of an instance a disclosure used up; pass
+// the format's services.NewMdocKeyService, or nil to keep them.
 func NewMdocDcqlHandler(
 	eudiStorage storage.Storage,
 	currentLocale *clientmodels.CurrentLocale,
 	deviceKeys DeviceKeys,
+	usedKeys services.KeyRemover,
 ) *MdocDcqlHandler {
 	return &MdocDcqlHandler{
 		storage:       eudiStorage,
 		store:         db.NewMdocStore(eudiStorage.Db()),
 		deviceKeys:    deviceKeys,
+		usedKeys:      usedKeys,
 		currentLocale: currentLocale,
 	}
 }
@@ -293,11 +300,15 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 		// and the credential would silently lose a use.
 		//
 		// Only mark the instance as used when the original batch had multiple instances.
-		// A batch of 1 keeps its single instance reusable, mirroring eudi_sdjwt_dcql.
+		// A batch of 1 keeps its single instance reusable, mirroring eudi_sdjwt_dcql. A
+		// used instance is never presented again, so its device key goes.
 		for _, p := range pending {
 			if p.batch.BatchSize > 1 {
 				if err := h.store.MarkInstanceUsed(p.instance.ID); err != nil {
 					return nil, fmt.Errorf("failed to mark instance as used: %w", err)
+				}
+				if key := p.instance.DeviceKey; key != nil {
+					services.RemoveUsedKey(h.usedKeys, key.ID)
 				}
 			}
 			result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(p.batch, p.sel.ClaimPaths, p.sel.Claims))

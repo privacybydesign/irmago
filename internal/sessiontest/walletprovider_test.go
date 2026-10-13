@@ -419,6 +419,12 @@ func testWalletProviderSdJwtIssueAndDisclose(t *testing.T) {
 	require.Equal(t, walletprovider.PurposeDisclosureKB, unlocks[1].Purpose)
 	require.Empty(t, unlocks[1].Counterparty)
 	require.Equal(t, keys+1, provider.SignCount())
+
+	// The test issuer issues batches of one, which a disclosure doesn't use
+	// up, so the key stays.
+	left, err := provider.KeyCount()
+	require.NoError(t, err)
+	require.Equal(t, keys, left, "a batch of one keeps its key")
 }
 
 func testWalletProviderMdocIssueAndDisclose(t *testing.T) {
@@ -495,7 +501,13 @@ func testWalletProviderMdocIssueAndDisclose(t *testing.T) {
 	require.Len(t, unlocks, 2)
 	require.Equal(t, walletprovider.PurposeDisclosureKB, unlocks[1].Purpose)
 
-	// Deleting the mdoc removes its whole batch of device keys from the
+	// The disclosure used up one instance of the batch, whose device key is
+	// removed from the provider.
+	left, err := provider.KeyCount()
+	require.NoError(t, err)
+	require.Equal(t, keys-1, left, "the used instance's device key is removed")
+
+	// Deleting the mdoc removes the rest of its batch of device keys from the
 	// provider.
 	pid := credentialListEntry(t, c, pidMdocDocType)
 	require.NoError(t, c.RemoveCredentialsByHash(pid.CredentialInstanceIds))

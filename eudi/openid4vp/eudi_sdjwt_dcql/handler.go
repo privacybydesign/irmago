@@ -71,9 +71,12 @@ type SdJwtVcDcqlHandler struct {
 	storage         storage.Storage
 	credentialStore db.SdJwtVcStore
 	holderKeys      HolderKeys
-	vctFetcher      typemetadata.VctFetcher
-	issuerFetcher   typemetadata.IssuerFetcher
-	currentLocale   *clientmodels.CurrentLocale
+	// usedKeys removes the holder key of an instance a disclosure uses up.
+	// Nil keeps it.
+	usedKeys      services.KeyRemover
+	vctFetcher    typemetadata.VctFetcher
+	issuerFetcher typemetadata.IssuerFetcher
+	currentLocale *clientmodels.CurrentLocale
 
 	// revocation determines a candidate's Revoked flag. Nil disables the check
 	// (candidates are then never flagged revoked).
@@ -85,8 +88,9 @@ type SdJwtVcDcqlHandler struct {
 // a VCT for which there is no stored batch). Pass nil to disable that path; the
 // handler will then return empty obtainable descriptors as before.
 //
-// holderKeys resolves the key a presentation's key binding JWT is signed with;
-// pass services.NewHolderBindingKeyService, which covers software keys and
+// holderKeys resolves the key a presentation's key binding JWT is signed with,
+// and usedKeys removes the key of an instance a disclosure used up; pass
+// services.NewHolderBindingKeyService for both, which covers software keys and
 // keys in a wallet provider's HSM alike.
 func NewSdJwtVcDcqlHandler(
 	eudiStorage storage.Storage,
@@ -94,6 +98,7 @@ func NewSdJwtVcDcqlHandler(
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
 	holderKeys HolderKeys,
+	usedKeys services.KeyRemover,
 	currentLocale *clientmodels.CurrentLocale,
 	revocation RevocationChecker,
 ) *SdJwtVcDcqlHandler {
@@ -101,6 +106,7 @@ func NewSdJwtVcDcqlHandler(
 		storage:         eudiStorage,
 		credentialStore: credentialStore,
 		holderKeys:      holderKeys,
+		usedKeys:        usedKeys,
 		vctFetcher:      vctFetcher,
 		issuerFetcher:   issuerFetcher,
 		currentLocale:   currentLocale,
@@ -488,10 +494,14 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			})
 
 			// Only mark the instance as used when the original batch had multiple instances.
-			// A batch of 1 keeps its single instance reusable.
+			// A batch of 1 keeps its single instance reusable. A used instance is never
+			// presented again, so its holder key goes.
 			if p.batch.BatchSize > 1 {
 				if err := h.credentialStore.MarkInstanceUsed(p.instance.ID); err != nil {
 					return nil, fmt.Errorf("failed to mark instance as used: %w", err)
+				}
+				if key := p.instance.HolderBindingKey; key != nil {
+					services.RemoveUsedKey(h.usedKeys, key.ID)
 				}
 			}
 

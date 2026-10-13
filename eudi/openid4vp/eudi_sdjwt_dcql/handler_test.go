@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -1018,5 +1019,57 @@ func TestIsHttpVct(t *testing.T) {
 	}
 	for _, c := range cases {
 		assert.Equal(t, c.want, isHttpVct(c.vct), "vct=%q", c.vct)
+	}
+}
+
+// removedKeys records the holder keys a handler removes.
+type removedKeys struct{ ids []datatypes.UUID }
+
+func (r *removedKeys) RemoveKeys(ids []datatypes.UUID) error {
+	r.ids = append(r.ids, ids...)
+	return nil
+}
+
+// TestPrepareDisclosure_RemovesTheHolderKeyOfAUsedInstance: a disclosure that
+// uses up an instance of a batch removes that instance's holder key, which
+// nothing will sign with again, and no other. A batch of one keeps its key,
+// as it keeps its instance.
+func TestPrepareDisclosure_RemovesTheHolderKeyOfAUsedInstance(t *testing.T) {
+	for _, size := range []uint{1, 2} {
+		t.Run(fmt.Sprintf("batch of %d", size), func(t *testing.T) {
+			h, store := newTestHandler(t)
+			removed := &removedKeys{}
+			h.usedKeys = removed
+
+			hash := fmt.Sprintf("hash-keys-%d", size)
+			batch := newTestBatch(hash, "https://example.com/EmailCredential", map[string]any{"email": "test@gmail.com"})
+			batch.BatchSize, batch.RemainingCount = size, size
+			batch.Instances = nil
+			for i := range size {
+				batch.Instances = append(batch.Instances, models.SdJwtVcBatchInstance{
+					RawCredential: []byte(validTestSdJwtVc),
+					HolderBindingKey: &models.HolderBindingKey{
+						Algorithm:           models.KeyAlgorithmECDSA,
+						PublicKeyThumbprint: datatypes.NullString{V: fmt.Sprintf("thumbprint %d", i), Valid: true},
+						PrivateKey:          fmt.Appendf(nil, "key %d", i),
+						ECDSA:               &models.ECDSAKeyMetadata{CurveName: "P-256"},
+					},
+				})
+			}
+			require.NoError(t, store.StoreBatch(batch))
+			selections := []dcql.DisclosureSelection{{QueryId: "q1", CredentialHash: hash, ClaimPaths: [][]any{{"email"}}}}
+
+			var want []datatypes.UUID
+			for i := range size {
+				unused, err := store.GetUnusedInstance(batch.ID)
+				require.NoError(t, err)
+				_, err = prepareSigned(h, selections, fmt.Sprintf("nonce%d", i), "client")
+				require.NoError(t, err)
+				if size > 1 {
+					want = append(want, unused.HolderBindingKey.ID)
+				}
+			}
+			require.Equal(t, want, removed.ids, "the key of each used instance, and only those")
+		})
 	}
 }

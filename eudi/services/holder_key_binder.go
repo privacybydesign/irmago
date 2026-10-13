@@ -5,6 +5,7 @@ import (
 
 	"github.com/privacybydesign/irmago/walletprovider"
 
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
@@ -38,9 +39,28 @@ type HolderKeyBinder interface {
 	// It asks nobody, so it can be checked before the user is asked anything.
 	KeyProtection(ctx context.Context) (walletprovider.KeyProtection, bool)
 
-	// RemoveKeys deletes previously created keys by their storage IDs. Used to
-	// roll back generated keys when an issuance session fails.
+	KeyRemover
+}
+
+// KeyRemover removes holder keys the wallet has no further use for, by their
+// storage IDs, from wherever they are held: the wallet's own storage or a
+// wallet provider's HSM. That is a failed issuance's keys, a deleted or
+// expired credential's, and those of a batch instance a disclosure used up.
+type KeyRemover interface {
 	RemoveKeys(ids []datatypes.UUID) error
+}
+
+// RemoveUsedKey removes the holder key id of a batch instance a disclosure
+// just used up, which will never be presented again, when keys is not nil.
+// Best effort: a key that could not be removed is only logged, and never fails
+// the disclosure.
+func RemoveUsedKey(keys KeyRemover, id datatypes.UUID) {
+	if keys == nil {
+		return
+	}
+	if err := keys.RemoveKeys([]datatypes.UUID{id}); err != nil {
+		eudi.Logger.Warnf("failed to remove the holder key of a used credential instance: %v", err)
+	}
 }
 
 // KeyAttestationOptions asks CreateKeyPairsWithProofs for a key attestation

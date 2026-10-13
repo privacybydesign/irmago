@@ -234,6 +234,26 @@ func TestMdocCredentialService_DeleteByHash(t *testing.T) {
 	require.Zero(t, keys, "deleting the batch cascades to its device keys")
 }
 
+// The device keys of a batch count as expired once its MSO validity ended,
+// and not before.
+func TestMdocCredentialService_ExpiredKeyIDs(t *testing.T) {
+	env := newMdocTestEnv(t)
+	ids, _, err := env.keyMint.CreateKeyPairsWithProofs(context.Background(), 1, testProofBuilder(proofs.CryptographicBindingMethod_JWK), nil)
+	require.NoError(t, err)
+	require.NoError(t, env.service.Store([]*ParsedCredential{env.issueBoundTo(t, *ids[0].PublicKeyThumbprint, map[string]any{"age_over_18": true})}, "proof_of_age", env.metadata, true, ids))
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	validUntil := batches[0].ValidUntil
+
+	expired, err := env.service.ExpiredKeyIDs(validUntil)
+	require.NoError(t, err)
+	require.Empty(t, expired, "still valid at its last moment")
+
+	expired, err = env.service.ExpiredKeyIDs(validUntil.Add(time.Second))
+	require.NoError(t, err)
+	require.Equal(t, []datatypes.UUID{ids[0].ID}, expired)
+}
+
 // --- the credential list's labelling, ported from the shared-table days ---
 
 // storedMdoc writes an mdoc batch with the given namespace values and claim
