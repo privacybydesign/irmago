@@ -495,13 +495,18 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 
 			// Only mark the instance as used when the original batch had multiple instances.
 			// A batch of 1 keeps its single instance reusable. A used instance is never
-			// presented again, so its holder key goes.
+			// presented again, so its holder key goes, unless it was the batch's last:
+			// the wallet keeps a key for every credential it holds (ARF 3.0, WIAM_21).
+			// The count is read after the marking, as another disclosure may have
+			// used an instance meanwhile; when it cannot be read, the key stays.
 			if p.batch.BatchSize > 1 {
 				if err := h.credentialStore.MarkInstanceUsed(p.instance.ID); err != nil {
 					return nil, fmt.Errorf("failed to mark instance as used: %w", err)
 				}
 				if key := p.instance.HolderBindingKey; key != nil {
-					services.RemoveUsedKey(h.usedKeys, key.ID)
+					if batch, err := h.credentialStore.GetBatchByHash(p.batch.Hash); err == nil && batch.RemainingCount > 0 {
+						services.RemoveUsedKey(h.usedKeys, key.ID)
+					}
 				}
 			}
 

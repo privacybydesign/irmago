@@ -47,27 +47,6 @@ func (s *mdocCredentialService) KeyIDsByHash(hash string) ([]datatypes.UUID, err
 	return s.store.KeyIDsByBatchHash(hash)
 }
 
-// ExpiredKeyIDs returns the device key IDs of the batches whose MSO validity
-// ended before now.
-func (s *mdocCredentialService) ExpiredKeyIDs(now time.Time) ([]datatypes.UUID, error) {
-	batches, err := s.store.ListBatches()
-	if err != nil {
-		return nil, err
-	}
-	var ids []datatypes.UUID
-	for _, batch := range batches {
-		if !now.After(batch.ValidUntil) {
-			continue
-		}
-		batchIDs, err := s.store.KeyIDsByBatchHash(batch.Hash)
-		if err != nil {
-			return nil, err
-		}
-		ids = append(ids, batchIDs...)
-	}
-	return ids, nil
-}
-
 func (s *mdocCredentialService) DeleteByHash(hash string) error {
 	return s.store.DeleteBatchByHash(hash)
 }

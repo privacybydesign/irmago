@@ -301,14 +301,19 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 		//
 		// Only mark the instance as used when the original batch had multiple instances.
 		// A batch of 1 keeps its single instance reusable, mirroring eudi_sdjwt_dcql. A
-		// used instance is never presented again, so its device key goes.
+		// used instance is never presented again, so its device key goes, unless it
+		// was the batch's last: the wallet keeps a key for every credential it holds
+		// (ARF 3.0, WIAM_21). The count is read after the marking; when it cannot
+		// be read, the key stays.
 		for _, p := range pending {
 			if p.batch.BatchSize > 1 {
 				if err := h.store.MarkInstanceUsed(p.instance.ID); err != nil {
 					return nil, fmt.Errorf("failed to mark instance as used: %w", err)
 				}
 				if key := p.instance.DeviceKey; key != nil {
-					services.RemoveUsedKey(h.usedKeys, key.ID)
+					if batch, err := h.store.GetBatchByHash(p.batch.Hash); err == nil && batch.RemainingCount > 0 {
+						services.RemoveUsedKey(h.usedKeys, key.ID)
+					}
 				}
 			}
 			result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(p.batch, p.sel.ClaimPaths, p.sel.Claims))

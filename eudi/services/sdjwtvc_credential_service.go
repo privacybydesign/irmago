@@ -59,29 +59,6 @@ func (s *sdJwtVcCredentialService) KeyIDsByHash(hash string) ([]datatypes.UUID, 
 	return s.store.KeyIDsByBatchHash(hash)
 }
 
-// ExpiredKeyIDs returns the holder key IDs of the batches whose exp is before
-// now. A batch stored without an exp has the Unix epoch instead (see
-// dcql.IsBatchValid), which is no expiry.
-func (s *sdJwtVcCredentialService) ExpiredKeyIDs(now time.Time) ([]datatypes.UUID, error) {
-	batches, err := s.store.GetCredentialBatchList()
-	if err != nil {
-		return nil, err
-	}
-	var ids []datatypes.UUID
-	for _, batch := range batches {
-		exp := batch.ExpiresAt
-		if !exp.Valid || exp.V.Equal(time.Unix(0, 0)) || !now.After(exp.V) {
-			continue
-		}
-		batchIDs, err := s.store.KeyIDsByBatchHash(batch.Hash)
-		if err != nil {
-			return nil, err
-		}
-		ids = append(ids, batchIDs...)
-	}
-	return ids, nil
-}
-
 func (s *sdJwtVcCredentialService) DeleteByHash(hash string) error {
 	return s.store.DeleteBatchByHash(hash)
 }

@@ -189,7 +189,9 @@ func TestFindCandidatesSkipsCredentialMissingRequestedClaim(t *testing.T) {
 // TestPrepareDisclosureBurnsOneInstancePerPresentation covers the single-use
 // half of the batch model: each presentation consumes one instance,
 // decrements the batch's remaining count and removes the instance's device
-// key, which nothing will sign with again, and once they are gone
+// key, which nothing will sign with again, but for the last one's: the wallet
+// keeps a key for every credential it holds (ARF 3.0, WIAM_21). Once they are
+// gone
 // FindCandidates reports the batch as exhausted rather than silently offering
 // a credential that cannot be presented.
 func TestPrepareDisclosureBurnsOneInstancePerPresentation(t *testing.T) {
@@ -215,7 +217,7 @@ func TestPrepareDisclosureBurnsOneInstancePerPresentation(t *testing.T) {
 		batch, err := env.store.GetBatchByHash(env.hash)
 		require.NoError(t, err)
 		require.Equal(t, remaining, batch.RemainingCount)
-		require.Equal(t, int(remaining), env.storedKeys(t), "a used instance's device key is removed")
+		require.Equal(t, max(int(remaining), 1), env.storedKeys(t), "a used instance's device key is removed, but for the last")
 
 		if remaining == 0 {
 			break

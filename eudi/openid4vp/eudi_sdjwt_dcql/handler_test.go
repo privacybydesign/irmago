@@ -1032,10 +1032,11 @@ func (r *removedKeys) RemoveKeys(ids []datatypes.UUID) error {
 
 // TestPrepareDisclosure_RemovesTheHolderKeyOfAUsedInstance: a disclosure that
 // uses up an instance of a batch removes that instance's holder key, which
-// nothing will sign with again, and no other. A batch of one keeps its key,
-// as it keeps its instance.
+// nothing will sign with again, and no other, but for the batch's last: the
+// wallet keeps a key for every credential it holds (ARF 3.0, WIAM_21). A batch
+// of one keeps its key, as it keeps its instance.
 func TestPrepareDisclosure_RemovesTheHolderKeyOfAUsedInstance(t *testing.T) {
-	for _, size := range []uint{1, 2} {
+	for _, size := range []uint{1, 2, 3} {
 		t.Run(fmt.Sprintf("batch of %d", size), func(t *testing.T) {
 			h, store := newTestHandler(t)
 			removed := &removedKeys{}
@@ -1065,11 +1066,11 @@ func TestPrepareDisclosure_RemovesTheHolderKeyOfAUsedInstance(t *testing.T) {
 				require.NoError(t, err)
 				_, err = prepareSigned(h, selections, fmt.Sprintf("nonce%d", i), "client")
 				require.NoError(t, err)
-				if size > 1 {
+				if i < size-1 {
 					want = append(want, unused.HolderBindingKey.ID)
 				}
 			}
-			require.Equal(t, want, removed.ids, "the key of each used instance, and only those")
+			require.Equal(t, want, removed.ids, "the key of each used instance but the last, and only those")
 		})
 	}
 }

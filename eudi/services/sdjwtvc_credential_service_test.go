@@ -1317,33 +1317,6 @@ func TestVerifyAndStore_NoKeyBinding_DoesNotLink(t *testing.T) {
 	assert.Empty(t, keyStore.linkedKeys)
 }
 
-// ========== ExpiredKeyIDs ==========
-
-// The holder keys of a batch whose exp has passed are expired; those of a
-// batch that expires later, has no exp, or was stored with the epoch for none
-// are not.
-func TestExpiredKeyIDs_OnlyThoseOfExpiredBatches(t *testing.T) {
-	now := time.Now()
-	at := func(t time.Time) datatypes.NullTime { return datatypes.NullTime{V: t, Valid: true} }
-	expired, later, noExp, epoch := datatypes.NewUUIDv4(), datatypes.NewUUIDv4(), datatypes.NewUUIDv4(), datatypes.NewUUIDv4()
-	mock := &mockCredentialStore{
-		batchListResult: []*models.SdJwtVcBatch{
-			{Hash: "expired", ExpiresAt: at(now.Add(-time.Minute))},
-			{Hash: "later", ExpiresAt: at(now.Add(time.Minute))},
-			{Hash: "no exp"},
-			{Hash: "epoch", ExpiresAt: at(time.Unix(0, 0))},
-		},
-		keyIDsByHash: map[string][]datatypes.UUID{
-			"expired": {expired}, "later": {later}, "no exp": {noExp}, "epoch": {epoch},
-		},
-	}
-	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
-
-	ids, err := svc.ExpiredKeyIDs(now)
-	require.NoError(t, err)
-	require.Equal(t, []datatypes.UUID{expired}, ids)
-}
-
 // --- mock SdJwtVcStore ---
 
 type mockCredentialStore struct {
@@ -1354,7 +1327,6 @@ type mockCredentialStore struct {
 	statusRefs      []db.BatchInstanceStatus
 	statusRefsErr   error
 	updatedHashes   []updatedHash
-	keyIDsByHash    map[string][]datatypes.UUID
 }
 
 // updatedHash records an UpdateBatchHash call, so a test can assert which batches
@@ -1380,8 +1352,8 @@ func (m *mockCredentialStore) GetBatchByHash(hash string) (*models.SdJwtVcBatch,
 	return nil, db.ErrNotFound
 }
 
-func (m *mockCredentialStore) KeyIDsByBatchHash(hash string) ([]datatypes.UUID, error) {
-	return m.keyIDsByHash[hash], nil
+func (m *mockCredentialStore) KeyIDsByBatchHash(string) ([]datatypes.UUID, error) {
+	return nil, nil
 }
 
 func (m *mockCredentialStore) GetUnusedInstance(batchID datatypes.UUID, _ ...datatypes.UUID) (*models.SdJwtVcBatchInstance, error) {

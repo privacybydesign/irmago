@@ -44,14 +44,15 @@ type HolderKeyBinder interface {
 
 // KeyRemover removes holder keys the wallet has no further use for, by their
 // storage IDs, from wherever they are held: the wallet's own storage or a
-// wallet provider's HSM. That is a failed issuance's keys, a deleted or
-// expired credential's, and those of a batch instance a disclosure used up.
+// wallet provider's HSM. That is a failed issuance's keys, a deleted
+// credential's, and that of a batch instance a disclosure used up.
 type KeyRemover interface {
 	RemoveKeys(ids []datatypes.UUID) error
 }
 
 // RemoveUsedKey removes the holder key id of a batch instance a disclosure
 // just used up, which will never be presented again, when keys is not nil.
+// The caller keeps the key of a batch's last instance.
 // Best effort: a key that could not be removed is only logged, and never fails
 // the disclosure.
 func RemoveUsedKey(keys KeyRemover, id datatypes.UUID) {

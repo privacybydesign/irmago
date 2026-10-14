@@ -2,7 +2,6 @@ package services
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
@@ -49,12 +48,6 @@ type CredentialFormatStore interface {
 	// remove where they live (a wallet provider's HSM) before the batch is
 	// deleted: deleting the batch only removes the local key rows.
 	KeyIDsByHash(hash string) ([]datatypes.UUID, error)
-
-	// ExpiredKeyIDs returns the IDs of the holder keys of every stored batch
-	// that expired before now, for the format's HolderKeyBinder to remove: an
-	// expired credential is never presented again, but stays stored, shown as
-	// expired, until the user deletes it.
-	ExpiredKeyIDs(now time.Time) ([]datatypes.UUID, error)
 
 	CredentialDisplaySource
 }

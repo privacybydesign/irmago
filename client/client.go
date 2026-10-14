@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -898,34 +897,6 @@ func (client *Client) GetPreferences() clientsettings.Preferences {
 	return client.irmaClient.Preferences
 }
 
-// expiredHolderKeysInterval is how often the wallet removes the holder keys of
-// credentials that expired.
-const expiredHolderKeysInterval = 24 * time.Hour
-
-// RemoveExpiredHolderKeys removes the holder keys of every OpenID4VC credential
-// that expired, from wherever they are held: the wallet's own storage or a
-// wallet provider's HSM. An expired credential is never presented again, so
-// its keys have no use left; the credential itself stays, shown as expired,
-// until the user deletes it. Every format is tried, and the errors are joined.
-func (client *Client) RemoveExpiredHolderKeys() error {
-	now := time.Now()
-	var errs []error
-	for format, support := range client.credentialFormats {
-		ids, err := support.Store.ExpiredKeyIDs(now)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("finding the expired holder keys of %s: %w", format, err))
-			continue
-		}
-		if len(ids) == 0 {
-			continue
-		}
-		if err := support.Keys.RemoveKeys(ids); err != nil {
-			errs = append(errs, fmt.Errorf("removing the expired holder keys of %s: %w", format, err))
-		}
-	}
-	return errors.Join(errs...)
-}
-
 func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInterval time.Duration) {
 	// Future TODO: add Context so we can check for cancellation of the job ?
 	_, err := client.scheduler.NewJob(
@@ -957,19 +928,5 @@ func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInte
 		if err != nil {
 			common.Logger.Warnf("failed to create new cron job for refreshing credential statuses: %v", err)
 		}
-	}
-
-	// Remove the holder keys of credentials that expired since the last run.
-	_, err = client.scheduler.NewJob(
-		gocron.DurationJob(expiredHolderKeysInterval),
-		gocron.NewTask(func() {
-			if err := client.RemoveExpiredHolderKeys(); err != nil {
-				common.Logger.Warnf("scheduled removal of expired holder keys failed: %v", err)
-			}
-		}),
-		gocron.WithStartAt(gocron.WithStartImmediately()),
-	)
-	if err != nil {
-		common.Logger.Warnf("failed to create new cron job for removing expired holder keys: %v", err)
 	}
 }
