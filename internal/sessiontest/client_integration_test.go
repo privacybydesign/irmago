@@ -55,6 +55,7 @@ func TestEudiClient(t *testing.T) {
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
 	t.Run("optional empty attributes excluded from GetCredentials", testOptionalEmptyAttributesExcludedFromGetCredentials)
 	t.Run("idemix and sdjwtvc with absent optional attribute merge into one credential", testIdemixAndSdJwtWithAbsentOptionalAttributeMerge)
+	t.Run("deleting combined credential with absent optional attribute deletes both formats", testDeletingCombinedCredentialWithAbsentOptionalAttribute)
 	t.Run("irma disclose keyshare attribute", testIrmaDiscloseKeyshareAttribute)
 }
 
@@ -998,6 +999,47 @@ func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
 	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 0)
+}
+
+// Deleting goes through RemoveCredentialsByHash, which checks that all given
+// hashes belong to the same credential. With an absent optional attribute both
+// formats must still pass that check and both must be removed.
+func testDeletingCombinedCredentialWithAbsentOptionalAttribute(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClient(t)
+	defer c.Close()
+
+	req := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
+			Attributes: map[string]string{
+				"firstnames": "Barry",
+				"firstname":  "Bar",
+				"familyname": "Batsbak",
+				// "prefix" is optional and left out on purpose
+			},
+			SdJwtBatchSize: 10,
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, 1, req)
+	awaitSessionState(t, sessionHandler)
+
+	creds, _, err := c.GetCredentials()
+	require.NoError(t, err)
+	fullName := findCredentialById(creds, "irma-demo.MijnOverheid.fullName")
+	require.NotNil(t, fullName)
+	require.Len(t, fullName.CredentialInstanceIds, 2)
+
+	require.NoError(t, c.RemoveCredentialsByHash(credentialHashByFormat(fullName)))
+
+	creds, _, err = c.GetCredentials()
+	require.NoError(t, err)
+	require.Nil(t, findCredentialById(creds, "irma-demo.MijnOverheid.fullName"))
 }
 
 func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {

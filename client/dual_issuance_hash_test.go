@@ -142,3 +142,40 @@ func TestDualIssuance_OptionalAttributeAbsent_MergesIntoOneCredential(t *testing
 	require.Contains(t, creds[0].CredentialInstanceIds, clientmodels.Format_Idemix)
 	require.Contains(t, creds[0].CredentialInstanceIds, clientmodels.Format_SdJwtVc)
 }
+
+// A missing optional attribute and one set to "" are different credentials.
+// Skipping nil values must not merge them: each keeps its own card, and each
+// card still holds both of its formats.
+func TestDualIssuance_OptionalAttributeAbsentAndEmptyStaySeparate(t *testing.T) {
+	conf := loadTestIrmaConfiguration(t)
+	absent := fullNameRequest(map[string]string{
+		"firstnames": "Barry",
+		"firstname":  "Bar",
+		"familyname": "Batsbak",
+	})
+	empty := fullNameRequest(map[string]string{
+		"firstnames": "Barry",
+		"firstname":  "Bar",
+		"familyname": "Batsbak",
+		"prefix":     "",
+	})
+
+	absentHash, err := hashAttributesAndCredType(idemixCredentialInfo(t, conf, absent))
+	require.NoError(t, err)
+	emptyHash, err := hashAttributesAndCredType(idemixCredentialInfo(t, conf, empty))
+	require.NoError(t, err)
+	require.NotEqual(t, absentHash, emptyHash)
+
+	creds, problematic := credentialInfoListToSchemaless(conf, irma.CredentialInfoList{
+		idemixCredentialInfo(t, conf, absent),
+		sdJwtCredentialInfo(absent),
+		idemixCredentialInfo(t, conf, empty),
+		sdJwtCredentialInfo(empty),
+	}, "en")
+
+	require.Empty(t, problematic)
+	require.Len(t, creds, 2)
+	for _, cred := range creds {
+		require.Len(t, cred.CredentialInstanceIds, 2)
+	}
+}
