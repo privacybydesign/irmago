@@ -1066,8 +1066,6 @@ func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
 	require.Len(t, emailCred.CredentialInstanceIds, 2)
 }
 
-// Dual issuance of a credential whose optional attribute is left out must still
-// show up as one credential holding both formats.
 func testIdemixAndSdJwtWithAbsentOptionalAttributeMerge(t *testing.T) {
 	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
 	defer irmaServer.Stop()
@@ -1103,6 +1101,7 @@ func testIdemixAndSdJwtWithAbsentOptionalAttributeMerge(t *testing.T) {
 			fullNames = append(fullNames, cred)
 		}
 	}
+
 	require.Len(t, fullNames, 1, "idemix and SD-JWT copies should merge into one credential")
 	require.Len(t, fullNames[0].CredentialInstanceIds, 2)
 }

@@ -18,6 +18,7 @@ import (
 // CredentialRequest, and check that the hashes match.
 
 func loadTestIrmaConfiguration(t *testing.T) *irma.Configuration {
+	t.Helper()
 	conf, err := irma.NewConfiguration(test.FindTestdataFolder(t)+"/irma_configuration", irma.ConfigurationOptions{})
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())
@@ -42,6 +43,7 @@ func sdJwtCredentialInfo(req *irma.CredentialRequest) *irma.CredentialInfo {
 	for k, v := range req.Attributes {
 		attrs[k] = v
 	}
+
 	return sdjwtvcBatchMetadataToIrmaCredentialInfo(irmaclient.SdJwtVcBatchMetadata{
 		CredentialType:         req.CredentialTypeID.String(),
 		Attributes:             attrs,
