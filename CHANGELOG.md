@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fixed
+- A credential issued over IRMA in both idemix and SD-JWT format now shows up as one credential when an optional attribute is left out. Idemix listed the missing attribute with a `nil` value while the SD-JWT had no claim for it, so the two formats got different hashes and showed up as two separate credentials. Deleting such a credential now also removes both formats. An optional attribute set to `""` was not affected, and still counts as a different credential from one where it is left out
 
 ## [1.4.1] - 2026-10-05
 ### Fixed
