@@ -446,6 +446,9 @@ func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString) *c
 		}
 	default:
 		val.String = &s
+		if code, ok := irma.CurrencyCode(displayHint); ok && irma.IsCurrencyAmount(s) {
+			val.Currency = &code
+		}
 	}
 	return val
 }

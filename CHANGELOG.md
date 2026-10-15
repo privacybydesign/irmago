@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- `currency:<ISO 4217 code>` display hint for attribute types (e.g. `displayHint="currency:EUR"`). The attribute value holds a plain decimal amount such as `12.50`. Its `AttributeValue` stays a string and gets a new optional `currency` field with the code, so clients can show the amount as a currency for the user's locale. If the value isn't a plain decimal or the code isn't three uppercase letters, `currency` is left out ([#752](https://github.com/privacybydesign/irmago/issues/752))
 
 ## [1.4.1] - 2026-10-05
 ### Fixed

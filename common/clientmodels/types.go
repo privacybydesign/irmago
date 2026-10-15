@@ -87,6 +87,10 @@ type AttributeValue struct {
 	String      *string `json:"string,omitempty"`
 	ImagePath   *string `json:"image_path,omitempty"`
 	Base64Image *string `json:"base64_image,omitempty"`
+
+	// Currency is the ISO 4217 currency code (e.g. "EUR") of a string value that
+	// holds a decimal amount, set for attributes with a "currency:<code>" display hint.
+	Currency *string `json:"currency,omitempty"`
 }
 
 // NewAttributeValue converts a scalar Go value into an AttributeValue.

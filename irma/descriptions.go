@@ -620,6 +620,27 @@ func (at AttributeType) IsOptional() bool {
 	return at.Optional == "true"
 }
 
+var (
+	currencyCodeRegex   = regexp.MustCompile(`^[A-Z]{3}$`)
+	currencyAmountRegex = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
+)
+
+// CurrencyCode returns the ISO 4217 currency code of a "currency:<code>" display hint,
+// e.g. "EUR" for "currency:EUR". It returns false if the hint is not a valid currency hint.
+func CurrencyCode(displayHint string) (string, bool) {
+	code, ok := strings.CutPrefix(displayHint, "currency:")
+	if !ok || !currencyCodeRegex.MatchString(code) {
+		return "", false
+	}
+	return code, true
+}
+
+// IsCurrencyAmount reports whether value is a plain decimal amount as expected for
+// attributes with a currency display hint, e.g. "12.50", "-3" or "1000.00".
+func IsCurrencyAmount(value string) bool {
+	return currencyAmountRegex.MatchString(value)
+}
+
 // RandomBlindAttributeIndices returns indices of random blind attributes within this credentialtype
 // The indices coincide with indices of an AttributeList (metadataAttribute at index 0)
 func (ct *CredentialType) RandomBlindAttributeIndices() []int {
