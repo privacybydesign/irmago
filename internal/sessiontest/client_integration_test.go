@@ -54,6 +54,7 @@ func TestEudiClient(t *testing.T) {
 	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSeparateCredentialInfos)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
 	t.Run("optional empty attributes excluded from GetCredentials", testOptionalEmptyAttributesExcludedFromGetCredentials)
+	t.Run("idemix and sdjwtvc with absent optional attribute merge into one credential", testIdemixAndSdJwtWithAbsentOptionalAttributeMerge)
 	t.Run("irma disclose keyshare attribute", testIrmaDiscloseKeyshareAttribute)
 }
 
@@ -1023,6 +1024,47 @@ func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
 	require.Len(t, emailCred.CredentialInstanceIds, 2)
 }
 
+// Dual issuance of a credential whose optional attribute is left out must still
+// show up as one credential holding both formats.
+func testIdemixAndSdJwtWithAbsentOptionalAttributeMerge(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClient(t)
+	defer c.Close()
+
+	req := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
+			Attributes: map[string]string{
+				"firstnames": "Barry",
+				"firstname":  "Bar",
+				"familyname": "Batsbak",
+				// "prefix" is optional and left out on purpose
+			},
+			SdJwtBatchSize: 10,
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, 1, req)
+	awaitSessionState(t, sessionHandler)
+
+	creds, problematic, err := c.GetCredentials()
+	require.NoError(t, err)
+	require.Empty(t, problematic)
+
+	var fullNames []*clientmodels.Credential
+	for _, cred := range creds {
+		if cred.CredentialId == "irma-demo.MijnOverheid.fullName" {
+			fullNames = append(fullNames, cred)
+		}
+	}
+	require.Len(t, fullNames, 1, "idemix and SD-JWT copies should merge into one credential")
+	require.Len(t, fullNames[0].CredentialInstanceIds, 2)
+}
+
 func testIdemixAndSdJwtCombinedIssuance(t *testing.T) {
 	conf := irmaServerConfWithSdJwtEnabled(t)
 	irmaServer := StartIrmaServer(t, conf)
@@ -1497,6 +1539,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 
 	// Credential without prefix: optional empty attribute should be excluded
 	require.NotNil(t, credWithoutPrefix)
+	require.Len(t, credWithoutPrefix.CredentialInstanceIds, 2, "idemix and SD-JWT copies should merge")
 	requireAttrsInOrder(t, credWithoutPrefix.Attributes,
 		expectedAttr{
 			Path:        []any{"firstnames"},
@@ -1517,6 +1560,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 
 	// Credential with prefix: optional non-empty attribute should be included
 	require.NotNil(t, credWithPrefix)
+	require.Len(t, credWithPrefix.CredentialInstanceIds, 2, "idemix and SD-JWT copies should merge")
 	requireAttrsInOrder(t, credWithPrefix.Attributes,
 		expectedAttr{
 			Path:        []any{"firstnames"},
