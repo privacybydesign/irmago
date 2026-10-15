@@ -537,7 +537,13 @@ func hashAttributesAndCredType(info *irma.CredentialInfo) (string, error) {
 	hashContent.WriteString(info.Identifier().String())
 
 	sortedKeys := []string{}
-	for key := range info.Attributes {
+	for key, value := range info.Attributes {
+		// Idemix lists an absent optional attribute with a nil value, while an
+		// SD-JWT has no claim for it at all. Skip it so both formats of a dual
+		// issued credential hash the same. A present "" is non-nil and still hashed.
+		if len(value) == 0 {
+			continue
+		}
 		sortedKeys = append(sortedKeys, key.String())
 	}
 	sort.Strings(sortedKeys)
