@@ -60,12 +60,28 @@ type DisplayEntry struct {
 	Logo            *RemoteImage
 	BackgroundColor string
 	TextColor       string
+	// BackgroundImage is rendering.simple.background_image, if any.
+	BackgroundImage *RemoteImage
+	// SvgTemplates are the rendering.svg_templates entries, in document order.
+	SvgTemplates []SvgTemplate
+}
+
+// SvgTemplate is one rendering.svg_templates entry (SD-JWT VC § 8.1.2).
+// The template itself is not fetched by the parser.
+type SvgTemplate struct {
+	URI         string
+	Integrity   string
+	Orientation string
+	ColorScheme string
+	Contrast    string
 }
 
 // ClaimMetadata is one claim metadata entry from the type-metadata document.
 type ClaimMetadata struct {
 	Path    []any
 	Display []ClaimDisplayEntry
+	// SvgId is the claim's placeholder identifier in SVG templates.
+	SvgId string
 }
 
 // ClaimDisplayEntry is one localized display entry for a single claim.
@@ -78,6 +94,8 @@ type ClaimDisplayEntry struct {
 type RemoteImage struct {
 	URI     string
 	AltText string
+	// Integrity is the optional "uri#integrity" subresource-integrity hash.
+	Integrity string
 }
 
 // IssuerMetadata is a slim view of the OpenID4VCI issuer metadata: only the
@@ -234,7 +252,21 @@ func ParseVctTypeMetadata(data []byte) (*VctTypeMetadata, error) {
 			Description: d.Description,
 		}
 		if d.Logo != nil {
-			entry.Logo = &RemoteImage{URI: d.Logo.URI, AltText: d.Logo.AltText}
+			entry.Logo = d.Logo.toRemoteImage()
+		}
+		if d.Rendering != nil {
+			for _, t := range d.Rendering.SvgTemplates {
+				if t.URI == "" {
+					continue
+				}
+				tpl := SvgTemplate{URI: t.URI, Integrity: t.Integrity}
+				if t.Properties != nil {
+					tpl.Orientation = t.Properties.Orientation
+					tpl.ColorScheme = t.Properties.ColorScheme
+					tpl.Contrast = t.Properties.Contrast
+				}
+				entry.SvgTemplates = append(entry.SvgTemplates, tpl)
+			}
 		}
 		if d.Rendering != nil && d.Rendering.Simple != nil {
 			entry.BackgroundColor = d.Rendering.Simple.BackgroundColor
@@ -243,16 +275,16 @@ func ParseVctTypeMetadata(data []byte) (*VctTypeMetadata, error) {
 			// rendering.simple.logo. Used only as a fallback so a top-level
 			// "logo" (older draft / OID4VCI-style) still wins when present.
 			if entry.Logo == nil && d.Rendering.Simple.Logo != nil {
-				entry.Logo = &RemoteImage{
-					URI:     d.Rendering.Simple.Logo.URI,
-					AltText: d.Rendering.Simple.Logo.AltText,
-				}
+				entry.Logo = d.Rendering.Simple.Logo.toRemoteImage()
+			}
+			if bg := d.Rendering.Simple.BackgroundImage; bg != nil && bg.URI != "" {
+				entry.BackgroundImage = bg.toRemoteImage()
 			}
 		}
 		out.Display = append(out.Display, entry)
 	}
 	for ci, c := range raw.Claims {
-		cm := ClaimMetadata{Path: c.Path}
+		cm := ClaimMetadata{Path: c.Path, SvgId: c.SvgId}
 		for di, d := range c.Display {
 			locale := firstNonEmpty(d.Locale, d.Lang)
 			if locale == "" {
@@ -335,18 +367,33 @@ type rawVctDisplay struct {
 }
 
 type rawRendering struct {
-	Simple *rawRenderingSimple `json:"simple,omitempty"`
+	Simple       *rawRenderingSimple `json:"simple,omitempty"`
+	SvgTemplates []rawSvgTemplate    `json:"svg_templates,omitempty"`
 }
 
 type rawRenderingSimple struct {
 	BackgroundColor string        `json:"background_color,omitempty"`
 	TextColor       string        `json:"text_color,omitempty"`
 	Logo            *rawRemoteImg `json:"logo,omitempty"`
+	BackgroundImage *rawRemoteImg `json:"background_image,omitempty"`
+}
+
+type rawSvgTemplate struct {
+	URI        string                    `json:"uri"`
+	Integrity  string                    `json:"uri#integrity,omitempty"`
+	Properties *rawSvgTemplateProperties `json:"properties,omitempty"`
+}
+
+type rawSvgTemplateProperties struct {
+	Orientation string `json:"orientation,omitempty"`
+	ColorScheme string `json:"color_scheme,omitempty"`
+	Contrast    string `json:"contrast,omitempty"`
 }
 
 type rawVctClaim struct {
 	Path    []any             `json:"path"`
 	Display []rawClaimDisplay `json:"display"`
+	SvgId   string            `json:"svg_id,omitempty"`
 }
 
 type rawClaimDisplay struct {
@@ -357,8 +404,13 @@ type rawClaimDisplay struct {
 }
 
 type rawRemoteImg struct {
-	URI     string `json:"uri"`
-	AltText string `json:"alt_text,omitempty"`
+	URI       string `json:"uri"`
+	AltText   string `json:"alt_text,omitempty"`
+	Integrity string `json:"uri#integrity,omitempty"`
+}
+
+func (r *rawRemoteImg) toRemoteImage() *RemoteImage {
+	return &RemoteImage{URI: r.URI, AltText: r.AltText, Integrity: r.Integrity}
 }
 
 type rawIssuerDocument struct {

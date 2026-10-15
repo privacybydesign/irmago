@@ -2,11 +2,8 @@ package services
 
 import (
 	"encoding/json"
-	"maps"
-	"slices"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -85,15 +82,8 @@ func ClaimNamesByLanguage(displays []models.ClaimDisplay) clientmodels.Translate
 // other cached display logo is returned instead, in deterministic key order,
 // so a logo still shows while the preferred one is on its way.
 func LoadResolvedLogo(manager filesystem.LogoManager, uris clientmodels.TranslatedString, locale string) *clientmodels.Image {
-	if img := eudi.LoadLogoImage(manager, clientmodels.Resolve(uris, locale)); img != nil {
-		return img
-	}
-	for _, k := range slices.Sorted(maps.Keys(uris)) {
-		if img := eudi.LoadLogoImage(manager, uris[k]); img != nil {
-			return img
-		}
-	}
-	return nil
+	img, _ := LoadResolvedLogoWithKey(manager, uris, locale)
+	return img
 }
 
 // ResolvedBatchDisplay is a stored credential batch's display text, resolved

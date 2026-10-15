@@ -537,7 +537,8 @@ func (client *Client) resolveCredentialMetadataFromVct(
 }
 
 // downloadLogos caches the issuer logo and, for each offered credential
-// configuration, the credential logo that resolves for the given locale. Call
+// configuration, the credential logo and card art (background image, SVG
+// templates) that resolve for the given locale. Call
 // it after resolveCredentialMetadataFromVct so VCT-derived logos (e.g. from
 // rendering.simple.logo) are picked up too. Logos for other languages are
 // fetched lazily by the backfill sweep when the locale changes.
@@ -558,6 +559,8 @@ func (client *Client) downloadLogos(
 		}
 		services.FetchLogoIfMissing(ctx, fs.Credentials().LogoManager(), client.httpClient,
 			clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale))
+		services.FetchCardArtIfMissing(ctx, fs.Credentials().LogoManager(), client.httpClient,
+			config.CredentialMetadata.Display, locale)
 	}
 }
 

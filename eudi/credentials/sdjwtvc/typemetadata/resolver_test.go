@@ -220,3 +220,37 @@ func newDocServer(t *testing.T, docs map[string]string) *docServer {
 	ds.Server = httptest.NewServer(mux)
 	return ds
 }
+
+// TestResolver_Resolve_ExtendsChain_CardArtInherited pins how card art crosses
+// an extends chain: display (with its svg_templates) and claims (with their
+// svg_id) are taken whole from the most-derived document that sets them.
+func TestResolver_Resolve_ExtendsChain_CardArtInherited(t *testing.T) {
+	srv := newDocServer(t, map[string]string{})
+	defer srv.Close()
+	srv.docs["/parent"] = `{
+		"display": [{ "locale": "en", "name": "Parent",
+			"rendering": { "svg_templates": [{ "uri": "https://example.com/parent.svg" }] } }],
+		"claims": [{ "path": ["name"], "svg_id": "name" }]
+	}`
+	srv.docs["/child"] = `{
+		"name": "Child",
+		"extends": "` + srv.URL + `/parent"
+	}`
+	srv.docs["/override"] = `{
+		"display": [{ "locale": "en", "name": "Override",
+			"rendering": { "svg_templates": [{ "uri": "https://example.com/child.svg" }] } }],
+		"extends": "` + srv.URL + `/parent"
+	}`
+
+	r := NewResolver(srv.Client())
+	inherited, err := r.Resolve(context.Background(), srv.URL+"/child", true)
+	require.NoError(t, err)
+	require.Equal(t, "https://example.com/parent.svg", inherited.Display[0].SvgTemplates[0].URI)
+	require.Equal(t, "name", inherited.Claims[0].SvgId)
+
+	overridden, err := r.Resolve(context.Background(), srv.URL+"/override", true)
+	require.NoError(t, err)
+	require.Len(t, overridden.Display[0].SvgTemplates, 1)
+	require.Equal(t, "https://example.com/child.svg", overridden.Display[0].SvgTemplates[0].URI)
+	require.Equal(t, "name", overridden.Claims[0].SvgId)
+}

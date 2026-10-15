@@ -380,6 +380,7 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 
 		uri := clientmodels.Resolve(metadata.LogoURIsByLanguage(merged.Display), s.locale)
 		services.FetchLogoIfMissing(ctx, logoManager, s.httpClient, uri)
+		services.FetchCardArtIfMissing(ctx, logoManager, s.httpClient, merged.Display, s.locale)
 	}
 	return nil
 }
@@ -484,8 +485,10 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
 
 		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
-		image := services.LoadResolvedLogo(credentialLogoManager,
+		image, logoKey := services.LoadResolvedLogoWithKey(credentialLogoManager,
 			metadata.LogoURIsByLanguage(credentialDisplay), s.locale)
+		cardDisplay := services.BuildCredentialDisplay(credentialLogoManager, credentialDisplay, s.locale, image, logoKey)
+		services.ApplySvgIds(attrs, services.SvgIdsByClaimPath(claims))
 
 		issuerLogoManager := s.storage.FileSystem().Issuers().LogoManager()
 		issuerImage := services.LoadResolvedLogo(issuerLogoManager,
@@ -564,6 +567,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			Attributes:   attrs,
 			IssuanceDate: issuanceDate,
 			ExpiryDate:   expiryDate,
+			Display:      cardDisplay,
 		}
 
 		result = append(result, &cred)

@@ -56,6 +56,11 @@ type CredentialDisplaySource interface {
 	// LogoURIs returns, per stored batch, the issuer and credential logo URIs
 	// that resolve for the locale; "" where a batch has none.
 	LogoURIs(locale string) (issuer []string, credential []string)
+
+	// CardArtDisplays returns, per stored batch that carries credential
+	// metadata, its credential display entries, from which the backfill
+	// fetches the background image and SVG templates for a locale.
+	CardArtDisplays() []metadata.CredentialDisplays
 }
 
 // CredentialFormatSupport is everything one format contributes: how to verify

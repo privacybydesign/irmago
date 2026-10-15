@@ -72,8 +72,11 @@ func (s *mdocCredentialService) List() ([]*clientmodels.Credential, error) {
 		}
 
 		var credentialImage *clientmodels.Image
+		var cardDisplay *clientmodels.CredentialDisplay
 		if cm := MdocCredentialMetadata(batch); cm != nil {
-			credentialImage = LoadResolvedLogo(credentialLogoManager, MdocCredentialLogoURIsByLanguage(cm.Display), locale)
+			var logoKey string
+			credentialImage, logoKey = LoadResolvedLogoWithKey(credentialLogoManager, MdocCredentialLogoURIsByLanguage(cm.Display), locale)
+			cardDisplay = BuildCredentialDisplay(credentialLogoManager, cm.Display, locale, credentialImage, logoKey)
 		}
 
 		signedAt := batch.SignedAt.Unix()
@@ -100,6 +103,7 @@ func (s *mdocCredentialService) List() ([]*clientmodels.Credential, error) {
 			Revoked:                      false,
 			RevocationSupported:          false,
 			IssueURL:                     nil,
+			Display:                      cardDisplay,
 		})
 	}
 
@@ -347,4 +351,21 @@ func (s mdocDisplaySource) LogoURIs(locale string) (issuer []string, credential 
 		}
 	}
 	return issuer, credential
+}
+
+// CardArtDisplays returns the credential display entries of every stored batch
+// that carries credential metadata.
+func (s mdocDisplaySource) CardArtDisplays() []metadata.CredentialDisplays {
+	batches, err := s.store.ListBatches()
+	if err != nil {
+		eudi.Logger.Warnf("failed to load mdoc batches for card art backfill: %v", err)
+		return nil
+	}
+	var out []metadata.CredentialDisplays
+	for _, batch := range batches {
+		if cm := MdocCredentialMetadata(batch); cm != nil {
+			out = append(out, cm.Display)
+		}
+	}
+	return out
 }

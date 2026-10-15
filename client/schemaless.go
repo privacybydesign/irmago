@@ -3,11 +3,13 @@ package client
 import (
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/internal/logotint"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
@@ -310,10 +312,12 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 			}
 
 			name, _, issueURL := info.ResolveTexts(locale)
+			logoPath := info.Logo(irmaConfig)
 			newCred := clientmodels.Credential{
 				CredentialId: cred.Identifier().String(),
 				Hash:         instanceHash,
-				Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
+				Image:        clientmodels.ImageFromFile(logoPath),
+				Display:      irmaCredentialDisplay(logoPath),
 				Name:         name,
 				Issuer:       issuer.ToTrustedParty(irmaConfig, locale),
 				CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
@@ -598,4 +602,32 @@ func (client *Client) listEudiCredentials() ([]*clientmodels.Credential, error) 
 		result = append(result, creds...)
 	}
 	return result, nil
+}
+
+// irmaCredentialDisplay returns the card styling of an IRMA credential: only
+// the tint of its scheme logo. The legacy scheme colour fields
+// (ForegroundColor, BackgroundGradient) are deliberately not used. Nil when
+// the logo is missing or has no clear colour.
+func irmaCredentialDisplay(logoPath string) *clientmodels.CredentialDisplay {
+	if logoPath == "" {
+		return nil
+	}
+	stat, err := os.Stat(logoPath)
+	if err != nil {
+		return nil
+	}
+	// The modification time is part of the key so a scheme update that
+	// replaces the logo is picked up without a restart.
+	key := fmt.Sprintf("irma-scheme-file|%s|%d", logoPath, stat.ModTime().UnixNano())
+	tint := logotint.Shared.Get(key, func() []byte {
+		data, err := os.ReadFile(logoPath)
+		if err != nil {
+			return nil
+		}
+		return data
+	})
+	if tint == "" {
+		return nil
+	}
+	return &clientmodels.CredentialDisplay{LogoTint: tint}
 }

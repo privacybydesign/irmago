@@ -358,3 +358,61 @@ func makeFetchedCredential(configID, vct string, payload map[string]any) *fetche
 		},
 	}
 }
+
+// TestOfferCardArt_FromVctToPermissionScreen follows the card art of an SD-JWT
+// VC type-metadata document through the offer: the VCT's svg_templates and
+// svg_id survive the merge, downloadLogos caches the template (verified
+// against its uri#integrity and sanitised), and the permission screen's
+// credential carries the template, colours and per-attribute svg_id.
+func TestOfferCardArt_FromVctToPermissionScreen(t *testing.T) {
+	const template = `<svg xmlns="http://www.w3.org/2000/svg"><script>x</script><text>{{email}}</text></svg>`
+	sum := sha256.Sum256([]byte(template))
+	integrity := "sha256-" + base64.StdEncoding.EncodeToString(sum[:])
+
+	srv := newVctTestServer(t, map[string]string{"/card.svg": template})
+	defer srv.Close()
+	srv.docs["/vct/Email"] = `{
+		"display": [{
+			"locale": "en", "name": "Email",
+			"rendering": {
+				"simple": { "background_color": "#004488", "text_color": "#ffffff" },
+				"svg_templates": [{ "uri": "` + srv.URL + `/card.svg", "uri#integrity": "` + integrity + `",
+					"properties": { "orientation": "landscape" } }]
+			}
+		}],
+		"claims": [{ "path": ["email"], "display": [{ "locale": "en", "label": "Email" }], "svg_id": "email" }]
+	}`
+
+	storage, client := createOpenID4VCiClientForTesting(t)
+	defer storage.Close()
+	client.httpClient = srv.Client()
+
+	issuerMeta := singleConfigMetadata("Email", metadata.CredentialConfiguration{
+		Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
+		VerifiableCredentialType: srv.URL + "/vct/Email",
+	})
+	issuerMeta.CredentialIssuer = "https://issuer.example.com"
+	offer := &CredentialOffer{CredentialConfigurationIds: []string{"Email"}}
+
+	client.resolveCredentialMetadataFromVct(context.Background(), offer, issuerMeta,
+		snapshotCredentialMetadata(issuerMeta), typemetadata.NewResolver(srv.Client()))
+	client.downloadLogos(context.Background(), offer, issuerMeta, "en")
+
+	s := &session{storage: storage, locale: "en", credentialIssuerMetadata: issuerMeta}
+	offered := s.buildOfferedCredentials([]*fetchedCredential{
+		makeFetchedCredential("Email", srv.URL+"/vct/Email", map[string]any{"email": "a@b.example"}),
+	})
+
+	require.Len(t, offered, 1)
+	display := offered[0].Display
+	require.NotNil(t, display)
+	require.Equal(t, "#004488", display.BackgroundColor)
+	require.Equal(t, "#ffffff", display.TextColor)
+	require.Len(t, display.SvgTemplates, 1)
+	require.Equal(t, "landscape", display.SvgTemplates[0].Orientation)
+	require.Contains(t, display.SvgTemplates[0].Svg, "{{email}}")
+	require.NotContains(t, display.SvgTemplates[0].Svg, "script")
+
+	require.Len(t, offered[0].Attributes, 1)
+	require.Equal(t, "email", offered[0].Attributes[0].SvgId)
+}

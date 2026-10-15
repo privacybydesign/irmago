@@ -221,3 +221,93 @@ func TestRenamedSdJwtVcModelsKeepDeployedSchema(t *testing.T) {
 	require.NoError(t, d.Model(&models.HolderBindingKey{}).Count(&keys).Error)
 	require.Zero(t, keys, "deleting the batch must cascade through the instance to the key")
 }
+
+// legacyCredentialDisplay and legacyCredentialClaim are the display and claim
+// rows as they stood before the card-art columns (background image integrity,
+// svg_templates, svg_id) were added.
+type legacyCredentialDisplay struct {
+	ID                     datatypes.UUID `gorm:"type:uuid;primaryKey"`
+	CredentialMetadataID   datatypes.UUID
+	Name                   string
+	Locale                 datatypes.NullString
+	LogoURI                string
+	LogoAltText            string
+	Description            string
+	BackgroundColor        string
+	BackgroundImageURI     string
+	BackgroundImageAltText string
+	TextColor              string
+}
+
+func (legacyCredentialDisplay) TableName() string { return "credential_displays" }
+
+type legacyCredentialClaim struct {
+	ID                   datatypes.UUID `gorm:"type:uuid;primaryKey"`
+	CredentialMetadataID datatypes.UUID
+	Path                 datatypes.JSON `gorm:"type:JSON;not null"`
+	Mandatory            bool           `gorm:"default:false"`
+}
+
+func (legacyCredentialClaim) TableName() string { return "credential_claims" }
+
+// TestAutoMigrateAddsCardArtColumnsToPopulatedTables runs the upgrade a wallet
+// holding a credential performs when the card-art columns arrive: the new
+// columns must be nullable so SQLite accepts the ADD COLUMN on a populated
+// table, the old rows must read back with them empty, and new rows must
+// round-trip them.
+func TestAutoMigrateAddsCardArtColumnsToPopulatedTables(t *testing.T) {
+	d := openHolderDB(t)
+	require.NoError(t, d.AutoMigrate(&legacyCredentialDisplay{}, &legacyCredentialClaim{}))
+
+	metadataID := datatypes.NewUUIDv4()
+	require.NoError(t, d.Create(&legacyCredentialDisplay{
+		ID: datatypes.NewUUIDv4(), CredentialMetadataID: metadataID, Name: "Old",
+		BackgroundImageURI: "https://x/bg.png", BackgroundColor: "#123456",
+	}).Error)
+	require.NoError(t, d.Create(&legacyCredentialClaim{
+		ID: datatypes.NewUUIDv4(), CredentialMetadataID: metadataID, Path: []byte(`["name"]`),
+	}).Error)
+
+	require.NoError(t, d.AutoMigrate(&models.CredentialDisplay{}, &models.CredentialClaim{}),
+		"AutoMigrate must add the card-art columns to tables that already hold rows")
+
+	var columns []string
+	require.NoError(t, d.Raw(`SELECT name FROM pragma_table_info('credential_displays')`).Scan(&columns).Error)
+	require.Contains(t, columns, "svg_templates")
+	require.Contains(t, columns, "background_image_integrity")
+	columns = nil
+	require.NoError(t, d.Raw(`SELECT name FROM pragma_table_info('credential_claims')`).Scan(&columns).Error)
+	require.Contains(t, columns, "svg_id")
+
+	var oldDisplay models.CredentialDisplay
+	require.NoError(t, d.Where("name = ?", "Old").First(&oldDisplay).Error)
+	require.Equal(t, "#123456", oldDisplay.BackgroundColor)
+	require.False(t, oldDisplay.BackgroundImageIntegrity.Valid)
+	require.True(t, len(oldDisplay.SvgTemplates) == 0 || string(oldDisplay.SvgTemplates) == "null")
+
+	var oldClaim models.CredentialClaim
+	require.NoError(t, d.Where("credential_metadata_id = ?", metadataID).First(&oldClaim).Error)
+	require.False(t, oldClaim.SvgId.Valid)
+
+	newMetadataID := datatypes.NewUUIDv4()
+	require.NoError(t, d.Create(&models.CredentialDisplay{
+		CredentialMetadataID:     newMetadataID,
+		Name:                     "New",
+		BackgroundImageIntegrity: datatypes.NullString{V: "sha256-abc", Valid: true},
+		SvgTemplates:             datatypes.JSON(`[{"uri":"https://x/t.svg"}]`),
+	}).Error)
+	require.NoError(t, d.Create(&models.CredentialClaim{
+		CredentialMetadataID: newMetadataID,
+		Path:                 []byte(`["name"]`),
+		SvgId:                datatypes.NullString{V: "name", Valid: true},
+	}).Error)
+
+	var newDisplay models.CredentialDisplay
+	require.NoError(t, d.Where("name = ?", "New").First(&newDisplay).Error)
+	require.Equal(t, "sha256-abc", newDisplay.BackgroundImageIntegrity.V)
+	require.JSONEq(t, `[{"uri":"https://x/t.svg"}]`, string(newDisplay.SvgTemplates))
+
+	var newClaim models.CredentialClaim
+	require.NoError(t, d.Where("credential_metadata_id = ?", newMetadataID).First(&newClaim).Error)
+	require.Equal(t, "name", newClaim.SvgId.V)
+}

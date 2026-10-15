@@ -310,8 +310,17 @@ type CredentialDisplay struct {
 	// BackgroundImageURI is flattened from the background_image sub-object.
 	BackgroundImageURI     string
 	BackgroundImageAltText string
+	// BackgroundImageIntegrity is the SD-JWT VC "uri#integrity" of the
+	// background image. Nullable: added after deployment (see SdJwtVcBatch).
+	BackgroundImageIntegrity datatypes.NullString
 
 	TextColor string
+
+	// SvgTemplates is the JSON-encoded []metadata.SvgTemplateRef for this
+	// locale (SD-JWT VC rendering.svg_templates). A JSON column rather than a
+	// child table: the refs are only ever read whole, together with the
+	// display row that owns them. Nullable: added after deployment.
+	SvgTemplates datatypes.JSON `gorm:"type:JSON"`
 }
 
 func (d *CredentialDisplay) BeforeCreate(tx *gorm.DB) error {
@@ -332,6 +341,10 @@ type CredentialClaim struct {
 	// Path is the dot-separated or JSON Pointer path to the claim within the credential.
 	Path      datatypes.JSON `gorm:"type:JSON;not null"`
 	Mandatory bool           `gorm:"default:false"`
+
+	// SvgId is the SD-JWT VC claim svg_id, the placeholder this claim fills in
+	// SVG card templates. Nullable: added after deployment.
+	SvgId datatypes.NullString
 
 	Display []ClaimDisplay `gorm:"constraint:OnDelete:CASCADE"`
 }

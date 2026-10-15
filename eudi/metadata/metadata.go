@@ -56,6 +56,9 @@ type CredentialIssuerDisplays []CredentialIssuerDisplay
 type RemoteImage struct {
 	Uri     string `json:"uri"`
 	AltText string `json:"alt_text,omitempty"`
+	// Integrity is the optional SD-JWT VC "uri#integrity" hash of the image.
+	// OID4VCI display entries never carry it; only VCT-derived images do.
+	Integrity string `json:"uri#integrity,omitempty"`
 }
 
 type CredentialFormatIdentifier string
@@ -139,8 +142,21 @@ type CredentialDisplay struct {
 	BackgroundColor string       `json:"background_color,omitempty"`
 	BackgroundImage *RemoteImage `json:"background_image,omitempty"`
 	TextColor       string       `json:"text_color,omitempty"`
+	// SvgTemplates are references to SD-JWT VC rendering.svg_templates
+	// (VCT only; OID4VCI has no such field). The template source itself is
+	// fetched, sanitised and cached separately, keyed by URI.
+	SvgTemplates []SvgTemplateRef `json:"svg_templates,omitempty"`
 }
 type CredentialDisplays []CredentialDisplay
+
+// SvgTemplateRef references one SD-JWT VC SVG card template.
+type SvgTemplateRef struct {
+	Uri         string `json:"uri"`
+	Integrity   string `json:"uri#integrity,omitempty"`
+	Orientation string `json:"orientation,omitempty"`
+	ColorScheme string `json:"color_scheme,omitempty"`
+	Contrast    string `json:"contrast,omitempty"`
+}
 
 type ClaimsPathPointer []any
 
@@ -148,6 +164,9 @@ type ClaimsDescription struct {
 	Path      ClaimsPathPointer `json:"path"`
 	Mandatory *bool             `json:"mandatory,omitempty"`
 	Display   []Display         `json:"display,omitempty"`
+	// SvgId is the SD-JWT VC claim svg_id: the placeholder name this claim's
+	// value fills in SVG templates. VCT only.
+	SvgId string `json:"svg_id,omitempty"`
 }
 
 type Translateable interface {
@@ -450,6 +469,15 @@ func (d CredentialDisplays) ToStorageModelIterator() iter.Seq[models.CredentialD
 			if item.BackgroundImage != nil {
 				m.BackgroundImageURI = item.BackgroundImage.Uri
 				m.BackgroundImageAltText = item.BackgroundImage.AltText
+				if item.BackgroundImage.Integrity != "" {
+					m.BackgroundImageIntegrity = datatypes.NullString{Valid: true, V: item.BackgroundImage.Integrity}
+				}
+			}
+
+			if len(item.SvgTemplates) > 0 {
+				if encoded, err := json.Marshal(item.SvgTemplates); err == nil {
+					m.SvgTemplates = datatypes.JSON(encoded)
+				}
 			}
 
 			if item.Logo != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -451,4 +452,72 @@ func TestWellKnownIssuerURL_WithPath(t *testing.T) {
 func TestWellKnownIssuerURL_NoScheme(t *testing.T) {
 	_, err := wellKnownIssuerURL("example.com/issuer1")
 	require.Error(t, err)
+}
+
+// TestParseVctTypeMetadata_SvgTemplatesFixture pins the SD-JWT VC card-art
+// fields: rendering.svg_templates (with properties and integrity),
+// rendering.simple.background_image, uri#integrity on images and claim
+// svg_id. A template without a uri is dropped.
+func TestParseVctTypeMetadata_SvgTemplatesFixture(t *testing.T) {
+	doc, err := os.ReadFile("testdata/svg_templates_vct.json")
+	require.NoError(t, err)
+
+	parsed, err := ParseVctTypeMetadata(doc)
+	require.NoError(t, err)
+	require.Len(t, parsed.Display, 2)
+
+	en := parsed.Display[0]
+	require.Equal(t, "#12107c", en.BackgroundColor)
+	require.Equal(t, "#FFFFFF", en.TextColor)
+	require.Equal(t, &RemoteImage{
+		URI:       "https://issuer.example.com/logo.png",
+		AltText:   "Club logo",
+		Integrity: "sha256-LCa0a2j/xo/5m0U8HTBBNBNCLXBkg7+g+YpeiGJm564=",
+	}, en.Logo)
+	require.Equal(t, &RemoteImage{
+		URI:       "https://issuer.example.com/background.png",
+		AltText:   "Wave pattern",
+		Integrity: "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+	}, en.BackgroundImage)
+	require.Equal(t, []SvgTemplate{
+		{
+			URI:         "https://issuer.example.com/card-landscape-light.svg",
+			Integrity:   "sha256-8cLjdQiZUoW1vQUtyc8KOsb9WFV0OQ3EV2B+vu6DS9A=",
+			Orientation: "landscape",
+			ColorScheme: "light",
+			Contrast:    "normal",
+		},
+		{
+			URI:         "https://issuer.example.com/card-portrait-dark.svg",
+			Orientation: "portrait",
+			ColorScheme: "dark",
+			Contrast:    "high",
+		},
+	}, en.SvgTemplates)
+
+	// Templates without a simple rendering, on a legacy "lang" entry.
+	nl := parsed.Display[1]
+	require.Equal(t, "nl", nl.Locale)
+	require.Nil(t, nl.BackgroundImage)
+	require.Equal(t, []SvgTemplate{{URI: "https://issuer.example.com/kaart.svg"}}, nl.SvgTemplates)
+
+	require.Len(t, parsed.Claims, 3)
+	require.Equal(t, "given_name", parsed.Claims[0].SvgId)
+	require.Equal(t, "member_since", parsed.Claims[1].SvgId)
+	require.Equal(t, "", parsed.Claims[2].SvgId)
+}
+
+func TestParseVctTypeMetadata_TopLevelLogoIntegrity(t *testing.T) {
+	doc := []byte(`{
+		"display": [{
+			"locale": "en",
+			"name": "X",
+			"logo": { "uri": "https://example.com/l.png", "uri#integrity": "sha256-abc" }
+		}]
+	}`)
+	parsed, err := ParseVctTypeMetadata(doc)
+	require.NoError(t, err)
+	require.Equal(t, "sha256-abc", parsed.Display[0].Logo.Integrity)
+	require.Nil(t, parsed.Display[0].SvgTemplates)
+	require.Nil(t, parsed.Display[0].BackgroundImage)
 }

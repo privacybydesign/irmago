@@ -503,6 +503,7 @@ func TestDecodeStoredAttributes_RoundTripsEveryAttributeField(t *testing.T) {
 		Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &value},
 		RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &requested},
 		IntentToRetain: &intentToRetain,
+		SvgId:          "email",
 	}
 	// A field left unset would round-trip as zero either way, proving nothing.
 	rv := reflect.ValueOf(original)

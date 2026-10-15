@@ -444,6 +444,50 @@ func TestGetCredentialMetadataList_IssuerLogoOnNonFirstDisplay(t *testing.T) {
 	require.NotNil(t, result[0].Issuer.Image, "issuer logo must resolve even when it's not on the first display entry")
 }
 
+// TestGetCredentialMetadataList_MapsCardArt pins the card-art fields of the
+// credential list: colours from the stored display, the cached SVG template
+// with its properties, and svg_id on the attribute whose claim carries one.
+func TestGetCredentialMetadataList_MapsCardArt(t *testing.T) {
+	ref := metadata.SvgTemplateRef{Uri: "https://x/card.svg", Orientation: "portrait", ColorScheme: "dark"}
+	batch := newStorageBatch()
+	batch.ProcessedSdJwtPayload = datatypes.JSON(`{"family_name":"Doe","given_name":"Jo"}`)
+	batch.CredentialMetadata.Display[0].BackgroundColor = "#123456"
+	batch.CredentialMetadata.Display[0].TextColor = "#ffffff"
+	batch.CredentialMetadata.Display[0].SvgTemplates = datatypes.JSON(`[{"uri":"https://x/card.svg","orientation":"portrait","color_scheme":"dark"}]`)
+	batch.CredentialMetadata.Claims[0].SvgId = datatypes.NullString{V: "family_name", Valid: true}
+
+	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
+	require.NoError(t, fileStorageMock.Credentials().LogoManager().Save(svgTemplateCacheKey(ref), []byte(`<svg>{{family_name}}</svg>`), "image/svg+xml"))
+
+	svc := newServiceWithMocks(&mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}, fileStorageMock)
+	result, err := svc.List()
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	display := result[0].Display
+	require.NotNil(t, display)
+	require.Equal(t, "#123456", display.BackgroundColor)
+	require.Equal(t, "#ffffff", display.TextColor)
+	require.Equal(t, []clientmodels.SvgCardTemplate{
+		{Svg: `<svg>{{family_name}}</svg>`, Orientation: "portrait", ColorScheme: "dark"},
+	}, display.SvgTemplates)
+
+	svgIds := map[string]string{}
+	for _, a := range result[0].Attributes {
+		svgIds[a.ClaimPath[0].(string)] = a.SvgId
+	}
+	require.Equal(t, map[string]string{"family_name": "family_name", "given_name": ""}, svgIds)
+}
+
+// A credential whose metadata carries no styling has no Display at all.
+func TestGetCredentialMetadataList_NoCardArtLeavesDisplayNil(t *testing.T) {
+	svc := newServiceWithMocks(&mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{newStorageBatch()}},
+		filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+	result, err := svc.List()
+	require.NoError(t, err)
+	require.Nil(t, result[0].Display)
+}
+
 // ========== missingDisplayMetadataReason ==========
 
 // ========== VerifyAndStoreIssuedCredentials ==========

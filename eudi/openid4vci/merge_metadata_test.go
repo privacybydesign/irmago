@@ -464,3 +464,50 @@ func TestMerge_VctOnlyDisplayFields(t *testing.T) {
 	require.Len(t, out.Claims[0].Display, 1)
 	require.Equal(t, "Email", out.Claims[0].Display[0].Name)
 }
+
+// TestMerge_CardArtCarriedFromVct pins that the VCT-only card-art fields —
+// svg_templates, background_image (with its integrity), logo integrity and
+// claim svg_id — survive the merge, and that VCI fills a background image the
+// VCT entry for the same locale leaves out.
+func TestMerge_CardArtCarriedFromVct(t *testing.T) {
+	en, nl := "en", "nl"
+	vct := &typemetadata.VctTypeMetadata{
+		Display: []typemetadata.DisplayEntry{
+			{
+				Locale:          en,
+				Name:            "Card",
+				Logo:            &typemetadata.RemoteImage{URI: "https://x/logo.png", Integrity: "sha256-l"},
+				BackgroundImage: &typemetadata.RemoteImage{URI: "https://x/bg.png", AltText: "bg", Integrity: "sha256-b"},
+				SvgTemplates: []typemetadata.SvgTemplate{
+					{URI: "https://x/t.svg", Integrity: "sha256-t", Orientation: "landscape", ColorScheme: "dark", Contrast: "high"},
+				},
+			},
+			{Locale: nl, Name: "Kaart"},
+		},
+		Claims: []typemetadata.ClaimMetadata{
+			{Path: []any{"name"}, SvgId: "name"},
+			{Path: []any{"age"}},
+		},
+	}
+	vci := &metadata.CredentialMetadata{
+		Display: metadata.CredentialDisplays{
+			{Display: metadata.Display{Name: "Kaart (VCI)", Locale: &nl}, BackgroundImage: &metadata.RemoteImage{Uri: "https://x/nl-bg.png"}},
+		},
+		Claims: []metadata.ClaimsDescription{{Path: metadata.ClaimsPathPointer{"age"}}},
+	}
+
+	out := Merge(vct, vci)
+
+	require.Len(t, out.Display, 2)
+	require.Equal(t, &metadata.RemoteImage{Uri: "https://x/logo.png", Integrity: "sha256-l"}, out.Display[0].Logo)
+	require.Equal(t, &metadata.RemoteImage{Uri: "https://x/bg.png", AltText: "bg", Integrity: "sha256-b"}, out.Display[0].BackgroundImage)
+	require.Equal(t, []metadata.SvgTemplateRef{
+		{Uri: "https://x/t.svg", Integrity: "sha256-t", Orientation: "landscape", ColorScheme: "dark", Contrast: "high"},
+	}, out.Display[0].SvgTemplates)
+	require.Equal(t, "https://x/nl-bg.png", out.Display[1].BackgroundImage.Uri, "VCI fills the background image VCT leaves empty")
+	require.Empty(t, out.Display[1].SvgTemplates)
+
+	require.Len(t, out.Claims, 2)
+	require.Equal(t, "name", out.Claims[0].SvgId)
+	require.Equal(t, "", out.Claims[1].SvgId)
+}

@@ -4,10 +4,12 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -159,6 +161,46 @@ func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
 	// Warm cache: nothing further downloaded.
 	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl"))
 	require.Equal(t, 2, requests)
+}
+
+// The sweep also fetches the card art (SVG templates, background image) that
+// resolves for the locale, sanitised, alongside the logos.
+func TestBackfillLogos_FetchesCardArt(t *testing.T) {
+	requests := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests[r.URL.Path]++
+		if strings.HasSuffix(r.URL.Path, ".svg") {
+			w.Header().Set("Content-Type", "image/svg+xml")
+			_, _ = w.Write([]byte(`<svg><script>x</script><text>{{name}}</text></svg>`))
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("\x89PNG\r\n\x1a\nlogo-bytes"))
+	}))
+	defer server.Close()
+
+	s := newBackfillTestStorage(t)
+	batch := backfillBatch(server.URL)
+	for i := range batch.CredentialMetadata.Display {
+		d := &batch.CredentialMetadata.Display[i]
+		d.SvgTemplates = datatypes.JSON(`[{"uri":"` + server.URL + `/card-` + d.Locale.V + `.svg"}]`)
+		d.BackgroundImageURI = server.URL + "/bg-" + d.Locale.V + ".png"
+	}
+	require.NoError(t, db.NewSdJwtVcStore(s.Db()).StoreBatch(batch))
+
+	added := backfillLogos(context.Background(), s, server.Client(), "nl")
+	require.Equal(t, 4, added, "nl issuer logo, nl credential logo, nl template, nl background")
+	require.Equal(t, 1, requests["/card-nl.svg"])
+	require.Equal(t, 1, requests["/bg-nl.png"])
+	require.Zero(t, requests["/card-en.svg"], "the en template does not resolve for nl")
+
+	data, mimeType, err := s.FileSystem().Credentials().LogoManager().Get(
+		svgTemplateCacheKey(metadata.SvgTemplateRef{Uri: server.URL + "/card-nl.svg"}))
+	require.NoError(t, err)
+	require.Equal(t, "image/svg+xml", mimeType)
+	require.NotContains(t, string(data), "script", "templates are cached sanitised")
+
+	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl"), "warm cache")
 }
 
 // Tapping through several languages must not queue up a sweep per tap. Only the

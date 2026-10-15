@@ -100,7 +100,7 @@ func (b *LogoBackfiller) Close() {
 	<-b.stopped
 }
 
-// backfillLogos downloads the logos that resolve for the given locale but are
+// backfillLogos downloads the logos (and credential card art) that resolve for the given locale but are
 // missing from the on-disk cache, for every stored credential batch. Returns
 // the number of logos newly cached.
 //
@@ -140,6 +140,14 @@ func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Clie
 				return added
 			}
 			added += fetchOnce(seenCredential, credentialLogos, uri)
+		}
+		// Card art (background image, SVG templates) follows the same
+		// locale-driven cache; FetchCardArtIfMissing skips what is cached.
+		for _, displays := range source.CardArtDisplays() {
+			if ctx.Err() != nil {
+				return added
+			}
+			added += FetchCardArtIfMissing(ctx, credentialLogos, httpClient, displays, locale)
 		}
 	}
 	return added

@@ -17,7 +17,7 @@ import (
 // Credential-level display merges per field, not per whole entry: for a
 // locale present in both sources, VCT wins each field it specifies, and any
 // field VCT leaves empty (Logo, Description, BackgroundColor, TextColor,
-// BackgroundImage) is inherited from the VCI entry for that locale. Locales
+// BackgroundImage, SvgTemplates) is inherited from the VCI entry for that locale. Locales
 // absent from VCT survive from VCI unchanged.
 //
 // Locale matching is BCP 47 base-language only (en-US and en collapse
@@ -112,6 +112,9 @@ func fillEmptyDisplayFields(dst *metadata.CredentialDisplay, vci metadata.Creden
 	if dst.BackgroundImage == nil {
 		dst.BackgroundImage = vci.BackgroundImage
 	}
+	if len(dst.SvgTemplates) == 0 {
+		dst.SvgTemplates = vci.SvgTemplates
+	}
 }
 
 func mergeClaims(vct *typemetadata.VctTypeMetadata, vci *metadata.CredentialMetadata) []metadata.ClaimsDescription {
@@ -170,12 +173,16 @@ func mergeClaims(vct *typemetadata.VctTypeMetadata, vci *metadata.CredentialMeta
 
 func vctClaimToClaimsDescription(vct typemetadata.ClaimMetadata, vciMatch *metadata.ClaimsDescription) metadata.ClaimsDescription {
 	out := metadata.ClaimsDescription{
-		Path: metadata.ClaimsPathPointer(vct.Path),
+		Path:  metadata.ClaimsPathPointer(vct.Path),
+		SvgId: vct.SvgId,
 	}
 	var vciDisplay []metadata.Display
 	if vciMatch != nil {
 		out.Mandatory = vciMatch.Mandatory
 		vciDisplay = vciMatch.Display
+		if out.SvgId == "" {
+			out.SvgId = vciMatch.SvgId
+		}
 	}
 	out.Display = mergeClaimDisplays(vct.Display, vciDisplay)
 	return out
@@ -214,10 +221,25 @@ func vctDisplayToCredentialDisplay(d typemetadata.DisplayEntry) metadata.Credent
 		locale := d.Locale
 		out.Locale = &locale
 	}
-	if d.Logo != nil {
-		out.Logo = &metadata.RemoteImage{Uri: d.Logo.URI, AltText: d.Logo.AltText}
+	out.Logo = vctImageToRemoteImage(d.Logo)
+	out.BackgroundImage = vctImageToRemoteImage(d.BackgroundImage)
+	for _, t := range d.SvgTemplates {
+		out.SvgTemplates = append(out.SvgTemplates, metadata.SvgTemplateRef{
+			Uri:         t.URI,
+			Integrity:   t.Integrity,
+			Orientation: t.Orientation,
+			ColorScheme: t.ColorScheme,
+			Contrast:    t.Contrast,
+		})
 	}
 	return out
+}
+
+func vctImageToRemoteImage(img *typemetadata.RemoteImage) *metadata.RemoteImage {
+	if img == nil {
+		return nil
+	}
+	return &metadata.RemoteImage{Uri: img.URI, AltText: img.AltText, Integrity: img.Integrity}
 }
 
 func vctClaimDisplayToDisplay(d typemetadata.ClaimDisplayEntry) metadata.Display {

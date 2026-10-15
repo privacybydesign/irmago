@@ -158,6 +158,11 @@ type Attribute struct {
 	// a format with no such concept must not be rendered as though the verifier
 	// had declared anything. The distinction is only available through a pointer.
 	IntentToRetain *bool `json:"intent_to_retain,omitempty"`
+
+	// SvgId is the SD-JWT VC svg_id the issuer's type metadata gives this
+	// claim: the {{placeholder}} name its value fills in the credential's SVG
+	// card templates (Credential.Display.SvgTemplates). Empty when none.
+	SvgId string `json:"svg_id,omitempty"`
 }
 
 // ClaimPathKey produces a deterministic string key from a claim path for use
@@ -231,6 +236,45 @@ type Credential struct {
 	RevocationSupported bool `json:"revocation_supported"`
 	// URL at which this credential can be issued (if any), resolved to the current locale.
 	IssueURL *string `json:"issue_url"`
+	// Issuer-provided card styling, resolved to the current locale. Nil when
+	// nothing is known.
+	Display *CredentialDisplay `json:"display,omitempty"`
+}
+
+// CredentialDisplay is the issuer-provided card styling for a credential:
+// colours and background image from the SD-JWT VC "simple" rendering (or
+// OpenID4VCI display), SVG card templates, and the dominant colour of the
+// credential logo. Every field is optional.
+type CredentialDisplay struct {
+	// CSS colour as given by the issuer.
+	BackgroundColor string `json:"background_color,omitempty"`
+	// CSS colour as given by the issuer.
+	TextColor string `json:"text_color,omitempty"`
+	// Cached background image, base64-encoded like logos.
+	BackgroundImage *Image `json:"background_image,omitempty"`
+	// "#RRGGBB" dominant colour of the credential logo; empty for SVG or
+	// missing logos.
+	LogoTint string `json:"logo_tint,omitempty"`
+	// Sanitised SVG card templates, in issuer order.
+	SvgTemplates []SvgCardTemplate `json:"svg_templates,omitempty"`
+}
+
+// IsEmpty reports whether d carries nothing worth sending.
+func (d *CredentialDisplay) IsEmpty() bool {
+	return d == nil || (d.BackgroundColor == "" && d.TextColor == "" && d.BackgroundImage == nil &&
+		d.LogoTint == "" && len(d.SvgTemplates) == 0)
+}
+
+// SvgCardTemplate is one SD-JWT VC SVG card template.
+type SvgCardTemplate struct {
+	// Sanitised SVG source with its {{svg_id}} placeholders intact.
+	Svg string `json:"svg"`
+	// "portrait" or "landscape".
+	Orientation string `json:"orientation,omitempty"`
+	// "light" or "dark".
+	ColorScheme string `json:"color_scheme,omitempty"`
+	// "normal" or "high".
+	Contrast string `json:"contrast,omitempty"`
 }
 
 // CredentialToLogCredential converts a Credential to a LogCredential, extracting formats

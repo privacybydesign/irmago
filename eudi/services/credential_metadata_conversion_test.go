@@ -126,3 +126,30 @@ func TestConvertCredentialMetadata_LegacyShapeKeepsEveryLocale(t *testing.T) {
 	require.Len(t, stored.Claims, 1)
 	require.Len(t, stored.Claims[0].Display, 2)
 }
+
+// The card-art fields cross into storage too: svg_templates and the
+// background image integrity on the display row, svg_id on the claim.
+func TestConvertCredentialMetadata_KeepsCardArt(t *testing.T) {
+	locale := "en"
+	config := metadata.CredentialConfiguration{
+		CredentialMetadata: &metadata.CredentialMetadata{
+			Display: metadata.CredentialDisplays{{
+				Display:         metadata.Display{Name: "Card", Locale: &locale},
+				BackgroundImage: &metadata.RemoteImage{Uri: "https://x/bg.png", Integrity: "sha256-b"},
+				SvgTemplates:    []metadata.SvgTemplateRef{{Uri: "https://x/t.svg", Integrity: "sha256-t", Contrast: "high"}},
+			}},
+			Claims: []metadata.ClaimsDescription{
+				{Path: metadata.ClaimsPathPointer{"name"}, SvgId: "name"},
+				{Path: metadata.ClaimsPathPointer{"age"}},
+			},
+		},
+	}
+
+	stored := convertCredentialMetadata(config)
+
+	require.Len(t, stored.Display, 1)
+	require.Equal(t, "sha256-b", stored.Display[0].BackgroundImageIntegrity.V)
+	require.JSONEq(t, `[{"uri":"https://x/t.svg","uri#integrity":"sha256-t","contrast":"high"}]`, string(stored.Display[0].SvgTemplates))
+	require.Equal(t, "name", stored.Claims[0].SvgId.V)
+	require.False(t, stored.Claims[1].SvgId.Valid)
+}

@@ -114,8 +114,13 @@ func (s *sdJwtVcCredentialService) List() ([]*clientmodels.Credential, error) {
 		// The logo falls back across languages independently of the text, so a
 		// logo shows whenever any display carries one.
 		var credentialImage *clientmodels.Image
+		var cardDisplay *clientmodels.CredentialDisplay
+		attributes := BuildAttributesFromPayload(payload, display.ClaimNames, display.ClaimOrder)
 		if batch.CredentialMetadata != nil {
-			credentialImage = LoadResolvedLogo(credentialLogoManager, CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale)
+			var logoKey string
+			credentialImage, logoKey = LoadResolvedLogoWithKey(credentialLogoManager, CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale)
+			cardDisplay = BuildCredentialDisplay(credentialLogoManager, StoredCredentialDisplays(batch.CredentialMetadata.Display), locale, credentialImage, logoKey)
+			ApplySvgIds(attributes, storedSvgIds(batch.CredentialMetadata.Claims))
 		}
 
 		result = append(result, &clientmodels.Credential{
@@ -136,12 +141,13 @@ func (s *sdJwtVcCredentialService) List() ([]*clientmodels.Credential, error) {
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,
 			},
 			BatchInstanceCountsRemaining: batchInstanceCounts(batch.Format, batch.BatchSize, &batch.RemainingCount),
-			Attributes:                   BuildAttributesFromPayload(payload, display.ClaimNames, display.ClaimOrder),
+			Attributes:                   attributes,
 			ExpiryDate:                   exp,
 			IssuanceDate:                 iat,
 			Revoked:                      revoked[batch.Hash],
 			RevocationSupported:          revocable[batch.Hash],
 			IssueURL:                     nil, // TODO: add issue URL to storage model so this can be filled in here
+			Display:                      cardDisplay,
 		})
 	}
 
@@ -417,6 +423,9 @@ func convertCredentialMetadata(config metadata.CredentialConfiguration) *models.
 			Path:      datatypes.JSON(pathBytes),
 			Mandatory: claim.Mandatory != nil && *claim.Mandatory,
 		}
+		if claim.SvgId != "" {
+			credentialClaim.SvgId = datatypes.NullString{V: claim.SvgId, Valid: true}
+		}
 		for _, display := range claim.Display {
 			locale := datatypes.NullString{}
 			if display.Locale != nil {
@@ -582,4 +591,38 @@ func (s sdJwtVcDisplaySource) LogoURIs(locale string) (issuer []string, credenti
 		}
 	}
 	return issuer, credential
+}
+
+// CardArtDisplays returns the credential display entries of every stored batch
+// that carries credential metadata.
+func (s sdJwtVcDisplaySource) CardArtDisplays() []metadata.CredentialDisplays {
+	batches, err := s.store.GetCredentialBatchList()
+	if err != nil {
+		eudi.Logger.Warnf("failed to load SD-JWT VC batches for card art backfill: %v", err)
+		return nil
+	}
+	var out []metadata.CredentialDisplays
+	for _, batch := range batches {
+		if batch.CredentialMetadata != nil {
+			out = append(out, StoredCredentialDisplays(batch.CredentialMetadata.Display))
+		}
+	}
+	return out
+}
+
+// storedSvgIds maps clientmodels.ClaimPathKey → svg_id over the stored claims
+// that carry one.
+func storedSvgIds(claims []models.CredentialClaim) map[string]string {
+	out := map[string]string{}
+	for _, c := range claims {
+		if !c.SvgId.Valid || c.SvgId.V == "" {
+			continue
+		}
+		var path []any
+		if err := json.Unmarshal(c.Path, &path); err != nil {
+			continue
+		}
+		out[clientmodels.ClaimPathKey(path)] = c.SvgId.V
+	}
+	return out
 }
