@@ -577,6 +577,9 @@ func displayHintToAttributeType(s string) clientmodels.AttributeType {
 func buildAttributeValue(displayHint string, rawValue *string) *clientmodels.AttributeValue {
 	attrType := displayHintToAttributeType(displayHint)
 	val := &clientmodels.AttributeValue{Type: attrType}
+	if displayHint != "" {
+		val.DisplayHint = &displayHint
+	}
 	if rawValue == nil {
 		return val
 	}
@@ -597,9 +600,6 @@ func buildAttributeValue(displayHint string, rawValue *string) *clientmodels.Att
 		}
 	default:
 		val.String = rawValue
-		if code, ok := irma.CurrencyCode(displayHint); ok && irma.IsCurrencyAmount(*rawValue) {
-			val.Currency = &code
-		}
 	}
 	return val
 }

@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Added
-- `currency:<ISO 4217 code>` display hint for attribute types (e.g. `displayHint="currency:EUR"`). The attribute value holds a plain decimal amount such as `12.50`. Its `AttributeValue` stays a string and gets a new optional `currency` field with the code, so clients can show the amount as a currency for the user's locale. If the value isn't a plain decimal or the code isn't three uppercase letters, `currency` is left out ([#752](https://github.com/privacybydesign/irmago/issues/752))
+- `AttributeValue` has a new optional `display_hint` field with the attribute type's display hint from the scheme, unchanged (e.g. `yesno`, `portraitPhoto`, `currency:EUR`). Clients can use it to render values for hints irmago doesn't interpret itself, starting with `currency:<ISO 4217 code>` for amounts stored as a plain decimal such as `12.50`. Values of attribute types without a display hint leave it out ([#752](https://github.com/privacybydesign/irmago/issues/752))
 
 ## [1.4.1] - 2026-10-05
 ### Fixed
