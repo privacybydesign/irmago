@@ -2,6 +2,7 @@ package irma
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1718,4 +1720,114 @@ func TestEmptyConSatisfyDoesNotSwallowDisclosure(t *testing.T) {
 		require.Len(t, attrs, 1, "disjunction satisfied by empty con instead of the [optional] con — disclosed attribute dropped (issue #360)")
 		require.Equal(t, "456", *attrs[0].RawValue)
 	})
+}
+
+// TestInstallSchemeMalformedSignatureMaterial installs from a remote whose signature
+// material does not parse at all, rather than parsing and failing to verify. Both cases
+// used to panic inside gabi's signed package instead of returning an error, and neither
+// is caught by the recover() in verifySignature: checkRemoteTimestamp runs first and
+// calls signed.Verify and signed.UnmarshalPemPublicKey itself, so the panic escaped
+// InstallScheme into the caller.
+func TestInstallSchemeMalformedSignatureMaterial(t *testing.T) {
+	testSchemeID := NewSchemeManagerIdentifier("test")
+
+	// serveScheme hosts a copy of the testdata scheme after corrupt has had its way with
+	// the scheme directory, and returns the URL of the test scheme on it. Everything after
+	// the scheme description is fetched from the Url inside that description rather than
+	// from the install URL, so the copy's description.xml is rewritten to point at the
+	// server we just started.
+	serveScheme := func(t *testing.T, corrupt func(schemeDir string)) string {
+		root := t.TempDir()
+		require.NoError(t, common.CopyDirectory(test.FindTestdataFolder(t), root))
+		schemeDir := filepath.Join(root, "irma_configuration", "test")
+		corrupt(schemeDir)
+
+		server := httptest.NewServer(http.FileServer(http.Dir(root)))
+		t.Cleanup(server.Close)
+		url := server.URL + "/irma_configuration/test"
+
+		descriptionPath := filepath.Join(schemeDir, "description.xml")
+		description, err := os.ReadFile(descriptionPath)
+		require.NoError(t, err)
+		rewritten := strings.Replace(string(description),
+			"<Url>http://localhost:48681/irma_configuration/test</Url>", "<Url>"+url+"</Url>", 1)
+		require.NotEqual(t, string(description), rewritten, "scheme description Url not found, testdata changed?")
+		require.NoError(t, os.WriteFile(descriptionPath, []byte(rewritten), 0600))
+
+		return url
+	}
+
+	t.Run("index.sig holding an empty ASN.1 sequence", func(t *testing.T) {
+		pkBytes, err := os.ReadFile(filepath.Join(test.FindTestdataFolder(t), "irma_configuration", "test", "pk.pem"))
+		require.NoError(t, err)
+
+		url := serveScheme(t, func(schemeDir string) {
+			// A SEQUENCE with no members: it parses as ASN.1, so the signature is only
+			// rejected once something checks that r and s are actually there.
+			require.NoError(t, os.WriteFile(filepath.Join(schemeDir, "index.sig"), []byte{0x30, 0x00}, 0600))
+		})
+
+		conf, err := NewConfiguration(t.TempDir(), ConfigurationOptions{})
+		require.NoError(t, err)
+		err = conf.InstallScheme(url, pkBytes)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "asn1")
+		require.NotContains(t, conf.SchemeManagers, testSchemeID)
+	})
+
+	t.Run("pk.pem holding no PEM block", func(t *testing.T) {
+		url := serveScheme(t, func(schemeDir string) {
+			require.NoError(t, os.WriteFile(filepath.Join(schemeDir, "pk.pem"), []byte("this is not PEM"), 0600))
+		})
+
+		conf, err := NewConfiguration(t.TempDir(), ConfigurationOptions{})
+		require.NoError(t, err)
+		// TOFU install, so the unusable key comes off the remote: that is how the scheme
+		// public key gets parsed without anything having vouched for it first.
+		err = conf.DangerousTOFUInstallScheme(url)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no PEM block found")
+		require.NotContains(t, conf.SchemeManagers, testSchemeID)
+	})
+}
+
+// TestParseKeysFolderMalformedBases parses an issuer public key whose <Bases> block does not
+// hold six usable base 10 integers. gabi used to size the base slice from the num attribute
+// and then index the elements without checking either, so a num above the element count
+// panicked out of parseKeysFolder, a num below it dropped the surplus bases without a word,
+// and a base that is not a base 10 integer became a nil entry that only surfaced downstream.
+// There is no recover() on this path, so the panic escaped ParseFolder into the caller.
+func TestParseKeysFolderMalformedBases(t *testing.T) {
+	issuerID := NewIssuerIdentifier("irma-demo.RU")
+	keyPath := "irma-demo/RU/PublicKeys/0.xml"
+
+	for _, mutation := range []struct {
+		name, from, to string
+	}{
+		{"Bases num of 7 against six Base elements", `<Bases num="6">`, `<Bases num="7">`},
+		{"Bases num of 5 against six Base elements", `<Bases num="6">`, `<Bases num="5">`},
+		{"a Base element that is not a base 10 integer", `<Base_1>1`, `<Base_1>z`},
+	} {
+		t.Run(mutation.name, func(t *testing.T) {
+			storage := t.TempDir()
+			require.NoError(t, common.CopyDirectory(filepath.Join(test.FindTestdataFolder(t), "irma_configuration"), storage))
+			conf, err := NewConfiguration(storage, ConfigurationOptions{})
+			require.NoError(t, err)
+			require.NoError(t, conf.ParseFolder())
+
+			keyFile := filepath.Join(storage, filepath.FromSlash(keyPath))
+			key, err := os.ReadFile(keyFile)
+			require.NoError(t, err)
+			rewritten := strings.Replace(string(key), mutation.from, mutation.to, 1)
+			require.NotEqual(t, string(key), rewritten, "%s not found, testdata changed?", mutation.from)
+			require.NoError(t, os.WriteFile(keyFile, []byte(rewritten), 0600))
+
+			// parseKeysFolder reads the key through readSignedFile, so the rewritten key
+			// needs its new hash in the index to reach gabi's unmarshaler at all.
+			hash := sha256.Sum256([]byte(rewritten))
+			conf.SchemeManagers[issuerID.SchemeManagerIdentifier()].index[keyPath] = hash[:]
+
+			require.Error(t, conf.parseKeysFolder(issuerID))
+		})
+	}
 }
