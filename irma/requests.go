@@ -562,6 +562,35 @@ func (cdc AttributeConDisCon) Iterate(f func(attr *AttributeRequest) error) erro
 	return nil
 }
 
+// DeprecatedAttributes returns the (deduplicated) attribute identifiers requested in
+// the condiscon whose credential type or issuer is deprecated according to conf.
+// Clients are generally unable or unwilling to disclose such attributes, so requesting
+// them typically results in a session that the user cannot complete. This is used to
+// warn operators about such requests at session-request validation time.
+func (cdc AttributeConDisCon) DeprecatedAttributes(conf *Configuration) []AttributeTypeIdentifier {
+	now := Timestamp(time.Now())
+	var deprecated []AttributeTypeIdentifier
+	seen := map[AttributeTypeIdentifier]struct{}{}
+	_ = cdc.Iterate(func(attr *AttributeRequest) error {
+		if _, ok := seen[attr.Type]; ok {
+			return nil
+		}
+		credType := conf.CredentialTypes[attr.Type.CredentialTypeIdentifier()]
+		if credType == nil {
+			return nil
+		}
+		issuer := conf.Issuers[credType.IssuerIdentifier()]
+		credDeprecated := !credType.DeprecatedSince.IsZero() && credType.DeprecatedSince.Before(now)
+		issuerDeprecated := issuer != nil && !issuer.DeprecatedSince.IsZero() && issuer.DeprecatedSince.Before(now)
+		if credDeprecated || issuerDeprecated {
+			seen[attr.Type] = struct{}{}
+			deprecated = append(deprecated, attr.Type)
+		}
+		return nil
+	})
+	return deprecated
+}
+
 func (dr *DisclosureRequest) AddSingle(attr AttributeTypeIdentifier, value *string, label TranslatedString) {
 	dr.Disclose = append(dr.Disclose, AttributeDisCon{AttributeCon{{Type: attr, Value: value}}})
 	dr.Labels[len(dr.Disclose)-1] = label
