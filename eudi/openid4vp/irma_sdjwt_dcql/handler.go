@@ -577,6 +577,9 @@ func displayHintToAttributeType(s string) clientmodels.AttributeType {
 func buildAttributeValue(displayHint string, rawValue *string) *clientmodels.AttributeValue {
 	attrType := displayHintToAttributeType(displayHint)
 	val := &clientmodels.AttributeValue{Type: attrType}
+	if displayHint != "" {
+		val.DisplayHint = &displayHint
+	}
 	if rawValue == nil {
 		return val
 	}

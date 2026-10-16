@@ -53,17 +53,17 @@ func TestYesnoAttributeBecomesBoolean(t *testing.T) {
 		{
 			Path:        []any{"over_18"},
 			DisplayName: new("Over 18"),
-			Value:       boolVal(true),
+			Value:       yesnoVal(true),
 		},
 		{
 			Path:        []any{"over_21"},
 			DisplayName: new("Over 21"),
-			Value:       boolVal(false),
+			Value:       yesnoVal(false),
 		},
 		{
 			Path:        []any{"nationalityNL"},
 			DisplayName: new("Dutch nationality"),
-			Value:       boolVal(true),
+			Value:       yesnoVal(true),
 		},
 	}
 
@@ -127,4 +127,13 @@ func TestYesnoAttributeBecomesBoolean(t *testing.T) {
 
 	// 4. Persisted disclosure log must mirror the Bool typing.
 	requireNewestDisclosureLogAttrs(t, c, "test.test.personalData", expectedAttrs)
+}
+
+// yesnoVal is the boolean AttributeValue of an attribute with displayHint="yesno";
+// the hint itself is passed to the client too.
+func yesnoVal(b bool) *clientmodels.AttributeValue {
+	v := boolVal(b)
+	hint := "yesno"
+	v.DisplayHint = &hint
+	return v
 }
