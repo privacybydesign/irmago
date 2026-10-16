@@ -176,7 +176,7 @@ func (s *memorySessionStore) handleTransaction(memSes *memorySessionData, handle
 		return err
 	}
 
-	s.conf.Logger.
+	s.conf.LoggerEntry.
 		WithFields(logrus.Fields{"session": ses.RequestorToken, "status": ses.Status}).
 		Info("Session updated")
 
@@ -277,12 +277,12 @@ func (s *memorySessionStore) deleteExpired() {
 	for token := range toCheck {
 		if err := s.transaction(context.Background(), token, func(session *sessionData) (bool, error) {
 			if session.ttl(s.conf) <= 0 {
-				s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Deleting expired session")
+				s.conf.LoggerEntry.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Deleting expired session")
 				expired = append(expired, token)
 			}
 			return false, nil
 		}); err != nil {
-			s.conf.Logger.WithFields(logrus.Fields{"session": token}).WithError(err).Error("Error while deleting expired session")
+			s.conf.LoggerEntry.WithFields(logrus.Fields{"session": token}).WithError(err).Error("Error while deleting expired session")
 		}
 	}
 
@@ -344,7 +344,7 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 		return &RedisError{err}
 	}
 
-	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session added in Redis datastore")
+	s.conf.LoggerEntry.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session added in Redis datastore")
 	return nil
 }
 
@@ -365,7 +365,7 @@ func (s *redisSessionStore) transaction(ctx context.Context, t irma.RequestorTok
 	if err != nil {
 		return &RedisError{err}
 	}
-	s.conf.Logger.WithFields(logrus.Fields{"session": t, "clientToken": clientToken}).Debug("clientToken found in Redis datastore")
+	s.conf.LoggerEntry.WithFields(logrus.Fields{"session": t, "clientToken": clientToken}).Debug("clientToken found in Redis datastore")
 
 	return s.clientTransaction(ctx, clientToken, handler)
 }
@@ -396,7 +396,7 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 			return err
 		}
 
-		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session received from Redis datastore")
+		s.conf.LoggerEntry.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session received from Redis datastore")
 
 		// Timeout check
 		if !session.Status.Finished() && session.timeout(s.conf) <= 0 {
@@ -411,7 +411,7 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 			return err
 		}
 
-		s.conf.Logger.
+		s.conf.LoggerEntry.
 			WithFields(logrus.Fields{"session": session.RequestorToken, "status": session.Status}).
 			Info("Session updated")
 
@@ -464,7 +464,7 @@ func (s *redisSessionStore) subscribeUpdates(ctx context.Context, token irma.Req
 func (s *redisSessionStore) stop() {
 	err := s.client.Close()
 	if err != nil {
-		s.conf.Logger.WithError(err).Error("Error closing Redis client")
+		s.conf.LoggerEntry.WithError(err).Error("Error closing Redis client")
 	}
-	s.conf.Logger.Info("Redis client closed successfully")
+	s.conf.LoggerEntry.Info("Redis client closed successfully")
 }
