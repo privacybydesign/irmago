@@ -846,7 +846,7 @@ func TestVerifyDeviceResponseRejectsMissingDeviceSigned(t *testing.T) {
 }
 
 // TestVerifierAcceptsTaggedCoseSign1 pins the deliberate asymmetry in
-// decodeCoseSign1: this package writes the bare array ISO 18013-5 specifies,
+// coseutil.DecodeSign1: this package writes the bare array ISO 18013-5 specifies,
 // but must keep reading the tag-18 form, since implementations differ on it and
 // the tag carries no security meaning (it is outside Sig_structure).
 func TestVerifierAcceptsTaggedCoseSign1(t *testing.T) {

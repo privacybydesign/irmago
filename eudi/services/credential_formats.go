@@ -7,6 +7,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -90,6 +91,7 @@ type CredentialFormats map[models.CredentialFormat]CredentialFormatSupport
 func NewCredentialFormats(
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+	statusChecker *statuslist.Checker,
 	d *gorm.DB,
 	fs filesystem.FileSystemStorage,
 	revocation *RevocationService,
@@ -99,6 +101,12 @@ func NewCredentialFormats(
 	mdocStore := db.NewMdocStore(d)
 	mdocKeys := db.NewMdocDeviceKeyStore(d)
 
+	// statusChecker is the one RevocationService's background sweep uses, so a
+	// revoked document is refused at parse time rather than merely flagged
+	// later — the same fail-closed guarantee sdjwtvc's holder verifier gives.
+	mdocVerifier := mdoc.NewVerifierFromTrustSource(&config.Issuers)
+	mdocVerifier.SetStatusChecker(statusChecker)
+
 	return CredentialFormats{
 		models.CredentialFormatSdJwtVc: {
 			Parser: NewSdJwtVcCredentialFormatParser(holderVerifier),
@@ -106,9 +114,9 @@ func NewCredentialFormats(
 			Store:  NewSdJwtVcCredentialService(sdJwtVcStore, db.NewHolderBindingKeyStore(d), fs, revocation, currentLocale),
 		},
 		models.CredentialFormatMsoMdoc: {
-			Parser: NewMdocCredentialFormatParser(mdoc.NewVerifierFromTrustSource(&config.Issuers)),
+			Parser: NewMdocCredentialFormatParser(mdocVerifier),
 			Keys:   NewMdocKeyService(mdocKeys),
-			Store:  NewMdocCredentialService(mdocStore, mdocKeys, fs, currentLocale),
+			Store:  NewMdocCredentialService(mdocStore, mdocKeys, fs, revocation, currentLocale),
 		},
 	}
 }

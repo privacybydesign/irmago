@@ -64,7 +64,7 @@ func Test_StatusListCacheStore_Put_EmptyURI_Errors(t *testing.T) {
 	require.Error(t, store.Put("", []byte("v"), time.Now().Add(time.Hour)))
 }
 
-func Test_StatusListCacheStore_Put_EmptyRawJwt_Errors(t *testing.T) {
+func Test_StatusListCacheStore_Put_EmptyRawToken_Errors(t *testing.T) {
 	store, _ := newTestStatusListCacheStore(t)
 	require.Error(t, store.Put("uri", nil, time.Now().Add(time.Hour)))
 }
