@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- `AttributeValue` has a new optional `display_hint` field with the attribute type's display hint from the scheme, unchanged (e.g. `yesno`, `portraitPhoto`, `currency:EUR`). Clients can use it to render values for hints irmago doesn't interpret itself, starting with `currency:<ISO 4217 code>` for amounts stored as a plain decimal such as `12.50`. Values of attribute types without a display hint leave it out ([#752](https://github.com/privacybydesign/irmago/issues/752))
+
 ### Fixed
 - A credential issued over IRMA in both idemix and SD-JWT format now shows up as one credential when an optional attribute is left out. Idemix listed the missing attribute with a `nil` value while the SD-JWT had no claim for it, so the two formats got different hashes and showed up as two separate credentials. Deleting such a credential now also removes both formats. An optional attribute set to `""` was not affected, and still counts as a different credential from one where it is left out
 
