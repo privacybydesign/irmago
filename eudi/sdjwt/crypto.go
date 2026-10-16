@@ -3,11 +3,10 @@ package sdjwt
 import (
 	"crypto/ecdsa"
 	"encoding/json"
-	"maps"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/privacybydesign/irmago/internal/jose"
 )
 
 type JwtCreator interface {
@@ -25,22 +24,14 @@ func NewJwtCreator(privateKey *ecdsa.PrivateKey) JwtCreator {
 }
 
 func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]any, payload string) (string, error) {
-	var claims jwt.MapClaims
-	err := json.Unmarshal([]byte(payload), &claims)
-
-	if err != nil {
+	// Decoded only to reject a payload that is not a JSON object, as this has always done. The
+	// bytes signed below are the ones given, so that the disclosure digests in the payload keep
+	// matching the JSON they were computed over.
+	var claims map[string]any
+	if err := json.Unmarshal([]byte(payload), &claims); err != nil {
 		return "", err
 	}
-
-	sdjwt := jwt.NewWithClaims(jwt.SigningMethodES256, &claims)
-	maps.Copy(sdjwt.Header, customHeaderFields)
-
-	jwt, err := sdjwt.SignedString(c.privateKey)
-	if err != nil {
-		return "", err
-	}
-
-	return jwt, nil
+	return jose.SignPayload([]byte(payload), jwa.ES256(), c.privateKey, customHeaderFields)
 }
 
 type JwtVerifier interface {

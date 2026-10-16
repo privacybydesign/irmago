@@ -19,7 +19,8 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,18 +45,17 @@ func TestPinFunctionality(t *testing.T) {
 		j, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
 		expiryUpperBound := time.Now().Unix() + JWTPinExpiryDefault
-		var claims jwt.StandardClaims
-		_, err = jwt.ParseWithClaims(j, &claims, func(_ *jwt.Token) (any, error) {
-			return &jwtTestKey.PublicKey, nil
-		})
+		var claims irma.RegisteredClaims
+		err = jose.Verify(j, &claims, jose.StaticKey(jwa.RS256(), &jwtTestKey.PublicKey))
 		assert.NoError(t, err)
 		assert.Equal(t, "auth_tok", claims.Subject)
 		// The JWT expiry is computed from time.Now() inside validateAuth, so it
 		// must fall within the window captured around that call. Asserting exact
 		// equality against a freshly read time.Now() is flaky when the second
 		// boundary is crossed between generating and checking the JWT.
-		assert.GreaterOrEqual(t, claims.ExpiresAt, expiryLowerBound)
-		assert.LessOrEqual(t, claims.ExpiresAt, expiryUpperBound)
+		require.NotNil(t, claims.ExpiresAt)
+		assert.GreaterOrEqual(t, claims.ExpiresAt.Unix(), expiryLowerBound)
+		assert.LessOrEqual(t, claims.ExpiresAt.Unix(), expiryUpperBound)
 		assert.Equal(t, JWTIssuerDefault, claims.Issuer)
 
 		// test change pin
@@ -103,65 +103,59 @@ func TestVerifyAccess(t *testing.T) {
 		tokenID := base64.StdEncoding.EncodeToString(s.ID)
 
 		// incorrect exp
-		token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		jwtt, err = jose.Sign(map[string]any{
 			"iat":      time.Now().Add(-6 * time.Minute).Unix(),
 			"exp":      time.Now().Add(-3 * time.Minute).Unix(),
 			"token_id": tokenID,
-		})
-		jwtt, err = token.SignedString(c.jwtPrivateKey)
+		}, jwa.RS256(), c.jwtPrivateKey, nil)
 		require.NoError(t, err)
 		_, err = c.verifyAccess(secrets1, jwtt)
 		assert.Error(t, err)
 
 		// missing exp
-		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		jwtt, err = jose.Sign(map[string]any{
 			"iat":      time.Now().Unix(),
 			"token_id": tokenID,
-		})
-		jwtt, err = token.SignedString(c.jwtPrivateKey)
+		}, jwa.RS256(), c.jwtPrivateKey, nil)
 		require.NoError(t, err)
 		_, err = c.verifyAccess(secrets1, jwtt)
 		assert.Error(t, err)
 
 		// Incorrectly typed exp
-		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		jwtt, err = jose.Sign(map[string]any{
 			"iat":      time.Now().Unix(),
 			"exp":      "test",
 			"token_id": tokenID,
-		})
-		jwtt, err = token.SignedString(c.jwtPrivateKey)
+		}, jwa.RS256(), c.jwtPrivateKey, nil)
 		require.NoError(t, err)
 		_, err = c.verifyAccess(secrets1, jwtt)
 		assert.Error(t, err)
 
 		// missing token_id
-		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		jwtt, err = jose.Sign(map[string]any{
 			"iat": time.Now().Unix(),
 			"exp": time.Now().Add(3 * time.Minute).Unix(),
-		})
-		jwtt, err = token.SignedString(c.jwtPrivateKey)
+		}, jwa.RS256(), c.jwtPrivateKey, nil)
 		require.NoError(t, err)
 		_, err = c.verifyAccess(secrets1, jwtt)
 		assert.Error(t, err)
 
 		// mistyped token_id
-		token = jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		jwtt, err = jose.Sign(map[string]any{
 			"iat":      time.Now().Unix(),
 			"exp":      time.Now().Add(3 * time.Minute).Unix(),
 			"token_id": 7,
-		})
-		jwtt, err = token.SignedString(c.jwtPrivateKey)
+		}, jwa.RS256(), c.jwtPrivateKey, nil)
 		require.NoError(t, err)
 		_, err = c.verifyAccess(secrets1, jwtt)
 		assert.Error(t, err)
 
 		// Incorrect signing method
-		token = jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		jwtt, err = jose.Sign(map[string]any{
 			"iat":      time.Now().Unix(),
 			"exp":      time.Now().Add(3 * time.Minute).Unix(),
 			"token_id": tokenID,
-		})
-		jwtt, err = token.SignedString([]byte("bla"))
+		}, jwa.HS256(), []byte("bla"), nil)
 		require.NoError(t, err)
 		_, err = c.verifyAccess(secrets1, jwtt)
 		assert.Error(t, err)
@@ -203,13 +197,11 @@ func TestProofFunctionality(t *testing.T) {
 
 		// Decode jwt
 		claims := &struct {
-			jwt.StandardClaims
+			irma.RegisteredClaims
 			ProofP *gabi.ProofP
 		}{}
 		fmt.Println(Rjwt)
-		_, err = jwt.ParseWithClaims(Rjwt, claims, func(tok *jwt.Token) (any, error) {
-			return &c.jwtPrivateKey.PublicKey, nil
-		})
+		err = jose.Verify(Rjwt, claims, jose.StaticKey(jwa.RS256(), &c.jwtPrivateKey.PublicKey))
 		require.NoError(t, err)
 
 		// Validate protocol execution
@@ -499,7 +491,7 @@ func setupParameters() error {
 	if err != nil {
 		return err
 	}
-	jwtTestKey, err = jwt.ParseRSAPrivateKeyFromPEM([]byte(jwtTestKeyPem))
+	jwtTestKey, err = jose.ParseRSAPrivateKeyFromPEM([]byte(jwtTestKeyPem))
 	if err != nil {
 		return err
 	}
@@ -520,7 +512,7 @@ func doChallengeResponse(t *testing.T, c *Core, signer irmaclient.Signer, secret
 	}
 
 	jwtt, err := irmaclient.SignerCreateJWT(signer, "", irma.KeyshareAuthRequestClaims{
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(3 * time.Minute)),
+		ExpiresAt: irma.NewNumericDate(time.Now().Add(3 * time.Minute)),
 	})
 	require.NoError(t, err)
 	challenge, err := c.GenerateChallenge(secrets, jwtt)
