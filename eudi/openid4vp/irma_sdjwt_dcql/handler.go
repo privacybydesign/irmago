@@ -479,6 +479,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		Image:        clientmodels.ImageFromFile(credType.Logo(h.config)),
 		Attributes:   attributes,
 		IssueURL:     issueURL,
+		Faq:          credType.ClientFaq(locale),
 	}, nil
 }
 
