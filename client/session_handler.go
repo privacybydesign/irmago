@@ -593,39 +593,31 @@ func createDisclosurePlan(
 
 		// the current disclosure flow is not satisfyable without issuance
 		if len(issuanceSteps) != 0 {
-			return &clientmodels.DisclosurePlan{
-				IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
-					IssuedCredentialIds: map[string]struct{}{},
-					Steps:               issuanceSteps,
-				},
-			}, nil
-		}
-	} else {
-		// update the existing issuance plan if it exists
-		lastIssuancePlan := oldDisclosurePlan.IssueDuringDisclosure
-		if lastIssuancePlan != nil {
-			var previousWrongHash string
-			if lastIssuancePlan.WrongCredentialIssued != nil {
-				previousWrongHash = lastIssuancePlan.WrongCredentialIssued.Hash
-			}
-			issued, lastWrongCredential, satisfied := getIssuedSinceOriginalPlan(
-				lastIssuancePlan.Steps, credentials, preExistingCredentialHashes, previousWrongHash,
-			)
 			newPlan.IssueDuringDisclosure = &clientmodels.IssueDuringDisclosure{
-				Steps:                 lastIssuancePlan.Steps,
-				IssuedCredentialIds:   issued,
-				WrongCredentialIssued: lastWrongCredential,
+				IssuedCredentialIds: map[string]struct{}{},
+				Steps:               issuanceSteps,
 			}
-
-			// still not satisfied, so no disclosure overview should be made
-			// return the old issuance steps with the credentials issued since starting the session
-			if !satisfied {
-				return newPlan, nil
-			}
+		}
+	} else if lastIssuancePlan := oldDisclosurePlan.IssueDuringDisclosure; lastIssuancePlan != nil {
+		// update the existing issuance plan with what was issued since
+		var previousWrongHash string
+		if lastIssuancePlan.WrongCredentialIssued != nil {
+			previousWrongHash = lastIssuancePlan.WrongCredentialIssued.Hash
+		}
+		issued, lastWrongCredential, _ := getIssuedSinceOriginalPlan(
+			lastIssuancePlan.Steps, credentials, preExistingCredentialHashes, previousWrongHash,
+		)
+		newPlan.IssueDuringDisclosure = &clientmodels.IssueDuringDisclosure{
+			Steps:                 lastIssuancePlan.Steps,
+			IssuedCredentialIds:   issued,
+			WrongCredentialIssued: lastWrongCredential,
 		}
 	}
 
-	// if the request is satisfiable we can continue to the next stage: picking disclosure choices
+	// The choices are there from the start, also while cards are still
+	// missing: a pick-one that cannot be filled yet has no owned options, only
+	// obtainable ones, so the app shows the whole request on one page with an
+	// empty spot for each missing card.
 	disclosureChoices, err := createDisclosureChoicesOverview(irmaConfig, credentials, candidates, locale)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create disclosure choices overview: %w", err)

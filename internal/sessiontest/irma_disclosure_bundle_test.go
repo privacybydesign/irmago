@@ -176,8 +176,12 @@ func testMultiCredBundleIssuanceFlow(
 		session.DisclosurePlan.IssueDuringDisclosure.IssuedCredentialIds,
 		"partial progress should be surfaced: singleton satisfies its descriptor, stempas does not",
 	)
-	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview,
-		"choices should not surface until the bundle is fully satisfied")
+	// The choices are there while the bundle is incomplete, but the bundle is
+	// not owned yet: there is nothing to pick, only something to obtain.
+	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1)
+	require.Empty(t, session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions,
+		"an incomplete bundle must not be offered as a choice")
+	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview[0].ObtainableOptions)
 	_ = awaitSessionState(t, sessionHandler) // finished issuance session
 
 	// Issue the second credential of the bundle.

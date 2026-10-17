@@ -168,7 +168,11 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 	require.Len(t, plan.IssueDuringDisclosure.Steps, 1)
 	require.Len(t, plan.IssueDuringDisclosure.Steps[0].Options, 2)
 	require.Empty(t, plan.IssueDuringDisclosure.IssuedCredentialIds)
-	require.Nil(t, plan.DisclosureChoicesOverview)
+	// The request is shown at once: the missing card is a pick-one with only
+	// obtainable options.
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.Empty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
+	require.Len(t, plan.DisclosureChoicesOverview[0].ObtainableOptions, 2)
 
 	// issue MijnOverheid
 	issue(t, irmaServer, c, sessionHandler, 2, createMijnOverheidIssuanceRequest())

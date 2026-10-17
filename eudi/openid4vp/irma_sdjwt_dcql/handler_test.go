@@ -3,6 +3,7 @@ package irma_sdjwt_dcql_test
 import (
 	"encoding/json"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -643,7 +644,12 @@ func requireSatisfiable(t *testing.T, plan *clientmodels.DisclosurePlan, expecte
 
 func requireUnsatisfiable(t *testing.T, plan *clientmodels.DisclosurePlan, stepOptionCounts ...int) {
 	t.Helper()
-	assert.Nil(t, plan.DisclosureChoicesOverview)
+	// The choices are there too, but a required one has nothing owned yet:
+	// the app shows it as an empty spot.
+	require.NotEmpty(t, plan.DisclosureChoicesOverview)
+	assert.True(t, slices.ContainsFunc(plan.DisclosureChoicesOverview, func(p clientmodels.DisclosurePickOne) bool {
+		return !p.Optional && len(p.OwnedOptions) == 0
+	}), "a required choice has no owned options")
 	require.NotNil(t, plan.IssueDuringDisclosure)
 	require.Len(t, plan.IssueDuringDisclosure.Steps, len(stepOptionCounts))
 	for i, count := range stepOptionCounts {
