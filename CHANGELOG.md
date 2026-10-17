@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [Unreleased]
 ### Added
 - A wallet can bind its OpenID4VC credentials to keys held by a wallet provider (an HSM-backed service implementing Split-ECDSA) instead of to software keys. The provider is supplied to `client.New` as the factory in `Config.WalletProvider`; the app gives the provider the wallet unit's possession key itself when it builds that factory. Without one nothing changes. The contract lives in the new `walletprovider` package, which imports only the standard library so a provider can implement it without importing irmago (ADR 0010): the provider offers activation, a PIN-gated `Unlock` returning a handle that generates holder keys and signs in batches, key removal and revocation, and the wallet offers it a key-value store in its encrypted database. The OpenID4VC protocols do not know whether there is a provider: they mint and sign through the holder key seams they always use, and a provider is reached behind them. With one, an OpenID4VCI issuance asks for the PIN when it first mints keys, after the user agreed to it (activating the wallet unit with that PIN if it never was), and mints the whole batch in the provider and signs its proofs in one call; an OpenID4VP disclosure, over a URL or the Digital Credentials API, asks for the PIN once, after consent and only when a selected credential is bound to provider keys, and signs every key binding JWT and mdoc `DeviceAuth` of the presentation in one call. The PIN is asked with the same `request_pin` session status, `remaining_pin_attempts` and `pin_blocked_time_seconds` the keyshare server uses, and answered with `UI_EnteredPin`. Each holder key records its key backend (`software` or `wallet-provider`), so a wallet holds credentials of both kinds side by side.
 - A wallet provider must check the PIN in `Unlock`, so a wrong or blocked PIN is reported where the user typed it; where it checks the PIN on every operation, the unlocked wallet unit keeps the PIN-derived material until `Close`. A `PinBlockedError` with a zero `Duration` is a permanent block (the WSCA's, after 10 consecutive wrong PINs; before that it blocks temporarily like the keyshare server); the session then reports `pin_blocked_time_seconds` 0.
@@ -29,11 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openid4vp.Client.NewSession`, `NewDcApiSession` and `openid4vci.Client.NewSession` take the session's context, and `services.HolderKeyBinder.CreateKeyPairsWithProofs` takes it too. `services.NewHolderBindingKeyService`, `NewMdocKeyService` and `NewCredentialFormats` take the wallet provider (nil for none).
 - `client.New` takes a `client.Config` instead of eight positional arguments: `client.New(client.Config{StoragePath: ..., IrmaConfigurationPath: ..., EudiAppDataPath: ..., Handler: ..., SessionHandler: ..., Signer: ..., AesKey: ..., Locale: ...})`. Three of the arguments were paths of the same type, so transposing two built a wallet that stored its data in the wrong place without any error; the named fields rule that out, and let optional capabilities such as the wallet provider be added without changing every caller.
 
-### Fixed
-- A credential issued over IRMA in both idemix and SD-JWT format now shows up as one credential when an optional attribute is left out. Idemix listed the missing attribute with a `nil` value while the SD-JWT had no claim for it, so the two formats got different hashes and showed up as two separate credentials. Deleting such a credential now also removes both formats. An optional attribute set to `""` was not affected, and still counts as a different credential from one where it is left out
-
 ### Internal
 - The EUDI Python issuer test setup exercises wallet unit attestations. Its AS advertises `attest_jwt_client_auth` next to `public` and trusts the signing certificate of a fixed test attestation PKI (`testdata/eudi-pid-issuer-py/wallet-attestation`, loaded with the new `fake.LoadAttestationCA`), and two copies of the age-verification mdoc configuration require a key attestation, one with the `attestation` proof type and one with `jwt` proofs only. The wallet provider session tests issue from both, and check that the AS refuses a WIA from an attester it does not trust. Wallets without a wallet provider keep authenticating as public clients.
+
+## [1.4.2] - 2026-10-16
+### Added
+- `AttributeValue` has a new optional `display_hint` field with the attribute type's display hint from the scheme, unchanged (e.g. `yesno`, `portraitPhoto`, `currency:EUR`). Clients can use it to render values for hints irmago doesn't interpret itself, starting with `currency:<ISO 4217 code>` for amounts stored as a plain decimal such as `12.50`. Values of attribute types without a display hint leave it out ([#752](https://github.com/privacybydesign/irmago/issues/752))
+
+### Fixed
+- A credential issued over IRMA in both idemix and SD-JWT format now shows up as one credential when an optional attribute is left out. Idemix listed the missing attribute with a `nil` value while the SD-JWT had no claim for it, so the two formats got different hashes and showed up as two separate credentials. Deleting such a credential now also removes both formats. An optional attribute set to `""` was not affected, and still counts as a different credential from one where it is left out
+- The holder database no longer writes the wallet's contents to the platform log. GORM's logger was built over `os.Stdout` without `ParameterizedQueries`, so a statement slower than 200ms or one that failed was rendered with its arguments substituted in -- raw SD-JWT VC tokens, the attribute JSON of a log entry, holder binding keys -- and on mobile the gomobile runtime redirects stdout to logcat and the device console, where it landed whatever log level the app had set. GORM's output now goes through irmago's logger, so it falls under that level, and it logs the statement with its placeholders rather than its values. Three smaller paths are covered too: the panic handler in `irma/irmaclient/session.go` and the random-source error in `revocation.go` printed to stdout with `fmt.Print*` instead of the logger, the keyshare session token was logged at debug level, and the two `%#v` dumps of an `AuthorizationRequest` in `eudi/openid4vp/client.go` are now an explicit field summary, so a field added to that struct later is not logged by default ([#730](https://github.com/privacybydesign/irmago/issues/730))
 
 ## [1.4.1] - 2026-10-05
 ### Fixed
@@ -44,9 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - In `keyshareserver`, `KeyshareAttributeValidity` (`--keyshare-attribute-validity`) configures how many days the keyshare attribute issued during registration is valid. It defaults to 365, the validity that was previously hardcoded.
-
-### Fixed
-- The holder database no longer writes the wallet's contents to the platform log. GORM's logger was built over `os.Stdout` without `ParameterizedQueries`, so a statement slower than 200ms or one that failed was rendered with its arguments substituted in -- raw SD-JWT VC tokens, the attribute JSON of a log entry, holder binding keys -- and on mobile the gomobile runtime redirects stdout to logcat and the device console, where it landed whatever log level the app had set. GORM's output now goes through irmago's logger, so it falls under that level, and it logs the statement with its placeholders rather than its values. Three smaller paths are covered too: the panic handler in `irma/irmaclient/session.go` and the random-source error in `revocation.go` printed to stdout with `fmt.Print*` instead of the logger, the keyshare session token was logged at debug level, and the two `%#v` dumps of an `AuthorizationRequest` in `eudi/openid4vp/client.go` are now an explicit field summary, so a field added to that struct later is not logged by default ([#730](https://github.com/privacybydesign/irmago/issues/730))
 
 ### Internal
 - Storage regression snapshot for v1.4.0 (`testdata/storage_regression/v1.4.0/`), verified by `TestClientStorageRegressionV1_4_0`. It is the first snapshot that holds an `mso_mdoc` credential: the fixture generator now issues an age-verification mdoc (`eu.europa.ec.av.1`) from the Python PID issuer and discloses it once to the EUDI reference verifier, so the snapshot carries the mdoc tables, a batch with one spent instance, and mdoc issuance and disclosure logs. The shared check that a reloaded client still works now also issues and discloses a fresh mdoc, for every snapshot version.
@@ -916,6 +918,8 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/privacybydesign/irmago/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/privacybydesign/irmago/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/privacybydesign/irmago/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/privacybydesign/irmago/compare/v1.3.0...v1.3.1

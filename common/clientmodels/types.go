@@ -87,6 +87,11 @@ type AttributeValue struct {
 	String      *string `json:"string,omitempty"`
 	ImagePath   *string `json:"image_path,omitempty"`
 	Base64Image *string `json:"base64_image,omitempty"`
+
+	// DisplayHint is the attribute type's display hint from the scheme, e.g.
+	// "yesno" or "currency:EUR", so clients can decide how to render the value.
+	// Omitted when the attribute type has no display hint.
+	DisplayHint *string `json:"display_hint,omitempty"`
 }
 
 // NewAttributeValue converts a scalar Go value into an AttributeValue.
