@@ -1,6 +1,7 @@
 package openid4vp
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/holdersigning"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/internal/common"
 )
@@ -139,12 +141,13 @@ func (client *Client) checkRedirectResponseModeAllowed(mode ResponseMode) error 
 func NewClient(
 	eudiConf *eudi.Configuration,
 	handlers []dcql.DcqlCredentialQueryHandler,
+	signer holdersigning.Signer,
 	verifierValidator VerifierValidator,
 	currentLocale *clientmodels.CurrentLocale,
 ) (*Client, error) {
 	return &Client{
 		Configuration:     eudiConf,
-		dcqlHandler:       dcql.NewDcqlHandler(handlers),
+		dcqlHandler:       dcql.NewDcqlHandler(handlers, signer),
 		verifierValidator: verifierValidator,
 		currentLocale:     currentLocale,
 	}, nil
@@ -153,8 +156,8 @@ func NewClient(
 // NewSession starts a new OpenID4VP session from the given URL and returns a
 // SessionDismisser bound to that session. Sessions may overlap, and each dismisser
 // dismisses only its own session, so dismissing one never cancels another.
-func (client *Client) NewSession(fullUrl string, handler Handler) SessionDismisser {
-	session := client.newSession(handler)
+func (client *Client) NewSession(ctx context.Context, fullUrl string, handler Handler) SessionDismisser {
+	session := client.newSession(ctx, handler)
 	client.handleSessionAsync(fullUrl, session)
 	return session
 }
@@ -164,14 +167,15 @@ func (client *Client) NewSession(fullUrl string, handler Handler) SessionDismiss
 // SessionDismisser bound to that session. The Authorization Response is handed
 // back to the platform via Handler.DeliverDcApiResponse instead of being
 // transmitted by the wallet.
-func (client *Client) NewDcApiSession(request *DcApiRequest, handler Handler) SessionDismisser {
-	session := client.newSession(handler)
+func (client *Client) NewDcApiSession(ctx context.Context, request *DcApiRequest, handler Handler) SessionDismisser {
+	session := client.newSession(ctx, handler)
 	client.handleDcApiSessionAsync(request, session)
 	return session
 }
 
-func (client *Client) newSession(handler Handler) *openid4vpSession {
+func (client *Client) newSession(ctx context.Context, handler Handler) *openid4vpSession {
 	return &openid4vpSession{
+		ctx:         ctx,
 		handler:     handler,
 		dcqlHandler: client.dcqlHandler,
 		answers:     make(chan *permissionResponse, 1),
@@ -451,6 +455,9 @@ func (client *Client) handleAuthorizationRequest(
 // ========================================================================
 
 type openid4vpSession struct {
+	// ctx is the session's context, which whatever signs the disclosure's
+	// holder binding proofs may need.
+	ctx         context.Context
 	request     *AuthorizationRequest
 	requestor   *clientmodels.TrustedParty
 	handler     Handler
@@ -686,7 +693,7 @@ func (session *openid4vpSession) prepareDisclosures(
 	binding dcql.ResponseBinding,
 ) ([]dcql.QueryResponse, []clientmodels.LogCredential, error) {
 	prepared, err := session.dcqlHandler.PrepareDisclosure(
-		session.request.DcqlQuery, selections, session.request.Nonce, session.audience, binding,
+		session.ctx, session.request.DcqlQuery, selections, session.request.Nonce, session.audience, binding,
 	)
 	if err != nil {
 		return nil, nil, err

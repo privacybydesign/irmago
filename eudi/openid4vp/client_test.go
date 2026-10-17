@@ -1,6 +1,7 @@
 package openid4vp
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +22,7 @@ func init() {
 
 // newTestClient builds a Client with the one collaborator a session needs.
 func newTestClient() *Client {
-	return &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+	return &Client{dcqlHandler: dcql.NewDcqlHandler(nil, nil)}
 }
 
 // awaitOn returns the next value sent on ch, failing the test if none arrives.
@@ -104,7 +105,7 @@ func TestNewSession_NonOKHttpStatus_ReportsFailure(t *testing.T) {
 			client := newTestClient()
 			handler := newSpyHandler()
 
-			client.NewSession(fmt.Sprintf("openid4vp://?request_uri=%s", server.URL), handler)
+			client.NewSession(context.Background(), fmt.Sprintf("openid4vp://?request_uri=%s", server.URL), handler)
 
 			err := handler.awaitFailure(t)
 			require.Contains(t, err.WrappedError, fmt.Sprintf("HTTP %d", code))
@@ -120,7 +121,7 @@ func TestNewSession_EmptyUrl_ReportsFailure(t *testing.T) {
 	client := newTestClient()
 	handler := newSpyHandler()
 
-	client.NewSession("openid4vp://", handler)
+	client.NewSession(context.Background(), "openid4vp://", handler)
 
 	err := handler.awaitFailure(t)
 	require.Contains(t, err.WrappedError, "no client_id")

@@ -217,36 +217,90 @@ func (v *CredentialConfigurationValidator) ValidateAndGetSupportedFeatures(c *me
 
 		s.cryptographicBindingMethod = &bindingMethod
 
-		// We only support JWT proof type, for now
-		if jwtProofType, ok := c.ProofTypesSupported[metadata.ProofTypeIdentifier_JWT]; !ok {
-			return nil, fmt.Errorf("no supported proof-type found in 'proof_types_supported'")
-		} else {
-			if len(jwtProofType.ProofSigningAlgValuesSupported) == 0 {
-				return nil, fmt.Errorf("no proof signing algorithm found in 'proof_signing_alg_values_supported'")
-			}
-
-			// For now, we only support `ES256` as proof signing algorithm, because our current keybinder only uses P-256 key type. This is a temporary limitation until we implement support for other key types. See keybinder_service.go for more details on the current keybinder implementation.
-			if !slices.Contains(jwtProofType.ProofSigningAlgValuesSupported, jwa.ES256().String()) {
-				return nil, fmt.Errorf("no supported proof signing algorithm found, only 'ES256' is supported")
-			}
-
-			s.proofSigningAlg = jwa.ES256()
-
-			// TODO: For the future: keep in mind restrictions for the did:key cryptographic binding method
-			// if bindingMethod == proofs.CryptographicBindingMethod_DID_KEY {
-			// 	// If cryptographic binding method is did:key, the signature algorithm must be compatible,
-			// 	// as did:key only supports: Ed25519, Ed25519+X25519, secp256k1, P-256, P-384, BLS12-381
-			// 	supportedAlgs := supported-algs(jwtProofType.ProofSigningAlgValuesSupported)
-			// }
-
-			// We don't support key attestations, for now
-			if jwtProofType.KeyAttestationsRequired != nil {
-				return nil, fmt.Errorf("unsupported 'key_attestations_required' in 'proof_types_supported' for JWT proof type")
-			}
+		proofType, requirement, err := selectProofType(c.ProofTypesSupported)
+		if err != nil {
+			return nil, err
 		}
+		s.proofType = proofType
+		s.keyAttestation = requirement
+		// For now, we only support `ES256`, because our keybinder only uses the
+		// P-256 key type. See keybinder_service.go.
+		s.proofSigningAlg = jwa.ES256()
 	}
 
 	return s, nil
+}
+
+// selectProofType picks the proof type to send, and the key attestation
+// requirement that comes with it (nil when no key attestation is sent):
+//   - the jwt proof type without key_attestations_required when offered,
+//     since a key attestation is only sent to an issuer that asks for one;
+//   - otherwise the attestation proof type, where the key attestation is the
+//     proof and the keys sign nothing (HAIP's preference);
+//   - otherwise the jwt proof type with its key_attestations_required, each
+//     proof carrying the key attestation.
+//
+// Every proof type is signed with ES256: the jwt proofs by the holder keys,
+// the key attestation by the wallet provider.
+func selectProofType(types map[metadata.ProofTypeIdentifier]metadata.ProofType) (metadata.ProofTypeIdentifier, *metadata.KeyAttestationRequirement, error) {
+	usable := func(id metadata.ProofTypeIdentifier) (metadata.ProofType, bool, error) {
+		pt, ok := types[id]
+		if !ok {
+			return pt, false, nil
+		}
+		if len(pt.ProofSigningAlgValuesSupported) == 0 {
+			return pt, false, fmt.Errorf("no proof signing algorithm found in 'proof_signing_alg_values_supported' for proof type %q", id)
+		}
+		return pt, slices.Contains(pt.ProofSigningAlgValuesSupported, jwa.ES256().String()), nil
+	}
+	jwtProof, jwtOK, err := usable(metadata.ProofTypeIdentifier_JWT)
+	if err != nil {
+		return "", nil, err
+	}
+	attestationProof, attestationOK, err := usable(metadata.ProofTypeIdentifier_Attestation)
+	if err != nil {
+		return "", nil, err
+	}
+
+	switch {
+	case jwtOK && jwtProof.KeyAttestationsRequired == nil:
+		return metadata.ProofTypeIdentifier_JWT, nil, nil
+	case attestationOK:
+		requirement := attestationProof.KeyAttestationsRequired
+		if requirement == nil {
+			requirement = &metadata.KeyAttestationRequirement{}
+		}
+		return metadata.ProofTypeIdentifier_Attestation, requirement, nil
+	case jwtOK:
+		return metadata.ProofTypeIdentifier_JWT, jwtProof.KeyAttestationsRequired, nil
+	}
+	_, jwtOffered := types[metadata.ProofTypeIdentifier_JWT]
+	_, attestationOffered := types[metadata.ProofTypeIdentifier_Attestation]
+	if jwtOffered || attestationOffered {
+		return "", nil, fmt.Errorf("no supported proof signing algorithm found, only 'ES256' is supported")
+	}
+	return "", nil, fmt.Errorf("no supported proof-type found in 'proof_types_supported'")
+}
+
+// satisfiesKeyAttestationRequirement reports whether a key attestation
+// claiming protection meets requirement: for key_storage and
+// user_authentication each, when the issuer lists accepted values, the
+// attestation must claim one of them. The values are compared as the issuer
+// lists them; a level the issuer does not list is not taken to satisfy one it
+// does.
+func satisfiesKeyAttestationRequirement(requirement *metadata.KeyAttestationRequirement, keyStorage, userAuthentication []string) bool {
+	accepts := func(accepted []metadata.AttestationAttackResistance, claimed []string) bool {
+		if len(accepted) == 0 {
+			return true
+		}
+		for _, a := range accepted {
+			if slices.Contains(claimed, string(a)) {
+				return true
+			}
+		}
+		return false
+	}
+	return accepts(requirement.KeyStorage, keyStorage) && accepts(requirement.UserAuthentication, userAuthentication)
 }
 
 type W3CVCFormatVerifier struct{}
