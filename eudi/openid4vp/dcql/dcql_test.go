@@ -235,3 +235,65 @@ func pathsOf(elements ...string) [][]any {
 	}
 	return paths
 }
+
+// While a card is missing the plan has the issuance steps and the choices
+// together: the app shows the whole request at once, with an empty spot (a
+// pick-one without owned options) for each missing card.
+func TestPlanKeepsChoicesWhileCardsAreMissing(t *testing.T) {
+	queries := []CredentialQuery{
+		{Id: "email", Format: "dc+sd-jwt"},
+		{Id: "phone", Format: "dc+sd-jwt"},
+	}
+	owned := func(id, hash string) []*clientmodels.SelectableCredentialInstance {
+		return []*clientmodels.SelectableCredentialInstance{{CredentialId: id, Hash: hash}}
+	}
+	obtainable := func(id string) []*clientmodels.CredentialDescriptor {
+		return []*clientmodels.CredentialDescriptor{{CredentialId: id}}
+	}
+	missingPhone := map[string]*CredentialQueryResult{
+		"email": {OwnedCandidates: owned("test.email", "e1"), ObtainableDescriptors: obtainable("test.email")},
+		"phone": {ObtainableDescriptors: obtainable("test.phone")},
+	}
+
+	t.Run("unsatisfied: steps and choices, the missing one empty", func(t *testing.T) {
+		plan, ids, err := buildPlanFromCredentialQueries(queries, missingPhone, nil, nil)
+		require.NoError(t, err)
+		require.NotNil(t, plan.IssueDuringDisclosure)
+		require.Len(t, plan.IssueDuringDisclosure.Steps, 1)
+		require.Len(t, plan.DisclosureChoicesOverview, 2)
+		assert.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+		assert.Empty(t, plan.DisclosureChoicesOverview[1].OwnedOptions)
+		assert.Len(t, plan.DisclosureChoicesOverview[1].ObtainableOptions, 1)
+		// The query ids stay parallel to the choices.
+		require.Len(t, ids, 2)
+		assert.Equal(t, "email", ids[0].QueryIdFor("e1", nil))
+		assert.Empty(t, ids[1])
+	})
+
+	first, _, err := buildPlanFromCredentialQueries(queries, missingPhone, nil, nil)
+	require.NoError(t, err)
+
+	t.Run("refreshed, still missing: the steps stay, nothing issued", func(t *testing.T) {
+		plan, ids, err := buildPlanFromCredentialQueries(queries, missingPhone, first, nil)
+		require.NoError(t, err)
+		require.NotNil(t, plan.IssueDuringDisclosure)
+		assert.Empty(t, plan.IssueDuringDisclosure.IssuedCredentialIds)
+		require.Len(t, plan.DisclosureChoicesOverview, 2)
+		assert.Empty(t, plan.DisclosureChoicesOverview[1].OwnedOptions)
+		assert.Len(t, ids, 2)
+	})
+
+	t.Run("refreshed after the issuance: the new card is owned and tracked", func(t *testing.T) {
+		issued := map[string]*CredentialQueryResult{
+			"email": missingPhone["email"],
+			"phone": {OwnedCandidates: owned("test.phone", "p1"), ObtainableDescriptors: obtainable("test.phone")},
+		}
+		plan, ids, err := buildPlanFromCredentialQueries(queries, issued, first, nil)
+		require.NoError(t, err)
+		require.NotNil(t, plan.IssueDuringDisclosure)
+		assert.Contains(t, plan.IssueDuringDisclosure.IssuedCredentialIds, "test.phone")
+		require.Len(t, plan.DisclosureChoicesOverview, 2)
+		assert.Len(t, plan.DisclosureChoicesOverview[1].OwnedOptions, 1)
+		assert.Equal(t, "phone", ids[1].QueryIdFor("p1", nil))
+	})
+}

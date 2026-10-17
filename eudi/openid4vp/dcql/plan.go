@@ -132,20 +132,19 @@ func choiceQueryIds(candidates []*clientmodels.SelectableCredentialInstance, que
 	return ids
 }
 
-// withQueryIds keeps the per-choice query ids parallel to the plan's choices.
-// finalizePlan drops the choices while an issuance-during-disclosure step is
-// still outstanding; the ids go with them, so nothing can index into a list that
-// no longer matches what the user was shown.
+// withQueryIds keeps the per-choice query ids parallel to the plan's choices,
+// which are always there (also while a card is still missing), so the ids
+// line up with what the user was shown.
 func withQueryIds(plan *clientmodels.DisclosurePlan, queryIds []ChoiceQueryIds) (*clientmodels.DisclosurePlan, []ChoiceQueryIds, error) {
-	if plan.DisclosureChoicesOverview == nil {
-		return plan, nil, nil
-	}
 	return plan, queryIds, nil
 }
 
 // finalizePlan handles the issuance-during-disclosure logic:
 // - On first call (previousPlan == nil): detects unsatisfied disjunctions and creates IssueDuringDisclosure
 // - On refresh (previousPlan != nil): updates IssueDuringDisclosure tracking with newly issued credentials
+//
+// The choices are kept either way: the app shows the whole request at once,
+// with an empty spot for a pick-one that has no owned options yet.
 func finalizePlan(plan *clientmodels.DisclosurePlan, previousPlan *clientmodels.DisclosurePlan, preExistingHashes map[string]struct{}) *clientmodels.DisclosurePlan {
 	if previousPlan == nil {
 		// First time: check if issuance is needed
@@ -160,10 +159,8 @@ func finalizePlan(plan *clientmodels.DisclosurePlan, previousPlan *clientmodels.
 	// Track which credentials were issued since the original plan
 	prevSteps := previousPlan.IssueDuringDisclosure.Steps
 	issuedIds := make(map[string]struct{})
-	allSatisfied := true
 
 	for _, step := range prevSteps {
-		stepSatisfied := false
 		for _, bundle := range step.Options {
 			bundleSatisfied := true
 			for _, desc := range bundle.Credentials {
@@ -188,12 +185,8 @@ func finalizePlan(plan *clientmodels.DisclosurePlan, previousPlan *clientmodels.
 				for _, desc := range bundle.Credentials {
 					issuedIds[desc.CredentialId] = struct{}{}
 				}
-				stepSatisfied = true
 				break
 			}
-		}
-		if !stepSatisfied {
-			allSatisfied = false
 		}
 	}
 
@@ -207,11 +200,8 @@ func finalizePlan(plan *clientmodels.DisclosurePlan, previousPlan *clientmodels.
 		IssuedCredentialIds: issuedIds,
 	}
 
-	// If not all steps satisfied, hide the disclosure choices
-	if !allSatisfied {
-		plan.DisclosureChoicesOverview = nil
-	}
-
+	// The choices stay, also while steps are left: a missing card is a
+	// pick-one without owned options.
 	return plan
 }
 
@@ -241,8 +231,6 @@ func addIssueDuringDisclosure(plan *clientmodels.DisclosurePlan) *clientmodels.D
 			Steps:               issuanceSteps,
 			IssuedCredentialIds: map[string]struct{}{},
 		}
-		// When issuance is needed, don't show disclosure choices yet
-		plan.DisclosureChoicesOverview = nil
 	}
 
 	return plan

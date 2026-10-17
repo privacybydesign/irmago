@@ -60,7 +60,8 @@ func testSignatureRequest(
 	require.Empty(t, session.OfferedCredentials)
 	plan := session.DisclosurePlan
 	require.Len(t, plan.IssueDuringDisclosure.Steps, 1)
-	require.Nil(t, plan.DisclosureChoicesOverview)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.Empty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
 
 	issue(t, irmaServer, c, sessionHandler, 2, createEmailIssuanceRequest())
 

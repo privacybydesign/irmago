@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -2926,10 +2927,9 @@ func testVeramoVerifierRequestingMissingCredentialSurfacesIt(t *testing.T) {
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 	require.NotNil(t, session.DisclosurePlan)
 
-	// addIssueDuringDisclosure hides DisclosureChoicesOverview when issuance is
-	// needed — including the "issuance" of an unobtainable credential.
-	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview,
-		"choices should be nil because there is one unsatisfiable issuance step")
+	// The choice is there, but empty: the credential is still to be issued
+	// (including the "issuance" of an unobtainable credential).
+	requireNothingToShareYet(t, session.DisclosurePlan)
 	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
@@ -2975,7 +2975,7 @@ func testVeramoVerifierRequestingUnknownVctUsesUrlOnlyFallback(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 	require.NotNil(t, session.DisclosurePlan)
-	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	requireNothingToShareYet(t, session.DisclosurePlan)
 	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
@@ -3025,7 +3025,7 @@ func testVeramoVerifierMultiVctFirstMissingSecondMatched(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 	require.NotNil(t, session.DisclosurePlan)
-	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	requireNothingToShareYet(t, session.DisclosurePlan)
 	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
@@ -3083,10 +3083,9 @@ func testVeramoVerifierRequestingUnsupportedClaimOnOwnedCredentialSurfacesIt(t *
 	require.NotNil(t, session.DisclosurePlan)
 
 	// Same shape as testVeramoVerifierRequestingMissingCredentialSurfacesIt:
-	// the choice is hidden because the only path forward is an unsatisfiable
+	// the choice is empty because the only path forward is an unsatisfiable
 	// issuance step.
-	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview,
-		"choices should be nil because there is one unsatisfiable issuance step")
+	requireNothingToShareYet(t, session.DisclosurePlan)
 	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
@@ -4675,7 +4674,7 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 
 	// --- Disclosure choices ---
 	if expected.Choices == nil {
-		require.Nil(t, plan.DisclosureChoicesOverview, "disclosure choices should be nil")
+		requireNothingToShareYet(t, plan)
 		return
 	}
 
@@ -5093,4 +5092,21 @@ func testOpenID4VPEudiDisclosureAfterLocaleSwitch(t *testing.T) {
 		expectedAttr{Path: []any{"given_name"}, DisplayName: new("Voornaam"), Value: strVal("Jan")},
 		expectedAttr{Path: []any{"email"}, DisplayName: new("E-mailadres"), Value: strVal("jan@voorbeeld.nl")},
 	)
+}
+
+// requireNothingToShareYet checks the plan of a request that needs a card
+// issued first: the choices are there from the start (the app shows the whole
+// request at once), but a required one has no owned options yet, so there is
+// nothing it can be filled with. Without issuance steps there are no choices.
+func requireNothingToShareYet(t testingT, plan *clientmodels.DisclosurePlan) {
+	t.Helper()
+	require.NotNil(t, plan)
+	if plan.IssueDuringDisclosure == nil {
+		require.Nil(t, plan.DisclosureChoicesOverview, "disclosure choices should be nil")
+		return
+	}
+	empty := slices.ContainsFunc(plan.DisclosureChoicesOverview, func(p clientmodels.DisclosurePickOne) bool {
+		return !p.Optional && len(p.OwnedOptions) == 0
+	})
+	require.True(t, empty, "a required choice should have no owned options while a card is missing")
 }

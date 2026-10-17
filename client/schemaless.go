@@ -46,7 +46,8 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 				ClaimPath:   []any{attr.ID},
 				DisplayName: dn,
 				Value: &clientmodels.AttributeValue{
-					Type: displayHintToAttributeType(attr.DisplayHint),
+					Type:        displayHintToAttributeType(attr.DisplayHint),
+					DisplayHint: displayHintPtr(attr.DisplayHint),
 				},
 			})
 		}
@@ -421,11 +422,18 @@ func displayHintToAttributeType(s string) clientmodels.AttributeType {
 	return result
 }
 
+func displayHintPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 // buildAttributeValue creates an AttributeValue with the value in the correct field
 // based on the attribute's display hint.
 func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString) *clientmodels.AttributeValue {
 	attrType := displayHintToAttributeType(displayHint)
-	val := &clientmodels.AttributeValue{Type: attrType}
+	val := &clientmodels.AttributeValue{Type: attrType, DisplayHint: displayHintPtr(displayHint)}
 	if rawValue == nil {
 		return val
 	}
