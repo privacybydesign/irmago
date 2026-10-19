@@ -59,6 +59,11 @@ type SessionState struct {
 	RemainingPinAttempts  *int `json:"remaining_pin_attempts,omitempty"`
 	PinBlockedTimeSeconds *int `json:"pin_blocked_time_seconds,omitempty"`
 
+	// OpenID4VP: how the response travels to the verifier (e.g.
+	// "direct_post.jwt"), for the wallet's technical details. Empty for other
+	// protocols.
+	ResponseMode string `json:"response_mode,omitempty"`
+
 	// OpenID4VP over the W3C Digital Credentials API: the JSON the app must hand
 	// back to the platform as the `data` member of the response. Set on the state
 	// that reaches Status_Success; empty for every other session.

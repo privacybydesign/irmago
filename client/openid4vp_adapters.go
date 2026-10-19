@@ -49,12 +49,14 @@ func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []client
 func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 	disclosurePlan *clientmodels.DisclosurePlan,
 	requestor *clientmodels.TrustedParty,
+	responseMode openid4vp.ResponseMode,
 	queryIds []dcql.ChoiceQueryIds,
 	callback openid4vp.PermissionHandler,
 ) {
 	a.session.State.Status = clientmodels.Status_RequestPermission
 	a.session.State.Type = clientmodels.Type_Disclosure
 	a.session.State.Protocol = clientmodels.Protocol_OpenID4VP
+	a.session.State.ResponseMode = string(responseMode)
 	if requestor != nil {
 		a.session.State.Requestor = *requestor
 	}

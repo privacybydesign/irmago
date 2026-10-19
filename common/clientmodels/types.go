@@ -43,6 +43,46 @@ type TrustedParty struct {
 	// for anything historical: the certificate that authenticated a past session
 	// is not something the wallet keeps.
 	Verified bool `json:"verified"`
+
+	// Where the trust in a verified party comes from: a Yivi scheme
+	// registration (IRMA), a Yivi-issued relying-party certificate, or a
+	// certificate from another anchored CA. Lets the wallet tell "Yivi
+	// vouches" apart from "someone else vouches" while both are Verified.
+	// Omitted when the party is not verified, or when it is unknown.
+	TrustSource TrustSource `json:"trust_source,omitempty"`
+	// The display name of the list or authority that vouches, when it is not
+	// Yivi (e.g. the organization of the CA that issued the certificate).
+	TrustAnchor string `json:"trust_anchor,omitempty"`
+	// What the trust rests on, for the wallet's technical details.
+	Evidence *TrustEvidence `json:"evidence,omitempty"`
+}
+
+// TrustSource is where the trust in a party comes from.
+type TrustSource string
+
+const (
+	TrustSource_YiviScheme    TrustSource = "yivi_scheme"
+	TrustSource_YiviTrustList TrustSource = "yivi_trust_list"
+	TrustSource_EuTrustedList TrustSource = "eu_trusted_list"
+	TrustSource_Other         TrustSource = "other"
+)
+
+// TrustEvidence is what a party's trust rests on: its registration in a Yivi
+// scheme, or the certificate it presented. Shown for the curious only.
+type TrustEvidence struct {
+	// The identifier under which the party is registered (IRMA), e.g.
+	// "pbdf-requestors.webshopnoord".
+	RegistrationId string `json:"registration_id,omitempty"`
+	// The end-entity certificate that authenticated the party (OpenID4VP).
+	Certificate *TrustCertificate `json:"certificate,omitempty"`
+}
+
+// TrustCertificate describes a certificate by who it names, who issued it and
+// until when it is valid (seconds since the epoch).
+type TrustCertificate struct {
+	Subject  string `json:"subject"`
+	Issuer   string `json:"issuer"`
+	NotAfter int64  `json:"not_after,omitempty"`
 }
 
 type Image struct {

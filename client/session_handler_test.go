@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/irma"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,4 +59,25 @@ func TestFinish_DispatchesLaterDifferentState(t *testing.T) {
 		clientmodels.Status_Dismissed,
 		clientmodels.Status_Success,
 	}, spy.statuses)
+}
+
+// A registered IRMA requestor is vouched for by the Yivi requestor scheme, and
+// says under which identifier; an unregistered one claims nothing.
+func TestRequestorInfoToTrustedParty_TrustSource(t *testing.T) {
+	registered := requestorInfoToTrustedParty(&irma.RequestorInfo{
+		ID:   irma.NewRequestorIdentifier("pbdf-requestors.webshopnoord"),
+		Name: irma.TranslatedString{"en": "Webshop Noord"},
+	}, "en")
+	require.True(t, registered.Verified)
+	require.Equal(t, clientmodels.TrustSource_YiviScheme, registered.TrustSource)
+	require.Equal(t, "pbdf-requestors.webshopnoord", registered.Evidence.RegistrationId)
+
+	unknown := requestorInfoToTrustedParty(&irma.RequestorInfo{
+		ID:         irma.NewRequestorIdentifier("webshop.example"),
+		Name:       irma.TranslatedString{"en": "webshop.example"},
+		Unverified: true,
+	}, "en")
+	require.False(t, unknown.Verified)
+	require.Empty(t, unknown.TrustSource)
+	require.Nil(t, unknown.Evidence)
 }

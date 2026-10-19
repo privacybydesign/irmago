@@ -30,9 +30,13 @@ type Handler interface {
 	// entry per pick-one, naming the DCQL query each of that pick-one's
 	// candidates answers. The UI hands it back position by position when it
 	// reports the user's choices.
+	//
+	// responseMode is how the response will travel to the verifier, for the
+	// wallet's technical details.
 	RequestVerificationPermission(
 		disclosurePlan *clientmodels.DisclosurePlan,
 		requestor *clientmodels.TrustedParty,
+		responseMode ResponseMode,
 		queryIds []dcql.ChoiceQueryIds,
 		callback PermissionHandler,
 	)
@@ -422,6 +426,10 @@ func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
 		Name:     clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), client.currentLocale.Get()),
 		Verified: endEntityCert != nil,
 	}
+	if endEntityCert != nil {
+		requestor.TrustSource, requestor.TrustAnchor = trustSourceOf(endEntityCert)
+		requestor.Evidence = &clientmodels.TrustEvidence{Certificate: trustCertificateOf(endEntityCert)}
+	}
 
 	if requestorSchemeData.Organization.Logo != nil && len(requestorSchemeData.Organization.Logo.Data) > 0 {
 		requestor.Image = &clientmodels.Image{
@@ -543,6 +551,7 @@ func (session *openid4vpSession) requestPermission() error {
 	session.handler.RequestVerificationPermission(
 		plan,
 		session.requestor,
+		session.request.ResponseMode,
 		session.lastQueryIds,
 		func(proceed bool, selections []dcql.DisclosureSelection) {
 			if proceed {

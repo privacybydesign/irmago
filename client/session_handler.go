@@ -166,13 +166,19 @@ func requestorInfoToTrustedParty(info *irma.RequestorInfo, locale string) client
 	if info.LogoPath != nil {
 		image = clientmodels.ImageFromFile(*info.LogoPath)
 	}
-	return clientmodels.TrustedParty{
+	party := clientmodels.TrustedParty{
 		Id:       info.ID.String(),
 		Name:     clientmodels.Resolve(clientmodels.TranslatedString(info.Name), locale),
 		Image:    image,
 		Parent:   nil,
 		Verified: !info.Unverified,
 	}
+	// A verified IRMA requestor is one registered in a Yivi requestor scheme.
+	if party.Verified {
+		party.TrustSource = clientmodels.TrustSource_YiviScheme
+		party.Evidence = &clientmodels.TrustEvidence{RegistrationId: info.ID.String()}
+	}
+	return party
 }
 
 func requestorInfoToTrustedPartyPtr(info *irma.RequestorInfo, locale string) *clientmodels.TrustedParty {
