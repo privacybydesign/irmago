@@ -92,7 +92,9 @@ type WalletProvider interface {
 	// State reports where the wallet unit stands.
 	State(ctx context.Context) (State, error)
 	// Activate sets up the wallet unit with the given PIN: it mints the
-	// possession key and binds it and the PIN to a fresh account.
+	// possession key and binds it and the PIN to a fresh account. Returns
+	// ErrIntegrityRefused when the provider refuses the app's integrity
+	// evidence.
 	Activate(ctx context.Context, pin string) error
 	// Unlock presents the PIN for one session, scoped to one purpose. Returns
 	// ErrNotActivated, *PinIncorrectError or *PinBlockedError when the PIN
@@ -254,7 +256,9 @@ type UnlockedWalletUnit interface {
 	InstanceAttestation(ctx context.Context, key *ecdsa.PublicKey) ([]byte, error)
 	// ChangePin replaces the PIN the wallet unit was unlocked with by newPin.
 	// The holder keys stay. The unlocked wallet unit is closed afterwards:
-	// what it kept of the old PIN no longer works.
+	// what it kept of the old PIN no longer works. Returns
+	// ErrIntegrityRefused when the provider refuses the app's integrity
+	// evidence; the old PIN then stays.
 	ChangePin(ctx context.Context, newPin string) error
 	// Close ends the unlock. Calling it more than once is harmless.
 	Close()
@@ -270,6 +274,11 @@ var (
 	// now, for instance while its PIN is blocked or when its device could not
 	// be attested at activation.
 	ErrAttestationRefused = errors.New("walletprovider: attestation refused")
+	// ErrIntegrityRefused: the provider refused the app's integrity evidence
+	// at activation or a PIN change: the app is not a genuine build, is too
+	// old, or its platform could not vouch for it. Installing the official
+	// app, or updating it, may help.
+	ErrIntegrityRefused = errors.New("walletprovider: app integrity refused")
 )
 
 // PinIncorrectError reports a wrong PIN. Remaining is how many attempts are
