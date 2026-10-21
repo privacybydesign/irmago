@@ -2,7 +2,7 @@ module github.com/privacybydesign/irmago
 
 go 1.27
 
-toolchain go1.27.0
+toolchain go1.27.3
 
 require (
 	github.com/alexandrevicenzi/go-sse v1.6.0
