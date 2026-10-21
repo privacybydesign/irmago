@@ -2,7 +2,6 @@ package openid4vp
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -422,8 +421,6 @@ func (session *openid4vpSession) perform() error {
 		return nil
 	}
 
-	//logMarshalled("selections:", permResp.selections)
-
 	// Group selections by format
 	queryResponses, credLogs, err := session.prepareDisclosures(permResp.selections)
 	if err != nil {
@@ -491,17 +488,4 @@ func (session *openid4vpSession) prepareDisclosures(
 		return nil, nil, err
 	}
 	return prepared.QueryResponses, prepared.CredentialLogs, nil
-}
-
-// ========================================================================
-// Helpers
-// ========================================================================
-
-func logMarshalled(message string, value any) {
-	jsonBytes, err := json.MarshalIndent(value, "", "   ")
-	if err != nil {
-		eudi.Logger.Errorf("%s: failed to marshal: %v", message, err)
-	} else {
-		eudi.Logger.Infof("\n%s\n%s\n", message, string(jsonBytes))
-	}
 }

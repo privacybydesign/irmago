@@ -65,7 +65,7 @@ func StatusValueAt(bits []byte, statusSize int, idx uint64) (uint, error) {
 	}
 
 	var value uint
-	for i := 0; i < statusSize; i++ {
+	for i := range statusSize {
 		p := startBit + uint64(i)
 		bit := (bits[p/8] >> (7 - uint(p%8))) & 1 // MSB-first within each byte
 		value = value<<1 | uint(bit)

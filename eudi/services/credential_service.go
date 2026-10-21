@@ -311,10 +311,12 @@ func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJ
 // is part of the key: a same-hash batch under a different securing format is a
 // distinct credential and must not be deleted here.
 func (s *credentialService) deleteExistingBatch(hash string, format models.CredentialFormat) error {
-	if existing, err := s.credentialStore.GetBatchByHashAndFormat(hash, format); err == nil {
-		if err := s.credentialStore.DeleteBatch(existing.ID); err != nil {
-			return fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
-		}
+	existing, err := s.credentialStore.GetBatchByHashAndFormat(hash, format)
+	if err != nil {
+		return nil
+	}
+	if err := s.credentialStore.DeleteBatch(existing.ID); err != nil {
+		return fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-// Package eudi_sdjwt_dcql is the DCQL query handler for IETF SD-JWT VC
+// Package eudi_sdjwtvc_dcql is the DCQL query handler for IETF SD-JWT VC
 // (dc+sd-jwt) credentials in the eudi SQLite storage (issued via OpenID4VCI).
 // It is a thin routing shell over the shared sdjwtdcql.Engine.
 package eudi_sdjwtvc_dcql

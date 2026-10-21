@@ -59,7 +59,7 @@ func TestStatusValueAt_MSBFirstSingleBit(t *testing.T) {
 	bits := []byte{0x80, 0x5A}
 
 	set := map[uint64]bool{0: true, 9: true, 11: true, 12: true, 14: true}
-	for idx := uint64(0); idx < 16; idx++ {
+	for idx := range uint64(16) {
 		v, err := StatusValueAt(bits, 1, idx)
 		require.NoError(t, err)
 		want := uint(0)

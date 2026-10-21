@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -404,12 +405,7 @@ func batchMatchesTypeConstraint(batch *models.CredentialBatch, typeValues [][]st
 		return batchTypeSatisfiesTypeValues(batch, typeValues)
 	}
 	if len(vctValues) > 0 {
-		for _, v := range vctValues {
-			if batch.CredentialType == v {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(vctValues, batch.CredentialType)
 	}
 	return true // §6.1: empty meta matches any credential of the format
 }

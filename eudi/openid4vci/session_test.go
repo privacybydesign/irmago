@@ -783,6 +783,7 @@ func Test_openid4vciSession_obtainCredential_vcdmSuccessResponse(t *testing.T) {
 			require.Equal(t,
 				vcdm.ContextV2+" "+vcdm.TypeVerifiableCredential+" ExampleCredential",
 				doc.TypeIdentity())
+
 			subjects, err := doc.CredentialSubjects()
 			require.NoError(t, err)
 			require.Equal(t, "Alice", subjects[0]["given_name"])

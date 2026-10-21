@@ -37,12 +37,6 @@ func CreatePresentation(fullSdJwt SdJwt, claimPaths [][]any, audience string, no
 	}
 
 	return Create(issuerSignedJwt, selected), nil
-
-	// Set the audience and nonce in the payload for the presentation.
-	// payload["aud"] = audience
-	// payload["nonce"] = nonce
-
-	//return CreateFromMap(payload, selected), nil
 }
 
 // PostDisclosureView returns the JSON value a verifier would see if a

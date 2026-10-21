@@ -1,6 +1,9 @@
 package bitstringstatus
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // ListCredentialSubjectType is the `type` of a BitstringStatusListCredential's
 // credentialSubject (W3C §2.2).
@@ -75,10 +78,5 @@ func Check(entry Entry, subject ListCredentialSubject) (uint, error) {
 }
 
 func coversPurpose(have []StatusPurpose, want StatusPurpose) bool {
-	for _, p := range have {
-		if p == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(have, want)
 }

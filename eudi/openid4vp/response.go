@@ -232,7 +232,6 @@ func createVpToken(config authorizationResponseConfig) (map[string]any, error) {
 		case "dc+sd-jwt":
 			content[resp.QueryId] = resp.Credentials
 		default:
-			// default handling
 			return nil, fmt.Errorf("unsupported credential format: %s", resp.CredentialFormat)
 		}
 	}

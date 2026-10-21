@@ -39,7 +39,7 @@ func (s *credentialService) VerifyAndStoreIssuedVcdmCredentials(
 	publicKeyIdentifiers []models.PublicHolderBindingKey,
 ) error {
 	if len(verified) == 0 {
-		return nil // nothing to store
+		return nil
 	}
 
 	if requireCryptographicKeyBinding && len(publicKeyIdentifiers) != len(verified) {
