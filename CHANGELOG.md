@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.4.3] - 2026-10-21
 ### Fixed
 - Update Go toolchain to fix eMudhra CA compromise.
 - Pin Docker image to exact version v.1.27.3 to fix the eMudhra CA compromise, with added bonus of always having an exact reproducable build.
@@ -895,7 +897,8 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
-[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/privacybydesign/irmago/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/privacybydesign/irmago/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/privacybydesign/irmago/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/privacybydesign/irmago/compare/v1.3.1...v1.4.0
@@ -948,4 +951,3 @@ This release contains several large new features. In particular, the shoulder su
 [0.5.0-rc.1]: https://github.com/privacybydesign/irmago/compare/v0.4.1...v0.5.0-rc.1
 [0.4.1]: https://github.com/privacybydesign/irmago/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/privacybydesign/irmago/tree/v0.4.0
-
