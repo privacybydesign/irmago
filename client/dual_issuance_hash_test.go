@@ -181,3 +181,34 @@ func TestDualIssuance_OptionalAttributeAbsentAndEmptyStaySeparate(t *testing.T) 
 		require.Len(t, cred.CredentialInstanceIds, 2)
 	}
 }
+
+// The credentials come back in the same order every time, oldest first, not in
+// the order Go happens to walk its map: the app files cards it has not seen in
+// that order.
+func TestCredentialInfoListToSchemaless_StableOrder(t *testing.T) {
+	conf := loadTestIrmaConfiguration(t)
+	var infos irma.CredentialInfoList
+	for i, name := range []string{"Anna", "Bert", "Carla", "Dirk", "Eva", "Femke", "Gijs", "Hanna"} {
+		info := sdJwtCredentialInfo(fullNameRequest(map[string]string{
+			"firstnames": name,
+			"firstname":  name,
+			"familyname": "Batsbak",
+		}))
+		info.Hash = "sdjwt-" + name
+		// Newest first in the input, so a sort that does nothing shows.
+		info.SignedOn = irma.Timestamp(time.Unix(int64(1000-i), 0))
+		infos = append(infos, info)
+	}
+
+	first, _ := credentialInfoListToSchemaless(conf, infos, "en")
+	require.Len(t, first, len(infos))
+	for i := 1; i < len(first); i++ {
+		require.Less(t, *first[i-1].IssuanceDate, *first[i].IssuanceDate, "oldest first")
+	}
+	for range 20 {
+		again, _ := credentialInfoListToSchemaless(conf, infos, "en")
+		for i := range first {
+			require.Equal(t, first[i].Hash, again[i].Hash)
+		}
+	}
+}

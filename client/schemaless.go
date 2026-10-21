@@ -1,6 +1,7 @@
 package client
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"os"
@@ -343,9 +344,14 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 		}
 	}
 
-	for _, credential := range intermediateResult {
-		result = append(result, credential)
-	}
+	// Go walks a map in a different order every time; sort so every call lists
+	// the same credentials in the same order: oldest first, then by hash.
+	result = append(result, slices.SortedFunc(maps.Values(intermediateResult), func(a, b *clientmodels.Credential) int {
+		if c := cmp.Compare(*a.IssuanceDate, *b.IssuanceDate); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Hash, b.Hash)
+	})...)
 
 	return result, problematic
 }
