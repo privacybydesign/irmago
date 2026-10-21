@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.4.3] - 2026-10-21
 ### Fixed
 - Update Go toolchain to fix eMudhra CA compromise.
-- Pin Docker image to exact version v.1.27.3 to fix the eMudhra CA compromise, with added bonus of always having an exact reproducable build.
+- Pin Docker images to Go 1.27.3 to fix the eMudhra CA compromise and make builds reproducible.
 
 ## [1.4.2] - 2026-10-16
 ### Added
