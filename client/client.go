@@ -154,7 +154,8 @@ func New(
 	}, statusListCache)
 	revocationService := services.NewRevocationService(statusChecker, credStore)
 
-	// Rewrite any credential hash still computed without the issuer. Runs before
+	// Rewrite any credential hash still computed under an older definition, and
+	// drop the duplicates that older definition let in. Runs before
 	// the wallet can be asked about its credentials, because a stale hash makes a
 	// re-issuance look like a credential the wallet does not hold, which would
 	// silently store a second copy. Idempotent, so it costs one query on a wallet
