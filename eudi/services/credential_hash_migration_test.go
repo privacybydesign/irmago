@@ -2,7 +2,9 @@ package services
 
 import (
 	"testing"
+	"time"
 
+	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
@@ -152,4 +154,78 @@ func TestMigrateCredentialHashes_SdJwtVcUsesTheSdJwtFunction(t *testing.T) {
 	want, err := hashForSdJwtVc("https://vct.example.com/Cred", "https://issuer.state.example", withStandardClaims)
 	require.NoError(t, err)
 	require.Equal(t, want, store.updatedHashes[0].hash)
+}
+
+// storedSdJwtBatch writes an SD-JWT VC batch with the given payload, hash and
+// iat into a real store, so the unique index on Hash is enforced.
+func storedSdJwtBatch(t *testing.T, store db.SdJwtVcStore, payload, hash string, issuedAt time.Time) datatypes.UUID {
+	t.Helper()
+	iss := "https://issuer.state.example"
+	batch := &models.SdJwtVcBatch{
+		IssuerIdentifier:           iss,
+		CredentialIssuerIdentifier: iss,
+		VerifiableCredentialType:   "https://vct.example.com/Cred",
+		Format:                     models.CredentialFormatSdJwtVc,
+		Hash:                       hash,
+		ProcessedSdJwtPayload:      datatypes.JSON(payload),
+		IssuedAt:                   datatypes.NullTime{V: issuedAt, Valid: true},
+		BatchSize:                  1,
+		RemainingCount:             1,
+		Instances:                  []models.SdJwtVcBatchInstance{{RawCredential: []byte("raw")}},
+	}
+	require.NoError(t, store.StoreBatch(batch))
+	return batch.ID
+}
+
+// Issue #772: before jti, aud and vct#integrity were standard claims, each
+// renewal whose jti differed was stored as a second copy. After the change both
+// copies hash the same, and Hash is a unique index. The migration keeps the
+// newest copy under the new hash and deletes the older one, as a renewal would.
+func TestMigrateCredentialHashes_DropsDuplicatesTheOldHashLetIn(t *testing.T) {
+	store := db.NewSdJwtVcStore(newTestHolderDB(t))
+	now := time.Now().UTC().Truncate(time.Second)
+	older := storedSdJwtBatch(t, store, `{"given_name":"Alice","jti":"first"}`, "old-hash-1", now.Add(-time.Hour))
+	newer := storedSdJwtBatch(t, store, `{"given_name":"Alice","jti":"second"}`, "old-hash-2", now)
+	other := storedSdJwtBatch(t, store, `{"given_name":"Bob","jti":"third"}`, "old-hash-3", now)
+
+	require.NoError(t, MigrateCredentialHashes(store))
+
+	batches, err := store.GetCredentialBatchList()
+	require.NoError(t, err)
+	ids := []datatypes.UUID{}
+	for _, b := range batches {
+		ids = append(ids, b.ID)
+		want, err := recomputeBatchHash(b)
+		require.NoError(t, err)
+		require.Equal(t, want, b.Hash, "every remaining batch must carry its current hash")
+	}
+	require.ElementsMatch(t, []datatypes.UUID{newer, other}, ids, "the older duplicate is deleted, the rest kept")
+	require.NotContains(t, ids, older)
+
+	// A second run finds nothing to do.
+	require.NoError(t, MigrateCredentialHashes(store))
+	again, err := store.GetCredentialBatchList()
+	require.NoError(t, err)
+	require.Len(t, again, 2)
+}
+
+// The newest copy may be the one that needs rewriting while the older already
+// holds the target hash. The older must be deleted before the newer takes it,
+// or the update hits the unique index.
+func TestMigrateCredentialHashes_NewestTakesHashHeldByOlderDuplicate(t *testing.T) {
+	store := db.NewSdJwtVcStore(newTestHolderDB(t))
+	now := time.Now().UTC().Truncate(time.Second)
+	current, err := hashForSdJwtVc("https://vct.example.com/Cred", "https://issuer.state.example", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
+	older := storedSdJwtBatch(t, store, `{"given_name":"Alice"}`, current, now.Add(-time.Hour))
+	newer := storedSdJwtBatch(t, store, `{"given_name":"Alice","vct#integrity":"sha256-AAAA"}`, "old-hash", now)
+
+	require.NoError(t, MigrateCredentialHashes(store))
+
+	batches, err := store.GetCredentialBatchList()
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+	require.Equal(t, newer, batches[0].ID)
+	require.NotEqual(t, older, batches[0].ID)
+	require.Equal(t, current, batches[0].Hash)
 }
