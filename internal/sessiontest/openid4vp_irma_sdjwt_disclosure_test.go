@@ -126,6 +126,15 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 							Value:       strVal("test@gmail.com"),
 						},
 					},
+					// The IRMA server's SD-JWT signing certificate chains to the
+					// trusted issuer root, so the issuer shows as verified. The
+					// scheme carries no status list for this credential.
+					IssuerVerified:      new(true),
+					Format:              new(clientmodels.Format_SdJwtVc),
+					HasIssuanceDate:     new(true),
+					HasExpiryDate:       new(true),
+					Revoked:             new(false),
+					RevocationSupported: new(false),
 				}},
 				Obtainable: []expectedCredentialDescriptor{
 					{

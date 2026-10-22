@@ -10,7 +10,6 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
@@ -185,35 +184,8 @@ func issueWithPinToClient(t *testing.T, c *client.Client, sessionId int, session
 }
 
 func createClientStorage(t *testing.T) (storagePath string, irmaConfigurationPath string) {
-	var aesKey [32]byte
-	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-
-	path := test.FindTestdataFolder(t)
-	storageFolder := test.CreateTestStorage(t)
-	storagePath = filepath.Join(storageFolder, "client")
-
-	// Copy files to storage folder
-	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
-	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(storagePath, "eudi")))
-
-	// Add test issuer certificates as trusted chain (encrypted, since the
-	// EUDI filesystem storage decrypts files on read).
-	encMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
-
-	issuerCertsPath := filepath.Join(storagePath, "eudi", "issuers", "certificates")
-	require.NoError(t, common.EnsureDirectoryExists(issuerCertsPath))
-	encIssuer, err := encMiddleware.Encrypt(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
-	require.NoError(t, err)
-	require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), encIssuer))
-
-	// Add test verifier CA certificate as trusted chain.
-	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
-	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))
-	encVerifierCA, err := encMiddleware.Encrypt(testdata.VerifierCACertBytes)
-	require.NoError(t, err)
-	require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encVerifierCA))
-
-	return storagePath, filepath.Join(path, "irma_configuration")
+	storagePath = newTestStorageFolder(t, stagingIssuerAnchor)
+	return storagePath, filepath.Join(test.FindTestdataFolder(t), "irma_configuration")
 }
 
 func keyshareEnrollClient(t *testing.T, c *client.Client, handler *irmaclient.MockClientHandler) {
@@ -230,14 +202,11 @@ func createClientWithStorageAndSigner(
 	eudiAppDataPath string,
 	signer irmaclient.Signer,
 ) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
-	var aesKey [32]byte
-	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-
 	clientHandler := irmaclient.NewMockClientHandler()
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, aesKey, "en")
+	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, testAESKey(), "en")
 	require.NoError(t, err)
 
 	return c, clientHandler, sessionHandler

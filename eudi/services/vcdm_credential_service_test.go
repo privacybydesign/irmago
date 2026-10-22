@@ -1,7 +1,8 @@
 package services
 
 import (
-	"encoding/json"
+	"crypto"
+	"encoding/hex"
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -10,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/eudi/utils"
@@ -17,14 +19,44 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 const testVcdmIssuer = "https://openid4vc.staging.yivi.app"
 
-// newVerifiedVcdm builds and holder-verifies a real SD-JWT-secured VCDM
-// credential with the test issuer key, so the verified result carries the raw
-// credential the store persists per instance.
-func newVerifiedVcdm(t *testing.T, subjectClaims ...*sdjwt.ClaimElement) *vcdmsdjwt.VerifiedSdJwtVcdm {
+var testVcdmTypeIdentity = vcdm.ContextV2 + " " + vcdm.TypeVerifiableCredential + " ExampleCredential"
+
+type vcdmTestEnv struct {
+	db      *gorm.DB
+	store   db.VcdmStore
+	keys    db.HolderBindingKeyStore
+	service *sdJwtVcdmCredentialService
+	parser  CredentialFormatParser
+}
+
+func newVcdmTestEnv(t *testing.T) *vcdmTestEnv {
+	t.Helper()
+	d := newTestHolderDB(t)
+	store := db.NewVcdmStore(d)
+	keys := db.NewHolderBindingKeyStore(d)
+	return &vcdmTestEnv{
+		db:      d,
+		store:   store,
+		keys:    keys,
+		service: NewSdJwtVcdmCredentialService(store, keys, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()), clientmodels.NewCurrentLocale("en")),
+		parser:  NewSdJwtVcdmCredentialFormatParser(newTestVcdmHolderVerifier()),
+	}
+}
+
+func newTestVcdmHolderVerifier() *vcdmsdjwt.HolderVerificationProcessor {
+	return vcdmsdjwt.NewHolderVerificationProcessor(
+		vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
+	)
+}
+
+// newRawVcdm builds a real SD-JWT-secured VCDM credential signed with the test
+// issuer key and bound to the test holder key.
+func newRawVcdm(t *testing.T, subjectClaims ...*sdjwt.ClaimElement) string {
 	t.Helper()
 	x5c, err := utils.ParsePemCertificateChainToX5cFormat(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	require.NoError(t, err)
@@ -48,140 +80,187 @@ func newVerifiedVcdm(t *testing.T, subjectClaims ...*sdjwt.ClaimElement) *vcdmsd
 		WithTyp(vcdmsdjwt.MediaTypeVcSdJwt).
 		Build(sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey())
 	require.NoError(t, err)
-
-	verifier := vcdmsdjwt.NewHolderVerificationProcessor(
-		vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
-	)
-	verified, err := verifier.ParseAndVerifySdJwtVcdm(vcdmsdjwt.SdJwtVcdmKb(built))
-	require.NoError(t, err)
-	return verified
+	return string(built)
 }
 
-func TestVerifyAndStoreIssuedVcdmCredentials_EmptySlice(t *testing.T) {
-	mock := &mockCredentialStore{}
-	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
-
-	err := svc.VerifyAndStoreIssuedVcdmCredentials(
-		nil, "config-id",
-		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVcdm),
-		false, nil,
-	)
-
+func (e *vcdmTestEnv) parse(t *testing.T, raw string) *ParsedCredential {
+	t.Helper()
+	parsed, err := e.parser.ParseAndVerify(raw, testVcdmIssuer, false)
 	require.NoError(t, err)
-	assert.Empty(t, mock.storedBatches)
+	return parsed
 }
 
-func TestVerifyAndStoreIssuedVcdmCredentials_StoresBatch(t *testing.T) {
-	mock := &mockCredentialStore{}
-	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
-	verified := newVerifiedVcdm(t, sdjwt.SdClaim("given_name", "Alice"))
+func (e *vcdmTestEnv) issuerMetadata() metadata.CredentialIssuerMetadata {
+	md := newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVcdm)
+	md.CredentialIssuer = testVcdmIssuer
+	return md
+}
 
-	err := svc.VerifyAndStoreIssuedVcdmCredentials(
-		[]*vcdmsdjwt.VerifiedSdJwtVcdm{verified}, "config-id",
-		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVcdm),
-		false, nil,
+func TestSdJwtVcdmParser_ParsesVcdm(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	parsed := env.parse(t, newRawVcdm(t, sdjwt.SdClaim("given_name", "Alice")))
+
+	assert.Equal(t, models.CredentialFormatSdJwtVcdm, parsed.Format)
+	assert.Equal(t, testVcdmTypeIdentity, parsed.VerifiableCredentialType)
+	assert.Equal(t, testVcdmIssuer, parsed.IssuerIdentifier)
+	require.NotNil(t, parsed.SdJwtVcdm)
+	assert.Nil(t, parsed.SdJwtVc)
+
+	// No JWT iat/exp were signed, so validity comes from the document.
+	require.NotNil(t, parsed.IssuedAt)
+	assert.Equal(t, int64(1577836800), *parsed.IssuedAt) // 2020-01-01T00:00:00Z
+	require.NotNil(t, parsed.ExpiresAt)
+	assert.Equal(t, int64(2051222400), *parsed.ExpiresAt) // 2035-01-01T00:00:00Z
+}
+
+// A dc+sd-jwt configuration may deliver a VCDM payload; the dc+sd-jwt parser
+// routes it to the VCDM verifier, and the result names the VCDM format so the
+// session stores it in the VCDM tables.
+func TestSdJwtDataModelParser_DispatchesVcdmPayload(t *testing.T) {
+	parser := NewSdJwtDataModelParser(
+		NewSdJwtVcCredentialFormatParser(nil),
+		NewSdJwtVcdmCredentialFormatParser(newTestVcdmHolderVerifier()),
 	)
 
+	parsed, err := parser.ParseAndVerify(newRawVcdm(t), testVcdmIssuer, false)
 	require.NoError(t, err)
-	require.Len(t, mock.storedBatches, 1)
-	batch := mock.storedBatches[0]
+	assert.Equal(t, models.CredentialFormatSdJwtVcdm, parsed.Format)
+	require.NotNil(t, parsed.SdJwtVcdm)
+}
+
+func TestSdJwtDataModelParser_RejectsMixedBatch(t *testing.T) {
+	parser := NewSdJwtDataModelParser(NewSdJwtVcCredentialFormatParser(nil), NewSdJwtVcdmCredentialFormatParser(nil))
+
+	err := parser.CheckBatchUniqueness([]*ParsedCredential{
+		{Format: models.CredentialFormatSdJwtVcdm},
+		{Format: models.CredentialFormatSdJwtVc},
+	})
+	require.ErrorContains(t, err, "heterogeneous")
+}
+
+func TestSdJwtVcdmStore_EmptySlice(t *testing.T) {
+	env := newVcdmTestEnv(t)
+
+	require.NoError(t, env.service.Store(nil, "config-id", env.issuerMetadata(), false, nil))
+
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	assert.Empty(t, batches)
+}
+
+func TestSdJwtVcdmStore_StoresBatch(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	raw := newRawVcdm(t, sdjwt.SdClaim("given_name", "Alice"))
+
+	require.NoError(t, env.service.Store([]*ParsedCredential{env.parse(t, raw)}, "config-id", env.issuerMetadata(), false, nil))
+
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+	batch := batches[0]
 
 	assert.Equal(t, models.CredentialFormatSdJwtVcdm, batch.Format)
-	assert.Equal(t, vcdm.ContextV2+" "+vcdm.TypeVerifiableCredential+" ExampleCredential", batch.CredentialType)
+	assert.Equal(t, testVcdmTypeIdentity, batch.TypeIdentity)
 	assert.Equal(t, testVcdmIssuer, batch.IssuerIdentifier)
-	assert.Equal(t, testVcdmIssuer, batch.CredentialIssuerIdentifier)
+	assert.Equal(t, testVcdmIssuer, batch.CredentialIssuer)
 	assert.NotEmpty(t, batch.Hash)
-
-	// Validity comes from the document: no JWT iat/exp were signed, so
-	// IssuedAt falls back to validFrom and ExpiresAt to validUntil.
-	require.True(t, batch.IssuedAt.Valid)
-	assert.Equal(t, int64(1577836800), batch.IssuedAt.V.Unix()) // 2020-01-01T00:00:00Z
+	assert.True(t, batch.IssuerVerified)
+	assert.Equal(t, int64(1577836800), batch.IssuedAt.Unix())
 	require.True(t, batch.ExpiresAt.Valid)
-	assert.Equal(t, int64(2051222400), batch.ExpiresAt.V.Unix()) // 2035-01-01T00:00:00Z
+	assert.Equal(t, int64(2051222400), batch.ExpiresAt.V.Unix())
 
-	// The raw secured credential is persisted per instance; VCDM status
-	// (credentialStatus / BitstringStatusList) is not seeded — the IETF
-	// Token Status List fields stay empty.
-	require.Len(t, batch.Instances, 1)
-	assert.Equal(t, []byte(verified.GetRawSdJwtVcdm()), batch.Instances[0].RawCredential)
-	assert.Nil(t, batch.Instances[0].StatusListURI)
-	assert.Nil(t, batch.Instances[0].StatusListIdx)
-}
-
-func TestVerifyAndStoreIssuedVcdmCredentials_SameContentSameHash(t *testing.T) {
-	mock := &mockCredentialStore{}
-	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
-	issuerMetadata := newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVcdm)
-
-	first := newVerifiedVcdm(t, sdjwt.SdClaim("given_name", "Alice"))
-	second := newVerifiedVcdm(t, sdjwt.SdClaim("given_name", "Alice"))
-	different := newVerifiedVcdm(t, sdjwt.SdClaim("given_name", "Bob"))
-
-	for _, v := range []*vcdmsdjwt.VerifiedSdJwtVcdm{first, second, different} {
-		require.NoError(t, svc.VerifyAndStoreIssuedVcdmCredentials(
-			[]*vcdmsdjwt.VerifiedSdJwtVcdm{v}, "config-id", issuerMetadata, false, nil))
-	}
-
-	require.Len(t, mock.storedBatches, 3)
-	// Re-issuance of the same logical credential reproduces the hash (so the
-	// stored batch is replaced); different content gets its own batch.
-	assert.Equal(t, mock.storedBatches[0].Hash, mock.storedBatches[1].Hash)
-	assert.NotEqual(t, mock.storedBatches[0].Hash, mock.storedBatches[2].Hash)
-}
-
-func TestVerifyAndStoreIssuedVcdmCredentials_KeyBindingMismatch(t *testing.T) {
-	mock := &mockCredentialStore{}
-	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
-	verified := newVerifiedVcdm(t)
-
-	err := svc.VerifyAndStoreIssuedVcdmCredentials(
-		[]*vcdmsdjwt.VerifiedSdJwtVcdm{verified}, "config-id",
-		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVcdm),
-		true,                              // requireCryptographicKeyBinding
-		[]models.PublicHolderBindingKey{}, // zero key IDs — mismatch with 1 credential
-	)
-
-	require.Error(t, err)
-	assert.Empty(t, mock.storedBatches)
-}
-
-func TestGetCredentialMetadataList_VcdmBatch_SubjectRootedAttributes(t *testing.T) {
-	payload, err := json.Marshal(map[string]any{
-		vcdm.ContextKey: []any{vcdm.ContextV2},
-		vcdm.TypeKey:    []any{vcdm.TypeVerifiableCredential, "ExampleCredential"},
-		vcdm.IssuerKey:  testVcdmIssuer,
-		vcdm.CredentialSubjectKey: map[string]any{
-			"given_name": "Alice",
-		},
-	})
+	instance, err := env.store.GetUnusedInstance(batch.ID)
 	require.NoError(t, err)
+	assert.Equal(t, []byte(raw), instance.RawCredential)
+}
 
-	batch := &models.CredentialBatch{
-		ID:                         datatypes.NewUUIDv4(),
-		IssuerIdentifier:           testVcdmIssuer,
-		CredentialType:             vcdm.ContextV2 + " " + vcdm.TypeVerifiableCredential + " ExampleCredential",
-		Format:                     models.CredentialFormatSdJwtVcdm,
-		Hash:                       "vcdm-hash",
-		ProcessedSdJwtPayload:      datatypes.JSON(payload),
-		CredentialIssuerIdentifier: testVcdmIssuer,
-		BatchSize:                  1,
-		RemainingCount:             1,
+func TestSdJwtVcdmStore_ReissuanceReplacesBatch(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	md := env.issuerMetadata()
+
+	for _, name := range []string{"Alice", "Alice", "Bob"} {
+		parsed := env.parse(t, newRawVcdm(t, sdjwt.SdClaim("given_name", name)))
+		require.NoError(t, env.service.Store([]*ParsedCredential{parsed}, "config-id", md, false, nil))
 	}
 
-	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+	// The second Alice has the same content hash as the first and replaces it;
+	// Bob is a different credential and sits next to it.
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	require.Len(t, batches, 2)
+	assert.NotEqual(t, batches[0].Hash, batches[1].Hash)
+}
 
-	list, err := svc.GetCredentialMetadataList()
+func TestSdJwtVcdmStore_KeyBindingMismatch(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	parsed := env.parse(t, newRawVcdm(t))
+
+	err := env.service.Store([]*ParsedCredential{parsed}, "config-id", env.issuerMetadata(),
+		true,                              // requireCryptographicKeyBinding
+		[]models.PublicHolderBindingKey{}, // zero keys for one credential
+	)
+	require.Error(t, err)
+
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	assert.Empty(t, batches)
+}
+
+// The holder binding key is linked to the VCDM instance, and deleting the
+// credential deletes the key with it.
+func TestSdJwtVcdmStore_LinksAndDeletesHolderBindingKey(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	parsed := env.parse(t, newRawVcdm(t))
+
+	thumbprintBytes, err := testdata.ParseHolderPubJwk().Thumbprint(crypto.SHA256)
+	require.NoError(t, err)
+	thumbprint := hex.EncodeToString(thumbprintBytes)
+	key := &models.HolderBindingKey{
+		Algorithm:           models.KeyAlgorithmECDSA,
+		PublicKeyThumbprint: datatypes.NullString{V: thumbprint, Valid: true},
+		PrivateKey:          []byte("not-a-real-key"),
+		ECDSA:               &models.ECDSAKeyMetadata{CurveName: "P-256"},
+	}
+	require.NoError(t, env.keys.StoreKey(key))
+
+	require.NoError(t, env.service.Store([]*ParsedCredential{parsed}, "config-id", env.issuerMetadata(),
+		true, []models.PublicHolderBindingKey{{ID: key.ID, PublicKeyThumbprint: &thumbprint}}))
+
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+	instance, err := env.store.GetUnusedInstance(batches[0].ID)
+	require.NoError(t, err)
+	require.NotNil(t, instance.HolderBindingKey)
+	assert.Equal(t, key.ID, instance.HolderBindingKey.ID)
+
+	require.NoError(t, env.service.DeleteByHash(batches[0].Hash))
+	_, err = env.keys.GetByID(key.ID)
+	require.ErrorIs(t, err, db.ErrNotFound)
+}
+
+func TestSdJwtVcdmList_SubjectRootedAttributes(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	parsed := env.parse(t, newRawVcdm(t, sdjwt.SdClaim("given_name", "Alice")))
+	require.NoError(t, env.service.Store([]*ParsedCredential{parsed}, "config-id", env.issuerMetadata(), false, nil))
+
+	list, err := env.service.List()
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 
 	cred := list[0]
-	assert.Equal(t, batch.CredentialType, cred.CredentialId)
-	assert.Equal(t, map[clientmodels.CredentialFormat]string{clientmodels.Format_SdJwtVcdm: "vcdm-hash"}, cred.CredentialInstanceIds)
+	assert.Equal(t, testVcdmTypeIdentity, cred.CredentialId)
+	assert.Equal(t, map[clientmodels.CredentialFormat]string{clientmodels.Format_SdJwtVcdm: cred.Hash}, cred.CredentialInstanceIds)
+	assert.True(t, cred.Issuer.Verified)
 
-	// Attributes are the credentialSubject tree with document-rooted paths;
-	// the VCDM envelope properties are not attributes.
-	require.Len(t, cred.Attributes, 1)
-	assert.Equal(t, []any{vcdm.CredentialSubjectKey, "given_name"}, cred.Attributes[0].ClaimPath)
-	require.NotNil(t, cred.Attributes[0].Value)
+	// Attributes are the credentialSubject tree with document-rooted paths; the
+	// VCDM envelope properties are not attributes.
+	paths := make([][]any, len(cred.Attributes))
+	for i, a := range cred.Attributes {
+		paths[i] = a.ClaimPath
+	}
+	assert.ElementsMatch(t, [][]any{
+		{vcdm.CredentialSubjectKey, "id"},
+		{vcdm.CredentialSubjectKey, "given_name"},
+	}, paths)
 }

@@ -34,17 +34,15 @@ type Client struct {
 	currentSession *session
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
-	// vcdmHolderVerifier verifies received SD-JWT-secured VCDM credentials;
-	// received credentials are routed between it and holderVerifier by data
-	// model (see session.obtainCredential).
+	// vcdmHolderVerifier verifies received SD-JWT-secured VCDM credentials. The
+	// registry's parsers hold it; the client keeps it to apply
+	// SetAllowInsecureHttp.
 	vcdmHolderVerifier *vcdmsdjwt.HolderVerificationProcessor
 
-	credentialService services.CredentialService
-
-	// holderKeyBinder creates the holder binding keys and OpenID4VCI proofs of
-	// possession during issuance. It is a required dependency (software or
-	// WSCA-backed); see NewClient.
-	holderKeyBinder HolderKeyBinder
+	// formats is the per-format registry: how each credential format is
+	// verified, which keys it is bound to, and where it is stored. Sessions look
+	// their format up here by the credential configuration's format identifier.
+	formats services.CredentialFormats
 
 	// currentLocale drives which translations are resolved into DTOs and
 	// which logo is downloaded during issuance. Sessions snapshot it at flow
@@ -55,31 +53,34 @@ type Client struct {
 	allowInsecureHttp bool
 }
 
-// NewClient builds an OpenID4VCI client. holderKeyBinder is required: pass
-// services.NewHolderBindingKeyService(config.Storage.Db()) for the default
-// software, storage-backed binder, or a WSCA-backed implementation to keep the
-// holder private key out of this process.
+// NewClient builds an OpenID4VCI client over the given per-format registry.
+// Build the registry with services.NewCredentialFormats, which derives every
+// supported format in one place; a registry missing a format fails that
+// format's issuance at runtime, so an empty one is refused here.
 func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 	vcdmHolderVerifier *vcdmsdjwt.HolderVerificationProcessor,
-	credentialService services.CredentialService,
-	holderKeyBinder HolderKeyBinder,
+	formats services.CredentialFormats,
 	currentLocale *clientmodels.CurrentLocale,
 ) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
 	}
-	if holderKeyBinder == nil {
-		return nil, fmt.Errorf("holderKeyBinder cannot be nil")
+	if len(formats) == 0 {
+		return nil, fmt.Errorf("no credential formats registered")
+	}
+	for format, support := range formats {
+		if support.Parser == nil || support.Keys == nil || support.Store == nil {
+			return nil, fmt.Errorf("credential format %q is registered incompletely", format)
+		}
 	}
 	return &Client{
 		httpClient:         httpClient,
 		Configuration:      config,
 		holderVerifier:     holderVerifier,
 		vcdmHolderVerifier: vcdmHolderVerifier,
-		credentialService:  credentialService,
-		holderKeyBinder:    holderKeyBinder,
+		formats:            formats,
 		currentLocale:      currentLocale,
 	}, nil
 }
@@ -190,10 +191,8 @@ func (client *Client) handleCredentialOffer(
 		handler:                    handler,
 		httpClient:                 client.httpClient,
 		holderVerifier:             client.holderVerifier,
-		vcdmHolderVerifier:         client.vcdmHolderVerifier,
-		holderKeyBinder:            client.holderKeyBinder,
 		storage:                    client.Configuration.Storage,
-		credentialService:          client.credentialService,
+		formats:                    client.formats,
 		vctResolver:                vctResolver,
 		allowInsecureHttp:          client.allowInsecureHttp,
 		originalCredentialMetadata: originalCredentialMetadata,
@@ -392,8 +391,8 @@ func (client *Client) convertToCredentialInfoList(
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
 			if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
-				config.Format != metadata.CredentialFormatIdentifier_SdJwtVcdm {
-				// We only support the SD-JWT-secured formats for now
+				config.Format != metadata.CredentialFormatIdentifier_SdJwtVcdm &&
+				config.Format != metadata.CredentialFormatIdentifier_MsoMdoc {
 				continue
 			}
 
@@ -463,9 +462,15 @@ func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.C
 		metadata.LogoURIsByLanguage(credentialIssuerMetadata.Display), locale)
 
 	return &clientmodels.TrustedParty{
-		Id:       credentialIssuerMetadata.CredentialIssuer,
-		Name:     clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
-		Image:    issuerImage,
+		Id:    credentialIssuerMetadata.CredentialIssuer,
+		Name:  clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
+		Image: issuerImage,
+		// Deliberately false, unlike the per-credential issuer elsewhere. This
+		// party is built from the issuer's metadata document, which is fetched over
+		// TLS and is not signed: nothing binds this name or logo to the document
+		// signer whose certificate the credentials are checked against. Saying
+		// "verified" here would vouch for branding the wallet has not
+		// authenticated. The TODO above is what would change that.
 		Verified: false,
 	}
 }

@@ -33,7 +33,7 @@ var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 // sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())).
 func NewSdJwtVcDcqlHandler(
 	eudiStorage storage.Storage,
-	credentialStore db.CredentialStore,
+	credentialStore db.SdJwtVcStore,
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
 	keyBinder sdjwt.KeyBinder,
@@ -48,7 +48,8 @@ func NewSdJwtVcDcqlHandler(
 			return !std
 		},
 	)
-	return &Handler{sdjwtdcql.NewEngine(profile, eudiStorage, credentialStore, vctFetcher, issuerFetcher, keyBinder, currentLocale, revocation)}
+	batches := sdjwtdcql.NewSdJwtVcBatchStore(credentialStore, revocation)
+	return &Handler{sdjwtdcql.NewEngine(profile, eudiStorage, batches, vctFetcher, issuerFetcher, keyBinder, currentLocale)}
 }
 
 // CanHandleCredentialQuery claims dc+sd-jwt queries whose vct_values are not

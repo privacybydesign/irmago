@@ -110,7 +110,7 @@ func bundleForEmail(t *testing.T, bundles []*clientmodels.DisclosureBundle, emai
 // irmamobile#520 order: delete first, then start the disclosure session).
 func deleteIrmaCredentialByEmail(t *testing.T, c *client.Client, email string) {
 	t.Helper()
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	for _, cred := range creds {
 		for _, attr := range cred.Attributes {

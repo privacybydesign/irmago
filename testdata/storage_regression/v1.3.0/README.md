@@ -5,6 +5,11 @@ Token Status List support. Loaded and verified by `TestClientStorageRegressionV1
 Regenerate with `TestGenerateClientStorageForRegressionTests` (`GENERATE_STORAGE=1`)
 while `version.go` reads `1.3.0`.
 
+Generated from commit `6fe0d585` (`v1.3.0` plus the status-list additions to the
+generator), with every IRMA issuance request given a validity of 2100-01-01 so the
+credentials don't expire. The in-process keyshare server was patched the same way, so the `test.test.mijnirma`
+keyshare-enrollment credential it issues is valid until 2100 too.
+
 This is the first snapshot written *after* the locale rewrite, which is what it exists
 to pin. Three storage-visible changes distinguish it from the `v1.0.0` and `v1.1.1`
 snapshots:
@@ -33,11 +38,8 @@ file is not plaintext (`sqlcipher.IsPlaintext` is false).
 | `eudi_client_db` | EUDI SQLCipher database (`yivi-eudi.db`): OpenID4VCI credentials, logs, and status-list state. **Encrypted at rest.** |
 | `ecdsa_sk.pem` | Client signer key. |
 | `keyshare_users.json` | Keyshare users preloaded into the test keyshare server. |
-| `metadata.json` | Human-readable dump of the stored credentials and logs. |
 
-Note that `metadata.json` is dumped from the live client that generated the snapshot,
-so it shows logo bytes and MIME types that the databases themselves do not hold — the
-EUDI database stores only a logo *URI*, while the bytes live in the eudi filesystem,
+The EUDI database stores only a logo *URI*; the bytes live in the eudi filesystem,
 which is not part of this snapshot. EUDI credentials and log entries therefore load
 without an image here.
 

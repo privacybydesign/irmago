@@ -2,12 +2,11 @@ package storage
 
 import (
 	"fmt"
-	"log"
-	"os"
 	"time"
 
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/internal/common"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -51,38 +50,55 @@ func NewStorageWithDialector(dialector gorm.Dialector, fs filesystem.FileSystemS
 	return &storage{db: db, fs: fs}, nil
 }
 
+// gormLogWriter routes GORM's output into irmago's logger instead of writing it
+// to stdout. The holder database is the wallet's, so on mobile this matters: the
+// gomobile runtime redirects the process's stdout to the platform log (logcat on
+// Android, the device console on iOS), where it lands regardless of the log level
+// the app configured. Going through the logger puts these lines under that level,
+// which the app drops to error outside developer mode.
+type gormLogWriter struct{}
+
+func (gormLogWriter) Printf(format string, args ...any) {
+	// Read the logger per call rather than capturing it: irma.SetLogger may
+	// replace it after this package is initialized.
+	if common.Logger == nil {
+		return
+	}
+	common.Logger.Warnf(format, args...)
+}
+
 func newDBLogger() logger.Interface {
 	return logger.New(
-		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		gormLogWriter{},
 		logger.Config{
 			SlowThreshold:             200 * time.Millisecond,
 			LogLevel:                  logger.Warn,
 			IgnoreRecordNotFoundError: true,
-			Colorful:                  true,
+			// Log the statement, never the values bound into it. GORM's default
+			// is to render a slow or failing query with its arguments inlined,
+			// and the arguments here are the wallet's contents: raw SD-JWT VC
+			// tokens, the attribute JSON of a log entry, holder binding keys.
+			// A single failing insert would otherwise write a credential out in
+			// full. Placeholders identify the statement just as well.
+			ParameterizedQueries: true,
+			// The destination is a log, not a terminal.
+			Colorful: false,
 		},
 	)
 }
 
 func autoMigrateHolderModels(db *gorm.DB) error {
-	// The single-column (hash) unique index was replaced by a composite
-	// (hash, format) unique index so one logical credential can be held under
-	// multiple securing formats. AutoMigrate creates the new index but never
-	// drops the superseded one, so remove the legacy single-column index
-	// explicitly; without this, hash-alone uniqueness would still be enforced on
-	// databases created before this change.
-	if db.Migrator().HasIndex(&models.CredentialBatch{}, "idx_credential_batches_hash") {
-		if err := db.Migrator().DropIndex(&models.CredentialBatch{}, "idx_credential_batches_hash"); err != nil {
-			return fmt.Errorf("drop legacy hash unique index: %w", err)
-		}
-	}
-
 	// Dependency order (parents before children): a referenced table must exist
 	// before the table whose foreign key points at it. SQLite tolerates any order,
 	// but Postgres (and any FK-enforcing driver) rejects a CREATE TABLE whose
 	// inline REFERENCES target does not exist yet, so the order matters here.
 	if err := db.AutoMigrate(
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
+		&models.SdJwtVcBatch{},
+		&models.SdJwtVcBatchInstance{},
+		// SD-JWT-secured VCDM has its own batch tables, but its instances link
+		// to the holder binding key table, so they come before it.
+		&models.VcdmBatch{},
+		&models.VcdmBatchInstance{},
 		&models.HolderBindingKey{},
 		&models.ECDSAKeyMetadata{},
 		&models.RSAKeyMetadata{},
@@ -94,10 +110,14 @@ func autoMigrateHolderModels(db *gorm.DB) error {
 		&models.EudiLogEntry{},
 		&models.EudiLogCredential{},
 		&models.StatusListCacheEntry{},
+		// mso_mdoc has its own tables, sharing nothing with the SD-JWT VC ones
+		// above but the database file.
+		&models.MdocBatch{},
+		&models.MdocBatchInstance{},
+		&models.MdocDeviceKey{},
 	); err != nil {
 		return fmt.Errorf("auto-migrate database failed: %w", err)
 	}
-
 	return nil
 }
 
@@ -122,7 +142,15 @@ func (s *storage) Close() error {
 func (s *storage) RemoveAll() error {
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		session := tx.Session(&gorm.Session{AllowGlobalUpdate: true})
-		if err := session.Delete(&models.CredentialBatch{}).Error; err != nil {
+		if err := session.Delete(&models.SdJwtVcBatch{}).Error; err != nil {
+			return err
+		}
+		if err := session.Delete(&models.MdocBatch{}).Error; err != nil {
+			return err
+		}
+		// Device keys minted for an issuance that never completed are bound to no
+		// instance, so the cascade above does not reach them.
+		if err := session.Delete(&models.MdocDeviceKey{}).Error; err != nil {
 			return err
 		}
 		return session.Delete(&models.EudiLogEntry{}).Error

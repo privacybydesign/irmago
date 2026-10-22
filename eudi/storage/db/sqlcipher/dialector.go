@@ -141,19 +141,6 @@ func (m *sqlcipherMigrator) HasIndex(value any, name string) bool {
 	return count > 0
 }
 
-func (m *sqlcipherMigrator) DropIndex(value any, name string) error {
-	return m.RunWithValue(value, func(stmt *gorm.Statement) error {
-		if idx := stmt.Schema.LookIndex(name); idx != nil {
-			name = idx.Name
-		}
-		// SQLite's DROP INDEX takes only the index name. The embedded base
-		// migrator emits MySQL-style "DROP INDEX <name> ON <table>", which SQLite
-		// rejects with a syntax error near "ON", so override it here. IF EXISTS
-		// keeps the drop idempotent for HasIndex-guarded migration calls.
-		return m.DB.Exec("DROP INDEX IF EXISTS ?", clause.Column{Name: name}).Error
-	})
-}
-
 func (m *sqlcipherMigrator) HasConstraint(value any, name string) bool {
 	return true // SQLite doesn't support ALTER TABLE ADD CONSTRAINT
 }

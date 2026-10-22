@@ -18,14 +18,15 @@ import (
 	"gorm.io/datatypes"
 )
 
-func newTestHandler(t *testing.T) (*Engine, db.CredentialStore) {
+func newTestHandler(t *testing.T) (*Engine, db.SdJwtVcStore) {
 	t.Helper()
-	ts, credStore := sdjwtdcqltest.NewTestStorage(t)
+	ts := sdjwtdcqltest.NewTestStorage(t)
+	credStore := db.NewSdJwtVcStore(ts.Db())
 	return &Engine{
-		storage:         ts,
-		credentialStore: credStore,
-		currentLocale:   clientmodels.NewCurrentLocale("en"),
-		profile:         testSdJwtVcProfile(),
+		storage:       ts,
+		batches:       NewSdJwtVcBatchStore(credStore, nil),
+		currentLocale: clientmodels.NewCurrentLocale("en"),
+		profile:       testSdJwtVcProfile(),
 	}, credStore
 }
 
@@ -38,7 +39,7 @@ func testSdJwtVcProfile() Profile {
 	})
 }
 
-func newTestBatch(hash, vct string, payload map[string]any) *models.CredentialBatch {
+func newTestBatch(hash, vct string, payload map[string]any) *models.SdJwtVcBatch {
 	return sdjwtdcqltest.NewTestBatch(hash, vct, payload)
 }
 
@@ -119,7 +120,7 @@ func TestFindCandidates_ValidCredentialIncluded(t *testing.T) {
 // Status List machinery (that lives with services.RevocationService).
 type stubRevocation struct{ revoked bool }
 
-func (s stubRevocation) IsRevoked(*models.IssuedCredentialInstance) bool { return s.revoked }
+func (s stubRevocation) IsRevoked(*models.SdJwtVcBatchInstance) bool { return s.revoked }
 
 // TestFindCandidates_RevokedSurfaced pins the IRMA-parity contract: a revoked
 // SD-JWT VC is NOT dropped or refused during planning. It still appears as an
@@ -127,7 +128,7 @@ func (s stubRevocation) IsRevoked(*models.IssuedCredentialInstance) bool { retur
 // so the frontend can decide — the verifier's own status check is the backstop.
 func TestFindCandidates_RevokedSurfaced(t *testing.T) {
 	h, store := newTestHandler(t)
-	h.revocation = stubRevocation{revoked: true}
+	h.batches = NewSdJwtVcBatchStore(store, stubRevocation{revoked: true})
 
 	batch := newTestBatch("hash-revoked", "https://example.com/EmailCredential", map[string]any{
 		"email": "test@example.com",
@@ -157,7 +158,7 @@ func TestFindCandidates_RevokedSurfaced(t *testing.T) {
 // status_list reference).
 func TestFindCandidates_NotRevoked(t *testing.T) {
 	h, store := newTestHandler(t)
-	h.revocation = stubRevocation{revoked: false}
+	h.batches = NewSdJwtVcBatchStore(store, stubRevocation{revoked: false})
 
 	batch := newTestBatch("hash-valid-stored", "https://example.com/EmailCredential", map[string]any{
 		"email": "test@example.com",
@@ -553,7 +554,7 @@ func TestPrepareDisclosure_BatchOfOne_RemainsUsableAfterDisclosure(t *testing.T)
 	})
 	batch.BatchSize = 1
 	batch.RemainingCount = 1
-	batch.Instances = []models.IssuedCredentialInstance{
+	batch.Instances = []models.SdJwtVcBatchInstance{
 		{RawCredential: []byte(validTestSdJwtVc)},
 	}
 	require.NoError(t, store.StoreBatch(batch))
@@ -577,7 +578,7 @@ func TestPrepareDisclosure_BatchOfOne_RemainsUsableAfterDisclosure(t *testing.T)
 	assert.NotEmpty(t, result2.QueryResponses[0].Credentials)
 
 	// RemainingCount must still be 1.
-	reloaded, err := store.GetBatchByHashAndFormat("hash-batch1", models.CredentialFormatSdJwtVc)
+	reloaded, err := store.GetBatchByHash("hash-batch1")
 	require.NoError(t, err)
 	assert.Equal(t, uint(1), reloaded.RemainingCount)
 }
@@ -591,7 +592,7 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	})
 	batch.BatchSize = 2
 	batch.RemainingCount = 2
-	batch.Instances = []models.IssuedCredentialInstance{
+	batch.Instances = []models.SdJwtVcBatchInstance{
 		{RawCredential: []byte(validTestSdJwtVc)},
 		{RawCredential: []byte(validTestSdJwtVc)},
 	}
@@ -607,7 +608,7 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	_, err := h.PrepareDisclosure(selections, "nonce1", "client1")
 	require.NoError(t, err)
 
-	reloaded, err := store.GetBatchByHashAndFormat("hash-batch2", models.CredentialFormatSdJwtVc)
+	reloaded, err := store.GetBatchByHash("hash-batch2")
 	require.NoError(t, err)
 	assert.Equal(t, uint(1), reloaded.RemainingCount)
 
@@ -615,7 +616,7 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	_, err = h.PrepareDisclosure(selections, "nonce2", "client2")
 	require.NoError(t, err)
 
-	reloaded, err = store.GetBatchByHashAndFormat("hash-batch2", models.CredentialFormatSdJwtVc)
+	reloaded, err = store.GetBatchByHash("hash-batch2")
 	require.NoError(t, err)
 	assert.Equal(t, uint(0), reloaded.RemainingCount)
 
@@ -920,14 +921,13 @@ func TestIsHttpVct(t *testing.T) {
 // for a dc+sd-jwt DCQL query — not even when the verifier echoes the batch's
 // composite type identity as a vct value.
 func TestFindCandidates_VcdmBatchExcluded(t *testing.T) {
-	h, store := newTestHandler(t)
+	h, _ := newTestHandler(t)
 
 	typeIdentity := "https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential"
-	batch := newTestBatch("hash-vcdm", typeIdentity, map[string]any{
+	batch := sdjwtdcqltest.NewTestVcdmBatch("hash-vcdm", typeIdentity, map[string]any{
 		"credentialSubject": map[string]any{"email": "test@example.com"},
 	})
-	batch.Format = models.CredentialFormatSdJwtVcdm
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, db.NewVcdmStore(h.storage.Db()).StoreBatch(batch))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",

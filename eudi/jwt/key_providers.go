@@ -104,8 +104,32 @@ func NewX509KeyProvider(x5cHeader *cert.Chain) *X509KeyProvider {
 	}
 }
 
-func (p *X509KeyProvider) GetCert() *x509.Certificate {
+func (p *X509KeyProvider) GetLeafCert() *x509.Certificate {
 	return p.cert
+}
+
+func (p *X509KeyProvider) GetChain() ([]*x509.Certificate, error) {
+	if p.x5cHeader == nil || p.x5cHeader.Len() == 0 {
+		return nil, fmt.Errorf("expected x5c header, but is empty")
+	}
+
+	chain := make([]*x509.Certificate, p.x5cHeader.Len())
+
+	for i := 0; i < p.x5cHeader.Len(); i++ {
+		c, present := p.x5cHeader.Get(i)
+		if !present {
+			return nil, fmt.Errorf("certificate could not be found")
+		}
+
+		cert, err := decodeCertificate(c)
+		if err != nil {
+			return nil, fmt.Errorf("could not parse certificate in chain: %v", err)
+		}
+
+		chain[i] = cert
+	}
+
+	return chain, nil
 }
 
 func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
@@ -114,13 +138,8 @@ func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *
 		return fmt.Errorf("expected x5c header, but is empty")
 	}
 
-	firstCert, _ := p.x5cHeader.Get(0)
-	der, err := base64.StdEncoding.DecodeString(string(firstCert))
-	if err != nil {
-		return fmt.Errorf("failed to decode end-entity base64 encoded der: %v", err)
-	}
-
-	cert, err := x509.ParseCertificate(der)
+	certBytes, _ := p.x5cHeader.Get(0)
+	cert, err := decodeCertificate(certBytes)
 	if err != nil {
 		return fmt.Errorf("failed to parse end-entity certificate: %v", err)
 	}
@@ -146,6 +165,15 @@ func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *
 	sink.Key(alg, cert.PublicKey)
 
 	return nil
+}
+
+func decodeCertificate(derBytes []byte) (*x509.Certificate, error) {
+	der, err := base64.StdEncoding.DecodeString(string(derBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode base64 encoded der: %v", err)
+	}
+
+	return x509.ParseCertificate(der)
 }
 
 type DidKeyProvider struct {

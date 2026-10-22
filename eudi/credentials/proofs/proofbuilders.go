@@ -98,8 +98,10 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (any, error) {
 	headers.Set(jws.TypeKey, "openid4vci-proof+jwt")
 
 	switch b.method {
-	case CryptographicBindingMethod_JWK:
-		// For JWK method, include the public key in the JWT header
+	case CryptographicBindingMethod_JWK, CryptographicBindingMethod_COSE:
+		// A JWS protected header has no COSE_Key parameter, so `cose_key` combined
+		// with the `jwt` proof type can only carry the holder key as a JWK. Genuine
+		// COSE_Key binding requires a CWT (COSE_Sign1) proof, which we don't build.
 		headers.Set(jws.JWKKey, pubJwk)
 	case CryptographicBindingMethod_DID_KEY:
 		did, err := didkey.CreateWithVerificationMethodIdentifier(privKey.PublicKey)
@@ -156,7 +158,7 @@ func (b *JwtProofBuilder) BuildWithES256Signer(pub *ecdsa.PublicKey, sign ES256S
 		"typ": "openid4vci-proof+jwt",
 	}
 	switch b.method {
-	case CryptographicBindingMethod_JWK:
+	case CryptographicBindingMethod_JWK, CryptographicBindingMethod_COSE:
 		header["jwk"] = pubJwk
 	case CryptographicBindingMethod_DID_KEY:
 		did, err := didkey.Create(*pub)

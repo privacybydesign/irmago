@@ -6,6 +6,10 @@ being opened without its AES key. Loaded and verified by
 `TestGenerateClientStorageForRegressionTests` (`GENERATE_STORAGE=1`) while
 `version.go` reads `1.1.1`.
 
+Generated from the `v1.1.1` tag with every IRMA issuance request given a validity of
+2100-01-01 so the credentials don't expire. The in-process keyshare server was patched the same way, so the `test.test.mijnirma`
+keyshare-enrollment credential it issues is valid until 2100 too.
+
 Unlike the `v1.0.0` snapshot (whose `eudi_client_db` is intentionally plaintext to
 exercise the migration), this snapshot's `eudi_client_db` is **born encrypted** — it
 was written by the fixed code. Loading it therefore exercises the steady-state
@@ -21,7 +25,6 @@ back through the SQLCipher connection. The test asserts the file is not plaintex
 | `eudi_client_db` | EUDI SQLCipher database (`yivi-eudi.db`): OpenID4VCI credentials. **Encrypted at rest.** |
 | `ecdsa_sk.pem` | Client signer key. |
 | `keyshare_users.json` | Keyshare users preloaded into the test keyshare server. |
-| `metadata.json` | Human-readable dump of the stored credentials and logs. |
 
 ## Contents
 

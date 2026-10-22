@@ -96,6 +96,7 @@ func configureIRMAServer() (*server.Configuration, error) {
 		conf.RedisSettings.SentinelAddrs = viper.GetStringSlice("redis_sentinel_addrs")
 		conf.RedisSettings.SentinelMasterName = viper.GetString("redis_sentinel_master_name")
 		conf.RedisSettings.AcceptInconsistencyRisk = viper.GetBool("redis_accept_inconsistency_risk")
+		conf.RedisSettings.RetryBudget = viper.GetDuration("redis_retry_budget")
 
 		if conf.RedisSettings.Addr == "" && len(conf.RedisSettings.SentinelAddrs) == 0 || conf.RedisSettings.Addr != "" && len(conf.RedisSettings.SentinelAddrs) > 0 {
 			return nil, errors.New("When Redis is used as session data store, either --redis-addr or --redis-sentinel-addrs must be specified.")

@@ -163,6 +163,9 @@ func validateDcApiRequest(request *AuthorizationRequest) error {
 	if len(request.DcqlQuery.Credentials) == 0 {
 		return fmt.Errorf("digital credentials api request is missing a non-empty dcql_query")
 	}
+	if err := request.DcqlQuery.Validate(); err != nil {
+		return fmt.Errorf("invalid dcql_query: %v", err)
+	}
 	return nil
 }
 

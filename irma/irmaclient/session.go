@@ -747,7 +747,10 @@ func panicToError(e any) *irma.SessionError {
 		info = x.String()
 	default: // nop
 	}
-	fmt.Printf("recovering from panic: %v\nstack trace:\n%v\n", info, string(debug.Stack()))
+	// Through the logger rather than stdout: on mobile stdout is the platform
+	// log, which this would write to whatever level the app set. The stack trace
+	// still reaches the app in the SessionError below.
+	irma.Logger.Errorf("recovering from panic: %v\nstack trace:\n%v\n", info, string(debug.Stack()))
 	return &irma.SessionError{ErrorType: irma.ErrorPanic, Info: info + "\n\n" + string(debug.Stack())}
 }
 

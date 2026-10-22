@@ -26,10 +26,12 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwtvc_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_vcdm_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/mdoc_dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -51,7 +53,7 @@ type Client struct {
 	didValidator      *openid4vp.DidVerifierValidator
 	scheduler         gocron.Scheduler
 	sessionManager    sessionManager
-	credentialService services.CredentialService
+	credentialFormats services.CredentialFormats
 	revocationService *services.RevocationService
 
 	// handler is how the wallet wakes the app when what it has already rendered
@@ -138,8 +140,7 @@ func New(
 	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(s)
 	irmaKeyBinder := sdjwt.NewDefaultKeyBinder(keyBindingStorage)
 
-	credStore := db.NewCredentialStore(eudiStorage.Db())
-	hbkStore := db.NewHolderBindingKeyStore(eudiStorage.Db())
+	credStore := db.NewSdJwtVcStore(eudiStorage.Db())
 
 	// Token Status List checker + the single revocation service built on it.
 	// The checker is also shared with the holder-side verifier
@@ -153,7 +154,15 @@ func New(
 	}, statusListCache)
 	revocationService := services.NewRevocationService(statusChecker, credStore)
 
-	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale)
+	// Rewrite any credential hash still computed without the issuer. Runs before
+	// the wallet can be asked about its credentials, because a stale hash makes a
+	// re-issuance look like a credential the wallet does not hold, which would
+	// silently store a second copy. Idempotent, so it costs one query on a wallet
+	// that is already current; a failure here is not fatal, since the wallet works
+	// with old-style hashes and only its duplicate detection is degraded.
+	if err := services.MigrateCredentialHashes(credStore); err != nil {
+		common.Logger.Warnf("could not migrate credential hashes: %v", err)
+	}
 
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
@@ -176,18 +185,27 @@ func New(
 		revocationService,
 	)
 	// The VCDM handler serves vc+sd-jwt queries (SD-JWT-secured W3C VCDM 2.0)
-	// while the SD-JWT VC handler above serves dc+sd-jwt. It shares the storage,
-	// key binder and revocation checker; the holder key was linked at receipt.
+	// from the VCDM tables, while the SD-JWT VC handler above serves dc+sd-jwt.
+	// It shares the storage and key binder; the holder key was linked at receipt.
 	eudiVcdmDcqlHandler := eudi_vcdm_dcql.NewVcdmDcqlHandler(
 		eudiStorage,
-		credStore,
+		db.NewVcdmStore(eudiStorage.Db()),
 		eudiKeyBinder,
 		currentLocale,
-		revocationService,
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
 
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler, eudiVcdmDcqlHandler}, verifierValidator, currentLocale)
+	// Register the mso_mdoc handler for credentials issued via OID4VCI (e.g. the AV
+	// Blueprint's proof_of_age credential). No fetchers here (unlike the SD-JWT
+	// handler above): there's no standardized online discovery document for an mdoc
+	// doctype to describe credentials the wallet has never seen.
+	// The device key binder is the software one: it reads the PKCS#8 key issuance
+	// stored. Replacing it with a StrongBox / Secure Enclave implementation is the
+	// one change needed to keep mdoc device keys out of this process.
+	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, currentLocale,
+		services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(eudiStorage.Db())))
+
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler, eudiVcdmDcqlHandler, mdocDcqlHandler}, verifierValidator, currentLocale)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -234,7 +252,7 @@ func New(
 	}
 
 	// SD-JWT-secured VCDM credentials share the issuer trust anchors and clock
-	// with the SD-JWT VC context; received credentials are routed between the
+	// with the SD-JWT VC context; a dc+sd-jwt credential is routed between the
 	// two verifiers by data model (#682).
 	vcdmVerificationContextOpenID4VCI := vcdmsdjwt.VerificationContext{
 		X509VerificationContext: &eudiConf.Issuers,
@@ -242,14 +260,19 @@ func New(
 		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
 	}
 
-	// Initiate the OpenID4VCI client
+	// The per-format registry: how each credential format is verified, which
+	// keys it is bound to, and where it is stored. Derived in one place
+	// (services.NewCredentialFormats), so adding a format is one entry there and
+	// nothing to register here.
+	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI)
+	vcdmHolderVerifier := vcdmsdjwt.NewHolderVerificationProcessor(vcdmVerificationContextOpenID4VCI)
+	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, vcdmHolderVerifier, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, currentLocale)
 	openid4vciClient, err := openid4vci.NewClient(
 		common.HTTPClient,
 		eudiConf,
-		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI),
-		vcdmsdjwt.NewHolderVerificationProcessor(vcdmVerificationContextOpenID4VCI),
-		credentialService,
-		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
+		holderVerifier,
+		vcdmHolderVerifier,
+		credentialFormats,
 		currentLocale,
 	)
 
@@ -277,7 +300,7 @@ func New(
 		scheduler:         scheduler,
 		handler:           handler,
 		currentLocale:     currentLocale,
-		credentialService: credentialService,
+		credentialFormats: credentialFormats,
 		revocationService: revocationService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
@@ -457,7 +480,13 @@ func hashAttributesAndCredType(info *irma.CredentialInfo) (string, error) {
 	hashContent.WriteString(info.Identifier().String())
 
 	sortedKeys := []string{}
-	for key := range info.Attributes {
+	for key, value := range info.Attributes {
+		// Idemix lists an absent optional attribute with a nil value, while an
+		// SD-JWT has no claim for it at all. Skip it so both formats of a dual
+		// issued credential hash the same. A present "" is non-nil and still hashed.
+		if len(value) == 0 {
+			continue
+		}
 		sortedKeys = append(sortedKeys, key.String())
 	}
 	sort.Strings(sortedKeys)
@@ -540,11 +569,15 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 		}
 	}
 
-	// Delete EUDI credentials (read metadata first for the removal log).
+	// Delete EUDI credentials. The removal log is best-effort: the metadata read
+	// only enriches the log, and a corrupt credential — the very case that makes
+	// deletion necessary — is exactly what can make that read fail. A failed or
+	// empty log must never block the deletion itself.
 	if len(eudiHashes) > 0 {
-		allEudiCreds, err := client.credentialService.GetCredentialMetadataList()
+		allEudiCreds, err := client.listEudiCredentials()
 		if err != nil {
-			return fmt.Errorf("failed to read eudi credentials for removal log: %v", err)
+			irma.Logger.Warnf("could not read eudi credentials for removal log; deleting without it: %v", err)
+			allEudiCreds = nil
 		}
 
 		// Find the credentials being deleted.
@@ -560,16 +593,21 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 		}
 
 		// Create removal log before deleting, so the log service can still
-		// look up batch metadata to resolve the credential logo filename.
+		// look up batch metadata to resolve the credential logo filename. A
+		// failure here must not block deletion either.
 		if len(removedCreds) > 0 {
 			logService := services.NewEudiLogService(client.eudiStorage, client.locale())
 			if err := logService.AddRemovalLog(removedCreds); err != nil {
-				return fmt.Errorf("failed to create eudi removal log: %v", err)
+				irma.Logger.Warnf("failed to create eudi removal log; deleting anyway: %v", err)
 			}
 		}
 
 		for format, hash := range eudiHashes {
-			if err := client.credentialService.DeleteByHashAndFormat(hash, format); err != nil {
+			support, ok := client.credentialFormats[models.CredentialFormat(format)]
+			if !ok {
+				return fmt.Errorf("error while deleting eudi credential: no storage for format %q", format)
+			}
+			if err := support.Store.DeleteByHash(hash); err != nil {
 				return fmt.Errorf("error while deleting eudi credential: %v", err)
 			}
 		}
@@ -596,10 +634,16 @@ func createRemovalLog(
 ) (*irmaclient.LogEntry, error) {
 	attrs := []irma.TranslatedString{}
 
-	// loop over it in display order
-	for _, t := range sortedAttributeTypes(irmaConfiguration.CredentialTypes[credentialType].AttributeTypes) {
-		id := t.GetAttributeTypeIdentifier()
-		attrs = append(attrs, attributes[id])
+	// Loop over the attributes in display order. A credential whose type is not
+	// in the configuration (a ProblematicCredential being cleaned up — reachable
+	// for an SD-JWT-over-IRMA credential whose type was dropped from its scheme)
+	// has no attribute types to order by, so its log entry records no attributes;
+	// the removal itself must still be logged.
+	if credType := irmaConfiguration.CredentialTypes[credentialType]; credType != nil {
+		for _, t := range sortedAttributeTypes(credType.AttributeTypes) {
+			id := t.GetAttributeTypeIdentifier()
+			attrs = append(attrs, attributes[id])
+		}
 	}
 
 	return &irmaclient.LogEntry{

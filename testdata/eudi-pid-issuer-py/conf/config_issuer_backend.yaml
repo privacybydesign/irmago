@@ -7,7 +7,8 @@
 # - All URLs are reachable via the existing nginx tls_proxy on https://localhost:8443/eudi-pid-issuer-py.
 # - The "FC" (form-based) country variant is used so the pre-auth flow does
 #   not depend on an external eIDAS provider.
-# - Only PID-SD-JWT is enabled; mdoc variants are not configured.
+# - PID-SD-JWT and the age-verification mdoc (doctype eu.europa.ec.av.1) are
+#   enabled; the other mdoc variants are not.
 
 service_url: "https://localhost:8443/eudi-pid-issuer-py"
 
@@ -63,6 +64,7 @@ credential_auth_methods:
   PID_login: []
   country_selection:
     - eu.europa.ec.eudi.pid_vc_sd_jwt
+    - eu.europa.ec.eudi.age_verification_mdoc
 
 countries:
   FC:
@@ -79,3 +81,24 @@ countries:
     un_distinguishing_sign: "FC"
     supported_credential_ids:
       - "eu.europa.ec.eudi.pid_vc_sd_jwt"
+
+  # The age-verification credential is issued under its own pseudo-country: for
+  # eu.europa.ec.eudi.age_verification_mdoc the issuer hardcodes country "AV"
+  # (app/preauthorization.py), then looks the signing key up under
+  # countries["AV"] — so without this block credential creation fails with
+  # KeyError: 'AV' after the wallet has already completed the token exchange.
+  # It signs with the same key as FC; only the bucket differs.
+  AV:
+    name: "AgeVerification"
+    validity: 90
+    keys:
+      _default:
+        private_key_path: "/etc/eudiw/pid-issuer-dev/privKey/issuer.key"
+        private_key_password: null
+        certificate_path: "/etc/eudiw/pid-issuer-dev/cert/issuer.der"
+    un_distinguishing_sign: "AV"
+    supported_credential_ids:
+      # doctype eu.europa.ec.av.1. The issuer advertises every upstream
+      # configuration in its metadata regardless of this list; only what is
+      # listed here can actually be issued.
+      - "eu.europa.ec.eudi.age_verification_mdoc"

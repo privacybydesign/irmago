@@ -132,7 +132,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 }
 
 // ============================================================================
-// Claim matching (ported from eudi/openid4vp/client/dcql.go)
+// Claim matching
 // ============================================================================
 
 type dcqlClaimMatch struct {
@@ -578,6 +578,9 @@ func displayHintToAttributeType(s string) clientmodels.AttributeType {
 func buildAttributeValue(displayHint string, rawValue *string) *clientmodels.AttributeValue {
 	attrType := displayHintToAttributeType(displayHint)
 	val := &clientmodels.AttributeValue{Type: attrType}
+	if displayHint != "" {
+		val.DisplayHint = &displayHint
+	}
 	if rawValue == nil {
 		return val
 	}

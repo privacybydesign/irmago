@@ -929,7 +929,7 @@ func (s *Server) reservePinCheck(ctx context.Context, user *User) (bool, int, in
 }
 
 func (s *Server) keyshareAttributeIssuanceRequest(username string) *irma.IssuanceRequest {
-	validity := irma.Timestamp(time.Now().AddDate(1, 0, 0)) // 1 year from now
+	validity := irma.Timestamp(time.Now().AddDate(0, 0, s.conf.KeyshareAttributeValidity))
 	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: s.conf.KeyshareAttribute.CredentialTypeIdentifier(),

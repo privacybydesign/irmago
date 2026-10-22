@@ -224,7 +224,7 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 // decodeJwtAndVerifyFromHeader parses the issuer-signed JWT, verifying its
 // signature via the shared eudi/jwt key provider (X.509 `x5c` or DID `kid`) and
 // its `typ` against the SD-JWT-secured VCDM media types. When an X.509 chain is
-// used, the end-entity certificate is additionally verified against the trusted
+// used, the whole chain is additionally verified against the trusted
 // roots/intermediates and revocation lists.
 func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, error) {
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{MediaTypeVcSdJwt, MediaTypeDcSdJwt}, p.allowInsecureDidWeb)
@@ -242,8 +242,11 @@ func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, e
 	// If an X.509 chain was used, validate it against the trust anchors + CRLs.
 	// (A DID `kid` resolves its key from the DID document, no chain to check.)
 	if x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider); ok {
-		cert := x509KeyProvider.GetCert()
-		if err := eudi_jwt.VerifyCertificate(p.verificationContext.X509VerificationContext, cert, nil); err != nil {
+		chain, err := x509KeyProvider.GetChain()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get certificate chain from provider: %v", err)
+		}
+		if err := eudi_jwt.VerifyCertificateChain(p.verificationContext.X509VerificationContext, chain, nil); err != nil {
 			return nil, fmt.Errorf("failed to verify certificate: %v", err)
 		}
 	}

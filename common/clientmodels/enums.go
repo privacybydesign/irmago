@@ -31,4 +31,5 @@ const (
 	// credential events will throw on the whole payload.
 	Format_SdJwtVcdm CredentialFormat = "vc+sd-jwt"
 	Format_Idemix    CredentialFormat = "idemix"
+	Format_MsoMdoc   CredentialFormat = "mso_mdoc"
 )

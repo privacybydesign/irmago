@@ -177,7 +177,6 @@ func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
 	_, err := parser.ParseWithClaims(kss.token, &claims, conf.KeyshareServerKeyFunc(kss.SchemeManagerIdentifier))
 	if err != nil {
 		irma.Logger.Info("Keyshare server token invalid")
-		irma.Logger.Debug("Token: ", kss.token)
 		return false
 	}
 
@@ -185,7 +184,6 @@ func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
 	// and for the rest of the protocol to take place with this token
 	if !claims.VerifyExpiresAt(time.Now().Add(1*time.Minute), true) {
 		irma.Logger.Info("Keyshare server token expires too soon")
-		irma.Logger.Debug("Token: ", kss.token)
 		return false
 	}
 

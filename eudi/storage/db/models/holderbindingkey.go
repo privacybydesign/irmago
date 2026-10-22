@@ -21,13 +21,20 @@ const (
 	KeyAlgorithmRSA   KeyAlgorithm = "rsa"
 )
 
-// HolderBindingKey is the base/common record used for all key types.
+// HolderBindingKey is an SD-JWT VC holder binding key: the key pair a
+// credential's cnf claim binds it to.
 type HolderBindingKey struct {
 	ID datatypes.UUID `gorm:"primaryKey"`
 
-	// FK back to the owning credential instance (Has One from IssuedCredentialInstance).
-	// Nil when the key has not yet been bound to a credential instance.
+	// FK back to the owning SdJwtVcBatchInstance (Has One from there). Nil when
+	// the key has not yet been bound to a credential instance, or when it is
+	// bound to a VCDM instance instead. mdoc device keys live in MdocDeviceKey.
 	IssuedCredentialInstanceID *datatypes.UUID
+
+	// FK back to the owning VcdmBatchInstance (Has One from there). SD-JWT-secured
+	// VCDM binds its holder the same way SD-JWT VC does, through `cnf`, so it
+	// shares this table; at most one of the two instance IDs is set.
+	VcdmBatchInstanceID *datatypes.UUID `gorm:"index"`
 
 	Algorithm KeyAlgorithm `gorm:"type:text;not null;index"`
 
@@ -46,6 +53,13 @@ type HolderBindingKey struct {
 
 	// Date/time of creation (UTC)
 	CreatedAt time.Time
+}
+
+// IsBound reports whether the key is linked to a credential instance of either
+// SD-JWT data model.
+func (k *HolderBindingKey) IsBound() bool {
+	return (k.IssuedCredentialInstanceID != nil && !k.IssuedCredentialInstanceID.IsNil()) ||
+		(k.VcdmBatchInstanceID != nil && !k.VcdmBatchInstanceID.IsNil())
 }
 
 func (k *HolderBindingKey) BeforeCreate(tx *gorm.DB) error {

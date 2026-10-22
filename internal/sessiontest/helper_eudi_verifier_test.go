@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // Helpers for driving the EUDI reference verifier (the eudi_openid4vp* services in
@@ -37,6 +38,19 @@ func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest st
 
 	if err != nil {
 		return EudiVerifierSession{}, fmt.Errorf("failed to read body of response from eudi verifier while starting session: %v", err)
+	}
+
+	// Checked explicitly, because the parse below only fails on *some* refusals: the
+	// verifier answers a rejected claim path with a body carrying a numeric "status"
+	// (which will not unmarshal into map[string]string, so an error surfaced) and a
+	// missing nonce with {"error":"MissingNonce"} (which parses cleanly, so the
+	// caller was handed a session with an empty transaction id and no error at all).
+	// Whether a refusal was reported therefore depended on the shape of the error
+	// body rather than on the status code.
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return EudiVerifierSession{}, fmt.Errorf(
+			"eudi verifier refused the session request: HTTP %d: %s",
+			response.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var requestRequest map[string]string

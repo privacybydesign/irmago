@@ -1,7 +1,6 @@
 package services
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -9,43 +8,149 @@ import (
 
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"gorm.io/datatypes"
 )
 
-// VerifyAndStoreIssuedVcdmCredentials persists a batch of verified
-// SD-JWT-secured VCDM credentials, mirroring VerifyAndStoreIssuedCredentials
-// for the W3C VCDM data model. Per the storage decision (#679), the VCDM
-// format forms its own logical batch (the cross-data-model grouping that
-// would link it to other formats of the same credential is follow-up work):
-// the existing CredentialBatch model is reused with the raw secured blob per
-// instance plus the extracted document as batch metadata, and the credential
-// type identity is the @context+type composite.
+// sdJwtVcdmCredentialService is the SD-JWT-secured W3C VCDM CredentialFormatStore:
+// it verifies the holder key bindings of freshly issued VCDM credentials,
+// persists them as one VcdmBatch, and renders stored batches for the app.
+//
+// The holder binding keys are the SD-JWT VC ones (HolderBindingKeyService),
+// matched by `cnf` the same way; only the instance they link to differs.
 //
 // W3C VCDM credentials reference status through `credentialStatus`
-// (BitstringStatusList), not the IETF Token Status List; the wallet's
-// Bitstring checker is separate follow-up work, so no status references are
-// validated or seeded here — the instances keep LastKnownStatus's zero value
-// (StatusUnknown) and are not status-checkable yet.
-func (s *credentialService) VerifyAndStoreIssuedVcdmCredentials(
-	verified []*vcdmsdjwt.VerifiedSdJwtVcdm,
+// (BitstringStatusList), not the IETF Token Status List; the wallet does not
+// check it yet, so nothing here is ever reported revoked.
+type sdJwtVcdmCredentialService struct {
+	sdJwtVcdmDisplaySource
+	holderBindingKeyStore db.HolderBindingKeyStore
+	fileStorage           filesystem.FileSystemStorage
+	currentLocale         *clientmodels.CurrentLocale
+}
+
+// NewSdJwtVcdmCredentialService returns the SD-JWT-secured VCDM store over the
+// given stores and file storage.
+func NewSdJwtVcdmCredentialService(
+	store db.VcdmStore,
+	holderBindingKeyStore db.HolderBindingKeyStore,
+	fileStorage filesystem.FileSystemStorage,
+	currentLocale *clientmodels.CurrentLocale,
+) *sdJwtVcdmCredentialService {
+	return &sdJwtVcdmCredentialService{
+		sdJwtVcdmDisplaySource: newSdJwtVcdmDisplaySource(store),
+		holderBindingKeyStore:  holderBindingKeyStore,
+		fileStorage:            fileStorage,
+		currentLocale:          currentLocale,
+	}
+}
+
+var _ CredentialFormatStore = (*sdJwtVcdmCredentialService)(nil)
+
+func (s *sdJwtVcdmCredentialService) DeleteByHash(hash string) error {
+	return s.store.DeleteBatchByHashAndFormat(hash, models.CredentialFormatSdJwtVcdm)
+}
+
+// List renders every stored VCDM batch for the app.
+func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) {
+	batches, err := s.store.ListBatches()
+	if err != nil {
+		return nil, err
+	}
+
+	locale := s.currentLocale.Get()
+	credentialLogoManager := s.fileStorage.Credentials().LogoManager()
+	issuerLogoManager := s.fileStorage.Issuers().LogoManager()
+
+	result := make([]*clientmodels.Credential, 0, len(batches))
+	for _, batch := range batches {
+		credentialMetadata := VcdmCredentialMetadata(batch)
+		display := ResolveVcdmDisplay(batch, locale)
+		// Fall back to the type identity when the issuer published no display
+		// text this locale can resolve, as the SD-JWT VC list does with the vct.
+		credentialName := display.CredentialName
+		if credentialName == "" {
+			credentialName = batch.TypeIdentity
+		}
+
+		var credentialImage *clientmodels.Image
+		if credentialMetadata != nil {
+			credentialImage = LoadResolvedLogo(credentialLogoManager, CredentialLogoURIsByLanguage(credentialMetadata.Display), locale)
+		}
+
+		var document vcdm.Document
+		if err := json.Unmarshal(batch.ProcessedPayload, &document); err != nil {
+			document = nil
+		}
+
+		issuedAt := batch.IssuedAt.Unix()
+		var exp *int64
+		if batch.ExpiresAt.Valid {
+			x := batch.ExpiresAt.V.Unix()
+			exp = &x
+		}
+
+		result = append(result, &clientmodels.Credential{
+			CredentialId: batch.TypeIdentity,
+			Hash:         batch.Hash,
+			Image:        credentialImage,
+			Name:         credentialName,
+			Issuer: clientmodels.TrustedParty{
+				Id:       batch.CredentialIssuer,
+				Name:     display.IssuerName,
+				Image:    LoadResolvedLogo(issuerLogoManager, IssuerLogoURIsByLanguage(VcdmIssuerDisplays(batch)), locale),
+				Verified: batch.IssuerVerified,
+			},
+			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
+				clientmodels.Format_SdJwtVcdm: batch.Hash,
+			},
+			BatchInstanceCountsRemaining: batchInstanceCounts(models.CredentialFormatSdJwtVcdm, batch.BatchSize, &batch.RemainingCount),
+			Attributes:                   BuildAttributesFromVcdmDocument(document, display.ClaimNames, display.ClaimOrder),
+			ExpiryDate:                   exp,
+			IssuanceDate:                 &issuedAt,
+			Revoked:                      false,
+			RevocationSupported:          false,
+			IssueURL:                     nil,
+		})
+	}
+
+	return result, nil
+}
+
+// Store builds a VcdmBatch from the supplied parsed credentials and metadata,
+// then persists the batch and all its instances in one transaction.
+//
+// publicKeyIdentifiers must either be empty (no cryptographic key binding
+// required) or have exactly the same length as parsedCredentials. All
+// credentials are assumed to come from one credential_configuration_id and so
+// share their type identity, issuer and validity.
+func (s *sdJwtVcdmCredentialService) Store(
+	parsedCredentials []*ParsedCredential,
 	credentialConfigurationId string,
 	issuerMetadata metadata.CredentialIssuerMetadata,
 	requireCryptographicKeyBinding bool,
 	publicKeyIdentifiers []models.PublicHolderBindingKey,
 ) error {
-	if len(verified) == 0 {
+	if len(parsedCredentials) == 0 {
 		return nil
 	}
+	for i, p := range parsedCredentials {
+		if p.SdJwtVcdm == nil {
+			return fmt.Errorf("credential %d is not an SD-JWT-secured VCDM credential (format %q); the VCDM store cannot hold it", i, p.Format)
+		}
+	}
 
-	if requireCryptographicKeyBinding && len(publicKeyIdentifiers) != len(verified) {
+	if requireCryptographicKeyBinding && len(publicKeyIdentifiers) != len(parsedCredentials) {
 		return fmt.Errorf(
-			"publicKeyIdentifiers length (%d) must equal verified credentials length (%d) when cryptographic key binding is used",
-			len(publicKeyIdentifiers), len(verified),
+			"publicKeyIdentifiers length (%d) must equal parsedCredentials length (%d) when cryptographic key binding is used",
+			len(publicKeyIdentifiers), len(parsedCredentials),
 		)
 	}
 
@@ -53,12 +158,8 @@ func (s *credentialService) VerifyAndStoreIssuedVcdmCredentials(
 	// mismatch aborts the issuance without deleting the user's existing batch.
 	var matchedKeyIDs []datatypes.UUID
 	if requireCryptographicKeyBinding {
-		cnfs := make([]*sdjwt.CnfField, len(verified))
-		for i, v := range verified {
-			cnfs[i] = v.RegisteredClaims.Confirm
-		}
 		var err error
-		matchedKeyIDs, err = matchAllHolderBindingKeys(cnfs, publicKeyIdentifiers)
+		matchedKeyIDs, err = matchAllHolderBindingKeys(parsedCredentials, publicKeyIdentifiers)
 		if err != nil {
 			s.deleteOrphanedKeys(publicKeyIdentifiers)
 			return err
@@ -67,84 +168,109 @@ func (s *credentialService) VerifyAndStoreIssuedVcdmCredentials(
 
 	// All instances in a batch are copies of one logical credential; the first
 	// is the source of truth for batch-level metadata.
-	first := verified[0]
-	typeIdentity := first.Document.TypeIdentity()
+	first := parsedCredentials[0]
 
-	// The document's issuer is authoritative for VCDM (the JWT iss, when
-	// present, was cross-checked against it during verification), and it
-	// cannot be malformed here: Document.Validate ran at receipt.
-	issuerID, err := first.Document.IssuerID()
-	if err != nil {
-		return fmt.Errorf("failed to read VCDM issuer: %w", err)
-	}
-
-	processedPayload, err := json.Marshal(first.ProcessedSdJwtPayload)
+	processedPayload, err := json.Marshal(first.SdJwtVcdm.ProcessedSdJwtPayload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
 	}
 
-	hash, err := hashForVcdmCredential(typeIdentity, first.ProcessedSdJwtPayload)
+	hash, err := s.computeHashAndDeleteExisting(first)
 	if err != nil {
-		return fmt.Errorf("failed to compute credential hash: %w", err)
-	}
-
-	// If a batch with this (hash, format) already exists, delete it so the new
-	// issuance replaces it (e.g. with updated timestamps or a fresh holder
-	// binding key).
-	if err := s.deleteExistingBatch(hash, models.CredentialFormatSdJwtVcdm); err != nil {
 		return err
 	}
 
-	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
-
-	batch := &models.CredentialBatch{
-		IssuerIdentifier:           issuerID,
-		CredentialType:             typeIdentity,
-		Format:                     models.CredentialFormatSdJwtVcdm,
-		Hash:                       hash,
-		ProcessedSdJwtPayload:      datatypes.JSON(processedPayload),
-		CredentialIssuerIdentifier: issuerID,
-		IssuerDisplay:              slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
-		CredentialMetadata:         convertCredentialMetadata(credentialConfiguration),
-		BatchSize:                  uint(len(verified)),
-		RemainingCount:             uint(len(verified)),
-		Instances:                  buildVcdmInstances(verified),
+	// Absent configuration is tolerated: everything read from it below is
+	// display metadata, which degrades to empty rather than making a verified
+	// credential unstorable.
+	credentialConfiguration, credentialConfigurationFound := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
+	if reason := missingDisplayMetadataReason(credentialConfigurationId, credentialConfiguration, credentialConfigurationFound); reason != "" {
+		eudi.Logger.Warnf("VCDM credential from issuer %q will render as its raw type %q: %s", first.IssuerIdentifier, first.VerifiableCredentialType, reason)
 	}
 
-	issuedAt, expiresAt, notBefore := VcdmIssuanceValidity(first)
-	if issuedAt != nil {
-		batch.IssuedAt = datatypes.NullTime{V: time.Unix(*issuedAt, 0), Valid: true}
+	issuerDisplay, credentialMetadata, err := displaySnapshots(issuerMetadata, credentialConfiguration)
+	if err != nil {
+		return err
+	}
+
+	instances := make([]models.VcdmBatchInstance, len(parsedCredentials))
+	for i, p := range parsedCredentials {
+		instances[i] = models.VcdmBatchInstance{RawCredential: p.RawCredentialBytes}
+	}
+
+	batch := &models.VcdmBatch{
+		TypeIdentity:     first.VerifiableCredentialType,
+		IssuerIdentifier: first.IssuerIdentifier,
+		CredentialIssuer: issuerMetadata.CredentialIssuer,
+		Format:           models.CredentialFormatSdJwtVcdm,
+		Hash:             hash,
+		ProcessedPayload: datatypes.JSON(processedPayload),
+		BatchSize:        uint(len(parsedCredentials)),
+		RemainingCount:   uint(len(parsedCredentials)),
+		// Reaching this point means the issuer was authenticated: the parser
+		// returns an error, not a ParsedCredential, otherwise.
+		IssuerVerified:     true,
+		IssuerDisplay:      issuerDisplay,
+		CredentialMetadata: credentialMetadata,
+		Instances:          instances,
+	}
+
+	if first.IssuedAt != nil {
+		batch.IssuedAt = time.Unix(*first.IssuedAt, 0)
 	} else {
 		// Neither a JWT iat nor a document validFrom is present; the batch
 		// model requires an issuance timestamp, so record the receipt time.
-		batch.IssuedAt = datatypes.NullTime{V: time.Now(), Valid: true}
+		batch.IssuedAt = time.Now()
 	}
-	if expiresAt != nil {
-		batch.ExpiresAt = datatypes.NullTime{V: time.Unix(*expiresAt, 0), Valid: true}
+	if first.ExpiresAt != nil {
+		batch.ExpiresAt = datatypes.NullTime{V: time.Unix(*first.ExpiresAt, 0), Valid: true}
 	}
-	if notBefore != nil {
-		batch.NotBefore = datatypes.NullTime{V: time.Unix(*notBefore, 0), Valid: true}
+	if first.NotBefore != nil {
+		batch.NotBefore = datatypes.NullTime{V: time.Unix(*first.NotBefore, 0), Valid: true}
 	}
 
-	if err := s.credentialStore.StoreBatch(batch); err != nil {
+	if err := s.store.StoreBatch(batch); err != nil {
 		return err
 	}
 
 	if requireCryptographicKeyBinding {
-		s.linkHolderBindingKeys(matchedKeyIDs, batch.Instances)
+		for i, keyID := range matchedKeyIDs {
+			if err := s.holderBindingKeyStore.LinkToVcdmInstance(keyID, batch.Instances[i].ID); err != nil {
+				eudi.Logger.Warnf("failed to link holder binding key %s to VCDM instance %s: %v", keyID, batch.Instances[i].ID, err)
+			}
+		}
 	}
 
 	return nil
 }
 
-func buildVcdmInstances(verified []*vcdmsdjwt.VerifiedSdJwtVcdm) []models.IssuedCredentialInstance {
-	instances := make([]models.IssuedCredentialInstance, len(verified))
-	for i, v := range verified {
-		instances[i] = models.IssuedCredentialInstance{
-			RawCredential: []byte(v.GetRawSdJwtVcdm()),
+// computeHashAndDeleteExisting computes the credential's content hash and, if
+// a batch with this (hash, format) already exists, deletes it so the new
+// issuance replaces it (e.g. with updated timestamps or a fresh holder binding
+// key).
+func (s *sdJwtVcdmCredentialService) computeHashAndDeleteExisting(p *ParsedCredential) (string, error) {
+	hash, err := hashForVcdmCredential(p.VerifiableCredentialType, p.IssuerIdentifier, p.SdJwtVcdm.ProcessedSdJwtPayload)
+	if err != nil {
+		return "", fmt.Errorf("failed to compute credential hash: %w", err)
+	}
+
+	if existing, err := s.store.GetBatchByHashAndFormat(hash, models.CredentialFormatSdJwtVcdm); err == nil {
+		if err := s.store.DeleteBatch(existing.ID); err != nil {
+			return "", fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
 		}
 	}
-	return instances
+
+	return hash, nil
+}
+
+func (s *sdJwtVcdmCredentialService) deleteOrphanedKeys(publicKeyIdentifiers []models.PublicHolderBindingKey) {
+	ids := make([]datatypes.UUID, len(publicKeyIdentifiers))
+	for i, pk := range publicKeyIdentifiers {
+		ids[i] = pk.ID
+	}
+	if err := s.holderBindingKeyStore.DeleteKeys(ids); err != nil {
+		eudi.Logger.Warnf("failed to clean up orphaned holder binding keys: %v", err)
+	}
 }
 
 // VcdmIssuanceValidity derives the wallet's issuance/validity timestamps for a
@@ -181,9 +307,9 @@ func VcdmIssuanceValidity(v *vcdmsdjwt.VerifiedSdJwtVcdm) (issuedAt, expiresAt, 
 
 // BuildAttributesFromVcdmDocument emits attributes for the credentialSubject
 // tree of a VCDM document, with document-rooted claim paths
-// (["credentialSubject", ...]) per the storage decision (#679). The envelope
-// properties (@context, type, issuer, validity, status, ...) are not
-// attributes; they surface through the credential's own metadata fields.
+// (["credentialSubject", ...]). The envelope properties (@context, type,
+// issuer, validity, status, ...) are not attributes; they surface through the
+// credential's own metadata fields.
 func BuildAttributesFromVcdmDocument(
 	doc vcdm.Document,
 	lookup map[string]string,
@@ -222,10 +348,11 @@ var vcdmNonContentKeys = map[string]struct{}{
 }
 
 // hashForVcdmCredential computes the deterministic batch-deduplication hash
-// for an SD-JWT-secured VCDM credential over its type identity and content
-// (see vcdmNonContentKeys for what is stripped). Same stability properties as
+// for an SD-JWT-secured VCDM credential over its type identity, its issuer and
+// its content (see vcdmNonContentKeys for what is stripped), through the same
+// credentialHash every other format uses. Same stability properties as
 // hashForSdJwtVc: json.Marshal sorts object keys, array order is significant.
-func hashForVcdmCredential(typeIdentity string, payload sdjwt.ProcessedPayload) (string, error) {
+func hashForVcdmCredential(typeIdentity, issuerIdentifier string, payload sdjwt.ProcessedPayload) (string, error) {
 	content := make(map[string]any, len(payload))
 	for key, value := range payload {
 		if _, skip := vcdmNonContentKeys[key]; skip {
@@ -239,6 +366,92 @@ func hashForVcdmCredential(typeIdentity string, payload sdjwt.ProcessedPayload) 
 		return "", fmt.Errorf("hashForVcdmCredential: failed to marshal content: %w", err)
 	}
 
-	combined := append([]byte(typeIdentity), contentBytes...)
-	return fmt.Sprintf("%x", sha256.Sum256(combined)), nil
+	return credentialHash(typeIdentity, issuerIdentifier, contentBytes), nil
+}
+
+// --- display ---
+
+// VcdmIssuerDisplays decodes the batch's issuer display snapshot into the
+// storage shape the SD-JWT VC display helpers read. Malformed or absent JSON
+// reads as no display entries.
+func VcdmIssuerDisplays(batch *models.VcdmBatch) []models.IssuerMetadataDisplay {
+	if len(batch.IssuerDisplay) == 0 {
+		return nil
+	}
+	var displays metadata.CredentialIssuerDisplays
+	if err := json.Unmarshal(batch.IssuerDisplay, &displays); err != nil {
+		return nil
+	}
+	return slices.Collect(displays.ToStorageModelIterator())
+}
+
+// VcdmCredentialMetadata decodes the batch's credential_metadata snapshot into
+// the storage shape the SD-JWT VC display helpers read, or returns nil when the
+// issuer advertised none (or the snapshot is unreadable).
+func VcdmCredentialMetadata(batch *models.VcdmBatch) *models.CredentialMetadata {
+	if len(batch.CredentialMetadata) == 0 {
+		return nil
+	}
+	var cm metadata.CredentialMetadata
+	if err := json.Unmarshal(batch.CredentialMetadata, &cm); err != nil {
+		return nil
+	}
+	return convertCredentialMetadata(metadata.CredentialConfiguration{CredentialMetadata: &cm})
+}
+
+// ResolveVcdmDisplay is ResolveBatchDisplay for a VCDM batch.
+func ResolveVcdmDisplay(batch *models.VcdmBatch, locale string) ResolvedBatchDisplay {
+	return resolveSdJwtBatchDisplay(batch.CredentialIssuer, VcdmIssuerDisplays(batch), VcdmCredentialMetadata(batch), locale)
+}
+
+// sdJwtVcdmDisplaySource is the SD-JWT-secured VCDM CredentialDisplaySource:
+// the read side that needs only the store.
+type sdJwtVcdmDisplaySource struct {
+	store db.VcdmStore
+}
+
+func newSdJwtVcdmDisplaySource(store db.VcdmStore) sdJwtVcdmDisplaySource {
+	return sdJwtVcdmDisplaySource{store: store}
+}
+
+// LiveDisplaysByType resolves the display text per stored type identity. When
+// several batches share one, a batch carrying credential metadata is
+// preferred. Best-effort: on a storage error the map is empty.
+func (s sdJwtVcdmDisplaySource) LiveDisplaysByType(locale string) map[string]ResolvedBatchDisplay {
+	batches, err := s.store.ListBatches()
+	if err != nil {
+		eudi.Logger.Warnf("failed to load VCDM batches for display re-resolution: %v", err)
+		return map[string]ResolvedBatchDisplay{}
+	}
+
+	preferred := map[string]*models.VcdmBatch{}
+	for _, batch := range batches {
+		if existing, ok := preferred[batch.TypeIdentity]; ok && len(existing.CredentialMetadata) > 0 {
+			continue
+		}
+		preferred[batch.TypeIdentity] = batch
+	}
+
+	result := make(map[string]ResolvedBatchDisplay, len(preferred))
+	for typ, batch := range preferred {
+		result[typ] = ResolveVcdmDisplay(batch, locale)
+	}
+	return result
+}
+
+// LogoURIs returns the issuer and credential logo URIs that resolve for the
+// locale, one per stored batch.
+func (s sdJwtVcdmDisplaySource) LogoURIs(locale string) (issuer []string, credential []string) {
+	batches, err := s.store.ListBatches()
+	if err != nil {
+		eudi.Logger.Warnf("failed to load VCDM batches for logo backfill: %v", err)
+		return nil, nil
+	}
+	for _, batch := range batches {
+		issuer = append(issuer, clientmodels.Resolve(IssuerLogoURIsByLanguage(VcdmIssuerDisplays(batch)), locale))
+		if cm := VcdmCredentialMetadata(batch); cm != nil {
+			credential = append(credential, clientmodels.Resolve(CredentialLogoURIsByLanguage(cm.Display), locale))
+		}
+	}
+	return issuer, credential
 }

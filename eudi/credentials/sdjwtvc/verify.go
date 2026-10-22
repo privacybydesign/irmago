@@ -59,6 +59,18 @@ type SdJwtVcVerificationContext struct {
 	// Used to verify both JWT components of an SD-JWT VC (issuer signed jwt and kbjwt).
 	JwtVerifier sdjwt.JwtVerifier
 
+	// VerifyVerifiableCredentialTypeInRequestorInfo does not currently do what
+	// its name says. The VCT-against-requestor check it is named for is
+	// commented out (see the TODO in ProcessAndVerifySdJwtVc, pending SD-JWT VCs
+	// that fit the scheme), and the requestorInfo it produces is discarded.
+	//
+	// What it still does, and what callers are really selecting, is require the
+	// issuer's certificate to carry parseable Yivi attestation-provider
+	// requestor info: when set, decodeJwtAndVerifyFromX5cHeader extracts it and
+	// fails verification if it cannot. That is why the IRMA path sets it and the
+	// OpenID4VCI path does not — a third-party issuer's certificate carries no
+	// such extension. Re-enabling the real check should make this comment
+	// unnecessary rather than need updating.
 	VerifyVerifiableCredentialTypeInRequestorInfo bool
 
 	// ExpectedNonce is the nonce from the OpenID4VP authorization request that the KB-JWT nonce
@@ -455,8 +467,13 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 
 	// If the key provider used was a X509KeyProvider, we can get the certificate and verify it against the trusted roots/intermediates and CRLs.
 	if x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider); ok {
-		cert := x509KeyProvider.GetCert()
-		err = eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil)
+		leafCert := x509KeyProvider.GetLeafCert()
+		chain, err := x509KeyProvider.GetChain()
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to get certificate chain from provider: %v", err)
+		}
+
+		err = eudi_jwt.VerifyCertificateChain(v.verificationContext, chain, nil)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to verify certificate: %v", err)
 		}
@@ -465,14 +482,14 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 		// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
 		// until we can issue SD-JWT VCs that fit our scheme
 		if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
-			requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert)
+			requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](leafCert)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
 			}
-			return token, cert, requestorInfo, nil
+			return token, leafCert, requestorInfo, nil
 		}
 
-		return token, cert, nil, nil
+		return token, leafCert, nil, nil
 	}
 
 	return token, nil, nil, nil

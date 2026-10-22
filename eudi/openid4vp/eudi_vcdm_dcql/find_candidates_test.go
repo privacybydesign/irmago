@@ -27,15 +27,16 @@ const academicVcdmType = "https://www.w3.org/ns/credentials/v2 https://eduwallet
 
 // newTestHandler builds the real VCDM handler over an in-memory store. FindCandidates
 // needs no key binder or revocation checker, so both are nil.
-func newTestHandler(t *testing.T) (*Handler, db.CredentialStore) {
+func newTestHandler(t *testing.T) (*Handler, db.VcdmStore) {
 	t.Helper()
-	ts, store := sdjwtdcqltest.NewTestStorage(t)
-	h := NewVcdmDcqlHandler(ts, store, nil, clientmodels.NewCurrentLocale("en"), nil)
+	ts := sdjwtdcqltest.NewTestStorage(t)
+	store := db.NewVcdmStore(ts.Db())
+	h := NewVcdmDcqlHandler(ts, store, nil, clientmodels.NewCurrentLocale("en"))
 	return h, store
 }
 
-func newTestBatch(hash, credType string, payload map[string]any) *models.CredentialBatch {
-	return sdjwtdcqltest.NewTestBatch(hash, credType, payload)
+func newTestBatch(hash, credType string, payload map[string]any) *models.VcdmBatch {
+	return sdjwtdcqltest.NewTestVcdmBatch(hash, credType, payload)
 }
 
 func parseDcqlQuery(t *testing.T, raw string) dcql.CredentialQuery {
@@ -60,7 +61,6 @@ func TestVcdmFindCandidates_MatchesCompositeTypeAndSubjectClaims(t *testing.T) {
 		"issuer":            "https://issuer.example",
 		"credentialSubject": map[string]any{"given_name": "Alice"},
 	})
-	batch.Format = models.CredentialFormatSdJwtVcdm
 	require.NoError(t, store.StoreBatch(batch))
 
 	query := parseDcqlQuery(t, `{
@@ -83,14 +83,15 @@ func TestVcdmFindCandidates_MatchesCompositeTypeAndSubjectClaims(t *testing.T) {
 }
 
 func TestVcdmFindCandidates_ExcludesSdJwtVcBatch(t *testing.T) {
-	h, store := newTestHandler(t)
+	ts := sdjwtdcqltest.NewTestStorage(t)
+	h := NewVcdmDcqlHandler(ts, db.NewVcdmStore(ts.Db()), nil, clientmodels.NewCurrentLocale("en"))
 
-	// A dc+sd-jwt (SD-JWT VC) batch — NewTestBatch's default format — must not be
+	// A dc+sd-jwt (SD-JWT VC) batch lives in the SD-JWT VC table and must not be
 	// served for a vc+sd-jwt query.
-	batch := newTestBatch("hash-sdjwtvc", "https://example.com/EmailCredential", map[string]any{
+	batch := sdjwtdcqltest.NewTestBatch("hash-sdjwtvc", "https://example.com/EmailCredential", map[string]any{
 		"credentialSubject": map[string]any{"email": "test@example.com"},
 	})
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, db.NewSdJwtVcStore(ts.Db()).StoreBatch(batch))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",
@@ -116,7 +117,6 @@ func TestVcdmFindCandidates_RealCredentialHidesEnvelope(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(vcdmsdjwt.AcademicBaseCredentialJSON), &payload))
 
 	batch := newTestBatch("hash-vcdm-real", academicVcdmType, payload)
-	batch.Format = models.CredentialFormatSdJwtVcdm
 	raw := vcdmsdjwt.IssueTestSdJwtVcdm(t, vcdmsdjwt.AcademicBaseCredentialClaims(t))
 	batch.Instances[0].RawCredential = []byte(raw)
 	require.NoError(t, store.StoreBatch(batch))
@@ -157,7 +157,6 @@ func TestVcdmFindCandidates_EmptyMetaMatchesByClaims(t *testing.T) {
 		"issuer":            "https://issuer.example",
 		"credentialSubject": map[string]any{"personal_administrative_number": "PID-12345"},
 	})
-	batch.Format = models.CredentialFormatSdJwtVcdm
 	require.NoError(t, store.StoreBatch(batch))
 
 	query := parseDcqlQuery(t, `{
@@ -185,7 +184,6 @@ func TestVcdmFindCandidates_TypeValuesSupersetMatch(t *testing.T) {
 		"type":              []any{"VerifiableCredential", "ExampleCredential"},
 		"credentialSubject": map[string]any{"given_name": "Alice"},
 	})
-	batch.Format = models.CredentialFormatSdJwtVcdm
 	require.NoError(t, store.StoreBatch(batch))
 
 	for _, tv := range []string{
@@ -210,7 +208,6 @@ func TestVcdmFindCandidates_TypeValuesDisjunctionAndNonMatch(t *testing.T) {
 		"type":              []any{"VerifiableCredential", "ExampleCredential"},
 		"credentialSubject": map[string]any{"given_name": "Alice"},
 	})
-	batch.Format = models.CredentialFormatSdJwtVcdm
 	require.NoError(t, store.StoreBatch(batch))
 
 	cases := []struct {
@@ -248,7 +245,6 @@ func TestVcdmPrepareDisclosure_RoundTrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(vcdmsdjwt.AcademicBaseCredentialJSON), &payload))
 
 	batch := newTestBatch("hash-vcdm-present", academicVcdmType, payload)
-	batch.Format = models.CredentialFormatSdJwtVcdm
 	raw := vcdmsdjwt.IssueTestSdJwtVcdm(t, vcdmsdjwt.AcademicBaseCredentialClaims(t))
 	batch.Instances[0].RawCredential = []byte(raw)
 	require.NoError(t, store.StoreBatch(batch))

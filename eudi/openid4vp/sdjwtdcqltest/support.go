@@ -13,7 +13,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/storage"
-	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -48,13 +47,17 @@ func (s *testStorage) RemoveAll() error                         { return nil }
 var _ storage.Storage = (*testStorage)(nil)
 
 // NewTestStorage opens an in-memory SQLCipher database with the holder models
-// migrated, and returns it paired with a CredentialStore over it.
-func NewTestStorage(t *testing.T) (storage.Storage, db.CredentialStore) {
+// of both SD-JWT-secured data models migrated.
+func NewTestStorage(t *testing.T) storage.Storage {
 	t.Helper()
 	d, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("test-key-123"))}, &gorm.Config{})
 	require.NoError(t, err)
 
 	require.NoError(t, d.AutoMigrate(
+		&models.SdJwtVcBatch{},
+		&models.SdJwtVcBatchInstance{},
+		&models.VcdmBatch{},
+		&models.VcdmBatchInstance{},
 		&models.HolderBindingKey{},
 		&models.ECDSAKeyMetadata{},
 		&models.RSAKeyMetadata{},
@@ -63,24 +66,20 @@ func NewTestStorage(t *testing.T) (storage.Storage, db.CredentialStore) {
 		&models.CredentialDisplay{},
 		&models.CredentialClaim{},
 		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
 	))
 
 	fs := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	ts := &testStorage{db: d, fs: fs}
-	return ts, db.NewCredentialStore(ts.Db())
+	return &testStorage{db: d, fs: fs}
 }
 
-// NewTestBatch builds a single-instance CredentialBatch with a fake raw
-// credential and the given processed payload. Format defaults to dc+sd-jwt;
-// callers testing another format override batch.Format before storing.
-func NewTestBatch(hash, credType string, payload map[string]any) *models.CredentialBatch {
+// NewTestBatch builds a single-instance SD-JWT VC batch with a fake raw
+// credential and the given processed payload.
+func NewTestBatch(hash, vct string, payload map[string]any) *models.SdJwtVcBatch {
 	payloadJSON, _ := json.Marshal(payload)
 	iss := "https://issuer.example.com"
-	return &models.CredentialBatch{
+	return &models.SdJwtVcBatch{
 		IssuerIdentifier:           iss,
-		CredentialType:             credType,
+		VerifiableCredentialType:   vct,
 		Format:                     models.CredentialFormatSdJwtVc,
 		Hash:                       hash,
 		ProcessedSdJwtPayload:      datatypes.JSON(payloadJSON),
@@ -88,7 +87,28 @@ func NewTestBatch(hash, credType string, payload map[string]any) *models.Credent
 		BatchSize:                  1,
 		RemainingCount:             1,
 		CredentialIssuerIdentifier: iss,
-		Instances: []models.IssuedCredentialInstance{
+		Instances: []models.SdJwtVcBatchInstance{
+			{RawCredential: []byte("fake-raw-credential")},
+		},
+	}
+}
+
+// NewTestVcdmBatch builds a single-instance SD-JWT-secured VCDM batch with a
+// fake raw credential and the given processed payload (the VCDM document).
+func NewTestVcdmBatch(hash, typeIdentity string, payload map[string]any) *models.VcdmBatch {
+	payloadJSON, _ := json.Marshal(payload)
+	iss := "https://issuer.example.com"
+	return &models.VcdmBatch{
+		TypeIdentity:     typeIdentity,
+		IssuerIdentifier: iss,
+		CredentialIssuer: iss,
+		Format:           models.CredentialFormatSdJwtVcdm,
+		Hash:             hash,
+		ProcessedPayload: datatypes.JSON(payloadJSON),
+		IssuedAt:         time.Now().UTC().Truncate(time.Second),
+		BatchSize:        1,
+		RemainingCount:   1,
+		Instances: []models.VcdmBatchInstance{
 			{RawCredential: []byte("fake-raw-credential")},
 		},
 	}

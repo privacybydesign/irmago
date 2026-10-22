@@ -31,11 +31,16 @@ func newTestHolderDB(t *testing.T) *gorm.DB {
 		&models.CredentialDisplay{},
 		&models.CredentialClaim{},
 		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
+		&models.SdJwtVcBatch{},
+		&models.SdJwtVcBatchInstance{},
+		&models.VcdmBatch{},
+		&models.VcdmBatchInstance{},
 		&models.StatusListCacheEntry{},
 		&models.EudiLogEntry{},
 		&models.EudiLogCredential{},
+		&models.MdocBatch{},
+		&models.MdocBatchInstance{},
+		&models.MdocDeviceKey{},
 	))
 	return d
 }

@@ -29,14 +29,14 @@ import (
 // except UNKNOWN (no status information yet), which stays advisory not-revoked.
 type RevocationService struct {
 	checker *statuslist.Checker
-	store   db.CredentialStore
+	store   db.SdJwtVcStore
 }
 
 // NewRevocationService returns a service backed by the given Token Status List
 // Checker and credential store. A nil checker disables the cached-read and
 // refresh paths (IsRevoked returns false, RefreshStatuses is a no-op); the
 // stored-status path (BatchRevocation) still works.
-func NewRevocationService(checker *statuslist.Checker, store db.CredentialStore) *RevocationService {
+func NewRevocationService(checker *statuslist.Checker, store db.SdJwtVcStore) *RevocationService {
 	return &RevocationService{checker: checker, store: store}
 }
 
@@ -62,7 +62,7 @@ func statusRevoked(s statuslist.Status) bool {
 //
 // The check never blocks disclosure — revocation is surfaced as a flag for the
 // frontend, with the verifier as the backstop.
-func (s *RevocationService) IsRevoked(instance *models.IssuedCredentialInstance) bool {
+func (s *RevocationService) IsRevoked(instance *models.SdJwtVcBatchInstance) bool {
 	if s.checker == nil || instance.StatusListURI == nil || instance.StatusListIdx == nil {
 		return false
 	}

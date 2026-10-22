@@ -2,6 +2,7 @@ package sdjwtvc
 
 import (
 	"crypto/x509"
+	"encoding/pem"
 	"testing"
 	"time"
 
@@ -594,6 +595,49 @@ func Test_HolderVerificationProcessor_Valid_X509Chain_Succeeds(t *testing.T) {
 		IssUrl:                         "https://irma.app",
 		ShouldFail:                     false,
 	})
+}
+
+func Test_HolderVerificationProcessor_IntermediateInX5cHeader_OnlyRootTrusted_Succeeds(t *testing.T) {
+	x5c, root := splitIrmaAppChainIntoX5cAndRoot(t)
+	runCertChainTestCase(t, x509TestConfig{
+		IssuerCert:                     x5c,
+		VerifierTrustedIssuerCertChain: root,
+		IssUrl:                         "https://irma.app",
+		ShouldFail:                     false,
+	})
+}
+
+func Test_HolderVerificationProcessor_IntermediateInX5cHeader_UnrelatedRootTrusted_Fails(t *testing.T) {
+	x5c, _ := splitIrmaAppChainIntoX5cAndRoot(t)
+	runCertChainTestCase(t, x509TestConfig{
+		IssuerCert:                     x5c,
+		VerifierTrustedIssuerCertChain: testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes,
+		IssUrl:                         "https://irma.app",
+		ShouldFail:                     true,
+	})
+}
+
+// splitIrmaAppChainIntoX5cAndRoot returns the irma.app leaf followed by its intermediate CA (in x5c order) and,
+// separately, the root CA, all PEM encoded. The intermediate CA has no key usage extension, like many real CAs.
+func splitIrmaAppChainIntoX5cAndRoot(t *testing.T) (x5c []byte, root []byte) {
+	leaf, err := utils.ParsePemCertificateChain(testdata.IssuerCert_irma_app_Bytes)
+	require.NoError(t, err)
+	require.Len(t, leaf, 1)
+
+	// The chain file holds the intermediate CA first, then the root CA
+	chain, err := utils.ParsePemCertificateChain(testdata.IssuerCertChain_irma_app_Bytes)
+	require.NoError(t, err)
+	require.Len(t, chain, 2)
+
+	toPem := func(certs ...*x509.Certificate) []byte {
+		var out []byte
+		for _, c := range certs {
+			out = append(out, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})...)
+		}
+		return out
+	}
+
+	return toPem(leaf[0], chain[0]), toPem(chain[1])
 }
 
 func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeIat_GivenClockSkew_Success(t *testing.T) {

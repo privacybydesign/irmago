@@ -23,7 +23,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
-	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
@@ -33,13 +32,6 @@ import (
 // emit a per-disclosure "unsupported protocol scheme" warning.
 func isHttpVct(vct string) bool {
 	return strings.HasPrefix(vct, "https://") || strings.HasPrefix(vct, "http://")
-}
-
-// RevocationChecker reports whether a stored credential instance is currently
-// revoked. The disclosure planner depends only on this narrow verb, keeping the
-// Token Status List mechanics out of this package (see services.RevocationService).
-type RevocationChecker interface {
-	IsRevoked(instance *models.IssuedCredentialInstance) bool
 }
 
 // Profile captures the only behavior that distinguishes the SD-JWT-secured data
@@ -77,22 +69,20 @@ func NewProfile(storageFormat models.CredentialFormat, clientFormat clientmodels
 // handler embeds an *Engine (gaining FindCandidates and PrepareDisclosure) and
 // adds its own CanHandleCredentialQuery. Construct it with NewEngine.
 type Engine struct {
-	storage         storage.Storage
-	credentialStore db.CredentialStore
-	keyBinder       sdjwt.KeyBinder
-	vctFetcher      typemetadata.VctFetcher
-	issuerFetcher   typemetadata.IssuerFetcher
-	currentLocale   *clientmodels.CurrentLocale
-
-	// revocation determines a candidate's Revoked flag. Nil disables the check
-	// (candidates are then never flagged revoked).
-	revocation RevocationChecker
+	storage       storage.Storage
+	batches       BatchStore
+	keyBinder     sdjwt.KeyBinder
+	vctFetcher    typemetadata.VctFetcher
+	issuerFetcher typemetadata.IssuerFetcher
+	currentLocale *clientmodels.CurrentLocale
 
 	// profile selects the data-model-specific behavior (format, claim rooting).
 	profile Profile
 }
 
-// NewEngine creates an Engine for the given Profile. vctFetcher and issuerFetcher
+// NewEngine creates an Engine for the given Profile, reading the data model's
+// credentials through batches (NewSdJwtVcBatchStore, NewVcdmBatchStore).
+// vctFetcher and issuerFetcher
 // describe credentials the wallet has never seen (the "obtainable descriptor"
 // path); pass nil to disable that path — VCDM does. keyBinder is the KB-JWT signer
 // used when a presentation requires holder binding; pass
@@ -102,22 +92,20 @@ type Engine struct {
 func NewEngine(
 	profile Profile,
 	eudiStorage storage.Storage,
-	credentialStore db.CredentialStore,
+	batches BatchStore,
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
 	keyBinder sdjwt.KeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
-	revocation RevocationChecker,
 ) *Engine {
 	return &Engine{
-		storage:         eudiStorage,
-		credentialStore: credentialStore,
-		keyBinder:       keyBinder,
-		vctFetcher:      vctFetcher,
-		issuerFetcher:   issuerFetcher,
-		currentLocale:   currentLocale,
-		revocation:      revocation,
-		profile:         profile,
+		storage:       eudiStorage,
+		batches:       batches,
+		keyBinder:     keyBinder,
+		vctFetcher:    vctFetcher,
+		issuerFetcher: issuerFetcher,
+		currentLocale: currentLocale,
+		profile:       profile,
 	}
 }
 
@@ -144,7 +132,7 @@ func (h *Engine) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQue
 			continue
 		}
 
-		instance, err := h.credentialStore.GetUnusedInstance(batch.ID)
+		instance, err := h.batches.GetUnusedInstance(batch.ID)
 		if err != nil {
 			continue
 		}
@@ -169,8 +157,8 @@ func (h *Engine) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQue
 			Attributes:                  attributes,
 			ExpiryDate:                  expiryUnix(batch),
 			Image:                       image,
-			Revoked:                     h.revocation != nil && h.revocation.IsRevoked(instance),
-			RevocationSupported:         instance.StatusListURI != nil,
+			Revoked:                     instance.Revoked,
+			RevocationSupported:         instance.RevocationSupported,
 		}
 
 		if batch.IssuedAt.Valid {
@@ -366,16 +354,16 @@ func claimDisplayFromVct(vctMeta *typemetadata.VctTypeMetadata, path []any) clie
 // satisfies the query's DCQL type constraints, with metadata preloaded. See
 // batchMatchesTypeConstraint for the precedence between type_values, vct_values
 // and an empty meta.
-func (h *Engine) findBatches(query dcql.CredentialQuery) ([]*models.CredentialBatch, error) {
+func (h *Engine) findBatches(query dcql.CredentialQuery) ([]*Batch, error) {
 	typeValues := query.TypeValues()
 	vctValues := query.VctValues()
 
-	allBatches, err := h.credentialStore.GetCredentialBatchList()
+	allBatches, err := h.batches.ListBatches()
 	if err != nil {
 		return nil, err
 	}
 
-	var filtered []*models.CredentialBatch
+	var filtered []*Batch
 	for _, batch := range allBatches {
 		// Serve only this handler's format. A stored batch of the other
 		// SD-JWT-secured data model must not be matched here, even when a
@@ -400,7 +388,7 @@ func (h *Engine) findBatches(query dcql.CredentialQuery) ([]*models.CredentialBa
 //     composite @context+type identity for VCDM — must equal one of them.
 //   - neither (an empty or absent `meta`, OpenID4VP §6.1): every batch of the
 //     format matches; claim matching then narrows.
-func batchMatchesTypeConstraint(batch *models.CredentialBatch, typeValues [][]string, vctValues []string) bool {
+func batchMatchesTypeConstraint(batch *Batch, typeValues [][]string, vctValues []string) bool {
 	if len(typeValues) > 0 {
 		return batchTypeSatisfiesTypeValues(batch, typeValues)
 	}
@@ -429,9 +417,9 @@ func batchMatchesTypeConstraint(batch *models.CredentialBatch, typeValues [][]st
 //   - The comparison is against the `type` array only. The credential's
 //     `@context` is part of its stored identity (CredentialType), but §B.1.1
 //     constrains `type`, so @context is intentionally not folded in here.
-func batchTypeSatisfiesTypeValues(batch *models.CredentialBatch, typeValues [][]string) bool {
+func batchTypeSatisfiesTypeValues(batch *Batch, typeValues [][]string) bool {
 	var doc vcdm.Document
-	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &doc); err != nil {
+	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &doc); err != nil {
 		return false
 	}
 	for _, requested := range typeValues {
@@ -456,11 +444,11 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 	result := &dcql.PreparedDisclosure{}
 
 	// Load all batches with full metadata so buildLogCredential can resolve display names.
-	allBatches, err := h.credentialStore.GetCredentialBatchList()
+	allBatches, err := h.batches.ListBatches()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load credential batches: %w", err)
 	}
-	batchByHash := make(map[string]*models.CredentialBatch, len(allBatches))
+	batchByHash := make(map[string]*Batch, len(allBatches))
 	for _, b := range allBatches {
 		batchByHash[b.Hash] = b
 	}
@@ -471,7 +459,7 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 			return nil, fmt.Errorf("batch not found for hash %s", sel.CredentialHash)
 		}
 
-		instance, err := h.credentialStore.GetUnusedInstance(batch.ID)
+		instance, err := h.batches.GetUnusedInstance(batch.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
 		}
@@ -501,12 +489,12 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 		// Only mark the instance as used when the original batch had multiple instances.
 		// A batch of 1 keeps its single instance reusable.
 		if batch.BatchSize > 1 {
-			if err := h.credentialStore.MarkInstanceUsed(instance.ID); err != nil {
+			if err := h.batches.MarkInstanceUsed(instance.ID); err != nil {
 				return nil, fmt.Errorf("failed to mark instance as used: %w", err)
 			}
 		}
 
-		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths))
+		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, instance, sel.ClaimPaths))
 	}
 
 	return result, nil
@@ -524,9 +512,9 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 // Returns nil if the credential doesn't satisfy the query's value
 // constraints. When claim_sets is present, each set is tried in order and the
 // first fully satisfiable set determines which claims are included.
-func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery, rawSdJwt sdjwt.SdJwt, locale string, isUserDataKey func(string) bool) ([]clientmodels.Attribute, error) {
+func parseBatchAttributes(batch *Batch, query dcql.CredentialQuery, rawSdJwt sdjwt.SdJwt, locale string, isUserDataKey func(string) bool) ([]clientmodels.Attribute, error) {
 	var resolved sdjwt.ProcessedPayload
-	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
+	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &resolved); err != nil {
 		return nil, err
 	}
 
@@ -734,17 +722,6 @@ func buildPairsFromLeaves(leafPaths [][]any, constrainedKeys map[string]struct{}
 	return pairs
 }
 
-// loadRawSdJwt fetches the raw issuer-signed SD-JWT bytes for a batch via the
-// credential store. Used by parseBatchAttributes to compute the post-disclosure
-// view and by other helpers that need to inspect the JWT structure.
-func loadRawSdJwt(batch *models.CredentialBatch, credStore db.CredentialStore) (sdjwt.SdJwt, error) {
-	instance, err := credStore.GetUnusedInstance(batch.ID)
-	if err != nil {
-		return "", fmt.Errorf("failed to load credential instance for batch %s: %w", batch.ID, err)
-	}
-	return sdjwt.SdJwt(instance.RawCredential), nil
-}
-
 // pathToFlatten describes one concrete claim path that should be emitted into
 // the disclosure-plan / log attribute list, along with its rendering context.
 type pathToFlatten struct {
@@ -764,7 +741,7 @@ type pathToFlatten struct {
 func flattenPathsForDisplay(
 	attrs []clientmodels.Attribute,
 	requestedKeys map[string]struct{},
-	batch *models.CredentialBatch,
+	batch *Batch,
 	payload *sdjwt.ProcessedPayload,
 	pairs []pathToFlatten,
 	metadataOrder map[string]int,
@@ -892,7 +869,7 @@ func claimMatchesPath(path []any, values []any, payload *sdjwt.ProcessedPayload)
 		}
 		if len(values) > 0 {
 			for _, reqVal := range values {
-				if claimValuesEqual(val, reqVal) {
+				if dcql.ClaimValuesEqual(val, reqVal) {
 					return true
 				}
 			}
@@ -915,7 +892,11 @@ func claimMatchesPath(path []any, values []any, payload *sdjwt.ProcessedPayload)
 	// Check if ANY element matches the remaining path after the null.
 	suffix := path[nullIdx+1:]
 	for i := range slice {
-		concretePath := make([]any, 0, len(prefix)+1+len(suffix))
+		// prefix, the index replacing the null, and suffix together are exactly as
+		// long as path, so that is the capacity — written as len(path) rather than
+		// summed from the two halves because the sum reads as arithmetic that could
+		// overflow, which CodeQL's go/allocation-size-overflow flags.
+		concretePath := make([]any, 0, len(path))
 		concretePath = append(concretePath, prefix...)
 		concretePath = append(concretePath, i)
 		concretePath = append(concretePath, suffix...)
@@ -926,38 +907,27 @@ func claimMatchesPath(path []any, values []any, payload *sdjwt.ProcessedPayload)
 	return false
 }
 
-// claimValuesEqual compares two values from JSON-decoded data. JSON numbers are
-// float64, so we normalize both sides to float64 for numeric comparison.
-func claimValuesEqual(actual, expected any) bool {
-	// Direct equality covers strings and booleans.
-	if actual == expected {
-		return true
-	}
-	// JSON numbers are float64; the constraint value may also be float64.
-	// Normalize both to float64 for comparison.
-	af, aOk := toFloat64(actual)
-	ef, eOk := toFloat64(expected)
-	return aOk && eOk && af == ef
-}
-
-func toFloat64(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	default:
-		return 0, false
-	}
-}
-
-func (h *Engine) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clientmodels.LogCredential {
+// buildLogCredential records what left the wallet for one disclosed credential.
+//
+// It is handed the instance that was actually presented, not just its batch,
+// and two things depend on that. The post-disclosure view has to be computed
+// from the copy the verifier received. And revocation is per-instance: each
+// copy in a batch carries its own status list entry, so the batch cannot
+// answer whether the disclosed copy was revoked.
+//
+// Re-reading an instance here would give the wrong one anyway. PrepareDisclosure
+// has already marked this copy used by the time it calls this, so a fresh
+// GetUnusedInstance returns a sibling copy — or fails outright on the last copy
+// of a batch, which left the log with no attributes at all.
+func (h *Engine) buildLogCredential(
+	batch *Batch,
+	instance *Instance,
+	claimPaths [][]any,
+) clientmodels.LogCredential {
 	attrs := make([]clientmodels.Attribute, 0)
 
 	var resolved sdjwt.ProcessedPayload
-	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
+	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &resolved); err != nil {
 		eudi.Logger.Warnf("failed to unmarshal processed SD-JWT payload for %q: %v", batch.CredentialType, err)
 	}
 
@@ -965,11 +935,7 @@ func (h *Engine) buildLogCredential(batch *models.CredentialBatch, claimPaths []
 	// log records exactly what was transmitted, including any sibling
 	// fields the issuer bundled into the same disclosure value as a
 	// requested leaf.
-	rawSdJwt, err := loadRawSdJwt(batch, h.credentialStore)
-	if err != nil {
-		eudi.Logger.Warnf("failed to load raw SD-JWT for log credential %q: %v", batch.CredentialType, err)
-	}
-	view, err := sdjwt.PostDisclosureView(rawSdJwt, claimPaths)
+	view, err := sdjwt.PostDisclosureView(sdjwt.SdJwt(instance.RawCredential), claimPaths)
 	if err != nil {
 		eudi.Logger.Warnf("failed to compute post-disclosure view for log credential %q: %v", batch.CredentialType, err)
 	}
@@ -990,6 +956,11 @@ func (h *Engine) buildLogCredential(batch *models.CredentialBatch, claimPaths []
 		Issuer:       h.issuerTrustedParty(batch, locale),
 		Attributes:   attrs,
 		ExpiryDate:   expiryUnix(batch),
+		// Read off the disclosed instance, the same way FindCandidates reports
+		// them on the plan. A log that forgets them leaves the user unable to see
+		// later that what they shared was already revoked.
+		Revoked:             instance.Revoked,
+		RevocationSupported: instance.RevocationSupported,
 	}
 
 	if batch.IssuedAt.Valid {
@@ -998,29 +969,6 @@ func (h *Engine) buildLogCredential(batch *models.CredentialBatch, claimPaths []
 	}
 
 	return log
-}
-
-func expiryUnix(batch *models.CredentialBatch) *int64 {
-	if batch.ExpiresAt.Valid {
-		x := batch.ExpiresAt.V.Unix()
-		return &x
-	}
-	return nil
-}
-
-// isBatchValid returns false if the credential batch is expired or not yet valid.
-// Unix epoch (time.Unix(0,0)) is treated as "not set" because the storage layer
-// currently always marks ExpiresAt/NotBefore as Valid, even when the JWT has no
-// exp/nbf claims — storing 0 as the timestamp.
-func isBatchValid(batch *models.CredentialBatch, now time.Time) bool {
-	epoch := time.Unix(0, 0)
-	if batch.ExpiresAt.Valid && !batch.ExpiresAt.V.Equal(epoch) && now.After(batch.ExpiresAt.V) {
-		return false
-	}
-	if batch.NotBefore.Valid && !batch.NotBefore.V.Equal(epoch) && now.Before(batch.NotBefore.V) {
-		return false
-	}
-	return true
 }
 
 // flattenForDisclosure recursively flattens arrays and objects into scalar
@@ -1033,7 +981,7 @@ func isBatchValid(batch *models.CredentialBatch, now time.Time) bool {
 func flattenForDisclosure(
 	attrs []clientmodels.Attribute,
 	requestedKeys map[string]struct{},
-	batch *models.CredentialBatch,
+	batch *Batch,
 	path []any,
 	value any,
 	metadataOrder map[string]int,
@@ -1137,7 +1085,8 @@ func expandNullPaths(path []any, payload *sdjwt.ProcessedPayload) [][]any {
 	suffix := path[nullIdx+1:]
 	var result [][]any
 	for i := range slice {
-		concrete := make([]any, 0, len(prefix)+1+len(suffix))
+		// len(prefix) + 1 + len(suffix) == len(path); see claimMatchesPath.
+		concrete := make([]any, 0, len(path))
 		concrete = append(concrete, prefix...)
 		concrete = append(concrete, i)
 		concrete = append(concrete, suffix...)
@@ -1174,7 +1123,7 @@ func metadataOrderForKey(parentPath []any, key string, metadataOrder map[string]
 
 // buildMetadataOrder creates a map from serialized claim path to position index
 // for ordering object keys by their metadata position.
-func buildMetadataOrder(batch *models.CredentialBatch) map[string]int {
+func buildMetadataOrder(batch *Batch) map[string]int {
 	order := make(map[string]int)
 	if batch.CredentialMetadata == nil {
 		return order
@@ -1250,20 +1199,11 @@ func pathLess(a, b []any, metadataOrder map[string]int) bool {
 	return len(a) < len(b)
 }
 
-// batchInstanceCountRemaining returns nil for batch-of-1 credentials (infinitely
-// reusable) and a pointer to the remaining count for larger batches.
-func batchInstanceCountRemaining(batch *models.CredentialBatch) *uint {
-	if batch.BatchSize <= 1 {
-		return nil
-	}
-	return &batch.RemainingCount
-}
-
 // credentialImage loads the credential logo that resolves for the locale from
 // the batch's display metadata (falling back to any cached display logo while
 // the backfill fetches the preferred one). Returns nil when no logo is
 // configured or none is cached.
-func (h *Engine) credentialImage(batch *models.CredentialBatch, locale string) *clientmodels.Image {
+func (h *Engine) credentialImage(batch *Batch, locale string) *clientmodels.Image {
 	if batch.CredentialMetadata == nil {
 		return nil
 	}
@@ -1273,25 +1213,26 @@ func (h *Engine) credentialImage(batch *models.CredentialBatch, locale string) *
 
 // issuerTrustedParty builds a TrustedParty from the stored issuer display metadata,
 // including the issuer logo if available on disk.
-func (h *Engine) issuerTrustedParty(batch *models.CredentialBatch, locale string) clientmodels.TrustedParty {
+func (h *Engine) issuerTrustedParty(batch *Batch, locale string) clientmodels.TrustedParty {
 	return clientmodels.TrustedParty{
-		Id:    batch.CredentialIssuerIdentifier,
-		Name:  clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
-		Image: h.issuerImage(batch, locale),
+		Id:       batch.CredentialIssuer,
+		Name:     clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
+		Image:    h.issuerImage(batch, locale),
+		Verified: batch.IssuerVerified,
 	}
 }
 
 // issuerImage loads the issuer logo that resolves for the locale from the
 // batch's issuer display metadata (falling back to any cached display logo
 // while the backfill fetches the preferred one).
-func (h *Engine) issuerImage(batch *models.CredentialBatch, locale string) *clientmodels.Image {
+func (h *Engine) issuerImage(batch *Batch, locale string) *clientmodels.Image {
 	logoManager := h.storage.FileSystem().Issuers().LogoManager()
 	return services.LoadResolvedLogo(logoManager, services.IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale)
 }
 
 // credentialDisplayName resolves a credential's display name from its stored
 // metadata, falling back to the VCT when there is no display metadata.
-func credentialDisplayName(batch *models.CredentialBatch, locale string) string {
+func credentialDisplayName(batch *Batch, locale string) string {
 	if batch.CredentialMetadata != nil {
 		if ts := services.CredentialNamesByLanguage(batch.CredentialMetadata.Display); len(ts) > 0 {
 			return clientmodels.Resolve(ts, locale)
@@ -1304,7 +1245,7 @@ func credentialDisplayName(batch *models.CredentialBatch, locale string) string 
 // metadata. Returns nil when no metadata display entry matches the path, or
 // when the entry has no translation for this locale — callers treat both as
 // "no display name".
-func claimDisplayName(batch *models.CredentialBatch, claimPath []any, locale string) *string {
+func claimDisplayName(batch *Batch, claimPath []any, locale string) *string {
 	if batch.CredentialMetadata == nil {
 		return nil
 	}

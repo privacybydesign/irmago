@@ -127,22 +127,38 @@ type ResolvedBatchDisplay struct {
 }
 
 // ResolveBatchDisplay resolves everything a batch's display metadata says, for
-// one locale, in one pass.
-func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedBatchDisplay {
+// one locale, in one pass. It reports only what the metadata actually says:
+// CredentialName is "" when the batch carries no resolvable credential name, so
+// that callers can tell "no live name" apart from a real one — the activity log
+// relies on this to keep its persisted snapshot. The credential list applies
+// its own fallback label at its call site.
+func ResolveBatchDisplay(batch *models.SdJwtVcBatch, locale string) ResolvedBatchDisplay {
+	return resolveSdJwtBatchDisplay(batch.CredentialIssuerIdentifier, batch.IssuerDisplay, batch.CredentialMetadata, locale)
+}
+
+// resolveSdJwtBatchDisplay is ResolveBatchDisplay over the display metadata
+// parts rather than a batch, so the SD-JWT-secured VCDM batches, which carry the
+// same metadata as JSON snapshots, resolve exactly the same way.
+func resolveSdJwtBatchDisplay(
+	credentialIssuer string,
+	issuerDisplay []models.IssuerMetadataDisplay,
+	credentialMetadata *models.CredentialMetadata,
+	locale string,
+) ResolvedBatchDisplay {
 	d := ResolvedBatchDisplay{
-		IssuerId:    batch.CredentialIssuerIdentifier,
-		IssuerNames: IssuerNamesByLanguage(batch.IssuerDisplay),
+		IssuerId:    credentialIssuer,
+		IssuerNames: IssuerNamesByLanguage(issuerDisplay),
 		ClaimNames:  map[string]string{},
 		ClaimOrder:  map[string]int{},
 	}
 	d.IssuerName = clientmodels.Resolve(d.IssuerNames, locale)
 
-	if batch.CredentialMetadata == nil {
+	if credentialMetadata == nil {
 		return d
 	}
-	d.CredentialName = clientmodels.Resolve(CredentialNamesByLanguage(batch.CredentialMetadata.Display), locale)
+	d.CredentialName = clientmodels.Resolve(CredentialNamesByLanguage(credentialMetadata.Display), locale)
 
-	for i, claim := range batch.CredentialMetadata.Claims {
+	for i, claim := range credentialMetadata.Claims {
 		var path []any
 		if err := json.Unmarshal(claim.Path, &path); err != nil {
 			continue

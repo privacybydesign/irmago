@@ -25,19 +25,20 @@ type Handler struct {
 
 var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 
-// NewVcdmDcqlHandler creates the VCDM handler. keyBinder is the same KB-JWT
-// signer the SD-JWT VC handler uses — the holder private key was linked to the
-// instance at VCDM receipt, and CreateKbJwt resolves it from the credential's
-// cnf. The SD-JWT VC type-metadata fetchers do not apply to VCDM (a verifier
-// targets a VCDM credential by its composite @context+type identity, not a
-// fetchable vct URL), so the "obtainable descriptor" path stays disabled: a VCDM
-// query matching no stored credential simply yields no owned candidate.
+// NewVcdmDcqlHandler creates the VCDM handler over the VCDM store. keyBinder is
+// the same KB-JWT signer the SD-JWT VC handler uses — the holder private key was
+// linked to the instance at VCDM receipt, and CreateKbJwt resolves it from the
+// credential's cnf. The SD-JWT VC type-metadata fetchers do not apply to VCDM (a
+// verifier targets a VCDM credential by its composite @context+type identity,
+// not a fetchable vct URL), so the "obtainable descriptor" path stays disabled:
+// a VCDM query matching no stored credential simply yields no owned candidate.
+// There is no revocation checker: VCDM status (Bitstring Status List) is not
+// checked yet.
 func NewVcdmDcqlHandler(
 	eudiStorage storage.Storage,
-	credentialStore db.CredentialStore,
+	credentialStore db.VcdmStore,
 	keyBinder sdjwt.KeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
-	revocation sdjwtdcql.RevocationChecker,
 ) *Handler {
 	profile := sdjwtdcql.NewProfile(
 		models.CredentialFormatSdJwtVcdm,
@@ -46,7 +47,7 @@ func NewVcdmDcqlHandler(
 			return key == vcdm.CredentialSubjectKey
 		},
 	)
-	return &Handler{sdjwtdcql.NewEngine(profile, eudiStorage, credentialStore, nil, nil, keyBinder, currentLocale, revocation)}
+	return &Handler{sdjwtdcql.NewEngine(profile, eudiStorage, sdjwtdcql.NewVcdmBatchStore(credentialStore), nil, nil, keyBinder, currentLocale)}
 }
 
 // CanHandleCredentialQuery claims every vc+sd-jwt query. Unlike SD-JWT VC there
