@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -352,6 +351,6 @@ type KeyshareKeyRegistrationData struct {
 }
 
 type KeyshareKeyRegistrationClaims struct {
-	jwt.RegisteredClaims
+	RegisteredClaims
 	KeyshareKeyRegistrationData
 }

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/privacybydesign/irmago/eudi/scheme"
+	"github.com/privacybydesign/irmago/internal/jose"
 )
 
 // CompositeVerifierValidator dispatches authorization request verification to the
@@ -33,13 +33,11 @@ func (v *CompositeVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJ
 	error,
 ) {
 	// Pre-parse to inspect client_id without verifying signature
-	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
-	token, _, err := parser.ParseUnverified(requestJwt, &AuthorizationRequest{})
-	if err != nil {
+	var claims AuthorizationRequest
+	if _, err := jose.ParseUnverified(requestJwt, &claims); err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to pre-parse auth request: %v", err)
 	}
 
-	claims := token.Claims.(*AuthorizationRequest)
 	clientId := claims.ClientId
 
 	switch {

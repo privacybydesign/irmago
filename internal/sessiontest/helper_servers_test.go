@@ -13,8 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
@@ -202,13 +203,10 @@ func chainedServerHandler(
 		require.NoError(t, r.Body.Close())
 
 		claims := &struct {
-			jwt.RegisteredClaims
+			irma.RegisteredClaims
 			server.SessionResult
 		}{}
-		_, err = jwt.ParseWithClaims(string(bts), claims, func(_ *jwt.Token) (any, error) {
-			//return &conf.JwtRSAPrivateKey.PublicKey, nil
-			return publicKey, nil
-		})
+		err = jose.Verify(string(bts), claims, jose.StaticKey(jwa.RS256(), publicKey))
 		require.NoError(t, err)
 		result := claims.SessionResult
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)

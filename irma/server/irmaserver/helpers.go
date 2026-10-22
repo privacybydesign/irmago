@@ -17,7 +17,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -28,6 +27,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/internal/common"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/sirupsen/logrus"
@@ -299,15 +299,11 @@ func (session *sessionData) getProofP(commitments *irma.IssueCommitmentMessage, 
 		}
 		conf.Logger.Trace("Parsing keyshare ProofP JWT: ", common.SanitizeForLog(str))
 		claims := &struct {
-			jwt.StandardClaims
+			irma.RegisteredClaims
 			ProofP *gabi.ProofP
 		}{}
-		token, err := jwt.ParseWithClaims(str, claims, conf.IrmaConfiguration.KeyshareServerKeyFunc(scheme))
-		if err != nil {
+		if err := jose.Verify(str, claims, conf.IrmaConfiguration.KeyshareServerKeyFunc(scheme)); err != nil {
 			return nil, err
-		}
-		if !token.Valid {
-			return nil, errors.Errorf("invalid keyshare proof included for scheme %s", scheme.Name())
 		}
 		session.KssProofs[scheme] = claims.ProofP
 	}
