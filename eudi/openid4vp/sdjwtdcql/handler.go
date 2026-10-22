@@ -466,7 +466,7 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 
 		rawSdJwt := sdjwt.SdJwt(instance.RawCredential)
 
-		selected, err := sdjwt.CreatePresentation(rawSdJwt, sel.ClaimPaths, audience, nonce)
+		selected, err := sdjwt.CreatePresentation(rawSdJwt, sel.ClaimPaths)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}

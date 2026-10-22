@@ -3,6 +3,8 @@ package sdjwt
 import (
 	"testing"
 
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/stretchr/testify/require"
@@ -36,34 +38,53 @@ func buildTestSdJwtWithNestedClaims(t *testing.T) SdJwt {
 	return sdJwt
 }
 
-func TestCreatePresentation_AppendsAudienceAndNonce(t *testing.T) {
-	fullSdJwt := buildTestSdJwtWithNestedClaims(t)
-
-	result, err := CreatePresentation(fullSdJwt, [][]any{}, audience, nonce)
-
-	// Trim the last expected "~" character from the result.
-	if len(result) > 0 && result[len(result)-1] == '~' {
-		result = result[:len(result)-1]
-	}
-
+// The issuer-signed JWT cannot carry aud and nonce without breaking the issuer's
+// signature, so the holder puts them in the KB-JWT (RFC 9901 Section 4.3).
+func TestCreatePresentation_KbJwtCarriesAudienceAndNonce(t *testing.T) {
+	keyBinder := NewDefaultKeyBinderWithInMemoryStorage()
+	holderKeys, err := keyBinder.CreateKeyPairs(1)
+	require.NoError(t, err)
+	holderKeyClaim, err := HolderKeyClaim(holderKeys[0])
 	require.NoError(t, err)
 
-	jwtToken, err := jwt.Parse([]byte(result), jwt.WithVerify(false))
+	fullSdJwt, err := NewBuilder().
+		WithPayload(
+			holderKeyClaim,
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(SdAlgKey, iana.SHA256),
+			SdClaim("given_name", "Alice"),
+			SdClaim("family_name", "Smith"),
+		).
+		Build(newTestJwtCreator(t))
 	require.NoError(t, err)
 
-	jwtAud, isAudPresent := jwtToken.Audience()
-	require.True(t, isAudPresent)
-	require.Equal(t, []string{audience}, jwtAud)
+	presentation, err := CreatePresentation(fullSdJwt, [][]any{{"given_name"}})
+	require.NoError(t, err)
 
-	jwtNonce, isNoncePresent := jwtToken.Field("nonce")
-	require.True(t, isNoncePresent)
-	require.Equal(t, nonce, jwtNonce)
+	kbJwt, err := CreateKbJwt(presentation, keyBinder, nonce, audience)
+	require.NoError(t, err)
+
+	_, err = jws.Verify([]byte(kbJwt), jws.WithKey(jwa.ES256(), holderKeys[0]))
+	require.NoError(t, err)
+
+	header, claims, err := DecodeJwtWithoutCheckingSignature(string(kbJwt))
+	require.NoError(t, err)
+	require.Equal(t, KbJwtTyp, header["typ"])
+	require.Equal(t, "ES256", header["alg"])
+	require.Equal(t, audience, claims["aud"])
+	require.Equal(t, nonce, claims["nonce"])
+	require.NotNil(t, claims["iat"])
+
+	// sd_hash covers the presented SD-JWT, i.e. only the selected disclosures.
+	expectedSdHash, err := iana.CreateUrlEncodedHash(iana.SHA256, string(presentation))
+	require.NoError(t, err)
+	require.Equal(t, expectedSdHash, claims["sd_hash"])
 }
 
 func TestCreatePresentation_SelectTopLevelClaim(t *testing.T) {
 	fullSdJwt := buildTestSdJwtWithNestedClaims(t)
 
-	result, err := CreatePresentation(fullSdJwt, [][]any{{"given_name"}}, audience, nonce)
+	result, err := CreatePresentation(fullSdJwt, [][]any{{"given_name"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -75,7 +96,7 @@ func TestCreatePresentation_SelectTopLevelClaim(t *testing.T) {
 func TestCreatePresentation_SelectMultipleTopLevelClaims(t *testing.T) {
 	fullSdJwt := buildTestSdJwtWithNestedClaims(t)
 
-	result, err := CreatePresentation(fullSdJwt, [][]any{{"given_name"}, {"family_name"}}, audience, nonce)
+	result, err := CreatePresentation(fullSdJwt, [][]any{{"given_name"}, {"family_name"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -87,7 +108,7 @@ func TestCreatePresentation_SelectMultipleTopLevelClaims(t *testing.T) {
 func TestCreatePresentation_SelectNestedClaim(t *testing.T) {
 	fullSdJwt := buildTestSdJwtWithNestedClaims(t)
 
-	result, err := CreatePresentation(fullSdJwt, [][]any{{"address", "street"}}, audience, nonce)
+	result, err := CreatePresentation(fullSdJwt, [][]any{{"address", "street"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -104,7 +125,7 @@ func TestCreatePresentation_SelectMultipleNestedClaims(t *testing.T) {
 	result, err := CreatePresentation(fullSdJwt, [][]any{
 		{"address", "street"},
 		{"address", "city"},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -120,7 +141,7 @@ func TestCreatePresentation_MixTopLevelAndNested(t *testing.T) {
 	result, err := CreatePresentation(fullSdJwt, [][]any{
 		{"given_name"},
 		{"address", "city"},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -134,7 +155,7 @@ func TestCreatePresentation_MixTopLevelAndNested(t *testing.T) {
 func TestCreatePresentation_EmptyPaths_NoDisclosures(t *testing.T) {
 	fullSdJwt := buildTestSdJwtWithNestedClaims(t)
 
-	result, err := CreatePresentation(fullSdJwt, [][]any{}, audience, nonce)
+	result, err := CreatePresentation(fullSdJwt, [][]any{})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -144,7 +165,7 @@ func TestCreatePresentation_EmptyPaths_NoDisclosures(t *testing.T) {
 func TestCreatePresentation_NonExistentClaim_NoError(t *testing.T) {
 	fullSdJwt := buildTestSdJwtWithNestedClaims(t)
 
-	result, err := CreatePresentation(fullSdJwt, [][]any{{"nonexistent"}}, audience, nonce)
+	result, err := CreatePresentation(fullSdJwt, [][]any{{"nonexistent"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -158,7 +179,7 @@ func TestCreatePresentation_DuplicatePaths_NoDuplicateDisclosures(t *testing.T) 
 		{"address", "street"},
 		{"address", "street"},
 		{"address", "city"},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -223,7 +244,7 @@ func buildMixedNestedSdJwt(t *testing.T) SdJwt {
 func TestCreatePresentation_Mixed_SelectSdClaim_SkipsPlaintext(t *testing.T) {
 	sdJwt := buildMixedSdJwt(t)
 
-	result, err := CreatePresentation(sdJwt, [][]any{{"email"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"email"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -237,7 +258,7 @@ func TestCreatePresentation_Mixed_SelectPlaintextClaim_NoDisclosure(t *testing.T
 	sdJwt := buildMixedSdJwt(t)
 
 	// "nickname" is not selectively disclosed; requesting it yields no disclosures.
-	result, err := CreatePresentation(sdJwt, [][]any{{"nickname"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"nickname"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -247,7 +268,7 @@ func TestCreatePresentation_Mixed_SelectPlaintextClaim_NoDisclosure(t *testing.T
 func TestCreatePresentation_Mixed_SelectAllSdClaims(t *testing.T) {
 	sdJwt := buildMixedSdJwt(t)
 
-	result, err := CreatePresentation(sdJwt, [][]any{{"email"}, {"phone_number"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"email"}, {"phone_number"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -261,7 +282,7 @@ func TestCreatePresentation_MixedNested_NonSdParent_SelectSdChild(t *testing.T) 
 
 	// "address" is a non-SD object, so no disclosure for it.
 	// "street" inside address is SD.
-	result, err := CreatePresentation(sdJwt, [][]any{{"address", "street"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"address", "street"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -275,7 +296,7 @@ func TestCreatePresentation_MixedNested_NonSdParent_SelectPlaintextChild(t *test
 	sdJwt := buildMixedNestedSdJwt(t)
 
 	// "country" inside "address" is plaintext — no disclosure needed.
-	result, err := CreatePresentation(sdJwt, [][]any{{"address", "country"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"address", "country"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -286,7 +307,7 @@ func TestCreatePresentation_MixedNested_SdParent_SelectSdChild(t *testing.T) {
 	sdJwt := buildMixedNestedSdJwt(t)
 
 	// "employment" is an SD object, "title" inside it is also SD.
-	result, err := CreatePresentation(sdJwt, [][]any{{"employment", "title"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"employment", "title"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -301,7 +322,7 @@ func TestCreatePresentation_MixedNested_SdParent_SelectPlaintextChild(t *testing
 
 	// "company" inside "employment" is plaintext, but "employment" itself is SD.
 	// Selecting the plaintext child should still include the parent disclosure.
-	result, err := CreatePresentation(sdJwt, [][]any{{"employment", "company"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"employment", "company"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -319,7 +340,7 @@ func TestCreatePresentation_MixedNested_CombinedPaths(t *testing.T) {
 		{"address", "street"},
 		{"address", "city"},
 		{"employment", "title"},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -393,7 +414,7 @@ func TestCreatePresentation_SdArray_SelectByKey(t *testing.T) {
 	sdJwt := buildSdJwtWithArrays(t)
 
 	// "roles" is an SD array — selecting it should include its disclosure.
-	result, err := CreatePresentation(sdJwt, [][]any{{"roles"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"roles"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -406,7 +427,7 @@ func TestCreatePresentation_SdArrayElement_SelectByIndex(t *testing.T) {
 
 	// "tags" is a non-SD array with an SD element at index 1 ("secret-tag").
 	// Selecting ["tags", 1] should include the disclosure for that element.
-	result, err := CreatePresentation(sdJwt, [][]any{{"tags", 1}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"tags", 1}})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -419,7 +440,7 @@ func TestCreatePresentation_SdArrayElement_NonSdIndex_NoDisclosure(t *testing.T)
 	sdJwt := buildSdJwtWithArrays(t)
 
 	// "tags" index 0 is a non-SD item ("public-tag") — no disclosure needed.
-	result, err := CreatePresentation(sdJwt, [][]any{{"tags", 0}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"tags", 0}})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -430,7 +451,7 @@ func TestCreatePresentation_SdArrayElement_OutOfBounds_NoError(t *testing.T) {
 	sdJwt := buildSdJwtWithArrays(t)
 
 	// Index 99 is out of bounds — should not error, just produce no disclosures.
-	result, err := CreatePresentation(sdJwt, [][]any{{"tags", 99}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"tags", 99}})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -454,7 +475,7 @@ func TestCreatePresentation_SdArrayElement_MultipleIndices(t *testing.T) {
 	require.NoError(t, err)
 
 	// Select index 0 and 2 — should include 2 disclosures with correct values.
-	result, err := CreatePresentation(sdJwt, [][]any{{"items", 0}, {"items", 2}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"items", 0}, {"items", 2}})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -512,7 +533,7 @@ func TestCreatePresentation_ComplexNested_SelectNestedSdArrayElement(t *testing.
 
 	// Select a single employee from the nested "team" array inside SD object "projects".
 	// Path: ["projects", "team", 0] → should include "projects" (parent) + "Alice" (array elem)
-	result, err := CreatePresentation(sdJwt, [][]any{{"projects", "team", 0}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"projects", "team", 0}})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -533,7 +554,7 @@ func TestCreatePresentation_ComplexNested_SelectMultipleNestedArrayElements(t *t
 	result, err := CreatePresentation(sdJwt, [][]any{
 		{"projects", "team", 0},
 		{"projects", "team", 1},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -550,7 +571,7 @@ func TestCreatePresentation_ComplexNested_NonSdArrayIndex_NoExtraDisclosure(t *t
 	sdJwt := buildComplexNestedSdJwt(t)
 
 	// "team" index 2 is non-SD ("Charlie") — only the parent "projects" disclosure is needed.
-	result, err := CreatePresentation(sdJwt, [][]any{{"projects", "team", 2}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"projects", "team", 2}})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -572,7 +593,7 @@ func TestCreatePresentation_ComplexNested_MixScalarAndArrayElementPaths(t *testi
 		{"projects", "project_name"},
 		{"projects", "team", 1},
 		{"tags", 0},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -605,7 +626,7 @@ func TestCreatePresentation_ComplexNested_SelectBudgetSkipsTeam(t *testing.T) {
 	sdJwt := buildComplexNestedSdJwt(t)
 
 	// Select only "budget" from within "projects" — should NOT include any team member disclosures.
-	result, err := CreatePresentation(sdJwt, [][]any{{"projects", "budget"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"projects", "budget"}})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -685,7 +706,7 @@ func TestCreatePresentation_DeepNested_SelectCourseAtDepth5(t *testing.T) {
 	// This navigates 5 levels deep: SD object → array → SD object → array → SD item
 	result, err := CreatePresentation(sdJwt, [][]any{
 		{"university", "faculties", 0, "departments", 0, "courses", 0},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -715,7 +736,7 @@ func TestCreatePresentation_DeepNested_SelectMultipleCoursesFromSameDepartment(t
 	result, err := CreatePresentation(sdJwt, [][]any{
 		{"university", "faculties", 0, "departments", 0, "courses", 0},
 		{"university", "faculties", 0, "departments", 0, "courses", 1},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -739,7 +760,7 @@ func TestCreatePresentation_DeepNested_SelectNonSdCourseIndex_OnlyParentsDisclos
 	// courses[2] is non-SD ("Intro to CS") — only parent disclosures needed.
 	result, err := CreatePresentation(sdJwt, [][]any{
 		{"university", "faculties", 0, "departments", 0, "courses", 2},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -758,7 +779,7 @@ func TestCreatePresentation_DeepNested_SelectFacultyName(t *testing.T) {
 	// Select just the faculty name from the second faculty (Architecture).
 	result, err := CreatePresentation(sdJwt, [][]any{
 		{"university", "faculties", 1, "faculty_name"},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -777,7 +798,7 @@ func TestCreatePresentation_DeepNested_SelectAcrossBothFaculties(t *testing.T) {
 	result, err := CreatePresentation(sdJwt, [][]any{
 		{"university", "faculties", 0, "faculty_name"},
 		{"university", "faculties", 1, "departments", 0},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -806,7 +827,7 @@ func TestCreatePresentation_DeepNested_SelectUniversityNameOnly(t *testing.T) {
 	// Select only the university name — nothing from faculties.
 	result, err := CreatePresentation(sdJwt, [][]any{
 		{"university", "name"},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDecodedDisclosures(t, result)
@@ -874,7 +895,7 @@ func TestCreatePresentation_NonSdArray_NotDisclosed(t *testing.T) {
 
 	// "tags" is a non-SD array — selecting it yields no disclosures for the array itself.
 	// (The SD items inside have no key, so they can't be selected by path.)
-	result, err := CreatePresentation(sdJwt, [][]any{{"tags"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"tags"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -885,7 +906,7 @@ func TestCreatePresentation_PlaintextArray_NotDisclosed(t *testing.T) {
 	sdJwt := buildSdJwtWithArrays(t)
 
 	// "scores" is fully plaintext — no disclosures at all.
-	result, err := CreatePresentation(sdJwt, [][]any{{"scores"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"scores"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -895,7 +916,7 @@ func TestCreatePresentation_PlaintextArray_NotDisclosed(t *testing.T) {
 func TestCreatePresentation_SdArrayAndSdClaim_Combined(t *testing.T) {
 	sdJwt := buildSdJwtWithArrays(t)
 
-	result, err := CreatePresentation(sdJwt, [][]any{{"name"}, {"roles"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"name"}, {"roles"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -908,7 +929,7 @@ func TestCreatePresentation_NestedSdArrayInSdObject(t *testing.T) {
 	sdJwt := buildSdJwtWithNestedArrayInObject(t)
 
 	// Select the nested SD array "permissions" inside the SD object "profile".
-	result, err := CreatePresentation(sdJwt, [][]any{{"profile", "permissions"}}, audience, nonce)
+	result, err := CreatePresentation(sdJwt, [][]any{{"profile", "permissions"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -925,7 +946,7 @@ func TestCreatePresentation_NestedSdClaim_AlongsideSdArray(t *testing.T) {
 	result, err := CreatePresentation(sdJwt, [][]any{
 		{"profile", "username"},
 		{"profile", "permissions"},
-	}, audience, nonce)
+	})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -962,7 +983,7 @@ func buildTestSdJwtWithoutSdAlg(t *testing.T) SdJwt {
 func TestCreatePresentation_MissingSdAlg_DefaultsToSha256(t *testing.T) {
 	fullSdJwt := buildTestSdJwtWithoutSdAlg(t)
 
-	result, err := CreatePresentation(fullSdJwt, [][]any{{"given_name"}}, audience, nonce)
+	result, err := CreatePresentation(fullSdJwt, [][]any{{"given_name"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)
@@ -973,7 +994,7 @@ func TestCreatePresentation_MissingSdAlg_DefaultsToSha256(t *testing.T) {
 func TestCreatePresentation_MissingSdAlg_AllClaims(t *testing.T) {
 	fullSdJwt := buildTestSdJwtWithoutSdAlg(t)
 
-	result, err := CreatePresentation(fullSdJwt, [][]any{{"given_name"}, {"email"}}, audience, nonce)
+	result, err := CreatePresentation(fullSdJwt, [][]any{{"given_name"}, {"email"}})
 
 	require.NoError(t, err)
 	disclosures := extractDisclosureKeys(t, result)

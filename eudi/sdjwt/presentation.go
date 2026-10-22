@@ -21,7 +21,7 @@ type indexedDisclosure struct {
 //
 // The returned SD-JWT has the same issuer-signed JWT but only the selected
 // disclosures appended.
-func CreatePresentation(fullSdJwt SdJwt, claimPaths [][]any, audience string, nonce string) (SdJwt, error) {
+func CreatePresentation(fullSdJwt SdJwt, claimPaths [][]any) (SdJwt, error) {
 	issuerSignedJwt, payload, byHash, err := decodeAndIndex(fullSdJwt)
 	if err != nil {
 		return "", err

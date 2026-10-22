@@ -104,7 +104,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			return nil, fmt.Errorf("failed to remove instance of credential %s: %w", sel.CredentialHash, err)
 		}
 
-		sdjwtSelected, err := sdjwt.CreatePresentation(sdjwt.SdJwt(cred.SdJwtVc), sel.ClaimPaths, audience, nonce)
+		sdjwtSelected, err := sdjwt.CreatePresentation(sdjwt.SdJwt(cred.SdJwtVc), sel.ClaimPaths)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
