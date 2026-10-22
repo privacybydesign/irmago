@@ -1561,3 +1561,49 @@ func newStorageBatch() *models.SdJwtVcBatch {
 		},
 	}
 }
+
+// Issue #772: vct#integrity is SD-JWT VC protocol metadata (a hash of the type
+// metadata document), not user data, so it must not show up as an attribute.
+// The same goes for the registered JWT claims jti and aud, which
+// sdjwtvc.StandardClaims also misses.
+func TestGetCredentialMetadataList_HidesProtocolClaims(t *testing.T) {
+	for _, claim := range []string{"vct#integrity", "jti", "aud"} {
+		t.Run(claim, func(t *testing.T) {
+			batch := newStorageBatch()
+			batch.ProcessedSdJwtPayload = datatypes.JSON(fmt.Sprintf(`{"family_name":"Smith","%s":"protocol-value"}`, claim))
+			mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
+			svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+
+			result, err := svc.List()
+
+			require.NoError(t, err)
+			require.Len(t, result, 1)
+
+			paths := []string{}
+			for _, a := range result[0].Attributes {
+				paths = append(paths, clientmodels.ClaimPathKey(a.ClaimPath))
+			}
+
+			assert.Equal(t, []string{clientmodels.ClaimPathKey([]any{"family_name"})}, paths)
+		})
+	}
+}
+
+// Issue #772, dedup side: these claims change between issuances with the same
+// claim values. vct#integrity changes when the issuer republishes its type
+// metadata, jti is unique per token. A renewal must still hash the same, or
+// the wallet keeps both copies instead of replacing the old one.
+func TestHashForSdJwtVc_IgnoresProtocolClaims(t *testing.T) {
+	for _, claim := range []string{"vct#integrity", "jti", "aud"} {
+		t.Run(claim, func(t *testing.T) {
+			before := fmt.Appendf(nil, `{"given_name":"Alice","%s":"first"}`, claim)
+			after := fmt.Appendf(nil, `{"given_name":"Alice","%s":"second"}`, claim)
+
+			h1, err := hashForSdJwtVc("https://vct.example.com/Cred", testHashIssuer, before)
+			require.NoError(t, err)
+			h2, err := hashForSdJwtVc("https://vct.example.com/Cred", testHashIssuer, after)
+			require.NoError(t, err)
+			assert.Equal(t, h1, h2, "a new %s must not make it a different credential", claim)
+		})
+	}
+}

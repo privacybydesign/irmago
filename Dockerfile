@@ -1,4 +1,4 @@
-FROM golang:1-alpine AS build
+FROM golang:1.27.3-alpine AS build
 
 # Set build environment
 ENV CGO_ENABLED=0

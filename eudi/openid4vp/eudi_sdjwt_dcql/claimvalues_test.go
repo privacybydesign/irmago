@@ -114,3 +114,24 @@ func TestClaimMatchesNumericConstraint(t *testing.T) {
 		})
 	}
 }
+
+// Issue #772, disclosure side: protocol claims sit in the issuer-signed JWT,
+// so they are in every verifier-side view. They must not be listed as
+// disclosed attributes on the disclosure screen or in the activity log.
+func TestCollectViewLeafPaths_SkipsProtocolClaims(t *testing.T) {
+	for _, claim := range []string{"vct#integrity", "jti", "aud"} {
+		t.Run(claim, func(t *testing.T) {
+			view := map[string]any{
+				"vct":        "https://vct.example.com/Cred",
+				claim:        "protocol-value",
+				"given_name": "Alice",
+			}
+
+			leaves := collectViewLeafPaths(view)
+
+			if len(leaves) != 1 || len(leaves[0]) != 1 || leaves[0][0] != "given_name" {
+				t.Fatalf("want only [given_name], got %v", leaves)
+			}
+		})
+	}
+}
