@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -788,6 +789,27 @@ func (ct *CredentialType) IssuerIdentifier() IssuerIdentifier {
 
 func (ct *CredentialType) SchemeManagerIdentifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(ct.SchemeManagerID)
+}
+
+// ClientFaq resolves the credential type's FAQ texts to the given locale, as
+// one text bundle (a single language for all four fields), for embedding in
+// the CredentialDescriptors handed to frontends. Returns nil when the scheme
+// provides no FAQ content at all.
+func (ct *CredentialType) ClientFaq(locale string) *clientmodels.Faq {
+	introTS, purposeTS := ct.FAQIntro.ToClientmodels(), ct.FAQPurpose.ToClientmodels()
+	contentTS, howtoTS := ct.FAQContent.ToClientmodels(), ct.FAQHowto.ToClientmodels()
+	lang := clientmodels.BundleLanguage(locale, introTS, purposeTS, contentTS, howtoTS)
+
+	faq := &clientmodels.Faq{
+		Intro:   clientmodels.PtrIfNonEmpty(introTS[lang]),
+		Purpose: clientmodels.PtrIfNonEmpty(purposeTS[lang]),
+		Content: clientmodels.PtrIfNonEmpty(contentTS[lang]),
+		HowTo:   clientmodels.PtrIfNonEmpty(howtoTS[lang]),
+	}
+	if faq.Intro == nil && faq.Purpose == nil && faq.Content == nil && faq.HowTo == nil {
+		return nil
+	}
+	return faq
 }
 
 func (ct *CredentialType) Logo(conf *Configuration) string {
