@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `POST /email/link` in `myirmaserver` lets the app link an email address to its keyshare account with one disclosure session, without a MyYivi login. The session asks for the keyshare attribute and an email attribute together, and when it has finished the email address is linked to the keyshare user, as `/email/add` does. At most 1000 of these sessions can wait to finish at a time ([#744](https://github.com/privacybydesign/irmago/issues/744))
 
+### Fixed
+- The SD-JWT VC claims `vct#integrity`, `jti` and `aud` are no longer shown as attributes in the credential list, on the issuance screen, or on the disclosure screen and log. They are protocol claims, not user data. They also no longer count towards a credential's duplicate check. `jti` changes on every issuance and `vct#integrity` whenever the issuer republishes its type metadata, so a renewal could be stored as a second copy instead of replacing the first. On startup, the wallet recomputes stored hashes. Copies that now turn out to be the same credential are merged: the one with the latest `iat` is kept and the others are deleted, as a renewal would do ([#772](https://github.com/privacybydesign/irmago/issues/772))
+
+## [1.4.3] - 2026-10-21
+### Fixed
+- Update Go toolchain to fix eMudhra CA compromise.
+- Pin Docker images to Go 1.27.3 to fix the eMudhra CA compromise and make builds reproducible.
+
 ## [1.4.2] - 2026-10-16
 ### Added
 - `AttributeValue` has a new optional `display_hint` field with the attribute type's display hint from the scheme, unchanged (e.g. `yesno`, `portraitPhoto`, `currency:EUR`). Clients can use it to render values for hints irmago doesn't interpret itself, starting with `currency:<ISO 4217 code>` for amounts stored as a plain decimal such as `12.50`. Values of attribute types without a display hint leave it out ([#752](https://github.com/privacybydesign/irmago/issues/752))
@@ -894,7 +902,8 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
-[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/privacybydesign/irmago/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/privacybydesign/irmago/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/privacybydesign/irmago/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/privacybydesign/irmago/compare/v1.3.1...v1.4.0
@@ -947,4 +956,3 @@ This release contains several large new features. In particular, the shoulder su
 [0.5.0-rc.1]: https://github.com/privacybydesign/irmago/compare/v0.4.1...v0.5.0-rc.1
 [0.4.1]: https://github.com/privacybydesign/irmago/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/privacybydesign/irmago/tree/v0.4.0
-
