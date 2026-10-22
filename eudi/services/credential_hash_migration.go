@@ -63,6 +63,7 @@ func MigrateCredentialHashes(store db.SdJwtVcStore) error {
 	for _, want := range hashes {
 		group := byHash[want]
 		keep := newestBatch(group)
+
 		// Delete the duplicates first: one of them may hold the hash the kept
 		// batch is about to take.
 		for _, batch := range group {
@@ -74,6 +75,7 @@ func MigrateCredentialHashes(store db.SdJwtVcStore) error {
 			}
 			deleted++
 		}
+
 		if want == keep.Hash {
 			continue
 		}

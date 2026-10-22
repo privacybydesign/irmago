@@ -192,6 +192,7 @@ func TestMigrateCredentialHashes_DropsDuplicatesTheOldHashLetIn(t *testing.T) {
 
 	batches, err := store.GetCredentialBatchList()
 	require.NoError(t, err)
+
 	ids := []datatypes.UUID{}
 	for _, b := range batches {
 		ids = append(ids, b.ID)
@@ -199,6 +200,7 @@ func TestMigrateCredentialHashes_DropsDuplicatesTheOldHashLetIn(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want, b.Hash, "every remaining batch must carry its current hash")
 	}
+
 	require.ElementsMatch(t, []datatypes.UUID{newer, other}, ids, "the older duplicate is deleted, the rest kept")
 	require.NotContains(t, ids, older)
 

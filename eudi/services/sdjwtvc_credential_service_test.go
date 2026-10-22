@@ -1574,10 +1574,12 @@ func TestGetCredentialMetadataList_HidesProtocolClaims(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Len(t, result, 1)
+
 			paths := []string{}
 			for _, a := range result[0].Attributes {
 				paths = append(paths, clientmodels.ClaimPathKey(a.ClaimPath))
 			}
+
 			assert.Equal(t, []string{clientmodels.ClaimPathKey([]any{"family_name"})}, paths)
 		})
 	}
