@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `POST /email/link` in `myirmaserver` lets the app link an email address to its keyshare account with one disclosure session, without a MyYivi login. The session asks for the keyshare attribute and an email attribute together, and when it has finished the email address is linked to the keyshare user, as `/email/add` does. At most 1000 of these sessions can wait to finish at a time ([#744](https://github.com/privacybydesign/irmago/issues/744))
+
 ### Fixed
 - The SD-JWT VC claims `vct#integrity`, `jti` and `aud` are no longer shown as attributes in the credential list, on the issuance screen, or on the disclosure screen and log. They are protocol claims, not user data. They also no longer count towards a credential's duplicate check. `jti` changes on every issuance and `vct#integrity` whenever the issuer republishes its type metadata, so a renewal could be stored as a second copy instead of replacing the first. On startup, the wallet recomputes stored hashes. Copies that now turn out to be the same credential are merged: the one with the latest `iat` is kept and the others are deleted, as a renewal would do ([#772](https://github.com/privacybydesign/irmago/issues/772))
 

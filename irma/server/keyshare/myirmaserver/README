@@ -65,6 +65,15 @@ Description: Starts session in which user can disclose the email address to be a
              After session, checksession needs to be called to check for potential errors
 Returns:     session pointer
 
+POST /email/link
+Arguments:   none
+Description: Starts session in which the app discloses its keyshare attribute and an email attribute
+             together. Needs no login and sets no cookie. Once the session has finished successfully,
+             the email address is linked to the keyshare user that was disclosed, as /email/add does.
+             The linking is done by the server instance that started the session, so it is lost if
+             that instance stops before the session finishes.
+Returns:     session pointer, or 429 when too many of these sessions are waiting to finish
+
 POST /email/remove
 Arguments:   none
 Description: emailaddress to remove as request body
