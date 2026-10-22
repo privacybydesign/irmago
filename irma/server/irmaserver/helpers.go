@@ -122,13 +122,18 @@ func (session *sessionData) chooseProtocolVersion(minClient, maxClient *irma.Pro
 		}
 	}
 
-	if minClient.AboveVersion(maxProtocolVersion) || maxClient.BelowVersion(minSessionProtocolVersion) || maxClient.BelowVersion(minClient) {
-		err := errors.Errorf("Protocol version negotiation failed, min=%s max=%s minServer=%s maxServer=%s", minClient.String(), maxClient.String(), minSessionProtocolVersion.String(), maxProtocolVersion.String())
+	serverMax := maxProtocolVersion
+	if MaxProtocolVersionOverride != nil {
+		serverMax = MaxProtocolVersionOverride
+	}
+
+	if minClient.AboveVersion(serverMax) || maxClient.BelowVersion(minSessionProtocolVersion) || maxClient.BelowVersion(minClient) {
+		err := errors.Errorf("Protocol version negotiation failed, min=%s max=%s minServer=%s maxServer=%s", minClient.String(), maxClient.String(), minSessionProtocolVersion.String(), serverMax.String())
 		_ = server.LogWarning(err)
 		return nil, err
 	}
-	if maxClient.AboveVersion(maxProtocolVersion) {
-		return maxProtocolVersion, nil
+	if maxClient.AboveVersion(serverMax) {
+		return serverMax, nil
 	} else {
 		return maxClient, nil
 	}
