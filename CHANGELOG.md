@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- The SD-JWT VC claims `vct#integrity`, `jti` and `aud` are no longer shown as attributes in the credential list, on the issuance screen, or on the disclosure screen and log. They are protocol claims, not user data. They also no longer count towards a credential's duplicate check. `jti` changes on every issuance and `vct#integrity` whenever the issuer republishes its type metadata, so a renewal could be stored as a second copy instead of replacing the first. On startup, the wallet recomputes stored hashes. Copies that now turn out to be the same credential are merged: the one with the latest `iat` is kept and the others are deleted, as a renewal would do ([#772](https://github.com/privacybydesign/irmago/issues/772))
 
 ## [1.4.3] - 2026-10-21
 ### Fixed
