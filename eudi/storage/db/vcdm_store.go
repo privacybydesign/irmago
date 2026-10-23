@@ -3,6 +3,7 @@ package db
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
@@ -43,6 +44,18 @@ type VcdmStore interface {
 	// DeleteBatchByHashAndFormat deletes the batch with the given content hash
 	// and securing format, the same way. Returns ErrNotFound if none matches.
 	DeleteBatchByHashAndFormat(hash string, format models.CredentialFormat) error
+
+	// ListInstancesWithStatusReference returns every instance carrying a status
+	// reference of either kind, with its status columns.
+	ListInstancesWithStatusReference() ([]*models.VcdmBatchInstance, error)
+
+	// ListStatusReferencedInstanceStatuses returns the (batch hash,
+	// last_known_status) pair of every instance carrying a status reference.
+	ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error)
+
+	// UpdateInstanceStatus writes last_known_status and last_status_check_at on
+	// one instance. Returns ErrNotFound on no match.
+	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
 }
 
 type vcdmStore struct {
@@ -159,4 +172,40 @@ func (s *vcdmStore) DeleteBatchByHashAndFormat(hash string, format models.Creden
 		return err
 	}
 	return s.DeleteBatch(batch.ID)
+}
+
+func (s *vcdmStore) ListInstancesWithStatusReference() ([]*models.VcdmBatchInstance, error) {
+	var instances []*models.VcdmBatchInstance
+	err := s.db.Where("has_status_reference = ?", true).Find(&instances).Error
+	return instances, err
+}
+
+func (s *vcdmStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error) {
+	var out []BatchInstanceStatus
+	err := s.db.
+		Model(&models.VcdmBatchInstance{}).
+		Select("vcdm_batches.hash AS hash, vcdm_batch_instances.last_known_status AS last_known_status").
+		Joins("JOIN vcdm_batches ON vcdm_batches.id = vcdm_batch_instances.vcdm_batch_id").
+		Where("vcdm_batch_instances.has_status_reference = ?", true).
+		Scan(&out).Error
+	return out, err
+}
+
+func (s *vcdmStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
+	if instanceID.IsNil() {
+		return fmt.Errorf("instanceID is required")
+	}
+	res := s.db.Model(&models.VcdmBatchInstance{}).
+		Where("id = ?", instanceID).
+		Updates(map[string]any{
+			"last_known_status":    status,
+			"last_status_check_at": checkedAt,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

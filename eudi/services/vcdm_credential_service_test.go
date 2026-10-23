@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
@@ -39,19 +41,24 @@ func newVcdmTestEnv(t *testing.T) *vcdmTestEnv {
 	d := newTestHolderDB(t)
 	store := db.NewVcdmStore(d)
 	keys := db.NewHolderBindingKeyStore(d)
+	fs := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
+	revocation := NewVcdmRevocationService(nil, nil, store)
 	return &vcdmTestEnv{
 		db:      d,
 		store:   store,
 		keys:    keys,
-		service: NewSdJwtVcdmCredentialService(store, keys, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()), clientmodels.NewCurrentLocale("en")),
+		service: NewSdJwtVcdmCredentialService(store, keys, fs, revocation, clientmodels.NewCurrentLocale("en")),
 		parser:  NewSdJwtVcdmCredentialFormatParser(newTestVcdmHolderVerifier()),
 	}
 }
 
+// newTestVcdmHolderVerifier checks status the way the wallet does, trusting the
+// test issuer for status lists as well as credentials.
 func newTestVcdmHolderVerifier() *vcdmsdjwt.HolderVerificationProcessor {
-	return vcdmsdjwt.NewHolderVerificationProcessor(
-		vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
-	)
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	ctx.StatusChecker = statuslist.NewChecker(statuslist.VerificationContext{X509Context: ctx.X509VerificationContext}, nil)
+	ctx.BitstringStatusChecker = bitstringstatus.NewChecker(bitstringstatus.VerificationContext{X509Context: ctx.X509VerificationContext})
+	return vcdmsdjwt.NewHolderVerificationProcessor(ctx)
 }
 
 // newRawVcdm builds a real SD-JWT-secured VCDM credential signed with the test

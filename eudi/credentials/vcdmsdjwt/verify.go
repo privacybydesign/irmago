@@ -1,12 +1,15 @@
 package vcdmsdjwt
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jwt"
+	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
@@ -39,6 +42,13 @@ type VerificationContext struct {
 	// KB-JWT must echo. Verifier-side only; unused for holder receipt.
 	ExpectedNonce    string
 	ExpectedAudience string
+
+	// StatusChecker and BitstringStatusChecker, when set, check the
+	// credential's IETF Token Status List and W3C Bitstring Status List
+	// references, and reject it unless every one reads valid. A credential
+	// without status references is not checked.
+	StatusChecker          *statuslist.Checker
+	BitstringStatusChecker *bitstringstatus.Checker
 }
 
 // CreateDefaultVerificationContext builds a VerificationContext that trusts the
@@ -140,6 +150,10 @@ func (p *processor) processAndVerify(
 		return nil, err
 	}
 
+	if err := p.runStatusCheck(document); err != nil {
+		return nil, err
+	}
+
 	return &VerifiedSdJwtVcdm{
 		Document:              document,
 		RegisteredClaims:      *registered,
@@ -148,6 +162,24 @@ func (p *processor) processAndVerify(
 		KeyBindingJwt:         kbPayload,
 		rawSdJwtVcdm:          raw,
 	}, nil
+}
+
+// runStatusCheck rejects a credential whose status does not read valid, or
+// cannot be read. Fail-closed, like sdjwtvc's runStatusListCheck, and for the
+// same reason without a caller context: the checkers bound their own requests.
+func (p *processor) runStatusCheck(document vcdm.Document) error {
+	refs, err := ParseStatusReferences(document)
+	if err != nil {
+		return fmt.Errorf("failed to parse status references: %w", err)
+	}
+	status, err := CheckStatus(context.Background(), refs, p.verificationContext.StatusChecker, p.verificationContext.BitstringStatusChecker)
+	if err != nil {
+		return err
+	}
+	if status != statuslist.StatusValid {
+		return fmt.Errorf("credential status is %s, not valid", status)
+	}
+	return nil
 }
 
 func (p *processor) parseAndVerifyIssuerSignedJwt(

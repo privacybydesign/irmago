@@ -1,6 +1,10 @@
 package statuslist
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"math"
+)
 
 // StatusListTokenTyp is the JOSE 'typ' header value mandated by the spec
 // for the JWT encoding (draft-ietf-oauth-status-list-15 §5.1; the media
@@ -23,6 +27,34 @@ type StatusClaim struct {
 type Reference struct {
 	Index uint64 `json:"idx"`
 	URI   string `json:"uri"`
+}
+
+// ParseStatusClaim reads the Token Status List reference from the value of a
+// decoded `status` claim, as found in a JSON-decoded credential payload. It
+// returns nil when the claim carries no `status_list` member, which the spec
+// allows as an extension point.
+func ParseStatusClaim(status any) (*Reference, error) {
+	claim, ok := status.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("status claim is not an object: %T", status)
+	}
+	raw, ok := claim["status_list"]
+	if !ok {
+		return nil, nil
+	}
+	list, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("status_list is not an object: %T", raw)
+	}
+	uri, ok := list["uri"].(string)
+	if !ok || uri == "" {
+		return nil, fmt.Errorf("status_list.uri is missing or not a string")
+	}
+	idx, ok := list["idx"].(float64)
+	if !ok || idx < 0 || idx != math.Trunc(idx) {
+		return nil, fmt.Errorf("status_list.idx is missing or not a non-negative integer")
+	}
+	return &Reference{URI: uri, Index: uint64(idx)}, nil
 }
 
 // Status is the typed value returned by Checker.Check.

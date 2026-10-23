@@ -41,6 +41,7 @@ func NewVcdmDcqlHandler(
 	credentialStore db.VcdmStore,
 	keyBinder sdjwt.KeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
+	revocation sdjwtdcql.VcdmRevocationChecker,
 ) *Handler {
 	profile := sdjwtdcql.NewProfile(
 		models.CredentialFormatSdJwtVcdm,
@@ -50,7 +51,7 @@ func NewVcdmDcqlHandler(
 		},
 		vcdmsdjwt.CreateEnvelopedPresentation,
 	)
-	return &Handler{sdjwtdcql.NewEngine(profile, eudiStorage, sdjwtdcql.NewVcdmBatchStore(credentialStore), nil, nil, keyBinder, currentLocale)}
+	return &Handler{sdjwtdcql.NewEngine(profile, eudiStorage, sdjwtdcql.NewVcdmBatchStore(credentialStore, revocation), nil, nil, keyBinder, currentLocale)}
 }
 
 // CanHandleCredentialQuery claims every vc+sd-jwt query. Unlike SD-JWT VC there

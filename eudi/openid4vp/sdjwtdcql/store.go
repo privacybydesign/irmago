@@ -127,15 +127,21 @@ func (s *sdJwtVcBatchStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 	return s.store.MarkInstanceUsed(instanceID)
 }
 
-// NewVcdmBatchStore adapts the SD-JWT-secured VCDM store. VCDM status (W3C
-// Bitstring Status List) is not checked yet, so no instance reports revocation
-// support.
-func NewVcdmBatchStore(store db.VcdmStore) BatchStore {
-	return &vcdmBatchStore{store: store}
+// VcdmRevocationChecker is RevocationChecker for a stored VCDM instance (see
+// services.VcdmRevocationService).
+type VcdmRevocationChecker interface {
+	IsRevoked(instance *models.VcdmBatchInstance) bool
+}
+
+// NewVcdmBatchStore adapts the SD-JWT-secured VCDM store. revocation determines
+// an instance's Revoked flag; nil disables the check.
+func NewVcdmBatchStore(store db.VcdmStore, revocation VcdmRevocationChecker) BatchStore {
+	return &vcdmBatchStore{store: store, revocation: revocation}
 }
 
 type vcdmBatchStore struct {
-	store db.VcdmStore
+	store      db.VcdmStore
+	revocation VcdmRevocationChecker
 }
 
 func (s *vcdmBatchStore) ListBatches() ([]*Batch, error) {
@@ -170,7 +176,12 @@ func (s *vcdmBatchStore) GetUnusedInstance(batchID datatypes.UUID) (*Instance, e
 	if err != nil {
 		return nil, err
 	}
-	return &Instance{ID: instance.ID, RawCredential: instance.RawCredential}, nil
+	return &Instance{
+		ID:                  instance.ID,
+		RawCredential:       instance.RawCredential,
+		Revoked:             s.revocation != nil && s.revocation.IsRevoked(instance),
+		RevocationSupported: instance.HasStatusReference,
+	}, nil
 }
 
 func (s *vcdmBatchStore) MarkInstanceUsed(instanceID datatypes.UUID) error {

@@ -32,7 +32,7 @@ func newTestHandler(t *testing.T) (*Handler, db.VcdmStore) {
 	t.Helper()
 	ts := sdjwtdcqltest.NewTestStorage(t)
 	store := db.NewVcdmStore(ts.Db())
-	h := NewVcdmDcqlHandler(ts, store, nil, clientmodels.NewCurrentLocale("en"))
+	h := NewVcdmDcqlHandler(ts, store, nil, clientmodels.NewCurrentLocale("en"), nil)
 	return h, store
 }
 
@@ -85,7 +85,7 @@ func TestVcdmFindCandidates_MatchesCompositeTypeAndSubjectClaims(t *testing.T) {
 
 func TestVcdmFindCandidates_ExcludesSdJwtVcBatch(t *testing.T) {
 	ts := sdjwtdcqltest.NewTestStorage(t)
-	h := NewVcdmDcqlHandler(ts, db.NewVcdmStore(ts.Db()), nil, clientmodels.NewCurrentLocale("en"))
+	h := NewVcdmDcqlHandler(ts, db.NewVcdmStore(ts.Db()), nil, clientmodels.NewCurrentLocale("en"), nil)
 
 	// A dc+sd-jwt (SD-JWT VC) batch lives in the SD-JWT VC table and must not be
 	// served for a vc+sd-jwt query.

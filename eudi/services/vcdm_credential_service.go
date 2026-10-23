@@ -26,28 +26,31 @@ import (
 // The holder binding keys are the SD-JWT VC ones (HolderBindingKeyService),
 // matched by `cnf` the same way; only the instance they link to differs.
 //
-// W3C VCDM credentials reference status through `credentialStatus`
-// (BitstringStatusList), not the IETF Token Status List; the wallet does not
-// check it yet, so nothing here is ever reported revoked.
+// Revocation is reported from the stored status that VcdmRevocationService
+// maintains.
 type sdJwtVcdmCredentialService struct {
 	sdJwtVcdmDisplaySource
 	holderBindingKeyStore db.HolderBindingKeyStore
 	fileStorage           filesystem.FileSystemStorage
+	revocation            *VcdmRevocationService
 	currentLocale         *clientmodels.CurrentLocale
 }
 
 // NewSdJwtVcdmCredentialService returns the SD-JWT-secured VCDM store over the
-// given stores and file storage.
+// given stores and file storage. A nil revocation service reports nothing as
+// revocable.
 func NewSdJwtVcdmCredentialService(
 	store db.VcdmStore,
 	holderBindingKeyStore db.HolderBindingKeyStore,
 	fileStorage filesystem.FileSystemStorage,
+	revocation *VcdmRevocationService,
 	currentLocale *clientmodels.CurrentLocale,
 ) *sdJwtVcdmCredentialService {
 	return &sdJwtVcdmCredentialService{
 		sdJwtVcdmDisplaySource: newSdJwtVcdmDisplaySource(store),
 		holderBindingKeyStore:  holderBindingKeyStore,
 		fileStorage:            fileStorage,
+		revocation:             revocation,
 		currentLocale:          currentLocale,
 	}
 }
@@ -63,6 +66,14 @@ func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) 
 	batches, err := s.store.ListBatches()
 	if err != nil {
 		return nil, err
+	}
+
+	revoked, revocable := map[string]bool{}, map[string]bool{}
+	if s.revocation != nil {
+		revoked, revocable, err = s.revocation.BatchRevocation()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	locale := s.currentLocale.Get()
@@ -115,8 +126,8 @@ func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) 
 			Attributes:                   BuildAttributesFromVcdmDocument(document, display.ClaimNames, display.ClaimOrder),
 			ExpiryDate:                   exp,
 			IssuanceDate:                 &issuedAt,
-			Revoked:                      false,
-			RevocationSupported:          false,
+			Revoked:                      revoked[batch.Hash],
+			RevocationSupported:          revocable[batch.Hash],
 			IssueURL:                     nil,
 		})
 	}
@@ -193,9 +204,18 @@ func (s *sdJwtVcdmCredentialService) Store(
 		return err
 	}
 
+	// Each copy has its own status entry, so the references are read per copy.
 	instances := make([]models.VcdmBatchInstance, len(parsedCredentials))
+	now := time.Now()
 	for i, p := range parsedCredentials {
-		instances[i] = models.VcdmBatchInstance{RawCredential: p.RawCredentialBytes}
+		refs, err := vcdmsdjwt.ParseStatusReferences(p.SdJwtVcdm.Document)
+		if err != nil {
+			return fmt.Errorf("credential %d: %w", i, err)
+		}
+		instances[i], err = withStatusReferences(models.VcdmBatchInstance{RawCredential: p.RawCredentialBytes}, refs, now)
+		if err != nil {
+			return err
+		}
 	}
 
 	batch := &models.VcdmBatch{

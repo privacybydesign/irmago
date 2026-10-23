@@ -15,6 +15,7 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
@@ -55,6 +56,7 @@ type Client struct {
 	sessionManager    sessionManager
 	credentialFormats services.CredentialFormats
 	revocationService *services.RevocationService
+	vcdmRevocation    *services.VcdmRevocationService
 
 	// handler is how the wallet wakes the app when what it has already rendered
 	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
@@ -154,6 +156,14 @@ func New(
 	}, statusListCache)
 	revocationService := services.NewRevocationService(statusChecker, credStore)
 
+	// SD-JWT-secured VCDM credentials can name either Token Status List or W3C
+	// Bitstring Status List; the latter's checker trusts the same issuers.
+	bitstringStatusChecker := bitstringstatus.NewChecker(bitstringstatus.VerificationContext{
+		X509Context: &eudiConf.Issuers,
+		Clock:       eudi_jwt.NewSystemClock(),
+	})
+	vcdmRevocationService := services.NewVcdmRevocationService(statusChecker, bitstringStatusChecker, db.NewVcdmStore(eudiStorage.Db()))
+
 	// Rewrite any credential hash still computed under an older definition, and
 	// drop the duplicates that older definition let in. Runs before
 	// the wallet can be asked about its credentials, because a stale hash makes a
@@ -193,6 +203,7 @@ func New(
 		db.NewVcdmStore(eudiStorage.Db()),
 		eudiKeyBinder,
 		currentLocale,
+		vcdmRevocationService,
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
 
@@ -259,6 +270,8 @@ func New(
 		X509VerificationContext: &eudiConf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),
 		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
+		StatusChecker:           statusChecker,
+		BitstringStatusChecker:  bitstringStatusChecker,
 	}
 
 	// The per-format registry: how each credential format is verified, which
@@ -267,7 +280,7 @@ func New(
 	// nothing to register here.
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI)
 	vcdmHolderVerifier := vcdmsdjwt.NewHolderVerificationProcessor(vcdmVerificationContextOpenID4VCI)
-	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, vcdmHolderVerifier, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, currentLocale)
+	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, vcdmHolderVerifier, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, vcdmRevocationService, currentLocale)
 	openid4vciClient, err := openid4vci.NewClient(
 		common.HTTPClient,
 		eudiConf,
@@ -303,6 +316,7 @@ func New(
 		currentLocale:     currentLocale,
 		credentialFormats: credentialFormats,
 		revocationService: revocationService,
+		vcdmRevocation:    vcdmRevocationService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,
@@ -352,8 +366,9 @@ func (client *Client) Close() error {
 	return client.storage.Close()
 }
 
-// RefreshStatuses re-fetches the Token Status List for one representative
-// instance per stored SD-JWT VC batch and updates its LastKnownStatus column.
+// RefreshStatuses re-fetches the status list for one representative instance
+// per stored SD-JWT VC and SD-JWT-secured VCDM batch and updates its
+// LastKnownStatus column.
 // Use this on app resume or when the UI exposes an explicit refresh action.
 // Errors during the sweep are logged; the previous LastKnownStatus persists for
 // any URI that fails to refresh.
@@ -370,6 +385,11 @@ func (client *Client) Close() error {
 // cancellation.
 func (client *Client) RefreshStatuses(ctx context.Context) error {
 	changed, err := client.revocationService.RefreshStatuses(ctx)
+	if err == nil {
+		var vcdmChanged int
+		vcdmChanged, err = client.vcdmRevocation.RefreshStatuses(ctx)
+		changed += vcdmChanged
+	}
 	if changed > 0 {
 		client.handler.CredentialsChanged()
 	}

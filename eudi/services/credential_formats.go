@@ -101,6 +101,7 @@ func NewCredentialFormats(
 	d *gorm.DB,
 	fs filesystem.FileSystemStorage,
 	revocation *RevocationService,
+	vcdmRevocation *VcdmRevocationService,
 	currentLocale *clientmodels.CurrentLocale,
 ) CredentialFormats {
 	sdJwtVcStore := db.NewSdJwtVcStore(d)
@@ -120,7 +121,7 @@ func NewCredentialFormats(
 		models.CredentialFormatSdJwtVcdm: {
 			Parser: vcdmParser,
 			Keys:   NewHolderBindingKeyService(d),
-			Store:  NewSdJwtVcdmCredentialService(vcdmStore, db.NewHolderBindingKeyStore(d), fs, currentLocale),
+			Store:  NewSdJwtVcdmCredentialService(vcdmStore, db.NewHolderBindingKeyStore(d), fs, vcdmRevocation, currentLocale),
 		},
 		models.CredentialFormatMsoMdoc: {
 			Parser: NewMdocCredentialFormatParser(mdoc.NewVerifierFromTrustSource(&config.Issuers)),

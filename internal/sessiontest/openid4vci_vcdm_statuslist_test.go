@@ -1,19 +1,16 @@
 package sessiontest
 
 // End-to-end status tests for SD-JWT-secured VCDM credentials: the VCDM
-// counterpart of openid4vci_statuslist_test.go, against the same veramo issuer
-// and statuslist_agent.
+// counterpart of openid4vci_statuslist_test.go, against the same veramo issuer.
 //
-// Veramo puts the status of every SD-JWT credential, vc+sd-jwt included, in the
-// IETF Token Status List claim `status.status_list`, never in a W3C
-// `credentialStatus`. So these tests pin the IETF mechanism on a VCDM
-// credential; W3C Bitstring Status List is covered in-process in
-// eudi/services/vcdm_status_test.go, since no issuer here emits it.
+// The issuer gives a vc+sd-jwt credential a W3C Bitstring Status List entry in
+// `credentialStatus`, and serves the status list credential itself as a
+// vc+jwt. So these tests pin the W3C mechanism end to end; the IETF
+// `status.status_list` claim on a VCDM credential is covered in-process in
+// eudi/services/vcdm_status_test.go.
 //
-// These tests are written ahead of the implementation: the wallet does not yet
-// check the status of a VCDM credential, so they fail until it does. Each one
-// mirrors the SD-JWT VC test of the same behaviour; the wallet must treat the
-// two alike.
+// Each test mirrors the SD-JWT VC test of the same behaviour; the wallet must
+// treat the two alike.
 
 import (
 	"context"
@@ -26,7 +23,7 @@ import (
 
 const (
 	// vcdmStatusListConfigId is the only VCDM credential configuration of the
-	// test issuer with a statusLists entry.
+	// test issuer with a statuslist entry.
 	vcdmStatusListConfigId = "StatusListCredentialVcdm"
 
 	// vcdmStatusListRecordType is what veramo files the issued credentials

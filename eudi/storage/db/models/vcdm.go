@@ -134,9 +134,10 @@ func (b *VcdmBatch) validate() error {
 // VcdmBatchInstance is one raw SD-JWT-secured VCDM credential within a
 // VcdmBatch.
 //
-// There are no status columns yet: VCDM references status through
-// `credentialStatus` (Bitstring Status List), and the wallet does not check it
-// yet.
+// Its status columns mirror SdJwtVcBatchInstance's. A VCDM credential can name
+// its status two ways, the W3C `credentialStatus` (Bitstring Status List) and the
+// IETF `status.status_list` claim, so both references are kept; LastKnownStatus
+// is their combined result, in statuslist.Status values.
 type VcdmBatchInstance struct {
 	ID datatypes.UUID `gorm:"primaryKey"`
 
@@ -154,6 +155,28 @@ type VcdmBatchInstance struct {
 
 	// Used marks this instance as consumed after it has been presented.
 	Used bool `gorm:"not null;default:false"`
+
+	// StatusListURI and StatusListIdx are the IETF `status.status_list`
+	// reference, when present. Both nil or both set.
+	StatusListURI *string
+	StatusListIdx *uint64
+
+	// BitstringStatusEntries are the revocation and suspension
+	// BitstringStatusListEntries from `credentialStatus`, as JSON
+	// ([]bitstringstatus.Entry). Empty when there are none.
+	BitstringStatusEntries datatypes.JSON `gorm:"type:JSON"`
+
+	// HasStatusReference is set when either reference is present, so the
+	// queries for status-checked instances need not inspect the JSON.
+	HasStatusReference bool `gorm:"not null;default:false;index"`
+
+	// LastKnownStatus is the most recently observed status, a
+	// statuslist.Status; 0 (StatusUnknown) until checked.
+	LastKnownStatus uint8 `gorm:"default:0"`
+
+	// LastStatusCheckAt is the time of the most recent successful check. Nil
+	// iff the instance has never been checked.
+	LastStatusCheckAt *time.Time
 }
 
 func (VcdmBatchInstance) TableName() string { return "vcdm_batch_instances" }
