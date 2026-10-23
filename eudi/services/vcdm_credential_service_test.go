@@ -264,3 +264,28 @@ func TestSdJwtVcdmList_SubjectRootedAttributes(t *testing.T) {
 		{vcdm.CredentialSubjectKey, "given_name"},
 	}, paths)
 }
+
+func TestVcdmDocumentName(t *testing.T) {
+	doc := vcdm.Document{vcdm.NameKey: []any{
+		map[string]any{"@value": "Alumni card", "@language": "en-GB"},
+		map[string]any{"@value": "Alumnikaart", "@language": "nl-NL"},
+	}}
+	require.Equal(t, "Alumnikaart", VcdmDocumentName(doc, "nl"), "region tags resolve by base language")
+	require.Equal(t, "Alumni card", VcdmDocumentName(doc, "de"), "unknown locale falls back to English")
+
+	plain := vcdm.Document{vcdm.NameKey: "Alumni card"}
+	require.Equal(t, "Alumni card", VcdmDocumentName(plain, "nl"), "a plain string is used for every locale")
+
+	require.Empty(t, VcdmDocumentName(vcdm.Document{}, "en"))
+}
+
+func TestResolveVcdmDisplay_FallsBackToDocumentName(t *testing.T) {
+	batch := &models.VcdmBatch{
+		CredentialIssuer: testVcdmIssuer,
+		ProcessedPayload: datatypes.JSON(`{"name": "Alumni card"}`),
+	}
+	require.Equal(t, "Alumni card", ResolveVcdmDisplay(batch, "en").CredentialName)
+
+	batch.CredentialMetadata = datatypes.JSON(`{"display": [{"name": "Diploma", "locale": "en"}]}`)
+	require.Equal(t, "Diploma", ResolveVcdmDisplay(batch, "en").CredentialName, "issuer metadata takes precedence")
+}

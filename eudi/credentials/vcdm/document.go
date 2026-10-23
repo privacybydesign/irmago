@@ -30,6 +30,7 @@ const (
 	TypeKey              = "type"
 	IssuerKey            = "issuer"
 	IDKey                = "id"
+	NameKey              = "name"
 	CredentialSubjectKey = "credentialSubject"
 	ValidFromKey         = "validFrom"
 	ValidUntilKey        = "validUntil"
@@ -127,6 +128,45 @@ func (d Document) IssuerID() (string, error) {
 	default:
 		return "", fmt.Errorf("%w: %q must be a URL string or an object with an %q, got %T", ErrMalformed, IssuerKey, IDKey, raw)
 	}
+}
+
+// Names returns the credential's `name` (VCDM 2.0 §4.6) per language tag.
+func (d Document) Names() map[string]string {
+	return languageValues(d[NameKey])
+}
+
+// languageValues reads a property that VCDM 2.0 §11.1 lets be a plain string,
+// a language value object (`@value` plus `@language`), or an array of those. A
+// plain string, or an object without `@language`, maps to the "" tag. Entries
+// of the wrong shape and empty values are skipped; nil when nothing is left.
+func languageValues(raw any) map[string]string {
+	var entries []any
+	switch v := raw.(type) {
+	case []any:
+		entries = v
+	default:
+		entries = []any{v}
+	}
+
+	result := map[string]string{}
+	for _, entry := range entries {
+		switch v := entry.(type) {
+		case string:
+			if v != "" {
+				result[""] = v
+			}
+		case map[string]any:
+			value, _ := v["@value"].(string)
+			lang, _ := v["@language"].(string)
+			if value != "" {
+				result[lang] = value
+			}
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // CredentialSubjects returns the credential subject(s) as objects. A single

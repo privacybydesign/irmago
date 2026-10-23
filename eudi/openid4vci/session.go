@@ -543,6 +543,11 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			credentialId = first.VerifiableCredentialType
 		}
 
+		// Without display metadata, a VCDM credential can still name itself.
+		if name == "" && first.SdJwtVcdm != nil {
+			name = services.VcdmDocumentName(first.SdJwtVcdm.Document, s.locale)
+		}
+
 		// Never offer a nameless credential: fall back to the credential id (the
 		// vct) so the permission screen and the resulting card have a label.
 		if name == "" {

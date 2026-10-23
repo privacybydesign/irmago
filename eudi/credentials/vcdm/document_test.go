@@ -195,3 +195,34 @@ func TestVerifyValidityPeriod(t *testing.T) {
 	tooLate := time.Date(2031, 1, 1, 0, 0, 0, 0, time.UTC)
 	require.Error(t, doc.VerifyValidityPeriod(tooLate, skew))
 }
+
+func TestNames(t *testing.T) {
+	cases := map[string]struct {
+		name string
+		want map[string]string
+	}{
+		"plain string": {`"Alumni card"`, map[string]string{"": "Alumni card"}},
+		"language value object": {
+			`{"@value": "Alumnikaart", "@language": "nl"}`,
+			map[string]string{"nl": "Alumnikaart"},
+		},
+		"array of language values": {
+			`[{"@value": "Alumni card", "@language": "en", "@direction": "ltr"}, {"@value": "Alumnikaart", "@language": "nl-NL"}]`,
+			map[string]string{"en": "Alumni card", "nl-NL": "Alumnikaart"},
+		},
+		"object without language": {`{"@value": "Alumni card"}`, map[string]string{"": "Alumni card"}},
+		"wrong shapes and empty values are skipped": {
+			`[42, "", {"@language": "en"}, {"@value": "Alumnikaart", "@language": "nl"}]`,
+			map[string]string{"nl": "Alumnikaart"},
+		},
+		"nothing usable": {`[42, ""]`, nil},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			doc := docFromJSON(t, `{"name": `+tc.name+`}`)
+			require.Equal(t, tc.want, doc.Names())
+		})
+	}
+
+	require.Nil(t, docFromJSON(t, exampleAlumniCredential).Names())
+}

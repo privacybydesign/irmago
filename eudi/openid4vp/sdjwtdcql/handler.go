@@ -1250,11 +1250,17 @@ func (h *Engine) issuerImage(batch *Batch, locale string) *clientmodels.Image {
 }
 
 // credentialDisplayName resolves a credential's display name from its stored
-// metadata, falling back to the VCT when there is no display metadata.
+// metadata. Without display metadata, a VCDM credential falls back to its own
+// `name`, and any credential to its type (the VCT or the VCDM type identity).
 func credentialDisplayName(batch *Batch, locale string) string {
 	if batch.CredentialMetadata != nil {
 		if ts := services.CredentialNamesByLanguage(batch.CredentialMetadata.Display); len(ts) > 0 {
 			return clientmodels.Resolve(ts, locale)
+		}
+	}
+	if batch.Format == models.CredentialFormatSdJwtVcdm {
+		if name := services.VcdmPayloadName(batch.ProcessedPayload, locale); name != "" {
+			return name
 		}
 	}
 	return batch.CredentialType

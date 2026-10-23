@@ -399,9 +399,39 @@ func VcdmCredentialMetadata(batch *models.VcdmBatch) *models.CredentialMetadata 
 	return convertCredentialMetadata(metadata.CredentialConfiguration{CredentialMetadata: &cm})
 }
 
-// ResolveVcdmDisplay is ResolveBatchDisplay for a VCDM batch.
+// ResolveVcdmDisplay is ResolveBatchDisplay for a VCDM batch. When the issuer
+// metadata names the credential in no language, the credential's own `name`
+// is used instead.
 func ResolveVcdmDisplay(batch *models.VcdmBatch, locale string) ResolvedBatchDisplay {
-	return resolveSdJwtBatchDisplay(batch.CredentialIssuer, VcdmIssuerDisplays(batch), VcdmCredentialMetadata(batch), locale)
+	d := resolveSdJwtBatchDisplay(batch.CredentialIssuer, VcdmIssuerDisplays(batch), VcdmCredentialMetadata(batch), locale)
+	if d.CredentialName == "" {
+		d.CredentialName = VcdmPayloadName(batch.ProcessedPayload, locale)
+	}
+	return d
+}
+
+// VcdmDocumentName resolves the credential's own `name` (VCDM 2.0 §4.6) for the
+// locale, or "" when it has none. Issuer metadata takes precedence where it
+// names the credential; this is the fallback for when it does not.
+func VcdmDocumentName(document vcdm.Document, locale string) string {
+	names := clientmodels.TranslatedString{}
+	for tag, name := range document.Names() {
+		if base, ok := clientmodels.BaseLanguage(tag); ok {
+			tag = base
+		}
+		names[tag] = name
+	}
+	return clientmodels.Resolve(names, locale)
+}
+
+// VcdmPayloadName is VcdmDocumentName over a stored processed payload. An
+// unreadable payload has no name.
+func VcdmPayloadName(payload datatypes.JSON, locale string) string {
+	var document vcdm.Document
+	if err := json.Unmarshal(payload, &document); err != nil {
+		return ""
+	}
+	return VcdmDocumentName(document, locale)
 }
 
 // sdJwtVcdmDisplaySource is the SD-JWT-secured VCDM CredentialDisplaySource:
