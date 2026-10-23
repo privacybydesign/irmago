@@ -89,8 +89,20 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	return result, nil
 }
 
-// PrepareDisclosure prepares the selected credentials for inclusion in the VP token.
-func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
+// PrepareDisclosure prepares the selected credentials for inclusion in the VP
+// token. IRMA-issued SD-JWTs are bound to software keys this handler's key
+// binder signs with itself, so the disclosure asks the signer for nothing.
+func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PendingDisclosure, error) {
+	prepared, err := h.prepareDisclosure(selections, nonce, audience)
+	if err != nil {
+		return nil, err
+	}
+	return &dcql.PendingDisclosure{
+		Complete: func([][]byte) (*dcql.PreparedDisclosure, error) { return prepared, nil },
+	}, nil
+}
+
+func (h *SdJwtVcDcqlHandler) prepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
 	for _, sel := range selections {

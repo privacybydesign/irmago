@@ -13,6 +13,8 @@ import (
 
 type MockClientHandler struct {
 	enrollmentChannel chan error
+	activationChannel chan error
+	pinChangeChannel  chan string
 	log               bool
 
 	// Atomic: written from whichever goroutine woke the UI, read from the test's.
@@ -22,6 +24,8 @@ type MockClientHandler struct {
 func NewMockClientHandler() *MockClientHandler {
 	return &MockClientHandler{
 		enrollmentChannel: make(chan error),
+		activationChannel: make(chan error, 8),
+		pinChangeChannel:  make(chan string, 8),
 		log:               false,
 	}
 }
@@ -47,14 +51,36 @@ func (h *MockClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifi
 	h.enrollmentChannel <- nil
 }
 
-func (h *MockClientHandler) ChangePinFailure(manager irma.SchemeManagerIdentifier, err error) {}
-func (h *MockClientHandler) ChangePinSuccess()                                                {}
-func (h *MockClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier, attempts int) {
+// AwaitWalletUnitActivation returns the outcome of the next wallet unit
+// activation: nil when it succeeded, its error when it is pending.
+func (h *MockClientHandler) AwaitWalletUnitActivation() error {
+	return <-h.activationChannel
 }
-func (h *MockClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifier, timeout int) {}
-func (h *MockClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet)                    {}
-func (h *MockClientHandler) UpdateAttributes()                                                  {}
-func (h *MockClientHandler) Revoked(cred *irma.CredentialIdentifier)                            {}
+
+func (h *MockClientHandler) WalletUnitActivated() { h.activationChannel <- nil }
+
+func (h *MockClientHandler) WalletUnitActivationPending(err error) { h.activationChannel <- err }
+
+// AwaitPinChangeResult returns how the next PIN change ended: "success",
+// "failure", "incorrect", "blocked" or "recovery-required".
+func (h *MockClientHandler) AwaitPinChangeResult() string {
+	return <-h.pinChangeChannel
+}
+
+func (h *MockClientHandler) ChangePinFailure(manager irma.SchemeManagerIdentifier, err error) {
+	h.pinChangeChannel <- "failure"
+}
+func (h *MockClientHandler) ChangePinSuccess() { h.pinChangeChannel <- "success" }
+func (h *MockClientHandler) ChangePinIncorrect(manager irma.SchemeManagerIdentifier, attempts int) {
+	h.pinChangeChannel <- "incorrect"
+}
+func (h *MockClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifier, timeout int) {
+	h.pinChangeChannel <- "blocked"
+}
+func (h *MockClientHandler) ChangePinRecoveryRequired()                      { h.pinChangeChannel <- "recovery-required" }
+func (h *MockClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet) {}
+func (h *MockClientHandler) UpdateAttributes()                               {}
+func (h *MockClientHandler) Revoked(cred *irma.CredentialIdentifier)         {}
 func (h *MockClientHandler) CredentialsChanged() {
 	h.credentialsChanged.Add(1)
 }

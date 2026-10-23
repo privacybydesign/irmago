@@ -1,6 +1,7 @@
 package openid4vp
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 func parkSession(t *testing.T, client *Client, verifier string) (*openid4vpSession, *spyHandler, chan error, PermissionHandler) {
 	t.Helper()
 	handler := newSpyHandler()
-	session := client.newSession(handler)
+	session := client.newSession(context.Background(), handler)
 
 	done := make(chan error, 1)
 	go func() {
@@ -98,7 +99,7 @@ func TestOverlappingSessions_DismissCancelsOnlyItsOwnSession(t *testing.T) {
 func TestDismiss_DuringNetworkWindow_CancelsWithoutAsking(t *testing.T) {
 	client := newTestClient()
 	handler := newSpyHandler()
-	session := client.newSession(handler)
+	session := client.newSession(context.Background(), handler)
 
 	// The dismissal arrives while the session would be fetching the request.
 	session.Dismiss()
@@ -198,7 +199,7 @@ func TestRefreshPendingPermissionRequest_SilentWhenNotAwaiting(t *testing.T) {
 		request:     &AuthorizationRequest{},
 		requestor:   &clientmodels.TrustedParty{Name: "Test verifier"},
 		handler:     handler,
-		dcqlHandler: dcql.NewDcqlHandler(nil),
+		dcqlHandler: dcql.NewDcqlHandler(nil, nil),
 		answers:     make(chan *permissionResponse, 1),
 	}
 

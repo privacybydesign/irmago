@@ -43,6 +43,10 @@ func NewMdocCredentialService(
 
 var _ CredentialFormatStore = (*mdocCredentialService)(nil)
 
+func (s *mdocCredentialService) KeyIDsByHash(hash string) ([]datatypes.UUID, error) {
+	return s.store.KeyIDsByBatchHash(hash)
+}
+
 func (s *mdocCredentialService) DeleteByHash(hash string) error {
 	return s.store.DeleteBatchByHash(hash)
 }

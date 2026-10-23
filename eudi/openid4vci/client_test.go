@@ -1,6 +1,7 @@
 package openid4vci
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -66,8 +67,8 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
 
 	credStore := db.NewSdJwtVcStore(s.Db())
-	formats := services.NewCredentialFormats(conf, holderVerifier, s.Db(), s.FileSystem(), services.NewRevocationService(nil, credStore), nil)
-	client, err := NewClient(&http.Client{}, conf, holderVerifier, formats, nil)
+	formats := services.NewCredentialFormats(conf, holderVerifier, s.Db(), s.FileSystem(), services.NewRevocationService(nil, credStore), nil, nil)
+	client, err := NewClient(&http.Client{}, conf, holderVerifier, formats, nil, nil)
 	require.NoError(t, err)
 	client.SetAllowInsecureHttp(true)
 
@@ -102,12 +103,12 @@ func TestNewClientRegistersEveryCredentialFormat(t *testing.T) {
 // NewClient refuses a registry that would fail at runtime: none at all, or a
 // format missing one of its three parts.
 func TestNewClientRefusesIncompleteRegistry(t *testing.T) {
-	_, err := NewClient(&http.Client{}, &eudi.Configuration{}, nil, nil, nil)
+	_, err := NewClient(&http.Client{}, &eudi.Configuration{}, nil, nil, nil, nil)
 	require.Error(t, err)
 
 	_, err = NewClient(&http.Client{}, &eudi.Configuration{}, nil, services.CredentialFormats{
 		models.CredentialFormatSdJwtVc: {Parser: services.NewSdJwtVcCredentialFormatParser(nil)},
-	}, nil)
+	}, nil, nil)
 	require.Error(t, err)
 }
 
@@ -137,7 +138,7 @@ func testIssuingCredential_Success(t *testing.T, credentialOfferEndpointUrl stri
 	storage, client := createOpenID4VCiClientForTesting(t)
 
 	handler := newMockSessionHandler(t)
-	client.NewSession(1, credentialOfferEndpointUrl, "https://open.yivi.app/-/auth-callback", handler)
+	client.NewSession(context.Background(), 1, credentialOfferEndpointUrl, "https://open.yivi.app/-/auth-callback", handler)
 
 	authCodeRequest := handler.AwaitAuthCodeRequest()
 
@@ -348,7 +349,7 @@ func TestNewSessionCredentialOfferWithoutGrantsContinuesSession(t *testing.T) {
 			transport := &countingRoundTripper{}
 			client := &Client{httpClient: &http.Client{Transport: transport}}
 
-			client.NewSession(1, "openid-credential-offer://?credential_offer="+url.QueryEscape(offer), "https://open.yivi.app/-/auth-callback", handler)
+			client.NewSession(context.Background(), 1, "openid-credential-offer://?credential_offer="+url.QueryEscape(offer), "https://open.yivi.app/-/auth-callback", handler)
 
 			require.Contains(t, handler.awaitFailure(t).WrappedError, "failed to get and verify credential issuer metadata")
 			require.NotZero(t, transport.requests.Load())
@@ -392,7 +393,7 @@ func TestNewSessionWithoutGrantsDerivesAuthorizationCodeFlow(t *testing.T) {
 	)
 
 	handler := newFailureRecordingHandler(t)
-	client.NewSession(1, "openid-credential-offer://?credential_offer="+url.QueryEscape(offer), "https://open.yivi.app/-/auth-callback", handler)
+	client.NewSession(context.Background(), 1, "openid-credential-offer://?credential_offer="+url.QueryEscape(offer), "https://open.yivi.app/-/auth-callback", handler)
 
 	select {
 	case received := <-handler.authCodeRequestChannel:
@@ -421,7 +422,7 @@ func TestNewSessionReportsPanicAsSessionFailure(t *testing.T) {
 		httpClient: &http.Client{Transport: &panickingRoundTripper{message: "injected panic"}},
 	}
 
-	client.NewSession(1, "openid-credential-offer://?credential_offer_uri=http://issuer.example.com/offer", "https://open.yivi.app/-/auth-callback", handler)
+	client.NewSession(context.Background(), 1, "openid-credential-offer://?credential_offer_uri=http://issuer.example.com/offer", "https://open.yivi.app/-/auth-callback", handler)
 
 	sessionError := handler.awaitFailure(t)
 	require.Equal(t, "panic", sessionError.ErrorType)

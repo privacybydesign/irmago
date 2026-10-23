@@ -65,6 +65,10 @@ credential_auth_methods:
   country_selection:
     - eu.europa.ec.eudi.pid_vc_sd_jwt
     - eu.europa.ec.eudi.age_verification_mdoc
+    # The same credential, requiring a key attestation (see
+    # metadata/age_verification_mdoc_ka*.json).
+    - eu.europa.ec.eudi.age_verification_mdoc_ka
+    - eu.europa.ec.eudi.age_verification_mdoc_ka_jwt
 
 countries:
   FC:
@@ -102,3 +106,5 @@ countries:
       # configuration in its metadata regardless of this list; only what is
       # listed here can actually be issued.
       - "eu.europa.ec.eudi.age_verification_mdoc"
+      - "eu.europa.ec.eudi.age_verification_mdoc_ka"
+      - "eu.europa.ec.eudi.age_verification_mdoc_ka_jwt"
