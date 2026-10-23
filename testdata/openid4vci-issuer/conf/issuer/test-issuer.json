@@ -9,6 +9,11 @@
       "url": "http://statuslist-agent.localhost:9156/statuslist/api/index",
       "revoke": "http://statuslist-agent.localhost:9156/statuslist/api/revoke",
       "token": "statuslist-admin-token"
+    },
+    "StatusListCredentialVcdm": {
+      "url": "http://statuslist-agent.localhost:9156/statuslist/api/index",
+      "revoke": "http://statuslist-agent.localhost:9156/statuslist/api/revoke",
+      "token": "statuslist-admin-token"
     }
   }
 }

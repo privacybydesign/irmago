@@ -274,10 +274,19 @@ func testOpenID4VPStatusListRevokedRecordedInLog(t *testing.T) {
 // discloses has been revoked.
 func revokeStatusListCredentialViaVeramo(t *testing.T, email string) {
 	t.Helper()
+	revokeCredentialsViaVeramo(t, "StatusListCredentialSdJwt", email)
+}
+
+// revokeCredentialsViaVeramo is revokeStatusListCredentialViaVeramo for any
+// credential the test issuer reserved a status for. recordType is the name
+// veramo files the issued credentials under, which for a configuration with a
+// scope is the scope rather than the configuration id.
+func revokeCredentialsViaVeramo(t *testing.T, recordType string, email string) {
+	t.Helper()
 
 	// 1) List the issued status-list credentials (POST, admin-authenticated).
 	//    The claims are returned as a JSON string, so we match the email there.
-	listBody := `{"credential":"StatusListCredentialSdJwt"}`
+	listBody := fmt.Sprintf(`{"credential":%q}`, recordType)
 	req, err := http.NewRequest(http.MethodPost, preAuthIssuerURL+"/api/list-credentials", strings.NewReader(listBody))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
