@@ -15,12 +15,10 @@ import (
 // This file is the in-repo issuer-side acceptance harness for SD-JWT-secured
 // VCDM (map ticket #680): a reusable generator that mints SD-JWT-secured VCDM
 // credentials in Go — the counterpart to how eudi/credentials/sdjwtvc mints
-// SD-JWT VCs in-test — plus canonical W3C VCDM 2.0 fixtures. Because the shared
-// mock OpenID4VCI issuer signs via an external agent (eduwallet/veramo-agent)
-// that this repo can't drive for VCDM yet, and because the wallet receive path
-// isn't wired for VCDM until the OpenID4VCI-integration ticket lands, M1
-// acceptance is exercised here in Go rather than over HTTP. The exported
-// helpers are reusable by the integration tests that ticket will add.
+// SD-JWT VCs in-test — plus canonical W3C VCDM 2.0 fixtures. It covers what the
+// veramo issuer used by internal/sessiontest cannot: veramo signs over did:web
+// only (no x5c) and issues every vc+sd-jwt claim in the clear, so x5c issuers
+// and selective disclosure of VCDM credentials are exercised here in Go.
 //
 // It reuses the same test issuer key + x5c chain as the sdjwtvc tests, so an
 // issued credential verifies against the trusted chain in CreateTestVerificationContext.

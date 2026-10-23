@@ -7,6 +7,7 @@ package eudi_vcdm_dcql
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -263,10 +264,19 @@ func TestVcdmPrepareDisclosure_RoundTrip(t *testing.T) {
 	presentation := result.QueryResponses[0].Credentials[0]
 	require.NotEmpty(t, presentation)
 
-	// The presentation discloses exactly the selected credentialSubject claim:
-	// given_name resolves, the other selectively-disclosable subject claims stay
-	// hidden, and the envelope is untouched.
-	view, err := sdjwt.PostDisclosureView(sdjwt.SdJwt(presentation), [][]any{{"credentialSubject", "given_name"}})
+	// The credential goes out enveloped in a Verifiable Presentation. Without
+	// holder binding that presentation is unsecured.
+	header, vp, err := sdjwt.DecodeJwtWithoutCheckingSignature(presentation)
+	require.NoError(t, err)
+	assert.Equal(t, "none", header["alg"])
+	assert.Equal(t, "verifier-1", vp["aud"])
+	assert.Equal(t, "nonce-1", vp["nonce"])
+	enveloped := envelopedSdJwt(t, vp)
+
+	// The enveloped SD-JWT discloses exactly the selected credentialSubject
+	// claim: given_name resolves, the other selectively-disclosable subject
+	// claims stay hidden, and the envelope is untouched.
+	view, err := sdjwt.PostDisclosureView(enveloped, [][]any{{"credentialSubject", "given_name"}})
 	require.NoError(t, err)
 
 	subject, ok := view["credentialSubject"].(map[string]any)
@@ -278,4 +288,20 @@ func TestVcdmPrepareDisclosure_RoundTrip(t *testing.T) {
 	reloaded, err := store.GetBatchByHashAndFormat("hash-vcdm-present", models.CredentialFormatSdJwtVcdm)
 	require.NoError(t, err)
 	assert.Equal(t, uint(1), reloaded.RemainingCount)
+}
+
+// envelopedSdJwt returns the SD-JWT from the single EnvelopedVerifiableCredential
+// in a Verifiable Presentation payload.
+func envelopedSdJwt(t *testing.T, vp map[string]any) sdjwt.SdJwt {
+	t.Helper()
+	creds, ok := vp["verifiableCredential"].([]any)
+	require.True(t, ok, "verifiableCredential should be an array")
+	require.Len(t, creds, 1)
+	cred, ok := creds[0].(map[string]any)
+	require.True(t, ok, "enveloped credential should be an object")
+	assert.Equal(t, "EnvelopedVerifiableCredential", cred["type"])
+	id, ok := cred["id"].(string)
+	require.True(t, ok, "enveloped credential id should be a string")
+	require.True(t, strings.HasPrefix(id, vcdmsdjwt.EnvelopedCredentialDataUrlPrefix), "id should be a vc+sd-jwt data URL, got %q", id)
+	return sdjwt.SdJwt(strings.TrimPrefix(id, vcdmsdjwt.EnvelopedCredentialDataUrlPrefix))
 }

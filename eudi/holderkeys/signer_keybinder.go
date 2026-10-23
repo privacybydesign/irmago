@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jwt"
@@ -78,6 +79,31 @@ func (b *signerKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, no
 	jws := append(signingInput, '.')
 	jws = append(jws, []byte(base64.RawURLEncoding.EncodeToString(sig))...)
 	return sdjwt.KeyBindingJwt(jws), nil
+}
+
+func (b *signerKeyBinder) CreateHolderSignedJwt(holderKey jwk.Key, customHeaders map[string]any, claims map[string]any) (string, error) {
+	ref, err := b.signer.Reference(holderKey)
+	if err != nil {
+		return "", fmt.Errorf("holderkeys: failed to resolve holder key reference: %w", err)
+	}
+
+	header := maps.Clone(customHeaders)
+	if header == nil {
+		header = map[string]any{}
+	}
+	header["alg"] = "ES256"
+
+	signingInput, err := jwsSigningInput(header, claims)
+	if err != nil {
+		return "", err
+	}
+	sig, err := b.signer.SignES256(ref, signingInput)
+	if err != nil {
+		return "", fmt.Errorf("holderkeys: failed to sign holder jwt: %w", err)
+	}
+	jws := append(signingInput, '.')
+	jws = append(jws, []byte(base64.RawURLEncoding.EncodeToString(sig))...)
+	return string(jws), nil
 }
 
 func (b *signerKeyBinder) RemovePrivateKeys(pubKeys []jwk.Key) error {

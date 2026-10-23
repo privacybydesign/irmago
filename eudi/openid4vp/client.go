@@ -642,9 +642,6 @@ func (session *openid4vpSession) perform() error {
 		ResponseUri:    session.request.ResponseUri,
 		ResponseType:   session.request.ResponseType,
 		ResponseMode:   session.request.ResponseMode,
-
-		Audience: session.audience,
-		Nonce:    session.request.Nonce,
 	}
 
 	if encryptionKey != nil {

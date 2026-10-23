@@ -12,7 +12,6 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwe"
 	"github.com/lestrrat-go/jwx/v4/jwk"
-	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
@@ -28,11 +27,6 @@ type authorizationResponseConfig struct {
 	// transcript can commit to its thumbprint.
 	EncryptionKey                       jwk.Key
 	EncryptedResponseEncValuesSupported []string
-
-	// Audience and Nonce bind the Verifiable Presentation that envelopes
-	// SD-JWT-secured VCDM credentials to this request.
-	Audience string
-	Nonce    string
 }
 
 func createAuthorizationResponseHttpRequest(config authorizationResponseConfig) (*http.Request, error) {
@@ -227,42 +221,9 @@ func pickEncryptionAlgorithm(options []string) (jwa.ContentEncryptionAlgorithm, 
 
 func createVpToken(config authorizationResponseConfig) (map[string][]string, error) {
 	content := map[string][]string{}
-
 	for _, resp := range config.QueryResponses {
-		if resp.CredentialFormat != "vc+sd-jwt" {
-			content[resp.QueryId] = append(content[resp.QueryId], resp.Credentials...)
-			continue
-		}
-
-		envelopedVerifiableCredentials := []any{}
-		for _, cred := range resp.Credentials {
-			evc := map[string]any{
-				"@context": "https://www.w3.org/ns/credentials/v2",
-				"type":     "EnvelopedVerifiableCredential",
-				"id":       "data:application/vc+sd-jwt," + cred,
-			}
-
-			envelopedVerifiableCredentials = append(envelopedVerifiableCredentials, evc)
-		}
-
-		tok, err := jwt.NewBuilder().
-			Claim("audience", config.Audience).
-			Claim("nonce", config.Nonce).
-			Claim("@context", []string{"https://www.w3.org/ns/credentials/v2"}).
-			Claim("type", []string{"VerifiablePresentation"}).
-			Claim("verifiableCredential", envelopedVerifiableCredentials).
-			Build()
-		if err != nil {
-			return nil, fmt.Errorf("failed to build JWT: %v", err)
-		}
-
-		signed, err := jwt.Sign(tok, jwt.WithInsecureNoSignature())
-		if err != nil {
-			return nil, fmt.Errorf("failed to sign JWT: %v", err)
-		}
-		content[resp.QueryId] = append(content[resp.QueryId], string(signed))
+		content[resp.QueryId] = append(content[resp.QueryId], resp.Credentials...)
 	}
-
 	return content, nil
 }
 

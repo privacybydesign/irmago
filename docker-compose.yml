@@ -431,17 +431,17 @@ services:
   # Uses the shared veramo_postgres server, isolated in its own `verifier` schema.
   veramo_openid4vp:
     build:
-      context: https://github.com/eduwallet/veramo-verifier.git#v1.6.0
+      # v1.6.6 is the first version that verifies vc+sd-jwt (SD-JWT-secured VCDM)
+      # presentations. It also reloads the identifier's keys after creating a DID,
+      # so the sed workaround for "Missing keys or identifier" on a fresh DB that
+      # v1.6.0 needed is gone.
+      context: https://github.com/eduwallet/veramo-verifier.git#v1.6.6
       dockerfile_inline: |
         FROM node:20-alpine
         WORKDIR /app
         COPY package.json yarn.lock .yarnrc.yml ./
         RUN yarn install
         COPY . .
-        # Workaround for https://github.com/eduwallet/veramo-verifier/issues/XXX:
-        # initialiseKey() doesn't set identifier.keys on the in-memory object after
-        # creating a new DID, causing "Missing keys or identifier" on a fresh DB.
-        RUN sed -i '/await prepo.save(pKey);/a\        identifier.keys = [dbKey];' src/dids/Store.ts
         CMD ["yarn", "start"]
     extra_hosts:
       - "localhost:host-gateway"

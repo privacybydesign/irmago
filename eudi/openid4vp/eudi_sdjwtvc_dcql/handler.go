@@ -47,6 +47,7 @@ func NewSdJwtVcDcqlHandler(
 			_, std := sdjwtvc.StandardClaims[key]
 			return !std
 		},
+		sdjwtdcql.PresentWithKbJwt,
 	)
 	batches := sdjwtdcql.NewSdJwtVcBatchStore(credentialStore, revocation)
 	return &Handler{sdjwtdcql.NewEngine(profile, eudiStorage, batches, vctFetcher, issuerFetcher, keyBinder, currentLocale)}

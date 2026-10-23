@@ -51,17 +51,40 @@ type Profile struct {
 	// any key that is not a JWT/SD-JWT standard claim. VCDM: only credentialSubject
 	// — @context/type/issuer/validFrom/validUntil/cnf/… are envelope, not user data.
 	isUserDataKey func(key string) bool
+	// present turns the selected SD-JWT into the vp_token entry. SD-JWT VC:
+	// PresentWithKbJwt. VCDM: a Verifiable Presentation enveloping the SD-JWT.
+	present Presenter
+}
+
+// Presenter turns an SD-JWT holding only the selected disclosures into the
+// credential string the vp_token carries, adding the holder proof when holder
+// binding is required.
+type Presenter func(selected sdjwt.SdJwt, keyBinder sdjwt.KeyBinder, requireHolderBinding bool, nonce string, audience string) (string, error)
+
+// PresentWithKbJwt is the SD-JWT VC Presenter: the selected SD-JWT, with a
+// KB-JWT over nonce and audience appended when holder binding is required.
+func PresentWithKbJwt(selected sdjwt.SdJwt, keyBinder sdjwt.KeyBinder, requireHolderBinding bool, nonce string, audience string) (string, error) {
+	if !requireHolderBinding {
+		return string(selected), nil
+	}
+	kbjwt, err := sdjwt.CreateKbJwt(selected, keyBinder, nonce, audience)
+	if err != nil {
+		return "", fmt.Errorf("failed to create kbjwt: %w", err)
+	}
+	return string(sdjwt.AddKeyBindingJwt(selected, kbjwt)), nil
 }
 
 // NewProfile builds a Profile for one SD-JWT-secured data model. storageFormat is
 // the models.CredentialFormat the engine serves; clientFormat is the wire/UI tag
 // stamped on candidates and logs; isUserDataKey decides which top-level claim keys
-// are user data (versus envelope) in the disclosure preview.
-func NewProfile(storageFormat models.CredentialFormat, clientFormat clientmodels.CredentialFormat, isUserDataKey func(key string) bool) Profile {
+// are user data (versus envelope) in the disclosure preview; present builds the
+// vp_token entry for a disclosed credential.
+func NewProfile(storageFormat models.CredentialFormat, clientFormat clientmodels.CredentialFormat, isUserDataKey func(key string) bool, present Presenter) Profile {
 	return Profile{
 		storageFormat: storageFormat,
 		clientFormat:  clientFormat,
 		isUserDataKey: isUserDataKey,
+		present:       present,
 	}
 }
 
@@ -471,13 +494,9 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
 
-		presentation := string(selected)
-		if sel.RequireHolderBinding {
-			kbjwt, err := sdjwt.CreateKbJwt(selected, h.keyBinder, nonce, audience)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create kbjwt: %w", err)
-			}
-			presentation = string(sdjwt.AddKeyBindingJwt(selected, kbjwt))
+		presentation, err := h.profile.present(selected, h.keyBinder, sel.RequireHolderBinding, nonce, audience)
+		if err != nil {
+			return nil, err
 		}
 
 		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{

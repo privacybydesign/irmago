@@ -36,7 +36,7 @@ func testSdJwtVcProfile() Profile {
 	return NewProfile(models.CredentialFormatSdJwtVc, clientmodels.Format_SdJwtVc, func(key string) bool {
 		_, std := sdjwtvc.StandardClaims[key]
 		return !std
-	})
+	}, PresentWithKbJwt)
 }
 
 func newTestBatch(hash, vct string, payload map[string]any) *models.SdJwtVcBatch {

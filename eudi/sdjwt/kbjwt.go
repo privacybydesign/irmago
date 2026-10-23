@@ -140,6 +140,10 @@ type KeyBinder interface {
 	// Creates a batch of key pairs and returns the proofs using the provided ProofBuilder.
 	// Takes in the hash over the issuer signed JWT and the selected disclosures
 	CreateKeyBindingJwt(hash string, holderPubKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error)
+	// Signs a JWT with the given claims using the holder private key of holderPubKey, for
+	// holder proofs other than a KB-JWT, such as the Verifiable Presentation that envelopes
+	// an SD-JWT-secured VCDM credential. The header gets alg ES256 on top of customHeaders.
+	CreateHolderSignedJwt(holderPubKey jwk.Key, customHeaders map[string]any, claims map[string]any) (string, error)
 	// Takes in a list of pub keys for which it should delete the corresponding private keys
 	RemovePrivateKeys(pubKeys []jwk.Key) error
 	// Removes all holder binding private keys
@@ -218,6 +222,20 @@ func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, n
 
 	jwt, err := jwtCreator.CreateSignedJwt(customHeaders, string(json))
 	return KeyBindingJwt(jwt), err
+}
+
+func (c *DefaultKeyBinder) CreateHolderSignedJwt(holderKey jwk.Key, customHeaders map[string]any, claims map[string]any) (string, error) {
+	json, err := json.Marshal(claims)
+	if err != nil {
+		return "", err
+	}
+
+	privKey, err := c.storage.GetAndRemovePrivateKey(holderKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve private key: %v", err)
+	}
+
+	return NewJwtCreator(privKey).CreateSignedJwt(customHeaders, string(json))
 }
 
 func (c *DefaultKeyBinder) RemovePrivateKeys(pubKeys []jwk.Key) error {
