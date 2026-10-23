@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Breaking (internal API):** the JWT-only names in `eudi/credentials/statuslist` now say JWT, now that CWT siblings exist: `StatusListTokenTyp` → `StatusListTokenJWTTyp`, `StatusListTokenContentType` → `StatusListTokenJWTContentType`, and in the test helpers `SignToken` → `SignJWTToken`, `SignTokenWithTyp` → `SignJWTTokenWithTyp`, `TestStatusListServer.Serve` → `ServeJWT`. `models.StatusListCacheEntry.RawJwt` is now `RawToken`; its database column stays `raw_jwt`.
 ## [Unreleased]
+### Fixed
+- The SD-JWT VC claims `vct#integrity`, `jti` and `aud` are no longer shown as attributes in the credential list, on the issuance screen, or on the disclosure screen and log. They are protocol claims, not user data. They also no longer count towards a credential's duplicate check. `jti` changes on every issuance and `vct#integrity` whenever the issuer republishes its type metadata, so a renewal could be stored as a second copy instead of replacing the first. On startup, the wallet recomputes stored hashes. Copies that now turn out to be the same credential are merged: the one with the latest `iat` is kept and the others are deleted, as a renewal would do ([#772](https://github.com/privacybydesign/irmago/issues/772))
+
+## [1.4.3] - 2026-10-21
+### Fixed
+- Update Go toolchain to fix eMudhra CA compromise.
+- Pin Docker images to Go 1.27.3 to fix the eMudhra CA compromise and make builds reproducible.
 
 ## [1.4.2] - 2026-10-16
 ### Added
@@ -898,7 +905,8 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
-[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/privacybydesign/irmago/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/privacybydesign/irmago/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/privacybydesign/irmago/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/privacybydesign/irmago/compare/v1.3.1...v1.4.0
@@ -951,4 +959,3 @@ This release contains several large new features. In particular, the shoulder su
 [0.5.0-rc.1]: https://github.com/privacybydesign/irmago/compare/v0.4.1...v0.5.0-rc.1
 [0.4.1]: https://github.com/privacybydesign/irmago/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/privacybydesign/irmago/tree/v0.4.0
-
