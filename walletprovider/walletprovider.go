@@ -227,7 +227,9 @@ type SignRequest struct {
 
 // UnlockedWalletUnit is a wallet unit unlocked for one session. Close it when
 // the session ends; the provider may also expire it after a period without
-// use, after which every call returns ErrUnlockExpired.
+// use, after which every call returns ErrUnlockExpired. A provider that keeps
+// signed records of what it did returns ErrTransactionRecordInvalid from any
+// call whose record does not verify, and then hands on no result.
 type UnlockedWalletUnit interface {
 	// GenerateKeys creates n holder keys in the HSM. With attest non-nil it
 	// also returns one key attestation (KA, a key-attestation+jwt as in
@@ -240,7 +242,8 @@ type UnlockedWalletUnit interface {
 	Sign(ctx context.Context, reqs []SignRequest) ([][]byte, error)
 	// Transactions returns the wallet unit's transaction log, newest first:
 	// at most max entries, and only those before the given time unless it is
-	// zero.
+	// zero. Returns ErrTransactionRecordInvalid when the log does not verify
+	// against the records the wallet unit kept.
 	Transactions(ctx context.Context, before time.Time, max int) ([]Transaction, error)
 	// InstanceAttestation returns a wallet instance attestation (WIA, TS3)
 	// binding key: the provider's statement that the wallet holding key is a
@@ -279,6 +282,10 @@ var (
 	// old, or its platform could not vouch for it. Installing the official
 	// app, or updating it, may help.
 	ErrIntegrityRefused = errors.New("walletprovider: app integrity refused")
+	// ErrTransactionRecordInvalid: the provider's signed record of an
+	// operation, or its transaction log, does not verify: the provider
+	// cannot be trusted with this wallet unit.
+	ErrTransactionRecordInvalid = errors.New("walletprovider: transaction record invalid")
 )
 
 // PinIncorrectError reports a wrong PIN. Remaining is how many attempts are
