@@ -174,7 +174,7 @@ When the databases and MailHog are running, the tests can be run using:
 ### Trusting the test TLS certificate
 
 Some EUDI tests reach the veramo issuer and the EUDI Python PID issuer through the
-`tls_proxy` service over HTTPS on ports 8443–8445. Their certificate is the self-signed
+`tls_proxy` service over HTTPS on ports 8443–8444. Their certificate is the self-signed
 `testdata/configurations/certs/localhost.crt`, so a `go test` run on the host must trust
 it: that directory's README gives the Linux command, and on macOS or Windows it has to go
 into the platform's own trust store. Without it these tests fail on

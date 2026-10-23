@@ -50,7 +50,15 @@
             "ES256"
           ]
         }
-      }
+      },
+      "statuslist": [
+        {
+          "name": "vcdm-revocation",
+          "bitSize": 1,
+          "purpose": "revocation",
+          "type": "BitstringStatusList"
+        }
+      ]
     },
     "TestCredentialSdJwt": {
       "format": "dc+sd-jwt",
@@ -184,6 +192,14 @@
         {
           "name": "Status List Credential (SD-JWT)",
           "locale": "en"
+        }
+      ],
+      "statuslist": [
+        {
+          "name": "sdjwt-revocation",
+          "bitSize": 1,
+          "purpose": "revocation",
+          "type": "statuslist+jwt"
         }
       ]
     },

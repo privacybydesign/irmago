@@ -1,12 +1,12 @@
 package sessiontest
 
 // End-to-end Token Status List (draft-ietf-oauth-status-list-15) tests over
-// OpenID4VCI. These require the full docker-compose stack including the
-// statuslist_agent service and veramo bumped to v1.5.5.
+// OpenID4VCI. These require the full docker-compose stack; the veramo issuer
+// hosts the status list itself.
 //
 // What they exercise:
 //   - issuance-time holder check: the wallet fetches + verifies the
-//     statuslist+jwt the agent serves (signed by its did:web, sub == uri) and
+//     statuslist+jwt the issuer serves (signed by its did:web, sub == uri) and
 //     accepts the credential because the freshly-allocated bit reads VALID;
 //   - RefreshStatuses: the background sweep re-fetches for the stored instance
 //     and writes back its LastKnownStatus;
@@ -89,9 +89,9 @@ func testOpenID4VCIStatusListRevocationNotifiesApp(t *testing.T) {
 const statusListCredentialEmail = "statuslist@example.com"
 
 // createStatusListPreAuthOffer creates a pre-authorized offer for the
-// StatusListCredentialSdJwt — the only credential whose issuer config wires a
-// `statusLists` entry, so issuance reserves an index on the statuslist_agent
-// and embeds status.status_list{idx,uri}.
+// StatusListCredentialSdJwt — the only SD-JWT VC credential whose metadata has
+// a `statuslist` entry, so issuance reserves an index on the issuer's own
+// statuslist+jwt list and embeds status.status_list{idx,uri}.
 func createStatusListPreAuthOffer(t *testing.T) openid4vciOfferResponse {
 	t.Helper()
 	return postOffer(t, preAuthIssuerURL, preAuthAdminToken, fmt.Sprintf(`{
@@ -112,7 +112,7 @@ func createStatusListPreAuthOffer(t *testing.T) openid4vciOfferResponse {
 // issueStatusListCredential runs the full pre-auth issuance for the
 // status-list credential and asserts it succeeds. Success here already proves
 // the issuance-time holder status check passed (the wallet fetched + verified
-// the agent's statuslist+jwt and read VALID at the allocated index).
+// the issuer's statuslist+jwt and read VALID at the allocated index).
 func issueStatusListCredential(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, sessionId int) {
 	t.Helper()
 	offer := createStatusListPreAuthOffer(t)
@@ -130,7 +130,7 @@ func issueStatusListCredential(t *testing.T, c *client.Client, sessionHandler *M
 
 	session = awaitSessionState(t, sessionHandler)
 	if session.Status == clientmodels.Status_Error {
-		t.Fatalf("status-list issuance errored before permission (check `docker compose logs veramo_openid4vci statuslist_agent`): %+v", session.Error)
+		t.Fatalf("status-list issuance errored before permission (check `docker compose logs veramo_openid4vci`): %+v", session.Error)
 	}
 	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 
@@ -138,7 +138,7 @@ func issueStatusListCredential(t *testing.T, c *client.Client, sessionHandler *M
 
 	session = awaitSessionState(t, sessionHandler)
 	if session.Status == clientmodels.Status_Error {
-		t.Fatalf("status-list issuance errored after permission grant (the holder-side status check fetches the statuslist+jwt from the agent — check `docker compose logs statuslist_agent`): %+v", session.Error)
+		t.Fatalf("status-list issuance errored after permission grant (the holder-side status check fetches the statuslist+jwt from the issuer — check `docker compose logs veramo_openid4vci`): %+v", session.Error)
 	}
 	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_Success)
 }
@@ -155,24 +155,23 @@ func testOpenID4VCIStatusListIssuanceAcceptsValid(t *testing.T) {
 	cred := findCredentialByName(t, creds, "Status List Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued status-list credential should appear in GetCredentials")
 
-	// The background refresh sweep runs against the real agent for the stored
+	// The background refresh sweep runs against the real issuer for the stored
 	// instance and completes without error (a per-URI fetch failure would be
 	// logged-and-swallowed, but a transport/setup error surfaces here).
 	require.NoError(t, c.RefreshStatuses(context.Background()))
 }
 
 func testOpenID4VPStatusListRevokedSurfacedInPlan(t *testing.T) {
-	// Requires an IETF-compliant status source. The upstream eduwallet
-	// statuslist-agent packs bits MSB-first (W3C @digitalcredentials/bitstring),
-	// which the IETF wallet (LSB-first, draft §4.1) reads at the wrong position,
-	// so a revoked credential reads as VALID. docker-compose therefore builds
-	// the status agent from privacybydesign/statuslist-agent, a fork that emits
-	// LSB-first bit arrays for application/statuslist+jwt.
+	// Requires an IETF-compliant status source. Upstream eduwallet/veramo-agent
+	// packs bits MSB-first (W3C @digitalcredentials/bitstring), which the IETF
+	// wallet (LSB-first, draft §4.1) reads at the wrong position, so a revoked
+	// credential reads as VALID. docker-compose therefore builds the issuer
+	// from privacybydesign/veramo-agent, a fork that emits LSB-first bit arrays
+	// for application/statuslist+jwt.
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	// Issue, then revoke at the issuer (which proxies the revoke to the
-	// statuslist_agent, flipping the credential's bit).
+	// Issue, then revoke at the issuer, which flips the credential's bit.
 	issueStatusListCredential(t, c, sessionHandler, 1)
 	revokeStatusListCredentialViaVeramo(t, statusListCredentialEmail)
 
@@ -265,8 +264,8 @@ func testOpenID4VPStatusListRevokedRecordedInLog(t *testing.T) {
 }
 
 // revokeStatusListCredentialViaVeramo revokes every issued status-list
-// credential bearing the given email, via the veramo issuer admin API. veramo
-// proxies each revoke to the statuslist_agent, flipping that credential's bit.
+// credential bearing the given email, via the veramo issuer admin API, which
+// flips that credential's bit.
 //
 // StatusListCredentialSdJwt is issued as a batch (multiple instances, each with
 // its own status index), and the same email is reused across test runs, so we
@@ -302,8 +301,8 @@ func revokeCredentialsViaVeramo(t *testing.T, recordType string, email string) {
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&records))
 
-	// 2) Revoke every record whose claims contain our email. veramo proxies
-	//    each revoke to the statuslist_agent, which sets the bit.
+	// 2) Revoke every record whose claims contain our email. veramo sets the
+	//    bit on every status list the record was issued with.
 	revoked := 0
 	for _, rec := range records {
 		if rec.UUID == "" || !strings.Contains(rec.Claims, email) {
