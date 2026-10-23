@@ -3,6 +3,7 @@ package db
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
@@ -50,6 +51,11 @@ type MdocStore interface {
 	// DeleteBatchByHash deletes the batch with the given content hash, with the
 	// same cascade. Returns ErrNotFound if none matches.
 	DeleteBatchByHash(hash string) error
+
+	// CredentialStatusStore is embedded so RevocationService can treat this
+	// store's instances the same way it treats SdJwtVcStore's — see
+	// credential_status_store.go.
+	CredentialStatusStore
 }
 
 type mdocStore struct {
@@ -162,4 +168,16 @@ func (s *mdocStore) DeleteBatchByHash(hash string) error {
 		return err
 	}
 	return s.DeleteBatch(batch.ID)
+}
+
+func (s *mdocStore) ListInstancesWithStatusReference() ([]CredentialStatusInstance, error) {
+	return mdocStatusTables.listInstancesWithStatusReference(s.db)
+}
+
+func (s *mdocStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error) {
+	return mdocStatusTables.listStatusReferencedInstanceStatuses(s.db)
+}
+
+func (s *mdocStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
+	return mdocStatusTables.updateInstanceStatus(s.db, instanceID, status, checkedAt)
 }

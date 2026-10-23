@@ -326,11 +326,17 @@ func testEudiPidPythonIssuerEmptyConfigurationIds(t *testing.T) {
 // anyway would satisfy every assertion about the session state.
 func requireNoAvMdocStored(t *testing.T, c *client.Client) {
 	t.Helper()
+	requireNoMdocStored(t, c, eudiPidIssuerPyAvDocType)
+}
+
+// requireNoMdocStored asserts the wallet holds no credential of docType.
+func requireNoMdocStored(t *testing.T, c *client.Client, docType string) {
+	t.Helper()
 
 	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	for _, cred := range creds {
-		require.NotEqual(t, eudiPidIssuerPyAvDocType, cred.CredentialId,
+		require.NotEqual(t, docType, cred.CredentialId,
 			"a refused issuance must leave nothing in the wallet")
 	}
 }
@@ -1134,10 +1140,5 @@ func testEudiPidPythonIssuerUntrustedIssuerIsRejected(t *testing.T) {
 	require.Empty(t, session.OfferedCredentials,
 		"the wallet offered a credential it was about to reject")
 
-	creds, _, err := c.GetCredentials()
-	require.NoError(t, err)
-	for _, cred := range creds {
-		require.NotEqual(t, eudiPidIssuerPyAvDocType, cred.CredentialId,
-			"the rejected credential was stored anyway")
-	}
+	requireNoAvMdocStored(t, c)
 }
