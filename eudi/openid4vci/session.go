@@ -257,7 +257,10 @@ func (s *session) perform() {
 }
 
 // fetchedCredential holds the result of fetching and verifying credentials
-// for a single credential configuration, before they are stored.
+// for a single credential configuration, before they are stored. A batch is
+// homogeneous — all instances are copies of one logical credential — so
+// exactly one of verifiedSdJwtVcs and verifiedVcdms is populated, according to
+// the data model the batch was dispatched to (see obtainCredential).
 type fetchedCredential struct {
 	credentialConfigurationId      string
 	parsedCredentials              []*services.ParsedCredential
@@ -472,6 +475,9 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		switch {
 		case first.SdJwtVc != nil:
 			attrs = buildAttributesWithValues(claims, first.SdJwtVc.ProcessedSdJwtPayload, s.locale)
+		case first.SdJwtVcdm != nil:
+			claimDisplays, claimOrder := claimDisplayLookups(claims, s.locale)
+			attrs = services.BuildAttributesFromVcdmDocument(first.SdJwtVcdm.Document, claimDisplays, claimOrder)
 		case first.Mdoc != nil:
 			attrs = services.BuildMdocAttributesFromResolvedClaims(claims, first.Mdoc.Namespaces, s.locale)
 		}
@@ -522,19 +528,24 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		issuanceDate, expiryDate := first.IssuedAt, first.ExpiresAt
 
 		// The issued credential is authoritative for the credential id — it is
-		// what was signed and what the stored batch is keyed by. Both format
-		// parsers populate ParsedCredential.VerifiableCredentialType with it:
-		// the vct claim for dc+sd-jwt, the docType out of the signed MSO for
-		// mso_mdoc.
+		// what was signed and what the stored batch is keyed by. Every format
+		// parser populates ParsedCredential.VerifiableCredentialType with it:
+		// the vct claim for dc+sd-jwt, the @context+type identity for
+		// SD-JWT-secured VCDM, the docType out of the signed MSO for mso_mdoc.
 		//
 		// The issuer's well-known document is only a fallback, and a weak one.
 		// For dc+sd-jwt it may carry a placeholder (e.g. veramo's "unknown"),
 		// and an mso_mdoc configuration has no vct field at all to carry —
 		// which is why reading it there yielded an empty id, leaving both the
 		// permission dialog and the issuance log naming nothing.
-		credentialId := config.VerifiableCredentialType
+		credentialId := credentialConfigurationTypeIdentity(config)
 		if first.VerifiableCredentialType != "" {
 			credentialId = first.VerifiableCredentialType
+		}
+
+		// Without display metadata, a VCDM credential can still name itself.
+		if name == "" && first.SdJwtVcdm != nil {
+			name = services.VcdmDocumentName(first.SdJwtVcdm.Document, s.locale)
 		}
 
 		// Never offer a nameless credential: fall back to the credential id (the
@@ -577,6 +588,14 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 // appear in declared order, payload-only claims are appended alphabetically.
 // Claims without a metadata display entry produce attributes with DisplayName: nil.
 func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwt.ProcessedPayload, locale string) []clientmodels.Attribute {
+	displayLookup, metadataOrder := claimDisplayLookups(claims, locale)
+	return services.BuildAttributesFromPayload(&payload, displayLookup, metadataOrder)
+}
+
+// claimDisplayLookups derives the display-name lookup (resolved to the given
+// locale) and declared-order index from the issuer metadata's claim
+// descriptions, keyed by claim path.
+func claimDisplayLookups(claims []metadata.ClaimsDescription, locale string) (map[string]string, map[string]int) {
 	displayLookup := map[string]string{}
 	metadataOrder := map[string]int{}
 	for i, c := range claims {
@@ -587,8 +606,7 @@ func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjw
 		}
 		displayLookup[key] = clientmodels.Resolve(claimDisplayToTranslatedString(c.Display), locale)
 	}
-
-	return services.BuildAttributesFromPayload(&payload, displayLookup, metadataOrder)
+	return displayLookup, metadataOrder
 }
 
 func claimDisplayToTranslatedString(displays []metadata.Display) clientmodels.TranslatedString {
@@ -948,6 +966,11 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		return nil, fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
 	}
 
+	support, err = s.withStoreForParsedFormat(support, credentialConfig.Format, parsedCredentials)
+	if err != nil {
+		return nil, err
+	}
+
 	return &fetchedCredential{
 		credentialConfigurationId:      credentialConfigurationId,
 		parsedCredentials:              parsedCredentials,
@@ -955,6 +978,37 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		publicKeyIdentifiers:           publicKeyIdentifiers,
 		support:                        support,
 	}, nil
+}
+
+// withStoreForParsedFormat returns support with its Store replaced by the store
+// of the format the credentials actually parsed as, when that differs from the
+// configuration's format.
+//
+// The two differ when a dc+sd-jwt configuration delivers an SD-JWT-secured VCDM
+// credential: the dc+sd-jwt parser recognises the VCDM payload and verifies it
+// as vc+sd-jwt, and it belongs in the VCDM tables. Only the Store moves. The
+// keys were minted by the configuration's key binder before any credential
+// arrived, and stay with it for rollback; the swap is sound because both
+// SD-JWT data models bind through `cnf` with the same key binder (see
+// services.NewCredentialFormats).
+func (s *session) withStoreForParsedFormat(
+	support services.CredentialFormatSupport,
+	configFormat metadata.CredentialFormatIdentifier,
+	parsedCredentials []*services.ParsedCredential,
+) (services.CredentialFormatSupport, error) {
+	if len(parsedCredentials) == 0 {
+		return support, nil
+	}
+	parsedFormat := parsedCredentials[0].Format
+	if parsedFormat == models.CredentialFormat(configFormat) {
+		return support, nil
+	}
+	parsedSupport, ok := s.formats[parsedFormat]
+	if !ok {
+		return support, fmt.Errorf("credential parsed as format %q, which has no storage registered", parsedFormat)
+	}
+	support.Store = parsedSupport.Store
+	return support, nil
 }
 
 // requireMdocDocTypeMatchesMetadata binds what the issuer signed to what it

@@ -7,6 +7,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -74,7 +75,8 @@ type CredentialFormats map[models.CredentialFormat]CredentialFormatSupport
 // NewCredentialFormats builds the registry for every format this wallet
 // supports, from the ingredients the formats share: the database the stores
 // live in, the file storage that holds logos, the issuer trust configuration,
-// the SD-JWT holder verifier, the revocation service, and the current locale.
+// the SD-JWT VC and SD-JWT-secured VCDM holder verifiers, the revocation
+// service, and the current locale.
 //
 // Derived in one place on purpose. A registry assembled at the call site can
 // be wired inconsistently or lose an entry in a merge with no compile error,
@@ -87,23 +89,39 @@ type CredentialFormats map[models.CredentialFormat]CredentialFormatSupport
 // model is passed as a live lookup, not as the pool it currently holds: the
 // trust models are rebuilt whenever developer mode is toggled, and the registry
 // outlives that.
+//
+// The two SD-JWT-secured data models share one key binder: both bind the holder
+// through `cnf`. That is what lets a dc+sd-jwt configuration deliver a VCDM
+// credential (its parser dispatches on the payload): the keys were minted by
+// the dc+sd-jwt entry, and the vc+sd-jwt store links them all the same.
 func NewCredentialFormats(
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+	vcdmHolderVerifier *vcdmsdjwt.HolderVerificationProcessor,
 	d *gorm.DB,
 	fs filesystem.FileSystemStorage,
 	revocation *RevocationService,
+	vcdmRevocation *VcdmRevocationService,
 	currentLocale *clientmodels.CurrentLocale,
 ) CredentialFormats {
 	sdJwtVcStore := db.NewSdJwtVcStore(d)
+	vcdmStore := db.NewVcdmStore(d)
 	mdocStore := db.NewMdocStore(d)
 	mdocKeys := db.NewMdocDeviceKeyStore(d)
 
+	sdJwtVcParser := NewSdJwtVcCredentialFormatParser(holderVerifier)
+	vcdmParser := NewSdJwtVcdmCredentialFormatParser(vcdmHolderVerifier)
+
 	return CredentialFormats{
 		models.CredentialFormatSdJwtVc: {
-			Parser: NewSdJwtVcCredentialFormatParser(holderVerifier),
+			Parser: NewSdJwtDataModelParser(sdJwtVcParser, vcdmParser),
 			Keys:   NewHolderBindingKeyService(d),
 			Store:  NewSdJwtVcCredentialService(sdJwtVcStore, db.NewHolderBindingKeyStore(d), fs, revocation, currentLocale),
+		},
+		models.CredentialFormatSdJwtVcdm: {
+			Parser: vcdmParser,
+			Keys:   NewHolderBindingKeyService(d),
+			Store:  NewSdJwtVcdmCredentialService(vcdmStore, db.NewHolderBindingKeyStore(d), fs, vcdmRevocation, currentLocale),
 		},
 		models.CredentialFormatMsoMdoc: {
 			Parser: NewMdocCredentialFormatParser(mdoc.NewVerifierFromTrustSource(&config.Issuers)),
@@ -121,6 +139,7 @@ func NewCredentialFormats(
 func NewCredentialDisplaySources(d *gorm.DB) []CredentialDisplaySource {
 	return []CredentialDisplaySource{
 		newSdJwtVcDisplaySource(db.NewSdJwtVcStore(d)),
+		newSdJwtVcdmDisplaySource(db.NewVcdmStore(d)),
 		newMdocDisplaySource(db.NewMdocStore(d)),
 	}
 }

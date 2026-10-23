@@ -95,6 +95,10 @@ func autoMigrateHolderModels(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		&models.SdJwtVcBatch{},
 		&models.SdJwtVcBatchInstance{},
+		// SD-JWT-secured VCDM has its own batch tables, but its instances link
+		// to the holder binding key table, so they come before it.
+		&models.VcdmBatch{},
+		&models.VcdmBatchInstance{},
 		&models.HolderBindingKey{},
 		&models.ECDSAKeyMetadata{},
 		&models.RSAKeyMetadata{},

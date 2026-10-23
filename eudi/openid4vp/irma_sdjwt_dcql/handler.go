@@ -119,8 +119,9 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 		}
 
 		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
-			QueryId:     sel.QueryId,
-			Credentials: []string{presentation},
+			QueryId:          sel.QueryId,
+			CredentialFormat: "dc+sd-jwt",
+			Credentials:      []string{presentation},
 		})
 
 		credLog := h.buildLogCredential(cred.Metadata, sel.ClaimPaths)

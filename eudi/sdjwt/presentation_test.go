@@ -3,10 +3,15 @@ package sdjwt
 import (
 	"testing"
 
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/stretchr/testify/require"
 )
+
+const audience = "https://example.com"
+const nonce = "test-nonce"
 
 func buildTestSdJwtWithNestedClaims(t *testing.T) SdJwt {
 	t.Helper()
@@ -31,6 +36,49 @@ func buildTestSdJwtWithNestedClaims(t *testing.T) SdJwt {
 		Build(newTestJwtCreator(t))
 	require.NoError(t, err)
 	return sdJwt
+}
+
+// The issuer-signed JWT cannot carry aud and nonce without breaking the issuer's
+// signature, so the holder puts them in the KB-JWT (RFC 9901 Section 4.3).
+func TestCreatePresentation_KbJwtCarriesAudienceAndNonce(t *testing.T) {
+	keyBinder := NewDefaultKeyBinderWithInMemoryStorage()
+	holderKeys, err := keyBinder.CreateKeyPairs(1)
+	require.NoError(t, err)
+	holderKeyClaim, err := HolderKeyClaim(holderKeys[0])
+	require.NoError(t, err)
+
+	fullSdJwt, err := NewBuilder().
+		WithPayload(
+			holderKeyClaim,
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(SdAlgKey, iana.SHA256),
+			SdClaim("given_name", "Alice"),
+			SdClaim("family_name", "Smith"),
+		).
+		Build(newTestJwtCreator(t))
+	require.NoError(t, err)
+
+	presentation, err := CreatePresentation(fullSdJwt, [][]any{{"given_name"}})
+	require.NoError(t, err)
+
+	kbJwt, err := CreateKbJwt(presentation, keyBinder, nonce, audience)
+	require.NoError(t, err)
+
+	_, err = jws.Verify([]byte(kbJwt), jws.WithKey(jwa.ES256(), holderKeys[0]))
+	require.NoError(t, err)
+
+	header, claims, err := DecodeJwtWithoutCheckingSignature(string(kbJwt))
+	require.NoError(t, err)
+	require.Equal(t, KbJwtTyp, header["typ"])
+	require.Equal(t, "ES256", header["alg"])
+	require.Equal(t, audience, claims["aud"])
+	require.Equal(t, nonce, claims["nonce"])
+	require.NotNil(t, claims["iat"])
+
+	// sd_hash covers the presented SD-JWT, i.e. only the selected disclosures.
+	expectedSdHash, err := iana.CreateUrlEncodedHash(iana.SHA256, string(presentation))
+	require.NoError(t, err)
+	require.Equal(t, expectedSdHash, claims["sd_hash"])
 }
 
 func TestCreatePresentation_SelectTopLevelClaim(t *testing.T) {

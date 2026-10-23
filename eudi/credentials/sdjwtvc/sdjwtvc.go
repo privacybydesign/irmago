@@ -23,8 +23,10 @@ const (
 	StatusKey                            string = "status"
 	FederationKey                        string = "fed"
 
-	SdJwtVcTyp        string = "dc+sd-jwt"
-	SdJwtVcTyp_Legacy string = "vc+sd-jwt"
+	// SdJwtVcTyp is the only JWS `typ` accepted for an IETF SD-JWT VC. The
+	// pre-2024 `vc+sd-jwt` media type now denotes an SD-JWT-secured W3C VCDM
+	// credential and is handled by eudi/credentials/vcdmsdjwt (#678/#683).
+	SdJwtVcTyp string = "dc+sd-jwt"
 )
 
 // LookupVctIntegrityClaim returns the vct#integrity claim string from the

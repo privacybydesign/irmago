@@ -5,6 +5,8 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
@@ -16,14 +18,18 @@ import (
 // The generic fields are what the OpenID4VCI session needs regardless of
 // format: to name the credential, to bind it to its configuration, and to show
 // it on the offer screen. Everything a format's own store needs to persist it
-// lives behind one typed escape hatch per format — SdJwtVc or Mdoc, exactly
-// one of which is set — so no format's data has to be flattened into bytes to
+// lives behind one typed escape hatch per format — SdJwtVc, SdJwtVcdm or Mdoc,
+// exactly one of which is set — so no format's data has to be flattened into bytes to
 // cross this seam and re-parsed on the other side.
 type ParsedCredential struct {
+	// Format is the format of the credential as parsed, which decides the store
+	// it goes to. It can differ from the format the credential configuration
+	// advertises: a dc+sd-jwt configuration may deliver an SD-JWT-secured VCDM
+	// credential, which parses as vc+sd-jwt.
 	Format models.CredentialFormat
 
-	// VerifiableCredentialType is the vct claim (dc+sd-jwt) or the ISO
-	// 18013-5 docType (mso_mdoc).
+	// VerifiableCredentialType is the vct claim (dc+sd-jwt), the @context+type
+	// identity (vc+sd-jwt), or the ISO 18013-5 docType (mso_mdoc).
 	VerifiableCredentialType string
 
 	// IssuerIdentifier is the issuer identity the credential itself asserts and
@@ -49,8 +55,24 @@ type ParsedCredential struct {
 	// SdJwtVc is set only when Format == models.CredentialFormatSdJwtVc.
 	SdJwtVc *sdjwtvc.VerifiedSdJwtVc
 
+	// SdJwtVcdm is set only when Format == models.CredentialFormatSdJwtVcdm.
+	SdJwtVcdm *vcdmsdjwt.VerifiedSdJwtVcdm
+
 	// Mdoc is set only when Format == models.CredentialFormatMsoMdoc.
 	Mdoc *ParsedMdoc
+}
+
+// holderConfirmation returns the `cnf` claim an SD-JWT-secured credential is
+// bound to its holder by, or nil when it carries none or is not SD-JWT-secured.
+func (p *ParsedCredential) holderConfirmation() *sdjwt.CnfField {
+	switch {
+	case p.SdJwtVc != nil:
+		return p.SdJwtVc.IssuerSignedJwtPayload.Confirm
+	case p.SdJwtVcdm != nil:
+		return p.SdJwtVcdm.RegisteredClaims.Confirm
+	default:
+		return nil
+	}
 }
 
 // ParsedMdoc is what verifying an mso_mdoc yields beyond the generic fields:

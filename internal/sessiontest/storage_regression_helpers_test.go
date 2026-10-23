@@ -104,7 +104,7 @@ func requireOrganizationCredential(t *testing.T, creds []*clientmodels.Credentia
 // every snapshot from v1.3.0 keeps, and returns it. The generator revoked it
 // and refreshed, so the wallet stored an INVALID status against the instances'
 // status.status_list reference. Both flags are read from storage, without
-// network access, so this does not depend on the status-list agent still
+// network access, so this does not depend on the issuer still
 // serving that list and index.
 func requireRevokedStatusListCredential(t *testing.T, creds []*clientmodels.Credential) *clientmodels.Credential {
 	t.Helper()

@@ -1401,6 +1401,11 @@ func (m *mockHolderBindingKeyStore) LinkToInstance(keyID datatypes.UUID, instanc
 	return nil
 }
 
+func (m *mockHolderBindingKeyStore) LinkToVcdmInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
+	m.linkedKeys = append(m.linkedKeys, linkRecord{KeyID: keyID, InstanceID: instanceID})
+	return nil
+}
+
 func (m *mockHolderBindingKeyStore) StoreKey(key *models.HolderBindingKey) error    { return nil }
 func (m *mockHolderBindingKeyStore) StoreKeys(keys []models.HolderBindingKey) error { return nil }
 func (m *mockHolderBindingKeyStore) GetByID(id datatypes.UUID) (*models.HolderBindingKey, error) {

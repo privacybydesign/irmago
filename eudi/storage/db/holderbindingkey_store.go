@@ -17,6 +17,7 @@ type HolderBindingKeyStore interface {
 	GetByThumbprint(thumbprint string) (*models.HolderBindingKey, error)
 	GetByDidUrl(didUrl string) (*models.HolderBindingKey, error)
 	LinkToInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error
+	LinkToVcdmInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error
 	DeleteKey(id datatypes.UUID) error
 	DeleteKeys(ids []datatypes.UUID) error
 	DeleteAll() error
@@ -90,6 +91,21 @@ func (r *holderBindingKeyStore) LinkToInstance(keyID datatypes.UUID, instanceID 
 	res := r.db.Model(&models.HolderBindingKey{}).
 		Where("id = ?", keyID).
 		Update("issued_credential_instance_id", instanceID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// LinkToVcdmInstance sets the VcdmBatchInstanceID on the given holder binding
+// key, binding it to the specified VCDM credential instance.
+func (r *holderBindingKeyStore) LinkToVcdmInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
+	res := r.db.Model(&models.HolderBindingKey{}).
+		Where("id = ?", keyID).
+		Update("vcdm_batch_instance_id", instanceID)
 	if res.Error != nil {
 		return res.Error
 	}

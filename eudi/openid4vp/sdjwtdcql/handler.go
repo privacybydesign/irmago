@@ -1,43 +1,30 @@
-// Package eudi_sdjwt_dcql implements a DcqlCredentialQueryHandler for SD-JWT-VC
-// credentials stored in the eudi SQLite storage (issued via OpenID4VCI).
-package eudi_sdjwt_dcql
+// Package sdjwtdcql is the data-model-agnostic engine behind the wallet's
+// SD-JWT-secured DCQL query handlers. It walks the SD-JWT payload by claim path
+// and knows nothing about `vct` versus VCDM `type`; the format-specific bits are
+// supplied as a Profile. The thin per-format handlers — eudi_sdjwtvc_dcql
+// (dc+sd-jwt) and eudi_vcdm_dcql (vc+sd-jwt) — embed an Engine and add their own
+// CanHandleCredentialQuery routing.
+package sdjwtdcql
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
-	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
-
-// isIrmaStyleVct reports whether vct looks like an IRMA scheme credential
-// identifier ("scheme.issuer.credential"): exactly three non-empty segments
-// separated by dots, none of which contain ':' or '/' (so URN/URL forms are
-// excluded even if they happen to have three dot-separated parts).
-func isIrmaStyleVct(vct string) bool {
-	parts := strings.Split(vct, ".")
-	if len(parts) != 3 {
-		return false
-	}
-	for _, p := range parts {
-		if p == "" || strings.ContainsAny(p, ":/") {
-			return false
-		}
-	}
-	return true
-}
 
 // isHttpVct reports whether vct is an absolute http(s) URL that the type
 // metadata fetcher can safely GET. Used to skip URN / scheme-less vcts
@@ -47,85 +34,105 @@ func isHttpVct(vct string) bool {
 	return strings.HasPrefix(vct, "https://") || strings.HasPrefix(vct, "http://")
 }
 
-// RevocationChecker reports whether a stored credential instance is currently
-// revoked. The disclosure planner depends only on this narrow verb, keeping the
-// Token Status List mechanics out of this package (see services.RevocationService).
-type RevocationChecker interface {
-	IsRevoked(instance *models.SdJwtVcBatchInstance) bool
+// Profile captures the only behavior that distinguishes the SD-JWT-secured data
+// models the engine serves: an IETF SD-JWT VC (dc+sd-jwt) batch versus an
+// SD-JWT-secured W3C VCDM 2.0 (vc+sd-jwt) batch. Everything else — claim
+// matching, disclosure preview, flattening, validity, display resolution, and
+// the SD-JWT presentation core — is data-model-agnostic. Build one with
+// NewProfile; the per-format handler packages own their concrete profiles.
+type Profile struct {
+	// storageFormat is the models.CredentialFormat the engine serves; batches of
+	// any other format are ignored.
+	storageFormat models.CredentialFormat
+	// clientFormat is the wire/UI format tag stamped on candidates and logs.
+	clientFormat clientmodels.CredentialFormat
+	// isUserDataKey reports whether a top-level claim key holds user data (versus
+	// an envelope/metadata claim to hide from the disclosure preview). SD-JWT VC:
+	// any key that is not a JWT/SD-JWT standard claim. VCDM: only credentialSubject
+	// — @context/type/issuer/validFrom/validUntil/cnf/… are envelope, not user data.
+	isUserDataKey func(key string) bool
+	// present turns the selected SD-JWT into the vp_token entry. SD-JWT VC:
+	// PresentWithKbJwt. VCDM: a Verifiable Presentation enveloping the SD-JWT.
+	present Presenter
 }
 
-// SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
-// credentials stored in the eudi storage (SQLite).
-type SdJwtVcDcqlHandler struct {
-	storage         storage.Storage
-	credentialStore db.SdJwtVcStore
-	keyBinder       sdjwt.KeyBinder
-	vctFetcher      typemetadata.VctFetcher
-	issuerFetcher   typemetadata.IssuerFetcher
-	currentLocale   *clientmodels.CurrentLocale
+// Presenter turns an SD-JWT holding only the selected disclosures into the
+// credential string the vp_token carries, adding the holder proof when holder
+// binding is required.
+type Presenter func(selected sdjwt.SdJwt, keyBinder sdjwt.KeyBinder, requireHolderBinding bool, nonce string, audience string) (string, error)
 
-	// revocation determines a candidate's Revoked flag. Nil disables the check
-	// (candidates are then never flagged revoked).
-	revocation RevocationChecker
+// PresentWithKbJwt is the SD-JWT VC Presenter: the selected SD-JWT, with a
+// KB-JWT over nonce and audience appended when holder binding is required.
+func PresentWithKbJwt(selected sdjwt.SdJwt, keyBinder sdjwt.KeyBinder, requireHolderBinding bool, nonce string, audience string) (string, error) {
+	if !requireHolderBinding {
+		return string(selected), nil
+	}
+	kbjwt, err := sdjwt.CreateKbJwt(selected, keyBinder, nonce, audience)
+	if err != nil {
+		return "", fmt.Errorf("failed to create kbjwt: %w", err)
+	}
+	return string(sdjwt.AddKeyBindingJwt(selected, kbjwt)), nil
 }
 
-// NewSdJwtVcDcqlHandler creates a new handler. vctFetcher and issuerFetcher are
-// used to describe credentials the wallet has never seen (the verifier requests
-// a VCT for which there is no stored batch). Pass nil to disable that path; the
-// handler will then return empty obtainable descriptors as before.
-//
-// keyBinder is the KB-JWT signer used when a presentation requires holder
-// binding. Pass sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(
-// eudiStorage.Db())) for the default software, storage-backed signer, or a
-// WSCA/HSM-backed implementation to keep the holder private key out of process.
-func NewSdJwtVcDcqlHandler(
+// NewProfile builds a Profile for one SD-JWT-secured data model. storageFormat is
+// the models.CredentialFormat the engine serves; clientFormat is the wire/UI tag
+// stamped on candidates and logs; isUserDataKey decides which top-level claim keys
+// are user data (versus envelope) in the disclosure preview; present builds the
+// vp_token entry for a disclosed credential.
+func NewProfile(storageFormat models.CredentialFormat, clientFormat clientmodels.CredentialFormat, isUserDataKey func(key string) bool, present Presenter) Profile {
+	return Profile{
+		storageFormat: storageFormat,
+		clientFormat:  clientFormat,
+		isUserDataKey: isUserDataKey,
+		present:       present,
+	}
+}
+
+// Engine is the data-model-agnostic SD-JWT DCQL query engine. A per-format
+// handler embeds an *Engine (gaining FindCandidates and PrepareDisclosure) and
+// adds its own CanHandleCredentialQuery. Construct it with NewEngine.
+type Engine struct {
+	storage       storage.Storage
+	batches       BatchStore
+	keyBinder     sdjwt.KeyBinder
+	vctFetcher    typemetadata.VctFetcher
+	issuerFetcher typemetadata.IssuerFetcher
+	currentLocale *clientmodels.CurrentLocale
+
+	// profile selects the data-model-specific behavior (format, claim rooting).
+	profile Profile
+}
+
+// NewEngine creates an Engine for the given Profile, reading the data model's
+// credentials through batches (NewSdJwtVcBatchStore, NewVcdmBatchStore).
+// vctFetcher and issuerFetcher
+// describe credentials the wallet has never seen (the "obtainable descriptor"
+// path); pass nil to disable that path — VCDM does. keyBinder is the KB-JWT signer
+// used when a presentation requires holder binding; pass
+// sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db()))
+// for the default software, storage-backed signer, or a WSCA/HSM-backed one to
+// keep the holder private key out of process.
+func NewEngine(
+	profile Profile,
 	eudiStorage storage.Storage,
-	credentialStore db.SdJwtVcStore,
+	batches BatchStore,
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
 	keyBinder sdjwt.KeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
-	revocation RevocationChecker,
-) *SdJwtVcDcqlHandler {
-	return &SdJwtVcDcqlHandler{
-		storage:         eudiStorage,
-		credentialStore: credentialStore,
-		keyBinder:       keyBinder,
-		vctFetcher:      vctFetcher,
-		issuerFetcher:   issuerFetcher,
-		currentLocale:   currentLocale,
-		revocation:      revocation,
+) *Engine {
+	return &Engine{
+		storage:       eudiStorage,
+		batches:       batches,
+		keyBinder:     keyBinder,
+		vctFetcher:    vctFetcher,
+		issuerFetcher: issuerFetcher,
+		currentLocale: currentLocale,
+		profile:       profile,
 	}
 }
 
-var _ dcql.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
-
-// CanHandleCredentialQuery returns true for any sd-jwt query whose vct_values
-// are not 3-component IRMA scheme identifiers (those are handled by
-// irma_sdjwt_dcql against the BBolt store). URL and URN vcts — and any other
-// non-IRMA-shaped identifier — route here. Queries without vct_values are
-// also handled here so the EUDI store still gets searched.
-//
-// The discrimination is purely structural — there is no semantic check that
-// the URL/URN is reachable, that the URN sits in any recognised namespace,
-// or that the EUDI store actually holds the requested type. See
-// isIrmaStyleVct for the boundary conditions of the shape check.
-func (h *SdJwtVcDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
-	if query.Format != "dc+sd-jwt" && query.Format != "vc+sd-jwt" {
-		return false
-	}
-	if len(query.VctValues()) == 0 {
-		return true
-	}
-	for _, vct := range query.VctValues() {
-		if !isIrmaStyleVct(vct) {
-			return true
-		}
-	}
-	return false
-}
-
-func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQueryResult, error) {
+func (h *Engine) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQueryResult, error) {
 	result := &dcql.CredentialQueryResult{}
 
 	batches, err := h.findBatches(query)
@@ -138,7 +145,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 
 	hasExhaustedBatch := false
 	for _, batch := range batches {
-		if !dcql.IsBatchValid(batch, now) {
+		if !isBatchValid(batch, now) {
 			continue
 		}
 		// Skip exhausted batches: when a batch was issued with multiple instances
@@ -148,12 +155,12 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			continue
 		}
 
-		instance, err := h.credentialStore.GetUnusedInstance(batch.ID)
+		instance, err := h.batches.GetUnusedInstance(batch.ID)
 		if err != nil {
 			continue
 		}
-		rawSdJwt := sdjwtvc.SdJwtVc(instance.RawCredential)
-		attributes, err := parseBatchAttributes(batch, query, rawSdJwt, locale)
+		rawSdJwt := sdjwt.SdJwt(instance.RawCredential)
+		attributes, err := parseBatchAttributes(batch, query, rawSdJwt, locale, h.profile.isUserDataKey)
 		if err != nil {
 			continue
 		}
@@ -164,17 +171,17 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 		image := h.credentialImage(batch, locale)
 
 		candidate := clientmodels.SelectableCredentialInstance{
-			CredentialId:                batch.VerifiableCredentialType,
+			CredentialId:                batch.CredentialType,
 			Hash:                        batch.Hash,
 			Name:                        credentialDisplayName(batch, locale),
 			Issuer:                      h.issuerTrustedParty(batch, locale),
-			Format:                      clientmodels.Format_SdJwtVc,
-			BatchInstanceCountRemaining: dcql.BatchInstanceCountRemaining(batch),
+			Format:                      h.profile.clientFormat,
+			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
 			Attributes:                  attributes,
-			ExpiryDate:                  dcql.BatchExpiryUnix(batch),
+			ExpiryDate:                  expiryUnix(batch),
 			Image:                       image,
-			Revoked:                     h.revocation != nil && h.revocation.IsRevoked(instance),
-			RevocationSupported:         instance.StatusListURI != nil,
+			Revoked:                     instance.Revoked,
+			RevocationSupported:         instance.RevocationSupported,
 		}
 
 		if batch.IssuedAt.Valid {
@@ -215,7 +222,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 // Walks query.VctValues in order; first VCT whose type-metadata fetch succeeds
 // wins. If every VCT fetch fails, returns a URL-only descriptor for the first
 // VCT (so the user still sees what was requested).
-func (h *SdJwtVcDcqlHandler) composeUnobtainableDescriptor(query dcql.CredentialQuery) *clientmodels.CredentialDescriptor {
+func (h *Engine) composeUnobtainableDescriptor(query dcql.CredentialQuery) *clientmodels.CredentialDescriptor {
 	vctValues := query.VctValues()
 	if len(vctValues) == 0 {
 		return nil
@@ -246,7 +253,7 @@ func (h *SdJwtVcDcqlHandler) composeUnobtainableDescriptor(query dcql.Credential
 	return buildUnobtainableDescriptor(vctValues[0], nil, nil, query, h.currentLocale.Get())
 }
 
-func (h *SdJwtVcDcqlHandler) fetchIssuerMetadata(ctx context.Context, issuerURL string) *typemetadata.IssuerMetadata {
+func (h *Engine) fetchIssuerMetadata(ctx context.Context, issuerURL string) *typemetadata.IssuerMetadata {
 	if issuerURL == "" || h.issuerFetcher == nil {
 		return nil
 	}
@@ -366,43 +373,105 @@ func claimDisplayFromVct(vctMeta *typemetadata.VctTypeMetadata, path []any) clie
 	return nil
 }
 
-// findBatches returns credential batches matching the query, with metadata
-// preloaded (including claim display names). Only batches whose VCT matches
-// one of the requested vct_values are returned. When no vct_values are
-// specified, no batches are returned.
-func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.SdJwtVcBatch, error) {
+// findBatches returns the batches of this handler's format whose type identity
+// satisfies the query's DCQL type constraints, with metadata preloaded. See
+// batchMatchesTypeConstraint for the precedence between type_values, vct_values
+// and an empty meta.
+func (h *Engine) findBatches(query dcql.CredentialQuery) ([]*Batch, error) {
+	typeValues := query.TypeValues()
 	vctValues := query.VctValues()
-	if len(vctValues) == 0 {
-		return nil, nil
-	}
 
-	allBatches, err := h.credentialStore.GetCredentialBatchList()
+	allBatches, err := h.batches.ListBatches()
 	if err != nil {
 		return nil, err
 	}
 
-	vctSet := make(map[string]struct{}, len(vctValues))
-	for _, vct := range vctValues {
-		vctSet[vct] = struct{}{}
-	}
-	var filtered []*models.SdJwtVcBatch
+	var filtered []*Batch
 	for _, batch := range allBatches {
-		if _, ok := vctSet[batch.VerifiableCredentialType]; ok {
+		// Serve only this handler's format. A stored batch of the other
+		// SD-JWT-secured data model must not be matched here, even when a
+		// verifier echoes a composite type identity as a vct value.
+		if batch.Format != h.profile.storageFormat {
+			continue
+		}
+		if batchMatchesTypeConstraint(batch, typeValues, vctValues) {
 			filtered = append(filtered, batch)
 		}
 	}
 	return filtered, nil
 }
 
-func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
+// batchMatchesTypeConstraint decides whether a batch satisfies a DCQL query's
+// type constraints, in precedence order:
+//
+//   - type_values (OpenID4VP §B.1.1, W3C VCDM): the credential's JSON-LD `type`
+//     set must be a superset of at least one requested set — see
+//     batchTypeSatisfiesTypeValues for the @context handling.
+//   - vct_values: the batch's CredentialType — the `vct` for SD-JWT VC, or the
+//     composite @context+type identity for VCDM — must equal one of them.
+//   - neither (an empty or absent `meta`, OpenID4VP §6.1): every batch of the
+//     format matches; claim matching then narrows.
+func batchMatchesTypeConstraint(batch *Batch, typeValues [][]string, vctValues []string) bool {
+	if len(typeValues) > 0 {
+		return batchTypeSatisfiesTypeValues(batch, typeValues)
+	}
+	if len(vctValues) > 0 {
+		return slices.Contains(vctValues, batch.CredentialType)
+	}
+	return true // §6.1: empty meta matches any credential of the format
+}
+
+// batchTypeSatisfiesTypeValues matches a stored credential's JSON-LD `type`
+// against DCQL type_values (OpenID4VP §B.1.1).
+//
+// The @context / JSON-LD processing rules honored here, within the wallet's
+// lightweight (non-dereferencing, §6.3) model:
+//
+//   - `type` is a JSON-LD @type SET: the match is order-independent and by
+//     membership. A credential satisfies an inner array when its type set is a
+//     SUPERSET of it (every requested type present); the outer array is a
+//     disjunction. An empty inner array is ignored rather than matching all.
+//   - Type values are compared as literal strings (terms or IRIs). We do NOT
+//     dereference `@context` to expand terms into IRIs, so verifier and issuer
+//     must share the term vocabulary — guaranteed for the core term
+//     VerifiableCredential by VCDM 2.0's mandatory base context (ContextV2,
+//     enforced at receipt by vcdm.Document.Validate), and assumed for domain
+//     terms via a shared domain `@context`.
+//   - The comparison is against the `type` array only. The credential's
+//     `@context` is part of its stored identity (CredentialType), but §B.1.1
+//     constrains `type`, so @context is intentionally not folded in here.
+func batchTypeSatisfiesTypeValues(batch *Batch, typeValues [][]string) bool {
+	var doc vcdm.Document
+	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &doc); err != nil {
+		return false
+	}
+	for _, requested := range typeValues {
+		if len(requested) == 0 {
+			continue
+		}
+		all := true
+		for _, t := range requested {
+			if !doc.HasType(t) {
+				all = false
+				break
+			}
+		}
+		if all {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
 	// Load all batches with full metadata so buildLogCredential can resolve display names.
-	allBatches, err := h.credentialStore.GetCredentialBatchList()
+	allBatches, err := h.batches.ListBatches()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load credential batches: %w", err)
 	}
-	batchByHash := make(map[string]*models.SdJwtVcBatch, len(allBatches))
+	batchByHash := make(map[string]*Batch, len(allBatches))
 	for _, b := range allBatches {
 		batchByHash[b.Hash] = b
 	}
@@ -413,36 +482,33 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			return nil, fmt.Errorf("batch not found for hash %s", sel.CredentialHash)
 		}
 
-		instance, err := h.credentialStore.GetUnusedInstance(batch.ID)
+		instance, err := h.batches.GetUnusedInstance(batch.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
 		}
 
-		rawSdJwt := sdjwtvc.SdJwtVc(instance.RawCredential)
+		rawSdJwt := sdjwt.SdJwt(instance.RawCredential)
 
-		selected, err := sdjwt.CreatePresentation(sdjwt.SdJwt(rawSdJwt), sel.ClaimPaths)
+		selected, err := sdjwt.CreatePresentation(rawSdJwt, sel.ClaimPaths)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
 
-		presentation := string(selected)
-		if sel.RequireHolderBinding {
-			kbjwt, err := sdjwt.CreateKbJwt(selected, h.keyBinder, nonce, audience)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create kbjwt: %w", err)
-			}
-			presentation = string(sdjwt.AddKeyBindingJwt(selected, kbjwt))
+		presentation, err := h.profile.present(selected, h.keyBinder, sel.RequireHolderBinding, nonce, audience)
+		if err != nil {
+			return nil, err
 		}
 
 		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
-			QueryId:     sel.QueryId,
-			Credentials: []string{presentation},
+			QueryId:          sel.QueryId,
+			CredentialFormat: string(batch.Format),
+			Credentials:      []string{presentation},
 		})
 
 		// Only mark the instance as used when the original batch had multiple instances.
 		// A batch of 1 keeps its single instance reusable.
 		if batch.BatchSize > 1 {
-			if err := h.credentialStore.MarkInstanceUsed(instance.ID); err != nil {
+			if err := h.batches.MarkInstanceUsed(instance.ID); err != nil {
 				return nil, fmt.Errorf("failed to mark instance as used: %w", err)
 			}
 		}
@@ -465,9 +531,9 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 // Returns nil if the credential doesn't satisfy the query's value
 // constraints. When claim_sets is present, each set is tried in order and the
 // first fully satisfiable set determines which claims are included.
-func parseBatchAttributes(batch *models.SdJwtVcBatch, query dcql.CredentialQuery, rawSdJwt sdjwtvc.SdJwtVc, locale string) ([]clientmodels.Attribute, error) {
+func parseBatchAttributes(batch *Batch, query dcql.CredentialQuery, rawSdJwt sdjwt.SdJwt, locale string, isUserDataKey func(string) bool) ([]clientmodels.Attribute, error) {
 	var resolved sdjwt.ProcessedPayload
-	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
+	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &resolved); err != nil {
 		return nil, err
 	}
 
@@ -490,7 +556,7 @@ func parseBatchAttributes(batch *models.SdJwtVcBatch, query dcql.CredentialQuery
 	// flattening the resolved payload at the requested paths. That keeps the
 	// pre-existing behavior for unit tests that work with synthetic batches,
 	// at the cost of not previewing bundled siblings in those tests.
-	leafPaths := computeDisclosurePreviewLeaves(rawSdJwt, requestedPaths, &resolved, batch.VerifiableCredentialType)
+	leafPaths := computeDisclosurePreviewLeaves(rawSdJwt, requestedPaths, &resolved, batch.CredentialType, isUserDataKey)
 	pairs := buildPairsFromLeaves(leafPaths, constrainedKeys)
 
 	metadataOrder := buildMetadataOrder(batch)
@@ -510,15 +576,16 @@ func parseBatchAttributes(batch *models.SdJwtVcBatch, query dcql.CredentialQuery
 // loses the bundled-sibling preview but preserves the old behavior when the
 // SD-JWT structure isn't accessible.
 func computeDisclosurePreviewLeaves(
-	rawSdJwt sdjwtvc.SdJwtVc,
+	rawSdJwt sdjwt.SdJwt,
 	requestedPaths [][]any,
 	resolved *sdjwt.ProcessedPayload,
 	credentialType string,
+	isUserDataKey func(string) bool,
 ) [][]any {
 	if len(rawSdJwt) > 0 {
-		view, err := sdjwt.PostDisclosureView(sdjwt.SdJwt(rawSdJwt), requestedPaths)
+		view, err := sdjwt.PostDisclosureView(rawSdJwt, requestedPaths)
 		if err == nil {
-			return collectViewLeafPaths(view)
+			return collectViewLeafPaths(view, isUserDataKey)
 		}
 		eudi.Logger.Warnf(
 			"failed to compute post-disclosure view for %q (falling back to requested-path flattening): %v",
@@ -613,14 +680,15 @@ func descendantLeafPaths(payload *sdjwt.ProcessedPayload, path []any) [][]any {
 }
 
 // collectViewLeafPaths walks a verifier-side view and returns the path of
-// every visible scalar leaf. Standard JWT/SD-JWT meta keys at the top level
-// (iss, iat, exp, vct, cnf, …) are skipped entirely — including their
-// subtrees — because they are not user data. Nil placeholders (representing
+// every visible scalar leaf. Top-level keys for which isUserDataKey returns
+// false are skipped entirely — including their subtrees — because they are
+// envelope/metadata, not user data (JWT/SD-JWT standard claims for SD-JWT VC;
+// everything but credentialSubject for VCDM). Nil placeholders (representing
 // hidden array-element digests) are skipped.
-func collectViewLeafPaths(view map[string]any) [][]any {
+func collectViewLeafPaths(view map[string]any, isUserDataKey func(string) bool) [][]any {
 	var leaves [][]any
 	for k, child := range view {
-		if _, std := sdjwtvc.StandardClaims[k]; std {
+		if !isUserDataKey(k) {
 			continue
 		}
 		walkLeafPaths(child, []any{k}, func(path []any) {
@@ -692,7 +760,7 @@ type pathToFlatten struct {
 func flattenPathsForDisplay(
 	attrs []clientmodels.Attribute,
 	requestedKeys map[string]struct{},
-	batch *models.SdJwtVcBatch,
+	batch *Batch,
 	payload *sdjwt.ProcessedPayload,
 	pairs []pathToFlatten,
 	metadataOrder map[string]int,
@@ -870,16 +938,16 @@ func claimMatchesPath(path []any, values []any, payload *sdjwt.ProcessedPayload)
 // has already marked this copy used by the time it calls this, so a fresh
 // GetUnusedInstance returns a sibling copy — or fails outright on the last copy
 // of a batch, which left the log with no attributes at all.
-func (h *SdJwtVcDcqlHandler) buildLogCredential(
-	batch *models.SdJwtVcBatch,
-	instance *models.SdJwtVcBatchInstance,
+func (h *Engine) buildLogCredential(
+	batch *Batch,
+	instance *Instance,
 	claimPaths [][]any,
 ) clientmodels.LogCredential {
 	attrs := make([]clientmodels.Attribute, 0)
 
 	var resolved sdjwt.ProcessedPayload
-	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
-		eudi.Logger.Warnf("failed to unmarshal processed SD-JWT payload for %q: %v", batch.VerifiableCredentialType, err)
+	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &resolved); err != nil {
+		eudi.Logger.Warnf("failed to unmarshal processed SD-JWT payload for %q: %v", batch.CredentialType, err)
 	}
 
 	// Compute the verifier-side view for the user's authorized paths so the
@@ -888,10 +956,10 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(
 	// requested leaf.
 	view, err := sdjwt.PostDisclosureView(sdjwt.SdJwt(instance.RawCredential), claimPaths)
 	if err != nil {
-		eudi.Logger.Warnf("failed to compute post-disclosure view for log credential %q: %v", batch.VerifiableCredentialType, err)
+		eudi.Logger.Warnf("failed to compute post-disclosure view for log credential %q: %v", batch.CredentialType, err)
 	}
 
-	leafPaths := collectViewLeafPaths(view)
+	leafPaths := collectViewLeafPaths(view, h.profile.isUserDataKey)
 	pairs := buildPairsFromLeaves(leafPaths, nil)
 
 	locale := h.currentLocale.Get()
@@ -900,18 +968,18 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(
 	attrs = flattenPathsForDisplay(attrs, requestedKeys, batch, &resolved, pairs, metadataOrder, locale)
 
 	log := clientmodels.LogCredential{
-		CredentialId: batch.VerifiableCredentialType,
-		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
+		CredentialId: batch.CredentialType,
+		Formats:      []clientmodels.CredentialFormat{h.profile.clientFormat},
 		Name:         credentialDisplayName(batch, locale),
 		Image:        h.credentialImage(batch, locale),
 		Issuer:       h.issuerTrustedParty(batch, locale),
 		Attributes:   attrs,
-		ExpiryDate:   dcql.BatchExpiryUnix(batch),
+		ExpiryDate:   expiryUnix(batch),
 		// Read off the disclosed instance, the same way FindCandidates reports
 		// them on the plan. A log that forgets them leaves the user unable to see
 		// later that what they shared was already revoked.
-		Revoked:             h.revocation != nil && h.revocation.IsRevoked(instance),
-		RevocationSupported: instance.StatusListURI != nil,
+		Revoked:             instance.Revoked,
+		RevocationSupported: instance.RevocationSupported,
 	}
 
 	if batch.IssuedAt.Valid {
@@ -932,7 +1000,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(
 func flattenForDisclosure(
 	attrs []clientmodels.Attribute,
 	requestedKeys map[string]struct{},
-	batch *models.SdJwtVcBatch,
+	batch *Batch,
 	path []any,
 	value any,
 	metadataOrder map[string]int,
@@ -1074,7 +1142,7 @@ func metadataOrderForKey(parentPath []any, key string, metadataOrder map[string]
 
 // buildMetadataOrder creates a map from serialized claim path to position index
 // for ordering object keys by their metadata position.
-func buildMetadataOrder(batch *models.SdJwtVcBatch) map[string]int {
+func buildMetadataOrder(batch *Batch) map[string]int {
 	order := make(map[string]int)
 	if batch.CredentialMetadata == nil {
 		return order
@@ -1154,7 +1222,7 @@ func pathLess(a, b []any, metadataOrder map[string]int) bool {
 // the batch's display metadata (falling back to any cached display logo while
 // the backfill fetches the preferred one). Returns nil when no logo is
 // configured or none is cached.
-func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.SdJwtVcBatch, locale string) *clientmodels.Image {
+func (h *Engine) credentialImage(batch *Batch, locale string) *clientmodels.Image {
 	if batch.CredentialMetadata == nil {
 		return nil
 	}
@@ -1164,9 +1232,9 @@ func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.SdJwtVcBatch, locale 
 
 // issuerTrustedParty builds a TrustedParty from the stored issuer display metadata,
 // including the issuer logo if available on disk.
-func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.SdJwtVcBatch, locale string) clientmodels.TrustedParty {
+func (h *Engine) issuerTrustedParty(batch *Batch, locale string) clientmodels.TrustedParty {
 	return clientmodels.TrustedParty{
-		Id:       batch.CredentialIssuerIdentifier,
+		Id:       batch.CredentialIssuer,
 		Name:     clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
 		Image:    h.issuerImage(batch, locale),
 		Verified: batch.IssuerVerified,
@@ -1176,27 +1244,33 @@ func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.SdJwtVcBatch, loca
 // issuerImage loads the issuer logo that resolves for the locale from the
 // batch's issuer display metadata (falling back to any cached display logo
 // while the backfill fetches the preferred one).
-func (h *SdJwtVcDcqlHandler) issuerImage(batch *models.SdJwtVcBatch, locale string) *clientmodels.Image {
+func (h *Engine) issuerImage(batch *Batch, locale string) *clientmodels.Image {
 	logoManager := h.storage.FileSystem().Issuers().LogoManager()
 	return services.LoadResolvedLogo(logoManager, services.IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale)
 }
 
 // credentialDisplayName resolves a credential's display name from its stored
-// metadata, falling back to the VCT when there is no display metadata.
-func credentialDisplayName(batch *models.SdJwtVcBatch, locale string) string {
+// metadata. Without display metadata, a VCDM credential falls back to its own
+// `name`, and any credential to its type (the VCT or the VCDM type identity).
+func credentialDisplayName(batch *Batch, locale string) string {
 	if batch.CredentialMetadata != nil {
 		if ts := services.CredentialNamesByLanguage(batch.CredentialMetadata.Display); len(ts) > 0 {
 			return clientmodels.Resolve(ts, locale)
 		}
 	}
-	return batch.VerifiableCredentialType
+	if batch.Format == models.CredentialFormatSdJwtVcdm {
+		if name := services.VcdmPayloadName(batch.ProcessedPayload, locale); name != "" {
+			return name
+		}
+	}
+	return batch.CredentialType
 }
 
 // claimDisplayName resolves a claim's display name from the stored credential
 // metadata. Returns nil when no metadata display entry matches the path, or
 // when the entry has no translation for this locale — callers treat both as
 // "no display name".
-func claimDisplayName(batch *models.SdJwtVcBatch, claimPath []any, locale string) *string {
+func claimDisplayName(batch *Batch, claimPath []any, locale string) *string {
 	if batch.CredentialMetadata == nil {
 		return nil
 	}

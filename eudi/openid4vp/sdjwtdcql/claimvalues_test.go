@@ -1,4 +1,4 @@
-package eudi_sdjwt_dcql
+package sdjwtdcql
 
 import (
 	"encoding/json"
@@ -127,7 +127,7 @@ func TestCollectViewLeafPaths_SkipsProtocolClaims(t *testing.T) {
 				"given_name": "Alice",
 			}
 
-			leaves := collectViewLeafPaths(view)
+			leaves := collectViewLeafPaths(view, testSdJwtVcProfile().isUserDataKey)
 
 			if len(leaves) != 1 || len(leaves[0]) != 1 || leaves[0][0] != "given_name" {
 				t.Fatalf("want only [given_name], got %v", leaves)

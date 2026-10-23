@@ -164,7 +164,7 @@ func (s *mdocCredentialService) Store(
 		eudi.Logger.Warnf("mdoc from issuer %q will render as its raw docType %q: %s", issuerMetadata.CredentialIssuer, first.Mdoc.DocType, reason)
 	}
 
-	issuerDisplay, credentialMetadata, err := mdocDisplaySnapshots(issuerMetadata, credentialConfiguration)
+	issuerDisplay, credentialMetadata, err := displaySnapshots(issuerMetadata, credentialConfiguration)
 	if err != nil {
 		return err
 	}
@@ -207,10 +207,10 @@ func (s *mdocCredentialService) Store(
 	return nil
 }
 
-// mdocDisplaySnapshots encodes the OpenID4VCI display metadata an mdoc batch
-// carries: the issuer's display[] and the configuration's credential_metadata,
+// displaySnapshots encodes the OpenID4VCI display metadata an mdoc or VCDM
+// batch carries: the issuer's display[] and the configuration's credential_metadata,
 // as published. Nil where the issuer advertised none.
-func mdocDisplaySnapshots(issuerMetadata metadata.CredentialIssuerMetadata, config metadata.CredentialConfiguration) (issuerDisplay, credentialMetadata datatypes.JSON, err error) {
+func displaySnapshots(issuerMetadata metadata.CredentialIssuerMetadata, config metadata.CredentialConfiguration) (issuerDisplay, credentialMetadata datatypes.JSON, err error) {
 	if len(issuerMetadata.Display) > 0 {
 		b, err := json.Marshal(issuerMetadata.Display)
 		if err != nil {

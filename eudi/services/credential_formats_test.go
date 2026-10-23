@@ -21,20 +21,22 @@ func TestNewCredentialFormatsRegistersEveryFormat(t *testing.T) {
 	formats := NewCredentialFormats(
 		&eudi.Configuration{},
 		nil,
+		nil,
 		d,
 		filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()),
 		NewRevocationService(nil, nil),
+		NewVcdmRevocationService(nil, nil, nil),
 		clientmodels.NewCurrentLocale("en"),
 	)
 
-	for _, format := range []models.CredentialFormat{models.CredentialFormatSdJwtVc, models.CredentialFormatMsoMdoc} {
+	for _, format := range []models.CredentialFormat{models.CredentialFormatSdJwtVc, models.CredentialFormatSdJwtVcdm, models.CredentialFormatMsoMdoc} {
 		support, ok := formats[format]
 		require.True(t, ok, "no support for %q", format)
 		require.NotNil(t, support.Parser, "%q has no parser", format)
 		require.NotNil(t, support.Keys, "%q has no key binder", format)
 		require.NotNil(t, support.Store, "%q has no store", format)
 	}
-	require.Len(t, formats, 2, "a new format needs a registry entry, a display source and a test row here")
+	require.Len(t, formats, 3, "a new format needs a registry entry, a display source and a test row here")
 	require.Len(t, NewCredentialDisplaySources(d), len(formats),
 		"the read-only display sources must cover the same formats as the registry")
 }

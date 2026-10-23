@@ -98,8 +98,6 @@ services:
         condition: service_healthy
       tls_proxy:
         condition: service_started
-      statuslist_agent:
-        condition: service_started
       postgres:
         condition: service_started
       mysql:
@@ -173,9 +171,9 @@ services:
     # Wait until the postgres server is actually accepting connections before
     # issuing the CREATE SCHEMA. A naive `sleep 3` is too short on cold CI
     # runners and causes flaky init failures. One schema per consumer —
-    # `agent` (OID4VCI issuer), `verifier` (OID4VP verifier), `statuslist`
-    # (status-list agent) — which is what keeps them isolated in the shared DB.
-    command: /bin/sh -c "until pg_isready -q; do sleep 1; done && psql -c 'CREATE SCHEMA IF NOT EXISTS agent' -c 'CREATE SCHEMA IF NOT EXISTS verifier' -c 'CREATE SCHEMA IF NOT EXISTS statuslist'"
+    # `agent` (OID4VCI issuer) and `verifier` (OID4VP verifier) — which is what
+    # keeps them isolated in the shared DB.
+    command: /bin/sh -c "until pg_isready -q; do sleep 1; done && psql -c 'CREATE SCHEMA IF NOT EXISTS agent' -c 'CREATE SCHEMA IF NOT EXISTS verifier'"
 
   veramo_openid4vci_mock_authorization_server:
     build:
@@ -191,11 +189,14 @@ services:
       - 9090:9090
 
   veramo_openid4vci:
-    # NOTE (status lists): bumped 1.4.1 -> 1.5.5 to get IETF Token Status
-    # List support (it attaches `status.status_list {idx,uri}` to issued
-    # dc+sd-jwt creds and proxies revoke to the statuslist_agent).
+    # Our fork of eduwallet/veramo-agent: upstream v1.8 plus patches upstream
+    # has not taken. The issuer hosts its own status lists (configured per
+    # credential in conf/metadata) under /<issuer>/sl/. The patches: IETF
+    # status lists packed LSB-first (upstream reads revoked as valid), W3C
+    # status list credentials typed vc+jwt, no IETF `status` claim on
+    # vc+sd-jwt, and DISABLE_RATE_LIMITS.
     build:
-      context: https://github.com/eduwallet/veramo-agent.git#v1.5.5
+      context: https://github.com/privacybydesign/veramo-agent.git#pbdf-v1.8.0
     command: ["yarn", "start"]
     extra_hosts:
       - "localhost:host-gateway"
@@ -206,8 +207,8 @@ services:
         condition: service_started
     volumes:
       - ./testdata/openid4vci-issuer/conf:/app/conf
-      # Trust the tls_proxy cert so veramo can reach the status list agent
-      # over https if it resolves its DID / uri there.
+      # Trust the tls_proxy cert so veramo can reach its own public origin
+      # over https if it resolves a DID / uri there.
       - ./testdata/configurations/certs/localhost.crt:/usr/local/share/ca-certificates/localhost.crt:ro
     environment:
       NODE_ENV: development
@@ -224,71 +225,13 @@ services:
       BASEURL: https://localhost:8443
       PASSPHRASE: abcdefghijklmnopqrstuvwxyz012345
       CONF_PATH: conf
+      # The test suite issues far more credentials per minute from one
+      # address than the per-IP limits allow.
+      DISABLE_RATE_LIMITS: "true"
     networks:
       irma-net:
         aliases:
           - veramo-openid4vci.localhost
-
-  # ---------------------------------------------------------------------------
-  # IETF Token Status List agent (eduwallet/statuslist-agent).
-  # Hosts the `application/statuslist+jwt` token and the set/revoke admin API
-  # that veramo_openid4vci calls at issuance/revocation. It shares the
-  # veramo_postgres server, isolated in its own `statuslist` schema
-  # (created by veramo_postgres_init).
-  # ---------------------------------------------------------------------------
-  statuslist_agent:
-    # The repo's docker/Dockerfile is a non-functional stub, so build inline
-    # (mirrors the veramo_openid4vp pattern). The signing key is generated at
-    # build time with the agent's own `key` script, then assembled into
-    # local.key with our fixed did:web name — this avoids guessing the
-    # @muisit/cryptokey hex format.
-    build:
-      context: https://github.com/privacybydesign/statuslist-agent.git#46d5c8cc3197cdf4a1e3299f5ac50b4b3f19eefa
-      dockerfile_inline: |
-        FROM node:20-bookworm
-        WORKDIR /app
-        COPY . .
-        RUN corepack enable && yarn install
-        # Generate a valid Ed25519 key with the agent's own tooling and wrap
-        # it into local.key with the did:web name matching the public origin.
-        # NOTE: $$ escapes compose interpolation so the literal $ reaches the
-        # Docker build — otherwise compose expands $KEYHEX / $(...) to empty and
-        # the agent gets a blank signing key (can't sign tokens -> 404 on fetch).
-        RUN KEYHEX="$$(yarn --silent key Ed25519 | tail -n1)" && \
-            printf '{"name":"did:web:localhost%%3A8445","privateKeyHex":"%s","type":"Ed25519"}\n' "$$KEYHEX" > /app/local.key
-        CMD ["yarn", "start"]
-    extra_hosts:
-      - "localhost:host-gateway"
-    depends_on:
-      veramo_postgres_init:
-        condition: service_completed_successfully
-    volumes:
-      # Only the list definitions are mounted; local.key is built into the image.
-      - ./testdata/statuslist-agent/conf/lists:/app/conf/lists:ro
-    environment:
-      NODE_ENV: development
-      DB_HOST: veramo-postgres.localhost
-      DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: testpassword
-      DB_NAME: postgres
-      DB_SCHEMA: statuslist
-      KEY_FILE: /app/local.key
-      PORT: 9156
-      LISTEN_ADDRESS: 0.0.0.0
-      # Public origin (via tls_proxy :8445) — determines the token `uri`/`sub`
-      # and the did:web the wallet resolves. Admin calls from veramo use the
-      # internal http alias instead (see veramo conf statusLists).
-      BASEURL: https://localhost:8445
-      CONF_PATH: conf
-      # Empty BEARER_TOKEN => list configs are loaded from files (conf/lists).
-      BEARER_TOKEN: ""
-    networks:
-      irma-net:
-        aliases:
-          - statuslist-agent.localhost
-    ports:
-      - 9156:9156
 
   # EUDI Python PID issuer authorization server (companion to eudi_pid_issuer_py).
   # Issues pre-authorized codes via POST /preauth_generate (used internally by the
@@ -411,8 +354,6 @@ services:
       # can start before the issuer is accepting requests on cold runners.
       eudi_pid_issuer_py:
         condition: service_healthy
-      statuslist_agent:
-        condition: service_started
     volumes:
       - ./testdata/configurations/certs/nginx-tls-proxy.conf:/etc/nginx/nginx.conf:ro
       - ./testdata/configurations/certs/localhost.crt:/etc/nginx/certs/localhost.crt:ro
@@ -425,23 +366,22 @@ services:
     ports:
       - 8443:443
       - 8444:444
-      - 8445:445
 
   # OpenID4VP verifier for integration tests (eduwallet/veramo-verifier).
   # Uses the shared veramo_postgres server, isolated in its own `verifier` schema.
   veramo_openid4vp:
     build:
-      context: https://github.com/eduwallet/veramo-verifier.git#v1.6.0
+      # v1.6.6 is the first version that verifies vc+sd-jwt (SD-JWT-secured VCDM)
+      # presentations. It also reloads the identifier's keys after creating a DID,
+      # so the sed workaround for "Missing keys or identifier" on a fresh DB that
+      # v1.6.0 needed is gone.
+      context: https://github.com/eduwallet/veramo-verifier.git#v1.6.6
       dockerfile_inline: |
         FROM node:20-alpine
         WORKDIR /app
         COPY package.json yarn.lock .yarnrc.yml ./
         RUN yarn install
         COPY . .
-        # Workaround for https://github.com/eduwallet/veramo-verifier/issues/XXX:
-        # initialiseKey() doesn't set identifier.keys on the in-memory object after
-        # creating a new DID, causing "Missing keys or identifier" on a fresh DB.
-        RUN sed -i '/await prepo.save(pKey);/a\        identifier.keys = [dbKey];' src/dids/Store.ts
         CMD ["yarn", "start"]
     extra_hosts:
       - "localhost:host-gateway"

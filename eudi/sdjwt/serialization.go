@@ -18,30 +18,55 @@ type SdJwt string
 // SdJwtKb represents an encoded SD-JWT as a string, be it with or without disclosures, potentially with a key binding jwt (which needs to be determined by processing)
 type SdJwtKb string
 
-func Create(issJwt IssuerSignedJwt, disclosures []EncodedDisclosure) SdJwt {
-	discs := ""
-	for _, d := range disclosures {
-		discs = fmt.Sprintf("%s%s~", discs, d)
-	}
+// disclosureSeparator is the ~ that terminates every SD-JWT component
+const disclosureSeparator = '~'
 
-	return SdJwt(fmt.Sprintf("%s~%s", issJwt, discs))
+func Create(issJwt IssuerSignedJwt, disclosures []EncodedDisclosure) SdJwt {
+	return concatDisclosures(string(issJwt), disclosures)
 }
 
 func CreateWithDisclosureContents(issJwt IssuerSignedJwt, disclosures []DisclosureContent) (SdJwt, error) {
-	discs := ""
+	var sb strings.Builder
+	sb.Grow(len(issJwt) + 1)
+	sb.WriteString(string(issJwt))
+	sb.WriteByte(disclosureSeparator)
+
 	for _, d := range disclosures {
 		encD, err := EncodeDisclosure(d)
 		if err != nil {
 			return "", err
 		}
-		discs = fmt.Sprintf("%s%s~", discs, encD)
+		sb.WriteString(string(encD))
+		sb.WriteByte(disclosureSeparator)
 	}
 
-	return SdJwt(fmt.Sprintf("%s~%s", issJwt, discs)), nil
+	return SdJwt(sb.String()), nil
+}
+
+// concatDisclosures writes the issuer-signed JWT and every disclosure, each
+// terminated by a ~, into a single buffer sized up front so that the result is
+// assembled in one allocation.
+func concatDisclosures(issJwt string, disclosures []EncodedDisclosure) SdJwt {
+	size := len(issJwt) + 1
+	for _, d := range disclosures {
+		size += len(d) + 1
+	}
+
+	var sb strings.Builder
+	sb.Grow(size)
+	sb.WriteString(issJwt)
+	sb.WriteByte(disclosureSeparator)
+
+	for _, d := range disclosures {
+		sb.WriteString(string(d))
+		sb.WriteByte(disclosureSeparator)
+	}
+
+	return SdJwt(sb.String())
 }
 
 func AddKeyBindingJwt(sdJwt SdJwt, kbjwt KeyBindingJwt) SdJwtKb {
-	return SdJwtKb(fmt.Sprintf("%s%s", sdJwt, kbjwt))
+	return SdJwtKb(string(sdJwt) + string(kbjwt))
 }
 
 // Split splits the sdjwt at the ~ characters and returns the individual components.

@@ -467,7 +467,7 @@ func matchAllHolderBindingKeys(
 
 	result := make([]datatypes.UUID, len(parsedCredentials))
 	for i, p := range parsedCredentials {
-		cnf := p.SdJwtVc.IssuerSignedJwtPayload.Confirm
+		cnf := p.holderConfirmation()
 		if cnf == nil {
 			return nil, fmt.Errorf("credential %d requires holder binding but has no cnf claim", i)
 		}
