@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	cose "github.com/veraison/go-cose"
 
-	"github.com/privacybydesign/irmago/eudi/credentials/coseutil"
+	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
 // Everything in this file is about bytes: the CBOR shape this package writes,
@@ -615,7 +615,7 @@ func foreignEudiMdoc(t *testing.T) []byte {
 // specifies at this position.
 func foreignIssuerAuth(t *testing.T, m *MDoc) *cose.Sign1Message {
 	t.Helper()
-	msg, err := coseutil.DecodeSign1(m.IssuerSigned.IssuerAuth)
+	msg, err := utils.DecodeSign1(m.IssuerSigned.IssuerAuth)
 	require.NoError(t, err, "decode foreign issuerAuth as COSE_Sign1: %v", err)
 	return msg
 }

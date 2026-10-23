@@ -13,7 +13,6 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/privacybydesign/irmago/eudi/credentials/coseutil"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
@@ -474,7 +473,7 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	}
 
 	// Step 1: decode COSE_Sign1
-	msg, err := coseutil.DecodeSign1(mdoc.IssuerSigned.IssuerAuth)
+	msg, err := utils.DecodeSign1(mdoc.IssuerSigned.IssuerAuth)
 	if err != nil {
 		result.Error = fmt.Sprintf("decode cose: %v", err)
 		return nil, result
@@ -482,7 +481,7 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 
 	// Step 2: parse x5chain (unprotected header 33): certs[0] = DS cert (leaf),
 	// certs[1..] = intermediates (IACA cert)
-	certs, err := coseutil.UnprotectedX5Chain(msg)
+	certs, err := utils.UnprotectedX5Chain(msg)
 	if err != nil {
 		result.Error = fmt.Sprintf("issuerAuth: %v", err)
 		return nil, result
@@ -550,7 +549,7 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	// Step 4: verify COSE_Sign1 signature using DS cert's public key
 	// go-cose internally builds the Sig_structure and verifies ECDSA against it
 	// NOT the bare MSO bytes — the Sig_structure wrapping is what actually gets signed
-	coseverifier, err := coseutil.VerifierFor(msg, dsCert.PublicKey, "issuerAuth")
+	coseverifier, err := utils.VerifierFor(msg, dsCert.PublicKey, "issuerAuth")
 	if err != nil {
 		result.Error = err.Error()
 		return nil, result
@@ -681,7 +680,7 @@ func (v *Verifier) runStatusListCheck(ref *statuslist.Reference) error {
 // still established afterwards: the caller's Verify re-reads it from the MSO
 // only once the Document Signer's signature over it has been checked.
 func DocTypeFromIssuerAuth(issuerAuth cbor.RawMessage) (string, error) {
-	msg, err := coseutil.DecodeSign1(issuerAuth)
+	msg, err := utils.DecodeSign1(issuerAuth)
 	if err != nil {
 		return "", fmt.Errorf("decode cose: %w", err)
 	}
@@ -705,7 +704,7 @@ func DocTypeFromIssuerAuth(issuerAuth cbor.RawMessage) (string, error) {
 // VerifyWithDeviceAuth, after the Document Signer's signature over it has been
 // checked.
 func DeviceKeyFromIssuerAuth(issuerAuth cbor.RawMessage) (*ecdsa.PublicKey, error) {
-	msg, err := coseutil.DecodeSign1(issuerAuth)
+	msg, err := utils.DecodeSign1(issuerAuth)
 	if err != nil {
 		return nil, fmt.Errorf("decode cose: %w", err)
 	}
@@ -935,7 +934,7 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 
 	// Re-decode the MSO for deviceKeyInfo. Safe: Verify() already checked this
 	// payload's signature and chain.
-	msg, err := coseutil.DecodeSign1(mdoc.IssuerSigned.IssuerAuth)
+	msg, err := utils.DecodeSign1(mdoc.IssuerSigned.IssuerAuth)
 	if err != nil {
 		result.Valid = false
 		result.Error = fmt.Sprintf("decode cose (deviceAuth phase): %v", err)
@@ -957,7 +956,7 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 
 	// Payload is nil on the wire: SignDeviceAuth detaches it, per the AV
 	// Blueprint's worked example. It is rebuilt below.
-	deviceMsg, err := coseutil.DecodeSign1(deviceAuthBytes)
+	deviceMsg, err := utils.DecodeSign1(deviceAuthBytes)
 	if err != nil {
 		result.Valid = false
 		result.Error = fmt.Sprintf("decode deviceAuth cose: %v", err)
@@ -996,7 +995,7 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 	}
 	deviceMsg.Payload = expectedPayload
 
-	deviceVerifier, err := coseutil.VerifierFor(deviceMsg, devicePub, "deviceAuth")
+	deviceVerifier, err := utils.VerifierFor(deviceMsg, devicePub, "deviceAuth")
 	if err != nil {
 		result.Valid = false
 		result.Error = err.Error()

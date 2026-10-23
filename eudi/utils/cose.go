@@ -1,8 +1,9 @@
-// Package coseutil holds the COSE_Sign1 handling shared by the formats that
-// verify one: the mdoc issuerAuth/deviceAuth signatures, and the CWT encoding of
-// a Token Status List. It exists so both apply one allow-list and one decoder,
+package utils
+
+// This file holds the COSE_Sign1 handling shared by the formats that verify
+// one: the mdoc issuerAuth/deviceAuth signatures, and the CWT encoding of a
+// Token Status List. It exists so both apply one allow-list and one decoder,
 // and so mdoc and statuslist do not have to import each other.
-package coseutil
 
 import (
 	"crypto"

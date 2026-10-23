@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	cose "github.com/veraison/go-cose"
 
-	"github.com/privacybydesign/irmago/eudi/credentials/coseutil"
+	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
 // ============================================================
@@ -156,12 +156,12 @@ func TestPermittedSignatureAlgorithms(t *testing.T) {
 	for _, required := range []cose.Algorithm{
 		cose.AlgorithmES256, cose.AlgorithmES384, cose.AlgorithmES512, cose.AlgorithmEdDSA,
 	} {
-		require.True(t, slices.Contains(coseutil.SignatureAlgorithms, required), "%v is required by 9.1.2.4 but is not in the permitted set", required)
+		require.True(t, slices.Contains(utils.SignatureAlgorithms, required), "%v is required by 9.1.2.4 but is not in the permitted set", required)
 	}
 	for _, forbidden := range []cose.Algorithm{
 		cose.AlgorithmPS256, cose.AlgorithmPS384, cose.AlgorithmPS512,
 	} {
-		require.False(t, slices.Contains(coseutil.SignatureAlgorithms, forbidden), "%v is not permitted by ISO/IEC 18013-5 but is in the set", forbidden)
+		require.False(t, slices.Contains(utils.SignatureAlgorithms, forbidden), "%v is not permitted by ISO/IEC 18013-5 but is in the set", forbidden)
 	}
 }
 

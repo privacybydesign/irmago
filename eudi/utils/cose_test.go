@@ -1,4 +1,4 @@
-package coseutil
+package utils
 
 import (
 	"crypto/ecdsa"

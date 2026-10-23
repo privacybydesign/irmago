@@ -8,8 +8,8 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	cose "github.com/veraison/go-cose"
 
-	"github.com/privacybydesign/irmago/eudi/credentials/coseutil"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
 // statusListCborDecMode is the decoder for every CBOR structure this file
@@ -19,13 +19,13 @@ import (
 // a Status List Token is a signed, security-relevant structure, and two
 // parties decoding the same bytes to different claim sets is exactly the
 // shape of a parser-differential attack.
-var statusListCborDecMode = coseutil.MustDecMode(cbor.DecOptions{DupMapKey: cbor.DupMapKeyEnforcedAPF})
+var statusListCborDecMode = utils.MustDecMode(cbor.DecOptions{DupMapKey: cbor.DupMapKeyEnforcedAPF})
 
 // looksLikeCWT reports whether raw is (very likely) a CBOR-encoded
 // COSE_Sign1 rather than a JWT. A JWT is ASCII — base64url characters and
 // '.' separators, all below 0x80 — so any leading byte at or above 0x80 can
 // only be a CBOR major-type/tag byte: 0xd2 (tag 18, COSE_Sign1_Tagged) or
-// 0x84 (a 4-element array, the untagged COSE_Sign1 coseutil.DecodeSign1 also
+// 0x84 (a 4-element array, the untagged COSE_Sign1 utils.DecodeSign1 also
 // accepts). Used to dispatch verification by encoding without threading the
 // HTTP response's Content-Type through the cache, which stores only raw
 // bytes (see Cache) — so a cache-read has no Content-Type to consult.
@@ -129,7 +129,7 @@ func verifyStatusList(raw []byte, ctx VerificationContext, expectedURI string, n
 // resolution has no established equivalent in ecosystems that use CWT/COSE,
 // so it is out of scope here rather than half-implemented.
 func verifyStatusListTokenCWT(raw []byte, ctx VerificationContext, expectedURI string, now time.Time) (*verifiedStatusListCWT, error) {
-	msg, err := coseutil.DecodeSign1(raw)
+	msg, err := utils.DecodeSign1(raw)
 	if err != nil {
 		return nil, fmt.Errorf("%w: decode cose: %v", ErrUnauthorized, err)
 	}
@@ -152,7 +152,7 @@ func verifyStatusListTokenCWT(raw []byte, ctx VerificationContext, expectedURI s
 	// The whole x5chain is validated, mirroring the JWT path's x5c handling:
 	// intermediates the token carries are accepted, but the chain must still
 	// end in a root from ctx.X509Context.
-	chain, err := coseutil.X5Chain(msg)
+	chain, err := utils.X5Chain(msg)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnauthorized, err)
 	}
@@ -161,7 +161,7 @@ func verifyStatusListTokenCWT(raw []byte, ctx VerificationContext, expectedURI s
 		return nil, fmt.Errorf("%w: certificate validation: %v", ErrUnauthorized, err)
 	}
 
-	verifier, err := coseutil.VerifierFor(msg, cert.PublicKey, "status list token")
+	verifier, err := utils.VerifierFor(msg, cert.PublicKey, "status list token")
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnauthorized, err)
 	}

@@ -12,7 +12,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	cose "github.com/veraison/go-cose"
 
-	"github.com/privacybydesign/irmago/eudi/credentials/coseutil"
+	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
 // ============================================================
@@ -34,7 +34,7 @@ import (
 //
 // The clause's companion rule about definite lengths is deliberately not
 // enforced; see indefLengthMode.
-var mdocDecMode = coseutil.MustDecMode(cbor.DecOptions{
+var mdocDecMode = utils.MustDecMode(cbor.DecOptions{
 	DupMapKey:   cbor.DupMapKeyEnforcedAPF,
 	IndefLength: indefLengthMode,
 })
