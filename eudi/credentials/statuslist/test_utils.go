@@ -94,6 +94,9 @@ type TestStatusListOpts struct {
 	// X5ChainInProtected puts a CWT token's x5chain in the protected
 	// header instead of the unprotected one. JWT tokens ignore it.
 	X5ChainInProtected bool
+	// FloatTimes encodes a CWT token's iat and exp as CBOR floats instead of
+	// integers, as RFC 8392 allows. JWT tokens ignore it.
+	FloatTimes bool
 }
 
 // SignJWTToken builds a JWT carrying the Status List Token claims and
@@ -231,13 +234,16 @@ func (s *TestStatusListSigner) SignCWTTokenWithTyp(t *testing.T, opts TestStatus
 		if issuedAt.IsZero() {
 			issuedAt = time.Now()
 		}
-		payload.IssuedAt = issuedAt.Unix()
+		payload.IssuedAt = numericDate(issuedAt.Unix())
 	}
 	if !opts.Expiry.IsZero() {
-		payload.Expiry = opts.Expiry.Unix()
+		payload.Expiry = numericDate(opts.Expiry.Unix())
 	}
 	payloadBytes, err := cbor.Marshal(payload)
 	require.NoError(t, err)
+	if opts.FloatTimes {
+		payloadBytes = withFloatTimes(t, payloadBytes)
+	}
 
 	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers, Payload: payloadBytes}
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
@@ -257,6 +263,22 @@ func (s *TestStatusListSigner) SignCWTTokenWithTyp(t *testing.T, opts TestStatus
 	signed, err := msg.MarshalCBOR()
 	require.NoError(t, err)
 	return signed
+}
+
+// withFloatTimes re-encodes a CWT payload's iat (6) and exp (4) as floats with
+// half a second added, so they cannot be shortened back to integers.
+func withFloatTimes(t *testing.T, payloadBytes []byte) []byte {
+	t.Helper()
+	var claims map[int64]any
+	require.NoError(t, cbor.Unmarshal(payloadBytes, &claims))
+	for _, key := range []int64{6, 4} {
+		if v, ok := claims[key].(uint64); ok {
+			claims[key] = float64(v) + 0.5
+		}
+	}
+	out, err := cbor.Marshal(claims)
+	require.NoError(t, err)
+	return out
 }
 
 // TestStatusListServer is an httptest.Server that serves a single

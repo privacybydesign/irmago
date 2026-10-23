@@ -2,6 +2,7 @@ package statuslist
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -52,10 +53,40 @@ type cwtStatusListClaim struct {
 // tolerated.
 type cwtStatusListPayload struct {
 	Subject    string             `cbor:"2,keyasint"`
-	IssuedAt   int64              `cbor:"6,keyasint"`
-	Expiry     int64              `cbor:"4,keyasint,omitempty"`
+	IssuedAt   numericDate        `cbor:"6,keyasint"`
+	Expiry     numericDate        `cbor:"4,keyasint,omitempty"`
 	TTLSeconds int64              `cbor:"65534,keyasint,omitempty"`
 	StatusList cwtStatusListClaim `cbor:"65533,keyasint"`
+}
+
+// numericDate is a CWT NumericDate (RFC 8392 §2): seconds since the epoch,
+// which an issuer may encode as an integer or as a float. A fraction is
+// dropped, which moves exp earlier rather than later. The tag 1 the RFC says
+// MUST be omitted is rejected, like any other non-number.
+type numericDate int64
+
+func (d *numericDate) UnmarshalCBOR(data []byte) error {
+	var v any
+	if err := statusListCborDecMode.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	switch n := v.(type) {
+	case uint64:
+		if n > math.MaxInt64 {
+			return fmt.Errorf("NumericDate %d out of range", n)
+		}
+		*d = numericDate(n)
+	case int64:
+		*d = numericDate(n)
+	case float64:
+		if math.IsNaN(n) || n < math.MinInt64 || n >= math.MaxInt64 {
+			return fmt.Errorf("NumericDate %v out of range", n)
+		}
+		*d = numericDate(math.Floor(n))
+	default:
+		return fmt.Errorf("NumericDate must be a number, got %T", v)
+	}
+	return nil
 }
 
 // verifiedStatusListCWT holds a CWT Status List Token whose signature, type
@@ -66,7 +97,7 @@ type verifiedStatusListCWT struct {
 }
 
 func (v *verifiedStatusListCWT) ttlSignal() (time.Duration, bool) {
-	return ttlFromClaims(v.payload.TTLSeconds, v.payload.Expiry)
+	return ttlFromClaims(v.payload.TTLSeconds, int64(v.payload.Expiry))
 }
 
 func (v *verifiedStatusListCWT) statusAt(ref Reference, maxBytes int64) (Status, error) {
@@ -164,10 +195,10 @@ func verifyStatusListTokenCWT(raw []byte, ctx VerificationContext, expectedURI s
 		clock = staticClock{t: now}
 	}
 	nowT := clock.Now()
-	if payload.IssuedAt > nowT.Add(ClockSkewSeconds*time.Second).Unix() {
+	if int64(payload.IssuedAt) > nowT.Add(ClockSkewSeconds*time.Second).Unix() {
 		return nil, fmt.Errorf("%w: iat %d is after current time (+skew)", ErrUnauthorized, payload.IssuedAt)
 	}
-	if payload.Expiry > 0 && payload.Expiry < nowT.Add(-ClockSkewSeconds*time.Second).Unix() {
+	if payload.Expiry > 0 && int64(payload.Expiry) < nowT.Add(-ClockSkewSeconds*time.Second).Unix() {
 		return nil, fmt.Errorf("%w: token expired at %d", ErrUnauthorized, payload.Expiry)
 	}
 

@@ -1,9 +1,11 @@
 package statuslist
 
 import (
+	"math"
 	"testing"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -97,6 +99,58 @@ func Test_VerifyStatusListTokenCWT_MissingIat_Rejected(t *testing.T) {
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
 	_, err := verifyStatusListTokenCWT(body, vc, "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
+}
+
+func Test_VerifyStatusListTokenCWT_FloatTimes_Accepted(t *testing.T) {
+	signer := NewTestStatusListSigner(t)
+	now := time.Now()
+	body := signer.SignCWTToken(t, TestStatusListOpts{
+		Subject:    "https://issuer.example/sl/1",
+		IssuedAt:   now,
+		Expiry:     now.Add(time.Hour),
+		Bits:       1,
+		Statuses:   map[uint64]uint8{0: 0},
+		FloatTimes: true,
+	})
+
+	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
+	v, err := verifyStatusListTokenCWT(body, vc, "https://issuer.example/sl/1", now)
+	require.NoError(t, err)
+	require.Equal(t, numericDate(now.Unix()), v.payload.IssuedAt, "the fraction is dropped")
+	require.Equal(t, numericDate(now.Add(time.Hour).Unix()), v.payload.Expiry)
+}
+
+func Test_VerifyStatusListTokenCWT_FloatExpiredBeyondSkew_Rejected(t *testing.T) {
+	signer := NewTestStatusListSigner(t)
+	now := time.Now()
+	body := signer.SignCWTToken(t, TestStatusListOpts{
+		Subject:    "https://issuer.example/sl/1",
+		IssuedAt:   now.Add(-2 * time.Hour),
+		Expiry:     now.Add(-time.Hour),
+		Bits:       1,
+		Statuses:   map[uint64]uint8{0: 0},
+		FloatTimes: true,
+	})
+
+	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
+	_, err := verifyStatusListTokenCWT(body, vc, "https://issuer.example/sl/1", now)
+	require.ErrorIs(t, err, ErrUnauthorized)
+}
+
+func Test_NumericDate_RejectsNonNumbers(t *testing.T) {
+	for name, value := range map[string]any{
+		"text":     "1700000000",
+		"tag 1":    cbor.Tag{Number: 1, Content: uint64(1700000000)},
+		"NaN":      math.NaN(),
+		"infinity": math.Inf(1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			data, err := cbor.Marshal(value)
+			require.NoError(t, err)
+			var d numericDate
+			require.Error(t, statusListCborDecMode.Unmarshal(data, &d))
+		})
+	}
 }
 
 func Test_VerifyStatusListTokenCWT_ExpiredBeyondSkew_Rejected(t *testing.T) {
