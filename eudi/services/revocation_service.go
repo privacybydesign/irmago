@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -91,9 +92,11 @@ func (s *RevocationService) IsRevoked(ref *statuslist.Reference) bool {
 // tell which format's row to write back to.
 //
 // Fail-soft: per-URI and per-instance errors are logged and skipped, leaving
-// the previous LastKnownStatus in place. A nil checker makes this a no-op.
-// Cancelling ctx is the one thing that does stop the sweep and surface an
-// error, keeping whatever was already written back.
+// the previous LastKnownStatus in place. A store that cannot list its
+// instances is skipped the same way, but its error is returned after the
+// other stores have been swept. A nil checker makes this a no-op. Cancelling
+// ctx is the one thing that does stop the sweep, keeping whatever was already
+// written back.
 //
 // Returns how many batches' statuses moved — one representative per batch, so
 // this counts batches, not rows. Re-confirmations and failures leave the stored
@@ -106,14 +109,22 @@ func (s *RevocationService) RefreshStatuses(ctx context.Context) (changed int, e
 	if s.checker == nil {
 		return 0, nil
 	}
+	var errs []error
 	for _, store := range s.stores {
 		n, err := s.refreshStoreStatuses(ctx, store)
 		changed += n
-		if err != nil {
+		if err == nil {
+			continue
+		}
+		if ctx.Err() != nil {
 			return changed, err
 		}
+		// One format's store failing to load says nothing about the others,
+		// so they are still swept; the failure is reported once the sweep is
+		// done.
+		errs = append(errs, err)
 	}
-	return changed, nil
+	return changed, errors.Join(errs...)
 }
 
 // refreshStoreStatuses runs one store's sweep; see RefreshStatuses.
