@@ -48,6 +48,11 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 	)
 
 	runSessionTest(t,
+		"optional partly owned con is an obtainable bundle",
+		testOptionalPartlyOwnedConIsObtainableBundle,
+	)
+
+	runSessionTest(t,
 		"optional attributes from same credential credential not present",
 		testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent,
 	)

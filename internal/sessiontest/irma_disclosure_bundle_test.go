@@ -279,3 +279,64 @@ func testMultipleIssuanceBundleOptions(
 	require.True(t, bundleBCredIds["irma-demo.MijnOverheid.singleton"])
 	require.True(t, bundleBCredIds["irma-demo.MijnOverheid.fullName"])
 }
+
+// testOptionalPartlyOwnedConIsObtainableBundle asks, optionally, for a con
+// of two singletons of which the wallet holds one, or for the other one on
+// its own. Neither con can be disclosed yet, so there are no owned options,
+// and no issuance steps (the discon is optional); each con becomes an
+// ObtainableBundle with the part that is owned and the type that is missing.
+func testOptionalPartlyOwnedConIsObtainableBundle(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	issue(t, irmaServer, c, sessionHandler, 1, irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas"),
+			Attributes:       map[string]string{"election": "plantsoen"},
+		},
+	}))
+	_ = awaitSessionState(t, sessionHandler)
+
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{},
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.singleton.BSN"),
+				irma.NewAttributeRequest("irma-demo.stemmen.stempas.election"),
+			},
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.singleton.BSN"),
+			},
+		},
+	}
+	c.NewSession(2, startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
+
+	require.NotNil(t, session.DisclosurePlan)
+	require.Nil(t, session.DisclosurePlan.IssueDuringDisclosure)
+	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1)
+	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.True(t, pickOne.Optional)
+	require.Empty(t, pickOne.OwnedOptions)
+	require.Len(t, pickOne.ObtainableOptions, 1)
+	require.Equal(t, "irma-demo.MijnOverheid.singleton", pickOne.ObtainableOptions[0].CredentialId)
+
+	require.Len(t, pickOne.ObtainableBundles, 2)
+	both := pickOne.ObtainableBundles[0]
+	require.Len(t, both.Owned, 1)
+	require.Equal(t, "irma-demo.stemmen.stempas", both.Owned[0].CredentialId)
+	require.NotEmpty(t, both.Owned[0].Hash)
+	require.Len(t, both.Owned[0].Attributes, 1)
+	require.Equal(t, []any{"election"}, both.Owned[0].Attributes[0].ClaimPath)
+	require.Len(t, both.Missing, 1)
+	require.Equal(t, "irma-demo.MijnOverheid.singleton", both.Missing[0].CredentialId)
+
+	alone := pickOne.ObtainableBundles[1]
+	require.Empty(t, alone.Owned)
+	require.Len(t, alone.Missing, 1)
+	require.Equal(t, "irma-demo.MijnOverheid.singleton", alone.Missing[0].CredentialId)
+}

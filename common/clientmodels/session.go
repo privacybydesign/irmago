@@ -150,6 +150,21 @@ type DisclosurePickOne struct {
 	OwnedOptions []*DisclosureBundle `json:"owned_options"`
 	// The user can issue one of these and then use it
 	ObtainableOptions []*CredentialDescriptor `json:"obtainable_options"`
+	// One per inner con that the user cannot satisfy yet: what of it is in the
+	// wallet already and which credential types are still missing. Unlike
+	// ObtainableOptions this keeps the credentials of one con together, so a
+	// frontend can show "Passport + Address" as one option, with the address
+	// it already has. Nil when every con is fully owned. IRMA only for now:
+	// DCQL credential sets have a single query per option.
+	ObtainableBundles []*ObtainableBundle `json:"obtainable_bundles"`
+}
+
+// ObtainableBundle is one inner con of a discon that cannot be disclosed yet:
+// the credentials of it that the user owns (each with only this con's
+// attributes, as in a DisclosureBundle) and the credential types to obtain.
+type ObtainableBundle struct {
+	Owned   []*SelectableCredentialInstance `json:"owned"`
+	Missing []*CredentialDescriptor         `json:"missing"`
 }
 
 // DisclosureBundle is a set of owned credential instances that together satisfy

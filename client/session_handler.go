@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -298,7 +299,9 @@ func createIssuanceSteps(
 // con's attrs on each — that together satisfy the con. A con that cannot be
 // fully satisfied with owned credentials does NOT emit a bundle; its missing
 // credential types feed ObtainableOptions instead (deduplicated by credential
-// id across the discon).
+// id across the discon), and the con as a whole becomes an ObtainableBundle:
+// its owned part and its missing types (one per distinct combination of
+// credential types).
 func createDisclosureChoicesOverview(
 	irmaConfig *irma.Configuration,
 	credentials []*clientmodels.Credential,
@@ -312,6 +315,9 @@ func createDisclosureChoicesOverview(
 
 		// Obtainable templates dedupe by credentialId across the whole discon.
 		choiceTemplates := map[string]*clientmodels.CredentialDescriptor{}
+		// Obtainable bundles dedupe by the credential types they consist of: a
+		// con that is partly owned comes once per owned instance otherwise.
+		seenBundles := map[string]struct{}{}
 
 		for _, con := range discon {
 			// An empty inner con means the discon is satisfiable by disclosing nothing.
@@ -325,6 +331,7 @@ func createDisclosureChoicesOverview(
 			perCon := map[string]*clientmodels.SelectableCredentialInstance{}
 			perConOrder := []string{}
 			fullyOwned := true
+			missingIDs := []string{}
 
 			for _, attr := range con {
 				hash := attr.AttributeIdentifier.CredentialHash
@@ -341,6 +348,9 @@ func createDisclosureChoicesOverview(
 						}
 						choiceTemplates[id] = descriptor
 						choice.ObtainableOptions = append(choice.ObtainableOptions, descriptor)
+					}
+					if !slices.Contains(missingIDs, id) {
+						missingIDs = append(missingIDs, id)
 					}
 
 					attrName := attr.AttributeIdentifier.Type.Name()
@@ -398,10 +408,6 @@ func createDisclosureChoicesOverview(
 				f.Attributes = append(f.Attributes, val)
 			}
 
-			if !fullyOwned || len(perConOrder) == 0 {
-				continue
-			}
-
 			// Reorder each credential's attrs to match the credential type's
 			// declared display order. The wire order from the verifier's
 			// request can be arbitrary; frontends rely on Attributes being in
@@ -412,6 +418,28 @@ func createDisclosureChoicesOverview(
 					continue
 				}
 				f.Attributes = sortAttributesBySchema(f.Attributes, credType)
+			}
+
+			if !fullyOwned {
+				bundle := &clientmodels.ObtainableBundle{}
+				key := []string{}
+				for _, hash := range perConOrder {
+					bundle.Owned = append(bundle.Owned, perCon[hash])
+					key = append(key, perCon[hash].CredentialId)
+				}
+				for _, id := range missingIDs {
+					bundle.Missing = append(bundle.Missing, choiceTemplates[id])
+					key = append(key, "missing:"+id)
+				}
+				k := strings.Join(key, "+")
+				if _, seen := seenBundles[k]; !seen {
+					seenBundles[k] = struct{}{}
+					choice.ObtainableBundles = append(choice.ObtainableBundles, bundle)
+				}
+				continue
+			}
+			if len(perConOrder) == 0 {
+				continue
 			}
 
 			bundle := &clientmodels.DisclosureBundle{}
