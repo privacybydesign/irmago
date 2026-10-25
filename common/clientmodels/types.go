@@ -250,6 +250,27 @@ func ClaimPathKey(path []any) string {
 	return sb.String()
 }
 
+// ClaimPatternKey is ClaimPathKey with every array position (an integer, or
+// already null) replaced by the null wildcard: the key of all items alike.
+func ClaimPatternKey(path []any) string {
+	pattern := make([]any, len(path))
+	for i, elem := range path {
+		switch v := elem.(type) {
+		case int, int64:
+			pattern[i] = nil
+		case float64:
+			if v == math.Trunc(v) {
+				pattern[i] = nil
+			} else {
+				pattern[i] = v
+			}
+		default:
+			pattern[i] = v
+		}
+	}
+	return ClaimPathKey(pattern)
+}
+
 // Credential represents a full credential with all its metadata and attribute values.
 type Credential struct {
 	// The id for this credential. For IRMA/idemix credentials this would look like

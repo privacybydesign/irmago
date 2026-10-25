@@ -72,8 +72,10 @@ type LogStoreFilter struct {
 	Roles          []string
 	CredentialHash string
 	CredentialId   string
-	ClaimPathKey   string
-	PartyKey       string
+	// ClaimPatternKeys keeps entries with an attribute whose pattern key is
+	// one of these, or lies under one of them.
+	ClaimPatternKeys []string
+	PartyKey         string
 	// TextTokens are normalised words that must all occur in SearchText.
 	TextTokens  []string
 	TextOrTypes []string
@@ -117,6 +119,12 @@ type eudiLogStore struct {
 
 func NewEudiLogStore(db *gorm.DB) EudiLogStore {
 	return &eudiLogStore{db: db}
+}
+
+// DB is the database the store works on, for tests that need to set up
+// rows the store itself would not write.
+func (s *eudiLogStore) DB() *gorm.DB {
+	return s.db
 }
 
 func (s *eudiLogStore) AddLog(entry *models.EudiLogEntry) error {
@@ -200,9 +208,16 @@ func apply(q *gorm.DB, f LogStoreFilter, withTypes bool) *gorm.DB {
 		}
 		conds = append(conds, "("+strings.Join(ors, " OR ")+")")
 	}
-	if f.ClaimPathKey != "" {
-		conds = append(conds, "EXISTS (SELECT 1 FROM eudi_log_attributes a WHERE a.eudi_log_credential_id = c.id AND a.claim_path_key = ?)")
-		args = append(args, f.ClaimPathKey)
+	if len(f.ClaimPatternKeys) > 0 {
+		// A key matches itself and every key under it: ClaimPathKey puts a
+		// '|' before each element, so the keys under "|saddress" all start
+		// with "|saddress|".
+		var ors []string
+		for _, key := range f.ClaimPatternKeys {
+			ors = append(ors, "a.claim_pattern_key = ? OR a.claim_pattern_key LIKE ? ESCAPE '\\'")
+			args = append(args, key, likeEscape(key+"|")+"%")
+		}
+		conds = append(conds, "EXISTS (SELECT 1 FROM eudi_log_attributes a WHERE a.eudi_log_credential_id = c.id AND ("+strings.Join(ors, " OR ")+"))")
 	}
 	if len(conds) > 0 {
 		q = q.Where("EXISTS (SELECT 1 FROM eudi_log_credentials c WHERE c.eudi_log_entry_id = e.id AND "+strings.Join(conds, " AND ")+")", args...)
@@ -443,11 +458,12 @@ func (s *eudiLogStore) MarkMigrationDone(name string) error {
 }
 
 // NewAttributeRow is a convenience for building attribute rows.
-func NewAttributeRow(entryID, credentialID datatypes.UUID, claimPathKey string) models.EudiLogAttribute {
+func NewAttributeRow(entryID, credentialID datatypes.UUID, claimPathKey, claimPatternKey string) models.EudiLogAttribute {
 	return models.EudiLogAttribute{
 		ID:                  datatypes.NewUUIDv4(),
 		EudiLogEntryID:      entryID,
 		EudiLogCredentialID: credentialID,
 		ClaimPathKey:        claimPathKey,
+		ClaimPatternKey:     claimPatternKey,
 	}
 }

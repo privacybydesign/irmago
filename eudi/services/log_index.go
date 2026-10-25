@@ -16,7 +16,10 @@ import (
 
 // logIndexVersion is the version of indexEntry. Bump it whenever indexEntry
 // changes what it derives; the next query then re-derives every entry.
-const logIndexVersion = 1
+//
+//   - 1: the derived columns and attribute rows.
+//   - 2: attribute rows gained their pattern key.
+const logIndexVersion = 2
 
 // logIndexBatch is how many entries the index pass handles per transaction.
 const logIndexBatch = 200
@@ -65,7 +68,7 @@ func indexEntry(e *models.EudiLogEntry) {
 		_ = json.Unmarshal(c.Attributes, &attrs)
 		c.AttributeRows = make([]models.EudiLogAttribute, 0, len(attrs))
 		for _, a := range attrs {
-			c.AttributeRows = append(c.AttributeRows, db.NewAttributeRow(e.ID, c.ID, clientmodels.ClaimPathKey(a.ClaimPath)))
+			c.AttributeRows = append(c.AttributeRows, db.NewAttributeRow(e.ID, c.ID, clientmodels.ClaimPathKey(a.ClaimPath), clientmodels.ClaimPatternKey(a.ClaimPath)))
 			text = append(text, storedTexts(a.DisplayName)...)
 			text = append(text, attributeValueText(a.Value))
 		}

@@ -88,3 +88,32 @@ func TestAutoMigrateAddsRequestorVerifiedToPopulatedLogTable(t *testing.T) {
 	require.NoError(t, d.Where("requestor_id = ?", "verifier-serial-2").First(&reread).Error)
 	require.True(t, reread.RequestorVerified)
 }
+
+// legacyEudiLogAttribute is EudiLogAttribute before ClaimPatternKey.
+type legacyEudiLogAttribute struct {
+	ID                  datatypes.UUID `gorm:"type:uuid;primaryKey"`
+	EudiLogCredentialID datatypes.UUID `gorm:"index"`
+	EudiLogEntryID      datatypes.UUID `gorm:"index"`
+	ClaimPathKey        string         `gorm:"index"`
+}
+
+func (legacyEudiLogAttribute) TableName() string { return "eudi_log_attributes" }
+
+// TestAutoMigrateAddsClaimPatternKeyToPopulatedAttributeTable: the column
+// arrives as an ALTER TABLE on a table that already holds rows, which SQLite
+// only allows for a nullable column. The rows keep an empty key until the log
+// index pass fills it.
+func TestAutoMigrateAddsClaimPatternKeyToPopulatedAttributeTable(t *testing.T) {
+	d := openHolderDB(t)
+	require.NoError(t, d.AutoMigrate(&legacyEudiLogAttribute{}))
+	require.NoError(t, d.Create(&legacyEudiLogAttribute{ID: datatypes.NewUUIDv4(), ClaimPathKey: "|sdegrees|i0|sname"}).Error)
+
+	require.NoError(t, d.AutoMigrate(&models.EudiLogAttribute{}),
+		"AutoMigrate must succeed against an attribute table that already holds rows")
+
+	var rows []models.EudiLogAttribute
+	require.NoError(t, d.Find(&rows).Error)
+	require.Len(t, rows, 1)
+	require.Equal(t, "|sdegrees|i0|sname", rows[0].ClaimPathKey)
+	require.Empty(t, rows[0].ClaimPatternKey)
+}

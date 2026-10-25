@@ -94,8 +94,15 @@ type LogFilter struct {
 	// CredentialId keeps entries about a credential of this type, including
 	// cards that were deleted since.
 	CredentialId string `json:"credential_id,omitempty"`
-	// ClaimPath keeps entries that included this attribute. Combine it with
-	// CredentialHash or CredentialId.
+	// ClaimPaths keeps entries that included any of these attributes.
+	// Combine it with CredentialHash or CredentialId. A path matches the
+	// attribute it names and everything under it, so ["address"] matches
+	// every address field. Array positions do not matter: an integer or null
+	// matches any item, so ["degrees", null, "name"] is the name of any degree.
+	ClaimPaths [][]any `json:"claim_paths,omitempty"`
+	// ClaimPath is one more path for ClaimPaths.
+	//
+	// Deprecated: use ClaimPaths.
 	ClaimPath []any `json:"claim_path,omitempty"`
 	// Roles keeps entries where the credential had one of these roles.
 	Roles []LogRole `json:"roles,omitempty"`

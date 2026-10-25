@@ -28,8 +28,14 @@ func toStoreFilter(f clientmodels.LogFilter) db.LogStoreFilter {
 		TextOrTypes:    stringsOf(f.TextOrTypes),
 		IncludeHidden:  f.IncludeHidden,
 	}
+	paths := f.ClaimPaths
 	if len(f.ClaimPath) > 0 {
-		sf.ClaimPathKey = clientmodels.ClaimPathKey(f.ClaimPath)
+		paths = append(paths, f.ClaimPath)
+	}
+	for _, path := range paths {
+		if len(path) > 0 {
+			sf.ClaimPatternKeys = append(sf.ClaimPatternKeys, clientmodels.ClaimPatternKey(path))
+		}
 	}
 	if f.From != nil {
 		ns := f.From.UnixNano()

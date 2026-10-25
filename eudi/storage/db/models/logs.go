@@ -142,6 +142,10 @@ type EudiLogAttribute struct {
 	EudiLogCredentialID datatypes.UUID `gorm:"index"`
 	EudiLogEntryID      datatypes.UUID `gorm:"index"`
 	ClaimPathKey        string         `gorm:"index"`
+	// ClaimPatternKey is ClaimPathKey with every array position replaced by
+	// the null wildcard, so "the name of any degree" ("degrees", null,
+	// "name") finds the name of every degree. Queries match on it.
+	ClaimPatternKey string `gorm:"index"`
 }
 
 // AppMigration marks a one-off data migration as done.

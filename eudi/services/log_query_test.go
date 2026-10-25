@@ -8,6 +8,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 func emailCred(hash, value string, role clientmodels.LogRole, formats ...clientmodels.CredentialFormat) LogWriteCredential {
@@ -334,4 +335,85 @@ func TestQueryLogs_IndexesOlderEntries(t *testing.T) {
 	require.Len(t, queryAll(t, svc, clientmodels.LogFilter{
 		CredentialId: "https://example.com/vct/legacy", ClaimPath: []any{"email"}, Roles: []clientmodels.LogRole{clientmodels.LogRole_Issued},
 	}, 10), 1)
+}
+
+func nestedCred(paths ...[]any) LogWriteCredential {
+	attrs := make([]clientmodels.Attribute, len(paths))
+	for i, p := range paths {
+		attrs[i] = clientmodels.Attribute{ClaimPath: p, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("x")}}
+	}
+	return LogWriteCredential{
+		LogCredential: clientmodels.LogCredential{
+			CredentialId: "https://example.com/vct/pid",
+			Name:         "PID",
+			Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
+			Issuer:       clientmodels.TrustedParty{Id: "https://pid.example.com"},
+			Attributes:   attrs,
+			Hash:         "pid",
+		},
+		Role: clientmodels.LogRole_Disclosed,
+	}
+}
+
+// A claim path in a filter names an attribute and everything under it, and
+// array positions do not matter: groups, lists of values and fields of list
+// items are all one kind of question.
+func TestQueryLogs_NestedClaimPaths(t *testing.T) {
+	svc := newTestLogService(t)
+	add := func(who string, c LogWriteCredential) {
+		require.NoError(t, svc.AddLog(LogWrite{Type: clientmodels.LogType_Disclosure, Requestor: &clientmodels.TrustedParty{Id: who}, Credentials: []LogWriteCredential{c}}))
+	}
+	add("rent", nestedCred([]any{"given_name"}, []any{"address", "street"}, []any{"address", "locality"}))
+	add("job", nestedCred([]any{"degrees", 0, "name"}, []any{"degrees", 1, "name"}, []any{"degrees", 0, "institution"}))
+	add("travel", nestedCred([]any{"nationalities", 0}, []any{"nationalities", 1}))
+	add("post", nestedCred([]any{"address_line"}))
+
+	who := func(paths ...[]any) []string {
+		var ids []string
+		for _, e := range queryAll(t, svc, clientmodels.LogFilter{CredentialHash: "pid", ClaimPaths: paths}, 10) {
+			ids = append(ids, e.DisclosureLog.Verifier.Id)
+		}
+		return ids
+	}
+
+	// A group matches every field in it, and not a sibling that only
+	// starts with the same letters.
+	require.Equal(t, []string{"rent"}, who([]any{"address"}))
+	require.Equal(t, []string{"rent"}, who([]any{"address", "street"}))
+	require.Empty(t, who([]any{"address", "postal_code"}))
+	// A field of any list item, with or without a position.
+	require.Equal(t, []string{"job"}, who([]any{"degrees", nil, "name"}))
+	require.Equal(t, []string{"job"}, who([]any{"degrees", 1, "name"}))
+	require.Equal(t, []string{"job"}, who([]any{"degrees"}))
+	// Any item of a list of values.
+	require.Equal(t, []string{"travel"}, who([]any{"nationalities", nil}))
+	require.Equal(t, []string{"travel"}, who([]any{"nationalities"}))
+	// More paths: any of them.
+	require.ElementsMatch(t, []string{"rent", "travel"}, who([]any{"address", "street"}, []any{"nationalities"}))
+	require.ElementsMatch(t, []string{"rent", "post"}, who([]any{"given_name"}, []any{"address_line"}))
+
+	// The single path still works.
+	single := queryAll(t, svc, clientmodels.LogFilter{CredentialHash: "pid", ClaimPath: []any{"degrees", nil, "institution"}}, 10)
+	require.Len(t, single, 1)
+
+	// So does "who has seen it".
+	parties, err := svc.ListParties(clientmodels.LogFilter{CredentialHash: "pid", ClaimPaths: [][]any{{"address"}, {"degrees"}}}, 0)
+	require.NoError(t, err)
+	require.Len(t, parties, 2)
+}
+
+// Entries indexed before attribute rows had a pattern key are indexed again
+// on the next query, so their list fields can be found.
+func TestQueryLogs_ReindexesForPatternKeys(t *testing.T) {
+	svc := newTestLogServiceWithLocale(t, "en")
+	require.NoError(t, svc.AddLog(LogWrite{Type: clientmodels.LogType_Disclosure, Requestor: &clientmodels.TrustedParty{Id: "job"},
+		Credentials: []LogWriteCredential{nestedCred([]any{"degrees", 0, "name"})}}))
+
+	// Make it look like the version 1 index wrote it.
+	db := svc.store.(interface{ DB() *gorm.DB }).DB()
+	require.NoError(t, db.Exec("UPDATE eudi_log_attributes SET claim_pattern_key = ''").Error)
+	require.NoError(t, db.Exec("UPDATE eudi_log_entries SET index_version = 1").Error)
+
+	found := queryAll(t, svc, clientmodels.LogFilter{CredentialHash: "pid", ClaimPaths: [][]any{{"degrees", nil, "name"}}}, 10)
+	require.Len(t, found, 1)
 }
