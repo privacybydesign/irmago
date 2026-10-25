@@ -417,3 +417,34 @@ func TestQueryLogs_ReindexesForPatternKeys(t *testing.T) {
 	found := queryAll(t, svc, clientmodels.LogFilter{CredentialHash: "pid", ClaimPaths: [][]any{{"degrees", nil, "name"}}}, 10)
 	require.Len(t, found, 1)
 }
+
+// A requestor without an id (an IRMA requestor not registered in a scheme)
+// is a party of its own all the same, keyed by its name.
+func TestListParties_RequestorWithoutId(t *testing.T) {
+	svc := newTestLogService(t)
+	unregistered := &clientmodels.TrustedParty{Name: "shop.example.com"}
+	for range 2 {
+		require.NoError(t, svc.AddLog(LogWrite{Type: clientmodels.LogType_Disclosure, Requestor: unregistered,
+			Credentials: []LogWriteCredential{emailCred("card", "a@example.com", clientmodels.LogRole_Disclosed)}}))
+	}
+	require.NoError(t, svc.AddLog(LogWrite{Type: clientmodels.LogType_Disclosure, Requestor: &clientmodels.TrustedParty{Id: "bank", Name: "Bank"},
+		Credentials: []LogWriteCredential{emailCred("card", "a@example.com", clientmodels.LogRole_Disclosed)}}))
+
+	parties, err := svc.ListParties(clientmodels.LogFilter{}, 0)
+	require.NoError(t, err)
+	require.Len(t, parties, 2)
+	byName := map[string]clientmodels.PartySummary{}
+	for _, p := range parties {
+		byName[p.Party.Name] = p
+	}
+	shop := byName["shop.example.com"]
+	require.Equal(t, "name:shop.example.com", shop.Key)
+	require.Equal(t, 2, shop.Count)
+
+	found := queryAll(t, svc, clientmodels.LogFilter{PartyKey: shop.Key}, 10)
+	require.Len(t, found, 2)
+
+	activity, err := svc.CredentialActivity([]string{"card"})
+	require.NoError(t, err)
+	require.Equal(t, 3, activity["card"].ShareCount)
+}

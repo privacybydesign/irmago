@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -19,7 +20,8 @@ import (
 //
 //   - 1: the derived columns and attribute rows.
 //   - 2: attribute rows gained their pattern key.
-const logIndexVersion = 2
+//   - 3: a requestor without an id is keyed by its name.
+const logIndexVersion = 3
 
 // logIndexBatch is how many entries the index pass handles per transaction.
 const logIndexBatch = 200
@@ -36,7 +38,7 @@ func indexEntry(e *models.EudiLogEntry) {
 
 	partyKey := ""
 	if e.Type != string(clientmodels.LogType_CredentialRemoval) {
-		partyKey = e.RequestorId
+		partyKey = requestorKey(e)
 	}
 	e.PartyKey = &partyKey
 
@@ -78,6 +80,42 @@ func indexEntry(e *models.EudiLogEntry) {
 	e.SearchText = &searchText
 	version := logIndexVersion
 	e.IndexVersion = &version
+}
+
+// requestorKey groups the entries with one party: its id, or for a party
+// without one (an IRMA requestor that is not registered in a scheme), its
+// name, so it still has activity of its own.
+func requestorKey(e *models.EudiLogEntry) string {
+	if e.RequestorId != "" {
+		return e.RequestorId
+	}
+	name := storedText(e.RequestorName)
+	if name == "" {
+		return ""
+	}
+	return "name:" + normaliseForSearch(name)
+}
+
+// storedText is one text of a stored text field, the same each time: the
+// string, or of a map the English one, else the first by language.
+func storedText(raw []byte) string {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var ts map[string]string
+	if err := json.Unmarshal(raw, &ts); err != nil || len(ts) == 0 {
+		return ""
+	}
+	if en := ts["en"]; en != "" {
+		return en
+	}
+	langs := make([]string, 0, len(ts))
+	for lang := range ts {
+		langs = append(langs, lang)
+	}
+	sort.Strings(langs)
+	return ts[langs[0]]
 }
 
 // storedTexts is every text in a stored text field: the string, or each
