@@ -52,6 +52,17 @@ type LogsStorage interface {
 	DeleteLogs() error
 }
 
+// LogSink receives the log entry of each finished session.
+type LogSink interface {
+	AddLogEntry(entry *LogEntry) error
+}
+
+// LogSchemeRemover is implemented by a LogSink that keeps logs outside the
+// bbolt store, to delete the logs of schemes being removed.
+type LogSchemeRemover interface {
+	DeleteLogsForSchemes(schemes []irma.SchemeManagerIdentifier) error
+}
+
 type OpenID4VPDisclosureLog struct {
 	DisclosedCredentials []CredentialLog
 }
@@ -81,6 +92,10 @@ type LogEntry struct {
 	Disclosure *irma.Disclosure
 	Request    json.RawMessage     // Message that started the session
 	request    irma.SessionRequest // cached parsed version of Request; get with LogEntry.SessionRequest()
+
+	// DisclosureChoice is which credential instance each disclosed attribute
+	// came from. The disclosure itself does not record that.
+	DisclosureChoice *irma.DisclosureChoice `json:",omitempty"`
 
 	// Eudi logs
 	OpenID4VP *OpenID4VPDisclosureLog
@@ -182,6 +197,9 @@ func (session *session) createLogEntry(response any) (*LogEntry, error) {
 		Version:    session.Version,
 		request:    session.request,
 	}
+	if session.choice != nil && len(session.choice.Attributes) > 0 {
+		entry.DisclosureChoice = session.choice
+	}
 
 	if err := entry.setSessionRequest(); err != nil {
 		return nil, err
@@ -249,4 +267,22 @@ func (s *InMemoryLogsStorage) LoadLogsBeforeTime(before time.Time, max int) ([]*
 func (s *InMemoryLogsStorage) DeleteLogs() error {
 	s.logs = []*LogEntry{}
 	return nil
+}
+
+// SetLogSink sends the log entries of finished sessions to sink instead of
+// the bbolt store.
+func (client *IrmaClient) SetLogSink(sink LogSink) {
+	client.logSink = sink
+}
+
+// IterateStoredLogs calls handler with every log entry in the bbolt store,
+// newest first, as stored: entries of disabled or unknown schemes are not
+// rejected, so a migration can carry them over.
+func (client *IrmaClient) IterateStoredLogs(handler func(entry *LogEntry) error) error {
+	return client.storage.iterateRawLogs(handler)
+}
+
+// DeleteStoredLogs deletes all log entries from the bbolt store.
+func (client *IrmaClient) DeleteStoredLogs() error {
+	return client.storage.DeleteLogs()
 }

@@ -2,12 +2,9 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"slices"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -34,7 +31,6 @@ import (
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
-	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
@@ -46,7 +42,6 @@ type Client struct {
 	openid4vpClient   *openid4vp.Client
 	openid4vciClient  *openid4vci.Client
 	irmaClient        *irmaclient.IrmaClient
-	logsStorage       irmaclient.LogsStorage
 	keyBinder         sdjwt.KeyBinder
 	didValidator      *openid4vp.DidVerifierValidator
 	scheduler         gocron.Scheduler
@@ -158,7 +153,7 @@ func New(
 	// silently store a second copy. Idempotent, so it costs one query on a wallet
 	// that is already current; a failure here is not fatal, since the wallet works
 	// with old-style hashes and only its duplicate detection is degraded.
-	if err := services.MigrateCredentialHashes(credStore); err != nil {
+	if err := services.MigrateCredentialHashes(credStore, db.NewEudiLogStore(eudiStorage.Db())); err != nil {
 		common.Logger.Warnf("could not migrate credential hashes: %v", err)
 	}
 
@@ -271,7 +266,6 @@ func New(
 		openid4vpClient:   openid4vpClient,
 		openid4vciClient:  openid4vciClient,
 		irmaClient:        irmaClient,
-		logsStorage:       irmaStorage,
 		keyBinder:         irmaKeyBinder,
 		didValidator:      didValidator,
 		scheduler:         scheduler,
@@ -293,6 +287,18 @@ func New(
 			client.handler.CredentialsChanged()
 		}
 	})
+
+	// IRMA sessions log to the SQL log, which holds every protocol's
+	// activity; the IRMA logs written before it are moved there once. A
+	// failure leaves them in bbolt for the next start, so the wallet still
+	// opens, with an activity log that misses them until then.
+	irmaClient.SetLogSink(irmaLogSink{client: client})
+	if err := client.migrateIrmaLogs(); err != nil {
+		common.Logger.Warnf("could not move the IRMA logs: %v", err)
+	}
+	if err := client.backfillLogHashes(); err != nil {
+		common.Logger.Warnf("could not match older log entries to their cards: %v", err)
+	}
 
 	// Startup backfill: fetch logos that resolve for the current locale but
 	// are missing from the cache (credentials issued before the wallet became
@@ -390,36 +396,7 @@ func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 }
 
 func sdjwtvcBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMetadata) *irma.CredentialInfo {
-	credIdSegments := strings.Split(metadata.CredentialType, ".")
-
-	attrs := map[irma.AttributeTypeIdentifier]irma.TranslatedString{}
-	for name, value := range metadata.Attributes {
-		id := irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", metadata.CredentialType, name))
-		valueStr := value.(string)
-		translatedValue := irma.NewTranslatedString(&valueStr)
-		attrs[id] = translatedValue
-	}
-
-	info := irma.CredentialInfo{
-		ID:                  credIdSegments[2],
-		IssuerID:            credIdSegments[1],
-		SchemeManagerID:     credIdSegments[0],
-		Attributes:          attrs,
-		Hash:                metadata.Hash,
-		Revoked:             false,
-		RevocationSupported: false,
-		CredentialFormat:    clientmodels.Format_SdJwtVc,
-		InstanceCount:       &metadata.RemainingInstanceCount,
-	}
-
-	if metadata.SignedOn != nil {
-		info.SignedOn = *metadata.SignedOn
-	}
-	if metadata.Expires != nil {
-		info.Expires = *metadata.Expires
-	}
-
-	return &info
+	return metadata.CredentialInfo()
 }
 
 func (client *Client) getIrmaCredentialInfoList() irma.CredentialInfoList {
@@ -453,30 +430,7 @@ func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email
 }
 
 func hashAttributesAndCredType(info *irma.CredentialInfo) (string, error) {
-	var hashContent strings.Builder
-	hashContent.WriteString(info.Identifier().String())
-
-	sortedKeys := []string{}
-	for key, value := range info.Attributes {
-		// Idemix lists an absent optional attribute with a nil value, while an
-		// SD-JWT has no claim for it at all. Skip it so both formats of a dual
-		// issued credential hash the same. A present "" is non-nil and still hashed.
-		if len(value) == 0 {
-			continue
-		}
-		sortedKeys = append(sortedKeys, key.String())
-	}
-	sort.Strings(sortedKeys)
-
-	for _, key := range sortedKeys {
-		valueStr, err := json.Marshal(info.Attributes[irma.NewAttributeTypeIdentifier(key)])
-		if err != nil {
-			return "", err
-		}
-		hashContent.WriteString(key + string(valueStr))
-	}
-
-	return iana.CreateUrlEncodedHash(iana.SHA256, hashContent.String())
+	return irmaclient.CardHash(info)
 }
 
 func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error) {
@@ -573,8 +527,7 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 		// look up batch metadata to resolve the credential logo filename. A
 		// failure here must not block deletion either.
 		if len(removedCreds) > 0 {
-			logService := services.NewEudiLogService(client.eudiStorage, client.locale())
-			if err := logService.AddRemovalLog(removedCreds); err != nil {
+			if err := client.logService().AddRemovalLog(removedCreds); err != nil {
 				irma.Logger.Warnf("failed to create eudi removal log; deleting anyway: %v", err)
 			}
 		}
@@ -592,45 +545,42 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 
 	// Create removal log for IRMA credentials.
 	if len(irmaRelevantCreds) > 0 {
-		info := irmaRelevantCreds[0]
-		logEntry, err := createRemovalLog(client.GetIrmaConfiguration(), info.Identifier(), info.Attributes, irmaFormats)
-		if err != nil {
-			return fmt.Errorf("failed to create delete log: %v", err)
-		}
-		return client.logsStorage.AddLogEntry(logEntry)
+		return client.addIrmaRemovalLog(irmaRelevantCreds[0], irmaFormats)
 	}
 
 	return nil
 }
 
-func createRemovalLog(
-	irmaConfiguration *irma.Configuration,
-	credentialType irma.CredentialTypeIdentifier,
-	attributes map[irma.AttributeTypeIdentifier]irma.TranslatedString,
-	formats []clientmodels.CredentialFormat,
-) (*irmaclient.LogEntry, error) {
-	attrs := []irma.TranslatedString{}
-
-	// Loop over the attributes in display order. A credential whose type is not
-	// in the configuration (a ProblematicCredential being cleaned up — reachable
-	// for an SD-JWT-over-IRMA credential whose type was dropped from its scheme)
-	// has no attribute types to order by, so its log entry records no attributes;
-	// the removal itself must still be logged.
-	if credType := irmaConfiguration.CredentialTypes[credentialType]; credType != nil {
-		for _, t := range sortedAttributeTypes(credType.AttributeTypes) {
-			id := t.GetAttributeTypeIdentifier()
-			attrs = append(attrs, attributes[id])
+// addIrmaRemovalLog logs the removal of an IRMA credential, with its card
+// hash and its attributes by claim path.
+func (client *Client) addIrmaRemovalLog(info *irma.CredentialInfo, formats []clientmodels.CredentialFormat) error {
+	conf := client.GetIrmaConfiguration()
+	cred := clientmodels.LogCredential{
+		CredentialId: info.Identifier().String(),
+		Name:         info.Identifier().String(),
+		Issuer:       clientmodels.TrustedParty{Id: info.Identifier().IssuerIdentifier().String()},
+		Attributes:   []clientmodels.Attribute{},
+	}
+	// A credential whose type is not in the configuration (a
+	// ProblematicCredential being cleaned up) is logged with its identifiers
+	// only; the removal itself must still be logged.
+	if conf.CredentialTypes[info.Identifier()] != nil {
+		if creds, err := issuedCredentialsToLogCredentials(conf, irma.CredentialInfoList{info}, client.locale()); err == nil && len(creds) == 1 {
+			cred = creds[0]
 		}
 	}
-
-	return &irmaclient.LogEntry{
-		Time: irmaclient.LogTime(time.Now()),
-		Type: irmaclient.ActionRemoval,
-		Removed: map[irma.CredentialTypeIdentifier][]irma.TranslatedString{
-			credentialType: attrs,
-		},
-		RemovedFormats: formats,
-	}, nil
+	cred.Formats = formats
+	if hash, err := hashAttributesAndCredType(info); err == nil {
+		cred.Hash = hash
+	}
+	return client.logService().AddLog(services.LogWrite{
+		Type: clientmodels.LogType_CredentialRemoval,
+		Credentials: []services.LogWriteCredential{{
+			LogCredential: cred,
+			Role:          clientmodels.LogRole_Removed,
+			Texts:         irmaCredentialTexts(conf, cred.CredentialId),
+		}},
+	})
 }
 
 func (client *Client) UpdateSchemes() {
@@ -663,72 +613,6 @@ func (client *Client) RemoveStorage() error {
 	client.sessionManager.Clear()
 
 	return client.irmaClient.RemoveStorage()
-}
-
-func (client *Client) LoadNewestLogs(max int) ([]clientmodels.LogInfo, error) {
-	// Load IRMA logs from bbolt.
-	rawLogs, err := client.irmaClient.LoadNewestLogs(max)
-	if err != nil {
-		return nil, err
-	}
-	irmaLogs, err := client.rawLogEntriesToLogInfo(rawLogs)
-	if err != nil {
-		return nil, err
-	}
-
-	// Load EUDI logs from SQLCipher.
-	logService := services.NewEudiLogService(client.eudiStorage, client.locale())
-	eudiLogs, err := logService.GetNewestLogs(max)
-	if err != nil {
-		return nil, err
-	}
-
-	return mergeLogsByTime(irmaLogs, eudiLogs, max), nil
-}
-
-func (client *Client) LoadLogsBefore(before time.Time, max int) ([]clientmodels.LogInfo, error) {
-	// Load IRMA logs from bbolt.
-	rawLogs, err := client.irmaClient.LoadLogsBeforeTime(before, max)
-	if err != nil {
-		return nil, err
-	}
-	irmaLogs, err := client.rawLogEntriesToLogInfo(rawLogs)
-	if err != nil {
-		return nil, err
-	}
-
-	// Load EUDI logs from SQLCipher.
-	logService := services.NewEudiLogService(client.eudiStorage, client.locale())
-	eudiLogs, err := logService.GetLogsBefore(before, max)
-	if err != nil {
-		return nil, err
-	}
-
-	return mergeLogsByTime(irmaLogs, eudiLogs, max), nil
-}
-
-// mergeLogsByTime merges two log slices (each already sorted newest-first) into
-// a single newest-first slice of at most max entries using a two-pointer merge.
-func mergeLogsByTime(a, b []clientmodels.LogInfo, max int) []clientmodels.LogInfo {
-	merged := make([]clientmodels.LogInfo, 0, min(len(a)+len(b), max))
-	i, j := 0, 0
-	for len(merged) < max && (i < len(a) || j < len(b)) {
-		switch {
-		case i >= len(a):
-			merged = append(merged, b[j])
-			j++
-		case j >= len(b):
-			merged = append(merged, a[i])
-			i++
-		case !a[i].Time.Before(b[j].Time): // a[i] >= b[j], take a
-			merged = append(merged, a[i])
-			i++
-		default:
-			merged = append(merged, b[j])
-			j++
-		}
-	}
-	return merged
 }
 
 // setDeveloperModeOnConfiguration brings the certificate checks in line with

@@ -595,7 +595,7 @@ func (session *session) sendResponse(message any) {
 	// and it is too complex to do a rollback of all these changes if that single transaction would fail.
 	// Changing this would require a major refactor. Therefore, we currently start a separate transaction
 	// to add the log entry. If this fails, we log the error as a warning.
-	if err = session.client.storage.AddLogEntry(log); err != nil {
+	if err = session.client.logSink.AddLogEntry(log); err != nil {
 		irma.Logger.Warn(fmt.Errorf("failed to write log entry: %w", err))
 	}
 	if session.Action == irma.ActionIssuing {

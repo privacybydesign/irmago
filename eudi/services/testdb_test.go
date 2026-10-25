@@ -36,6 +36,8 @@ func newTestHolderDB(t *testing.T) *gorm.DB {
 		&models.StatusListCacheEntry{},
 		&models.EudiLogEntry{},
 		&models.EudiLogCredential{},
+		&models.EudiLogAttribute{},
+		&models.AppMigration{},
 		&models.MdocBatch{},
 		&models.MdocBatchInstance{},
 		&models.MdocDeviceKey{},

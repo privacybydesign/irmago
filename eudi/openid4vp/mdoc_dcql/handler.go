@@ -661,5 +661,6 @@ func (h *MdocDcqlHandler) buildLogCredential(batch *models.MdocBatch, claimPaths
 		Attributes:   attrs,
 		ExpiryDate:   batchExpiryUnix(batch),
 		IssuanceDate: &signedAt,
+		Hash:         batch.Hash,
 	}
 }

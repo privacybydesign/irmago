@@ -105,6 +105,8 @@ func autoMigrateHolderModels(db *gorm.DB) error {
 		&models.ClaimDisplay{},
 		&models.EudiLogEntry{},
 		&models.EudiLogCredential{},
+		&models.EudiLogAttribute{},
+		&models.AppMigration{},
 		&models.StatusListCacheEntry{},
 		// mso_mdoc has its own tables, sharing nothing with the SD-JWT VC ones
 		// above but the database file.

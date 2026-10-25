@@ -85,7 +85,7 @@ func TestDisclosureLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T)
 
 	require.NoError(t, svc.AddDisclosureLog(verifier, input))
 
-	logs, err := svc.GetNewestLogs(10)
+	logs, err := newestLogs(svc, 10)
 	require.NoError(t, err)
 	require.Len(t, logs, 1)
 	require.NotNil(t, logs[0].DisclosureLog)
@@ -159,7 +159,7 @@ func TestIssuanceLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T) {
 
 	require.NoError(t, svc.AddIssuanceLog(clientmodels.Protocol_OpenID4VCI, issuer, creds))
 
-	logs, err := svc.GetNewestLogs(10)
+	logs, err := newestLogs(svc, 10)
 	require.NoError(t, err)
 	require.Len(t, logs, 1)
 	require.NotNil(t, logs[0].IssuanceLog)
@@ -203,7 +203,7 @@ func TestRemovalLogRoundTrip(t *testing.T) {
 
 	require.NoError(t, svc.AddRemovalLog(creds))
 
-	logs, err := svc.GetNewestLogs(10)
+	logs, err := newestLogs(svc, 10)
 	require.NoError(t, err)
 	require.Len(t, logs, 1)
 
@@ -218,7 +218,7 @@ func TestRemovalLogRoundTrip(t *testing.T) {
 	require.Equal(t, issuanceDate, *cred.IssuanceDate)
 }
 
-func TestGetLogsBefore_Pagination(t *testing.T) {
+func TestQueryLogs_Pagination(t *testing.T) {
 	svc := newTestLogService(t)
 
 	// Create 3 logs with distinct timestamps.
@@ -240,18 +240,29 @@ func TestGetLogsBefore_Pagination(t *testing.T) {
 		}
 	}
 
-	all, err := svc.GetNewestLogs(10)
+	all, err := newestLogs(svc, 10)
 	require.NoError(t, err)
 	require.Len(t, all, 3)
 	// Newest first.
 	require.Equal(t, "third", all[0].IssuanceLog.Credentials[0].Name)
 
-	// Get logs before the newest entry → should return the 2 older ones.
-	older, err := svc.GetLogsBefore(all[0].Time, 10)
+	// A page of one, then the page after it → the 2 older ones.
+	first, err := svc.QueryLogs(clientmodels.LogQuery{Limit: 1})
 	require.NoError(t, err)
-	require.Len(t, older, 2)
-	require.Equal(t, "second", older[0].IssuanceLog.Credentials[0].Name)
-	require.Equal(t, "first", older[1].IssuanceLog.Credentials[0].Name)
+	require.Len(t, first.Entries, 1)
+	require.NotEmpty(t, first.NextCursor)
+	older, err := svc.QueryLogs(clientmodels.LogQuery{Limit: 10, Cursor: first.NextCursor})
+	require.NoError(t, err)
+	require.Len(t, older.Entries, 2)
+	require.Empty(t, older.NextCursor)
+	require.Equal(t, "second", older.Entries[0].IssuanceLog.Credentials[0].Name)
+	require.Equal(t, "first", older.Entries[1].IssuanceLog.Credentials[0].Name)
+}
+
+// newestLogs returns the newest max entries, hidden ones included.
+func newestLogs(svc EudiLogService, max int) ([]clientmodels.LogInfo, error) {
+	page, err := svc.QueryLogs(clientmodels.LogQuery{Limit: max, Filter: clientmodels.LogFilter{IncludeHidden: true}})
+	return page.Entries, err
 }
 
 // newLiveBatch stores a credential batch with en+nl display metadata so log
@@ -330,7 +341,7 @@ func TestLogReadKeepsSnapshotNameWhenLiveBatchHasNoDisplay(t *testing.T) {
 		Attributes:   []clientmodels.Attribute{},
 	}}))
 
-	logs, err := svc.GetNewestLogs(10)
+	logs, err := newestLogs(svc, 10)
 	require.NoError(t, err)
 	require.Len(t, logs, 1)
 
@@ -369,7 +380,7 @@ func TestLogReadReResolvesTextFromLiveMetadata(t *testing.T) {
 
 	// Switch the active locale and read the log back.
 	svc.locale = "nl"
-	logs, err := svc.GetNewestLogs(10)
+	logs, err := newestLogs(svc, 10)
 	require.NoError(t, err)
 	require.Len(t, logs, 1)
 
@@ -396,7 +407,7 @@ func TestLogReadFallsBackToSnapshotWhenCredentialDeleted(t *testing.T) {
 	}}))
 
 	svc.locale = "nl"
-	logs, err := svc.GetNewestLogs(10)
+	logs, err := newestLogs(svc, 10)
 	require.NoError(t, err)
 	require.Len(t, logs, 1)
 
@@ -428,7 +439,7 @@ func TestLogReadDoesNotBorrowIssuerNameFromDifferentIssuer(t *testing.T) {
 	))
 
 	svc.locale = "nl"
-	logs, err := svc.GetNewestLogs(10)
+	logs, err := newestLogs(svc, 10)
 	require.NoError(t, err)
 
 	cred := logs[0].DisclosureLog.Credentials[0]
@@ -465,7 +476,7 @@ func TestLogReadDecodesLegacyMapFormat(t *testing.T) {
 	}
 	require.NoError(t, svc.store.AddLog(entry))
 
-	logs, err := svc.GetNewestLogs(10)
+	logs, err := newestLogs(svc, 10)
 	require.NoError(t, err)
 	require.Len(t, logs, 1)
 
@@ -537,7 +548,7 @@ func TestDisclosureLogRoundTrip_PreservesVerifierVerifiedFlag(t *testing.T) {
 	}
 	require.NoError(t, svc.AddDisclosureLog(verified, nil))
 
-	logs, err := svc.GetNewestLogs(10)
+	logs, err := newestLogs(svc, 10)
 	require.NoError(t, err)
 	require.Len(t, logs, 1)
 	require.NotNil(t, logs[0].DisclosureLog)
@@ -557,7 +568,7 @@ func TestDisclosureLogRoundTrip_KeepsUnverifiedVerifierUnverified(t *testing.T) 
 		Name: "Some Verifier",
 	}, nil))
 
-	logs, err := svc.GetNewestLogs(10)
+	logs, err := newestLogs(svc, 10)
 	require.NoError(t, err)
 	require.Len(t, logs, 1)
 	require.False(t, logs[0].DisclosureLog.Verifier.Verified)
@@ -575,7 +586,7 @@ func TestIssuanceLogRoundTrip_PreservesIssuerVerifiedFlag(t *testing.T) {
 		nil,
 	))
 
-	logs, err := svc.GetNewestLogs(10)
+	logs, err := newestLogs(svc, 10)
 	require.NoError(t, err)
 	require.Len(t, logs, 1)
 	require.NotNil(t, logs[0].IssuanceLog)

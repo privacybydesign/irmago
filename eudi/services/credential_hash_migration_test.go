@@ -77,7 +77,7 @@ func TestMigrateCredentialHashes_RewritesIssuerlessHash(t *testing.T) {
 	}
 	store := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{stale}}
 
-	require.NoError(t, MigrateCredentialHashes(store))
+	require.NoError(t, MigrateCredentialHashes(store, nil))
 
 	require.Len(t, store.updatedHashes, 1)
 	require.Equal(t, batchID, store.updatedHashes[0].batchID)
@@ -100,7 +100,7 @@ func TestMigrateCredentialHashes_LeavesCurrentHashesAlone(t *testing.T) {
 	}
 	store := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{current}}
 
-	require.NoError(t, MigrateCredentialHashes(store))
+	require.NoError(t, MigrateCredentialHashes(store, nil))
 	require.Empty(t, store.updatedHashes)
 }
 
@@ -125,7 +125,7 @@ func TestMigrateCredentialHashes_SkipsUnhashableBatchAndContinues(t *testing.T) 
 	}
 	store := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{unhashable, good}}
 
-	require.NoError(t, MigrateCredentialHashes(store))
+	require.NoError(t, MigrateCredentialHashes(store, nil))
 
 	require.Len(t, store.updatedHashes, 1, "the unhashable batch must be skipped, the good one still migrated")
 	require.Equal(t, good.ID, store.updatedHashes[0].batchID)
@@ -146,7 +146,7 @@ func TestMigrateCredentialHashes_SdJwtVcUsesTheSdJwtFunction(t *testing.T) {
 	}
 	store := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 
-	require.NoError(t, MigrateCredentialHashes(store))
+	require.NoError(t, MigrateCredentialHashes(store, nil))
 	require.Len(t, store.updatedHashes, 1)
 
 	want, err := hashForSdJwtVc("https://vct.example.com/Cred", "https://issuer.state.example", withStandardClaims)

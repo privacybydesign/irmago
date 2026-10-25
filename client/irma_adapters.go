@@ -323,12 +323,13 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 			}
 			issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
 
+			values := removedAttributeValues(credTypeInfo, attributeValues, time.Time(entry.Time))
 			attributes := []clientmodels.Attribute{}
 			for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
 				if atType.RevocationAttribute {
 					continue
 				}
-				rawVal := irma.TranslatedString(attributeValues[atType.Index])
+				rawVal := values[atType.GetAttributeTypeIdentifier()]
 				name, description := atType.ResolveTexts(locale)
 				attributes = append(attributes, clientmodels.Attribute{
 					ClaimPath:   []any{atType.ID},
@@ -519,14 +520,26 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 	return result
 }
 
-func (client *Client) rawLogEntriesToLogInfo(entries []*irmaclient.LogEntry) ([]clientmodels.LogInfo, error) {
-	result := []clientmodels.LogInfo{}
-	for _, e := range entries {
-		info, err := client.rawLogEntryToLogInfo(e)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert log entry to info: %v", err)
-		}
-		result = append(result, info)
+// displayOrderRemovalLogsSince is the release (irmago v1.0.0-beta.1) from which
+// removal logs list attribute values in display order. Before it they were
+// written in the order of the scheme, which the attribute index follows.
+var displayOrderRemovalLogsSince = time.Date(2026, 6, 15, 12, 17, 20, 0, time.UTC)
+
+// removedAttributeValues pairs the values of a removal log with their
+// attribute types. Which order the values are in depends on when the entry was
+// written; only types whose attributes have a display index differ, and for
+// those the release date decides. Logs from irmago v0.19.0 listed the values
+// in no particular order, which nothing can undo.
+func removedAttributeValues(credType *irma.CredentialType, values []irma.TranslatedString, written time.Time) map[irma.AttributeTypeIdentifier]irma.TranslatedString {
+	order := credType.AttributeTypes
+	if !written.Before(displayOrderRemovalLogsSince) {
+		order = sortedAttributeTypes(credType.AttributeTypes)
 	}
-	return result, nil
+	result := map[irma.AttributeTypeIdentifier]irma.TranslatedString{}
+	for i, atType := range order {
+		if i < len(values) {
+			result[atType.GetAttributeTypeIdentifier()] = values[i]
+		}
+	}
+	return result
 }

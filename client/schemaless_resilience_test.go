@@ -52,20 +52,23 @@ func TestCredentialInfoListToSchemaless_EmptyInput(t *testing.T) {
 // credential a ProblematicCredential points at — must still yield a removal log
 // entry (without attributes, since there is no type to name them) rather than
 // dereference the missing type.
-func TestCreateRemovalLog_UnknownTypeLogsWithoutAttributes(t *testing.T) {
-	conf := &irma.Configuration{
-		CredentialTypes: map[irma.CredentialTypeIdentifier]*irma.CredentialType{},
-	}
-	id := irma.NewCredentialTypeIdentifier("irma-demo.acme.gone")
+func TestAddIrmaRemovalLog_UnknownTypeLogsWithoutAttributes(t *testing.T) {
+	client := newClientOnFreshStorage(t)()
+	defer client.Close()
 
-	entry, err := createRemovalLog(conf, id,
-		map[irma.AttributeTypeIdentifier]irma.TranslatedString{},
-		[]clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc})
+	info := &irma.CredentialInfo{SchemeManagerID: "irma-demo", IssuerID: "acme", ID: "gone",
+		Attributes: map[irma.AttributeTypeIdentifier]irma.TranslatedString{}}
+	require.NoError(t, client.addIrmaRemovalLog(info, []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc}))
 
+	logs, err := client.LoadNewestLogs(10)
 	require.NoError(t, err)
-	require.Contains(t, entry.Removed, id)
-	assert.Empty(t, entry.Removed[id])
-	assert.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc}, entry.RemovedFormats)
+	require.Len(t, logs, 1)
+	require.NotNil(t, logs[0].RemovalLog)
+	cred := logs[0].RemovalLog.Credentials[0]
+	assert.Equal(t, "irma-demo.acme.gone", cred.CredentialId)
+	assert.Empty(t, cred.Attributes)
+	assert.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc}, cred.Formats)
+	assert.NotEmpty(t, cred.Hash)
 }
 
 // The activity log must render the removal of a credential whose type is not in

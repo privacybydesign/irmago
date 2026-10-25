@@ -346,6 +346,7 @@ func CredentialToLogCredential(c *Credential) LogCredential {
 		Revoked:             c.Revoked,
 		RevocationSupported: c.RevocationSupported,
 		IssueURL:            c.IssueURL,
+		Hash:                c.Hash,
 	}
 }
 

@@ -491,6 +491,9 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 		CredentialId: metadata.CredentialType,
 		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
 	}
+	if hash, err := irmaclient.CardHash(metadata.CredentialInfo()); err == nil {
+		logCred.Hash = hash
+	}
 
 	if metadata.SignedOn != nil {
 		x := time.Time(*metadata.SignedOn).Unix()

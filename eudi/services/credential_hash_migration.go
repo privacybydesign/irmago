@@ -26,11 +26,16 @@ import (
 // Idempotent: a second run recomputes the same values and writes nothing, so it
 // is safe to call on every startup, which is how it is wired.
 //
+// The activity log refers to cards by this hash, so the log entries of a
+// rewritten batch are pointed at its new hash too, before the batch itself:
+// interrupted in between, the next run still finds the batch under its old
+// hash and finishes both. logs may be nil when there is no log to keep up.
+//
 // Collision is not a risk. The new hash covers strictly more input than the old
 // one, so it can only tell apart batches the old one conflated — and the old one
 // conflated none, since Hash is a unique index and two colliding rows could
 // never both have existed.
-func MigrateCredentialHashes(store db.SdJwtVcStore) error {
+func MigrateCredentialHashes(store db.SdJwtVcStore, logs db.EudiLogStore) error {
 	batches, err := store.GetCredentialBatchList()
 	if err != nil {
 		return fmt.Errorf("credential hash migration: failed to list batches: %w", err)
@@ -49,6 +54,11 @@ func MigrateCredentialHashes(store db.SdJwtVcStore) error {
 		}
 		if want == batch.Hash {
 			continue
+		}
+		if logs != nil {
+			if err := logs.UpdateCredentialHash(nil, batch.Hash, want); err != nil {
+				return fmt.Errorf("credential hash migration: failed to update log entries of batch %s: %w", batch.ID, err)
+			}
 		}
 		if err := store.UpdateBatchHash(batch.ID, want); err != nil {
 			return fmt.Errorf("credential hash migration: failed to update batch %s: %w", batch.ID, err)

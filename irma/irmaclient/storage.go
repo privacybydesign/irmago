@@ -512,3 +512,32 @@ func (s *storage) DeleteAll() error {
 		return s.TxDeleteAll(tx)
 	})
 }
+
+// iterateRawLogs calls handler with every stored log entry, newest first,
+// without checking it against the configuration. An entry that does not
+// decrypt or decode is skipped with a warning: there is nothing to carry over.
+func (s *storage) iterateRawLogs(handler func(log *LogEntry) error) error {
+	return s.dbStorage.Db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(logsBucket))
+		if bucket == nil {
+			return nil
+		}
+		c := bucket.Cursor()
+		for k, v := c.Last(); k != nil; k, v = c.Prev() {
+			plaintext, err := s.dbStorage.Decrypt(v)
+			if err != nil {
+				irma.Logger.Warnf("skipping log entry that does not decrypt: %v", err)
+				continue
+			}
+			var log LogEntry
+			if err = json.Unmarshal(plaintext, &log); err != nil {
+				irma.Logger.Warnf("skipping log entry that does not decode: %v", err)
+				continue
+			}
+			if err = handler(&log); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}

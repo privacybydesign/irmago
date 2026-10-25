@@ -62,6 +62,10 @@ type IrmaClient struct {
 	// Where we store/load IRMA related data to/from
 	storage *storage
 
+	// Where session log entries go: the bbolt store, unless SetLogSink
+	// replaced it.
+	logSink LogSink
+
 	// Where we store/load SD-JWT-VC related data to/from
 	sdJwtVcStorage SdJwtVcStorage
 	keyBinder      sdjwt.KeyBinder
@@ -132,6 +136,7 @@ func NewIrmaClient(
 	var err error
 
 	client := &IrmaClient{
+		logSink:         storage,
 		Configuration:   conf,
 		storage:         storage,
 		sdJwtVcStorage:  sdJwtVcStorage,
@@ -1368,7 +1373,7 @@ func (client *IrmaClient) stripStorage(schemeIDs []irma.SchemeManagerIdentifier,
 		delete(remainingSchemes, schemeID)
 	}
 
-	return client.storage.dbStorage.Transaction(func(tx *clientstorage.Transaction) error {
+	err := client.storage.dbStorage.Transaction(func(tx *clientstorage.Transaction) error {
 		// Delete all credentials of given schemes.
 		for _, cred := range client.CredentialInfoList() {
 			if _, ok := remainingSchemes[irma.NewSchemeManagerIdentifier(cred.SchemeManagerID)]; !ok {
@@ -1383,7 +1388,8 @@ func (client *IrmaClient) stripStorage(schemeIDs []irma.SchemeManagerIdentifier,
 			}
 		}
 
-		// Remove all logs of given schemes, if necessary.
+		// Remove all logs of given schemes, if necessary. Logs kept elsewhere
+		// are removed by their sink, after this transaction.
 		if removeLogs {
 			err := client.storage.TxIterateLogs(tx, func(log *LogEntry) error {
 				shouldDelete := false
@@ -1417,6 +1423,15 @@ func (client *IrmaClient) stripStorage(schemeIDs []irma.SchemeManagerIdentifier,
 
 		return client.storage.TxStoreKeyshareServers(tx, client.keyshareServers)
 	})
+	if err != nil || !removeLogs {
+		return err
+	}
+	if remover, ok := client.logSink.(LogSchemeRemover); ok {
+		if err := remover.DeleteLogsForSchemes(schemeIDs); err != nil {
+			irma.Logger.Warnf("failed to delete the logs of removed schemes: %v", err)
+		}
+	}
+	return nil
 }
 
 func (client *IrmaClient) ensureKeyshareAttributeValid(pin string, kss *keyshareServer, transport *irma.HTTPTransport) {

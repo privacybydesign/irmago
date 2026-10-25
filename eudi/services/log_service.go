@@ -15,13 +15,79 @@ import (
 	"gorm.io/datatypes"
 )
 
-// EudiLogService creates and retrieves EUDI activity log entries.
+// EudiLogService creates, retrieves and queries activity log entries, for
+// every protocol: IRMA sessions are logged here too.
 type EudiLogService interface {
 	AddIssuanceLog(protocol clientmodels.Protocol, issuer clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error
 	AddDisclosureLog(verifier clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error
 	AddRemovalLog(credentials []clientmodels.LogCredential) error
-	GetNewestLogs(max int) ([]clientmodels.LogInfo, error)
-	GetLogsBefore(before time.Time, max int) ([]clientmodels.LogInfo, error)
+	// AddLog writes one entry, with everything the specific Add methods
+	// cannot express (roles, signed message, multi-language texts).
+	AddLog(w LogWrite) error
+	// AddLogs writes entries in one transaction, skipping ids that are
+	// already stored, and marks migration done with them.
+	AddLogs(ws []LogWrite, migration string) error
+
+	// IndexLogs brings the derived columns of older entries up to date. The
+	// query methods call it, so it only needs calling to do the work early.
+	IndexLogs() error
+	QueryLogs(q clientmodels.LogQuery) (clientmodels.LogPage, error)
+	// GetLog returns one entry, or nil when there is none with this id.
+	GetLog(id string) (*clientmodels.LogInfo, error)
+	CredentialActivity(hashes []string) (map[string]clientmodels.CredentialActivity, error)
+	ListParties(f clientmodels.LogFilter, limit int) ([]clientmodels.PartySummary, error)
+	// UpdateCredentialHash points the log entries of a card at its new hash.
+	UpdateCredentialHash(oldHash, newHash string) error
+	// DeleteLogsForCredentialTypes deletes the entries with a credential whose
+	// type starts with one of the prefixes.
+	DeleteLogsForCredentialTypes(prefixes []string) error
+	// InferCredentialHashes matches log credentials without a card hash to
+	// the given cards, once (see InferLogCredentialHashes).
+	InferCredentialHashes(cards []*clientmodels.Credential, migration string) error
+}
+
+// LogWrite is one log entry to write.
+type LogWrite struct {
+	// ID is the entry id; zero for a new random one. Set it to make writing
+	// the same entry twice idempotent, as a migration does.
+	ID       datatypes.UUID
+	Type     clientmodels.LogType
+	Protocol clientmodels.Protocol
+	// Time is when it happened; zero for now.
+	Time      time.Time
+	Requestor *clientmodels.TrustedParty
+	// RequestorNames, when set, is stored in place of Requestor.Name so the
+	// name follows the locale.
+	RequestorNames clientmodels.TranslatedString
+	Credentials    []LogWriteCredential
+	SignedMessage  string
+	Hidden         bool
+	Source         string
+	IrmaRaw        []byte
+}
+
+// LogWriteCredential is one credential of a LogWrite.
+type LogWriteCredential struct {
+	clientmodels.LogCredential
+	Role clientmodels.LogRole
+	// Texts, when set, are stored in place of the resolved strings, so the
+	// entry follows the locale and is found in every language.
+	Texts *LogCredentialTexts
+}
+
+// LogCredentialTexts are the translations of a log credential's texts.
+type LogCredentialTexts struct {
+	Name       clientmodels.TranslatedString
+	IssuerName clientmodels.TranslatedString
+	IssueURL   clientmodels.TranslatedString
+	// Attributes holds the name and description per attribute, by
+	// clientmodels.ClaimPathKey of its claim path.
+	Attributes map[string]LogAttributeTexts
+}
+
+type LogAttributeTexts struct {
+	Name        clientmodels.TranslatedString
+	Description clientmodels.TranslatedString
 }
 
 type eudiLogService struct {
@@ -45,94 +111,155 @@ func NewEudiLogService(s storage.Storage, locale string) EudiLogService {
 }
 
 func (s *eudiLogService) AddIssuanceLog(protocol clientmodels.Protocol, issuer clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error {
-	creds, err := s.logCredentialsToModelCredentials(credentials)
-	if err != nil {
-		return err
-	}
-	return s.addSessionLog(clientmodels.LogType_Issuance, protocol, issuer, creds)
+	return s.AddLog(LogWrite{
+		Type:        clientmodels.LogType_Issuance,
+		Protocol:    protocol,
+		Requestor:   &issuer,
+		Credentials: withRole(credentials, clientmodels.LogRole_Issued),
+	})
 }
 
 func (s *eudiLogService) AddDisclosureLog(verifier clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error {
-	creds, err := s.logCredentialsToModelCredentials(credentials)
-	if err != nil {
-		return err
-	}
-	return s.addSessionLog(clientmodels.LogType_Disclosure, clientmodels.Protocol_OpenID4VP, verifier, creds)
-}
-
-func (s *eudiLogService) addSessionLog(logType clientmodels.LogType, protocol clientmodels.Protocol, requestor clientmodels.TrustedParty, creds []models.EudiLogCredential) error {
-	requestorName, err := json.Marshal(requestor.Name)
-	if err != nil {
-		return err
-	}
-	saveLogoFromBase64(s.verifierLogoManager, requestor.Id, requestor.Image)
-	entry := &models.EudiLogEntry{
-		ID:                datatypes.NewUUIDv4(),
-		Type:              string(logType),
-		Protocol:          string(protocol),
-		CreatedAt:         time.Now(),
-		RequestorId:       requestor.Id,
-		RequestorName:     requestorName,
-		RequestorVerified: requestor.Verified,
-		Credentials:       creds,
-	}
-	return s.store.AddLog(entry)
+	return s.AddLog(LogWrite{
+		Type:        clientmodels.LogType_Disclosure,
+		Protocol:    clientmodels.Protocol_OpenID4VP,
+		Requestor:   &verifier,
+		Credentials: withRole(credentials, clientmodels.LogRole_Disclosed),
+	})
 }
 
 func (s *eudiLogService) AddRemovalLog(credentials []clientmodels.LogCredential) error {
-	creds, err := s.logCredentialsToModelCredentials(credentials)
+	return s.AddLog(LogWrite{
+		Type:        clientmodels.LogType_CredentialRemoval,
+		Credentials: withRole(credentials, clientmodels.LogRole_Removed),
+	})
+}
+
+func withRole(creds []clientmodels.LogCredential, role clientmodels.LogRole) []LogWriteCredential {
+	result := make([]LogWriteCredential, len(creds))
+	for i, c := range creds {
+		result[i] = LogWriteCredential{LogCredential: c, Role: role}
+	}
+	return result
+}
+
+func (s *eudiLogService) AddLog(w LogWrite) error {
+	entry, err := s.toModelEntry(w)
 	if err != nil {
 		return err
-	}
-	entry := &models.EudiLogEntry{
-		ID:          datatypes.NewUUIDv4(),
-		Type:        string(clientmodels.LogType_CredentialRemoval),
-		CreatedAt:   time.Now(),
-		Credentials: creds,
 	}
 	return s.store.AddLog(entry)
 }
 
-func (s *eudiLogService) GetNewestLogs(max int) ([]clientmodels.LogInfo, error) {
-	entries, err := s.store.GetNewestLogs(max)
-	if err != nil {
-		return nil, err
+func (s *eudiLogService) AddLogs(ws []LogWrite, migration string) error {
+	entries := make([]*models.EudiLogEntry, 0, len(ws))
+	for _, w := range ws {
+		entry, err := s.toModelEntry(w)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, entry)
 	}
-	return s.entriesToLogInfos(entries)
+	return s.store.AddLogs(entries, migration)
 }
 
-func (s *eudiLogService) GetLogsBefore(before time.Time, max int) ([]clientmodels.LogInfo, error) {
-	entries, err := s.store.GetLogsBefore(before, max)
+func (s *eudiLogService) toModelEntry(w LogWrite) (*models.EudiLogEntry, error) {
+	creds, err := s.logCredentialsToModelCredentials(w.Credentials)
 	if err != nil {
 		return nil, err
 	}
-	return s.entriesToLogInfos(entries)
+
+	id := w.ID
+	if id == (datatypes.UUID{}) {
+		id = datatypes.NewUUIDv4()
+	}
+	created := w.Time
+	if created.IsZero() {
+		created = time.Now()
+	}
+	entry := &models.EudiLogEntry{
+		ID:          id,
+		Type:        string(w.Type),
+		Protocol:    string(w.Protocol),
+		CreatedAt:   created,
+		Credentials: creds,
+		IrmaRaw:     w.IrmaRaw,
+	}
+	if w.Hidden {
+		entry.Hidden = &w.Hidden
+	}
+	if w.SignedMessage != "" {
+		entry.SignedMessage = &w.SignedMessage
+	}
+	if w.Source != "" {
+		entry.Source = &w.Source
+	}
+
+	if r := w.Requestor; r != nil {
+		var name any = r.Name
+		if len(w.RequestorNames) > 0 {
+			name = w.RequestorNames
+		}
+		if entry.RequestorName, err = json.Marshal(name); err != nil {
+			return nil, err
+		}
+		if entry.RequestorDetails, err = partyDetails(r); err != nil {
+			return nil, err
+		}
+		entry.RequestorId = r.Id
+		entry.RequestorVerified = r.Verified
+		saveLogoFromBase64(s.verifierLogoManager, r.Id, r.Image)
+	}
+
+	indexEntry(entry)
+	return entry, nil
+}
+
+// partyDetails encodes a party without its name and image, which are stored
+// on their own.
+func partyDetails(p *clientmodels.TrustedParty) (datatypes.JSON, error) {
+	details := *p
+	details.Name = ""
+	details.Image = nil
+	return json.Marshal(details)
 }
 
 // --- conversion helpers ---
 
-func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.LogCredential) ([]models.EudiLogCredential, error) {
+func (s *eudiLogService) logCredentialsToModelCredentials(creds []LogWriteCredential) ([]models.EudiLogCredential, error) {
 	result := make([]models.EudiLogCredential, len(creds))
 	for i, c := range creds {
+		texts := c.Texts
+		if texts == nil {
+			texts = &LogCredentialTexts{}
+		}
 		formatsJSON, err := json.Marshal(c.Formats)
 		if err != nil {
 			return nil, fmt.Errorf("marshal formats for %q: %w", c.CredentialId, err)
 		}
-		nameJSON, err := json.Marshal(c.Name)
+		nameJSON, err := json.Marshal(textOr(texts.Name, c.Name))
 		if err != nil {
 			return nil, fmt.Errorf("marshal name for %q: %w", c.CredentialId, err)
 		}
-		issuerNameJSON, err := json.Marshal(c.Issuer.Name)
+		issuerNameJSON, err := json.Marshal(textOr(texts.IssuerName, c.Issuer.Name))
 		if err != nil {
 			return nil, fmt.Errorf("marshal issuer name for %q: %w", c.CredentialId, err)
 		}
-		attrsJSON, err := json.Marshal(c.Attributes)
+		attrsJSON, err := json.Marshal(writtenAttributes(c.Attributes, texts.Attributes))
 		if err != nil {
 			return nil, fmt.Errorf("marshal attributes for %q: %w", c.CredentialId, err)
 		}
-		issueURLJSON, err := json.Marshal(c.IssueURL)
+		var issueURL any = c.IssueURL
+		if len(texts.IssueURL) > 0 {
+			issueURL = texts.IssueURL
+		}
+		issueURLJSON, err := json.Marshal(issueURL)
 		if err != nil {
 			return nil, fmt.Errorf("marshal issue URL for %q: %w", c.CredentialId, err)
+		}
+		issuerDetails, err := partyDetails(&c.Issuer)
+		if err != nil {
+			return nil, fmt.Errorf("marshal issuer for %q: %w", c.CredentialId, err)
 		}
 		var issuanceDate, expiryDate datatypes.NullTime
 		if c.IssuanceDate != nil {
@@ -144,6 +271,8 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 
 		saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image)
 		saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image)
+		role := string(c.Role)
+		position := i
 		result[i] = models.EudiLogCredential{
 			ID:                  datatypes.NewUUIDv4(),
 			CredentialId:        c.CredentialId,
@@ -152,15 +281,68 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 			IssuerName:          issuerNameJSON,
 			IssuerId:            c.Issuer.Id,
 			IssuerVerified:      c.Issuer.Verified,
+			IssuerDetails:       issuerDetails,
 			Attributes:          attrsJSON,
 			IssuanceDate:        issuanceDate,
 			ExpiryDate:          expiryDate,
 			Revoked:             c.Revoked,
 			RevocationSupported: c.RevocationSupported,
 			IssueURL:            issueURLJSON,
+			Role:                &role,
+			Position:            &position,
+		}
+		if c.Hash != "" {
+			hash := c.Hash
+			confidence := string(c.HashConfidence)
+			if confidence == "" {
+				confidence = string(clientmodels.HashConfidence_Exact)
+			}
+			result[i].CredentialHash = &hash
+			result[i].HashConfidence = &confidence
 		}
 	}
 	return result, nil
+}
+
+// textOr is the translations when there are any, else the resolved text.
+func textOr(texts clientmodels.TranslatedString, resolved string) any {
+	if len(texts) > 0 {
+		return texts
+	}
+	return resolved
+}
+
+// writtenLogAttribute is an attribute as stored, with its name and
+// description either resolved strings or translation maps. storedLogAttribute
+// reads both back.
+type writtenLogAttribute struct {
+	clientmodels.Attribute
+	DisplayName any `json:"display_name,omitempty"`
+	Description any `json:"description,omitempty"`
+}
+
+func writtenAttributes(attrs []clientmodels.Attribute, texts map[string]LogAttributeTexts) []writtenLogAttribute {
+	result := make([]writtenLogAttribute, len(attrs))
+	for i, a := range attrs {
+		result[i] = writtenLogAttribute{Attribute: a}
+		if a.DisplayName != nil {
+			result[i].DisplayName = *a.DisplayName
+		}
+		if a.Description != nil {
+			result[i].Description = *a.Description
+		}
+		t, ok := texts[clientmodels.ClaimPathKey(a.ClaimPath)]
+		if !ok {
+			continue
+		}
+		if len(t.Name) > 0 {
+			result[i].DisplayName = t.Name
+		}
+		if len(t.Description) > 0 {
+			result[i].Description = t.Description
+		}
+	}
+	return result
 }
 
 func (s *eudiLogService) entriesToLogInfos(entries []*models.EudiLogEntry) ([]clientmodels.LogInfo, error) {
@@ -197,42 +379,97 @@ func (s *eudiLogService) liveDisplaysByVct() map[string]ResolvedBatchDisplay {
 }
 
 func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry, displayByVct map[string]ResolvedBatchDisplay) clientmodels.LogInfo {
-	logCreds := s.modelCredentialsToLogCredentials(e.Credentials, displayByVct)
-
 	info := clientmodels.LogInfo{
+		ID:   e.ID.String(),
 		Type: clientmodels.LogType(e.Type),
 		Time: e.CreatedAt,
 	}
+	if e.CreatedAtNs != nil {
+		info.Time = time.Unix(0, *e.CreatedAtNs)
+	}
 
-	requestorName := decodeStoredText(e.RequestorName, s.locale)
-	requestorImage := eudi.LoadLogoImage(s.verifierLogoManager, e.RequestorId)
-	requestor := &clientmodels.TrustedParty{
-		Id:       e.RequestorId,
-		Name:     requestorName,
-		Image:    requestorImage,
-		Verified: e.RequestorVerified,
+	requestor := s.requestorOf(e)
+
+	// Split the credentials by what happened to them. Entries written before
+	// roles were stored have the role their entry type implies.
+	issued := []clientmodels.LogCredential{}
+	disclosed := []clientmodels.LogCredential{}
+	all := s.modelCredentialsToLogCredentials(e.Credentials, displayByVct)
+	for i, c := range e.Credentials {
+		if roleOf(e.Type, &c) == clientmodels.LogRole_Disclosed && e.Type == string(clientmodels.LogType_Issuance) {
+			disclosed = append(disclosed, all[i])
+		} else {
+			issued = append(issued, all[i])
+		}
 	}
 
 	switch clientmodels.LogType(e.Type) {
 	case clientmodels.LogType_Issuance:
 		info.IssuanceLog = &clientmodels.IssuanceLog{
-			Protocol:    clientmodels.Protocol(e.Protocol),
-			Credentials: logCreds,
-			Issuer:      requestor,
+			Protocol:             clientmodels.Protocol(e.Protocol),
+			Credentials:          issued,
+			DisclosedCredentials: disclosed,
+			Issuer:               requestor,
 		}
 	case clientmodels.LogType_Disclosure:
 		info.DisclosureLog = &clientmodels.DisclosureLog{
 			Protocol:    clientmodels.Protocol(e.Protocol),
-			Credentials: logCreds,
+			Credentials: all,
 			Verifier:    requestor,
+		}
+	case clientmodels.LogType_Signature:
+		message := ""
+		if e.SignedMessage != nil {
+			message = *e.SignedMessage
+		}
+		info.SignedMessageLog = &clientmodels.SignedMessageLog{
+			DisclosureLog: clientmodels.DisclosureLog{
+				Protocol:    clientmodels.Protocol(e.Protocol),
+				Credentials: all,
+				Verifier:    requestor,
+			},
+			Message: message,
 		}
 	case clientmodels.LogType_CredentialRemoval:
 		info.RemovalLog = &clientmodels.RemovalLog{
-			Credentials: logCreds,
+			Credentials: all,
 		}
 	}
 
 	return info
+}
+
+// requestorOf is the party on the other side of an entry, with the trust
+// details stored with it.
+func (s *eudiLogService) requestorOf(e *models.EudiLogEntry) *clientmodels.TrustedParty {
+	requestor := &clientmodels.TrustedParty{}
+	if len(e.RequestorDetails) > 0 {
+		if err := json.Unmarshal(e.RequestorDetails, requestor); err != nil {
+			eudi.Logger.Warnf("failed to unmarshal requestor details: %v", err)
+			requestor = &clientmodels.TrustedParty{}
+		}
+	}
+	requestor.Id = e.RequestorId
+	requestor.Name = decodeStoredText(e.RequestorName, s.locale)
+	requestor.Image = eudi.LoadLogoImage(s.verifierLogoManager, e.RequestorId)
+	requestor.Verified = e.RequestorVerified
+	return requestor
+}
+
+// roleOf is the stored role of a log credential, or for entries written
+// before roles were stored, the role its entry type implies.
+func roleOf(entryType string, c *models.EudiLogCredential) clientmodels.LogRole {
+	if c.Role != nil && *c.Role != "" {
+		return clientmodels.LogRole(*c.Role)
+	}
+	switch clientmodels.LogType(entryType) {
+	case clientmodels.LogType_Issuance:
+		return clientmodels.LogRole_Issued
+	case clientmodels.LogType_CredentialRemoval:
+		return clientmodels.LogRole_Removed
+	default:
+		return clientmodels.LogRole_Disclosed
+	}
 }
 
 func (s *eudiLogService) modelCredentialsToLogCredentials(creds []models.EudiLogCredential, displayByVct map[string]ResolvedBatchDisplay) []clientmodels.LogCredential {
@@ -280,12 +517,32 @@ func (s *eudiLogService) modelCredentialsToLogCredentials(creds []models.EudiLog
 			reResolveAttributeNames(attrs, live.ClaimNames)
 		}
 
+		issuer := clientmodels.TrustedParty{}
+		if len(c.IssuerDetails) > 0 {
+			if err := json.Unmarshal(c.IssuerDetails, &issuer); err != nil {
+				eudi.Logger.Warnf("failed to unmarshal issuer details for %q: %v", c.CredentialId, err)
+				issuer = clientmodels.TrustedParty{}
+			}
+		}
+		issuer.Id, issuer.Name, issuer.Image, issuer.Verified = c.IssuerId, issuerName, issuerImage, c.IssuerVerified
+
+		var hash string
+		var confidence clientmodels.HashConfidence
+		if c.CredentialHash != nil {
+			hash = *c.CredentialHash
+		}
+		if c.HashConfidence != nil {
+			confidence = clientmodels.HashConfidence(*c.HashConfidence)
+		}
+
 		result[i] = clientmodels.LogCredential{
 			CredentialId:        c.CredentialId,
 			Formats:             formats,
 			Name:                name,
 			Image:               credImage,
-			Issuer:              clientmodels.TrustedParty{Id: c.IssuerId, Name: issuerName, Image: issuerImage, Verified: c.IssuerVerified},
+			Issuer:              issuer,
+			Hash:                hash,
+			HashConfidence:      confidence,
 			Attributes:          attrs,
 			IssuanceDate:        issuanceDate,
 			ExpiryDate:          expiryDate,

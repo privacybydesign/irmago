@@ -912,6 +912,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(
 		// later that what they shared was already revoked.
 		Revoked:             h.revocation != nil && h.revocation.IsRevoked(instance),
 		RevocationSupported: instance.StatusListURI != nil,
+		Hash:                batch.Hash,
 	}
 
 	if batch.IssuedAt.Valid {
