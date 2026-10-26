@@ -7,6 +7,7 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -20,8 +21,11 @@ import (
 // any other format.
 type mdocCredentialService struct {
 	mdocDisplaySource
-	deviceKeys    db.MdocDeviceKeyStore
-	fileStorage   filesystem.FileSystemStorage
+	deviceKeys  db.MdocDeviceKeyStore
+	fileStorage filesystem.FileSystemStorage
+	// revocation supplies the per-batch revocation flags for the credential
+	// list view (see List). Mirrors sdJwtVcCredentialService.revocation.
+	revocation    *RevocationService
 	currentLocale *clientmodels.CurrentLocale
 }
 
@@ -31,12 +35,14 @@ func NewMdocCredentialService(
 	store db.MdocStore,
 	deviceKeys db.MdocDeviceKeyStore,
 	fileStorage filesystem.FileSystemStorage,
+	revocation *RevocationService,
 	currentLocale *clientmodels.CurrentLocale,
 ) *mdocCredentialService {
 	return &mdocCredentialService{
 		mdocDisplaySource: newMdocDisplaySource(store),
 		deviceKeys:        deviceKeys,
 		fileStorage:       fileStorage,
+		revocation:        revocation,
 		currentLocale:     currentLocale,
 	}
 }
@@ -47,10 +53,16 @@ func (s *mdocCredentialService) DeleteByHash(hash string) error {
 	return s.store.DeleteBatchByHash(hash)
 }
 
-// List renders every stored mdoc batch for the app. An mdoc carries no Token
-// Status List reference today, so nothing here is ever reported revoked.
+// List renders every stored mdoc batch for the app.
 func (s *mdocCredentialService) List() ([]*clientmodels.Credential, error) {
 	batches, err := s.store.ListBatches()
+	if err != nil {
+		return nil, err
+	}
+
+	// Per-credential revocation flags are derived from stored Token Status List
+	// statuses (maintained by RevocationService.RefreshStatuses).
+	revoked, revocable, err := s.revocation.BatchRevocation(s.store)
 	if err != nil {
 		return nil, err
 	}
@@ -97,8 +109,8 @@ func (s *mdocCredentialService) List() ([]*clientmodels.Credential, error) {
 			Attributes:                   BuildMdocAttributes(batch, locale),
 			ExpiryDate:                   &validUntil,
 			IssuanceDate:                 &signedAt,
-			Revoked:                      false,
-			RevocationSupported:          false,
+			Revoked:                      revoked[batch.Hash],
+			RevocationSupported:          revocable[batch.Hash],
 			IssueURL:                     nil,
 		})
 	}
@@ -128,6 +140,16 @@ func (s *mdocCredentialService) Store(
 		if p.Mdoc == nil {
 			return fmt.Errorf("credential %d is not an mdoc (format %q); the mdoc store cannot hold it", i, p.Format)
 		}
+	}
+
+	// Same batch-wide Token Status List invariants sdjwtvc_credential_service
+	// enforces, and for the same reason: reject here, before any side effects,
+	// so a malformed issuance can't delete the user's existing batch.
+	if err := validateStatusReferences(parsedCredentials); err != nil {
+		if requireCryptographicKeyBinding {
+			s.deleteOrphanedKeys(publicKeyIdentifiers)
+		}
+		return err
 	}
 
 	if requireCryptographicKeyBinding && len(publicKeyIdentifiers) != len(parsedCredentials) {
@@ -169,10 +191,7 @@ func (s *mdocCredentialService) Store(
 		return err
 	}
 
-	instances := make([]models.MdocBatchInstance, len(parsedCredentials))
-	for i, p := range parsedCredentials {
-		instances[i] = models.MdocBatchInstance{IssuerSigned: p.RawCredentialBytes}
-	}
+	instances := buildMdocInstances(parsedCredentials)
 
 	batch := &models.MdocBatch{
 		DocType:          first.Mdoc.DocType,
@@ -250,6 +269,33 @@ func (s *mdocCredentialService) computeHashAndDeleteExisting(p *ParsedCredential
 	}
 
 	return hash, nil
+}
+
+// buildMdocInstances builds the batch's instance rows, persisting each
+// document's Token Status List reference (if any) so the disclosure path
+// and the refresh sweep can run without re-parsing the mdoc. Mirrors
+// sdjwtvc_credential_service.buildInstances.
+func buildMdocInstances(parsedCredentials []*ParsedCredential) []models.MdocBatchInstance {
+	instances := make([]models.MdocBatchInstance, len(parsedCredentials))
+	now := time.Now()
+	for i, p := range parsedCredentials {
+		inst := models.MdocBatchInstance{IssuerSigned: p.RawCredentialBytes}
+		// At issuance time the holder verifier has just confirmed the bit
+		// reads StatusValid (or the document has no status reference), so
+		// seed LastKnownStatus accordingly — see
+		// mdoc.Verifier.SetStatusChecker / runStatusListCheck.
+		if ref := statusReferenceOf(p); ref != (statuslist.Reference{}) {
+			uri := ref.URI
+			idx := ref.Index
+			t := now
+			inst.StatusListURI = &uri
+			inst.StatusListIdx = &idx
+			inst.LastKnownStatus = uint8(statuslist.StatusValid)
+			inst.LastStatusCheckAt = &t
+		}
+		instances[i] = inst
+	}
+	return instances
 }
 
 // MdocBatchIsValid reports whether now falls inside the batch's MSO validity

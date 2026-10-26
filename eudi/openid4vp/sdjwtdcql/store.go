@@ -3,6 +3,7 @@ package sdjwtdcql
 import (
 	"time"
 
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -64,11 +65,11 @@ type BatchStore interface {
 	MarkInstanceUsed(instanceID datatypes.UUID) error
 }
 
-// RevocationChecker reports whether a stored SD-JWT VC instance is currently
-// revoked. The disclosure planner depends only on this narrow verb, keeping the
-// Token Status List mechanics out of this package (see services.RevocationService).
+// RevocationChecker reports whether a status list entry is currently revoked.
+// The disclosure planner depends only on this narrow verb, keeping the Token
+// Status List mechanics out of this package (see services.RevocationService).
 type RevocationChecker interface {
-	IsRevoked(instance *models.SdJwtVcBatchInstance) bool
+	IsRevoked(ref *statuslist.Reference) bool
 }
 
 // NewSdJwtVcBatchStore adapts the SD-JWT VC store. revocation determines an
@@ -118,7 +119,7 @@ func (s *sdJwtVcBatchStore) GetUnusedInstance(batchID datatypes.UUID) (*Instance
 	return &Instance{
 		ID:                  instance.ID,
 		RawCredential:       instance.RawCredential,
-		Revoked:             s.revocation != nil && s.revocation.IsRevoked(instance),
+		Revoked:             s.revocation != nil && s.revocation.IsRevoked(instance.StatusReference()),
 		RevocationSupported: instance.StatusListURI != nil,
 	}, nil
 }

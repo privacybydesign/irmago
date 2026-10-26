@@ -142,19 +142,22 @@ func New(
 	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(s)
 	irmaKeyBinder := sdjwt.NewDefaultKeyBinder(keyBindingStorage)
 
-	credStore := db.NewSdJwtVcStore(eudiStorage.Db())
+	sdjwtCredentialStore := db.NewSdJwtVcStore(eudiStorage.Db())
+	mdocCredentialStore := db.NewMdocStore(eudiStorage.Db())
 
 	// Token Status List checker + the single revocation service built on it.
-	// The checker is also shared with the holder-side verifier
-	// (sdJwtVcVerificationContext below). The revocation service is the one home
-	// for revocation: the background sweep, the credential list's flags, and the
-	// OpenID4VP disclosure planner's cached Revoked flag all go through it.
+	// The checker is also shared with the holder-side verifiers
+	// (sdJwtVcVerificationContext below, and the mdoc verifier built inside
+	// services.NewCredentialFormats). The revocation service is the one home
+	// for revocation across every credential format: the background sweep,
+	// the credential list's flags, and the OpenID4VP disclosure planner's
+	// cached Revoked flag all go through it.
 	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
 	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: &eudiConf.Issuers,
 		Clock:       eudi_jwt.NewSystemClock(),
 	}, statusListCache)
-	revocationService := services.NewRevocationService(statusChecker, credStore)
+	revocationService := services.NewRevocationService(statusChecker, sdjwtCredentialStore, mdocCredentialStore)
 
 	// SD-JWT-secured VCDM credentials can name either Token Status List or W3C
 	// Bitstring Status List; the latter's checker trusts the same issuers.
@@ -171,7 +174,7 @@ func New(
 	// silently store a second copy. Idempotent, so it costs one query on a wallet
 	// that is already current; a failure here is not fatal, since the wallet works
 	// with old-style hashes and only its duplicate detection is degraded.
-	if err := services.MigrateCredentialHashes(credStore); err != nil {
+	if err := services.MigrateCredentialHashes(sdjwtCredentialStore); err != nil {
 		common.Logger.Warnf("could not migrate credential hashes: %v", err)
 	}
 
@@ -188,7 +191,7 @@ func New(
 	eudiKeyBinder := sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db()))
 	eudiSdJwtDcqlHandler := eudi_sdjwtvc_dcql.NewSdJwtVcDcqlHandler(
 		eudiStorage,
-		credStore,
+		sdjwtCredentialStore,
 		typemetadata.NewDefaultVctFetcher(nil),
 		typemetadata.NewDefaultIssuerFetcher(nil),
 		eudiKeyBinder,
@@ -214,8 +217,8 @@ func New(
 	// The device key binder is the software one: it reads the PKCS#8 key issuance
 	// stored. Replacing it with a StrongBox / Secure Enclave implementation is the
 	// one change needed to keep mdoc device keys out of this process.
-	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, currentLocale,
-		services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(eudiStorage.Db())))
+	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, mdocCredentialStore, currentLocale,
+		services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(eudiStorage.Db())), revocationService)
 
 	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler, eudiVcdmDcqlHandler, mdocDcqlHandler}, verifierValidator, currentLocale)
 	if err != nil {
@@ -280,7 +283,7 @@ func New(
 	// nothing to register here.
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI)
 	vcdmHolderVerifier := vcdmsdjwt.NewHolderVerificationProcessor(vcdmVerificationContextOpenID4VCI)
-	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, vcdmHolderVerifier, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, vcdmRevocationService, currentLocale)
+	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, vcdmHolderVerifier, statusChecker, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, vcdmRevocationService, currentLocale)
 	openid4vciClient, err := openid4vci.NewClient(
 		common.HTTPClient,
 		eudiConf,

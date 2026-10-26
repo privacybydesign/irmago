@@ -18,6 +18,7 @@ func TestSessionHandler(t *testing.T) {
 	t.Run("openid4vp/mdoc-pid-mdl", testSessionHandlerForOpenID4VPWithPidAndMdlMdocs)
 	t.Run("openid4vci/sdjwtvc/pre-authorized", testSessionHandlerForOpenID4VCIPreAuth)
 	t.Run("openid4vci/sdjwtvc/status-list", testSessionHandlerForOpenID4VCIStatusList)
+	t.Run("openid4vci/mdoc/status-list", testSessionHandlerForOpenID4VCIMdocStatusList)
 	t.Run("openid4vci/sdjwtvc/auth-code", testSessionHandlerForOpenID4VCIAuthCode)
 	t.Run("openid4vci/vcdm/pre-authorized", testSessionHandlerForOpenID4VCIVcdm)
 	t.Run("openid4vci/vcdm/status-list", testSessionHandlerForOpenID4VCIVcdmStatusList)

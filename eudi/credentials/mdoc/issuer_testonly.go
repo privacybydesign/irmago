@@ -12,6 +12,8 @@ import (
 	"time"
 
 	cose "github.com/veraison/go-cose"
+
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 )
 
 // ============================================================
@@ -242,6 +244,13 @@ func shuffleIdentifiers(identifiers []string) error {
 // holderPub is the holder's device public key — gets embedded in MSO.deviceKeyInfo
 // This locks the credential to the specific device that generated that key pair
 func (iss *TestIssuer) Issue(docType string, namespace string, claims map[string]any, holderPub *ecdsa.PublicKey) (*MDoc, error) {
+	return iss.IssueWithStatus(docType, namespace, claims, holderPub, nil)
+}
+
+// IssueWithStatus is Issue plus a Token Status List reference embedded in
+// the MSO's `status` field (draft-ietf-oauth-status-list-15 §6.3.2), for
+// tests exercising status-aware verification. A nil status is Issue.
+func (iss *TestIssuer) IssueWithStatus(docType string, namespace string, claims map[string]any, holderPub *ecdsa.PublicKey, status *statuslist.StatusClaim) (*MDoc, error) {
 	// ── Build IssuerSignedItems ──────────────────────────────────
 	// Claim order is randomized — deliberately NOT sorted — before
 	// digestID assignment. A deterministic order (e.g. alphabetical, which
@@ -322,6 +331,7 @@ func (iss *TestIssuer) Issue(docType string, namespace string, claims map[string
 		DocType:         docType,
 		ValidityInfo:    issuedValidityInfo(time.Now()),
 		DeviceKeyInfo:   DeviceKeyInfo{DeviceKey: deviceKey},
+		Status:          status,
 	}
 
 	// MSO travels as Tag24(CBOR(MSO)) inside issuerAuth's payload — per ISO
