@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -231,7 +232,7 @@ func Test_RefreshStatuses_DetectsRevocationTransition(t *testing.T) {
 	require.Zero(t, refresh(t, svc), "re-confirming the same status is not a change")
 
 	// The issuer revokes the credential by flipping the bit at idx 4.
-	srv.Serve(t, signer, statuslist.TestStatusListOpts{
+	srv.ServeJWT(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{4: 1}, // Invalid (revoked)
@@ -284,6 +285,41 @@ func Test_RefreshStatuses_OneURIFailure_DoesNotAbortSweep(t *testing.T) {
 	}
 	require.Equal(t, uint8(statuslist.StatusValid), statusesByURI[good.URL()])
 	require.Equal(t, uint8(0), statusesByURI["http://127.0.0.1:0/nope"])
+}
+
+// failingStatusStore is a CredentialStatusStore that cannot list its instances.
+type failingStatusStore struct{ dbpkg.CredentialStatusStore }
+
+func (failingStatusStore) ListInstancesWithStatusReference() ([]dbpkg.CredentialStatusInstance, error) {
+	return nil, errors.New("store unavailable")
+}
+
+func Test_RefreshStatuses_OneStoreFailure_DoesNotAbortSweep(t *testing.T) {
+	db := newTestHolderDB(t)
+	signer := statuslist.NewTestStatusListSigner(t)
+	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
+		Issuer:   "https://issuer.example",
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0},
+	})
+	checker := statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: signer.X509VerificationContext(),
+	}, statuslist.NewInMemoryCache())
+
+	seedBatch(t, db, "h1", "https://issuer.example", []models.SdJwtVcBatchInstance{
+		instanceWithStatus(srv.URL(), 0),
+	})
+
+	// The failing store comes first, so a sweep that stops at it never
+	// reaches the working one.
+	svc := NewRevocationService(checker, failingStatusStore{}, dbpkg.NewSdJwtVcStore(db))
+	changed, err := svc.RefreshStatuses(context.Background())
+	require.ErrorContains(t, err, "store unavailable", "the failing store is still reported")
+	require.Equal(t, 1, changed, "the working store is swept anyway")
+
+	var row models.SdJwtVcBatchInstance
+	require.NoError(t, db.First(&row, "status_list_uri = ?", srv.URL()).Error)
+	require.Equal(t, uint8(statuslist.StatusValid), row.LastKnownStatus)
 }
 
 // Test_RefreshStatuses_CancelledFetch_ReportsCancellation separates the two
@@ -408,7 +444,7 @@ func Test_ScheduledRefresh_PicksUpRevocation(t *testing.T) {
 		3*time.Second, 20*time.Millisecond, "scheduled refresh should record Valid")
 
 	// Issuer revokes the credential by flipping the bit at idx 9.
-	srv.Serve(t, signer, statuslist.TestStatusListOpts{
+	srv.ServeJWT(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{9: 1}, // Invalid (revoked)

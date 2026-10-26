@@ -5,6 +5,7 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
@@ -74,6 +75,11 @@ type ParsedMdoc struct {
 	// and looked up under; "" when DeviceKey is nil.
 	DeviceKey           *ecdsa.PublicKey
 	DeviceKeyThumbprint string
+
+	// StatusReference is the MSO's Token Status List reference
+	// (draft-ietf-oauth-status-list-15 §6.3.2), nil when the document
+	// carries none.
+	StatusReference *statuslist.Reference
 }
 
 // CredentialFormatParser parses and cryptographically verifies one raw
