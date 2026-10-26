@@ -360,7 +360,7 @@ var vcdmNonContentKeys = map[string]struct{}{
 	sdjwt.ConfirmationKey:    {},
 	sdjwt.SdKey:              {},
 	sdjwt.SdAlgKey:           {},
-	"status":                 {},
+	vcdmsdjwt.StatusKey:      {},
 	vcdm.IDKey:               {},
 	vcdm.ValidFromKey:        {},
 	vcdm.ValidUntilKey:       {},

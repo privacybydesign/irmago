@@ -191,11 +191,8 @@ func (s *vcdmBatchStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 	return s.store.MarkInstanceUsed(instanceID)
 }
 
-// isBatchValid returns false if the credential batch is expired or not yet
-// valid. Unix epoch (time.Unix(0,0)) is treated as "not set" because the
-// storage layer has marked ExpiresAt/NotBefore as Valid even when the
-// credential states no expiry or not-before of its own, storing 0 as the
-// timestamp.
+// isVcdmInstanceRevoked reports whether the instance's stored or fetched status
+// marks it revoked.
 func isVcdmInstanceRevoked(revocation VcdmRevocationChecker, instance *models.VcdmBatchInstance) bool {
 	if len(instance.BitstringStatusEntries) > 0 {
 		return revocation.IsStoredStatusRevoked(instance.LastKnownStatus)
@@ -203,6 +200,11 @@ func isVcdmInstanceRevoked(revocation VcdmRevocationChecker, instance *models.Vc
 	return revocation.IsRevoked(instance.StatusReference())
 }
 
+// isBatchValid returns false if the credential batch is expired or not yet
+// valid. Unix epoch (time.Unix(0,0)) is treated as "not set" because the
+// storage layer has marked ExpiresAt/NotBefore as Valid even when the
+// credential states no expiry or not-before of its own, storing 0 as the
+// timestamp.
 func isBatchValid(batch *Batch, now time.Time) bool {
 	epoch := time.Unix(0, 0)
 	if batch.ExpiresAt.Valid && !batch.ExpiresAt.V.Equal(epoch) && now.After(batch.ExpiresAt.V) {

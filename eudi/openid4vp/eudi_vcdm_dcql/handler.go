@@ -34,8 +34,7 @@ var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 // verifier targets a VCDM credential by its composite @context+type identity,
 // not a fetchable vct URL), so the "obtainable descriptor" path stays disabled:
 // a VCDM query matching no stored credential simply yields no owned candidate.
-// There is no revocation checker: VCDM status (Bitstring Status List) is not
-// checked yet.
+// A revoked credential is still offered, flagged by the revocation checker.
 func NewVcdmDcqlHandler(
 	eudiStorage storage.Storage,
 	credentialStore db.VcdmStore,

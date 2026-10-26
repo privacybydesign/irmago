@@ -19,6 +19,14 @@ const PresentationTyp = "vp+jwt"
 // EnvelopedVerifiableCredential (VCDM 2.0 §4.13.1, VC-JOSE-COSE §3.2).
 const EnvelopedCredentialDataUrlPrefix = "data:application/vc+sd-jwt,"
 
+// VCDM 2.0 type of a Verifiable Presentation and of a credential enveloped in
+// one (VCDM 2.0 §4.13.1), and the JWS alg of an unsecured JWT (RFC 7519 §6).
+const (
+	typeVerifiablePresentation        = "VerifiablePresentation"
+	typeEnvelopedVerifiableCredential = "EnvelopedVerifiableCredential"
+	algUnsecured                      = "none"
+)
+
 // CreateEnvelopedPresentation wraps an SD-JWT-secured VCDM credential, holding
 // only the selected disclosures, in a VCDM 2.0 Verifiable Presentation that
 // envelopes it as an EnvelopedVerifiableCredential.
@@ -32,11 +40,11 @@ const EnvelopedCredentialDataUrlPrefix = "data:application/vc+sd-jwt,"
 func CreateEnvelopedPresentation(selected sdjwt.SdJwt, keyBinder sdjwt.KeyBinder, requireHolderBinding bool, nonce string, audience string) (string, error) {
 	claims := map[string]any{
 		vcdm.ContextKey: []string{vcdm.ContextV2},
-		vcdm.TypeKey:    []string{"VerifiablePresentation"},
+		vcdm.TypeKey:    []string{typeVerifiablePresentation},
 		"verifiableCredential": []any{
 			map[string]any{
 				vcdm.ContextKey: []string{vcdm.ContextV2},
-				vcdm.TypeKey:    "EnvelopedVerifiableCredential",
+				vcdm.TypeKey:    typeEnvelopedVerifiableCredential,
 				"id":            EnvelopedCredentialDataUrlPrefix + string(selected),
 			},
 		},
@@ -70,7 +78,7 @@ func CreateEnvelopedPresentation(selected sdjwt.SdJwt, keyBinder sdjwt.KeyBinder
 // Assembled by hand rather than with jwx, which would turn the aud string into
 // an array and so give the two presentation forms different aud shapes.
 func createUnsecuredJwt(claims map[string]any) (string, error) {
-	header, err := json.Marshal(map[string]any{"alg": "none", "typ": PresentationTyp})
+	header, err := json.Marshal(map[string]any{"alg": algUnsecured, "typ": PresentationTyp})
 	if err != nil {
 		return "", fmt.Errorf("failed to serialize verifiable presentation header: %w", err)
 	}
