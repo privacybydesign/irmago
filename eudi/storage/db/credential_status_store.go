@@ -9,7 +9,7 @@ import (
 )
 
 // CredentialStatusInstance is an instance's status_list reference.
-// BatchID lets callers select a single representative instance per batch, and
+// BatchID lets callers combine a batch's instances into one batch status, and
 // LastKnownStatus lets them tell a status change from a re-confirmation without
 // a second read.
 type CredentialStatusInstance struct {

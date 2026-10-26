@@ -367,9 +367,9 @@ func (client *Client) Close() error {
 	return client.storage.Close()
 }
 
-// RefreshStatuses re-fetches the status list for one representative instance
-// per stored SD-JWT VC and SD-JWT-secured VCDM batch and updates its
-// LastKnownStatus column.
+// RefreshStatuses re-fetches the status lists of every stored credential,
+// checks each instance, and stores its batch's status on every instance of the
+// batch (see services.RevocationService.RefreshStatuses).
 // Use this on app resume or when the UI exposes an explicit refresh action.
 // Errors during the sweep are logged; the previous LastKnownStatus persists for
 // any URI that fails to refresh.
@@ -846,9 +846,9 @@ func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInte
 		common.Logger.Warnf("failed to create new cron job for updating CRLs: %v", err)
 	}
 
-	// Periodically re-fetch referenced Token Status Lists and update one
-	// representative instance's LastKnownStatus per credential batch (a batch is
-	// revoked all at once, so one entry stands in for the whole batch). Skipped
+	// Periodically re-fetch referenced status lists and update every instance's
+	// LastKnownStatus with its batch's status (a batch is revoked all at once,
+	// so one revoked instance revokes the whole batch). Skipped
 	// when the interval is non-positive. The sweep is fail-soft: per-URI errors
 	// are logged inside RefreshStatuses and the previous status is kept. A sweep
 	// that finds a status change signals the app through RefreshStatuses.

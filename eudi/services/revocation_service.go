@@ -9,26 +9,25 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/internal/common"
 	"gorm.io/datatypes"
 )
 
-// RevocationService is the single home for Token Status List revocation
-// across every credential format. It owns the status-list Checker and one
-// CredentialStatusStore per format, and exposes the three ways the wallet
-// consults revocation:
+// RevocationService is the single home for credential revocation across every
+// credential format. It owns the status-list checkers and one status store per
+// format. Every format works the same way: RefreshStatuses checks each stored
+// instance and records its batch's status on it, and everything else reads only
+// that stored status:
 //
-//   - IsRevoked: a cached (no-fetch) check for one status list entry, used by
-//     the OpenID4VP disclosure planners;
-//   - RefreshStatuses: the background sweep that re-fetches and writes back each
-//     stored instance's LastKnownStatus, and keeps the status-list cache warm;
-//   - BatchRevocation: per-batch flags derived from stored status, for the
-//     credential list view.
+//   - IsStoredStatusRevoked: the flag for one instance, used by the OpenID4VP
+//     disclosure planners;
+//   - BatchRevocation: per-batch flags, for the credential list view.
 //
-// All three share one revocation policy (see statusRevoked): anything other
-// than VALID counts as revoked (INVALID, SUSPENDED, application-specific),
-// except UNKNOWN (no status information yet), which stays advisory not-revoked.
+// Both share one revocation policy (see statusRevoked): anything other than
+// VALID counts as revoked (INVALID, SUSPENDED, application-specific), except
+// UNKNOWN (no status information yet), which stays advisory not-revoked.
 type RevocationService struct {
 	checker *statuslist.Checker
 	stores  []db.CredentialStatusStore
@@ -41,9 +40,8 @@ type RevocationService struct {
 
 // NewRevocationService returns a service backed by the given Token Status
 // List Checker, consulting every given store for status-referenced
-// instances. A nil checker disables the cached-read and refresh paths
-// (IsRevoked returns false, RefreshStatuses skips these stores); the
-// stored-status path (BatchRevocation) still works. One store per credential
+// instances. A nil checker makes RefreshStatuses skip these stores; the stored
+// status is still read. One store per credential
 // format that carries a Token Status List reference (SD-JWT VC, mso_mdoc and
 // SD-JWT-secured VCDM).
 func NewRevocationService(checker *statuslist.Checker, stores ...db.CredentialStatusStore) *RevocationService {
@@ -54,8 +52,8 @@ func NewRevocationService(checker *statuslist.Checker, stores ...db.CredentialSt
 // is usable only when it reads VALID. INVALID, SUSPENDED, and any
 // application-specific status all count as revoked (fail-closed on anything the
 // issuer flags). UNKNOWN is the sole exception — it means "no status
-// information" (cold cache / not yet checked), not a bad status, so it stays
-// advisory not-revoked (see IsRevoked and the cold-cache behaviour).
+// information" (not yet checked), not a bad status, so it stays advisory
+// not-revoked.
 // TODO: the client model has no separate suspended state, so suspension is
 // surfaced as "revoked" for now — add a distinct suspended state (clientmodels
 // + frontend) to show it as temporary rather than permanent.
@@ -63,55 +61,41 @@ func statusRevoked(s statuslist.Status) bool {
 	return s != statuslist.StatusValid && s != statuslist.StatusUnknown
 }
 
-// IsRevoked reports whether the entry ref points at is revoked according to
-// the locally cached Token Status List -- no network fetch. A nil ref (an
-// instance without a status_list reference) is never revoked. A missing or
-// undeterminable cached status reads as NOT revoked: the flag is advisory, the
-// cache is kept warm by RefreshStatuses, and the verifier's own status check is
+// IsStoredStatusRevoked applies the revocation policy to an instance's stored
+// status, which RefreshStatuses keeps up to date. The flag never blocks
+// disclosure: it is shown to the user, and the verifier's own status check is
 // the backstop.
-//
-// The check never blocks disclosure -- revocation is surfaced as a flag for the
-// frontend, with the verifier as the backstop.
-func (s *RevocationService) IsRevoked(ref *statuslist.Reference) bool {
-	if s.checker == nil || ref == nil {
-		return false
-	}
-	status, err := s.checker.CheckCached(*ref)
-	if err != nil {
-		eudi.Logger.Warnf("revocation: cached status read for %s idx %d: %v", common.SanitizeForLog(ref.URI), ref.Index, err)
-		return false // advisory: undeterminable status -> not flagged
-	}
-	return statusRevoked(status)
+func (s *RevocationService) IsStoredStatusRevoked(status uint8) bool {
+	return statusRevoked(statuslist.Status(status))
 }
 
-// RefreshStatuses re-fetches Token Status Lists and updates stored statuses,
-// checking one representative instance per batch rather than every copy. A
-// batch's instances are the same logical credential and are revoked together
-// (draft-ietf-oauth-status-list §13.2), so one entry's bit determines the whole
-// batch's status; re-checking every copy would be redundant work.
+// RefreshStatuses re-fetches the status lists and updates stored statuses.
+// Every instance is checked against its own status entry, and each batch's
+// worst status is stored on every instance of the batch: a batch's instances
+// are the same logical credential and are revoked together
+// (draft-ietf-oauth-status-list §13.2), so one revoked instance revokes the
+// batch. The credential list and disclosure, which read an instance's stored
+// status, therefore always agree.
 //
-// Every configured store is swept in turn (SD-JWT VC, mso_mdoc, ...);
-// representatives are grouped by status list URI *within* each store's sweep,
-// so a list shared across many batches of the same format is fetched once. A
-// URI happening to be shared *across* formats would still cost one extra
-// fetch — an acceptable rarity, since batches of different formats are never
-// the same credential and grouping across stores would mean callers cannot
-// tell which format's row to write back to.
+// Each status list is fetched once per store's sweep, however many instances
+// point at it. A URI happening to be shared *across* formats still costs one
+// extra fetch — an acceptable rarity, since batches of different formats are
+// never the same credential.
 //
-// Fail-soft: per-URI and per-instance errors are logged and skipped, leaving
-// the previous LastKnownStatus in place. A store that cannot list its
-// instances is skipped the same way, but its error is returned after the
-// other stores have been swept. A nil checker skips the Token Status List stores. Cancelling
-// ctx is the one thing that does stop the sweep, keeping whatever was already
-// written back.
+// Fail-soft: an instance whose list cannot be fetched or read counts with its
+// previous stored status, so a failure never clears a revocation, and a batch
+// none of whose instances could be checked is left alone. A store that cannot
+// list its instances is skipped the same way, but its error is returned after
+// the other stores have been swept. A nil checker skips the Token Status List
+// stores. Cancelling ctx is the one thing that does stop the sweep, keeping
+// whatever was already written back.
 //
-// Returns how many batches' statuses moved — one representative per batch, so
-// this counts batches, not rows. Re-confirmations and failures leave the stored
-// status alone and so count for nothing; callers use the count to decide
-// whether anything happened worth telling the app about. A cut-short sweep
-// returns both: the changes it did write back, and the cancellation. Both matter
-// — the writebacks are committed, so a caller that discards the count on an
-// error loses those changes for good.
+// Returns how many batches' statuses moved. Re-confirmations and failures
+// count for nothing; callers use the count to decide whether anything happened
+// worth telling the app about. A cut-short sweep returns both: the changes it
+// did write back, and the cancellation. Both matter — the writebacks are
+// committed, so a caller that discards the count on an error loses those
+// changes for good.
 //
 // The Bitstring stores (see WithBitstringStatus) are swept after the Token
 // Status List ones, the same way.
@@ -153,61 +137,122 @@ func (s *RevocationService) refreshStoreStatuses(ctx context.Context, store db.C
 		return 0, fmt.Errorf("load instances: %w", err)
 	}
 
-	// Keep one representative instance per batch. Any copy gives the same
-	// answer under the whole-batch-revoked assumption, so the first seen wins.
-	seenBatch := make(map[datatypes.UUID]struct{}, len(instances))
-	representatives := make([]db.CredentialStatusInstance, 0, len(instances))
+	// One Refresh per URI populates the cache; the per-instance Check calls
+	// below then read from the warm cache (no extra HTTP traffic).
+	refreshed := map[string]bool{}
 	for _, inst := range instances {
-		if _, ok := seenBatch[inst.BatchID]; ok {
+		uri := inst.StatusListURI
+		if _, seen := refreshed[uri]; seen {
 			continue
 		}
-		seenBatch[inst.BatchID] = struct{}{}
-		representatives = append(representatives, inst)
-	}
-
-	groups := map[string][]db.CredentialStatusInstance{}
-	for _, inst := range representatives {
-		groups[inst.StatusListURI] = append(groups[inst.StatusListURI], inst)
-	}
-
-	for uri, group := range groups {
-		// Stop between groups, so shutdown does not wait on the remaining URIs.
+		// Stop between URIs, so shutdown does not wait on the remaining ones.
 		if ctx.Err() != nil {
-			return changed, ctx.Err()
+			return 0, ctx.Err()
 		}
-
-		// One Refresh per URI populates the cache; the per-idx Check calls
-		// below then read from the warm cache (no extra HTTP traffic).
 		if _, err := s.checker.Refresh(ctx, statuslist.Reference{URI: uri}); err != nil {
 			// A fetch aborted by cancellation is not a fail-soft per-URI error:
 			// it means the sweep was cut short, which the caller has to be able
-			// to tell from a sweep that looked at everything. Without this, a
-			// cancellation landing in the last group's fetch returns nil.
+			// to tell from a sweep that looked at everything.
 			if ctx.Err() != nil {
-				return changed, ctx.Err()
+				return 0, ctx.Err()
 			}
 			eudi.Logger.Warnf("status refresh: refresh %s failed: %v", common.SanitizeForLog(uri), err)
+			refreshed[uri] = false
 			continue
 		}
-		now := time.Now()
-		for _, inst := range group {
-			st, err := s.checker.Check(ctx, statuslist.Reference{URI: uri, Index: inst.StatusListIdx})
+		refreshed[uri] = true
+	}
+
+	for _, batch := range groupByBatch(instances, func(inst db.CredentialStatusInstance) datatypes.UUID { return inst.BatchID }) {
+		var combined batchStatus
+		swept := make([]sweptInstance, len(batch))
+		for i, inst := range batch {
+			swept[i] = sweptInstance{id: inst.InstanceID, lastKnown: inst.LastKnownStatus}
+			if !refreshed[inst.StatusListURI] {
+				combined.addStored(inst.LastKnownStatus)
+				continue
+			}
+			st, err := s.checker.Check(ctx, statuslist.Reference{URI: inst.StatusListURI, Index: inst.StatusListIdx})
 			if err != nil {
-				eudi.Logger.Warnf("status refresh: check idx %d on %s failed: %v", inst.StatusListIdx, common.SanitizeForLog(uri), err)
+				eudi.Logger.Warnf("status refresh: check idx %d on %s failed: %v", inst.StatusListIdx, common.SanitizeForLog(inst.StatusListURI), err)
+				combined.addStored(inst.LastKnownStatus)
 				continue
 			}
-			// Written either way, so a re-confirmation still records that the
-			// wallet looked; only a different value counts as a change.
-			if err := store.UpdateInstanceStatus(inst.InstanceID, uint8(st), now); err != nil {
-				eudi.Logger.Warnf("status refresh: writeback failed for instance %s: %v", inst.InstanceID, err)
-				continue
-			}
-			if uint8(st) != inst.LastKnownStatus {
-				changed++
-			}
+			combined.addChecked(st)
+		}
+		if storeBatchStatus(store, swept, combined) {
+			changed++
 		}
 	}
 	return changed, nil
+}
+
+// sweptInstance is what storeBatchStatus needs of one instance a sweep looked at.
+type sweptInstance struct {
+	id        datatypes.UUID
+	lastKnown uint8
+}
+
+// batchStatus combines a sweep's findings for one batch into the status every
+// instance of the batch gets: the worst one, so one revoked instance revokes
+// the batch. An instance that could not be checked counts with its stored
+// status, so a failed check never clears a revocation.
+type batchStatus struct {
+	status  statuslist.Status
+	checked bool
+}
+
+func (b *batchStatus) addChecked(s statuslist.Status) {
+	b.status = vcdmsdjwt.WorseStatus(b.status, s)
+	b.checked = true
+}
+
+func (b *batchStatus) addStored(s uint8) {
+	b.status = vcdmsdjwt.WorseStatus(b.status, statuslist.Status(s))
+}
+
+// storeBatchStatus writes a batch's combined status to every instance of the
+// batch, and reports whether any instance's stored status moved. A batch none
+// of whose instances could be checked is left alone: nothing was learned, and
+// the write would record a check that did not happen.
+func storeBatchStatus(store interface {
+	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
+}, batch []sweptInstance, combined batchStatus) bool {
+	if !combined.checked {
+		return false
+	}
+	// Written either way, so a re-confirmation still records that the wallet
+	// looked; only a different value counts as a change.
+	now := time.Now()
+	moved := false
+	for _, inst := range batch {
+		if err := store.UpdateInstanceStatus(inst.id, uint8(combined.status), now); err != nil {
+			eudi.Logger.Warnf("status refresh: writeback failed for instance %s: %v", inst.id, err)
+			continue
+		}
+		if uint8(combined.status) != inst.lastKnown {
+			moved = true
+		}
+	}
+	return moved
+}
+
+// groupByBatch splits instances into their batches, in the order each batch
+// first appears.
+func groupByBatch[T any](instances []T, batchOf func(T) datatypes.UUID) [][]T {
+	index := map[datatypes.UUID]int{}
+	var batches [][]T
+	for _, inst := range instances {
+		id := batchOf(inst)
+		i, ok := index[id]
+		if !ok {
+			i = len(batches)
+			index[id] = i
+			batches = append(batches, nil)
+		}
+		batches[i] = append(batches[i], inst)
+	}
+	return batches
 }
 
 // BatchRevocation returns, keyed by batch hash, which of store's batches support

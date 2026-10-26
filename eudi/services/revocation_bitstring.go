@@ -26,16 +26,10 @@ func (s *RevocationService) WithBitstringStatus(checker *bitstringstatus.Checker
 	return s
 }
 
-// IsStoredStatusRevoked applies the revocation policy to a status a sweep
-// stored. The disclosure planner uses it for an instance with Bitstring
-// entries: those lists are not cached, so IsRevoked cannot read them.
-func (s *RevocationService) IsStoredStatusRevoked(status uint8) bool {
-	return statusRevoked(statuslist.Status(status))
-}
-
 // refreshBitstringStatuses is refreshStoreStatuses for a BitstringStatusStore:
-// one representative per batch, each list fetched once per sweep. An instance's
-// status combines all of its references, its IETF one included.
+// every instance checked, each list fetched once per sweep, and each batch's
+// worst status stored on all of its instances. An instance's status combines
+// all of its references, its IETF one included.
 func (s *RevocationService) refreshBitstringStatuses(ctx context.Context, store db.BitstringStatusStore) (changed int, err error) {
 	instances, err := store.ListInstancesWithBitstringStatus()
 	if err != nil {
@@ -47,28 +41,25 @@ func (s *RevocationService) refreshBitstringStatuses(ctx context.Context, store 
 		refreshedTokenURIs: map[string]bool{},
 		lists:              map[string]bitstringstatus.ListCredentialSubject{},
 	}
-	seenBatch := map[datatypes.UUID]bool{}
-	for _, inst := range instances {
-		if seenBatch[inst.BatchID] {
-			continue
+	for _, batch := range groupByBatch(instances, func(inst db.BitstringStatusInstance) datatypes.UUID { return inst.BatchID }) {
+		var combined batchStatus
+		swept := make([]sweptInstance, len(batch))
+		for i, inst := range batch {
+			swept[i] = sweptInstance{id: inst.InstanceID, lastKnown: inst.LastKnownStatus}
+			if ctx.Err() != nil {
+				return changed, ctx.Err()
+			}
+			status, ok := sweep.check(ctx, inst)
+			if ctx.Err() != nil {
+				return changed, ctx.Err()
+			}
+			if !ok {
+				combined.addStored(inst.LastKnownStatus)
+				continue
+			}
+			combined.addChecked(status)
 		}
-		seenBatch[inst.BatchID] = true
-
-		if ctx.Err() != nil {
-			return changed, ctx.Err()
-		}
-		status, ok := sweep.check(ctx, inst)
-		if ctx.Err() != nil {
-			return changed, ctx.Err()
-		}
-		if !ok {
-			continue
-		}
-		if err := store.UpdateInstanceStatus(inst.InstanceID, uint8(status), time.Now()); err != nil {
-			eudi.Logger.Warnf("status refresh: writeback failed for instance %s: %v", inst.InstanceID, err)
-			continue
-		}
-		if uint8(status) != inst.LastKnownStatus {
+		if storeBatchStatus(store, swept, combined) {
 			changed++
 		}
 	}

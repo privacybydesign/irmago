@@ -3,7 +3,6 @@ package sdjwtdcql
 import (
 	"time"
 
-	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -65,11 +64,12 @@ type BatchStore interface {
 	MarkInstanceUsed(instanceID datatypes.UUID) error
 }
 
-// RevocationChecker reports whether a status list entry is currently revoked.
-// The disclosure planner depends only on this narrow verb, keeping the Token
-// Status List mechanics out of this package (see services.RevocationService).
+// RevocationChecker applies the revocation policy to an instance's stored
+// status, which the revocation sweep keeps up to date for every format. The
+// disclosure planner depends only on this narrow verb, keeping the status list
+// mechanics out of this package (see services.RevocationService).
 type RevocationChecker interface {
-	IsRevoked(ref *statuslist.Reference) bool
+	IsStoredStatusRevoked(status uint8) bool
 }
 
 // NewSdJwtVcBatchStore adapts the SD-JWT VC store. revocation determines an
@@ -119,7 +119,7 @@ func (s *sdJwtVcBatchStore) GetUnusedInstance(batchID datatypes.UUID) (*Instance
 	return &Instance{
 		ID:                  instance.ID,
 		RawCredential:       instance.RawCredential,
-		Revoked:             s.revocation != nil && s.revocation.IsRevoked(instance.StatusReference()),
+		Revoked:             s.revocation != nil && s.revocation.IsStoredStatusRevoked(instance.LastKnownStatus),
 		RevocationSupported: instance.StatusListURI != nil,
 	}, nil
 }
@@ -128,23 +128,15 @@ func (s *sdJwtVcBatchStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 	return s.store.MarkInstanceUsed(instanceID)
 }
 
-// VcdmRevocationChecker is RevocationChecker plus the stored-status read a VCDM
-// instance with W3C Bitstring entries needs: those lists are not cached, so
-// their last sweep result is what is known (see services.RevocationService).
-type VcdmRevocationChecker interface {
-	RevocationChecker
-	IsStoredStatusRevoked(status uint8) bool
-}
-
 // NewVcdmBatchStore adapts the SD-JWT-secured VCDM store. revocation determines
 // an instance's Revoked flag; nil disables the check.
-func NewVcdmBatchStore(store db.VcdmStore, revocation VcdmRevocationChecker) BatchStore {
+func NewVcdmBatchStore(store db.VcdmStore, revocation RevocationChecker) BatchStore {
 	return &vcdmBatchStore{store: store, revocation: revocation}
 }
 
 type vcdmBatchStore struct {
 	store      db.VcdmStore
-	revocation VcdmRevocationChecker
+	revocation RevocationChecker
 }
 
 func (s *vcdmBatchStore) ListBatches() ([]*Batch, error) {
@@ -182,22 +174,13 @@ func (s *vcdmBatchStore) GetUnusedInstance(batchID datatypes.UUID) (*Instance, e
 	return &Instance{
 		ID:                  instance.ID,
 		RawCredential:       instance.RawCredential,
-		Revoked:             s.revocation != nil && isVcdmInstanceRevoked(s.revocation, instance),
+		Revoked:             s.revocation != nil && s.revocation.IsStoredStatusRevoked(instance.LastKnownStatus),
 		RevocationSupported: instance.HasStatusReference,
 	}, nil
 }
 
 func (s *vcdmBatchStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 	return s.store.MarkInstanceUsed(instanceID)
-}
-
-// isVcdmInstanceRevoked reports whether the instance's stored or fetched status
-// marks it revoked.
-func isVcdmInstanceRevoked(revocation VcdmRevocationChecker, instance *models.VcdmBatchInstance) bool {
-	if len(instance.BitstringStatusEntries) > 0 {
-		return revocation.IsStoredStatusRevoked(instance.LastKnownStatus)
-	}
-	return revocation.IsRevoked(instance.StatusReference())
 }
 
 // isBatchValid returns false if the credential batch is expired or not yet

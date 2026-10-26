@@ -28,15 +28,19 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
+	"gorm.io/datatypes"
 )
 
 // testStatusListIndex is the index every test credential gets on the list.
@@ -334,4 +338,55 @@ func TestVcdmStore_BitstringInstancesAreSweptOnce(t *testing.T) {
 	referenced, err := env.store.ListStatusReferencedInstanceStatuses()
 	require.NoError(t, err)
 	require.Len(t, referenced, 1, "the credential list still sees the instance as revocable")
+}
+
+// recordingBitstringStore is a BitstringStatusStore over fixed instances that
+// records the status written to each.
+type recordingBitstringStore struct {
+	instances []db.BitstringStatusInstance
+	written   map[datatypes.UUID]uint8
+}
+
+func (s *recordingBitstringStore) ListInstancesWithBitstringStatus() ([]db.BitstringStatusInstance, error) {
+	return s.instances, nil
+}
+
+func (s *recordingBitstringStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, _ time.Time) error {
+	s.written[instanceID] = status
+	return nil
+}
+
+// Disclosure reads the stored status of the instance it sends, so a sweep that
+// finds a batch revoked must record that on every instance of the batch, not
+// only on the one it checked.
+func TestRevocationService_BitstringRefreshWritesEveryInstanceOfABatch(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	server.serve(t, true)
+
+	entries, err := json.Marshal([]bitstringstatus.Entry{{
+		StatusPurpose:        bitstringstatus.PurposeRevocation,
+		StatusListIndex:      testStatusListIndex,
+		StatusListCredential: server.url(),
+		StatusSize:           1,
+	}})
+	require.NoError(t, err)
+	batchID := datatypes.NewUUIDv4()
+	valid := uint8(statuslist.StatusValid)
+	store := &recordingBitstringStore{
+		instances: []db.BitstringStatusInstance{
+			{InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: valid, Entries: entries},
+			{InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: valid, Entries: entries},
+		},
+		written: map[datatypes.UUID]uint8{},
+	}
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	checker := bitstringstatus.NewChecker(bitstringstatus.VerificationContext{X509Context: ctx.X509VerificationContext})
+	changed, err := NewRevocationService(nil).WithBitstringStatus(checker, store).RefreshStatuses(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, changed, "one batch changed")
+
+	for _, inst := range store.instances {
+		require.Equal(t, uint8(statuslist.StatusInvalid), store.written[inst.InstanceID], "instance %s", inst.InstanceID)
+	}
 }

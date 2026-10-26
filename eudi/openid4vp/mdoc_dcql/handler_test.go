@@ -15,7 +15,6 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
-	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -122,7 +121,7 @@ func TestFindCandidatesAndPrepareDisclosureRoundTrip(t *testing.T) {
 // lives with services.RevocationService).
 type stubRevocation struct{ revoked bool }
 
-func (s stubRevocation) IsRevoked(*statuslist.Reference) bool { return s.revoked }
+func (s stubRevocation) IsStoredStatusRevoked(uint8) bool { return s.revoked }
 
 // TestRevokedMdocIsOfferedAndLoggedAsRevoked pins the IRMA-parity contract for
 // mso_mdoc, as eudi_sdjwt_dcql does for SD-JWT VC: a revoked credential is not

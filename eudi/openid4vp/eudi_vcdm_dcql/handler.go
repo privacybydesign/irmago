@@ -38,15 +38,15 @@ var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 // vct URL), so the "obtainable descriptor" path stays disabled: a VCDM query
 // matching no stored credential simply yields no owned candidate.
 //
-// revocation decides each candidate's Revoked flag: from the cached Token
-// Status List, and for Bitstring Status List entries from the status the
-// revocation sweep last stored. A revoked credential is still offered, flagged.
+// revocation decides each candidate's Revoked flag from the status the
+// revocation sweep last stored, as for every format. A revoked credential is
+// still offered, flagged.
 func NewVcdmDcqlHandler(
 	eudiStorage storage.Storage,
 	credentialStore db.VcdmStore,
 	keyBinder sdjwt.KeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
-	revocation sdjwtdcql.VcdmRevocationChecker,
+	revocation sdjwtdcql.RevocationChecker,
 ) *Handler {
 	profile := sdjwtdcql.NewProfile(
 		models.CredentialFormatSdJwtVcdm,
