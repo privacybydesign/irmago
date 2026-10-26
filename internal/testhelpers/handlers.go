@@ -168,7 +168,7 @@ func (th TestHandler) RequestPin(remainingAttempts int, callback irmaclient.PinH
 		callback(true, "12345")
 	})
 }
-func (th TestHandler) PairingRequired(pairingCode string) {
+func (th TestHandler) PairingRequired(pairingCode string, requestorInfo *irma.RequestorInfo) {
 	// Send pairing code via channel to calling test. This is done such that
 	// calling tests can detect it when this handler is skipped unexpectedly.
 	if th.PairingCodeChan != nil {

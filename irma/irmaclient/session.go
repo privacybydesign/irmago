@@ -32,7 +32,7 @@ type PinHandler func(proceed bool, pin string)
 type Handler interface {
 	StatusUpdate(action irma.Action, status irma.ClientStatus)
 	ClientReturnURLSet(clientReturnURL string)
-	PairingRequired(pairingCode string)
+	PairingRequired(pairingCode string, requestorInfo *irma.RequestorInfo)
 	Success(result string)
 	Cancelled()
 	Failure(err *irma.SessionError)
@@ -289,7 +289,8 @@ func (session *session) getSessionInfo() {
 }
 
 func (session *session) handlePairing(pairingCode string) error {
-	session.Handler.PairingRequired(pairingCode)
+	// Who asks is already known (from the QR host): the pairing screen can say it.
+	session.Handler.PairingRequired(pairingCode, session.RequestorInfo)
 
 	statuschan := make(chan irma.ServerStatus)
 	errorchan := make(chan error)

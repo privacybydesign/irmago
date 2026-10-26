@@ -29,10 +29,19 @@ func (a *irmaSessionAdapter) ClientReturnURLSet(clientReturnURL string) {
 	}
 }
 
-func (a *irmaSessionAdapter) PairingRequired(pairingCode string) {
-	a.session.State.Status = clientmodels.Status_ShowPairingCode
-	a.session.State.PairingCode = pairingCode
-	a.session.dispatchState()
+// PairingRequired shows the pairing code before the request arrives. Who
+// asks is known already (from the QR host), so the code screen names the
+// requestor, verified or not, as the screens after it do; the type comes
+// from the QR, the protocol is IRMA.
+func (a *irmaSessionAdapter) PairingRequired(pairingCode string, requestorInfo *irma.RequestorInfo) {
+	s := a.session
+	s.State.Status = clientmodels.Status_ShowPairingCode
+	s.State.PairingCode = pairingCode
+	s.State.Protocol = clientmodels.Protocol_Irma
+	if requestorInfo != nil {
+		s.State.Requestor = requestorInfoToTrustedParty(requestorInfo, s.client.locale())
+	}
+	s.dispatchState()
 }
 
 func (a *irmaSessionAdapter) Success(result string) {

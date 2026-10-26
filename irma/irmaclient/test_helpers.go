@@ -160,7 +160,7 @@ func (h *MockSessionHandler) RequestPin(remainingAttempts int, callback PinHandl
 }
 
 func (h *MockSessionHandler) ClientReturnURLSet(clientReturnURL string) {}
-func (h *MockSessionHandler) PairingRequired(pairingCode string) {
+func (h *MockSessionHandler) PairingRequired(pairingCode string, requestorInfo *irma.RequestorInfo) {
 	if h.log {
 		fmt.Printf("pairing required: %v\n", pairingCode)
 	}

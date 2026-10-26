@@ -172,6 +172,10 @@ func testSessionWithPairingCode(
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_ShowPairingCode)
 	require.Len(t, session.PairingCode, 4)
 	require.False(t, session.ContinueOnSecondDevice)
+	// Who asks is known before the request: the code screen can name them.
+	require.Equal(t, clientmodels.Protocol_Irma, session.Protocol)
+	require.NotEmpty(t, session.Requestor.Name)
+	pairingRequestor := session.Requestor
 
 	// pretend the pairing was completed
 	irmaServer.irma.PairingCompleted(requestorToken)
@@ -179,6 +183,10 @@ func testSessionWithPairingCode(
 	// now the session should continue to issuance permission
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	// The same requestor, verified or not, as on the screens after it.
+	require.Equal(t, session.Requestor.Name, pairingRequestor.Name)
+	require.Equal(t, session.Requestor.Id, pairingRequestor.Id)
+	require.Equal(t, session.Requestor.Verified, pairingRequestor.Verified)
 }
 
 func testSessionErrorsArePropagated(

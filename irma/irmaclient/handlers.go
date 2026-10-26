@@ -118,6 +118,6 @@ func (h *backgroundIssuanceHandler) KeyshareEnrollmentMissing(manager irma.Schem
 func (h *backgroundIssuanceHandler) ClientReturnURLSet(clientReturnURL string) {
 	h.fail(errors.New("unexpectedly found an external return url"))
 }
-func (h *backgroundIssuanceHandler) PairingRequired(pairingCode string) {
+func (h *backgroundIssuanceHandler) PairingRequired(pairingCode string, requestorInfo *irma.RequestorInfo) {
 	h.fail(errors.New("device pairing required"))
 }
