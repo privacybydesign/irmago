@@ -346,9 +346,11 @@ func BuildAttributesFromVcdmDocument(
 // vcdmNonContentKeys are the top-level keys stripped before hashing a VCDM
 // credential for batch deduplication: the JWT/SD-JWT securing claims plus the
 // per-issuance envelope properties (identifier, validity window, status
-// references). Two issuances of the same logical credential then produce the
-// same hash, so a re-issuance replaces the stored batch — mirroring
-// hashForSdJwtVc's treatment of the IETF SD-JWT VC registered claims.
+// references). Two issuances with the same content then produce the same hash,
+// so such a re-issuance replaces the stored batch — mirroring hashForSdJwtVc's
+// treatment of the IETF SD-JWT VC registered claims. credentialSubject is
+// content, its id included: a re-issuance to a new subject id, such as a fresh
+// holder DID, is stored as a second credential.
 var vcdmNonContentKeys = map[string]struct{}{
 	jwt.IssuerKey:            {},
 	jwt.SubjectKey:           {},

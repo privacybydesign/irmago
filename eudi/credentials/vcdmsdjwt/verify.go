@@ -24,24 +24,13 @@ import (
 const ClockSkewInSeconds = 180
 
 // VerificationContext carries the options for verifying an SD-JWT-secured VCDM
-// credential. It mirrors sdjwtvc.SdJwtVcVerificationContext so the two policy
-// layers configure the same way; the JwtVerifier and Expected* fields are used
-// only by verifier-side (disclosure) processing, added later.
+// credential, on receipt by the holder.
 type VerificationContext struct {
 	eudi_jwt.X509VerificationContext
 
 	// Clock supplies "now" for verifying iat/nbf/exp and the VCDM validity
 	// period.
 	Clock jwt.Clock
-
-	// JwtVerifier verifies JWT signatures. Unused by holder-side receipt
-	// verification (no KB-JWT); reserved for verifier-side disclosure.
-	JwtVerifier sdjwt.JwtVerifier
-
-	// ExpectedNonce / ExpectedAudience are the OpenID4VP request values a
-	// KB-JWT must echo. Verifier-side only; unused for holder receipt.
-	ExpectedNonce    string
-	ExpectedAudience string
 
 	// StatusChecker and BitstringStatusChecker, when set, check the
 	// credential's IETF Token Status List and W3C Bitstring Status List
@@ -63,8 +52,7 @@ func CreateDefaultVerificationContext(trustedChain []byte) VerificationContext {
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
 			VerifyOpts: *opts,
 		},
-		Clock:       eudi_jwt.NewSystemClock(),
-		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
+		Clock: eudi_jwt.NewSystemClock(),
 	}
 }
 

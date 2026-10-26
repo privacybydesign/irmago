@@ -69,7 +69,6 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 	vcdmVerificationContext := vcdmsdjwt.VerificationContext{
 		X509VerificationContext: &conf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),
-		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
 	}
 	vcdmHolderVerifier := vcdmsdjwt.NewHolderVerificationProcessor(vcdmVerificationContext)
 

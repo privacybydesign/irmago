@@ -31,12 +31,16 @@ var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 // was linked to the instance at VCDM receipt. With holder binding, a disclosed
 // credential is enveloped in a Verifiable Presentation signed with the holder
 // key from its cnf, instead of carrying a KB-JWT; without it, the SD-JWT is sent
-// as is (vcdmsdjwt.Present). The SD-JWT VC type-metadata fetchers do not apply to VCDM (a
-// verifier targets a VCDM credential by its composite @context+type identity,
-// not a fetchable vct URL), so the "obtainable descriptor" path stays disabled:
-// a VCDM query matching no stored credential simply yields no owned candidate.
-// There is no revocation checker: VCDM status (Bitstring Status List) is not
-// checked yet.
+// as is (vcdmsdjwt.Present).
+//
+// The SD-JWT VC type-metadata fetchers do not apply to VCDM (a verifier targets
+// a VCDM credential by its composite @context+type identity, not a fetchable
+// vct URL), so the "obtainable descriptor" path stays disabled: a VCDM query
+// matching no stored credential simply yields no owned candidate.
+//
+// revocation decides each candidate's Revoked flag: from the cached Token
+// Status List, and for Bitstring Status List entries from the status the
+// revocation sweep last stored.
 func NewVcdmDcqlHandler(
 	eudiStorage storage.Storage,
 	credentialStore db.VcdmStore,
