@@ -9,6 +9,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
@@ -177,6 +178,27 @@ func (s *sdJwtVcdmCredentialService) Store(
 		}
 	}
 
+	// Each copy has its own status entries, so the references are read per
+	// copy. They are read and checked here, before computeHashAndDeleteExisting
+	// below, so a malformed issuance can't delete the user's existing batch.
+	statusRefs := make([]vcdmsdjwt.StatusReferences, len(parsedCredentials))
+	for i, p := range parsedCredentials {
+		refs, err := vcdmsdjwt.ParseStatusReferences(p.SdJwtVcdm.Document)
+		if err != nil {
+			if requireCryptographicKeyBinding {
+				s.deleteOrphanedKeys(publicKeyIdentifiers)
+			}
+			return fmt.Errorf("credential %d: %w", i, err)
+		}
+		statusRefs[i] = refs
+	}
+	if err := validateVcdmStatusReferences(statusRefs); err != nil {
+		if requireCryptographicKeyBinding {
+			s.deleteOrphanedKeys(publicKeyIdentifiers)
+		}
+		return err
+	}
+
 	// All instances in a batch are copies of one logical credential; the first
 	// is the source of truth for batch-level metadata.
 	first := parsedCredentials[0]
@@ -204,15 +226,10 @@ func (s *sdJwtVcdmCredentialService) Store(
 		return err
 	}
 
-	// Each copy has its own status entry, so the references are read per copy.
 	instances := make([]models.VcdmBatchInstance, len(parsedCredentials))
 	now := time.Now()
 	for i, p := range parsedCredentials {
-		refs, err := vcdmsdjwt.ParseStatusReferences(p.SdJwtVcdm.Document)
-		if err != nil {
-			return fmt.Errorf("credential %d: %w", i, err)
-		}
-		instances[i], err = withStatusReferences(models.VcdmBatchInstance{RawCredential: p.RawCredentialBytes}, refs, now)
+		instances[i], err = withStatusReferences(models.VcdmBatchInstance{RawCredential: p.RawCredentialBytes}, statusRefs[i], now)
 		if err != nil {
 			return err
 		}
@@ -341,6 +358,31 @@ func BuildAttributesFromVcdmDocument(
 		return attrs
 	}
 	return FlattenClaimValue(attrs, []any{vcdm.CredentialSubjectKey}, subject, lookup, metadataOrder)
+}
+
+// validateVcdmStatusReferences enforces the batch status invariants (see
+// requireDedicatedStatusEntries) for both kinds of status reference a VCDM
+// credential can carry. A Bitstring entry is identified by its list and index:
+// two instances on one position share its bit, whatever their purposes.
+func validateVcdmStatusReferences(refs []vcdmsdjwt.StatusReferences) error {
+	type bitstringPosition struct {
+		list  string
+		index uint64
+	}
+	tokenStatusLists := make([][]statuslist.Reference, len(refs))
+	bitstringPositions := make([][]bitstringPosition, len(refs))
+	for i, r := range refs {
+		if r.TokenStatusList != nil {
+			tokenStatusLists[i] = []statuslist.Reference{*r.TokenStatusList}
+		}
+		for _, entry := range r.Bitstring {
+			bitstringPositions[i] = append(bitstringPositions[i], bitstringPosition{entry.StatusListCredential, entry.StatusListIndex})
+		}
+	}
+	if err := requireDedicatedStatusEntries("status_list", tokenStatusLists); err != nil {
+		return err
+	}
+	return requireDedicatedStatusEntries("credentialStatus", bitstringPositions)
 }
 
 // vcdmNonContentKeys are the top-level keys stripped before hashing a VCDM

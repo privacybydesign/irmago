@@ -390,3 +390,79 @@ func TestRevocationService_BitstringRefreshWritesEveryInstanceOfABatch(t *testin
 		require.Equal(t, uint8(statuslist.StatusInvalid), store.written[inst.InstanceID], "instance %s", inst.InstanceID)
 	}
 }
+
+// A batch whose instances share a status entry, or carry status references
+// only in part, is refused: each one-time-use instance needs an entry of its
+// own. One instance may use one position for several purposes.
+func TestValidateVcdmStatusReferences(t *testing.T) {
+	entry := func(list string, index uint64, purpose bitstringstatus.StatusPurpose) bitstringstatus.Entry {
+		return bitstringstatus.Entry{StatusListCredential: list, StatusListIndex: index, StatusPurpose: purpose, StatusSize: 1}
+	}
+	bitstring := func(entries ...bitstringstatus.Entry) vcdmsdjwt.StatusReferences {
+		return vcdmsdjwt.StatusReferences{Bitstring: entries}
+	}
+	token := func(uri string, index uint64) vcdmsdjwt.StatusReferences {
+		return vcdmsdjwt.StatusReferences{TokenStatusList: &statuslist.Reference{URI: uri, Index: index}}
+	}
+	const list = "https://issuer.example/lists/1"
+
+	cases := []struct {
+		name    string
+		refs    []vcdmsdjwt.StatusReferences
+		wantErr string
+	}{
+		{"distinct positions", []vcdmsdjwt.StatusReferences{
+			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
+			bitstring(entry(list, 2, bitstringstatus.PurposeRevocation)),
+		}, ""},
+		{"one position for two purposes in one instance", []vcdmsdjwt.StatusReferences{
+			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation), entry(list, 1, bitstringstatus.PurposeSuspension)),
+			bitstring(entry(list, 2, bitstringstatus.PurposeRevocation), entry(list, 2, bitstringstatus.PurposeSuspension)),
+		}, ""},
+		{"no status at all", []vcdmsdjwt.StatusReferences{{}, {}}, ""},
+		{"shared position", []vcdmsdjwt.StatusReferences{
+			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
+			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
+		}, "duplicate credentialStatus reference"},
+		{"shared position, other purpose", []vcdmsdjwt.StatusReferences{
+			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
+			bitstring(entry(list, 1, bitstringstatus.PurposeSuspension)),
+		}, "duplicate credentialStatus reference"},
+		{"partial credentialStatus", []vcdmsdjwt.StatusReferences{
+			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
+			{},
+		}, "partial credentialStatus reference"},
+		{"shared status_list entry", []vcdmsdjwt.StatusReferences{token(list, 1), token(list, 1)}, "duplicate status_list reference"},
+		{"partial status_list", []vcdmsdjwt.StatusReferences{token(list, 1), {}}, "partial status_list reference"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := validateVcdmStatusReferences(c.refs)
+			if c.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, c.wantErr)
+			}
+		})
+	}
+}
+
+// The check runs before Store deletes anything, so a re-issuance that fails it
+// leaves the stored credential in place.
+func TestVcdmStore_RejectedStatusReferencesKeepTheStoredCredential(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	server := newBitstringStatusListServer(t)
+	server.serve(t, false)
+	storeVcdmWithStatus(t, env, server)
+
+	// Two instances on the same position: same content, so the same hash as
+	// the stored credential, which a re-issuance would replace.
+	raw := newRawVcdmWithStatus(t, server.url())
+	batch := []*ParsedCredential{env.parse(t, raw), env.parse(t, raw)}
+	err := env.service.Store(batch, "config-id", env.issuerMetadata(), false, nil)
+	require.ErrorContains(t, err, "duplicate credentialStatus reference")
+
+	list, err := env.service.List()
+	require.NoError(t, err)
+	require.Len(t, list, 1, "the stored credential must survive the refused re-issuance")
+}

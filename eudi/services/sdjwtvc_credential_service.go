@@ -338,37 +338,52 @@ func statusReferenceOf(p *ParsedCredential) statuslist.Reference {
 	}
 }
 
-// validateStatusReferences enforces the batch's Token Status List invariants from
-// draft-ietf-oauth-status-list §13.2/§13.3:
-//   - all-or-none: either every instance carries a status_list reference or none
-//     does (a partially-referenced batch would leave some instances
-//     status-checkable and others not);
-//   - uniqueness: each reference MUST be distinct across the batch. Every
-//     one-time-use copy needs its own dedicated (uri, idx) entry so presentations
-//     can't be correlated and to avoid double allocation (§13.3). Copies may
-//     differ by idx on one list or be spread across multiple Status List Tokens.
+// validateStatusReferences enforces the batch status invariants (see
+// requireDedicatedStatusEntries) for the Token Status List reference that
+// SD-JWT VC and mdoc credentials carry.
 func validateStatusReferences(parsedCredentials []*ParsedCredential) error {
-	firstHasRef := statusReferenceOf(parsedCredentials[0]) != (statuslist.Reference{})
-	seen := make(map[statuslist.Reference]int, len(parsedCredentials))
+	refs := make([][]statuslist.Reference, len(parsedCredentials))
 	for i, p := range parsedCredentials {
-		ref := statusReferenceOf(p)
-		hasRef := ref != (statuslist.Reference{})
-		if hasRef != firstHasRef {
+		if ref := statusReferenceOf(p); ref != (statuslist.Reference{}) {
+			refs[i] = []statuslist.Reference{ref}
+		}
+	}
+	return requireDedicatedStatusEntries("status_list", refs)
+}
+
+// requireDedicatedStatusEntries enforces a batch's status invariants for one
+// kind of status reference, given each instance's references of that kind:
+//   - all-or-none: either every instance carries a reference or none does (a
+//     partially-referenced batch would leave some instances status-checkable
+//     and others not);
+//   - uniqueness: no entry is shared between instances. Every one-time-use copy
+//     needs its own dedicated entry so presentations can't be correlated and to
+//     avoid double allocation (draft-ietf-oauth-status-list §13.2/§13.3; the
+//     same holds for a W3C Bitstring Status List position). Copies may differ
+//     by index on one list or be spread across several lists. One instance may
+//     use one entry for several purposes.
+//
+// The services run it before any side effects, so a malformed issuance can't
+// delete the user's existing credential.
+func requireDedicatedStatusEntries[K comparable](kind string, refs [][]K) error {
+	firstHasRef := len(refs[0]) > 0
+	seen := map[K]int{}
+	for i, instanceRefs := range refs {
+		if hasRef := len(instanceRefs) > 0; hasRef != firstHasRef {
 			return fmt.Errorf(
-				"partial status_list reference in batch: instance 0 hasRef=%t but instance %d hasRef=%t; either all instances carry a status_list reference or none do",
-				firstHasRef, i, hasRef,
+				"partial %s reference in batch: instance 0 hasRef=%t but instance %d hasRef=%t; either all instances carry a %s reference or none do",
+				kind, firstHasRef, i, hasRef, kind,
 			)
 		}
-		if !hasRef {
-			continue
+		for _, ref := range instanceRefs {
+			if prev, dup := seen[ref]; dup && prev != i {
+				return fmt.Errorf(
+					"duplicate %s reference in batch: instances %d and %d both use %+v; each one-time-use copy MUST have a dedicated entry",
+					kind, prev, i, ref,
+				)
+			}
+			seen[ref] = i
 		}
-		if prev, dup := seen[ref]; dup {
-			return fmt.Errorf(
-				"duplicate status_list reference in batch: instances %d and %d both use %+v; each one-time-use copy MUST have a dedicated entry (draft-ietf-oauth-status-list §13.2)",
-				prev, i, ref,
-			)
-		}
-		seen[ref] = i
 	}
 	return nil
 }
