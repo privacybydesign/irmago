@@ -1,6 +1,7 @@
 package services
 
 import (
+	"maps"
 	"testing"
 	"time"
 
@@ -106,9 +107,7 @@ func vcdmBatchInstance(subjectId, validFrom string, credentialStatus any, extra 
 		payload["credentialStatus"] = credentialStatus
 	}
 	for _, e := range extra {
-		for key, value := range e {
-			payload[key] = value
-		}
+		maps.Copy(payload, e)
 	}
 	return &ParsedCredential{
 		Format:                   models.CredentialFormatSdJwtVcdm,
