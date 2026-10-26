@@ -178,7 +178,7 @@ func (id RequestorIdentifier) RequestorSchemeIdentifier() RequestorSchemeIdentif
 	return NewRequestorSchemeIdentifier(id.Parent())
 }
 
-// SchemeManagerIdentifier returns the scheme manager identifer of the issuer.
+// SchemeManagerIdentifier returns the scheme manager identifier of the issuer.
 func (id IssuerIdentifier) SchemeManagerIdentifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(id.Parent())
 }
