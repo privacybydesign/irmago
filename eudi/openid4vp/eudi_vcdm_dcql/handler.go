@@ -28,9 +28,10 @@ var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 
 // NewVcdmDcqlHandler creates the VCDM handler over the VCDM store. keyBinder is
 // the same holder key signer the SD-JWT VC handler uses — the holder private key
-// was linked to the instance at VCDM receipt. A disclosed credential is enveloped
-// in a Verifiable Presentation signed with the holder key from its cnf
-// (vcdmsdjwt.CreateEnvelopedPresentation), instead of carrying a KB-JWT. The SD-JWT VC type-metadata fetchers do not apply to VCDM (a
+// was linked to the instance at VCDM receipt. With holder binding, a disclosed
+// credential is enveloped in a Verifiable Presentation signed with the holder
+// key from its cnf, instead of carrying a KB-JWT; without it, the SD-JWT is sent
+// as is (vcdmsdjwt.Present). The SD-JWT VC type-metadata fetchers do not apply to VCDM (a
 // verifier targets a VCDM credential by its composite @context+type identity,
 // not a fetchable vct URL), so the "obtainable descriptor" path stays disabled:
 // a VCDM query matching no stored credential simply yields no owned candidate.
@@ -49,7 +50,7 @@ func NewVcdmDcqlHandler(
 		func(key string) bool {
 			return key == vcdm.CredentialSubjectKey
 		},
-		vcdmsdjwt.CreateEnvelopedPresentation,
+		vcdmsdjwt.Present,
 	)
 	return &Handler{sdjwtdcql.NewEngine(profile, eudiStorage, sdjwtdcql.NewVcdmBatchStore(credentialStore, revocation), nil, nil, keyBinder, currentLocale)}
 }

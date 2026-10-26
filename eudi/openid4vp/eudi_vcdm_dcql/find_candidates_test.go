@@ -9,7 +9,11 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
@@ -19,6 +23,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/datatypes"
 )
 
 // The composite @context+type identity a verifier echoes as a vct value to
@@ -34,6 +39,31 @@ func newTestHandler(t *testing.T) (*Handler, db.VcdmStore) {
 	store := db.NewVcdmStore(ts.Db())
 	h := NewVcdmDcqlHandler(ts, store, nil, clientmodels.NewCurrentLocale("en"), nil)
 	return h, store
+}
+
+// newTestHandlerWithKeyBinder builds the real VCDM handler with an in-memory key
+// binder, for disclosures that sign a Verifiable Presentation.
+func newTestHandlerWithKeyBinder(t *testing.T) (*Handler, db.VcdmStore, sdjwt.KeyBinder) {
+	t.Helper()
+	ts := sdjwtdcqltest.NewTestStorage(t)
+	store := db.NewVcdmStore(ts.Db())
+	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
+	h := NewVcdmDcqlHandler(ts, store, keyBinder, clientmodels.NewCurrentLocale("en"), nil)
+	return h, store, keyBinder
+}
+
+// issueHolderBoundAcademicCredential issues the academic test credential bound
+// to a fresh holder key of keyBinder, and returns it with that key.
+func issueHolderBoundAcademicCredential(t *testing.T, keyBinder sdjwt.KeyBinder) (string, jwk.Key) {
+	t.Helper()
+	holderKeys, err := keyBinder.CreateKeyPairs(1)
+	require.NoError(t, err)
+	cnf, err := sdjwt.HolderKeyClaim(holderKeys[0])
+	require.NoError(t, err)
+
+	claims := vcdmsdjwt.AcademicBaseCredentialClaims(t)
+	claims[len(claims)-1] = cnf
+	return string(vcdmsdjwt.IssueTestSdJwtVcdm(t, claims)), holderKeys[0]
 }
 
 func newTestBatch(hash, credType string, payload map[string]any) *models.VcdmBatch {
@@ -239,24 +269,33 @@ func TestVcdmFindCandidates_TypeValuesDisjunctionAndNonMatch(t *testing.T) {
 // PrepareDisclosure: present a real VCDM credential and decode the result
 // ========================================================================
 
-func TestVcdmPrepareDisclosure_RoundTrip(t *testing.T) {
-	h, store := newTestHandler(t)
-
+// academicPayload is the processed payload of the academic test credential,
+// for the stored batch.
+func academicPayload(t *testing.T) map[string]any {
+	t.Helper()
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal([]byte(vcdmsdjwt.AcademicBaseCredentialJSON), &payload))
+	return payload
+}
 
-	batch := newTestBatch("hash-vcdm-present", academicVcdmType, payload)
-	raw := vcdmsdjwt.IssueTestSdJwtVcdm(t, vcdmsdjwt.AcademicBaseCredentialClaims(t))
+func givenNameSelection(hash string) []dcql.DisclosureSelection {
+	return []dcql.DisclosureSelection{{
+		QueryId:              "q1",
+		CredentialHash:       hash,
+		ClaimPaths:           [][]any{{"credentialSubject", "given_name"}},
+		RequireHolderBinding: true,
+	}}
+}
+
+func TestVcdmPrepareDisclosure_RoundTrip(t *testing.T) {
+	h, store, keyBinder := newTestHandlerWithKeyBinder(t)
+
+	batch := newTestBatch("hash-vcdm-present", academicVcdmType, academicPayload(t))
+	raw, holderKey := issueHolderBoundAcademicCredential(t, keyBinder)
 	batch.Instances[0].RawCredential = []byte(raw)
 	require.NoError(t, store.StoreBatch(batch))
 
-	selections := []dcql.DisclosureSelection{{
-		QueryId:        "q1",
-		CredentialHash: "hash-vcdm-present",
-		ClaimPaths:     [][]any{{"credentialSubject", "given_name"}},
-	}}
-
-	result, err := h.PrepareDisclosure(selections, "nonce-1", "verifier-1")
+	result, err := h.PrepareDisclosure(givenNameSelection("hash-vcdm-present"), "nonce-1", "verifier-1")
 	require.NoError(t, err)
 	require.Len(t, result.QueryResponses, 1)
 	require.Len(t, result.QueryResponses[0].Credentials, 1)
@@ -264,11 +303,14 @@ func TestVcdmPrepareDisclosure_RoundTrip(t *testing.T) {
 	presentation := result.QueryResponses[0].Credentials[0]
 	require.NotEmpty(t, presentation)
 
-	// The credential goes out enveloped in a Verifiable Presentation. Without
-	// holder binding that presentation is unsecured.
+	// The credential goes out enveloped in a Verifiable Presentation signed with
+	// the holder key from its cnf, over the verifier's nonce and audience.
+	_, err = jws.Verify([]byte(presentation), jws.WithKey(jwa.ES256(), holderKey))
+	require.NoError(t, err, "presentation must verify with the holder key from cnf")
+
 	header, vp, err := sdjwt.DecodeJwtWithoutCheckingSignature(presentation)
 	require.NoError(t, err)
-	assert.Equal(t, "none", header["alg"])
+	assert.Equal(t, vcdmsdjwt.PresentationTyp, header["typ"])
 	assert.Equal(t, "verifier-1", vp["aud"])
 	assert.Equal(t, "nonce-1", vp["nonce"])
 	enveloped := envelopedSdJwt(t, vp)
@@ -288,6 +330,117 @@ func TestVcdmPrepareDisclosure_RoundTrip(t *testing.T) {
 	reloaded, err := store.GetBatchByHashAndFormat("hash-vcdm-present", models.CredentialFormatSdJwtVcdm)
 	require.NoError(t, err)
 	assert.Equal(t, uint(1), reloaded.RemainingCount)
+}
+
+func TestVcdmPrepareDisclosure_WithoutHolderBindingSendsTheSdJwt(t *testing.T) {
+	h, store, keyBinder := newTestHandlerWithKeyBinder(t)
+
+	batch := newTestBatch("hash-vcdm-unbound", academicVcdmType, academicPayload(t))
+	raw, _ := issueHolderBoundAcademicCredential(t, keyBinder)
+	batch.Instances[0].RawCredential = []byte(raw)
+	require.NoError(t, store.StoreBatch(batch))
+
+	selections := givenNameSelection("hash-vcdm-unbound")
+	selections[0].RequireHolderBinding = false
+
+	result, err := h.PrepareDisclosure(selections, "nonce-1", "verifier-1")
+	require.NoError(t, err)
+	require.Len(t, result.QueryResponses, 1)
+	require.Len(t, result.QueryResponses[0].Credentials, 1)
+
+	// The credential goes out as an SD-JWT, with no presentation around it and
+	// no KB-JWT: it ends in the ~ that closes the last disclosure.
+	presentation := result.QueryResponses[0].Credentials[0]
+	require.True(t, strings.HasSuffix(presentation, "~"), "an SD-JWT without KB-JWT ends in ~")
+
+	view, err := sdjwt.PostDisclosureView(sdjwt.SdJwt(presentation), [][]any{{"credentialSubject", "given_name"}})
+	require.NoError(t, err)
+	subject, ok := view["credentialSubject"].(map[string]any)
+	require.True(t, ok, "credentialSubject should be present in the disclosed view")
+	assert.Equal(t, "Alice", subject["given_name"], "the selected claim should be disclosed")
+	assert.NotContains(t, subject, "family_name", "unselected selectively-disclosable claims must stay hidden")
+}
+
+func TestVcdmPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
+	h, store, keyBinder := newTestHandlerWithKeyBinder(t)
+
+	batch := newTestBatch("hash-vcdm-batch2", academicVcdmType, academicPayload(t))
+	batch.BatchSize = 2
+	batch.RemainingCount = 2
+	rawA, keyA := issueHolderBoundAcademicCredential(t, keyBinder)
+	rawB, keyB := issueHolderBoundAcademicCredential(t, keyBinder)
+	batch.Instances = []models.VcdmBatchInstance{
+		{RawCredential: []byte(rawA)},
+		{RawCredential: []byte(rawB)},
+	}
+	require.NoError(t, store.StoreBatch(batch))
+
+	// Each disclosure sends an unused instance, signed with that instance's
+	// own holder key, and uses it up.
+	sentWith := map[string]bool{}
+	for i, wantRemaining := range []uint{1, 0} {
+		result, err := h.PrepareDisclosure(givenNameSelection("hash-vcdm-batch2"), "nonce", "verifier")
+		require.NoError(t, err, "disclosure %d", i+1)
+		presentation := []byte(result.QueryResponses[0].Credentials[0])
+		for name, key := range map[string]jwk.Key{"a": keyA, "b": keyB} {
+			if _, err := jws.Verify(presentation, jws.WithKey(jwa.ES256(), key)); err == nil {
+				sentWith[name] = true
+			}
+		}
+
+		reloaded, err := store.GetBatchByHashAndFormat("hash-vcdm-batch2", models.CredentialFormatSdJwtVcdm)
+		require.NoError(t, err)
+		assert.Equal(t, wantRemaining, reloaded.RemainingCount, "after disclosure %d", i+1)
+	}
+	assert.Equal(t, map[string]bool{"a": true, "b": true}, sentWith, "each instance should be sent once")
+
+	_, err := h.PrepareDisclosure(givenNameSelection("hash-vcdm-batch2"), "nonce", "verifier")
+	require.Error(t, err, "a batch of two with both instances used should fail")
+}
+
+// ========================================================================
+// FindCandidates: validity window
+// ========================================================================
+
+func TestVcdmFindCandidates_ValidityWindow(t *testing.T) {
+	cases := []struct {
+		name      string
+		expiresAt time.Time
+		notBefore time.Time
+		wantMatch bool
+	}{
+		{"expired", time.Now().Add(-time.Hour), time.Now().Add(-48 * time.Hour), false},
+		{"not yet valid", time.Now().Add(48 * time.Hour), time.Now().Add(time.Hour), false},
+		{"valid", time.Now().Add(24 * time.Hour), time.Now().Add(-24 * time.Hour), true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h, store := newTestHandler(t)
+
+			typeIdentity := "https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential"
+			batch := newTestBatch("hash-vcdm-validity", typeIdentity, map[string]any{
+				"@context":          []any{"https://www.w3.org/ns/credentials/v2"},
+				"type":              []any{"VerifiableCredential", "ExampleCredential"},
+				"credentialSubject": map[string]any{"given_name": "Alice"},
+			})
+			batch.ExpiresAt = datatypes.NullTime{V: c.expiresAt, Valid: true}
+			batch.NotBefore = datatypes.NullTime{V: c.notBefore, Valid: true}
+			require.NoError(t, store.StoreBatch(batch))
+
+			result, err := h.FindCandidates(parseDcqlQuery(t, `{
+				"id": "q1",
+				"format": "vc+sd-jwt",
+				"meta": {"vct_values": ["`+typeIdentity+`"]},
+				"claims": [{"path": ["credentialSubject", "given_name"]}]
+			}`))
+			require.NoError(t, err)
+			if c.wantMatch {
+				require.Len(t, result.OwnedCandidates, 1)
+			} else {
+				assert.Empty(t, result.OwnedCandidates)
+			}
+		})
+	}
 }
 
 // envelopedSdJwt returns the SD-JWT from the single EnvelopedVerifiableCredential

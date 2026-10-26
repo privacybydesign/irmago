@@ -65,7 +65,7 @@ func TestCreateEnvelopedPresentation_SignedWithHolderKey(t *testing.T) {
 	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 	selected, holderKey := issueHolderBoundSdJwtVcdm(t, keyBinder)
 
-	presentation, err := CreateEnvelopedPresentation(selected, keyBinder, true, presentationNonce, presentationAudience)
+	presentation, err := CreateEnvelopedPresentation(selected, keyBinder, presentationNonce, presentationAudience)
 	require.NoError(t, err)
 
 	_, err = jws.Verify([]byte(presentation), jws.WithKey(jwa.ES256(), holderKey))
@@ -96,22 +96,23 @@ func TestCreateEnvelopedPresentation_SignedWithHolderKey(t *testing.T) {
 	require.True(t, strings.HasSuffix(string(selected), "~"))
 }
 
-func TestCreateEnvelopedPresentation_UnsecuredWithoutHolderBinding(t *testing.T) {
+func TestPresent_WithoutHolderBindingSendsTheSdJwt(t *testing.T) {
 	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 	selected, _ := issueHolderBoundSdJwtVcdm(t, keyBinder)
 
-	presentation, err := CreateEnvelopedPresentation(selected, keyBinder, false, presentationNonce, presentationAudience)
+	presentation, err := Present(selected, keyBinder, false, presentationNonce, presentationAudience)
 	require.NoError(t, err)
+	require.Equal(t, string(selected), presentation, "without holder binding the SD-JWT goes out as is, with no presentation and no KB-JWT")
+}
 
-	parts := strings.Split(presentation, ".")
-	require.Len(t, parts, 3)
-	require.Empty(t, parts[2], "an unsecured JWT has an empty signature")
+func TestPresent_WithHolderBindingSendsASignedPresentation(t *testing.T) {
+	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
+	selected, holderKey := issueHolderBoundSdJwtVcdm(t, keyBinder)
 
-	header, vp, err := sdjwt.DecodeJwtWithoutCheckingSignature(presentation)
+	presentation, err := Present(selected, keyBinder, true, presentationNonce, presentationAudience)
 	require.NoError(t, err)
-	require.Equal(t, "none", header["alg"])
-	require.Equal(t, PresentationTyp, header["typ"])
-	requireEnvelopes(t, vp, selected)
+	_, err = jws.Verify([]byte(presentation), jws.WithKey(jwa.ES256(), holderKey))
+	require.NoError(t, err, "presentation must verify with the holder key from cnf")
 }
 
 func TestCreateEnvelopedPresentation_HolderBindingWithoutCnfFails(t *testing.T) {
@@ -123,6 +124,6 @@ func TestCreateEnvelopedPresentation_HolderBindingWithoutCnfFails(t *testing.T) 
 		Build(sdjwt.NewJwtCreator(testIssuerKey(t)))
 	require.NoError(t, err)
 
-	_, err = CreateEnvelopedPresentation(sdjwt.SdJwt(unbound), keyBinder, true, presentationNonce, presentationAudience)
+	_, err = CreateEnvelopedPresentation(sdjwt.SdJwt(unbound), keyBinder, presentationNonce, presentationAudience)
 	require.ErrorContains(t, err, "holder key")
 }
