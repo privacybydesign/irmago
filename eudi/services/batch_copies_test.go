@@ -41,7 +41,7 @@ func sdJwtVcCopyPayload(overrides map[string]any) sdjwt.ProcessedPayload {
 	return payload
 }
 
-func TestSdJwtVcCheckBatch_CopiesMayDifferInKeyBindingAndStatusOnly(t *testing.T) {
+func TestSdJwtVcCheckBatch_CopiesMayDifferInKeyBindingStatusAndIdentifiers(t *testing.T) {
 	parser := NewSdJwtVcCredentialFormatParser(nil)
 	err := parser.CheckBatch([]*ParsedCredential{
 		sdJwtVcCopy(sdJwtVcCopyPayload(map[string]any{
@@ -52,6 +52,8 @@ func TestSdJwtVcCheckBatch_CopiesMayDifferInKeyBindingAndStatusOnly(t *testing.T
 		sdJwtVcCopy(sdJwtVcCopyPayload(map[string]any{
 			"cnf":    map[string]any{"jwk": map[string]any{"x": "b"}},
 			"status": map[string]any{"status_list": map[string]any{"idx": float64(2), "uri": "https://example.com/sl"}},
+			"iat":    float64(1700000001),
+			"jti":    "urn:uuid:2",
 		})),
 	})
 	require.NoError(t, err)
@@ -64,8 +66,8 @@ func TestSdJwtVcCheckBatch_RejectsDifferingCopies(t *testing.T) {
 		differing string
 	}{
 		{"claim value", map[string]any{"email": "bob@example.com"}, "email"},
-		{"issuance time", map[string]any{"iat": float64(1700000001)}, "iat"},
-		{"token identifier", map[string]any{"jti": "urn:uuid:2"}, "jti"},
+		{"expiry", map[string]any{"exp": float64(1800000000)}, "exp"},
+		{"not before", map[string]any{"nbf": float64(1700000001)}, "nbf"},
 		{"claim only in one copy", map[string]any{"phone": "0612345678"}, "phone"},
 		{"claim missing from one copy", map[string]any{"email": nil}, "email"},
 	}
@@ -92,7 +94,7 @@ func TestSdJwtVcCheckBatch_RejectsCopiesFromDifferentIssuers(t *testing.T) {
 	require.ErrorContains(t, err, "issued by")
 }
 
-func vcdmCopy(subjectId, validFrom string, credentialStatus any) *ParsedCredential {
+func vcdmCopy(subjectId, validFrom string, credentialStatus any, extra ...map[string]any) *ParsedCredential {
 	payload := sdjwt.ProcessedPayload{
 		"@context":          []any{"https://www.w3.org/ns/credentials/v2"},
 		"type":              []any{"VerifiableCredential", "EmailCredential"},
@@ -102,6 +104,11 @@ func vcdmCopy(subjectId, validFrom string, credentialStatus any) *ParsedCredenti
 	}
 	if credentialStatus != nil {
 		payload["credentialStatus"] = credentialStatus
+	}
+	for _, e := range extra {
+		for key, value := range e {
+			payload[key] = value
+		}
 	}
 	return &ParsedCredential{
 		Format:                   models.CredentialFormatSdJwtVcdm,
@@ -123,6 +130,14 @@ func TestSdJwtVcdmCheckBatch(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("copies may differ in their identifiers and issuance time", func(t *testing.T) {
+		err := parser.CheckBatch([]*ParsedCredential{
+			vcdmCopy("did:key:a", validFrom, nil, map[string]any{"id": "urn:uuid:1", "jti": "urn:uuid:1", "iat": float64(1700000000)}),
+			vcdmCopy("did:key:a", validFrom, nil, map[string]any{"id": "urn:uuid:2", "jti": "urn:uuid:2", "iat": float64(1700000001)}),
+		})
+		require.NoError(t, err)
+	})
+
 	t.Run("copies may not differ in credentialSubject.id", func(t *testing.T) {
 		err := parser.CheckBatch([]*ParsedCredential{
 			vcdmCopy("did:key:a", validFrom, nil),
@@ -140,7 +155,11 @@ func TestSdJwtVcdmCheckBatch(t *testing.T) {
 	})
 }
 
-func mdocCopy(thumbprint string, ageOver18 bool, signed time.Time) *ParsedCredential {
+func mdocCopy(thumbprint string, ageOver18 bool, validFrom time.Time) *ParsedCredential {
+	return mdocCopySignedAt(thumbprint, ageOver18, validFrom, validFrom)
+}
+
+func mdocCopySignedAt(thumbprint string, ageOver18 bool, validFrom, signed time.Time) *ParsedCredential {
 	return &ParsedCredential{
 		Format:                   models.CredentialFormatMsoMdoc,
 		VerifiableCredentialType: "eu.europa.ec.av.1",
@@ -148,7 +167,7 @@ func mdocCopy(thumbprint string, ageOver18 bool, signed time.Time) *ParsedCreden
 		Mdoc: &ParsedMdoc{
 			DocType:             "eu.europa.ec.av.1",
 			Namespaces:          models.MdocNamespaces{"eu.europa.ec.av.1": {"age_over_18": ageOver18}},
-			ValidityInfo:        mdoc.ValidityInfo{Signed: signed, ValidFrom: signed, ValidUntil: signed.Add(24 * time.Hour)},
+			ValidityInfo:        mdoc.ValidityInfo{Signed: signed, ValidFrom: validFrom, ValidUntil: validFrom.Add(24 * time.Hour)},
 			DeviceKeyThumbprint: thumbprint,
 		},
 	}
@@ -163,6 +182,14 @@ func TestMdocCheckBatch_RejectsDifferingCopies(t *testing.T) {
 		err := parser.CheckBatch([]*ParsedCredential{
 			mdocCopy("key-a", true, signed),
 			mdocCopy("key-b", true, signed.In(time.FixedZone("CET", 3600))),
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("copies may differ in their signing time", func(t *testing.T) {
+		err := parser.CheckBatch([]*ParsedCredential{
+			mdocCopySignedAt("key-a", true, signed, signed),
+			mdocCopySignedAt("key-b", true, signed, signed.Add(time.Second)),
 		})
 		require.NoError(t, err)
 	})

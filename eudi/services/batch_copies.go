@@ -7,22 +7,24 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
 
 // requireIdenticalCopies rejects a batch whose copies are not copies of one
-// credential. The copies of a batch may differ only where they must: in their
-// cryptographic material (holder binding key, digests and salts, signature)
-// and in their status list entry, which each one-time-use copy needs for
-// itself. Everything else, timestamps and identifiers included, must be equal.
+// credential. The copies of a batch may differ in their cryptographic material
+// (holder binding key, digests and salts, signature), in their status list
+// entry, and in their per-issuance identifier and issuance time. Each
+// one-time-use copy needs its own status entry, and an issuer that gives each
+// copy its own identifier or issuance time keeps the copies unlinkable.
+// Everything else, the validity window included, must be equal.
 //
 // The wallet relies on this. A batch is shown, logged and deduplicated as one
 // credential, from the values of one copy, while presentations send whichever
-// copy is unused next. A copy that differs would leave the wallet showing the
-// user one value and sending the verifier another. It would also make copies
-// linkable, which is what using each copy once is meant to prevent.
+// copy is unused next. A copy that differs in a claim or its validity would
+// leave the wallet showing the user one value and sending the verifier another.
 //
 // contentOf returns a copy's values with the parts that may differ removed.
 // The type and issuer identity the parser derived are compared as well.
@@ -94,32 +96,35 @@ func withoutKeys(payload sdjwt.ProcessedPayload, keys ...string) map[string]any 
 	return content
 }
 
-// sdJwtVcCopyContent is an SD-JWT VC copy's values without its key binding
-// and its Token Status List reference. Digests and salts are already gone
-// from the processed payload, but _sd and _sd_alg are dropped regardless.
+// sdJwtVcCopyContent is an SD-JWT VC copy's values without its key binding,
+// its Token Status List reference, its jti and its iat. Digests and salts are
+// already gone from the processed payload, but _sd and _sd_alg are dropped
+// regardless.
 func sdJwtVcCopyContent(pc *ParsedCredential) map[string]any {
 	return withoutKeys(pc.SdJwtVc.ProcessedSdJwtPayload,
-		sdjwt.ConfirmationKey, sdjwt.SdKey, sdjwt.SdAlgKey, sdjwtvc.StatusKey)
+		sdjwt.ConfirmationKey, sdjwt.SdKey, sdjwt.SdAlgKey, sdjwtvc.StatusKey,
+		jwt.JwtIDKey, jwt.IssuedAtKey)
 }
 
 // sdJwtVcdmCopyContent is an SD-JWT-secured VCDM copy's values without its key
-// binding and its status entries: the Token Status List reference and the
-// W3C credentialStatus.
+// binding, its status entries (the Token Status List reference and the W3C
+// credentialStatus), its identifiers (jti and the credential id) and its iat.
+// credentialSubject.id is content and must match.
 func sdJwtVcdmCopyContent(pc *ParsedCredential) map[string]any {
 	return withoutKeys(pc.SdJwtVcdm.ProcessedSdJwtPayload,
-		sdjwt.ConfirmationKey, sdjwt.SdKey, sdjwt.SdAlgKey, sdjwtvc.StatusKey, vcdm.CredentialStatusKey)
+		sdjwt.ConfirmationKey, sdjwt.SdKey, sdjwt.SdAlgKey, sdjwtvc.StatusKey, vcdm.CredentialStatusKey,
+		jwt.JwtIDKey, vcdm.IDKey, jwt.IssuedAtKey)
 }
 
 // mdocCopyContent is an mdoc copy's values: its doctype, its element values
-// and its validity window. The device key, the digests and the status
-// reference are left out.
+// and its validity window. The device key, the digests, the status reference
+// and the signing time are left out.
 func mdocCopyContent(pc *ParsedCredential) map[string]any {
 	validity := pc.Mdoc.ValidityInfo
 	return map[string]any{
 		"docType":    pc.Mdoc.DocType,
 		"namespaces": pc.Mdoc.Namespaces,
 		"validityInfo": map[string]any{
-			"signed":     validity.Signed.UTC(),
 			"validFrom":  validity.ValidFrom.UTC(),
 			"validUntil": validity.ValidUntil.UTC(),
 		},
