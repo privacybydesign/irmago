@@ -14,26 +14,30 @@ runs:
   using: composite
   steps:
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
       with:
         go-version-file: go.mod
 
     - name: Download IRMA server artifact (url)
       if: startsWith(inputs.irma-server-artifact, 'https://') && endsWith(inputs.irma-server-artifact, 'yivi-linux-amd64')
+      env:
+        URL: ${{ inputs.irma-server-artifact }}
       run: |
-        curl --create-dirs -L -o ./bin-is/yivi ${{ inputs.irma-server-artifact }}
+        curl --create-dirs -L -o ./bin-is/yivi "$URL"
       shell: bash
 
     # Backwards compatible version: download `irma` instead of `yivi`
     - name: Download IRMA server artifact (url, backwards compatible)
       if: startsWith(inputs.irma-server-artifact, 'https://') && endsWith(inputs.irma-server-artifact, 'irma-linux-amd64')
+      env:
+        URL: ${{ inputs.irma-server-artifact }}
       run: |
-        curl --create-dirs -L -o ./bin-is/irma ${{ inputs.irma-server-artifact }}
+        curl --create-dirs -L -o ./bin-is/irma "$URL"
       shell: bash
 
     - name: Download IRMA server artifact (artifact id)
       if: ${{ !startsWith(inputs.irma-server-artifact, 'https://') }}
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: ${{ inputs.irma-server-artifact }}
         path: ./bin-is
@@ -51,20 +55,24 @@ runs:
 
     - name: Download keyshare server artifact (url)
       if: startsWith(inputs.keyshare-server-artifact, 'https://') && endsWith(inputs.keyshare-server-artifact, 'yivi-linux-amd64')
+      env:
+        URL: ${{ inputs.keyshare-server-artifact }}
       run: |
-        curl --create-dirs -L -o ./bin-ks/yivi ${{ inputs.keyshare-server-artifact }}
+        curl --create-dirs -L -o ./bin-ks/yivi "$URL"
       shell: bash
 
     # Backwards compatible version: download `irma` instead of `yivi`
     - name: Download keyshare server artifact (url, backwards compatible)
       if: startsWith(inputs.keyshare-server-artifact, 'https://') && endsWith(inputs.keyshare-server-artifact, 'irma-linux-amd64')
+      env:
+        URL: ${{ inputs.keyshare-server-artifact }}
       run: |
-        curl --create-dirs -L -o ./bin-ks/irma ${{ inputs.keyshare-server-artifact }}
+        curl --create-dirs -L -o ./bin-ks/irma "$URL"
       shell: bash
 
     - name: Download keyshare server artifact (artifact id)
       if: ${{ !startsWith(inputs.keyshare-server-artifact, 'https://') }}
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: ${{ inputs.keyshare-server-artifact }}
         path: ./bin-ks
@@ -105,10 +113,11 @@ runs:
       shell: bash
 
     - name: Checkout test code
-      uses: actions/checkout@v6
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         ref: ${{ inputs.test-ref }}
         path: irmago_test_checkout
+        persist-credentials: false
 
     - name: Use testdata from current checkout
       run: cp -R ./testdata ./irmago_test_checkout
