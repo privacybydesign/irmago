@@ -49,7 +49,7 @@ func (p *sdJwtVcdmCredentialFormatParser) ParseAndVerify(raw, _ string, _ bool) 
 	}, nil
 }
 
-func (p *sdJwtVcdmCredentialFormatParser) CheckBatchUniqueness(batch []*ParsedCredential) error {
+func (p *sdJwtVcdmCredentialFormatParser) CheckBatch(batch []*ParsedCredential) error {
 	verified := make([]*vcdmsdjwt.VerifiedSdJwtVcdm, len(batch))
 	for i, pc := range batch {
 		if pc.SdJwtVcdm == nil {
@@ -57,7 +57,10 @@ func (p *sdJwtVcdmCredentialFormatParser) CheckBatchUniqueness(batch []*ParsedCr
 		}
 		verified[i] = pc.SdJwtVcdm
 	}
-	return vcdmsdjwt.CheckKeyBindingConfirmationUniqueness(verified)
+	if err := vcdmsdjwt.CheckKeyBindingConfirmationUniqueness(verified); err != nil {
+		return err
+	}
+	return requireIdenticalCopies(batch, sdJwtVcdmCopyContent)
 }
 
 // sdJwtDataModelParser is the dc+sd-jwt CredentialFormatParser. The dc+sd-jwt
@@ -95,10 +98,10 @@ func (p *sdJwtDataModelParser) ParseAndVerify(raw, credentialIssuer string, hold
 	return p.sdJwtVc.ParseAndVerify(raw, credentialIssuer, holderBindingKeyRequired)
 }
 
-// CheckBatchUniqueness rejects a batch that mixes data models — its instances
+// CheckBatch rejects a batch that mixes data models — its instances
 // are copies of one logical credential — and otherwise applies the parsed data
 // model's own check.
-func (p *sdJwtDataModelParser) CheckBatchUniqueness(batch []*ParsedCredential) error {
+func (p *sdJwtDataModelParser) CheckBatch(batch []*ParsedCredential) error {
 	if len(batch) == 0 {
 		return nil
 	}
@@ -109,7 +112,7 @@ func (p *sdJwtDataModelParser) CheckBatchUniqueness(batch []*ParsedCredential) e
 		}
 	}
 	if format == models.CredentialFormatSdJwtVcdm {
-		return p.vcdm.CheckBatchUniqueness(batch)
+		return p.vcdm.CheckBatch(batch)
 	}
-	return p.sdJwtVc.CheckBatchUniqueness(batch)
+	return p.sdJwtVc.CheckBatch(batch)
 }

@@ -117,10 +117,11 @@ type CredentialFormatParser interface {
 	// key binding.
 	ParseAndVerify(raw, credentialIssuer string, holderBindingKeyRequired bool) (*ParsedCredential, error)
 
-	// CheckBatchUniqueness validates cross-instance invariants across one
-	// full batch of credentials issued from a single credential request
-	// (e.g. rejecting a repeated holder-binding key within the batch).
-	CheckBatchUniqueness(batch []*ParsedCredential) error
+	// CheckBatch validates cross-instance invariants across one full batch
+	// of credentials issued from a single credential request: no
+	// holder-binding key is repeated, and the copies are identical apart from
+	// their cryptographic material and status entry (requireIdenticalCopies).
+	CheckBatch(batch []*ParsedCredential) error
 }
 
 // CredentialFormatParsers is a format -> parser registry.

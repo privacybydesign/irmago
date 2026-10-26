@@ -2,6 +2,8 @@ package sdjwtdcql
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwtdcqltest"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/stretchr/testify/assert"
@@ -624,6 +627,73 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	// Third disclosure — no unused instances left, should fail.
 	_, err = h.PrepareDisclosure(selections, "nonce3", "client3")
 	require.Error(t, err, "batch-of-2 with all instances used should fail")
+}
+
+// unsignedSdJwt builds an SD-JWT without disclosures whose payload is all
+// plain claims. The signature is junk: nothing on the disclosure path checks it.
+func unsignedSdJwt(t *testing.T, payload map[string]any) string {
+	t.Helper()
+	header, err := json.Marshal(map[string]any{"alg": "ES256", "typ": "dc+sd-jwt"})
+	require.NoError(t, err)
+	body, err := json.Marshal(payload)
+	require.NoError(t, err)
+	enc := base64.RawURLEncoding.EncodeToString
+	return enc(header) + "." + enc(body) + "." + enc([]byte("sig")) + "~"
+}
+
+// Copies of a batch can differ in plain claims: veramo, for one, writes each
+// copy's own holder key into the VCDM credentialSubject.id. The batch payload
+// holds only one copy's values, so the plan and the log must read values off
+// the copy that is sent, or one of the two disclosures below shows and logs a
+// value the verifier never got.
+func TestPrepareDisclosure_BatchOfTwo_ShowsValuesOfInstanceSent(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	vct := "https://example.com/EmailCredential"
+	batch := newTestBatch("hash-batch2-differing", vct, map[string]any{"holder": "did:example:a"})
+	batch.BatchSize = 2
+	batch.RemainingCount = 2
+	batch.Instances = []models.SdJwtVcBatchInstance{
+		{RawCredential: []byte(unsignedSdJwt(t, map[string]any{"vct": vct, "holder": "did:example:a"}))},
+		{RawCredential: []byte(unsignedSdJwt(t, map[string]any{"vct": vct, "holder": "did:example:b"}))},
+	}
+	require.NoError(t, store.StoreBatch(batch))
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/EmailCredential"]},
+		"claims": [{"path": ["holder"]}]
+	}`)
+	selections := []dcql.DisclosureSelection{{
+		QueryId:        "q1",
+		CredentialHash: "hash-batch2-differing",
+		ClaimPaths:     [][]any{{"holder"}},
+	}}
+
+	var sent []string
+	for i := range 2 {
+		candidates, err := h.FindCandidates(query)
+		require.NoError(t, err)
+		require.Len(t, candidates.OwnedCandidates, 1)
+		shown := candidates.OwnedCandidates[0].Attributes
+		require.Len(t, shown, 1)
+
+		prepared, err := h.PrepareDisclosure(selections, "nonce", "client")
+		require.NoError(t, err)
+		payload, err := sdjwt.DecodeJwtPayload(sdjwt.SdJwt(prepared.QueryResponses[0].Credentials[0]))
+		require.NoError(t, err)
+		sentHolder := payload["holder"].(string)
+		sent = append(sent, sentHolder)
+
+		require.NotNil(t, shown[0].Value)
+		assert.Equal(t, sentHolder, *shown[0].Value.String, "disclosure %d: plan shows another copy's value", i+1)
+		logged := prepared.CredentialLogs[0].Attributes
+		require.Len(t, logged, 1)
+		require.NotNil(t, logged[0].Value)
+		assert.Equal(t, sentHolder, *logged[0].Value.String, "disclosure %d: log records another copy's value", i+1)
+	}
+	assert.ElementsMatch(t, []string{"did:example:a", "did:example:b"}, sent)
 }
 
 // ========================================================================

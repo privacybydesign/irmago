@@ -27,7 +27,6 @@ func testSessionHandlerForOpenID4VPVcdm(t *testing.T) {
 	t.Run("type_values mismatch offers no VCDM candidate", testVcdmTypeValuesMismatchOffersNoCandidate)
 	t.Run("dc+sd-jwt query does not offer VCDM credential", testDcSdJwtQueryDoesNotOfferVcdmCredential)
 	t.Run("VCDM and SD-JWT VC disclosed in one request", testVcdmAndSdJwtVcInOneRequest)
-	t.Run("VCDM batch shows the subject id each instance sends", testVcdmBatchShowsSubjectIdEachInstanceSends)
 }
 
 func testDiscloseVcdmToVeramoVerifier(t *testing.T) {
@@ -217,59 +216,6 @@ func testVcdmAndSdJwtVcInOneRequest(t *testing.T) {
 	requireVerifierReceivedClaims(t, result, "test-credential",
 		claim([]any{"email"}, "test@example.com"),
 	)
-}
-
-// testVcdmBatchShowsSubjectIdEachInstanceSends checks that the disclosure screen
-// and the log show the values the verifier actually receives, for every
-// instance of a batch. Each instance is bound to its own holder key, and veramo
-// copies that key into credentialSubject.id, so the instances differ in that
-// value: each disclosure must show and log the id of the instance it sends, not
-// that of the first instance.
-func testVcdmBatchShowsSubjectIdEachInstanceSends(t *testing.T) {
-	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
-	defer c.Close()
-
-	issueCredentialViaOpenID4VCIFromIssuer(t, c, 1, sessionHandler, batch2IssuerURL, batch2AdminToken,
-		vcdmCredentialConfigId, vcdmTestClaims)
-	requireBatchRemaining(t, c, vcdmCredentialName, new(uint(2)))
-
-	query := vcdmDcqlQuery(
-		`"meta": {"type_values": [["VerifiableCredential", "`+vcdmCredentialType+`"]]}`,
-		[]any{"credentialSubject", "given_name"},
-	)
-
-	var sentDids []string
-	for i, sessionId := range []int{2, 3} {
-		t.Logf("disclosure %d of the batch of 2", i+1)
-		veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, query)
-		startOpenID4VPDisclosureSession(t, c, sessionId, veramoSession.RequestUri)
-
-		session := awaitSessionState(t, sessionHandler)
-		requireSessionState(t, session, sessionId, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-		require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1)
-		require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions, 1)
-		bundle := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-		require.Len(t, bundle.Credentials, 1)
-		shown := bundle.Credentials[0].Attributes
-
-		grantPermission(t, c, session.Id, makeDisclosureChoice(bundle))
-		session = awaitSessionState(t, sessionHandler)
-		requireSessionState(t, session, sessionId, clientmodels.Type_Disclosure, clientmodels.Status_Success)
-
-		result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
-		requireNoVeramoVcdmErrors(t, result)
-		require.NotEmpty(t, result.Result.Credentials[vcdmQueryId])
-		sentDid, ok := result.Result.Credentials[vcdmQueryId][0].Claims["id"].(string)
-		require.True(t, ok, "disclosure %d: verifier should have received credentialSubject.id", i+1)
-		sentDids = append(sentDids, sentDid)
-
-		expected := vcdmTestExpectedAttrs("Vera", "Modell", "vera@example.com", sentDid)
-		requireAttrsInOrder(t, shown, expected...)
-		requireNewestDisclosureLogAttrs(t, c, vcdmCredentialId, expected)
-	}
-
-	require.NotEqual(t, sentDids[0], sentDids[1],
-		"each batch instance should be bound to its own holder key, and so carry its own credentialSubject.id")
 }
 
 // ---------------------------------------------------------------------------

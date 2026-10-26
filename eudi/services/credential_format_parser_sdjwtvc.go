@@ -46,10 +46,16 @@ func (p *sdJwtVcCredentialFormatParser) ParseAndVerify(raw, _ string, _ bool) (*
 	}, nil
 }
 
-func (p *sdJwtVcCredentialFormatParser) CheckBatchUniqueness(batch []*ParsedCredential) error {
+func (p *sdJwtVcCredentialFormatParser) CheckBatch(batch []*ParsedCredential) error {
 	vcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(batch))
 	for i, pc := range batch {
+		if pc.SdJwtVc == nil {
+			return fmt.Errorf("credential %d is not an SD-JWT VC (format %q)", i, pc.Format)
+		}
 		vcs[i] = pc.SdJwtVc
 	}
-	return sdjwtvc.CheckKeyBindingConfirmationUniqueness(vcs)
+	if err := sdjwtvc.CheckKeyBindingConfirmationUniqueness(vcs); err != nil {
+		return err
+	}
+	return requireIdenticalCopies(batch, sdJwtVcCopyContent)
 }

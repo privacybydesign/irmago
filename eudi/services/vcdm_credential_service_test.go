@@ -138,7 +138,7 @@ func TestSdJwtDataModelParser_DispatchesVcdmPayload(t *testing.T) {
 func TestSdJwtDataModelParser_RejectsMixedBatch(t *testing.T) {
 	parser := NewSdJwtDataModelParser(NewSdJwtVcCredentialFormatParser(nil), NewSdJwtVcdmCredentialFormatParser(nil))
 
-	err := parser.CheckBatchUniqueness([]*ParsedCredential{
+	err := parser.CheckBatch([]*ParsedCredential{
 		{Format: models.CredentialFormatSdJwtVcdm},
 		{Format: models.CredentialFormatSdJwtVc},
 	})

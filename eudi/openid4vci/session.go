@@ -961,9 +961,9 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		parsedCredentials[i] = parsed
 	}
 
-	err = parser.CheckBatchUniqueness(parsedCredentials)
+	err = parser.CheckBatch(parsedCredentials)
 	if err != nil {
-		return nil, fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
+		return nil, fmt.Errorf("credential batch rejected: %v", err)
 	}
 
 	support, err = s.withStoreForParsedFormat(support, credentialConfig.Format, parsedCredentials)

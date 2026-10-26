@@ -556,43 +556,47 @@ func parseBatchAttributes(batch *Batch, query dcql.CredentialQuery, rawSdJwt sdj
 	// flattening the resolved payload at the requested paths. That keeps the
 	// pre-existing behavior for unit tests that work with synthetic batches,
 	// at the cost of not previewing bundled siblings in those tests.
-	leafPaths := computeDisclosurePreviewLeaves(rawSdJwt, requestedPaths, &resolved, batch.CredentialType, isUserDataKey)
+	leafPaths, values := computeDisclosurePreview(rawSdJwt, requestedPaths, &resolved, batch.CredentialType, isUserDataKey)
 	pairs := buildPairsFromLeaves(leafPaths, constrainedKeys)
 
 	metadataOrder := buildMetadataOrder(batch)
 	attributes := make([]clientmodels.Attribute, 0)
 	requestedKeys := make(map[string]struct{})
-	attributes = flattenPathsForDisplay(attributes, requestedKeys, batch, &resolved, pairs, metadataOrder, locale)
+	attributes = flattenPathsForDisplay(attributes, requestedKeys, batch, values, pairs, metadataOrder, locale)
 
 	return attributes, nil
 }
 
-// computeDisclosurePreviewLeaves returns the leaf paths that should appear in
-// the disclosure plan. Production path: simulate the verifier-side view from
-// the raw SD-JWT and walk every visible leaf, so the user sees any sibling
-// fields bundled into the same disclosure as a requested leaf. Fallback path
-// (raw SD-JWT empty or unparseable, e.g. in unit tests with synthetic
+// computeDisclosurePreview returns the leaf paths that should appear in the
+// disclosure plan, and the payload to read their values from. Production path:
+// simulate the verifier-side view from the raw SD-JWT and walk every visible
+// leaf, so the user sees any sibling fields bundled into the same disclosure as
+// a requested leaf. Values come from that view too: instances of a batch can
+// differ (each copy carries its own holder-bound claims, such as a VCDM
+// credentialSubject.id), and the batch payload holds only one of them. Fallback
+// path (raw SD-JWT empty or unparseable, e.g. in unit tests with synthetic
 // batches): walk the resolved payload at each requested path. The fallback
 // loses the bundled-sibling preview but preserves the old behavior when the
 // SD-JWT structure isn't accessible.
-func computeDisclosurePreviewLeaves(
+func computeDisclosurePreview(
 	rawSdJwt sdjwt.SdJwt,
 	requestedPaths [][]any,
 	resolved *sdjwt.ProcessedPayload,
 	credentialType string,
 	isUserDataKey func(string) bool,
-) [][]any {
+) ([][]any, *sdjwt.ProcessedPayload) {
 	if len(rawSdJwt) > 0 {
 		view, err := sdjwt.PostDisclosureView(rawSdJwt, requestedPaths)
 		if err == nil {
-			return collectViewLeafPaths(view, isUserDataKey)
+			values := sdjwt.ProcessedPayload(view)
+			return collectViewLeafPaths(view, isUserDataKey), &values
 		}
 		eudi.Logger.Warnf(
 			"failed to compute post-disclosure view for %q (falling back to requested-path flattening): %v",
 			credentialType, err,
 		)
 	}
-	return collectResolvedLeavesAtPaths(resolved, requestedPaths)
+	return collectResolvedLeavesAtPaths(resolved, requestedPaths), resolved
 }
 
 // collectResolvedLeavesAtPaths walks the resolved payload at each requested
@@ -957,6 +961,10 @@ func (h *Engine) buildLogCredential(
 	view, err := sdjwt.PostDisclosureView(sdjwt.SdJwt(instance.RawCredential), claimPaths)
 	if err != nil {
 		eudi.Logger.Warnf("failed to compute post-disclosure view for log credential %q: %v", batch.CredentialType, err)
+	} else {
+		// Read values off the sent copy too, not the batch payload: copies of a
+		// batch can differ in holder-bound claims such as credentialSubject.id.
+		resolved = sdjwt.ProcessedPayload(view)
 	}
 
 	leafPaths := collectViewLeafPaths(view, h.profile.isUserDataKey)

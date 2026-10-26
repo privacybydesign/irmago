@@ -40,6 +40,44 @@ func testSessionHandlerForOpenID4VCIVcdm(t *testing.T) {
 	t.Run("different claims give a second VCDM credential", testOpenID4VCIVcdmDifferentClaimsAddSecond)
 	t.Run("deleting VCDM credential removes it", testOpenID4VCIVcdmDeletion)
 	t.Run("denying VCDM issuance stores nothing", testOpenID4VCIVcdmDenyStoresNothing)
+	t.Run("VCDM batch with differing subject ids is rejected", testOpenID4VCIVcdmBatchWithDifferingSubjectIdsRejected)
+}
+
+// testOpenID4VCIVcdmBatchWithDifferingSubjectIdsRejected checks that the wallet
+// refuses a batch whose copies differ in a value it would show. Veramo writes
+// each copy's own holder key into credentialSubject.id, so the two copies from
+// the batch2 issuer differ there. The wallet shows a batch as one credential,
+// so accepting it would mean showing the user one id and sending another.
+func testOpenID4VCIVcdmBatchWithDifferingSubjectIdsRejected(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := postOffer(t, batch2IssuerURL, batch2AdminToken, fmt.Sprintf(`{
+		"credentials": [%q],
+		"grants": {
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+				"pre-authorized_code": "generate"
+			}
+		},
+		"credentialDataSupplierInput": %s
+	}`, vcdmCredentialConfigId, vcdmTestClaims))
+	startOpenID4VCISession(t, c, 1, offer.URI)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+
+	// The batch is checked when the credentials arrive, before the user is
+	// asked to accept them.
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Error, session.Status)
+	require.NotNil(t, session.Error)
+	require.Contains(t, session.Error.WrappedError, "differs from credential 0 in credentialSubject")
+	require.Empty(t, session.OfferedCredentials)
 }
 
 func testOpenID4VCIVcdmPreAuthFlow(t *testing.T) {
