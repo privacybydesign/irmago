@@ -362,7 +362,7 @@ func testRevocationAll(t *testing.T, dbType string) {
 		events = newrequest.Revocation[revocationTestCred].Updates[revocationPkCounter].Events
 		require.Equal(t, uint64(2), events[len(events)-1].Index)
 
-		// Use newrequest to update client to index 2 and contruct a disclosure proof
+		// Use newrequest to update client to index 2 and construct a disclosure proof
 		require.NoError(t, client.NonrevPrepare(newrequest))
 		disclosure, _, err = client.Proofs(choice, newrequest)
 		require.NoError(t, err)
