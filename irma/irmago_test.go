@@ -922,6 +922,29 @@ func TestPrivateKeyRings(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestPrivateKeyRingFolderRejectsPathTraversal(t *testing.T) {
+	conf := parseConfiguration(t)
+	folderring, err := NewPrivateKeyRingFolder(filepath.Join(test.FindTestdataFolder(t), "privatekeys"), conf)
+	require.NoError(t, err)
+
+	// An issuer identifier is turned into a flat "scheme.issuer[.counter].xml" filename
+	// inside the key ring folder. The identifier is reachable from untrusted input (the
+	// credential type in a session or revocation request), so a crafted identifier must
+	// never let a lookup escape the key ring folder. Latest (via Iterate) and Iterate
+	// build the path straight from the identifier, so they are the reachable sinks.
+	traversal := NewIssuerIdentifier("../../../../etc/passwd")
+	_, err = folderring.Latest(traversal)
+	require.ErrorContains(t, err, "outside the key ring")
+	require.ErrorContains(t,
+		folderring.Iterate(traversal, func(*gabikeys.PrivateKey) error { return nil }),
+		"outside the key ring")
+
+	// Get is also guarded (readFile resolves the path), though it additionally rejects
+	// the identifier earlier because its scheme part is unknown.
+	_, err = folderring.Get(traversal, 1)
+	require.Error(t, err)
+}
+
 // Helper functions for wizard tests below
 func credid(s string) CredentialTypeIdentifier {
 	return NewCredentialTypeIdentifier(s)
