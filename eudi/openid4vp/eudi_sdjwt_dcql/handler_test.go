@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -62,6 +64,21 @@ func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.SdJwtVcStore) {
 		currentLocale:   clientmodels.NewCurrentLocale("en"),
 	}
 	return handler, credStore
+}
+
+// prepareSigned runs the handler's two-phase PrepareDisclosure to the end,
+// signing with software keys, the way the dispatcher does with the wallet's
+// signer for a wallet without a wallet provider.
+func prepareSigned(h *SdJwtVcDcqlHandler, selections []dcql.DisclosureSelection, nonce, audience string) (*dcql.PreparedDisclosure, error) {
+	pending, err := h.PrepareDisclosure(selections, nonce, audience)
+	if err != nil {
+		return nil, err
+	}
+	signatures, err := services.NewHolderSigner(nil).Sign(context.Background(), pending.Signatures)
+	if err != nil {
+		return nil, err
+	}
+	return pending.Complete(signatures)
 }
 
 func newTestBatch(hash, vct string, payload map[string]any) *models.SdJwtVcBatch {
@@ -603,13 +620,13 @@ func TestPrepareDisclosure_BatchOfOne_RemainsUsableAfterDisclosure(t *testing.T)
 	}}
 
 	// First disclosure should succeed.
-	result, err := h.PrepareDisclosure(selections, "nonce1", "client1")
+	result, err := prepareSigned(h, selections, "nonce1", "client1")
 	require.NoError(t, err)
 	require.Len(t, result.QueryResponses, 1)
 	assert.NotEmpty(t, result.QueryResponses[0].Credentials)
 
 	// Second disclosure should also succeed — the single instance must stay reusable.
-	result2, err := h.PrepareDisclosure(selections, "nonce2", "client2")
+	result2, err := prepareSigned(h, selections, "nonce2", "client2")
 	require.NoError(t, err, "batch-of-1 credential must remain usable after disclosure")
 	require.Len(t, result2.QueryResponses, 1)
 	assert.NotEmpty(t, result2.QueryResponses[0].Credentials)
@@ -642,7 +659,7 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	}}
 
 	// First disclosure — uses one instance.
-	_, err := h.PrepareDisclosure(selections, "nonce1", "client1")
+	_, err := prepareSigned(h, selections, "nonce1", "client1")
 	require.NoError(t, err)
 
 	reloaded, err := store.GetBatchByHash("hash-batch2")
@@ -650,7 +667,7 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	assert.Equal(t, uint(1), reloaded.RemainingCount)
 
 	// Second disclosure — uses the last instance.
-	_, err = h.PrepareDisclosure(selections, "nonce2", "client2")
+	_, err = prepareSigned(h, selections, "nonce2", "client2")
 	require.NoError(t, err)
 
 	reloaded, err = store.GetBatchByHash("hash-batch2")
@@ -658,7 +675,7 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	assert.Equal(t, uint(0), reloaded.RemainingCount)
 
 	// Third disclosure — no unused instances left, should fail.
-	_, err = h.PrepareDisclosure(selections, "nonce3", "client3")
+	_, err = prepareSigned(h, selections, "nonce3", "client3")
 	require.Error(t, err, "batch-of-2 with all instances used should fail")
 }
 
@@ -1003,5 +1020,58 @@ func TestIsHttpVct(t *testing.T) {
 	}
 	for _, c := range cases {
 		assert.Equal(t, c.want, isHttpVct(c.vct), "vct=%q", c.vct)
+	}
+}
+
+// removedKeys records the holder keys a handler removes.
+type removedKeys struct{ ids []datatypes.UUID }
+
+func (r *removedKeys) RemoveKeys(ids []datatypes.UUID) error {
+	r.ids = append(r.ids, ids...)
+	return nil
+}
+
+// TestPrepareDisclosure_RemovesTheHolderKeyOfAUsedInstance: a disclosure that
+// uses up an instance of a batch removes that instance's holder key, which
+// nothing will sign with again, and no other, but for the batch's last: the
+// wallet keeps a key for every credential it holds (ARF 3.0, WIAM_21). A batch
+// of one keeps its key, as it keeps its instance.
+func TestPrepareDisclosure_RemovesTheHolderKeyOfAUsedInstance(t *testing.T) {
+	for _, size := range []uint{1, 2, 3} {
+		t.Run(fmt.Sprintf("batch of %d", size), func(t *testing.T) {
+			h, store := newTestHandler(t)
+			removed := &removedKeys{}
+			h.usedKeys = removed
+
+			hash := fmt.Sprintf("hash-keys-%d", size)
+			batch := newTestBatch(hash, "https://example.com/EmailCredential", map[string]any{"email": "test@gmail.com"})
+			batch.BatchSize, batch.RemainingCount = size, size
+			batch.Instances = nil
+			for i := range size {
+				batch.Instances = append(batch.Instances, models.SdJwtVcBatchInstance{
+					RawCredential: []byte(validTestSdJwtVc),
+					HolderBindingKey: &models.HolderBindingKey{
+						Algorithm:           models.KeyAlgorithmECDSA,
+						PublicKeyThumbprint: datatypes.NullString{V: fmt.Sprintf("thumbprint %d", i), Valid: true},
+						PrivateKey:          fmt.Appendf(nil, "key %d", i),
+						ECDSA:               &models.ECDSAKeyMetadata{CurveName: "P-256"},
+					},
+				})
+			}
+			require.NoError(t, store.StoreBatch(batch))
+			selections := []dcql.DisclosureSelection{{QueryId: "q1", CredentialHash: hash, ClaimPaths: [][]any{{"email"}}}}
+
+			var want []datatypes.UUID
+			for i := range size {
+				unused, err := store.GetUnusedInstance(batch.ID)
+				require.NoError(t, err)
+				_, err = prepareSigned(h, selections, fmt.Sprintf("nonce%d", i), "client")
+				require.NoError(t, err)
+				if i < size-1 {
+					want = append(want, unused.HolderBindingKey.ID)
+				}
+			}
+			require.Equal(t, want, removed.ids, "the key of each used instance but the last, and only those")
+		})
 	}
 }

@@ -1352,7 +1352,11 @@ func (m *mockCredentialStore) GetBatchByHash(hash string) (*models.SdJwtVcBatch,
 	return nil, db.ErrNotFound
 }
 
-func (m *mockCredentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.SdJwtVcBatchInstance, error) {
+func (m *mockCredentialStore) KeyIDsByBatchHash(string) ([]datatypes.UUID, error) {
+	return nil, nil
+}
+
+func (m *mockCredentialStore) GetUnusedInstance(batchID datatypes.UUID, _ ...datatypes.UUID) (*models.SdJwtVcBatchInstance, error) {
 	return nil, db.ErrNotFound
 }
 
