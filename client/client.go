@@ -272,7 +272,6 @@ func New(
 	vcdmVerificationContextOpenID4VCI := vcdmsdjwt.VerificationContext{
 		X509VerificationContext: &eudiConf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),
-		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
 		StatusChecker:           statusChecker,
 		BitstringStatusChecker:  bitstringStatusChecker,
 	}

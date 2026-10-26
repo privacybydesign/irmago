@@ -57,5 +57,5 @@ func (p *sdJwtVcCredentialFormatParser) CheckBatch(batch []*ParsedCredential) er
 	if err := sdjwtvc.CheckKeyBindingConfirmationUniqueness(vcs); err != nil {
 		return err
 	}
-	return requireIdenticalCopies(batch, sdJwtVcCopyContent)
+	return requireIdenticalBatchInstances(batch, sdJwtVcBatchInstanceContent)
 }

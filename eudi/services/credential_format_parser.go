@@ -119,9 +119,9 @@ type CredentialFormatParser interface {
 
 	// CheckBatch validates cross-instance invariants across one full batch
 	// of credentials issued from a single credential request: no
-	// holder-binding key is repeated, and the copies are identical apart from
+	// holder-binding key is repeated, and the instances are identical apart from
 	// their cryptographic material, status entry, identifier and issuance
-	// time (requireIdenticalCopies).
+	// time (requireIdenticalBatchInstances).
 	CheckBatch(batch []*ParsedCredential) error
 }
 

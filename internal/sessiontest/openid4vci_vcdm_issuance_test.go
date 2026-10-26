@@ -36,7 +36,7 @@ const (
 func testSessionHandlerForOpenID4VCIVcdm(t *testing.T) {
 	t.Run("issues VCDM credential via pre-authorized code", testOpenID4VCIVcdmPreAuthFlow)
 	t.Run("stores VCDM credential under its type identity", testOpenID4VCIVcdmStoredUnderTypeIdentity)
-	t.Run("reissuing VCDM credential stores a second copy", testOpenID4VCIVcdmReissueStoresSecondCopy)
+	t.Run("reissuing VCDM credential stores a second credential", testOpenID4VCIVcdmReissueStoresSecondCredential)
 	t.Run("different claims give a second VCDM credential", testOpenID4VCIVcdmDifferentClaimsAddSecond)
 	t.Run("deleting VCDM credential removes it", testOpenID4VCIVcdmDeletion)
 	t.Run("denying VCDM issuance stores nothing", testOpenID4VCIVcdmDenyStoresNothing)
@@ -44,8 +44,8 @@ func testSessionHandlerForOpenID4VCIVcdm(t *testing.T) {
 }
 
 // testOpenID4VCIVcdmBatchWithDifferingSubjectIdsRejected checks that the wallet
-// refuses a batch whose copies differ in a value it would show. Veramo writes
-// each copy's own holder key into credentialSubject.id, so the two copies from
+// refuses a batch whose instances differ in a value it would show. Veramo writes
+// each instance's own holder key into credentialSubject.id, so the two instances from
 // the batch2 issuer differ there. The wallet shows a batch as one credential,
 // so accepting it would mean showing the user one id and sending another.
 func testOpenID4VCIVcdmBatchWithDifferingSubjectIdsRejected(t *testing.T) {
@@ -142,14 +142,14 @@ func testOpenID4VCIVcdmStoredUnderTypeIdentity(t *testing.T) {
 	}
 }
 
-// testOpenID4VCIVcdmReissueStoresSecondCopy pins current behavior, not the
-// desired one. Veramo sets credentialSubject.id to the holder key's did:key,
-// and every issuance uses a fresh holder key. The dedupe hash leaves the
-// envelope out but keeps all of credentialSubject, so a renewal with the same
-// claims is stored next to the first copy instead of replacing it. Whether a
-// subject id equal to the holder key should count as content is an open design
-// question: a subject id can also be a stable identifier of the person.
-func testOpenID4VCIVcdmReissueStoresSecondCopy(t *testing.T) {
+// testOpenID4VCIVcdmReissueStoresSecondCredential checks that credentialSubject.id
+// counts as content. Veramo sets it to the holder key's did:key, and every
+// issuance uses a fresh holder key. The dedupe hash leaves the envelope out but
+// keeps all of credentialSubject, so a renewal with the same claims is stored
+// next to the first credential instead of replacing it. That is intended: a
+// subject id can also be a stable identifier of the person, so the wallet does
+// not guess when it is only a key.
+func testOpenID4VCIVcdmReissueStoresSecondCredential(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -160,7 +160,7 @@ func testOpenID4VCIVcdmReissueStoresSecondCopy(t *testing.T) {
 	require.Len(t, creds, 2)
 	require.NotEqual(t, creds[0].Hash, creds[1].Hash)
 
-	// The copies differ only in credentialSubject.id.
+	// The two credentials differ only in credentialSubject.id.
 	firstDid, secondDid := vcdmHolderDid(t, creds[0].Attributes), vcdmHolderDid(t, creds[1].Attributes)
 	require.NotEqual(t, firstDid, secondDid)
 	requireVcdmTestAttrs(t, creds[0].Attributes, "Vera", "Modell", "vera@example.com")

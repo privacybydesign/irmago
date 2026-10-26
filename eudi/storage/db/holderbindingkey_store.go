@@ -85,7 +85,7 @@ func (r *holderBindingKeyStore) GetByThumbprint(thumbprint string) (*models.Hold
 	return &key, nil
 }
 
-// LinkToInstance sets the IssuedCredentialInstanceID on the given holder binding key,
+// LinkToInstance sets the SdJwtVcBatchInstanceID on the given holder binding key,
 // binding it to the specified credential instance.
 func (r *holderBindingKeyStore) LinkToInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
 	res := r.db.Model(&models.HolderBindingKey{}).

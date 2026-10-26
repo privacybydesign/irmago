@@ -29,7 +29,8 @@ type HolderBindingKey struct {
 	// FK back to the owning SdJwtVcBatchInstance (Has One from there). Nil when
 	// the key has not yet been bound to a credential instance, or when it is
 	// bound to a VCDM instance instead. mdoc device keys live in MdocDeviceKey.
-	IssuedCredentialInstanceID *datatypes.UUID
+	// The column keeps its name from before the SD-JWT VC and VCDM split.
+	SdJwtVcBatchInstanceID *datatypes.UUID `gorm:"column:issued_credential_instance_id"`
 
 	// FK back to the owning VcdmBatchInstance (Has One from there). SD-JWT-secured
 	// VCDM binds its holder the same way SD-JWT VC does, through `cnf`, so it
@@ -58,7 +59,7 @@ type HolderBindingKey struct {
 // IsBound reports whether the key is linked to a credential instance of either
 // SD-JWT data model.
 func (k *HolderBindingKey) IsBound() bool {
-	return (k.IssuedCredentialInstanceID != nil && !k.IssuedCredentialInstanceID.IsNil()) ||
+	return (k.SdJwtVcBatchInstanceID != nil && !k.SdJwtVcBatchInstanceID.IsNil()) ||
 		(k.VcdmBatchInstanceID != nil && !k.VcdmBatchInstanceID.IsNil())
 }
 

@@ -180,7 +180,7 @@ type SdJwtVcBatchInstance struct {
 
 	// HolderBindingKey is the key pair bound to this credential instance during issuance.
 	// Nil if the credential configuration did not require cryptographic key binding.
-	HolderBindingKey *HolderBindingKey `gorm:"foreignKey:IssuedCredentialInstanceID;constraint:OnDelete:CASCADE"`
+	HolderBindingKey *HolderBindingKey `gorm:"foreignKey:SdJwtVcBatchInstanceID;constraint:OnDelete:CASCADE"`
 
 	// RawCredential is the SD-JWT VC token as issued, without its key binding JWT
 	// (the holder creates that per presentation). The surrounding SQLCipher layer
@@ -235,11 +235,11 @@ func (i *SdJwtVcBatchInstance) BeforeCreate(tx *gorm.DB) error {
 		i.ID = datatypes.NewUUIDv4()
 	}
 	if i.HolderBindingKey != nil {
-		if i.HolderBindingKey.IssuedCredentialInstanceID != nil && !i.HolderBindingKey.IssuedCredentialInstanceID.IsNil() {
+		if i.HolderBindingKey.SdJwtVcBatchInstanceID != nil && !i.HolderBindingKey.SdJwtVcBatchInstanceID.IsNil() {
 			return fmt.Errorf("holder binding key %s is already bound to credential instance %s",
-				i.HolderBindingKey.ID, *i.HolderBindingKey.IssuedCredentialInstanceID)
+				i.HolderBindingKey.ID, *i.HolderBindingKey.SdJwtVcBatchInstanceID)
 		}
-		i.HolderBindingKey.IssuedCredentialInstanceID = &i.ID
+		i.HolderBindingKey.SdJwtVcBatchInstanceID = &i.ID
 	}
 	return i.validate()
 }

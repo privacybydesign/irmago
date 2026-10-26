@@ -140,7 +140,7 @@ func (p *mdocCredentialFormatParser) CheckBatch(batch []*ParsedCredential) error
 		}
 		seen[pc.Mdoc.DeviceKeyThumbprint] = true
 	}
-	return requireIdenticalCopies(batch, mdocCopyContent)
+	return requireIdenticalBatchInstances(batch, mdocBatchInstanceContent)
 }
 
 func jwkThumbprintFromECDSAPublicKey(pub any) (string, error) {

@@ -60,7 +60,7 @@ func (p *sdJwtVcdmCredentialFormatParser) CheckBatch(batch []*ParsedCredential) 
 	if err := vcdmsdjwt.CheckKeyBindingConfirmationUniqueness(verified); err != nil {
 		return err
 	}
-	return requireIdenticalCopies(batch, sdJwtVcdmCopyContent)
+	return requireIdenticalBatchInstances(batch, sdJwtVcdmBatchInstanceContent)
 }
 
 // sdJwtDataModelParser is the dc+sd-jwt CredentialFormatParser. The dc+sd-jwt
@@ -99,7 +99,7 @@ func (p *sdJwtDataModelParser) ParseAndVerify(raw, credentialIssuer string, hold
 }
 
 // CheckBatch rejects a batch that mixes data models — its instances
-// are copies of one logical credential — and otherwise applies the parsed data
+// are instances of one logical credential — and otherwise applies the parsed data
 // model's own check.
 func (p *sdJwtDataModelParser) CheckBatch(batch []*ParsedCredential) error {
 	if len(batch) == 0 {
