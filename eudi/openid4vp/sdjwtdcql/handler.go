@@ -375,8 +375,8 @@ func claimDisplayFromVct(vctMeta *typemetadata.VctTypeMetadata, path []any) clie
 
 // findBatches returns the batches of this handler's format whose type identity
 // satisfies the query's DCQL type constraints, with metadata preloaded. See
-// batchMatchesTypeConstraint for the precedence between type_values, vct_values
-// and an empty meta.
+// batchMatchesTypeConstraint for how type_values, vct_values and an empty meta
+// combine.
 func (h *Engine) findBatches(query dcql.CredentialQuery) ([]*Batch, error) {
 	typeValues := query.TypeValues()
 	vctValues := query.VctValues()
@@ -402,7 +402,7 @@ func (h *Engine) findBatches(query dcql.CredentialQuery) ([]*Batch, error) {
 }
 
 // batchMatchesTypeConstraint decides whether a batch satisfies a DCQL query's
-// type constraints, in precedence order:
+// type constraints. Each one the query sets must hold:
 //
 //   - type_values (OpenID4VP §B.1.1, W3C VCDM): the credential's JSON-LD `type`
 //     set must be a superset of at least one requested set — see
@@ -411,12 +411,16 @@ func (h *Engine) findBatches(query dcql.CredentialQuery) ([]*Batch, error) {
 //     composite @context+type identity for VCDM — must equal one of them.
 //   - neither (an empty or absent `meta`, OpenID4VP §6.1): every batch of the
 //     format matches; claim matching then narrows.
+//
+// Both apply when both are set. Verifier authorization reads vct_values and not
+// type_values, so letting type_values replace vct_values would let a verifier
+// pass authorization with one credential type and receive another.
 func batchMatchesTypeConstraint(batch *Batch, typeValues [][]string, vctValues []string) bool {
-	if len(typeValues) > 0 {
-		return batchTypeSatisfiesTypeValues(batch, typeValues)
+	if len(typeValues) > 0 && !batchTypeSatisfiesTypeValues(batch, typeValues) {
+		return false
 	}
-	if len(vctValues) > 0 {
-		return slices.Contains(vctValues, batch.CredentialType)
+	if len(vctValues) > 0 && !slices.Contains(vctValues, batch.CredentialType) {
+		return false
 	}
 	return true // §6.1: empty meta matches any credential of the format
 }

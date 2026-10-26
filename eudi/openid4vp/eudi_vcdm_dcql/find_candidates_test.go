@@ -265,6 +265,43 @@ func TestVcdmFindCandidates_TypeValuesDisjunctionAndNonMatch(t *testing.T) {
 	}
 }
 
+// Verifier authorization reads vct_values and not type_values, so both must
+// hold when a query sets both. Otherwise a verifier authorized for one type
+// could name it as a decoy and receive whatever its type_values match.
+func TestVcdmFindCandidates_TypeValuesAndVctValuesBothApply(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	typeIdentity := "https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential"
+	batch := newTestBatch("hash-vcdm-both", typeIdentity, map[string]any{
+		"@context":          []any{"https://www.w3.org/ns/credentials/v2"},
+		"type":              []any{"VerifiableCredential", "ExampleCredential"},
+		"credentialSubject": map[string]any{"given_name": "Alice"},
+	})
+	require.NoError(t, store.StoreBatch(batch))
+
+	cases := []struct {
+		name      string
+		vctValues string
+		wantMatch bool
+	}{
+		{"vct_values names another type", `["https://example.com/authorized-decoy"]`, false},
+		{"vct_values names this type", `["` + typeIdentity + `"]`, true},
+	}
+	for _, c := range cases {
+		res, err := h.FindCandidates(parseDcqlQuery(t, `{
+			"id": "q1", "format": "vc+sd-jwt",
+			"meta": {"type_values": [["ExampleCredential"]], "vct_values": `+c.vctValues+`},
+			"claims": [{"path": ["credentialSubject", "given_name"]}]
+		}`))
+		require.NoError(t, err, c.name)
+		if c.wantMatch {
+			require.Len(t, res.OwnedCandidates, 1, c.name)
+		} else {
+			require.Empty(t, res.OwnedCandidates, c.name)
+		}
+	}
+}
+
 // ========================================================================
 // PrepareDisclosure: present a real VCDM credential and decode the result
 // ========================================================================
