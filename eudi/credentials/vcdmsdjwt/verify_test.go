@@ -44,19 +44,19 @@ func TestHolder_ValidVcSdJwt_Succeeds(t *testing.T) {
 	require.NotEmpty(t, verified.GetRawSdJwtVcdm())
 }
 
-// dc+sd-jwt is content-dispatched: a VCDM payload under it is accepted.
-func TestHolder_ValidDcSdJwtCarryingVcdm_Succeeds(t *testing.T) {
-	credential := signCredential(t, MediaTypeDcSdJwt, vcdmClaims(t, "2020-01-01T00:00:00Z", "2035-01-01T00:00:00Z"))
+// dc+sd-jwt is IETF SD-JWT VC: a VCDM payload under it fits neither spec.
+func TestHolder_DcSdJwtCarryingVcdm_Rejected(t *testing.T) {
+	credential := signCredential(t, "dc+sd-jwt", vcdmClaims(t, "2020-01-01T00:00:00Z", "2035-01-01T00:00:00Z"))
 	_, err := NewHolderVerificationProcessor(CreateTestVerificationContext()).ParseAndVerifySdJwtVcdm(credential)
-	require.NoError(t, err)
+	require.Error(t, err)
 }
 
-// dc+sd-jwt carrying an IETF SD-JWT VC (a `vct` payload) verifies its signature
-// but is not VCDM: the cornerstone dispatch must reject it here.
-func TestHolder_DcSdJwtCarryingSdJwtVc_Rejected(t *testing.T) {
+// A `vct` payload signed as vc+sd-jwt verifies its signature but is not VCDM,
+// so the payload gate rejects it.
+func TestHolder_VcSdJwtCarryingSdJwtVc_Rejected(t *testing.T) {
 	cnf, err := sdjwt.HolderKeyClaim(testdata.ParseHolderPubJwk())
 	require.NoError(t, err)
-	credential := signCredential(t, MediaTypeDcSdJwt, []*sdjwt.ClaimElement{
+	credential := signCredential(t, MediaTypeVcSdJwt, []*sdjwt.ClaimElement{
 		sdjwt.Claim("vct", "https://example.com/credentials/identity"),
 		sdjwt.Claim("iss", TestIssuerURL),
 		sdjwt.SdClaim("given_name", "Alice"),

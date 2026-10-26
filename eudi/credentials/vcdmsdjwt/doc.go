@@ -15,13 +15,10 @@
 // distinct data models: an SD-JWT-secured VCDM credential is NOT an IETF
 // SD-JWT VC, so they get distinct policy layers over the shared securing core.
 //
-// Media types (JWS `typ` header): per the effort's format-id convention,
-// `vc+sd-jwt` always denotes an SD-JWT-secured VCDM credential, while
-// `dc+sd-jwt` is content-dispatched (a `dc+sd-jwt` payload is VCDM only when it
-// looks like VCDM). This layer accepts both `typ` values at the securing level
-// and then gates on the decoded payload actually being a VCDM document (the
-// cornerstone dispatch, vcdm.IsVCDM); a `dc+sd-jwt` carrying an IETF SD-JWT VC
-// is rejected here and belongs to eudi/credentials/sdjwtvc.
+// Media type (JWS `typ` header): only `vc+sd-jwt`. `dc+sd-jwt` is IETF SD-JWT
+// VC and belongs to eudi/credentials/sdjwtvc. After verifying the signature,
+// this layer also requires the decoded payload to be a VCDM document
+// (vcdm.IsVCDM).
 //
 // Verification order follows VCDM 2.0 §7.1: the SD-JWT proof is verified first
 // (issuer signature over the issuer-signed JWT, via the shared eudi/jwt key

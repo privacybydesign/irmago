@@ -110,9 +110,6 @@ func NewCredentialFormats(
 	mdocStore := db.NewMdocStore(d)
 	mdocKeys := db.NewMdocDeviceKeyStore(d)
 
-	sdJwtVcParser := NewSdJwtVcCredentialFormatParser(holderVerifier)
-	vcdmParser := NewSdJwtVcdmCredentialFormatParser(vcdmHolderVerifier)
-
 	// statusChecker is the one RevocationService's background sweep uses, so a
 	// revoked document is refused at parse time rather than merely flagged
 	// later — the same fail-closed guarantee sdjwtvc's holder verifier gives.
@@ -121,12 +118,12 @@ func NewCredentialFormats(
 
 	return CredentialFormats{
 		models.CredentialFormatSdJwtVc: {
-			Parser: NewSdJwtDataModelParser(sdJwtVcParser, vcdmParser),
+			Parser: NewSdJwtVcCredentialFormatParser(holderVerifier),
 			Keys:   NewHolderBindingKeyService(d),
 			Store:  NewSdJwtVcCredentialService(sdJwtVcStore, db.NewHolderBindingKeyStore(d), fs, revocation, currentLocale),
 		},
 		models.CredentialFormatSdJwtVcdm: {
-			Parser: vcdmParser,
+			Parser: NewSdJwtVcdmCredentialFormatParser(vcdmHolderVerifier),
 			Keys:   NewHolderBindingKeyService(d),
 			Store:  NewSdJwtVcdmCredentialService(vcdmStore, db.NewHolderBindingKeyStore(d), fs, revocation, currentLocale),
 		},

@@ -200,9 +200,9 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 		return nil, nil, nil, nil, err
 	}
 
-	// Step 4 (cornerstone dispatch): the decoded payload must actually be a
-	// VCDM document. A `dc+sd-jwt` carrying an IETF SD-JWT VC verifies its
-	// signature fine but is not ours — reject it here rather than mis-validate.
+	// Step 4: the decoded payload must actually be a VCDM document. A
+	// `vct`-typed SD-JWT VC payload signed as `vc+sd-jwt` verifies its signature
+	// fine but is not ours — reject it here rather than mis-validate.
 	payload := map[string]any(processed)
 	if !vcdm.IsVCDM(payload) {
 		return nil, nil, nil, nil, fmt.Errorf(
@@ -258,12 +258,12 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 
 // decodeJwtAndVerifyFromHeader parses the issuer-signed JWT, verifying its
 // signature via the shared eudi/jwt key provider (X.509 `x5c` or DID `kid`) and
-// its `typ` against the SD-JWT-secured VCDM media types. When an X.509 chain is
+// its `typ` against the SD-JWT-secured VCDM media type. When an X.509 chain is
 // used, the whole chain is additionally verified against the trusted
 // roots/intermediates and revocation lists, and its leaf certificate is
 // returned; it is nil when the key came from a DID.
 func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, *x509.Certificate, error) {
-	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{MediaTypeVcSdJwt, MediaTypeDcSdJwt}, p.allowInsecureDidWeb)
+	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{MediaTypeVcSdJwt}, p.allowInsecureDidWeb)
 
 	token, err := jwt.Parse(signedJwt,
 		jwt.WithKeyProvider(keyProvider),

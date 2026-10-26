@@ -425,8 +425,7 @@ func (client *Client) convertToCredentialInfoList(
 
 // credentialConfigurationTypeIdentity returns the credential type identity a
 // configuration advertises: the `vct` for an IETF SD-JWT VC, or the
-// @context+type composite for an SD-JWT-secured VCDM credential (either format
-// id; a `dc+sd-jwt` configuration is content-dispatched, #678/#683). This is
+// @context+type composite for an SD-JWT-secured VCDM credential. This is
 // display-only: after issuance the verified credential's own type claims are
 // authoritative (see buildOfferedCredentials).
 func credentialConfigurationTypeIdentity(config metadata.CredentialConfiguration) string {
@@ -541,9 +540,7 @@ func (client *Client) resolveCredentialMetadataFromVct(
 		if !ok {
 			continue
 		}
-		// VCT type metadata only exists for the IETF SD-JWT VC data model; an
-		// SD-JWT-secured VCDM configuration (`vc+sd-jwt`, or a VCDM-shaped
-		// `dc+sd-jwt`) has no `vct` and is skipped via vctLooksFetchable below.
+		// VCT type metadata only exists for the IETF SD-JWT VC data model.
 		if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc {
 			continue
 		}

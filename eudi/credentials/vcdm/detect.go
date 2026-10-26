@@ -1,11 +1,9 @@
 package vcdm
 
-// DataModel identifies which credential *data model* a decoded payload uses.
-// This is the "cornerstone" dispatch of the VCDM effort: the data model (W3C
-// VCDM vs IETF SD-JWT VC) is detected by inspecting the decoded — but
-// not-yet-trusted — structure, and is orthogonal to the securing mechanism.
-// Dispatch on the structure; trust only after the securing layer has verified
-// the proof.
+// DataModel identifies which credential *data model* a decoded payload uses
+// (W3C VCDM vs IETF SD-JWT VC), read from its structure alone. The format id
+// already decides which verifier runs; this names what a rejected payload
+// turned out to be.
 type DataModel int
 
 const (

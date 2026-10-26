@@ -1369,41 +1369,30 @@ func TestGetSupportedCredentialSigningAlgorithm_Failure(t *testing.T) {
 	}
 }
 
-// A `dc+sd-jwt` configuration is content-dispatched (#678/#683): a `vct`
-// routes to the IETF SD-JWT VC verifier, a credential_definition without
-// `vct` routes to the VCDM verifier, and neither is rejected by the SD-JWT VC
-// verifier's vct requirement.
-func TestValidateCredentialConfiguration_DcSdJwtContentDispatch(t *testing.T) {
+// A `dc+sd-jwt` configuration is IETF SD-JWT VC only: it needs a `vct`, and a
+// VCDM credential_definition does not stand in for one.
+func TestValidateCredentialConfiguration_DcSdJwtRequiresVct(t *testing.T) {
 	tests := []struct {
 		name        string
 		config      metadata.CredentialConfiguration
 		expectedErr string
 	}{
 		{
-			name: "vct routes to the SD-JWT VC verifier",
+			name: "vct is accepted",
 			config: metadata.CredentialConfiguration{
 				Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
 				VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
 			},
 		},
 		{
-			name: "credential_definition routes to the VCDM verifier",
+			name: "VCDM credential_definition without vct is rejected",
 			config: metadata.CredentialConfiguration{
 				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				CredentialDefinition: &metadata.W3CCredentialDefinition{
 					Type: []string{"VerifiableCredential", "ExampleCredential"},
 				},
 			},
-		},
-		{
-			name: "credential_definition missing VerifiableCredential is rejected by the VCDM verifier",
-			config: metadata.CredentialConfiguration{
-				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
-				CredentialDefinition: &metadata.W3CCredentialDefinition{
-					Type: []string{"ExampleCredential"},
-				},
-			},
-			expectedErr: `'credential_definition.type' must include "VerifiableCredential" for SD-JWT-secured VCDM credential format`,
+			expectedErr: "missing 'vct' field for SD-JWT VC credential format",
 		},
 		{
 			name: "neither vct nor credential_definition is rejected",

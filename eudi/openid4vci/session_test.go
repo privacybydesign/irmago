@@ -894,78 +894,82 @@ func testX5cChain(t *testing.T) []string {
 
 func Test_openid4vciSession_obtainCredential_vcdmSuccessResponse(t *testing.T) {
 	chain := testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes
-	x5c := testX5cChain(t)
+	testCredential := createTestVcdmSdJwt(t, vcdmsdjwt.MediaTypeVcSdJwt, testX5cChain(t))
 
-	tests := []struct {
-		name   string
-		typ    string
-		format metadata.CredentialFormatIdentifier
-	}{
-		{"vc+sd-jwt format id", vcdmsdjwt.MediaTypeVcSdJwt, metadata.CredentialFormatIdentifier_SdJwtVcdm},
-		{"VCDM payload under dc+sd-jwt", vcdmsdjwt.MediaTypeDcSdJwt, metadata.CredentialFormatIdentifier_SdJwtVc},
-	}
+	sess, ts := setupTestEnvironment(t, NonceNotRequired, vcdmCredentialEndpoint(testCredential))
+	defer ts.Close()
+	setVcdmConfiguration(sess, metadata.CredentialFormatIdentifier_SdJwtVcdm)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			testCredential := createTestVcdmSdJwt(t, tt.typ, x5c)
-
-			credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				resp, _ := json.Marshal(CredentialResponse{
-					Credentials: []CredentialInstance{{Credential: testCredential}},
-				})
-				w.Write(resp)
-			})
-
-			sess, ts := setupTestEnvironment(t, NonceNotRequired, credEndpointHandler)
-			defer ts.Close()
-
-			config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
-			config.Format = tt.format
-			config.CredentialDefinition = &metadata.W3CCredentialDefinition{
-				Context: []string{vcdm.ContextV2},
-				Type:    []string{vcdm.TypeVerifiableCredential, "ExampleCredential"},
-			}
-			sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
-
-			// The registry as services.NewCredentialFormats wires it: dc+sd-jwt
-			// dispatches on the payload's data model, vc+sd-jwt is always VCDM.
-			// The stores are distinct sentinels so the test can tell which one
-			// the session picked.
-			vcdmParser := services.NewSdJwtVcdmCredentialFormatParser(
+	vcdmStore := &sentinelFormatStore{}
+	sess.formats = services.CredentialFormats{
+		models.CredentialFormatSdJwtVcdm: {
+			Parser: services.NewSdJwtVcdmCredentialFormatParser(
 				vcdmsdjwt.NewHolderVerificationProcessor(vcdmsdjwt.CreateDefaultVerificationContext(chain)),
-			)
-			sdJwtVcStore, vcdmStore := &sentinelFormatStore{}, &sentinelFormatStore{}
-			sess.formats = services.CredentialFormats{
-				models.CredentialFormatSdJwtVc: {
-					Parser: services.NewSdJwtDataModelParser(services.NewSdJwtVcCredentialFormatParser(nil), vcdmParser),
-					Store:  sdJwtVcStore,
-				},
-				models.CredentialFormatSdJwtVcdm: {Parser: vcdmParser, Store: vcdmStore},
-			}
-
-			fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
-			require.NoError(t, err)
-			require.NotNil(t, fetched)
-			require.Len(t, fetched.parsedCredentials, 1)
-			parsed := fetched.parsedCredentials[0]
-			require.Equal(t, models.CredentialFormatSdJwtVcdm, parsed.Format)
-			require.NotNil(t, parsed.SdJwtVcdm)
-			require.Nil(t, parsed.SdJwtVc)
-
-			// Stored in the VCDM tables whatever the configuration's format said.
-			require.Same(t, vcdmStore, fetched.support.Store)
-
-			doc := parsed.SdJwtVcdm.Document
-			require.Equal(t,
-				vcdm.ContextV2+" "+vcdm.TypeVerifiableCredential+" ExampleCredential",
-				doc.TypeIdentity())
-
-			subjects, err := doc.CredentialSubjects()
-			require.NoError(t, err)
-			require.Equal(t, "Alice", subjects[0]["given_name"])
-		})
+			),
+			Store: vcdmStore,
+		},
 	}
+
+	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	require.Len(t, fetched.parsedCredentials, 1)
+	parsed := fetched.parsedCredentials[0]
+	require.Equal(t, models.CredentialFormatSdJwtVcdm, parsed.Format)
+	require.NotNil(t, parsed.SdJwtVcdm)
+	require.Nil(t, parsed.SdJwtVc)
+	require.Same(t, vcdmStore, fetched.support.Store)
+
+	doc := parsed.SdJwtVcdm.Document
+	require.Equal(t,
+		vcdm.ContextV2+" "+vcdm.TypeVerifiableCredential+" ExampleCredential",
+		doc.TypeIdentity())
+
+	subjects, err := doc.CredentialSubjects()
+	require.NoError(t, err)
+	require.Equal(t, "Alice", subjects[0]["given_name"])
+}
+
+// dc+sd-jwt is IETF SD-JWT VC only: a VCDM credential delivered under it is
+// refused, not moved to the VCDM tables.
+func Test_openid4vciSession_obtainCredential_vcdmUnderDcSdJwtRejected(t *testing.T) {
+	chain := testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes
+	testCredential := createTestVcdmSdJwt(t, "dc+sd-jwt", testX5cChain(t))
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired, vcdmCredentialEndpoint(testCredential))
+	defer ts.Close()
+	setVcdmConfiguration(sess, metadata.CredentialFormatIdentifier_SdJwtVc)
+
+	sess.formats = services.CredentialFormats{
+		models.CredentialFormatSdJwtVc: {
+			Parser: services.NewSdJwtVcCredentialFormatParser(
+				sdjwtvc.NewHolderVerificationProcessor(sdjwtvc.CreateDefaultVerificationContext(chain)),
+			),
+		},
+	}
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.ErrorContains(t, err, "missing vct")
+}
+
+func vcdmCredentialEndpoint(credential string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: credential}},
+		})
+		w.Write(resp)
+	})
+}
+
+func setVcdmConfiguration(sess *session, format metadata.CredentialFormatIdentifier) {
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.Format = format
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{
+		Context: []string{vcdm.ContextV2},
+		Type:    []string{vcdm.TypeVerifiableCredential, "ExampleCredential"},
+	}
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
 }
 
 // sentinelFormatStore is a CredentialFormatStore that does nothing; tests

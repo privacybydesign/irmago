@@ -966,11 +966,6 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		return nil, fmt.Errorf("credential batch rejected: %v", err)
 	}
 
-	support, err = s.withStoreForParsedFormat(support, credentialConfig.Format, parsedCredentials)
-	if err != nil {
-		return nil, err
-	}
-
 	return &fetchedCredential{
 		credentialConfigurationId:      credentialConfigurationId,
 		parsedCredentials:              parsedCredentials,
@@ -978,37 +973,6 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		publicKeyIdentifiers:           publicKeyIdentifiers,
 		support:                        support,
 	}, nil
-}
-
-// withStoreForParsedFormat returns support with its Store replaced by the store
-// of the format the credentials actually parsed as, when that differs from the
-// configuration's format.
-//
-// The two differ when a dc+sd-jwt configuration delivers an SD-JWT-secured VCDM
-// credential: the dc+sd-jwt parser recognises the VCDM payload and verifies it
-// as vc+sd-jwt, and it belongs in the VCDM tables. Only the Store moves. The
-// keys were minted by the configuration's key binder before any credential
-// arrived, and stay with it for rollback; the swap is sound because both
-// SD-JWT data models bind through `cnf` with the same key binder (see
-// services.NewCredentialFormats).
-func (s *session) withStoreForParsedFormat(
-	support services.CredentialFormatSupport,
-	configFormat metadata.CredentialFormatIdentifier,
-	parsedCredentials []*services.ParsedCredential,
-) (services.CredentialFormatSupport, error) {
-	if len(parsedCredentials) == 0 {
-		return support, nil
-	}
-	parsedFormat := parsedCredentials[0].Format
-	if parsedFormat == models.CredentialFormat(configFormat) {
-		return support, nil
-	}
-	parsedSupport, ok := s.formats[parsedFormat]
-	if !ok {
-		return support, fmt.Errorf("credential parsed as format %q, which has no storage registered", parsedFormat)
-	}
-	support.Store = parsedSupport.Store
-	return support, nil
 }
 
 // requireMdocDocTypeMatchesMetadata binds what the issuer signed to what it

@@ -2,14 +2,9 @@ package vcdmsdjwt
 
 import "github.com/privacybydesign/irmago/eudi/sdjwt"
 
-// SD-JWT media types (JWS `typ` header) under which an SD-JWT-secured VCDM 2.0
-// credential can arrive. `vc+sd-jwt` always denotes SD-JWT-secured VCDM;
-// `dc+sd-jwt` is shared with the IETF SD-JWT VC layer and is content-dispatched
-// on the decoded payload (see package doc and vcdm.Detect).
-const (
-	MediaTypeVcSdJwt = "vc+sd-jwt"
-	MediaTypeDcSdJwt = "dc+sd-jwt"
-)
+// MediaTypeVcSdJwt is the JWS `typ` of an SD-JWT-secured VCDM 2.0 credential
+// (VC-JOSE-COSE §3.2). `dc+sd-jwt` belongs to IETF SD-JWT VC and is refused.
+const MediaTypeVcSdJwt = "vc+sd-jwt"
 
 // SdJwtVcdm is an encoded SD-JWT-secured VCDM credential (issuer-signed JWT and
 // optional disclosures, no key binding JWT). It is a defined type over

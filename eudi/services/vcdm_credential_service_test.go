@@ -120,31 +120,6 @@ func TestSdJwtVcdmParser_ParsesVcdm(t *testing.T) {
 	assert.Equal(t, int64(2051222400), *parsed.ExpiresAt) // 2035-01-01T00:00:00Z
 }
 
-// A dc+sd-jwt configuration may deliver a VCDM payload; the dc+sd-jwt parser
-// routes it to the VCDM verifier, and the result names the VCDM format so the
-// session stores it in the VCDM tables.
-func TestSdJwtDataModelParser_DispatchesVcdmPayload(t *testing.T) {
-	parser := NewSdJwtDataModelParser(
-		NewSdJwtVcCredentialFormatParser(nil),
-		NewSdJwtVcdmCredentialFormatParser(newTestVcdmHolderVerifier()),
-	)
-
-	parsed, err := parser.ParseAndVerify(newRawVcdm(t), testVcdmIssuer, false)
-	require.NoError(t, err)
-	assert.Equal(t, models.CredentialFormatSdJwtVcdm, parsed.Format)
-	require.NotNil(t, parsed.SdJwtVcdm)
-}
-
-func TestSdJwtDataModelParser_RejectsMixedBatch(t *testing.T) {
-	parser := NewSdJwtDataModelParser(NewSdJwtVcCredentialFormatParser(nil), NewSdJwtVcdmCredentialFormatParser(nil))
-
-	err := parser.CheckBatch([]*ParsedCredential{
-		{Format: models.CredentialFormatSdJwtVcdm},
-		{Format: models.CredentialFormatSdJwtVc},
-	})
-	require.ErrorContains(t, err, "heterogeneous")
-}
-
 func TestSdJwtVcdmStore_EmptySlice(t *testing.T) {
 	env := newVcdmTestEnv(t)
 

@@ -169,16 +169,7 @@ func (v *CredentialConfigurationValidator) Verify(c *metadata.CredentialConfigur
 	case metadata.CredentialFormatIdentifier_MsoMdoc:
 		verifier = &MdocFormatVerifier{}
 	case metadata.CredentialFormatIdentifier_SdJwtVc:
-		// `dc+sd-jwt` is shared between two data models and is dispatched on
-		// the configuration's content (#678/#683): a `vct` marks an IETF
-		// SD-JWT VC, a `credential_definition` without `vct` marks an
-		// SD-JWT-secured VCDM credential. A configuration with neither is
-		// routed to the SD-JWT VC verifier, which rejects the missing `vct`.
-		if c.VerifiableCredentialType == "" && c.CredentialDefinition != nil {
-			verifier = &SdJwtVcdmFormatVerifier{}
-		} else {
-			verifier = &SdJwtVcFormatVerifier{}
-		}
+		verifier = &SdJwtVcFormatVerifier{}
 	case metadata.CredentialFormatIdentifier_SdJwtVcdm:
 		verifier = &SdJwtVcdmFormatVerifier{}
 	default:
@@ -277,8 +268,8 @@ func (v *SdJwtVcFormatVerifier) Verify(credentialConfiguration *metadata.Credent
 	return nil
 }
 
-// Verify an SD-JWT-secured VCDM credential configuration (#678/#683: format id
-// `vc+sd-jwt`, or `dc+sd-jwt` content-dispatched here). The configuration must
+// Verify an SD-JWT-secured VCDM credential configuration (format id
+// `vc+sd-jwt`). The configuration must
 // describe a W3C VCDM credential: a 'credential_definition' whose 'type'
 // includes VerifiableCredential, and no 'vct' — a vct-typed configuration is an
 // IETF SD-JWT VC and belongs under `dc+sd-jwt`. The '@context' member of the
