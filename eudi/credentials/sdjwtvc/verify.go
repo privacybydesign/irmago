@@ -156,15 +156,7 @@ func (v *sdJwtVcProcessor) runStatusListCheck(payload *IssuerSignedJwtPayload) e
 	// the timeout-bounded HTTP client used for DID resolution (didweb.NewHTTPClient).
 	// Threading a cancellable context down ~60 ParseAndVerifySdJwtVc call sites
 	// would only buy cancel-on-dismiss.
-	ctx := context.Background()
-	status, err := v.verificationContext.StatusChecker.Check(ctx, *payload.Status.StatusList)
-	if err != nil {
-		return fmt.Errorf("status list check failed: %w", err)
-	}
-	if status != statuslist.StatusValid {
-		return fmt.Errorf("credential status is %s, not valid", status)
-	}
-	return nil
+	return v.verificationContext.StatusChecker.RequireValid(context.Background(), *payload.Status.StatusList)
 }
 
 // ProcessAndVerifySdJwtVc implements chapter 7.1 of the SD-JWT VC specification.
