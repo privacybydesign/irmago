@@ -56,7 +56,6 @@ type Client struct {
 	sessionManager    sessionManager
 	credentialFormats services.CredentialFormats
 	revocationService *services.RevocationService
-	vcdmRevocation    *services.VcdmRevocationService
 
 	// handler is how the wallet wakes the app when what it has already rendered
 	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
@@ -157,7 +156,6 @@ func New(
 		X509Context: &eudiConf.Issuers,
 		Clock:       eudi_jwt.NewSystemClock(),
 	}, statusListCache)
-	revocationService := services.NewRevocationService(statusChecker, sdjwtCredentialStore, mdocCredentialStore)
 
 	// SD-JWT-secured VCDM credentials can name either Token Status List or W3C
 	// Bitstring Status List; the latter's checker trusts the same issuers.
@@ -165,7 +163,9 @@ func New(
 		X509Context: &eudiConf.Issuers,
 		Clock:       eudi_jwt.NewSystemClock(),
 	})
-	vcdmRevocationService := services.NewVcdmRevocationService(statusChecker, bitstringStatusChecker, db.NewVcdmStore(eudiStorage.Db()))
+	vcdmCredentialStore := db.NewVcdmStore(eudiStorage.Db())
+	revocationService := services.NewRevocationService(statusChecker, sdjwtCredentialStore, mdocCredentialStore, vcdmCredentialStore).
+		WithBitstringStatus(bitstringStatusChecker, vcdmCredentialStore)
 
 	// Rewrite any credential hash still computed under an older definition, and
 	// drop the duplicates that older definition let in. Runs before
@@ -203,10 +203,10 @@ func New(
 	// It shares the storage and key binder; the holder key was linked at receipt.
 	eudiVcdmDcqlHandler := eudi_vcdm_dcql.NewVcdmDcqlHandler(
 		eudiStorage,
-		db.NewVcdmStore(eudiStorage.Db()),
+		vcdmCredentialStore,
 		eudiKeyBinder,
 		currentLocale,
-		vcdmRevocationService,
+		revocationService,
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
 
@@ -283,7 +283,7 @@ func New(
 	// nothing to register here.
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI)
 	vcdmHolderVerifier := vcdmsdjwt.NewHolderVerificationProcessor(vcdmVerificationContextOpenID4VCI)
-	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, vcdmHolderVerifier, statusChecker, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, vcdmRevocationService, currentLocale)
+	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, vcdmHolderVerifier, statusChecker, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, currentLocale)
 	openid4vciClient, err := openid4vci.NewClient(
 		common.HTTPClient,
 		eudiConf,
@@ -319,7 +319,6 @@ func New(
 		currentLocale:     currentLocale,
 		credentialFormats: credentialFormats,
 		revocationService: revocationService,
-		vcdmRevocation:    vcdmRevocationService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,
@@ -388,11 +387,6 @@ func (client *Client) Close() error {
 // cancellation.
 func (client *Client) RefreshStatuses(ctx context.Context) error {
 	changed, err := client.revocationService.RefreshStatuses(ctx)
-	if err == nil {
-		var vcdmChanged int
-		vcdmChanged, err = client.vcdmRevocation.RefreshStatuses(ctx)
-		changed += vcdmChanged
-	}
 	if changed > 0 {
 		client.handler.CredentialsChanged()
 	}
