@@ -34,7 +34,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         env:
           SHA: ${{ github.sha }}
-        run: git branch --contains "$SHA" | grep -x "* master"
+        run: git branch --contains "$SHA" | grep -Fx "* master"
         shell: bash
 
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -43,12 +43,12 @@ jobs:
 
       - name: Check whether version.go contains the new version number
         if: github.event_name == 'release'
-        run: cat version.go | grep ${GITHUB_REF_NAME:1}
+        run: grep "${GITHUB_REF_NAME:1}" version.go
         shell: bash
 
       - name: Check whether CHANGELOG.md contains the new version number
         if: github.event_name == 'release'
-        run: cat CHANGELOG.md | grep "\[${GITHUB_REF_NAME:1}\]"
+        run: grep "\[${GITHUB_REF_NAME:1}\]" CHANGELOG.md
         shell: bash
 
   docker:
