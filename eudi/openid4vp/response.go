@@ -12,7 +12,6 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwe"
 	"github.com/lestrrat-go/jwx/v4/jwk"
-	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
@@ -39,8 +38,6 @@ func createAuthorizationResponseHttpRequest(config authorizationResponseConfig) 
 		}
 		values.Add("vp_token", vpToken)
 		values.Add("state", config.State)
-
-		eudi.Logger.Printf("VP-TOKEN: %s", vpToken)
 	}
 
 	if config.ResponseMode == ResponseMode_DirectPostJwt {
