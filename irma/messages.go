@@ -18,8 +18,8 @@ import (
 
 	"github.com/fxamacker/cbor"
 	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi"
+	"github.com/privacybydesign/irmago/internal/jose"
 )
 
 // ClientStatus encodes the client status of an IRMA session (e.g., connected).
@@ -349,7 +349,7 @@ type KeyshareEnrollmentData struct {
 }
 
 type KeyshareEnrollmentClaims struct {
-	jwt.RegisteredClaims
+	RegisteredClaims
 	KeyshareEnrollmentData
 }
 
@@ -365,7 +365,7 @@ type KeyshareChangePinData struct {
 }
 
 type KeyshareChangePinClaims struct {
-	jwt.RegisteredClaims
+	RegisteredClaims
 	KeyshareChangePinData
 }
 
@@ -374,7 +374,7 @@ type KeyshareAuthRequest struct {
 }
 
 type KeyshareAuthRequestClaims struct {
-	jwt.RegisteredClaims
+	RegisteredClaims
 	Username string `json:"id"`
 }
 
@@ -395,7 +395,7 @@ type KeyshareAuthResponseData struct {
 }
 
 type KeyshareAuthResponseClaims struct {
-	jwt.RegisteredClaims
+	RegisteredClaims
 	KeyshareAuthResponseData
 }
 
@@ -550,7 +550,7 @@ func ParseRequestorJwt(action string, requestorJwt string) (RequestorJwt, error)
 	default:
 		return nil, errors.New("Invalid session type")
 	}
-	if _, _, err := new(jwt.Parser).ParseUnverified(requestorJwt, retval); err != nil {
+	if _, err := jose.ParseUnverified(requestorJwt, retval); err != nil {
 		return nil, err
 	}
 	if err := retval.RequestorRequest().Validate(); err != nil {

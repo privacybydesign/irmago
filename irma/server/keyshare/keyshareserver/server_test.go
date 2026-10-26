@@ -12,8 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/privacybydesign/gabi/signed"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
@@ -108,9 +109,9 @@ func TestServerHandleRegister(t *testing.T) {
 		require.NoError(t, err)
 		data.PublicKey = pkbts
 
-		j, err = jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareEnrollmentClaims{
+		j, err = jose.Sign(irma.KeyshareEnrollmentClaims{
 			KeyshareEnrollmentData: data,
-		}).SignedString(sk)
+		}, jwa.ES256(), sk, nil)
 		require.NoError(t, err)
 
 		msg, err := json.Marshal(irma.KeyshareEnrollment{EnrollmentJWT: j})
@@ -189,10 +190,10 @@ func marshalJSON(t *testing.T, v any) string {
 }
 
 func authJWT(t *testing.T, sk *ecdsa.PrivateKey, username string) string {
-	jwtt, err := jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareAuthRequestClaims{
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(3 * time.Minute)),
+	jwtt, err := jose.Sign(irma.KeyshareAuthRequestClaims{
+		ExpiresAt: irma.NewNumericDate(time.Now().Add(3 * time.Minute)),
 		Username:  username,
-	}).SignedString(sk)
+	}, jwa.ES256(), sk, nil)
 	require.NoError(t, err)
 	x := marshalJSON(t, irma.KeyshareAuthRequest{AuthRequestJWT: jwtt})
 	return x
@@ -589,11 +590,11 @@ func doChallengeResponse(t *testing.T, sk *ecdsa.PrivateKey, username, pin strin
 	require.Contains(t, auth.Candidates, irma.KeyshareAuthMethodChallengeResponse)
 	require.NotEmpty(t, auth.Challenge)
 
-	jwtt, err := jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareAuthResponseClaims{
+	jwtt, err := jose.Sign(irma.KeyshareAuthResponseClaims{
 		Username:  username,
 		Pin:       pin,
 		Challenge: auth.Challenge,
-	}).SignedString(sk)
+	}, jwa.ES256(), sk, nil)
 	require.NoError(t, err)
 
 	return jwtt
@@ -609,9 +610,9 @@ func loadClientPrivateKey(t *testing.T) *ecdsa.PrivateKey {
 }
 
 func registrationJWT(t *testing.T, sk *ecdsa.PrivateKey, data irma.KeyshareKeyRegistrationData) string {
-	j, err := jwt.NewWithClaims(jwt.SigningMethodES256, irma.KeyshareKeyRegistrationClaims{
+	j, err := jose.Sign(irma.KeyshareKeyRegistrationClaims{
 		KeyshareKeyRegistrationData: data,
-	}).SignedString(sk)
+	}, jwa.ES256(), sk, nil)
 	require.NoError(t, err)
 	return j
 }

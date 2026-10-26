@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/privacybydesign/irmago/internal/jose"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/sirupsen/logrus"
@@ -96,7 +97,7 @@ func TestHmacAuthenticator_AuthenticateSession(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(disclosureRequestData), disclosureRequest))
 
 	j := irma.NewServiceProviderJwt("my_requestor", disclosureRequest)
-	validJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
+	validJwtData, jErr := j.Sign(jwa.HS256(), key)
 	require.NoError(t, jErr)
 
 	requestHeaders := map[string][]string{
@@ -116,7 +117,7 @@ func TestHmacAuthenticator_AuthenticateSession(t *testing.T) {
 	server.Logger.SetLevel(logrus.ErrorLevel)
 	t.Run("invalid jwt requestor", func(t *testing.T) {
 		j := irma.NewServiceProviderJwt("another_requestor", disclosureRequest)
-		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
+		invalidJwtData, jErr := j.Sign(jwa.HS256(), key)
 		require.NoError(t, jErr)
 
 		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, []byte(invalidJwtData))
@@ -125,13 +126,13 @@ func TestHmacAuthenticator_AuthenticateSession(t *testing.T) {
 	})
 
 	t.Run("empty jwt data", func(t *testing.T) {
-		claims := (*jwt.MapClaims)(&map[string]any{
+		claims := map[string]any{
 			"sub":       "verification_request",
 			"iss":       "my_requestor",
 			"iat":       time.Now().Unix(),
 			"sprequest": map[string]any{},
-		})
-		emptyJwtData, jErr := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(key)
+		}
+		emptyJwtData, jErr := jose.Sign(claims, jwa.HS256(), key, nil)
 		require.NoError(t, jErr)
 		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, []byte(emptyJwtData))
 		require.True(t, applies)
@@ -142,7 +143,7 @@ func TestHmacAuthenticator_AuthenticateSession(t *testing.T) {
 	t.Run("old jwt data", func(t *testing.T) {
 		j := irma.NewServiceProviderJwt("my_requestor", disclosureRequest)
 		j.IssuedAt = (irma.Timestamp)(time.Unix(0, 0))
-		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
+		invalidJwtData, jErr := j.Sign(jwa.HS256(), key)
 		require.NoError(t, jErr)
 		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, []byte(invalidJwtData))
 		require.True(t, applies)
@@ -153,7 +154,7 @@ func TestHmacAuthenticator_AuthenticateSession(t *testing.T) {
 	t.Run("jwt data not yet valid", func(t *testing.T) {
 		j := irma.NewServiceProviderJwt("my_requestor", disclosureRequest)
 		j.IssuedAt = (irma.Timestamp)(time.Now().AddDate(1, 0, 0))
-		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
+		invalidJwtData, jErr := j.Sign(jwa.HS256(), key)
 		require.NoError(t, jErr)
 		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, []byte(invalidJwtData))
 		require.True(t, applies)
@@ -163,7 +164,7 @@ func TestHmacAuthenticator_AuthenticateSession(t *testing.T) {
 
 	t.Run("jwt signed using invalid key", func(t *testing.T) {
 		j := irma.NewServiceProviderJwt("my_requestor", disclosureRequest)
-		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, invalidKey)
+		invalidJwtData, jErr := j.Sign(jwa.HS256(), invalidKey)
 		require.NoError(t, jErr)
 		applies, _, _, err := authenticator.AuthenticateSession(requestHeaders, []byte(invalidJwtData))
 		require.True(t, applies)
@@ -185,7 +186,7 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(revocationRequestData), revocationRequest))
 
 	j := newRevocationJwt("my_requestor", revocationRequest)
-	validJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
+	validJwtData, jErr := j.Sign(jwa.HS256(), key)
 	require.NoError(t, jErr)
 
 	requestHeaders := map[string][]string{
@@ -206,7 +207,7 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 	server.Logger.SetLevel(logrus.ErrorLevel)
 	t.Run("invalid jwt requestor", func(t *testing.T) {
 		j := newRevocationJwt("another_requestor", revocationRequest)
-		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
+		invalidJwtData, jErr := j.Sign(jwa.HS256(), key)
 		require.NoError(t, jErr)
 
 		applies, _, _, err := authenticator.AuthenticateRevocation(requestHeaders, []byte(invalidJwtData))
@@ -215,12 +216,12 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 	})
 
 	t.Run("empty jwt data", func(t *testing.T) {
-		claims := (*jwt.MapClaims)(&map[string]any{
+		claims := map[string]any{
 			"iss":        "my_requestor",
 			"iat":        time.Now().Unix(),
 			"revrequest": map[string]any{},
-		})
-		emptyJwtData, jErr := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(key)
+		}
+		emptyJwtData, jErr := jose.Sign(claims, jwa.HS256(), key, nil)
 		require.NoError(t, jErr)
 		applies, _, _, err := authenticator.AuthenticateRevocation(requestHeaders, []byte(emptyJwtData))
 		require.True(t, applies)
@@ -231,7 +232,7 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 	t.Run("old jwt data", func(t *testing.T) {
 		j := newRevocationJwt("my_requestor", revocationRequest)
 		j.IssuedAt = (irma.Timestamp)(time.Unix(0, 0))
-		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
+		invalidJwtData, jErr := j.Sign(jwa.HS256(), key)
 		require.NoError(t, jErr)
 		applies, _, _, err := authenticator.AuthenticateRevocation(requestHeaders, []byte(invalidJwtData))
 		require.True(t, applies)
@@ -242,7 +243,7 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 	t.Run("jwt data not yet valid", func(t *testing.T) {
 		j := newRevocationJwt("my_requestor", revocationRequest)
 		j.IssuedAt = (irma.Timestamp)(time.Now().AddDate(1, 0, 0))
-		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, key)
+		invalidJwtData, jErr := j.Sign(jwa.HS256(), key)
 		require.NoError(t, jErr)
 		applies, _, _, err := authenticator.AuthenticateRevocation(requestHeaders, []byte(invalidJwtData))
 		require.True(t, applies)
@@ -252,7 +253,7 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 
 	t.Run("jwt signed using invalid key", func(t *testing.T) {
 		j := newRevocationJwt("my_requestor", revocationRequest)
-		invalidJwtData, jErr := j.Sign(jwt.SigningMethodHS256, invalidKey)
+		invalidJwtData, jErr := j.Sign(jwa.HS256(), invalidKey)
 		require.NoError(t, jErr)
 		applies, _, _, err := authenticator.AuthenticateRevocation(requestHeaders, []byte(invalidJwtData))
 		require.True(t, applies)
