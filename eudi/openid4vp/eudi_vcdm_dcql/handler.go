@@ -40,7 +40,7 @@ var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 //
 // revocation decides each candidate's Revoked flag: from the cached Token
 // Status List, and for Bitstring Status List entries from the status the
-// revocation sweep last stored.
+// revocation sweep last stored. A revoked credential is still offered, flagged.
 func NewVcdmDcqlHandler(
 	eudiStorage storage.Storage,
 	credentialStore db.VcdmStore,

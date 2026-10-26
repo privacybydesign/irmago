@@ -130,7 +130,7 @@ func testOpenID4VCIVcdmStoredUnderTypeIdentity(t *testing.T) {
 	require.True(t, cred.Issuer.Verified)
 	require.NotNil(t, cred.IssuanceDate, "validFrom is the issuance date")
 
-	// The credential carries no status list (VCDM status is not checked yet).
+	// TestCredentialVcdm has no statuslist entry, so it carries no status reference.
 	require.False(t, cred.RevocationSupported)
 	require.False(t, cred.Revoked)
 

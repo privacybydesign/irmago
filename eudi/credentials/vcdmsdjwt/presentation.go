@@ -17,6 +17,13 @@ const PresentationTyp = "vp+jwt"
 // EnvelopedVerifiableCredential (VCDM 2.0 §4.13.1, VC-JOSE-COSE §3.2).
 const EnvelopedCredentialDataUrlPrefix = "data:application/vc+sd-jwt,"
 
+// VCDM 2.0 type of a Verifiable Presentation and of a credential enveloped in
+// one (VCDM 2.0 §4.13.1).
+const (
+	typeVerifiablePresentation        = "VerifiablePresentation"
+	typeEnvelopedVerifiableCredential = "EnvelopedVerifiableCredential"
+)
+
 // Present turns an SD-JWT-secured VCDM credential, holding only the selected
 // disclosures, into what the wallet sends the verifier. With holder binding
 // that is a Verifiable Presentation signed with the holder key
@@ -41,11 +48,11 @@ func Present(selected sdjwt.SdJwt, keyBinder sdjwt.KeyBinder, requireHolderBindi
 func CreateEnvelopedPresentation(selected sdjwt.SdJwt, keyBinder sdjwt.KeyBinder, nonce string, audience string) (string, error) {
 	claims := map[string]any{
 		vcdm.ContextKey: []string{vcdm.ContextV2},
-		vcdm.TypeKey:    []string{"VerifiablePresentation"},
+		vcdm.TypeKey:    []string{typeVerifiablePresentation},
 		"verifiableCredential": []any{
 			map[string]any{
 				vcdm.ContextKey: []string{vcdm.ContextV2},
-				vcdm.TypeKey:    "EnvelopedVerifiableCredential",
+				vcdm.TypeKey:    typeEnvelopedVerifiableCredential,
 				"id":            EnvelopedCredentialDataUrlPrefix + string(selected),
 			},
 		},

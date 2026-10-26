@@ -72,14 +72,15 @@ func CheckStatus(
 		}
 		status = WorseStatus(status, s)
 	}
-	if bitstring != nil {
-		for _, entry := range refs.Bitstring {
-			value, err := bitstring.Check(ctx, entry)
-			if err != nil {
-				return statuslist.StatusUnknown, fmt.Errorf("bitstring status check failed: %w", err)
-			}
-			status = WorseStatus(status, BitstringEntryStatus(entry, value))
+	if bitstring == nil {
+		return status, nil
+	}
+	for _, entry := range refs.Bitstring {
+		value, err := bitstring.Check(ctx, entry)
+		if err != nil {
+			return statuslist.StatusUnknown, fmt.Errorf("bitstring status check failed: %w", err)
 		}
+		status = WorseStatus(status, BitstringEntryStatus(entry, value))
 	}
 	return status, nil
 }

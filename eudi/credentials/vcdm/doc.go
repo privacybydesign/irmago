@@ -18,7 +18,7 @@
 // `@context` by order and hash: it validates the decoded document
 // *structurally* without a full JSON-LD processor. JSON-LD expansion, RDF
 // canonicalization, and Data-Integrity proof suites are deliberately out of
-// scope here — they belong to the Data-Integrity securing layer (map milestone
+// scope here; they belong to the Data-Integrity securing layer (map milestone
 // M3), not to the data model.
 //
 // Two boundaries worth knowing when reading this package:
@@ -27,7 +27,7 @@
 //     document" + Appendix A "Validation"): the shapes that must hold
 //     regardless of securing mechanism. Per §7.1, a securing layer MUST run
 //     this check *after* its mechanism-specific proof verification, on the
-//     decoded/disclosed logical document — never on the raw wire form.
+//     decoded/disclosed logical document, never on the raw wire form.
 //
 //   - VerifyValidityPeriod is a separate, temporal check ("is this credential
 //     valid *now*"), kept apart from Validate so that structural conformance
