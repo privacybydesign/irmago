@@ -67,7 +67,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
 
 	credStore := db.NewSdJwtVcStore(s.Db())
-	formats := services.NewCredentialFormats(conf, holderVerifier, s.Db(), s.FileSystem(), services.NewRevocationService(nil, credStore), nil, nil)
+	formats := services.NewCredentialFormats(conf, holderVerifier, nil, s.Db(), s.FileSystem(), services.NewRevocationService(nil, credStore), nil, nil)
 	client, err := NewClient(&http.Client{}, conf, holderVerifier, formats, nil, nil)
 	require.NoError(t, err)
 	client.SetAllowInsecureHttp(true)

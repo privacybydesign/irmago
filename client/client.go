@@ -186,19 +186,22 @@ func New(cfg Config) (*Client, error) {
 	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(s)
 	irmaKeyBinder := sdjwt.NewDefaultKeyBinder(keyBindingStorage)
 
-	credStore := db.NewSdJwtVcStore(eudiStorage.Db())
+	sdjwtCredentialStore := db.NewSdJwtVcStore(eudiStorage.Db())
+	mdocCredentialStore := db.NewMdocStore(eudiStorage.Db())
 
 	// Token Status List checker + the single revocation service built on it.
-	// The checker is also shared with the holder-side verifier
-	// (sdJwtVcVerificationContext below). The revocation service is the one home
-	// for revocation: the background sweep, the credential list's flags, and the
-	// OpenID4VP disclosure planner's cached Revoked flag all go through it.
+	// The checker is also shared with the holder-side verifiers
+	// (sdJwtVcVerificationContext below, and the mdoc verifier built inside
+	// services.NewCredentialFormats). The revocation service is the one home
+	// for revocation across every credential format: the background sweep,
+	// the credential list's flags, and the OpenID4VP disclosure planner's
+	// cached Revoked flag all go through it.
 	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
 	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: &eudiConf.Issuers,
 		Clock:       eudi_jwt.NewSystemClock(),
 	}, statusListCache)
-	revocationService := services.NewRevocationService(statusChecker, credStore)
+	revocationService := services.NewRevocationService(statusChecker, sdjwtCredentialStore, mdocCredentialStore)
 
 	// Rewrite any credential hash still computed under an older definition, and
 	// drop the duplicates that older definition let in. Runs before
@@ -207,7 +210,7 @@ func New(cfg Config) (*Client, error) {
 	// silently store a second copy. Idempotent, so it costs one query on a wallet
 	// that is already current; a failure here is not fatal, since the wallet works
 	// with old-style hashes and only its duplicate detection is degraded.
-	if err := services.MigrateCredentialHashes(credStore); err != nil {
+	if err := services.MigrateCredentialHashes(sdjwtCredentialStore); err != nil {
 		common.Logger.Warnf("could not migrate credential hashes: %v", err)
 	}
 
@@ -226,7 +229,7 @@ func New(cfg Config) (*Client, error) {
 	holderKeys := services.NewHolderBindingKeyService(eudiStorage.Db(), walletProvider)
 	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(
 		eudiStorage,
-		credStore,
+		sdjwtCredentialStore,
 		typemetadata.NewDefaultVctFetcher(nil),
 		typemetadata.NewDefaultIssuerFetcher(nil),
 		holderKeys,
@@ -243,9 +246,10 @@ func New(cfg Config) (*Client, error) {
 	// The device key resolver hands back the stored software key, or the wallet
 	// provider's reference to a key in its HSM; the holder signer signs either.
 	mdocDeviceKeys := db.NewMdocDeviceKeyStore(eudiStorage.Db())
-	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, currentLocale,
+	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, mdocCredentialStore, currentLocale,
 		services.NewMdocDeviceKeyResolver(mdocDeviceKeys),
-		services.NewMdocKeyService(mdocDeviceKeys, walletProvider))
+		services.NewMdocKeyService(mdocDeviceKeys, walletProvider),
+		revocationService)
 
 	openid4vpClient, err := openid4vp.NewClient(
 		eudiConf,
@@ -305,7 +309,7 @@ func New(cfg Config) (*Client, error) {
 	// (services.NewCredentialFormats), so adding a format is one entry there and
 	// nothing to register here.
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI)
-	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, currentLocale, walletProvider)
+	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, statusChecker, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, currentLocale, walletProvider)
 	openid4vciClient, err := openid4vci.NewClient(
 		common.HTTPClient,
 		eudiConf,
