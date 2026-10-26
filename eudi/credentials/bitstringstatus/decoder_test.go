@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -97,6 +98,23 @@ func TestStatusValueAt_IndexOutOfBounds(t *testing.T) {
 	// A multi-bit entry that would read past the end.
 	_, err = StatusValueAt(bits, 2, 4)
 	require.ErrorIs(t, err, ErrIndexBounds)
+}
+
+// An index whose bit position overflows uint64 must be out of bounds, not
+// wrap around to a position inside the list or past the end of the slice.
+func TestStatusValueAt_IndexOverflow(t *testing.T) {
+	bits := make([]byte, 16)
+	for _, c := range []struct {
+		idx        uint64
+		statusSize int
+	}{
+		{math.MaxUint64, 1},
+		{1 << 63, 2}, // 2^63 * 2 wraps to bit 0
+		{math.MaxUint64/8 + 1, 8},
+	} {
+		_, err := StatusValueAt(bits, c.statusSize, c.idx)
+		require.ErrorIs(t, err, ErrIndexBounds, "idx %d, statusSize %d", c.idx, c.statusSize)
+	}
 }
 
 func TestStatusValueAt_InvalidStatusSize(t *testing.T) {

@@ -58,11 +58,14 @@ func StatusValueAt(bits []byte, statusSize int, idx uint64) (uint, error) {
 		return 0, fmt.Errorf("%w: unsupported statusSize %d (want 1..8)", ErrDecode, statusSize)
 	}
 
+	// Bound the index by the entry count rather than by its bit position:
+	// idx*statusSize can overflow uint64 and wrap to a position in range.
 	totalBits := uint64(len(bits)) * 8
-	startBit := idx * uint64(statusSize)
-	if startBit+uint64(statusSize) > totalBits {
-		return 0, fmt.Errorf("%w: index %d (bit %d) exceeds %d total bits", ErrIndexBounds, idx, startBit, totalBits)
+	entries := totalBits / uint64(statusSize)
+	if idx >= entries {
+		return 0, fmt.Errorf("%w: index %d exceeds the list's %d entries", ErrIndexBounds, idx, entries)
 	}
+	startBit := idx * uint64(statusSize)
 
 	var value uint
 	for i := range statusSize {
