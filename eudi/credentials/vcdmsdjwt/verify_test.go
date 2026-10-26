@@ -117,3 +117,23 @@ func TestHolder_JwtIssMustMatchVcdmIssuer(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not match VCDM issuer")
 }
+
+// A credential signed under a trusted x5c chain cannot claim another issuer's
+// identity: the VCDM `issuer` must name the leaf certificate, with or without a
+// matching JWT `iss`.
+func TestHolder_VcdmIssuerMustNameTheX5cCertificate(t *testing.T) {
+	const otherIssuer = "https://someone.else.example"
+	for name, extra := range map[string][]*sdjwt.ClaimElement{
+		"without iss":         nil,
+		"with a matching iss": {sdjwt.Claim("iss", otherIssuer)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			claims := vcdmClaims(t, "2020-01-01T00:00:00Z", "2035-01-01T00:00:00Z")
+			claims[2] = sdjwt.Claim(vcdm.IssuerKey, otherIssuer)
+			credential := signCredential(t, MediaTypeVcSdJwt, append(claims, extra...))
+
+			_, err := NewHolderVerificationProcessor(CreateTestVerificationContext()).ParseAndVerifySdJwtVcdm(credential)
+			require.ErrorContains(t, err, `VCDM issuer "https://someone.else.example" is not a SAN of the issuer certificate`)
+		})
+	}
+}

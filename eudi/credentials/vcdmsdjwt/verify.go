@@ -2,6 +2,7 @@ package vcdmsdjwt
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"time"
@@ -175,7 +176,7 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 	disclosures []sdjwt.EncodedDisclosure,
 ) (*sdjwt.RegisteredClaims, vcdm.Document, []sdjwt.DisclosureContent, *sdjwt.ProcessedPayload, error) {
 	// Step 1: verify the issuer signature (X.509 x5c or DID kid) and the `typ`.
-	token, err := p.decodeJwtAndVerifyFromHeader([]byte(signedJwt))
+	token, leafCert, err := p.decodeJwtAndVerifyFromHeader([]byte(signedJwt))
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -233,6 +234,20 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 		}
 	}
 
+	// Step 8: an x5c-authenticated issuer must not be able to claim another
+	// issuer's identity, so the VCDM `issuer` (and with it `iss`, equal per step
+	// 7) must name the leaf certificate. A DID `kid` needs no such check: its key
+	// is resolved from the `iss` DID itself.
+	if leafCert != nil {
+		issuerID, err := document.IssuerID()
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		if err := utils.VerifyCertificateUri(leafCert, issuerID); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("VCDM issuer %q is not a SAN of the issuer certificate: %w", issuerID, err)
+		}
+	}
+
 	decodedValues := make([]sdjwt.DisclosureContent, len(decodedDisclosures))
 	for i, d := range decodedDisclosures {
 		decodedValues[i] = *d
@@ -245,8 +260,9 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 // signature via the shared eudi/jwt key provider (X.509 `x5c` or DID `kid`) and
 // its `typ` against the SD-JWT-secured VCDM media types. When an X.509 chain is
 // used, the whole chain is additionally verified against the trusted
-// roots/intermediates and revocation lists.
-func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, error) {
+// roots/intermediates and revocation lists, and its leaf certificate is
+// returned; it is nil when the key came from a DID.
+func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, *x509.Certificate, error) {
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{MediaTypeVcSdJwt, MediaTypeDcSdJwt}, p.allowInsecureDidWeb)
 
 	token, err := jwt.Parse(signedJwt,
@@ -256,22 +272,23 @@ func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, e
 		jwt.WithVerify(true),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse JWT: %v", err)
+		return nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
 	}
 
 	// If an X.509 chain was used, validate it against the trust anchors + CRLs.
 	// (A DID `kid` resolves its key from the DID document, no chain to check.)
-	if x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider); ok {
-		chain, err := x509KeyProvider.GetChain()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get certificate chain from provider: %v", err)
-		}
-		if err := eudi_jwt.VerifyCertificateChain(p.verificationContext.X509VerificationContext, chain, nil); err != nil {
-			return nil, fmt.Errorf("failed to verify certificate: %v", err)
-		}
+	x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider)
+	if !ok {
+		return token, nil, nil
 	}
-
-	return token, nil
+	chain, err := x509KeyProvider.GetChain()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get certificate chain from provider: %v", err)
+	}
+	if err := eudi_jwt.VerifyCertificateChain(p.verificationContext.X509VerificationContext, chain, nil); err != nil {
+		return nil, nil, fmt.Errorf("failed to verify certificate: %v", err)
+	}
+	return token, chain[0], nil
 }
 
 // extractRegisteredClaims reads the SD-JWT / JWT registered claims from a
