@@ -26,7 +26,6 @@ func TestNewCredentialFormatsRegistersEveryFormat(t *testing.T) {
 		d,
 		filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()),
 		NewRevocationService(nil, nil),
-		NewVcdmRevocationService(nil, nil, nil),
 		clientmodels.NewCurrentLocale("en"),
 	)
 

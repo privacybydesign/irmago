@@ -26,13 +26,13 @@ import (
 // The holder binding keys are the SD-JWT VC ones (HolderBindingKeyService),
 // matched by `cnf` the same way; only the instance they link to differs.
 //
-// Revocation is reported from the stored status that VcdmRevocationService
+// Revocation is reported from the stored status that RevocationService
 // maintains.
 type sdJwtVcdmCredentialService struct {
 	sdJwtVcdmDisplaySource
 	holderBindingKeyStore db.HolderBindingKeyStore
 	fileStorage           filesystem.FileSystemStorage
-	revocation            *VcdmRevocationService
+	revocation            *RevocationService
 	currentLocale         *clientmodels.CurrentLocale
 }
 
@@ -43,7 +43,7 @@ func NewSdJwtVcdmCredentialService(
 	store db.VcdmStore,
 	holderBindingKeyStore db.HolderBindingKeyStore,
 	fileStorage filesystem.FileSystemStorage,
-	revocation *VcdmRevocationService,
+	revocation *RevocationService,
 	currentLocale *clientmodels.CurrentLocale,
 ) *sdJwtVcdmCredentialService {
 	return &sdJwtVcdmCredentialService{
@@ -70,7 +70,7 @@ func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) 
 
 	revoked, revocable := map[string]bool{}, map[string]bool{}
 	if s.revocation != nil {
-		revoked, revocable, err = s.revocation.BatchRevocation()
+		revoked, revocable, err = s.revocation.BatchRevocation(s.store)
 		if err != nil {
 			return nil, err
 		}

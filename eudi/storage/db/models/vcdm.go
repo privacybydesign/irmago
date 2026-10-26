@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -180,6 +181,12 @@ type VcdmBatchInstance struct {
 }
 
 func (VcdmBatchInstance) TableName() string { return "vcdm_batch_instances" }
+
+// StatusReference returns the instance's IETF Token Status List reference, or
+// nil when it has none.
+func (i *VcdmBatchInstance) StatusReference() *statuslist.Reference {
+	return statusReference(i.StatusListURI, i.StatusListIdx)
+}
 
 func (i *VcdmBatchInstance) BeforeCreate(tx *gorm.DB) error {
 	if i.ID.IsNil() {

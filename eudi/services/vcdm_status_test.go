@@ -249,13 +249,14 @@ func TestVcdmBitstringStatus_FixtureReadsAsSigned(t *testing.T) {
 
 // storeVcdmWithStatus issues a credential on the server's list into env and
 // returns a revocation service over env's store and a W3C checker.
-func storeVcdmWithStatus(t *testing.T, env *vcdmTestEnv, server *bitstringStatusListServer) *VcdmRevocationService {
+func storeVcdmWithStatus(t *testing.T, env *vcdmTestEnv, server *bitstringStatusListServer) *RevocationService {
 	t.Helper()
 	parsed := env.parse(t, newRawVcdmWithStatus(t, server.url()))
 	require.NoError(t, env.service.Store([]*ParsedCredential{parsed}, "config-id", env.issuerMetadata(), false, nil))
 
 	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
-	return NewVcdmRevocationService(nil, bitstringstatus.NewChecker(bitstringstatus.VerificationContext{X509Context: ctx.X509VerificationContext}), env.store)
+	checker := bitstringstatus.NewChecker(bitstringstatus.VerificationContext{X509Context: ctx.X509VerificationContext})
+	return NewRevocationService(nil, env.store).WithBitstringStatus(checker, env.store)
 }
 
 func requireVcdmRevoked(t *testing.T, env *vcdmTestEnv, want bool) {
@@ -266,7 +267,7 @@ func requireVcdmRevoked(t *testing.T, env *vcdmTestEnv, want bool) {
 	require.Equal(t, want, list[0].Revoked)
 }
 
-func TestVcdmRevocationService_RefreshFindsRevocationOnce(t *testing.T) {
+func TestRevocationService_BitstringRefreshFindsRevocationOnce(t *testing.T) {
 	env := newVcdmTestEnv(t)
 	server := newBitstringStatusListServer(t)
 	server.serve(t, false)
@@ -287,7 +288,7 @@ func TestVcdmRevocationService_RefreshFindsRevocationOnce(t *testing.T) {
 	require.Zero(t, changed, "a known revocation is not re-reported")
 }
 
-func TestVcdmRevocationService_UnreachableListKeepsStatus(t *testing.T) {
+func TestRevocationService_BitstringUnreachableListKeepsStatus(t *testing.T) {
 	env := newVcdmTestEnv(t)
 	server := newBitstringStatusListServer(t)
 	server.serve(t, false)
@@ -311,4 +312,26 @@ func TestBitstringChecker_RejectsListServedUnderAnotherURL(t *testing.T) {
 	_, err := checker.Fetch(context.Background(), server.url())
 	require.ErrorIs(t, err, bitstringstatus.ErrUnauthorized)
 	require.ErrorContains(t, err, "does not match status list url")
+}
+
+// TestVcdmStore_BitstringInstancesAreSweptOnce pins the split between the two
+// sweeps: an instance with Bitstring entries is the Bitstring sweep's, which
+// checks all of its references, and the Token Status List sweep leaves it alone.
+func TestVcdmStore_BitstringInstancesAreSweptOnce(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	server := newBitstringStatusListServer(t)
+	server.serve(t, false)
+	storeVcdmWithStatus(t, env, server)
+
+	tokenStatusList, err := env.store.ListInstancesWithStatusReference()
+	require.NoError(t, err)
+	require.Empty(t, tokenStatusList)
+
+	bitstring, err := env.store.ListInstancesWithBitstringStatus()
+	require.NoError(t, err)
+	require.Len(t, bitstring, 1)
+
+	referenced, err := env.store.ListStatusReferencedInstanceStatuses()
+	require.NoError(t, err)
+	require.Len(t, referenced, 1, "the credential list still sees the instance as revocable")
 }

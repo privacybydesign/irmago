@@ -128,10 +128,12 @@ func (s *sdJwtVcBatchStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 	return s.store.MarkInstanceUsed(instanceID)
 }
 
-// VcdmRevocationChecker is RevocationChecker for a stored VCDM instance (see
-// services.VcdmRevocationService).
+// VcdmRevocationChecker is RevocationChecker plus the stored-status read a VCDM
+// instance with W3C Bitstring entries needs: those lists are not cached, so
+// their last sweep result is what is known (see services.RevocationService).
 type VcdmRevocationChecker interface {
-	IsRevoked(instance *models.VcdmBatchInstance) bool
+	RevocationChecker
+	IsStoredStatusRevoked(status uint8) bool
 }
 
 // NewVcdmBatchStore adapts the SD-JWT-secured VCDM store. revocation determines
@@ -180,7 +182,7 @@ func (s *vcdmBatchStore) GetUnusedInstance(batchID datatypes.UUID) (*Instance, e
 	return &Instance{
 		ID:                  instance.ID,
 		RawCredential:       instance.RawCredential,
-		Revoked:             s.revocation != nil && s.revocation.IsRevoked(instance),
+		Revoked:             s.revocation != nil && isVcdmInstanceRevoked(s.revocation, instance),
 		RevocationSupported: instance.HasStatusReference,
 	}, nil
 }
@@ -194,6 +196,13 @@ func (s *vcdmBatchStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 // storage layer has marked ExpiresAt/NotBefore as Valid even when the
 // credential states no expiry or not-before of its own, storing 0 as the
 // timestamp.
+func isVcdmInstanceRevoked(revocation VcdmRevocationChecker, instance *models.VcdmBatchInstance) bool {
+	if len(instance.BitstringStatusEntries) > 0 {
+		return revocation.IsStoredStatusRevoked(instance.LastKnownStatus)
+	}
+	return revocation.IsRevoked(instance.StatusReference())
+}
+
 func isBatchValid(batch *Batch, now time.Time) bool {
 	epoch := time.Unix(0, 0)
 	if batch.ExpiresAt.Valid && !batch.ExpiresAt.V.Equal(epoch) && now.After(batch.ExpiresAt.V) {

@@ -54,6 +54,31 @@ type CredentialStatusStore interface {
 	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
 }
 
+// BitstringStatusInstance is an instance with W3C Bitstring Status List
+// entries, along with the IETF reference it may carry as well; its status is
+// the combination of both.
+type BitstringStatusInstance struct {
+	InstanceID      datatypes.UUID
+	BatchID         datatypes.UUID
+	StatusListURI   *string
+	StatusListIdx   *uint64
+	LastKnownStatus uint8
+
+	// Entries are the revocation and suspension entries, as JSON
+	// ([]bitstringstatus.Entry).
+	Entries datatypes.JSON
+}
+
+// BitstringStatusStore is CredentialStatusStore for instances whose status is
+// named, at least in part, by W3C Bitstring Status List entries. Only
+// SD-JWT-secured VCDM credentials carry those. Such an instance is listed here
+// and not by CredentialStatusStore.ListInstancesWithStatusReference, so the
+// revocation sweep checks it once, with all of its references.
+type BitstringStatusStore interface {
+	ListInstancesWithBitstringStatus() ([]BitstringStatusInstance, error)
+	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
+}
+
 // statusTables names where one format keeps its instances and their batches,
 // so both stores share the CredentialStatusStore queries below. The status
 // columns themselves are named the same in every instance table.
@@ -73,6 +98,11 @@ var (
 		instances: "mdoc_batch_instances",
 		batches:   "mdoc_batches",
 		batchFK:   "mdoc_batch_id",
+	}
+	vcdmStatusTables = statusTables{
+		instances: "vcdm_batch_instances",
+		batches:   "vcdm_batches",
+		batchFK:   "vcdm_batch_id",
 	}
 )
 

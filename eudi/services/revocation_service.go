@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -31,14 +32,20 @@ import (
 type RevocationService struct {
 	checker *statuslist.Checker
 	stores  []db.CredentialStatusStore
+
+	// bitstring and bitstringStores cover W3C Bitstring Status List entries;
+	// see WithBitstringStatus.
+	bitstring       *bitstringstatus.Checker
+	bitstringStores []db.BitstringStatusStore
 }
 
 // NewRevocationService returns a service backed by the given Token Status
 // List Checker, consulting every given store for status-referenced
 // instances. A nil checker disables the cached-read and refresh paths
-// (IsRevoked returns false, RefreshStatuses is a no-op); the stored-status
-// path (BatchRevocation) still works. One store per credential format that
-// carries a Token Status List reference (today: SD-JWT VC and mso_mdoc).
+// (IsRevoked returns false, RefreshStatuses skips these stores); the
+// stored-status path (BatchRevocation) still works. One store per credential
+// format that carries a Token Status List reference (SD-JWT VC, mso_mdoc and
+// SD-JWT-secured VCDM).
 func NewRevocationService(checker *statuslist.Checker, stores ...db.CredentialStatusStore) *RevocationService {
 	return &RevocationService{checker: checker, stores: stores}
 }
@@ -94,7 +101,7 @@ func (s *RevocationService) IsRevoked(ref *statuslist.Reference) bool {
 // Fail-soft: per-URI and per-instance errors are logged and skipped, leaving
 // the previous LastKnownStatus in place. A store that cannot list its
 // instances is skipped the same way, but its error is returned after the
-// other stores have been swept. A nil checker makes this a no-op. Cancelling
+// other stores have been swept. A nil checker skips the Token Status List stores. Cancelling
 // ctx is the one thing that does stop the sweep, keeping whatever was already
 // written back.
 //
@@ -105,13 +112,25 @@ func (s *RevocationService) IsRevoked(ref *statuslist.Reference) bool {
 // returns both: the changes it did write back, and the cancellation. Both matter
 // — the writebacks are committed, so a caller that discards the count on an
 // error loses those changes for good.
+//
+// The Bitstring stores (see WithBitstringStatus) are swept after the Token
+// Status List ones, the same way.
 func (s *RevocationService) RefreshStatuses(ctx context.Context) (changed int, err error) {
-	if s.checker == nil {
-		return 0, nil
+	var sweeps []func() (int, error)
+	if s.checker != nil {
+		for _, store := range s.stores {
+			sweeps = append(sweeps, func() (int, error) { return s.refreshStoreStatuses(ctx, store) })
+		}
 	}
+	if s.bitstring != nil {
+		for _, store := range s.bitstringStores {
+			sweeps = append(sweeps, func() (int, error) { return s.refreshBitstringStatuses(ctx, store) })
+		}
+	}
+
 	var errs []error
-	for _, store := range s.stores {
-		n, err := s.refreshStoreStatuses(ctx, store)
+	for _, sweep := range sweeps {
+		n, err := sweep()
 		changed += n
 		if err == nil {
 			continue

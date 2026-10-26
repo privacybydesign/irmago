@@ -45,17 +45,12 @@ type VcdmStore interface {
 	// and securing format, the same way. Returns ErrNotFound if none matches.
 	DeleteBatchByHashAndFormat(hash string, format models.CredentialFormat) error
 
-	// ListInstancesWithStatusReference returns every instance carrying a status
-	// reference of either kind, with its status columns.
-	ListInstancesWithStatusReference() ([]*models.VcdmBatchInstance, error)
-
-	// ListStatusReferencedInstanceStatuses returns the (batch hash,
-	// last_known_status) pair of every instance carrying a status reference.
-	ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error)
-
-	// UpdateInstanceStatus writes last_known_status and last_status_check_at on
-	// one instance. Returns ErrNotFound on no match.
-	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
+	// A VCDM credential names its status by an IETF status_list reference, by
+	// W3C Bitstring Status List entries, or both. CredentialStatusStore lists
+	// the instances with only the former, BitstringStatusStore the rest;
+	// ListStatusReferencedInstanceStatuses reports every instance with either.
+	CredentialStatusStore
+	BitstringStatusStore
 }
 
 type vcdmStore struct {
@@ -174,12 +169,27 @@ func (s *vcdmStore) DeleteBatchByHashAndFormat(hash string, format models.Creden
 	return s.DeleteBatch(batch.ID)
 }
 
-func (s *vcdmStore) ListInstancesWithStatusReference() ([]*models.VcdmBatchInstance, error) {
-	var instances []*models.VcdmBatchInstance
-	err := s.db.Where("has_status_reference = ?", true).Find(&instances).Error
-	return instances, err
+func (s *vcdmStore) ListInstancesWithStatusReference() ([]CredentialStatusInstance, error) {
+	return vcdmStatusTables.listInstancesWithStatusReference(s.db.Where("bitstring_status_entries IS NULL"))
 }
 
+func (s *vcdmStore) ListInstancesWithBitstringStatus() ([]BitstringStatusInstance, error) {
+	var out []BitstringStatusInstance
+	err := s.db.
+		Model(&models.VcdmBatchInstance{}).
+		Select("id AS instance_id, " +
+			"vcdm_batch_id AS batch_id, " +
+			"status_list_uri AS status_list_uri, " +
+			"status_list_idx AS status_list_idx, " +
+			"last_known_status AS last_known_status, " +
+			"bitstring_status_entries AS entries").
+		Where("bitstring_status_entries IS NOT NULL").
+		Scan(&out).Error
+	return out, err
+}
+
+// ListStatusReferencedInstanceStatuses differs from the shared query in what
+// counts as referenced: an IETF reference or Bitstring entries.
 func (s *vcdmStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error) {
 	var out []BatchInstanceStatus
 	err := s.db.
@@ -192,20 +202,5 @@ func (s *vcdmStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatu
 }
 
 func (s *vcdmStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
-	if instanceID.IsNil() {
-		return fmt.Errorf("instanceID is required")
-	}
-	res := s.db.Model(&models.VcdmBatchInstance{}).
-		Where("id = ?", instanceID).
-		Updates(map[string]any{
-			"last_known_status":    status,
-			"last_status_check_at": checkedAt,
-		})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return vcdmStatusTables.updateInstanceStatus(s.db, instanceID, status, checkedAt)
 }
