@@ -145,7 +145,15 @@ func (s *storage) RemoveAll() error {
 		if err := session.Delete(&models.SdJwtVcBatch{}).Error; err != nil {
 			return err
 		}
+		if err := session.Delete(&models.VcdmBatch{}).Error; err != nil {
+			return err
+		}
 		if err := session.Delete(&models.MdocBatch{}).Error; err != nil {
+			return err
+		}
+		// Holder binding keys minted for an issuance that never completed are
+		// bound to no instance, so the cascades above do not reach them either.
+		if err := session.Delete(&models.HolderBindingKey{}).Error; err != nil {
 			return err
 		}
 		// Device keys minted for an issuance that never completed are bound to no
