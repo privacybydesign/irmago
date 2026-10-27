@@ -1,3 +1,8 @@
+# Delivery: builds, scans and pushes ghcr.io/privacybydesign/yivi (linux/amd64 and
+# linux/arm64), and builds the yivi binaries and attaches them to releases.
+# Push to master -> :edge, release vX.Y.Z -> :X.Y.Z and :latest, manual run ->
+# :<branch>. PR builds are scanned in Status checks; published images are
+# re-scanned weekly by image-rescan.yml.
 name: Delivery
 
 on:
@@ -8,129 +13,65 @@ on:
     types: [ published ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-  packages: write
-
-# Disable concurrency to prevent that images are tagged in the wrong order.
-concurrency:
-  group: delivery
+permissions: {}
 
 jobs:
 
+  # Release checks; nothing is published when one of them fails.
   prepare:
     runs-on: ubuntu-latest
-    outputs:
-      is-head-master: ${{ steps.is-head-master.outcome == 'success' }}
-      is-latest-release: ${{ steps.is-latest-release.outcome == 'success' }}
-      safe-branch-name: ${{ steps.safe-branch-name.outputs.branch }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: master
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Check whether the release is merged to master
         if: github.event_name != 'workflow_dispatch'
-        run: git branch --contains ${{ github.sha }} | grep -x "* master"
+        env:
+          SHA: ${{ github.sha }}
+        run: git branch --contains "$SHA" | grep -Fx "* master"
         shell: bash
 
-      - name: Check whether this event is the HEAD of master
-        continue-on-error: true
-        id: is-head-master
-        run: git rev-parse HEAD | grep -x ${{ github.sha }}
-        shell: bash
-
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Check whether version.go contains the new version number
         if: github.event_name == 'release'
-        run: cat version.go | grep ${GITHUB_REF_NAME:1}
+        run: grep "${GITHUB_REF_NAME:1}" version.go
         shell: bash
 
       - name: Check whether CHANGELOG.md contains the new version number
         if: github.event_name == 'release'
-        run: cat CHANGELOG.md | grep "\[${GITHUB_REF_NAME:1}\]"
+        run: grep "\[${GITHUB_REF_NAME:1}\]" CHANGELOG.md
         shell: bash
 
-      - name: Check whether the release is latest
-        continue-on-error: true
-        id: is-latest-release
-        if: github.event_name == 'release'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release view --json tagName --jq .tagName | grep -x ${{ github.event.release.tag_name }}
-        shell: bash
-      
-      - name: Extract branch name for workflow_dispatch tagging
-        id: safe-branch-name
-        if: github.event_name == 'workflow_dispatch'
-        run: echo "branch=${GITHUB_REF_NAME//\//-}" >> $GITHUB_OUTPUT
-        shell: bash
-  
-  build-docker-image:
-    runs-on: ubuntu-latest
+  docker:
     needs: prepare
-    steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v7
-        with:
-          platforms: linux/amd64,linux/arm64
-          tags: ghcr.io/${{ github.repository_owner }}/yivi:${{ github.sha }}
-
-      - name: Push Docker image (edge)
-        if: needs.prepare.outputs.is-head-master == 'true'
-        uses: docker/build-push-action@v7
-        with:
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/yivi:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/yivi:edge
-
-      - name: Push Docker image (version)
-        if: github.event_name == 'release'
-        uses: docker/build-push-action@v7
-        with:
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/yivi:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/yivi:${{ github.event.release.tag_name }}
-
-      - name: Push Docker image (latest)
-        if: needs.prepare.outputs.is-latest-release == 'true'
-        uses: docker/build-push-action@v7
-        with:
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/yivi:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/yivi:latest
-
-      - name: Push Docker image (branch)
-        if: github.event_name == 'workflow_dispatch'
-        uses: docker/build-push-action@v7
-        with:
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/yivi:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/yivi:${{ needs.prepare.outputs.safe-branch-name }}
+    uses: privacybydesign/github-workflows/.github/workflows/docker-publish.yml@v1
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      id-token: write
+      attestations: write
+    with:
+      image-name: ghcr.io/privacybydesign/yivi
+      platforms: linux/amd64,linux/arm64
+      # The old Delivery tagged :latest on the latest release; keep doing so.
+      tag-latest: true
 
   build-release-artifact:
     needs: prepare
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # gh release upload
     strategy:
       matrix:
         os: [ linux, darwin, windows ]
@@ -144,7 +85,9 @@ jobs:
           - os: windows
             arch: arm
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Build artifact
         uses: ./.github/actions/build
@@ -154,7 +97,7 @@ jobs:
           arch: ${{ matrix.arch }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: yivi-${{ matrix.os }}-${{ matrix.arch }}
           path: ${{ steps.build.outputs.artifact-name }}
@@ -163,4 +106,6 @@ jobs:
         if: github.event_name == 'release'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.event.release.tag_name }} ${{ steps.build.outputs.artifact-name }}
+          TAG: ${{ github.event.release.tag_name }}
+          ARTIFACT: ${{ steps.build.outputs.artifact-name }}
+        run: gh release upload "$TAG" "$ARTIFACT"

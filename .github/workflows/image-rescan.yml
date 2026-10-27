@@ -1,0 +1,23 @@
+# Weekly re-scan of the PUBLISHED images (all platforms) for new CVEs.
+name: Image rescan
+
+on:
+  schedule:
+    - cron: "23 6 * * 1" # Mondays 06:23 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  rescan:
+    uses: privacybydesign/github-workflows/.github/workflows/image-rescan.yml@v1
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    with:
+      image-name: ghcr.io/privacybydesign/yivi
+      # :latest is the latest release. Releases up to v1.4.3 are tagged with the
+      # "v" prefix, which "latest-release" (v1.2.3 -> :1.2.3) would not find.
+      tags: edge latest
+      severity-cutoff: high
