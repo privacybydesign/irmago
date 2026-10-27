@@ -13,6 +13,12 @@ on:
 
 permissions: {}
 
+# A new push to a PR cancels the PR's previous run. Other events get a
+# group of their own (run_id), so they never wait for or cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   go:
     uses: privacybydesign/github-workflows/.github/workflows/go-checks.yml@v1
