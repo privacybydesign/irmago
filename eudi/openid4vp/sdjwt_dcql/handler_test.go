@@ -540,6 +540,58 @@ func TestFindCandidates_ClaimValueMixedTypes(t *testing.T) {
 	require.Len(t, result.OwnedCandidates, 1, "string value should match when listed among mixed-type constraints")
 }
 
+// An issuer may put decoy digests in an array (RFC 9901 §4.2.5). The processed
+// payload, which the wallet matches the query against, has none, so the index
+// it expands a null to must reach the same element in the stored SD-JWT: the
+// plan shows "real", and the disclosure sends it.
+func TestPrepareDisclosure_DecoyInArray_SendsTheElementShown(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	real, err := sdjwt.NewArrayItemDisclosureContent("real")
+	require.NoError(t, err)
+	encoded, err := sdjwt.EncodeDisclosure(real)
+	require.NoError(t, err)
+	digest, err := sdjwt.HashEncodedDisclosure("sha-256", encoded)
+	require.NoError(t, err)
+
+	vct := "https://example.com/TagCredential"
+	batch := newTestBatch("hash-decoy", vct, map[string]any{"tags": []any{"real"}})
+	batch.Instances = []models.SdJwtVcBatchInstance{{
+		RawCredential: []byte(unsignedSdJwt(t, map[string]any{
+			"vct": vct,
+			"tags": []any{
+				map[string]any{"...": "c29tZSBkZWNveSBkaWdlc3QgdGhhdCBtYXRjaGVzIG5vdGhpbmc"},
+				map[string]any{"...": string(digest)},
+			},
+		}) + string(encoded) + "~"),
+	}}
+	require.NoError(t, store.StoreBatch(batch))
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/TagCredential"]},
+		"claims": [{"path": ["tags", null]}]
+	}`)
+	candidates, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	require.Len(t, candidates.OwnedCandidates, 1)
+	shown := candidates.OwnedCandidates[0].Attributes
+	require.Len(t, shown, 1, "the plan shows the tag")
+	require.NotNil(t, shown[0].Value)
+	require.Equal(t, "real", *shown[0].Value.String)
+
+	prepared, err := h.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:        "q1",
+		CredentialHash: "hash-decoy",
+		ClaimPaths:     [][]any{shown[0].ClaimPath},
+	}}, "nonce", "client")
+	require.NoError(t, err)
+	_, disclosures, err := sdjwt.Split(sdjwt.SdJwt(prepared.QueryResponses[0].Credentials[0]))
+	require.NoError(t, err)
+	require.Equal(t, []sdjwt.EncodedDisclosure{encoded}, disclosures, "the tag shown is the tag sent")
+}
+
 // ========================================================================
 // ExpiryDate correctness (expiryUnix bug fix verification)
 // ========================================================================

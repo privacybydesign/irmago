@@ -1,6 +1,7 @@
 package sdjwt
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
@@ -1053,4 +1054,49 @@ func findArrayElementDisclosures(t *testing.T, disclosures []DisclosureContent) 
 		}
 	}
 	return result
+}
+
+// buildSdJwtWithDecoyInArray signs {"arr": [<decoy>, <digest of "real">, "plain"]}
+// by hand, since the builder adds no decoys (RFC 9901 §4.2.5).
+func buildSdJwtWithDecoyInArray(t *testing.T) SdJwt {
+	t.Helper()
+	real, err := NewArrayItemDisclosureContent("real")
+	require.NoError(t, err)
+	encoded, err := EncodeDisclosure(real)
+	require.NoError(t, err)
+	digest, err := HashEncodedDisclosure(iana.SHA256, encoded)
+	require.NoError(t, err)
+
+	payload, err := json.Marshal(map[string]any{
+		"arr": []any{
+			map[string]any{EllipsisKey: "c29tZSBkZWNveSBkaWdlc3QgdGhhdCBtYXRjaGVzIG5vdGhpbmc"},
+			map[string]any{EllipsisKey: string(digest)},
+			"plain",
+		},
+	})
+	require.NoError(t, err)
+	issuerSignedJwt, err := newTestJwtCreator(t).CreateSignedJwt(map[string]any{}, string(payload))
+	require.NoError(t, err)
+	return Create(IssuerSignedJwt(issuerSignedJwt), []EncodedDisclosure{encoded})
+}
+
+// A claim path indexes the credential's arrays as they are after the
+// Disclosures are applied, without decoys: that is how a verifier's DCQL query
+// and the wallet's processed payload see the credential. ["arr", 0] is "real".
+func TestCreatePresentation_ArrayIndexSkipsDecoys(t *testing.T) {
+	sdJwt := buildSdJwtWithDecoyInArray(t)
+
+	result, err := CreatePresentation(sdJwt, [][]any{{"arr", 0}})
+	require.NoError(t, err)
+	disclosures := extractDecodedDisclosures(t, result)
+	require.Len(t, disclosures, 1)
+	require.Equal(t, "real", disclosures[0].Value)
+
+	view, err := PostDisclosureView(sdJwt, [][]any{{"arr", 0}})
+	require.NoError(t, err)
+	require.Equal(t, []any{"real", "plain"}, view["arr"])
+
+	view, err = PostDisclosureView(sdJwt, [][]any{{"arr", 1}})
+	require.NoError(t, err)
+	require.Equal(t, []any{nil, "plain"}, view["arr"], "an undisclosed element keeps its place; a decoy has none")
 }
