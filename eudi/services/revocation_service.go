@@ -118,11 +118,9 @@ func (s *RevocationService) refreshStoreStatuses(ctx context.Context, store db.C
 	}
 
 	lists := newSweepLists(s)
-	for _, batch := range groupByBatch(instances, func(inst db.CredentialStatusInstance) datatypes.UUID { return inst.BatchID }) {
+	for _, batch := range groupByBatch(instances) {
 		var combined batchStatus
-		swept := make([]sweptInstance, len(batch))
-		for i, inst := range batch {
-			swept[i] = sweptInstance{id: inst.InstanceID, lastKnown: inst.LastKnownStatus}
+		for _, inst := range batch {
 			// Stop between instances, so shutdown does not wait on the rest.
 			if ctx.Err() != nil {
 				return changed, ctx.Err()
@@ -143,17 +141,11 @@ func (s *RevocationService) refreshStoreStatuses(ctx context.Context, store db.C
 			}
 			combined.addChecked(status)
 		}
-		if storeBatchStatus(store, swept, combined) {
+		if storeBatchStatus(store, batch, combined) {
 			changed++
 		}
 	}
 	return changed, nil
-}
-
-// sweptInstance is what storeBatchStatus needs of one instance a sweep looked at.
-type sweptInstance struct {
-	id        datatypes.UUID
-	lastKnown uint8
 }
 
 // batchStatus combines a sweep's findings for one batch into the status every
@@ -178,9 +170,7 @@ func (b *batchStatus) addStored(s uint8) {
 // batch, and reports whether any instance's stored status moved. A batch none
 // of whose instances could be checked is left alone: nothing was learned, and
 // the write would record a check that did not happen.
-func storeBatchStatus(store interface {
-	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
-}, batch []sweptInstance, combined batchStatus) bool {
+func storeBatchStatus(store db.CredentialStatusStore, batch []db.CredentialStatusInstance, combined batchStatus) bool {
 	if !combined.checked {
 		return false
 	}
@@ -189,11 +179,11 @@ func storeBatchStatus(store interface {
 	now := time.Now()
 	moved := false
 	for _, inst := range batch {
-		if err := store.UpdateInstanceStatus(inst.id, uint8(combined.status), now); err != nil {
-			eudi.Logger.Warnf("status refresh: writeback failed for instance %s: %v", inst.id, err)
+		if err := store.UpdateInstanceStatus(inst.InstanceID, uint8(combined.status), now); err != nil {
+			eudi.Logger.Warnf("status refresh: writeback failed for instance %s: %v", inst.InstanceID, err)
 			continue
 		}
-		if uint8(combined.status) != inst.lastKnown {
+		if uint8(combined.status) != inst.LastKnownStatus {
 			moved = true
 		}
 	}
@@ -202,15 +192,14 @@ func storeBatchStatus(store interface {
 
 // groupByBatch splits instances into their batches, in the order each batch
 // first appears.
-func groupByBatch[T any](instances []T, batchOf func(T) datatypes.UUID) [][]T {
+func groupByBatch(instances []db.CredentialStatusInstance) [][]db.CredentialStatusInstance {
 	index := map[datatypes.UUID]int{}
-	var batches [][]T
+	var batches [][]db.CredentialStatusInstance
 	for _, inst := range instances {
-		id := batchOf(inst)
-		i, ok := index[id]
+		i, ok := index[inst.BatchID]
 		if !ok {
 			i = len(batches)
-			index[id] = i
+			index[inst.BatchID] = i
 			batches = append(batches, nil)
 		}
 		batches[i] = append(batches[i], inst)

@@ -40,15 +40,15 @@ func NewSdJwtVcDcqlHandler(
 	currentLocale *clientmodels.CurrentLocale,
 	revocation sdjwtdcql.RevocationChecker,
 ) *Handler {
-	profile := sdjwtdcql.NewProfile(
-		models.CredentialFormatSdJwtVc,
-		clientmodels.Format_SdJwtVc,
-		func(key string) bool {
+	profile := sdjwtdcql.Profile{
+		StorageFormat: models.CredentialFormatSdJwtVc,
+		ClientFormat:  clientmodels.Format_SdJwtVc,
+		IsUserDataKey: func(key string) bool {
 			_, std := sdjwtvc.StandardClaims[key]
 			return !std
 		},
-		sdjwtdcql.PresentWithKbJwt,
-	)
+		Present: sdjwtdcql.PresentWithKbJwt,
+	}
 	batches := sdjwtdcql.NewSdJwtVcBatchStore(credentialStore, revocation)
 	return &Handler{sdjwtdcql.NewEngine(profile, eudiStorage, batches, vctFetcher, issuerFetcher, keyBinder, currentLocale)}
 }

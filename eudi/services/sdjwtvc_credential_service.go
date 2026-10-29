@@ -180,7 +180,7 @@ func (s *sdJwtVcCredentialService) Store(
 	// touches the user's existing credential.
 	if err := validateStatusReferences(parsedCredentials); err != nil {
 		if requireCryptographicKeyBinding {
-			s.deleteOrphanedKeys(publicKeyIdentifiers)
+			deleteOrphanedKeys(s.holderBindingKeyStore, publicKeyIdentifiers)
 		}
 		return err
 	}
@@ -199,7 +199,7 @@ func (s *sdJwtVcCredentialService) Store(
 		var err error
 		matchedKeyIDs, err = matchAllHolderBindingKeys(parsedCredentials, publicKeyIdentifiers)
 		if err != nil {
-			s.deleteOrphanedKeys(publicKeyIdentifiers)
+			deleteOrphanedKeys(s.holderBindingKeyStore, publicKeyIdentifiers)
 			return err
 		}
 	}
@@ -496,19 +496,21 @@ func matchHolderBindingKey(cnf *sdjwt.CnfField, keyByThumbprint map[string]datat
 	return datatypes.UUID{}, fmt.Errorf("no matching holder binding key found for cnf claim")
 }
 
-func (s *sdJwtVcCredentialService) deleteOrphanedKeys(publicKeyIdentifiers []models.PublicHolderBindingKey) {
+// deleteOrphanedKeys deletes the holder binding keys made for a credential
+// that was not stored after all.
+func deleteOrphanedKeys(store db.HolderBindingKeyStore, publicKeyIdentifiers []models.PublicHolderBindingKey) {
 	ids := make([]datatypes.UUID, len(publicKeyIdentifiers))
 	for i, pk := range publicKeyIdentifiers {
 		ids[i] = pk.ID
 	}
-	if err := s.holderBindingKeyStore.DeleteKeys(ids); err != nil {
+	if err := store.DeleteKeys(ids); err != nil {
 		eudi.Logger.Warnf("failed to clean up orphaned holder binding keys: %v", err)
 	}
 }
 
 func (s *sdJwtVcCredentialService) linkHolderBindingKeys(keyIDs []datatypes.UUID, instances []models.SdJwtVcBatchInstance) {
 	for i, keyID := range keyIDs {
-		if err := s.holderBindingKeyStore.LinkToInstance(keyID, instances[i].ID); err != nil {
+		if err := s.holderBindingKeyStore.LinkToSdJwtVcInstance(keyID, instances[i].ID); err != nil {
 			eudi.Logger.Warnf("failed to link holder binding key %s to instance %s: %v", keyID, instances[i].ID, err)
 		}
 	}

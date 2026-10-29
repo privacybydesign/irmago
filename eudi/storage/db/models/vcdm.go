@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -182,12 +181,6 @@ func (VcdmBatchInstance) TableName() string { return "vcdm_batch_instances" }
 // way, so the wallet can check whether it is revoked.
 func (i *VcdmBatchInstance) HasStatusReference() bool {
 	return i.StatusListURI != nil || len(i.BitstringStatusEntries) > 0
-}
-
-// StatusReference returns the instance's IETF Token Status List reference, or
-// nil when it has none.
-func (i *VcdmBatchInstance) StatusReference() *statuslist.Reference {
-	return statusReference(i.StatusListURI, i.StatusListIdx)
 }
 
 func (i *VcdmBatchInstance) BeforeCreate(tx *gorm.DB) error {

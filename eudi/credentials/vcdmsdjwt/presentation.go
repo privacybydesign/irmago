@@ -2,7 +2,6 @@ package vcdmsdjwt
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
@@ -23,19 +22,6 @@ const (
 	typeVerifiablePresentation        = "VerifiablePresentation"
 	typeEnvelopedVerifiableCredential = "EnvelopedVerifiableCredential"
 )
-
-// Present turns an SD-JWT-secured VCDM credential, holding only the selected
-// disclosures, into what the wallet sends the verifier. With holder binding
-// that is a Verifiable Presentation signed with the holder key
-// (CreateEnvelopedPresentation). Without it, the credential itself is sent
-// without a presentation around it, as OpenID4VP 1.0 Appendix B.1 requires for
-// W3C credentials: the SD-JWT, with no KB-JWT.
-func Present(selected sdjwt.SdJwt, keyBinder sdjwt.KeyBinder, requireHolderBinding bool, nonce string, audience string) (string, error) {
-	if !requireHolderBinding {
-		return string(selected), nil
-	}
-	return CreateEnvelopedPresentation(selected, keyBinder, nonce, audience)
-}
 
 // CreateEnvelopedPresentation wraps an SD-JWT-secured VCDM credential, holding
 // only the selected disclosures, in a VCDM 2.0 Verifiable Presentation that
@@ -58,7 +44,6 @@ func CreateEnvelopedPresentation(selected sdjwt.SdJwt, keyBinder sdjwt.KeyBinder
 		},
 		jwt.AudienceKey: audience,
 		"nonce":         nonce,
-		jwt.IssuedAtKey: time.Now().Unix(),
 	}
 
 	_, holderKey, err := sdjwt.ExtractHashingAlgorithmAndHolderPubKey(selected)

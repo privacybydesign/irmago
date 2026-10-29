@@ -465,9 +465,9 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (sdjwt.IssuerSignedJwt,
 	}
 
 	if config.rawStatus != nil {
-		issuerPayload[StatusKey] = config.rawStatus
+		issuerPayload[statuslist.StatusClaimKey] = config.rawStatus
 	} else if config.status != nil && config.status.StatusList != nil {
-		issuerPayload[StatusKey] = map[string]any{
+		issuerPayload[statuslist.StatusClaimKey] = map[string]any{
 			"status_list": map[string]any{
 				"idx": config.status.StatusList.Index,
 				"uri": config.status.StatusList.URI,

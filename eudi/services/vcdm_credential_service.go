@@ -174,7 +174,7 @@ func (s *sdJwtVcdmCredentialService) Store(
 		var err error
 		matchedKeyIDs, err = matchAllHolderBindingKeys(parsedCredentials, publicKeyIdentifiers)
 		if err != nil {
-			s.deleteOrphanedKeys(publicKeyIdentifiers)
+			deleteOrphanedKeys(s.holderBindingKeyStore, publicKeyIdentifiers)
 			return err
 		}
 	}
@@ -187,7 +187,7 @@ func (s *sdJwtVcdmCredentialService) Store(
 		refs, err := vcdmstatus.ParseStatusReferences(p.SdJwtVcdm.Document)
 		if err != nil {
 			if requireCryptographicKeyBinding {
-				s.deleteOrphanedKeys(publicKeyIdentifiers)
+				deleteOrphanedKeys(s.holderBindingKeyStore, publicKeyIdentifiers)
 			}
 			return fmt.Errorf("credential %d: %w", i, err)
 		}
@@ -195,7 +195,7 @@ func (s *sdJwtVcdmCredentialService) Store(
 	}
 	if err := validateVcdmStatusReferences(statusRefs); err != nil {
 		if requireCryptographicKeyBinding {
-			s.deleteOrphanedKeys(publicKeyIdentifiers)
+			deleteOrphanedKeys(s.holderBindingKeyStore, publicKeyIdentifiers)
 		}
 		return err
 	}
@@ -204,14 +204,14 @@ func (s *sdJwtVcdmCredentialService) Store(
 	// is the source of truth for batch-level metadata.
 	first := parsedCredentials[0]
 
-	processedPayload, err := json.Marshal(first.SdJwtVcdm.ProcessedSdJwtPayload)
+	processedPayload, err := json.Marshal(first.SdJwtVcdm.Document)
 	if err != nil {
 		return fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
 	}
 
 	// The store replaces a batch with this hash, the same credential issued
 	// before, in the transaction that stores this one.
-	hash, err := hashForVcdmCredential(first.VerifiableCredentialType, first.IssuerIdentifier, first.SdJwtVcdm.ProcessedSdJwtPayload)
+	hash, err := hashForVcdmCredential(first.VerifiableCredentialType, first.IssuerIdentifier, sdjwt.ProcessedPayload(first.SdJwtVcdm.Document))
 	if err != nil {
 		return fmt.Errorf("failed to compute credential hash: %w", err)
 	}
@@ -282,16 +282,6 @@ func (s *sdJwtVcdmCredentialService) Store(
 	}
 
 	return nil
-}
-
-func (s *sdJwtVcdmCredentialService) deleteOrphanedKeys(publicKeyIdentifiers []models.PublicHolderBindingKey) {
-	ids := make([]datatypes.UUID, len(publicKeyIdentifiers))
-	for i, pk := range publicKeyIdentifiers {
-		ids[i] = pk.ID
-	}
-	if err := s.holderBindingKeyStore.DeleteKeys(ids); err != nil {
-		eudi.Logger.Warnf("failed to clean up orphaned holder binding keys: %v", err)
-	}
 }
 
 // VcdmIssuanceValidity derives the wallet's issuance/validity timestamps for a
@@ -374,22 +364,22 @@ func validateVcdmStatusReferences(refs []vcdmstatus.StatusReferences) error {
 // treatment of the IETF SD-JWT VC registered claims. credentialSubject is
 // content, its id included: a re-issuance to a new subject id, such as a fresh
 // holder DID, is stored as a second credential.
-var vcdmNonContentKeys = map[string]struct{}{
-	jwt.IssuerKey:            {},
-	jwt.SubjectKey:           {},
-	jwt.AudienceKey:          {},
-	jwt.IssuedAtKey:          {},
-	jwt.NotBeforeKey:         {},
-	jwt.ExpirationKey:        {},
-	jwt.JwtIDKey:             {},
-	sdjwt.ConfirmationKey:    {},
-	sdjwt.SdKey:              {},
-	sdjwt.SdAlgKey:           {},
-	vcdmstatus.StatusKey:     {},
-	vcdm.IDKey:               {},
-	vcdm.ValidFromKey:        {},
-	vcdm.ValidUntilKey:       {},
-	vcdm.CredentialStatusKey: {},
+var vcdmNonContentKeys = []string{
+	jwt.IssuerKey,
+	jwt.SubjectKey,
+	jwt.AudienceKey,
+	jwt.IssuedAtKey,
+	jwt.NotBeforeKey,
+	jwt.ExpirationKey,
+	jwt.JwtIDKey,
+	sdjwt.ConfirmationKey,
+	sdjwt.SdKey,
+	sdjwt.SdAlgKey,
+	statuslist.StatusClaimKey,
+	vcdm.IDKey,
+	vcdm.ValidFromKey,
+	vcdm.ValidUntilKey,
+	vcdm.CredentialStatusKey,
 }
 
 // hashForVcdmCredential computes the deterministic batch-deduplication hash
@@ -398,15 +388,7 @@ var vcdmNonContentKeys = map[string]struct{}{
 // credentialHash every other format uses. Same stability properties as
 // hashForSdJwtVc: json.Marshal sorts object keys, array order is significant.
 func hashForVcdmCredential(typeIdentity, issuerIdentifier string, payload sdjwt.ProcessedPayload) (string, error) {
-	content := make(map[string]any, len(payload))
-	for key, value := range payload {
-		if _, skip := vcdmNonContentKeys[key]; skip {
-			continue
-		}
-		content[key] = value
-	}
-
-	contentBytes, err := json.Marshal(content)
+	contentBytes, err := json.Marshal(withoutKeys(payload, vcdmNonContentKeys...))
 	if err != nil {
 		return "", fmt.Errorf("hashForVcdmCredential: failed to marshal content: %w", err)
 	}

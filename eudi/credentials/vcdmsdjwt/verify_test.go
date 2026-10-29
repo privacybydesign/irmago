@@ -40,8 +40,7 @@ func TestHolder_ValidVcSdJwt_Succeeds(t *testing.T) {
 	require.Equal(t, "Smith", subs[0]["family_name"])
 	require.Len(t, verified.Disclosures, 2)
 
-	// No KB-JWT on receipt; holder cnf key retained and resolvable.
-	require.Nil(t, verified.KeyBindingJwt)
+	// Holder cnf key retained and resolvable.
 	require.NotNil(t, verified.RegisteredClaims.Confirm)
 	key, err := verified.HolderPublicKey()
 	require.NoError(t, err)

@@ -50,14 +50,24 @@ type verifiedStatusListToken interface {
 	// one at all.
 	ttlSignal() (time.Duration, bool)
 
-	// statusAt decompresses the token's bit array (capped at maxBytes) and
-	// returns the status at ref.Index.
-	statusAt(ref Reference, maxBytes int64) (Status, error)
+	// decode decompresses the token's bit array, capped at maxBytes.
+	decode(maxBytes int64) (*List, error)
+}
+
+// List is the decoded bit array of a verified Status List Token.
+type List struct {
+	bits    []byte
+	bitSize int
+}
+
+// StatusAt returns the status at idx.
+func (l *List) StatusAt(idx uint64) (Status, error) {
+	return statusAtIndex(l.bits, l.bitSize, idx)
 }
 
 // verifiedStatusListJWT holds a JWT Status List Token whose signature, typ,
 // iss, and time bounds have been validated. The lst field is still
-// base64url-encoded and zlib-compressed; statusAt consumes it.
+// base64url-encoded and zlib-compressed; decode consumes it.
 type verifiedStatusListJWT struct {
 	payload jwtStatusListPayload
 }
@@ -66,12 +76,12 @@ func (v *verifiedStatusListJWT) ttlSignal() (time.Duration, bool) {
 	return ttlFromClaims(v.payload.TTLSeconds, v.payload.Expiry)
 }
 
-func (v *verifiedStatusListJWT) statusAt(ref Reference, maxBytes int64) (Status, error) {
+func (v *verifiedStatusListJWT) decode(maxBytes int64) (*List, error) {
 	bits, err := decodeBitsBase64(v.payload.StatusList.Lst, maxBytes)
 	if err != nil {
-		return StatusUnknown, err
+		return nil, err
 	}
-	return statusAtIndex(bits, v.payload.StatusList.Bits, ref.Index)
+	return &List{bits: bits, bitSize: v.payload.StatusList.Bits}, nil
 }
 
 // ttlFromClaims reports the caching lifetime advertised by the Status List

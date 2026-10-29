@@ -1420,7 +1420,7 @@ type linkRecord struct {
 	InstanceID datatypes.UUID
 }
 
-func (m *mockHolderBindingKeyStore) LinkToInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
+func (m *mockHolderBindingKeyStore) LinkToSdJwtVcInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
 	m.linkedKeys = append(m.linkedKeys, linkRecord{KeyID: keyID, InstanceID: instanceID})
 	return nil
 }

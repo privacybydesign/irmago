@@ -3,6 +3,8 @@ package bitstringstatus
 import (
 	"fmt"
 	"strconv"
+
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 )
 
 // EntryType is the `type` value that marks a credentialStatus object as a
@@ -65,7 +67,7 @@ func ParseEntries(credentialStatus any) ([]Entry, error) {
 
 	var entries []Entry
 	for _, m := range objs {
-		if !hasType(m, EntryType) {
+		if !vcdm.Document(m).HasType(EntryType) {
 			continue // a sibling status mechanism we do not handle
 		}
 		entry, err := parseEntry(m)
@@ -105,34 +107,14 @@ func parseEntry(m map[string]any) (Entry, error) {
 		}
 	}
 
+	id, _ := m["id"].(string)
 	return Entry{
-		ID:                   asString(m["id"]),
+		ID:                   id,
 		StatusPurpose:        StatusPurpose(purpose),
 		StatusListIndex:      idx,
 		StatusListCredential: cred,
 		StatusSize:           size,
 	}, nil
-}
-
-// hasType reports whether a credentialStatus object's `type` is or includes
-// want. VCDM allows type to be a single string or an array of strings.
-func hasType(m map[string]any, want string) bool {
-	switch t := m["type"].(type) {
-	case string:
-		return t == want
-	case []any:
-		for _, v := range t {
-			if s, ok := v.(string); ok && s == want {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func asString(v any) string {
-	s, _ := v.(string)
-	return s
 }
 
 // asPositiveInt accepts the JSON number shapes statusSize may arrive as

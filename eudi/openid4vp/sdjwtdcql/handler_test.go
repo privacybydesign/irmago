@@ -36,10 +36,15 @@ func newTestHandler(t *testing.T) (*Engine, db.SdJwtVcStore) {
 // testSdJwtVcProfile mirrors the real SD-JWT VC profile (which now lives in the
 // eudi_sdjwtvc_dcql package) so the engine tests can build an Engine directly.
 func testSdJwtVcProfile() Profile {
-	return NewProfile(models.CredentialFormatSdJwtVc, clientmodels.Format_SdJwtVc, func(key string) bool {
-		_, std := sdjwtvc.StandardClaims[key]
-		return !std
-	}, PresentWithKbJwt)
+	return Profile{
+		StorageFormat: models.CredentialFormatSdJwtVc,
+		ClientFormat:  clientmodels.Format_SdJwtVc,
+		IsUserDataKey: func(key string) bool {
+			_, std := sdjwtvc.StandardClaims[key]
+			return !std
+		},
+		Present: PresentWithKbJwt,
+	}
 }
 
 func newTestBatch(hash, vct string, payload map[string]any) *models.SdJwtVcBatch {
@@ -1009,16 +1014,4 @@ func TestFindCandidates_VcdmBatchExcluded(t *testing.T) {
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
 	assert.Empty(t, result.OwnedCandidates, "an SD-JWT-secured VCDM batch is not a dc+sd-jwt candidate")
-}
-
-func TestCredentialDisplayName_VcdmFallsBackToDocumentName(t *testing.T) {
-	payload := datatypes.JSON(`{"name": "Alumni card"}`)
-
-	vcdmBatch := &Batch{Format: models.CredentialFormatSdJwtVcdm, CredentialType: "vcdm-type", ProcessedPayload: payload}
-	require.Equal(t, "Alumni card", credentialDisplayName(vcdmBatch, "en"))
-
-	// In an SD-JWT VC, a top-level `name` is an ordinary claim, not the
-	// credential's name.
-	sdJwtVcBatch := &Batch{Format: models.CredentialFormatSdJwtVc, CredentialType: "https://example.com/vct", ProcessedPayload: payload}
-	require.Equal(t, "https://example.com/vct", credentialDisplayName(sdJwtVcBatch, "en"))
 }

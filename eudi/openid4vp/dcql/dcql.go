@@ -147,8 +147,7 @@ func (c CredentialQuery) NeedsHolderBinding() bool {
 // serialized credentials
 type QueryResponse struct {
 	// corresponds to a Credential.Id field
-	QueryId          string
-	CredentialFormat string
+	QueryId string
 	// the resulting serialized credentials
 	Credentials []string
 }

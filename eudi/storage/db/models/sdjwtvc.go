@@ -6,8 +6,6 @@ import (
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
-
-	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 )
 
 // SdJwtVcBatch is one logical SD-JWT VC credential: every credential issued from
@@ -203,21 +201,6 @@ type SdJwtVcBatchInstance struct {
 
 // TableName pins the deployed table name; see SdJwtVcBatch.TableName.
 func (SdJwtVcBatchInstance) TableName() string { return "issued_credential_instances" }
-
-// StatusReference is the instance's Token Status List reference, nil when it
-// carries none.
-func (i *SdJwtVcBatchInstance) StatusReference() *statuslist.Reference {
-	return statusReference(i.StatusListURI, i.StatusListIdx)
-}
-
-// statusReference builds a reference from the two nullable columns every
-// credential instance table stores it in. Both are set or neither is.
-func statusReference(uri *string, idx *uint64) *statuslist.Reference {
-	if uri == nil || idx == nil {
-		return nil
-	}
-	return &statuslist.Reference{URI: *uri, Index: *idx}
-}
 
 func (i *SdJwtVcBatchInstance) BeforeCreate(tx *gorm.DB) error {
 	if i.ID.IsNil() {

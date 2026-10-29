@@ -41,24 +41,27 @@ var errListUnavailable = errors.New("status list unavailable in this sweep")
 // Bitstring lists are kept per URL and issuer, because a list is only accepted
 // for credentials of its own issuer.
 type sweepLists struct {
-	service *RevocationService
-	// tokenLists maps a Token Status List URI to the outcome of refreshing it;
-	// a refreshed list is in the checker's cache.
-	tokenLists     map[string]error
+	service        *RevocationService
+	tokenLists     map[string]tokenList
 	bitstringLists map[bitstringListKey]bitstringList
+}
+
+type tokenList struct {
+	list *statuslist.List
+	err  error
 }
 
 type bitstringListKey struct{ url, issuer string }
 
 type bitstringList struct {
-	subject bitstringstatus.ListCredentialSubject
-	err     error
+	list *bitstringstatus.List
+	err  error
 }
 
 func newSweepLists(s *RevocationService) *sweepLists {
 	return &sweepLists{
 		service:        s,
-		tokenLists:     map[string]error{},
+		tokenLists:     map[string]tokenList{},
 		bitstringLists: map[bitstringListKey]bitstringList{},
 	}
 }
@@ -68,22 +71,21 @@ func (l *sweepLists) TokenStatus(ctx context.Context, ref statuslist.Reference) 
 	if checker == nil {
 		return statuslist.StatusUnknown, errors.New("no Token Status List checker configured")
 	}
-	err, seen := l.tokenLists[ref.URI]
+	list, seen := l.tokenLists[ref.URI]
 	if !seen {
-		// One Refresh per URI populates the checker's cache; the Check calls
-		// then read from it, with no extra HTTP traffic.
-		if _, err = checker.Refresh(ctx, statuslist.Reference{URI: ref.URI}); err != nil {
+		list.list, list.err = checker.RefreshList(ctx, ref.URI)
+		if list.err != nil {
 			if ctx.Err() != nil {
 				return statuslist.StatusUnknown, ctx.Err()
 			}
-			eudi.Logger.Warnf("status refresh: refresh %s failed: %v", common.SanitizeForLog(ref.URI), err)
+			eudi.Logger.Warnf("status refresh: refresh %s failed: %v", common.SanitizeForLog(ref.URI), list.err)
 		}
-		l.tokenLists[ref.URI] = err
+		l.tokenLists[ref.URI] = list
 	}
-	if err != nil {
+	if list.err != nil {
 		return statuslist.StatusUnknown, errListUnavailable
 	}
-	return checker.Check(ctx, ref)
+	return list.list.StatusAt(ref.Index)
 }
 
 func (l *sweepLists) BitstringValue(ctx context.Context, entry bitstringstatus.Entry, issuer string) (uint, error) {
@@ -94,9 +96,13 @@ func (l *sweepLists) BitstringValue(ctx context.Context, entry bitstringstatus.E
 	key := bitstringListKey{url: entry.StatusListCredential, issuer: issuer}
 	list, seen := l.bitstringLists[key]
 	if !seen {
-		list.subject, list.err = checker.Fetch(ctx, entry.StatusListCredential, issuer)
+		var subject bitstringstatus.ListCredentialSubject
+		subject, list.err = checker.Fetch(ctx, entry.StatusListCredential, issuer)
 		if list.err != nil && ctx.Err() != nil {
 			return 0, ctx.Err()
+		}
+		if list.err == nil {
+			list.list, list.err = bitstringstatus.Expand(subject)
 		}
 		if list.err != nil {
 			eudi.Logger.Warnf("status refresh: fetch %s failed: %v", common.SanitizeForLog(entry.StatusListCredential), list.err)
@@ -106,7 +112,7 @@ func (l *sweepLists) BitstringValue(ctx context.Context, entry bitstringstatus.E
 	if list.err != nil {
 		return 0, errListUnavailable
 	}
-	return bitstringstatus.Check(entry, list.subject)
+	return list.list.Value(entry)
 }
 
 // withStatusReferences fills a VCDM instance's status columns from the

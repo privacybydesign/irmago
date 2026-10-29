@@ -32,7 +32,7 @@ func createAuthorizationResponseHttpRequest(config authorizationResponseConfig) 
 	values := url.Values{}
 
 	if config.ResponseMode == ResponseMode_DirectPost {
-		vpToken, err := createDirectPostVpToken(config)
+		vpToken, err := createDirectPostVpToken(config.QueryResponses)
 		if err != nil {
 			return nil, err
 		}
@@ -45,7 +45,7 @@ func createAuthorizationResponseHttpRequest(config authorizationResponseConfig) 
 			return nil, fmt.Errorf("using response mode %v, but the encryption key is nil", ResponseMode_DirectPostJwt)
 		}
 		jwe, err := createEncryptedResponse(
-			config,
+			config.QueryResponses,
 			map[string]any{"state": config.State},
 			config.EncryptionKey,
 			config.EncryptedResponseEncValuesSupported,
@@ -75,18 +75,14 @@ func createDcApiResponse(config authorizationResponseConfig) (string, error) {
 
 	switch config.ResponseMode {
 	case ResponseMode_DcApi:
-		vpToken, err := createVpToken(config)
-		if err != nil {
-			return "", err
-		}
-		payload = map[string]any{"vp_token": vpToken}
+		payload = map[string]any{"vp_token": createVpToken(config.QueryResponses)}
 
 	case ResponseMode_DcApiJwt:
 		if config.EncryptionKey == nil {
 			return "", fmt.Errorf("using response mode %v, but the encryption key is nil", ResponseMode_DcApiJwt)
 		}
 		jwe, err := createEncryptedResponse(
-			config,
+			config.QueryResponses,
 			nil,
 			config.EncryptionKey,
 			config.EncryptedResponseEncValuesSupported,
@@ -111,14 +107,9 @@ func createDcApiResponse(config authorizationResponseConfig) (string, error) {
 // encrypted JWT whose payload holds the response parameters as top-level members
 // (Section 8.3). extraMembers carries the response-mode-specific members beyond
 // vp_token, such as state for direct_post.jwt.
-func createEncryptedResponse(config authorizationResponseConfig, extraMembers map[string]any, encryptionKey jwk.Key, encSupported []string) (string, error) {
-	vpToken, err := createVpToken(config)
-	if err != nil {
-		return "", err
-	}
-
+func createEncryptedResponse(queryResponses []dcql.QueryResponse, extraMembers map[string]any, encryptionKey jwk.Key, encSupported []string) (string, error) {
 	payload := map[string]any{
-		"vp_token": vpToken,
+		"vp_token": createVpToken(queryResponses),
 	}
 	maps.Copy(payload, extraMembers)
 	return encryptJwe(payload, encryptionKey, encSupported)
@@ -216,19 +207,17 @@ func pickEncryptionAlgorithm(options []string) (jwa.ContentEncryptionAlgorithm, 
 	return jwa.EmptyContentEncryptionAlgorithm(), fmt.Errorf("no supported encryption algorithm provided (%v)", options)
 }
 
-func createVpToken(config authorizationResponseConfig) (map[string][]string, error) {
+func createVpToken(queryResponses []dcql.QueryResponse) map[string][]string {
 	content := map[string][]string{}
-	for _, resp := range config.QueryResponses {
+	for _, resp := range queryResponses {
 		content[resp.QueryId] = append(content[resp.QueryId], resp.Credentials...)
 	}
-	return content, nil
+
+	return content
 }
 
-func createDirectPostVpToken(config authorizationResponseConfig) (string, error) {
-	content, err := createVpToken(config)
-	if err != nil {
-		return "", err
-	}
+func createDirectPostVpToken(queryResponses []dcql.QueryResponse) (string, error) {
+	content := createVpToken(queryResponses)
 	result, err := json.Marshal(content)
 	return string(result), err
 }

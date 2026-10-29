@@ -2,6 +2,7 @@ package services
 
 import (
 	"crypto/ecdsa"
+	"fmt"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -73,6 +74,19 @@ func (p *ParsedCredential) holderConfirmation() *sdjwt.CnfField {
 	default:
 		return nil
 	}
+}
+
+// requireUniqueHolderConfirmations refuses a batch in which two credentials
+// are bound to the same holder key.
+func requireUniqueHolderConfirmations(batch []*ParsedCredential) error {
+	cnfs := make([]*sdjwt.CnfField, len(batch))
+	for i, pc := range batch {
+		cnfs[i] = pc.holderConfirmation()
+	}
+	if i := sdjwt.DuplicateConfirmation(cnfs); i >= 0 {
+		return fmt.Errorf("duplicate cryptographic key binding confirmation found for credential of type %q", batch[i].VerifiableCredentialType)
+	}
+	return nil
 }
 
 // ParsedMdoc is what verifying an mso_mdoc yields beyond the generic fields:

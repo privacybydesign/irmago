@@ -25,7 +25,9 @@ func Test_VerifyStatusListTokenCWT_ValidX5ChainSignature(t *testing.T) {
 	require.Equal(t, 1, v.payload.StatusList.Bits)
 	require.NotEmpty(t, v.payload.StatusList.Lst)
 
-	status, err := v.statusAt(Reference{Index: 1}, 0)
+	list, err := v.decode(0)
+	require.NoError(t, err)
+	status, err := list.StatusAt(1)
 	require.NoError(t, err)
 	require.Equal(t, StatusInvalid, status)
 }
@@ -230,7 +232,9 @@ func Test_VerifyStatusList_DispatchesByEncoding(t *testing.T) {
 	v, err := verifyStatusList(jwtBody, vc, uri, time.Now())
 	require.NoError(t, err)
 	require.IsType(t, &verifiedStatusListJWT{}, v)
-	status, err := v.statusAt(Reference{Index: 0}, 0)
+	list, err := v.decode(0)
+	require.NoError(t, err)
+	status, err := list.StatusAt(0)
 	require.NoError(t, err)
 	require.Equal(t, StatusInvalid, status)
 
@@ -241,7 +245,9 @@ func Test_VerifyStatusList_DispatchesByEncoding(t *testing.T) {
 	v, err = verifyStatusList(cwtBody, vc, uri, time.Now())
 	require.NoError(t, err)
 	require.IsType(t, &verifiedStatusListCWT{}, v)
-	status, err = v.statusAt(Reference{Index: 0}, 0)
+	list, err = v.decode(0)
+	require.NoError(t, err)
+	status, err = list.StatusAt(0)
 	require.NoError(t, err)
 	require.Equal(t, StatusInvalid, status)
 }

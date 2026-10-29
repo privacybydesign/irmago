@@ -32,7 +32,11 @@ func TestSignerKeyBinder_ProducesVerifiableKbJwt(t *testing.T) {
 		nonce = "nonce-xyz"
 		aud   = "https://verifier.example"
 	)
-	kb, err := binder.CreateKeyBindingJwt(hash, holderKey, nonce, aud)
+	kb, err := binder.CreateHolderSignedJwt(holderKey, map[string]any{"typ": sdjwt.KbJwtTyp}, map[string]any{
+		"sd_hash": hash,
+		"nonce":   nonce,
+		"aud":     aud,
+	})
 	require.NoError(t, err)
 
 	parts := strings.Split(string(kb), ".")

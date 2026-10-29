@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 )
 
 // ListCredentialSubjectType is the `type` of a BitstringStatusListCredential's
@@ -23,7 +24,7 @@ type ListCredentialSubject struct {
 // verified BitstringStatusListCredential's credentialSubject. statusPurpose may
 // be a single string or an array — a single list may cover several purposes.
 func ParseListCredentialSubject(subject map[string]any) (ListCredentialSubject, error) {
-	if !hasType(subject, ListCredentialSubjectType) {
+	if !vcdm.Document(subject).HasType(ListCredentialSubjectType) {
 		return ListCredentialSubject{}, fmt.Errorf("%w: credentialSubject.type is not %s", ErrUnauthorized, ListCredentialSubjectType)
 	}
 	encoded, _ := subject["encodedList"].(string)
@@ -69,18 +70,35 @@ func parsePurposes(v any) ([]StatusPurpose, error) {
 // value at the entry's index. For a single-bit revocation or suspension entry a
 // non-zero value means the credential is revoked or suspended respectively.
 func Check(entry Entry, subject ListCredentialSubject) (uint, error) {
-	if !coversPurpose(subject.StatusPurposes, entry.StatusPurpose) {
-		return 0, fmt.Errorf("%w: list purposes %v do not cover entry purpose %q", ErrUnauthorized, subject.StatusPurposes, entry.StatusPurpose)
-	}
-	bits, err := ExpandBitstring(subject.EncodedList)
+	list, err := Expand(subject)
 	if err != nil {
 		return 0, err
 	}
-	return StatusValueAt(bits, entry.StatusSize, entry.StatusListIndex)
+	return list.Value(entry)
 }
 
-func coversPurpose(have []StatusPurpose, want StatusPurpose) bool {
-	return slices.Contains(have, want)
+// List is a verified status list credential subject with its bitstring
+// expanded, for a caller that reads many entries of one list.
+type List struct {
+	purposes []StatusPurpose
+	bits     []byte
+}
+
+// Expand expands the subject's bitstring.
+func Expand(subject ListCredentialSubject) (*List, error) {
+	bits, err := ExpandBitstring(subject.EncodedList)
+	if err != nil {
+		return nil, err
+	}
+	return &List{purposes: subject.StatusPurposes, bits: bits}, nil
+}
+
+// Value returns the status value at the entry's index; see Check.
+func (l *List) Value(entry Entry) (uint, error) {
+	if !slices.Contains(l.purposes, entry.StatusPurpose) {
+		return 0, fmt.Errorf("%w: list purposes %v do not cover entry purpose %q", ErrUnauthorized, l.purposes, entry.StatusPurpose)
+	}
+	return StatusValueAt(l.bits, entry.StatusSize, entry.StatusListIndex)
 }
 
 // EntryStatus maps a revocation or suspension entry's value onto the Token

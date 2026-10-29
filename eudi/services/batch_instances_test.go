@@ -7,6 +7,7 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -113,7 +114,7 @@ func vcdmBatchInstance(subjectId, validFrom string, credentialStatus any, extra 
 		Format:                   models.CredentialFormatSdJwtVcdm,
 		VerifiableCredentialType: "EmailCredential",
 		IssuerIdentifier:         batchInstanceTestIssuer,
-		SdJwtVcdm:                &vcdmsdjwt.VerifiedSdJwtVcdm{ProcessedSdJwtPayload: payload},
+		SdJwtVcdm:                &vcdmsdjwt.VerifiedSdJwtVcdm{Document: vcdm.Document(payload)},
 	}
 }
 

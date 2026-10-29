@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/lestrrat-go/jwx/v4/jwt"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
 
@@ -20,7 +21,6 @@ type SdJwtVcKb sdjwt.SdJwtKb
 const (
 	VerifiableCredentialTypeKey          string = "vct"
 	VerifiableCredentialTypeIntegrityKey string = "vct#integrity"
-	StatusKey                            string = "status"
 	FederationKey                        string = "fed"
 
 	// SdJwtVcTyp is the only JWS `typ` accepted for an IETF SD-JWT VC. The
@@ -66,5 +66,5 @@ var StandardClaims = map[string]struct{}{
 	FederationKey:                        {},
 	VerifiableCredentialTypeKey:          {},
 	VerifiableCredentialTypeIntegrityKey: {},
-	StatusKey:                            {},
+	statuslist.StatusClaimKey:            {},
 }

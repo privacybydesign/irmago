@@ -48,14 +48,12 @@ func (p *sdJwtVcdmCredentialFormatParser) ParseAndVerify(raw, _ string, _ bool) 
 }
 
 func (p *sdJwtVcdmCredentialFormatParser) CheckBatch(batch []*ParsedCredential) error {
-	verified := make([]*vcdmsdjwt.VerifiedSdJwtVcdm, len(batch))
 	for i, pc := range batch {
 		if pc.SdJwtVcdm == nil {
 			return fmt.Errorf("credential %d is not an SD-JWT-secured VCDM credential (format %q)", i, pc.Format)
 		}
-		verified[i] = pc.SdJwtVcdm
 	}
-	if err := vcdmsdjwt.CheckKeyBindingConfirmationUniqueness(verified); err != nil {
+	if err := requireUniqueHolderConfirmations(batch); err != nil {
 		return err
 	}
 	return requireIdenticalBatchInstances(batch, sdJwtVcdmBatchInstanceContent)

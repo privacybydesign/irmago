@@ -23,6 +23,9 @@ const StatusListTokenJWTContentType = "application/statuslist+jwt"
 // one constant serves both checks.
 const StatusListTokenCWTContentType = "application/statuslist+cwt"
 
+// StatusClaimKey is the JWT claim carrying a token's status (§6.2).
+const StatusClaimKey = "status"
+
 // StatusClaim is the shape of the `status` claim on a referenced token (an
 // SD-JWT VC's JSON claim, or an mdoc MSO's CBOR field — see
 // draft-ietf-oauth-status-list-15 §6.2/§6.3.2). The spec allows multiple

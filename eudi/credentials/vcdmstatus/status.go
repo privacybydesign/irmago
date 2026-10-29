@@ -13,9 +13,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 )
 
-// StatusKey is the JWT claim carrying an IETF Token Status List reference.
-const StatusKey = "status"
-
 // StatusReferences are the status mechanisms a VCDM credential can point to.
 // VCDM's own is the W3C `credentialStatus` (Bitstring Status List); as a JWT it
 // can also carry the IETF `status.status_list` claim, which is what veramo
@@ -38,7 +35,7 @@ func (r StatusReferences) HasAny() bool {
 // to name its status and fails cannot be shown as unrevocable.
 func ParseStatusReferences(document vcdm.Document) (StatusReferences, error) {
 	var refs StatusReferences
-	if raw, ok := document[StatusKey]; ok {
+	if raw, ok := document[statuslist.StatusClaimKey]; ok {
 		ref, err := statuslist.ParseStatusClaim(raw)
 		if err != nil {
 			return StatusReferences{}, err

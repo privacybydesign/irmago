@@ -21,32 +21,9 @@ type SdJwtKb string
 // disclosureSeparator is the ~ that terminates every SD-JWT component
 const disclosureSeparator = '~'
 
+// Create joins the issuer-signed JWT and every disclosure, each terminated by
+// a ~, in one allocation.
 func Create(issJwt IssuerSignedJwt, disclosures []EncodedDisclosure) SdJwt {
-	return concatDisclosures(string(issJwt), disclosures)
-}
-
-func CreateWithDisclosureContents(issJwt IssuerSignedJwt, disclosures []DisclosureContent) (SdJwt, error) {
-	var sb strings.Builder
-	sb.Grow(len(issJwt) + 1)
-	sb.WriteString(string(issJwt))
-	sb.WriteByte(disclosureSeparator)
-
-	for _, d := range disclosures {
-		encD, err := EncodeDisclosure(d)
-		if err != nil {
-			return "", err
-		}
-		sb.WriteString(string(encD))
-		sb.WriteByte(disclosureSeparator)
-	}
-
-	return SdJwt(sb.String()), nil
-}
-
-// concatDisclosures writes the issuer-signed JWT and every disclosure, each
-// terminated by a ~, into a single buffer sized up front so that the result is
-// assembled in one allocation.
-func concatDisclosures(issJwt string, disclosures []EncodedDisclosure) SdJwt {
 	size := len(issJwt) + 1
 	for _, d := range disclosures {
 		size += len(d) + 1
@@ -54,15 +31,25 @@ func concatDisclosures(issJwt string, disclosures []EncodedDisclosure) SdJwt {
 
 	var sb strings.Builder
 	sb.Grow(size)
-	sb.WriteString(issJwt)
+	sb.WriteString(string(issJwt))
 	sb.WriteByte(disclosureSeparator)
-
 	for _, d := range disclosures {
 		sb.WriteString(string(d))
 		sb.WriteByte(disclosureSeparator)
 	}
-
 	return SdJwt(sb.String())
+}
+
+func CreateWithDisclosureContents(issJwt IssuerSignedJwt, disclosures []DisclosureContent) (SdJwt, error) {
+	encoded := make([]EncodedDisclosure, len(disclosures))
+	for i, d := range disclosures {
+		encD, err := EncodeDisclosure(d)
+		if err != nil {
+			return "", err
+		}
+		encoded[i] = encD
+	}
+	return Create(issJwt, encoded), nil
 }
 
 func AddKeyBindingJwt(sdJwt SdJwt, kbjwt KeyBindingJwt) SdJwtKb {

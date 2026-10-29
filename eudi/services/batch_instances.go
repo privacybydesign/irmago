@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v4/jwt"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
@@ -104,7 +104,7 @@ func withoutKeys(payload sdjwt.ProcessedPayload, keys ...string) map[string]any 
 // regardless.
 func sdJwtVcBatchInstanceContent(pc *ParsedCredential) map[string]any {
 	return withoutKeys(pc.SdJwtVc.ProcessedSdJwtPayload,
-		sdjwt.ConfirmationKey, sdjwt.SdKey, sdjwt.SdAlgKey, sdjwtvc.StatusKey,
+		sdjwt.ConfirmationKey, sdjwt.SdKey, sdjwt.SdAlgKey, statuslist.StatusClaimKey,
 		jwt.JwtIDKey, jwt.IssuedAtKey)
 }
 
@@ -113,8 +113,8 @@ func sdJwtVcBatchInstanceContent(pc *ParsedCredential) map[string]any {
 // credentialStatus), its identifiers (jti and the credential id) and its iat.
 // credentialSubject.id is content and must match.
 func sdJwtVcdmBatchInstanceContent(pc *ParsedCredential) map[string]any {
-	return withoutKeys(pc.SdJwtVcdm.ProcessedSdJwtPayload,
-		sdjwt.ConfirmationKey, sdjwt.SdKey, sdjwt.SdAlgKey, sdjwtvc.StatusKey, vcdm.CredentialStatusKey,
+	return withoutKeys(sdjwt.ProcessedPayload(pc.SdJwtVcdm.Document),
+		sdjwt.ConfirmationKey, sdjwt.SdKey, sdjwt.SdAlgKey, statuslist.StatusClaimKey, vcdm.CredentialStatusKey,
 		jwt.JwtIDKey, vcdm.IDKey, jwt.IssuedAtKey)
 }
 

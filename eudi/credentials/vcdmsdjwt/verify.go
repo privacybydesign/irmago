@@ -17,7 +17,6 @@ import (
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
-	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
 // ClockSkewInSeconds is the tolerance applied when checking time-based claims
@@ -61,8 +60,7 @@ func CreateDefaultVerificationContext(trustedChain []byte) VerificationContext {
 
 // VerifiedSdJwtVcdm is the result of verifying an SD-JWT-secured VCDM
 // credential: the validated VCDM document (the disclosed logical document), the
-// SD-JWT registered claims that secured it, the disclosures, and — when present
-// — the verified key binding JWT.
+// SD-JWT registered claims that secured it, and the disclosures.
 type VerifiedSdJwtVcdm struct {
 	// Document is the disclosed, structurally-validated VCDM 2.0 document.
 	Document vcdm.Document
@@ -74,14 +72,6 @@ type VerifiedSdJwtVcdm struct {
 	// Disclosures are the decoded selective-disclosure values that were
 	// merged into Document.
 	Disclosures []sdjwt.DisclosureContent
-
-	// ProcessedSdJwtPayload is the full disclosed payload (== Document as a
-	// plain map), retained for hashing/storage parity with sdjwtvc.
-	ProcessedSdJwtPayload sdjwt.ProcessedPayload
-
-	// KeyBindingJwt is the verified KB-JWT payload, or nil when none is
-	// present (the holder-receipt case).
-	KeyBindingJwt *sdjwt.KeyBindingJwtPayload
 
 	rawSdJwtVcdm SdJwtVcdm
 }
@@ -102,41 +92,22 @@ func (v *VerifiedSdJwtVcdm) HolderPublicKey() (jwk.Key, error) {
 	return key, err
 }
 
-// processor is the base processor shared by holder-side and (future)
-// verifier-side verification.
+// processor verifies an SD-JWT-secured VCDM credential.
 type processor struct {
 	verificationContext VerificationContext
 	allowInsecureDidWeb bool
 }
 
-// keyBindingProcessor processes the KB-JWT of an SD-JWT-secured VCDM
-// credential. Implementations differ for holder receipt (must be absent) and
-// verifier-side disclosure (must be present and valid). Mirrors the sdjwtvc
-// seam so a verifier processor slots in later.
-type keyBindingProcessor interface {
-	ProcessAndVerifyKeyBindingJwt(
-		kbjwt *sdjwt.KeyBindingJwt,
-		rawSdJwtVcdm SdJwtVcdm,
-		registered *sdjwt.RegisteredClaims,
-	) (*sdjwt.KeyBindingJwtPayload, error)
-}
-
-func (p *processor) processAndVerify(
-	credential SdJwtVcdmKb,
-	kbProcessor keyBindingProcessor,
-) (*VerifiedSdJwtVcdm, error) {
+func (p *processor) processAndVerify(credential SdJwtVcdmKb) (*VerifiedSdJwtVcdm, error) {
 	issuerSignedJwt, disclosures, rawSdJwt, rawKbJwt, err := sdjwt.SplitKb(sdjwt.SdJwtKb(credential))
 	if err != nil {
 		return nil, err
 	}
-	raw := SdJwtVcdm(rawSdJwt)
-
-	registered, document, decodedDisclosures, processed, err := p.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
-	if err != nil {
-		return nil, err
+	if rawKbJwt != nil {
+		return nil, errors.New("key binding jwt found in SD-JWT-secured VCDM, but holder should not receive one from the issuer")
 	}
 
-	kbPayload, err := kbProcessor.ProcessAndVerifyKeyBindingJwt(rawKbJwt, raw, registered)
+	registered, document, decodedDisclosures, err := p.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
 	if err != nil {
 		return nil, err
 	}
@@ -146,12 +117,10 @@ func (p *processor) processAndVerify(
 	}
 
 	return &VerifiedSdJwtVcdm{
-		Document:              document,
-		RegisteredClaims:      *registered,
-		Disclosures:           decodedDisclosures,
-		ProcessedSdJwtPayload: *processed,
-		KeyBindingJwt:         kbPayload,
-		rawSdJwtVcdm:          raw,
+		Document:         document,
+		RegisteredClaims: *registered,
+		Disclosures:      decodedDisclosures,
+		rawSdJwtVcdm:     SdJwtVcdm(rawSdJwt),
 	}, nil
 }
 
@@ -183,38 +152,38 @@ func (p *processor) runStatusCheck(document vcdm.Document) error {
 func (p *processor) parseAndVerifyIssuerSignedJwt(
 	signedJwt sdjwt.IssuerSignedJwt,
 	disclosures []sdjwt.EncodedDisclosure,
-) (*sdjwt.RegisteredClaims, vcdm.Document, []sdjwt.DisclosureContent, *sdjwt.ProcessedPayload, error) {
+) (*sdjwt.RegisteredClaims, vcdm.Document, []sdjwt.DisclosureContent, error) {
 	// Step 1: verify the issuer signature (X.509 x5c or DID kid) and the `typ`.
 	token, leafCert, signerDid, err := p.decodeJwtAndVerifyFromHeader([]byte(signedJwt))
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Step 2: extract SD-JWT / JWT registered claims and verify JWT time fields.
-	registered, err := extractRegisteredClaims(token)
+	registered, err := sdjwt.ExtractRegisteredClaims(token)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
-	if err := p.verifyTimeFields(registered); err != nil {
-		return nil, nil, nil, nil, err
+	if err := registered.VerifyTimes(p.verificationContext.Clock.Now(), ClockSkewInSeconds*time.Second); err != nil {
+		return nil, nil, nil, err
 	}
 
 	// Step 3: verify and merge disclosures into the full logical payload.
 	claims, err := sdjwt.ExtractClaimsAndDisclosureDigestsFromToken(token)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
 	}
 	signedInPlain, err := validationPropertiesInPlain(claims)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 	processed, decodedDisclosures, err := sdjwt.VerifyAndProcessDisclosures(registered.SdAlg, &claims, disclosures)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 	for _, key := range vcdm.ValidationProperties {
 		if _, ok := processed[key]; ok && !signedInPlain[key] {
-			return nil, nil, nil, nil, errSelectivelyDisclosable(key)
+			return nil, nil, nil, errSelectivelyDisclosable(key)
 		}
 	}
 
@@ -223,15 +192,17 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 	// fine but is not ours — reject it here rather than mis-validate.
 	payload := map[string]any(processed)
 	if !vcdm.IsVCDM(payload) {
-		return nil, nil, nil, nil, fmt.Errorf(
+		return nil, nil, nil, fmt.Errorf(
 			"payload is not an SD-JWT-secured VCDM credential (detected data model: %s)", vcdm.Detect(payload))
 	}
 	document := vcdm.Document(payload)
 
 	// Step 5 (VCDM 2.0 §7.1): structural validation AFTER proof verification.
 	if err := document.Validate(); err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
+	// Validate has checked the issuer.
+	issuerID, _ := document.IssuerID()
 
 	// The document's validFrom/validUntil are not checked against the clock:
 	// they are the validity of the data, which is for a verifier to judge
@@ -240,15 +211,9 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 
 	// Step 6 (VC-JOSE-COSE §3.2.1): when the JWT `iss` claim is present it MUST
 	// equal the VCDM `issuer`.
-	if registered.Issuer != nil {
-		issuerID, err := document.IssuerID()
-		if err != nil {
-			return nil, nil, nil, nil, err
-		}
-		if *registered.Issuer != issuerID {
-			return nil, nil, nil, nil, fmt.Errorf(
-				"JWT iss %q does not match VCDM issuer %q", *registered.Issuer, issuerID)
-		}
+	if registered.Issuer != nil && *registered.Issuer != issuerID {
+		return nil, nil, nil, fmt.Errorf(
+			"JWT iss %q does not match VCDM issuer %q", *registered.Issuer, issuerID)
 	}
 
 	// Step 7: the signer must be the issuer. An x5c-authenticated issuer must
@@ -257,22 +222,12 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 	// is the key of the DID it was resolved from: `iss`, or, without `iss`, the
 	// DID of an absolute `kid` (VC-JOSE-COSE §4.2), which must then be the
 	// `issuer` itself.
-	if signerDid != "" {
-		issuerID, err := document.IssuerID()
-		if err != nil {
-			return nil, nil, nil, nil, err
-		}
-		if signerDid != issuerID {
-			return nil, nil, nil, nil, fmt.Errorf("signed with a key of %q, not of the VCDM issuer %q", signerDid, issuerID)
-		}
+	if signerDid != "" && signerDid != issuerID {
+		return nil, nil, nil, fmt.Errorf("signed with a key of %q, not of the VCDM issuer %q", signerDid, issuerID)
 	}
 	if leafCert != nil {
-		issuerID, err := document.IssuerID()
-		if err != nil {
-			return nil, nil, nil, nil, err
-		}
 		if err := utils.VerifyCertificateUri(leafCert, issuerID); err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("VCDM issuer %q is not a SAN of the issuer certificate: %w", issuerID, err)
+			return nil, nil, nil, fmt.Errorf("VCDM issuer %q is not a SAN of the issuer certificate: %w", issuerID, err)
 		}
 	}
 
@@ -281,7 +236,7 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 		decodedValues[i] = *d
 	}
 
-	return registered, document, decodedValues, &processed, nil
+	return registered, document, decodedValues, nil
 }
 
 // decodeJwtAndVerifyFromHeader parses the issuer-signed JWT, verifying its
@@ -324,88 +279,6 @@ func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, *
 	return token, chain[0], "", nil
 }
 
-// extractRegisteredClaims reads the SD-JWT / JWT registered claims from a
-// verified token. `iss` is optional here (the VCDM `issuer` field is the
-// authoritative issuer; iss is cross-checked against it in step 6 when present).
-func extractRegisteredClaims(token jwt.Token) (*sdjwt.RegisteredClaims, error) {
-	sub, subPresent := token.Subject()
-	iss, issPresent := token.Issuer()
-
-	sdAlg := iana.SHA256
-	if token.Has(sdjwt.SdAlgKey) {
-		h := getOptional[string](token, sdjwt.SdAlgKey)
-		if !iana.IsSupportedHashingAlgorithm(iana.HashingAlgorithm(h)) {
-			return nil, fmt.Errorf("unsupported _sd_alg: %s", h)
-		}
-		sdAlg = iana.HashingAlgorithm(h)
-	}
-
-	var sd []sdjwt.HashedDisclosure
-	sdRaw, err := jwt.Get[any](token, sdjwt.SdKey)
-	if err == nil {
-		sd, err = sdjwt.ParseSdField(sdRaw)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse _sd field: %v", err)
-		}
-	}
-
-	var cnf *sdjwt.CnfField
-	cnfRaw, err := jwt.Get[any](token, sdjwt.ConfirmationKey)
-	if err == nil {
-		cnf, err = sdjwt.ParseConfirmField(cnfRaw)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse cnf field: %v", err)
-		}
-	}
-
-	registered := &sdjwt.RegisteredClaims{
-		Sd:      sd,
-		SdAlg:   sdAlg,
-		Confirm: cnf,
-	}
-	if subPresent {
-		registered.Subject = &sub
-	}
-	if issPresent {
-		registered.Issuer = &iss
-	}
-
-	if exp, ok := token.Expiration(); ok {
-		v := timeToUnixOrZero(exp)
-		registered.Expiry = &v
-	}
-	if iat, ok := token.IssuedAt(); ok {
-		v := timeToUnixOrZero(iat)
-		registered.IssuedAt = &v
-	}
-	if nbf, ok := token.NotBefore(); ok {
-		v := timeToUnixOrZero(nbf)
-		registered.NotBefore = &v
-	}
-
-	return registered, nil
-}
-
-// verifyTimeFields validates the JWT-level iat/exp/nbf claims with clock skew.
-// This is the securing-level temporal check; the VCDM validity period
-// (validFrom/validUntil) is checked separately on the document.
-func (p *processor) verifyTimeFields(registered *sdjwt.RegisteredClaims) error {
-	now := p.verificationContext.Clock.Now().Unix()
-	minSkewNow := now - ClockSkewInSeconds
-	maxSkewNow := now + ClockSkewInSeconds
-
-	if nbf := registered.NotBefore; nbf != nil && maxSkewNow < *nbf {
-		return fmt.Errorf("verification before nbf: now %v + skew %v < nbf %v", now, ClockSkewInSeconds, *nbf)
-	}
-	if iat := registered.IssuedAt; iat != nil && maxSkewNow < *iat {
-		return fmt.Errorf("verification before issued at: now %v + skew %v < iat %v", now, ClockSkewInSeconds, *iat)
-	}
-	if exp := registered.Expiry; exp != nil && minSkewNow > *exp {
-		return fmt.Errorf("verification after expiry: now %v - skew %v > exp %v", now, ClockSkewInSeconds, *exp)
-	}
-	return nil
-}
-
 // ============================= Holder processing =====================================
 
 // HolderVerificationProcessor verifies an SD-JWT-secured VCDM credential as
@@ -426,42 +299,10 @@ func (v *HolderVerificationProcessor) SetAllowInsecureDidWeb(allow bool) {
 	v.allowInsecureDidWeb = allow
 }
 
-type holderKeyBindingProcessor struct{}
-
-func (holderKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(
-	kbjwt *sdjwt.KeyBindingJwt,
-	_ SdJwtVcdm,
-	_ *sdjwt.RegisteredClaims,
-) (*sdjwt.KeyBindingJwtPayload, error) {
-	if kbjwt != nil {
-		return nil, errors.New("key binding jwt found in SD-JWT-secured VCDM, but holder should not receive one from the issuer")
-	}
-	return nil, nil
-}
-
 // ParseAndVerifySdJwtVcdm verifies an SD-JWT-secured VCDM credential received by
 // the holder, using the options in the verification context.
 func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVcdm(credential SdJwtVcdmKb) (*VerifiedSdJwtVcdm, error) {
-	return v.processor.processAndVerify(credential, holderKeyBindingProcessor{})
-}
-
-// ====== Utils ======
-
-func getOptional[T any](token jwt.Token, key string) T {
-	value, err := jwt.Get[T](token, key)
-	if err != nil {
-		return *new(T)
-	}
-	return value
-}
-
-// timeToUnixOrZero returns 0 for the zero time (a missing claim) instead of
-// time.Time{}.Unix() (a large negative), matching sdjwtvc.
-func timeToUnixOrZero(t time.Time) int64 {
-	if t.IsZero() {
-		return 0
-	}
-	return t.Unix()
+	return v.processor.processAndVerify(credential)
 }
 
 // validationPropertiesInPlain returns which of vcdm.ValidationProperties the

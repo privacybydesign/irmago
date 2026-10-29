@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -58,6 +59,26 @@ type CnfField struct {
 	Jwk *jwk.Key `json:"jwk,omitempty"`
 	// Note: kid can be any value, but for now we only support the did:jwk and did:key methods, so it should be a string DID URL referencing a key in the database with keybinding keys
 	Kid *string `json:"kid,omitempty"`
+}
+
+// DuplicateConfirmation returns the index of the first confirmation that names
+// the same holder key as another one, or -1 when every key is distinct. Nil
+// confirmations are skipped. Each one-time-use copy in a batch must be bound
+// to its own key, or presentations of the copies can be linked.
+func DuplicateConfirmation(cnfs []*CnfField) int {
+	for i, cnf := range cnfs {
+		if cnf == nil {
+			continue
+		}
+		for _, other := range cnfs[i+1:] {
+			if other != nil &&
+				((cnf.Jwk != nil && other.Jwk != nil && jwk.Equal(*other.Jwk, *cnf.Jwk)) ||
+					(cnf.Kid != nil && other.Kid != nil && *other.Kid == *cnf.Kid)) {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 type KeyBindingStorage interface {
@@ -131,18 +152,17 @@ func (s *InMemoryKeyBindingStorage) RemoveAllPrivateKeys() error {
 	return nil
 }
 
-// KeyBinder is an interface for creating a key binding jwt from a hash.
-// Can be used to move creating the kbjwt to a server.
+// KeyBinder holds the holder's private keys and signs with them. Can be used to
+// move the signing to a server.
 type KeyBinder interface {
 	// Creates a batch of key pairs and returns the pub keys.
-	// These pub keys should be passed in when calling `CreateKeyBindingJwt()`.
+	// These pub keys should be passed in when calling `CreateHolderSignedJwt()`.
 	CreateKeyPairs(num uint) ([]jwk.Key, error)
-	// Creates a batch of key pairs and returns the proofs using the provided ProofBuilder.
-	// Takes in the hash over the issuer signed JWT and the selected disclosures
-	CreateKeyBindingJwt(hash string, holderPubKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error)
-	// Signs a JWT with the given claims using the holder private key of holderPubKey, for
-	// holder proofs other than a KB-JWT, such as the Verifiable Presentation that envelopes
-	// an SD-JWT-secured VCDM credential. The header gets alg ES256 on top of customHeaders.
+	// Signs a JWT with the given claims using the holder private key of holderPubKey: a
+	// KB-JWT (see CreateKbJwt), or the Verifiable Presentation that envelopes an
+	// SD-JWT-secured VCDM credential. The header gets alg ES256 on top of customHeaders.
+	// The implementation sets iat to the time of signing by its own clock, replacing any
+	// iat in claims, so a binder on a server stamps the server's time.
 	CreateHolderSignedJwt(holderPubKey jwk.Key, customHeaders map[string]any, claims map[string]any) (string, error)
 	// Takes in a list of pub keys for which it should delete the corresponding private keys
 	RemovePrivateKeys(pubKeys []jwk.Key) error
@@ -198,34 +218,8 @@ func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	return result, nil
 }
 
-func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error) {
-	payload := KeyBindingJwtPayload{
-		IssuerSignedJwtHash: hash,
-		Nonce:               nonce,
-		IssuedAt:            c.clock.Now().Unix(),
-		Audience:            audience,
-	}
-	json, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-	customHeaders := map[string]any{
-		"typ": KbJwtTyp,
-	}
-
-	privKey, err := c.storage.GetAndRemovePrivateKey(holderKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve private key: %v", err)
-	}
-
-	jwtCreator := NewJwtCreator(privKey)
-
-	jwt, err := jwtCreator.CreateSignedJwt(customHeaders, string(json))
-	return KeyBindingJwt(jwt), err
-}
-
 func (c *DefaultKeyBinder) CreateHolderSignedJwt(holderKey jwk.Key, customHeaders map[string]any, claims map[string]any) (string, error) {
-	json, err := json.Marshal(claims)
+	json, err := json.Marshal(WithIssuedAt(claims, c.clock.Now()))
 	if err != nil {
 		return "", err
 	}
@@ -257,7 +251,25 @@ func CreateKbJwt(sdJwt SdJwt, creator KeyBinder, nonce string, audience string) 
 		return "", err
 	}
 
-	return creator.CreateKeyBindingJwt(hash, holderKey, nonce, audience)
+	// The binder adds iat.
+	payload := map[string]any{
+		"sd_hash": hash,
+		"nonce":   nonce,
+		"aud":     audience,
+	}
+	kbjwt, err := creator.CreateHolderSignedJwt(holderKey, map[string]any{"typ": KbJwtTyp}, payload)
+	return KeyBindingJwt(kbjwt), err
+}
+
+// WithIssuedAt returns a copy of claims with iat set to now, for a KeyBinder
+// implementation to stamp the time of signing.
+func WithIssuedAt(claims map[string]any, now time.Time) map[string]any {
+	stamped := maps.Clone(claims)
+	if stamped == nil {
+		stamped = map[string]any{}
+	}
+	stamped[jwt.IssuedAtKey] = now.Unix()
+	return stamped
 }
 
 func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwt) (iana.HashingAlgorithm, jwk.Key, error) {

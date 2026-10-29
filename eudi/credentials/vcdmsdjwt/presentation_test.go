@@ -96,25 +96,6 @@ func TestCreateEnvelopedPresentation_SignedWithHolderKey(t *testing.T) {
 	require.True(t, strings.HasSuffix(string(selected), "~"))
 }
 
-func TestPresent_WithoutHolderBindingSendsTheSdJwt(t *testing.T) {
-	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
-	selected, _ := issueHolderBoundSdJwtVcdm(t, keyBinder)
-
-	presentation, err := Present(selected, keyBinder, false, presentationNonce, presentationAudience)
-	require.NoError(t, err)
-	require.Equal(t, string(selected), presentation, "without holder binding the SD-JWT goes out as is, with no presentation and no KB-JWT")
-}
-
-func TestPresent_WithHolderBindingSendsASignedPresentation(t *testing.T) {
-	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
-	selected, holderKey := issueHolderBoundSdJwtVcdm(t, keyBinder)
-
-	presentation, err := Present(selected, keyBinder, true, presentationNonce, presentationAudience)
-	require.NoError(t, err)
-	_, err = jws.Verify([]byte(presentation), jws.WithKey(jwa.ES256(), holderKey))
-	require.NoError(t, err, "presentation must verify with the holder key from cnf")
-}
-
 func TestCreateEnvelopedPresentation_HolderBindingWithoutCnfFails(t *testing.T) {
 	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 	claims := vcdmClaims(t, "2024-01-01T00:00:00Z", "2034-01-01T00:00:00Z")
