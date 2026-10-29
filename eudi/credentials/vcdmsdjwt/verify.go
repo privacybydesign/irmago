@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
@@ -503,10 +504,8 @@ func hasDisclosureDigest(value any) bool {
 			}
 		}
 	case []any:
-		for _, child := range v {
-			if hasDisclosureDigest(child) {
-				return true
-			}
+		if slices.ContainsFunc(v, hasDisclosureDigest) {
+			return true
 		}
 	}
 	return false

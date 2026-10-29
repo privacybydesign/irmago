@@ -598,4 +598,3 @@ func TestRevocationService_InstanceWithoutItsCheckerKeepsItsStatus(t *testing.T)
 	require.Zero(t, server.requests)
 	require.Empty(t, store.written)
 }
-
