@@ -166,7 +166,10 @@ func (p *processor) runStatusCheck(document vcdm.Document) error {
 	if err != nil {
 		return err
 	}
-	status, err := vcdmstatus.CheckStatus(context.Background(), refs, issuer, p.verificationContext.StatusChecker, p.verificationContext.BitstringStatusChecker)
+	status, err := vcdmstatus.CheckStatus(context.Background(), refs, issuer, vcdmstatus.Checkers{
+		TokenStatusList: p.verificationContext.StatusChecker,
+		Bitstring:       p.verificationContext.BitstringStatusChecker,
+	})
 	if err != nil {
 		return err
 	}

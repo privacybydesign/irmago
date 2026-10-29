@@ -167,10 +167,6 @@ type VcdmBatchInstance struct {
 	// ([]bitstringstatus.Entry). Empty when there are none.
 	BitstringStatusEntries datatypes.JSON `gorm:"type:JSON"`
 
-	// HasStatusReference is set when either reference is present, so the
-	// queries for status-checked instances need not inspect the JSON.
-	HasStatusReference bool `gorm:"not null;default:false;index"`
-
 	// LastKnownStatus is the most recently observed status, a
 	// statuslist.Status; 0 (StatusUnknown) until checked.
 	LastKnownStatus uint8 `gorm:"default:0"`
@@ -181,6 +177,12 @@ type VcdmBatchInstance struct {
 }
 
 func (VcdmBatchInstance) TableName() string { return "vcdm_batch_instances" }
+
+// HasStatusReference reports whether the instance names its status in either
+// way, so the wallet can check whether it is revoked.
+func (i *VcdmBatchInstance) HasStatusReference() bool {
+	return i.StatusListURI != nil || len(i.BitstringStatusEntries) > 0
+}
 
 // StatusReference returns the instance's IETF Token Status List reference, or
 // nil when it has none.

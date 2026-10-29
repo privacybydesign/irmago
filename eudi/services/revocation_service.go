@@ -10,7 +10,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
-	"github.com/privacybydesign/irmago/internal/common"
 	"gorm.io/datatypes"
 )
 
@@ -28,23 +27,18 @@ import (
 // VALID counts as revoked (INVALID, SUSPENDED, application-specific), except
 // UNKNOWN (no status information yet), which stays advisory not-revoked.
 type RevocationService struct {
-	checker *statuslist.Checker
-	stores  []db.CredentialStatusStore
-
-	// bitstring and bitstringStores cover W3C Bitstring Status List entries;
-	// see WithBitstringStatus.
-	bitstring       *bitstringstatus.Checker
-	bitstringStores []db.BitstringStatusStore
+	checker   *statuslist.Checker
+	bitstring *bitstringstatus.Checker
+	stores    []db.CredentialStatusStore
 }
 
-// NewRevocationService returns a service backed by the given Token Status
-// List Checker, consulting every given store for status-referenced
-// instances. A nil checker makes RefreshStatuses skip these stores; the stored
-// status is still read. One store per credential
-// format that carries a Token Status List reference (SD-JWT VC, mso_mdoc and
-// SD-JWT-secured VCDM).
-func NewRevocationService(checker *statuslist.Checker, stores ...db.CredentialStatusStore) *RevocationService {
-	return &RevocationService{checker: checker, stores: stores}
+// NewRevocationService returns a service that checks IETF Token Status Lists
+// with checker and W3C Bitstring Status Lists with bitstring, consulting every
+// given store, one per credential format, for status-referenced instances. An
+// instance whose reference needs a nil checker keeps its stored status; with
+// both nil, RefreshStatuses does nothing, and the stored status is still read.
+func NewRevocationService(checker *statuslist.Checker, bitstring *bitstringstatus.Checker, stores ...db.CredentialStatusStore) *RevocationService {
+	return &RevocationService{checker: checker, bitstring: bitstring, stores: stores}
 }
 
 // statusRevoked is the one revocation policy shared by every path: a credential
@@ -85,9 +79,8 @@ func (s *RevocationService) IsStoredStatusRevoked(status uint8) bool {
 // previous stored status, so a failure never clears a revocation, and a batch
 // none of whose instances could be checked is left alone. A store that cannot
 // list its instances is skipped the same way, but its error is returned after
-// the other stores have been swept. A nil checker skips the Token Status List
-// stores. Cancelling ctx is the one thing that does stop the sweep, keeping
-// whatever was already written back.
+// the other stores have been swept. Cancelling ctx is the one thing that does
+// stop the sweep, keeping whatever was already written back.
 //
 // Returns how many batches' statuses moved. Re-confirmations and failures
 // count for nothing; callers use the count to decide whether anything happened
@@ -95,25 +88,13 @@ func (s *RevocationService) IsStoredStatusRevoked(status uint8) bool {
 // did write back, and the cancellation. Both matter — the writebacks are
 // committed, so a caller that discards the count on an error loses those
 // changes for good.
-//
-// The Bitstring stores (see WithBitstringStatus) are swept after the Token
-// Status List ones, the same way.
 func (s *RevocationService) RefreshStatuses(ctx context.Context) (changed int, err error) {
-	var sweeps []func() (int, error)
-	if s.checker != nil {
-		for _, store := range s.stores {
-			sweeps = append(sweeps, func() (int, error) { return s.refreshStoreStatuses(ctx, store) })
-		}
+	if s.checker == nil && s.bitstring == nil {
+		return 0, nil
 	}
-	if s.bitstring != nil {
-		for _, store := range s.bitstringStores {
-			sweeps = append(sweeps, func() (int, error) { return s.refreshBitstringStatuses(ctx, store) })
-		}
-	}
-
 	var errs []error
-	for _, sweep := range sweeps {
-		n, err := sweep()
+	for _, store := range s.stores {
+		n, err := s.refreshStoreStatuses(ctx, store)
 		changed += n
 		if err == nil {
 			continue
@@ -136,48 +117,31 @@ func (s *RevocationService) refreshStoreStatuses(ctx context.Context, store db.C
 		return 0, fmt.Errorf("load instances: %w", err)
 	}
 
-	// One Refresh per URI populates the cache; the per-instance Check calls
-	// below then read from the warm cache (no extra HTTP traffic).
-	refreshed := map[string]bool{}
-	for _, inst := range instances {
-		uri := inst.StatusListURI
-		if _, seen := refreshed[uri]; seen {
-			continue
-		}
-		// Stop between URIs, so shutdown does not wait on the remaining ones.
-		if ctx.Err() != nil {
-			return 0, ctx.Err()
-		}
-		if _, err := s.checker.Refresh(ctx, statuslist.Reference{URI: uri}); err != nil {
-			// A fetch aborted by cancellation is not a fail-soft per-URI error:
-			// it means the sweep was cut short, which the caller has to be able
-			// to tell from a sweep that looked at everything.
-			if ctx.Err() != nil {
-				return 0, ctx.Err()
-			}
-			eudi.Logger.Warnf("status refresh: refresh %s failed: %v", common.SanitizeForLog(uri), err)
-			refreshed[uri] = false
-			continue
-		}
-		refreshed[uri] = true
-	}
-
+	lists := newSweepLists(s)
 	for _, batch := range groupByBatch(instances, func(inst db.CredentialStatusInstance) datatypes.UUID { return inst.BatchID }) {
 		var combined batchStatus
 		swept := make([]sweptInstance, len(batch))
 		for i, inst := range batch {
 			swept[i] = sweptInstance{id: inst.InstanceID, lastKnown: inst.LastKnownStatus}
-			if !refreshed[inst.StatusListURI] {
-				combined.addStored(inst.LastKnownStatus)
-				continue
+			// Stop between instances, so shutdown does not wait on the rest.
+			if ctx.Err() != nil {
+				return changed, ctx.Err()
 			}
-			st, err := s.checker.Check(ctx, statuslist.Reference{URI: inst.StatusListURI, Index: inst.StatusListIdx})
+			status, err := instanceStatus(ctx, inst, lists)
 			if err != nil {
-				eudi.Logger.Warnf("status refresh: check idx %d on %s failed: %v", inst.StatusListIdx, common.SanitizeForLog(inst.StatusListURI), err)
+				// A fetch aborted by cancellation is not a fail-soft error: it
+				// means the sweep was cut short, which the caller has to be able
+				// to tell from a sweep that looked at everything.
+				if ctx.Err() != nil {
+					return changed, ctx.Err()
+				}
+				if !errors.Is(err, errListUnavailable) {
+					eudi.Logger.Warnf("status refresh: instance %s: %v", inst.InstanceID, err)
+				}
 				combined.addStored(inst.LastKnownStatus)
 				continue
 			}
-			combined.addChecked(st)
+			combined.addChecked(status)
 		}
 		if storeBatchStatus(store, swept, combined) {
 			changed++

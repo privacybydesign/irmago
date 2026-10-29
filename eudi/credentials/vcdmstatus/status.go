@@ -58,35 +58,58 @@ func ParseStatusReferences(document vcdm.Document) (StatusReferences, error) {
 	return refs, nil
 }
 
+// Lists reads the status lists CheckStatus consults. Issuance reads them
+// through Checkers; the wallet's status sweep through a cache that fetches each
+// list once per sweep.
+type Lists interface {
+	// TokenStatus returns the status at ref in an IETF Token Status List.
+	TokenStatus(ctx context.Context, ref statuslist.Reference) (statuslist.Status, error)
+	// BitstringValue returns the value of entry in its W3C Bitstring Status
+	// List, which must have been issued by issuer.
+	BitstringValue(ctx context.Context, entry bitstringstatus.Entry, issuer string) (uint, error)
+}
+
 // CheckStatus returns the credential's current status: StatusValid only when
-// every reference reads valid. A reference whose checker is not configured is
-// skipped, as SD-JWT VC skips its check without a StatusChecker. A fetch or
-// verification failure is an error. issuer is the credential's `issuer`, which
-// a Bitstring status list must also have.
-func CheckStatus(
-	ctx context.Context,
-	refs StatusReferences,
-	issuer string,
-	tokenStatusList *statuslist.Checker,
-	bitstring *bitstringstatus.Checker,
-) (statuslist.Status, error) {
+// every reference reads valid. issuer is the credential's `issuer`, which a
+// Bitstring status list must also have. A list that cannot be read is an
+// error.
+func CheckStatus(ctx context.Context, refs StatusReferences, issuer string, lists Lists) (statuslist.Status, error) {
 	status := statuslist.StatusValid
-	if refs.TokenStatusList != nil && tokenStatusList != nil {
-		s, err := tokenStatusList.Check(ctx, *refs.TokenStatusList)
+	if refs.TokenStatusList != nil {
+		s, err := lists.TokenStatus(ctx, *refs.TokenStatusList)
 		if err != nil {
 			return statuslist.StatusUnknown, fmt.Errorf("status list check failed: %w", err)
 		}
 		status = statuslist.WorseStatus(status, s)
 	}
-	if bitstring == nil {
-		return status, nil
-	}
 	for _, entry := range refs.Bitstring {
-		value, err := bitstring.Check(ctx, entry, issuer)
+		value, err := lists.BitstringValue(ctx, entry, issuer)
 		if err != nil {
 			return statuslist.StatusUnknown, fmt.Errorf("bitstring status check failed: %w", err)
 		}
 		status = statuslist.WorseStatus(status, bitstringstatus.EntryStatus(entry, value))
 	}
 	return status, nil
+}
+
+// Checkers reads status lists straight from the two checkers. A reference
+// whose checker is nil reads as valid: the check is skipped, as SD-JWT VC skips
+// its check without a StatusChecker.
+type Checkers struct {
+	TokenStatusList *statuslist.Checker
+	Bitstring       *bitstringstatus.Checker
+}
+
+func (c Checkers) TokenStatus(ctx context.Context, ref statuslist.Reference) (statuslist.Status, error) {
+	if c.TokenStatusList == nil {
+		return statuslist.StatusValid, nil
+	}
+	return c.TokenStatusList.Check(ctx, ref)
+}
+
+func (c Checkers) BitstringValue(ctx context.Context, entry bitstringstatus.Entry, issuer string) (uint, error) {
+	if c.Bitstring == nil {
+		return 0, nil
+	}
+	return c.Bitstring.Check(ctx, entry, issuer)
 }

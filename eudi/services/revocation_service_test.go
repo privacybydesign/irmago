@@ -10,7 +10,7 @@ import (
 // IsStoredStatusRevoked is the one revocation policy every read path uses:
 // anything other than valid is revoked, except unknown (not yet checked).
 func Test_RevocationService_IsStoredStatusRevoked(t *testing.T) {
-	rc := NewRevocationService(nil)
+	rc := NewRevocationService(nil, nil)
 	for status, want := range map[statuslist.Status]bool{
 		statuslist.StatusValid:               false,
 		statuslist.StatusInvalid:             true,

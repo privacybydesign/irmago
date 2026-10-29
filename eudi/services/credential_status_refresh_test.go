@@ -19,7 +19,7 @@ import (
 
 // newRefreshService builds a RevocationService for the status-refresh tests.
 func newRefreshService(db *gorm.DB, checker *statuslist.Checker) *RevocationService {
-	return NewRevocationService(checker, dbpkg.NewSdJwtVcStore(db))
+	return NewRevocationService(checker, nil, dbpkg.NewSdJwtVcStore(db))
 }
 
 func seedBatch(t *testing.T, db *gorm.DB, hash, issuer string, instances []models.SdJwtVcBatchInstance) *models.SdJwtVcBatch {
@@ -313,7 +313,7 @@ func Test_RefreshStatuses_OneStoreFailure_DoesNotAbortSweep(t *testing.T) {
 
 	// The failing store comes first, so a sweep that stops at it never
 	// reaches the working one.
-	svc := NewRevocationService(checker, failingStatusStore{}, dbpkg.NewSdJwtVcStore(db))
+	svc := NewRevocationService(checker, nil, failingStatusStore{}, dbpkg.NewSdJwtVcStore(db))
 	changed, err := svc.RefreshStatuses(context.Background())
 	require.ErrorContains(t, err, "store unavailable", "the failing store is still reported")
 	require.Equal(t, 1, changed, "the working store is swept anyway")

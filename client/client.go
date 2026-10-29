@@ -164,8 +164,7 @@ func New(
 		Clock:       eudi_jwt.NewSystemClock(),
 	})
 	vcdmCredentialStore := db.NewVcdmStore(eudiStorage.Db())
-	revocationService := services.NewRevocationService(statusChecker, sdjwtCredentialStore, mdocCredentialStore, vcdmCredentialStore).
-		WithBitstringStatus(bitstringStatusChecker, vcdmCredentialStore)
+	revocationService := services.NewRevocationService(statusChecker, bitstringStatusChecker, sdjwtCredentialStore, mdocCredentialStore, vcdmCredentialStore)
 
 	// Rewrite any credential hash still computed under an older definition, and
 	// drop the duplicates that older definition let in. Runs before

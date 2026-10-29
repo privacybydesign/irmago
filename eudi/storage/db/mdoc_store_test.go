@@ -319,8 +319,8 @@ func TestMdocStore_ListInstancesWithStatusReference(t *testing.T) {
 	require.Len(t, got, 1)
 	require.Equal(t, withStatus.Instances[0].ID, got[0].InstanceID)
 	require.Equal(t, withStatus.ID, got[0].BatchID)
-	require.Equal(t, uri, got[0].StatusListURI)
-	require.Equal(t, idx, got[0].StatusListIdx)
+	require.Equal(t, &uri, got[0].StatusListURI)
+	require.Equal(t, &idx, got[0].StatusListIdx)
 	require.Equal(t, uint8(1), got[0].LastKnownStatus)
 }
 

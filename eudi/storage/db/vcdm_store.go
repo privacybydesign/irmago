@@ -48,11 +48,9 @@ type VcdmStore interface {
 	DeleteBatchByHashAndFormat(hash string, format models.CredentialFormat) error
 
 	// A VCDM credential names its status by an IETF status_list reference, by
-	// W3C Bitstring Status List entries, or both. CredentialStatusStore lists
-	// the instances with only the former, BitstringStatusStore the rest;
-	// ListStatusReferencedInstanceStatuses reports every instance with either.
+	// W3C Bitstring Status List entries, or both; an instance is listed with
+	// all of them.
 	CredentialStatusStore
-	BitstringStatusStore
 }
 
 type vcdmStore struct {
@@ -190,36 +188,34 @@ func (s *vcdmStore) DeleteBatchByHashAndFormat(hash string, format models.Creden
 	return s.DeleteBatch(batch.ID)
 }
 
-func (s *vcdmStore) ListInstancesWithStatusReference() ([]CredentialStatusInstance, error) {
-	return vcdmStatusTables.listInstancesWithStatusReference(s.db.Where("bitstring_status_entries IS NULL"))
-}
+// vcdmStatusReferenced selects the instances with a status reference of either
+// kind.
+const vcdmStatusReferenced = "(vcdm_batch_instances.status_list_uri IS NOT NULL OR vcdm_batch_instances.bitstring_status_entries IS NOT NULL)"
 
-func (s *vcdmStore) ListInstancesWithBitstringStatus() ([]BitstringStatusInstance, error) {
-	var out []BitstringStatusInstance
+func (s *vcdmStore) ListInstancesWithStatusReference() ([]CredentialStatusInstance, error) {
+	var out []CredentialStatusInstance
 	err := s.db.
 		Model(&models.VcdmBatchInstance{}).
 		Select("vcdm_batch_instances.id AS instance_id, " +
 			"vcdm_batch_instances.vcdm_batch_id AS batch_id, " +
+			"vcdm_batch_instances.last_known_status AS last_known_status, " +
 			"vcdm_batch_instances.status_list_uri AS status_list_uri, " +
 			"vcdm_batch_instances.status_list_idx AS status_list_idx, " +
-			"vcdm_batch_instances.last_known_status AS last_known_status, " +
-			"vcdm_batches.issuer_identifier AS issuer, " +
-			"vcdm_batch_instances.bitstring_status_entries AS entries").
+			"vcdm_batch_instances.bitstring_status_entries AS bitstring_entries, " +
+			"vcdm_batches.issuer_identifier AS issuer").
 		Joins("JOIN vcdm_batches ON vcdm_batches.id = vcdm_batch_instances.vcdm_batch_id").
-		Where("vcdm_batch_instances.bitstring_status_entries IS NOT NULL").
+		Where(vcdmStatusReferenced).
 		Scan(&out).Error
 	return out, err
 }
 
-// ListStatusReferencedInstanceStatuses differs from the shared query in what
-// counts as referenced: an IETF reference or Bitstring entries.
 func (s *vcdmStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error) {
 	var out []BatchInstanceStatus
 	err := s.db.
 		Model(&models.VcdmBatchInstance{}).
 		Select("vcdm_batches.hash AS hash, vcdm_batch_instances.last_known_status AS last_known_status").
 		Joins("JOIN vcdm_batches ON vcdm_batches.id = vcdm_batch_instances.vcdm_batch_id").
-		Where("vcdm_batch_instances.has_status_reference = ?", true).
+		Where(vcdmStatusReferenced).
 		Scan(&out).Error
 	return out, err
 }

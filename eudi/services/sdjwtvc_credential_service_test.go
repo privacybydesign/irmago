@@ -1454,7 +1454,7 @@ func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesys
 		fileStorage:           fileStorageMock,
 		currentLocale:         clientmodels.NewCurrentLocale("en"),
 		// BatchRevocation reads the same mock store; no live checker needed.
-		revocation: NewRevocationService(nil, storeMock),
+		revocation: NewRevocationService(nil, nil, storeMock),
 	}
 }
 

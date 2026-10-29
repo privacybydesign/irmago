@@ -54,7 +54,7 @@ func newMdocTestEnv(t *testing.T) *mdocTestEnv {
 		db:      d,
 		store:   store,
 		keys:    keys,
-		service: NewMdocCredentialService(store, keys, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()), NewRevocationService(nil, store), clientmodels.NewCurrentLocale("en")),
+		service: NewMdocCredentialService(store, keys, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()), NewRevocationService(nil, nil, store), clientmodels.NewCurrentLocale("en")),
 		keyMint: NewMdocKeyService(keys),
 		issuer:  issuer,
 		parser:  NewMdocCredentialFormatParser(stdmdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})),

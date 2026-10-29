@@ -175,7 +175,7 @@ func (s *vcdmBatchStore) GetUnusedInstance(batchID datatypes.UUID) (*Instance, e
 		ID:                  instance.ID,
 		RawCredential:       instance.RawCredential,
 		Revoked:             s.revocation != nil && s.revocation.IsStoredStatusRevoked(instance.LastKnownStatus),
-		RevocationSupported: instance.HasStatusReference,
+		RevocationSupported: instance.HasStatusReference(),
 	}, nil
 }
 

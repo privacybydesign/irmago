@@ -51,15 +51,17 @@ const testStatusListIndex = 5
 
 // bitstringStatusListServer serves one JWT-secured BitstringStatusListCredential.
 type bitstringStatusListServer struct {
-	server *httptest.Server
-	body   []byte
-	status int
+	server   *httptest.Server
+	body     []byte
+	status   int
+	requests int
 }
 
 func newBitstringStatusListServer(t *testing.T) *bitstringStatusListServer {
 	t.Helper()
 	s := &bitstringStatusListServer{status: http.StatusOK}
 	s.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.requests++
 		if s.status != http.StatusOK {
 			w.WriteHeader(s.status)
 			return
@@ -275,7 +277,7 @@ func storeVcdmWithStatus(t *testing.T, env *vcdmTestEnv, server *bitstringStatus
 
 	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	checker := newTestBitstringChecker(ctx)
-	return NewRevocationService(nil, env.store).WithBitstringStatus(checker, env.store)
+	return NewRevocationService(nil, checker, env.store)
 }
 
 func requireVcdmRevoked(t *testing.T, env *vcdmTestEnv, want bool) {
@@ -391,40 +393,42 @@ func TestBitstringChecker_RejectsListSignedWithAnotherDidKey(t *testing.T) {
 	require.ErrorContains(t, err, "does not match list issuer")
 }
 
-// TestVcdmStore_BitstringInstancesAreSweptOnce pins the split between the two
-// sweeps: an instance with Bitstring entries is the Bitstring sweep's, which
-// checks all of its references, and the Token Status List sweep leaves it alone.
-func TestVcdmStore_BitstringInstancesAreSweptOnce(t *testing.T) {
+// The VCDM store lists an instance once, with all of its references and its
+// issuer, whichever kind of status list it names.
+func TestVcdmStore_ListsBitstringInstancesWithTheirIssuer(t *testing.T) {
 	env := newVcdmTestEnv(t)
 	server := newBitstringStatusListServer(t)
 	server.serve(t, false)
 	storeVcdmWithStatus(t, env, server)
 
-	tokenStatusList, err := env.store.ListInstancesWithStatusReference()
+	instances, err := env.store.ListInstancesWithStatusReference()
 	require.NoError(t, err)
-	require.Empty(t, tokenStatusList)
-
-	bitstring, err := env.store.ListInstancesWithBitstringStatus()
-	require.NoError(t, err)
-	require.Len(t, bitstring, 1)
+	require.Len(t, instances, 1)
+	require.NotEmpty(t, instances[0].BitstringEntries)
+	require.Nil(t, instances[0].StatusListURI)
+	require.Equal(t, testVcdmIssuer, instances[0].Issuer)
 
 	referenced, err := env.store.ListStatusReferencedInstanceStatuses()
 	require.NoError(t, err)
-	require.Len(t, referenced, 1, "the credential list still sees the instance as revocable")
+	require.Len(t, referenced, 1, "the credential list sees the instance as revocable")
 }
 
-// recordingBitstringStore is a BitstringStatusStore over fixed instances that
+// recordingStatusStore is a CredentialStatusStore over fixed instances that
 // records the status written to each.
-type recordingBitstringStore struct {
-	instances []db.BitstringStatusInstance
+type recordingStatusStore struct {
+	instances []db.CredentialStatusInstance
 	written   map[datatypes.UUID]uint8
 }
 
-func (s *recordingBitstringStore) ListInstancesWithBitstringStatus() ([]db.BitstringStatusInstance, error) {
+func (s *recordingStatusStore) ListInstancesWithStatusReference() ([]db.CredentialStatusInstance, error) {
 	return s.instances, nil
 }
 
-func (s *recordingBitstringStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, _ time.Time) error {
+func (s *recordingStatusStore) ListStatusReferencedInstanceStatuses() ([]db.BatchInstanceStatus, error) {
+	return nil, nil
+}
+
+func (s *recordingStatusStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, _ time.Time) error {
 	s.written[instanceID] = status
 	return nil
 }
@@ -445,17 +449,17 @@ func TestRevocationService_BitstringRefreshWritesEveryInstanceOfABatch(t *testin
 	require.NoError(t, err)
 	batchID := datatypes.NewUUIDv4()
 	valid := uint8(statuslist.StatusValid)
-	store := &recordingBitstringStore{
-		instances: []db.BitstringStatusInstance{
-			{InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: valid, Issuer: testVcdmIssuer, Entries: entries},
-			{InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: valid, Issuer: testVcdmIssuer, Entries: entries},
+	store := &recordingStatusStore{
+		instances: []db.CredentialStatusInstance{
+			{InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: valid, Issuer: testVcdmIssuer, BitstringEntries: entries},
+			{InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: valid, Issuer: testVcdmIssuer, BitstringEntries: entries},
 		},
 		written: map[datatypes.UUID]uint8{},
 	}
 
 	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	checker := newTestBitstringChecker(ctx)
-	changed, err := NewRevocationService(nil).WithBitstringStatus(checker, store).RefreshStatuses(context.Background())
+	changed, err := NewRevocationService(nil, checker, store).RefreshStatuses(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, 1, changed, "one batch changed")
 
@@ -539,3 +543,59 @@ func TestVcdmStore_RejectedStatusReferencesKeepTheStoredCredential(t *testing.T)
 	require.NoError(t, err)
 	require.Len(t, list, 1, "the stored credential must survive the refused re-issuance")
 }
+
+// recordingStatusStoreOnOneList is a recordingStatusStore with two batches of
+// two instances, all on the list at listURL.
+func recordingStatusStoreOnOneList(t *testing.T, listURL string) *recordingStatusStore {
+	t.Helper()
+	entries, err := json.Marshal([]bitstringstatus.Entry{{
+		StatusPurpose:        bitstringstatus.PurposeRevocation,
+		StatusListIndex:      testStatusListIndex,
+		StatusListCredential: listURL,
+		StatusSize:           1,
+	}})
+	require.NoError(t, err)
+	store := &recordingStatusStore{written: map[datatypes.UUID]uint8{}}
+	for range 2 {
+		batchID := datatypes.NewUUIDv4()
+		for range 2 {
+			store.instances = append(store.instances, db.CredentialStatusInstance{
+				InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: uint8(statuslist.StatusValid),
+				Issuer: testVcdmIssuer, BitstringEntries: entries,
+			})
+		}
+	}
+	return store
+}
+
+// A sweep reads each list once, however many instances point at it, and that
+// holds for a list it cannot read too: a slow or broken list costs one fetch
+// per sweep, not one per instance.
+func TestRevocationService_BrokenListIsFetchedOncePerSweep(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	server.status = http.StatusServiceUnavailable
+	store := recordingStatusStoreOnOneList(t, server.url())
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	changed, err := NewRevocationService(nil, newTestBitstringChecker(ctx), store).RefreshStatuses(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, changed)
+	require.Equal(t, 1, server.requests)
+	require.Empty(t, store.written, "nothing was learned, so nothing is written")
+}
+
+// An instance whose list kind has no checker keeps its stored status, rather
+// than being skipped unnoticed or read as valid.
+func TestRevocationService_InstanceWithoutItsCheckerKeepsItsStatus(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	server.serve(t, true)
+	store := recordingStatusStoreOnOneList(t, server.url())
+
+	tokenStatusList := statuslist.NewChecker(statuslist.VerificationContext{}, nil)
+	changed, err := NewRevocationService(tokenStatusList, nil, store).RefreshStatuses(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, changed)
+	require.Zero(t, server.requests)
+	require.Empty(t, store.written)
+}
+

@@ -43,7 +43,7 @@ func newVcdmTestEnv(t *testing.T) *vcdmTestEnv {
 	store := db.NewVcdmStore(d)
 	keys := db.NewHolderBindingKeyStore(d)
 	fs := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	revocation := NewRevocationService(nil, store)
+	revocation := NewRevocationService(nil, nil, store)
 	return &vcdmTestEnv{
 		db:      d,
 		store:   store,
