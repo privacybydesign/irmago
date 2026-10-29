@@ -173,7 +173,9 @@ func (s *mdocCredentialService) Store(
 
 	first := parsedCredentials[0]
 
-	hash, err := s.computeHashAndDeleteExisting(first)
+	// The store replaces a batch with this hash, the same document issued
+	// before, in the transaction that stores this one.
+	hash, err := mdocCredentialHash(first)
 	if err != nil {
 		return err
 	}
@@ -247,12 +249,9 @@ func displaySnapshots(issuerMetadata metadata.CredentialIssuerMetadata, config m
 	return issuerDisplay, credentialMetadata, nil
 }
 
-// computeHashAndDeleteExisting computes the document's content hash — docType,
-// credential issuer, element values — and makes room for it, refusing
-// while a stored batch under the same hash is still presentable and replacing
-// it once it is not. Same rule and same reasoning as the SD-JWT VC store's
-// computeHashAndDeleteExisting; see there.
-func (s *mdocCredentialService) computeHashAndDeleteExisting(p *ParsedCredential) (string, error) {
+// mdocCredentialHash computes the document's content hash: docType, credential
+// issuer and element values.
+func mdocCredentialHash(p *ParsedCredential) (string, error) {
 	namespaces, err := json.Marshal(p.Mdoc.Namespaces)
 	if err != nil {
 		return "", fmt.Errorf("failed to encode mdoc namespaces for hashing: %w", err)
@@ -261,13 +260,6 @@ func (s *mdocCredentialService) computeHashAndDeleteExisting(p *ParsedCredential
 	if err != nil {
 		return "", fmt.Errorf("failed to compute credential hash: %w", err)
 	}
-
-	if existing, err := s.store.GetBatchByHash(hash); err == nil {
-		if err := s.store.DeleteBatch(existing.ID); err != nil {
-			return "", fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
-		}
-	}
-
 	return hash, nil
 }
 

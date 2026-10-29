@@ -794,6 +794,23 @@ func TestVerifyAndStoreIssuedCredentials_StoreError_Propagated(t *testing.T) {
 	require.Error(t, err)
 }
 
+// A re-issuance replaces the stored batch with the same hash, but the store
+// does that in the transaction that stores the new batch. The service must not
+// delete it first: if storing then fails, the user has lost the credential.
+func TestVerifyAndStoreIssuedCredentials_StoreError_KeepsTheStoredCredential(t *testing.T) {
+	mock := &mockCredentialStore{
+		storeBatchErr: errors.New("storage failure"),
+		existing:      &models.SdJwtVcBatch{ID: datatypes.NewUUIDv4()},
+	}
+	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
+
+	err := svc.Store(wrapSdJwtVcs(vc), "config-id", newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc), false, nil)
+
+	require.Error(t, err)
+	assert.Empty(t, mock.deletedBatches, "the service must leave replacing the stored batch to the store")
+}
+
 func TestVerifyAndStoreIssuedCredentials_FullMetadata_ClaimsConverted(t *testing.T) {
 	mock := &mockCredentialStore{}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
@@ -1327,6 +1344,9 @@ type mockCredentialStore struct {
 	statusRefs      []db.BatchInstanceStatus
 	statusRefsErr   error
 	updatedHashes   []updatedHash
+	// existing is what GetBatchByHash finds, whatever the hash.
+	existing       *models.SdJwtVcBatch
+	deletedBatches []datatypes.UUID
 }
 
 // updatedHash records an UpdateBatchHash call, so a test can assert which batches
@@ -1349,6 +1369,9 @@ func (m *mockCredentialStore) GetCredentialBatchList() ([]*models.SdJwtVcBatch, 
 }
 
 func (m *mockCredentialStore) GetBatchByHash(hash string) (*models.SdJwtVcBatch, error) {
+	if m.existing != nil {
+		return m.existing, nil
+	}
 	return nil, db.ErrNotFound
 }
 
@@ -1361,6 +1384,7 @@ func (m *mockCredentialStore) MarkInstanceUsed(instanceID datatypes.UUID) error 
 }
 
 func (m *mockCredentialStore) DeleteBatch(batchID datatypes.UUID) error {
+	m.deletedBatches = append(m.deletedBatches, batchID)
 	return nil
 }
 

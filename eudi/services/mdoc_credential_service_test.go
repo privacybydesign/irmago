@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -425,4 +426,34 @@ func TestMdocDisplaySource(t *testing.T) {
 	issuer, credential := newMdocDisplaySource(env.store).LogoURIs("en")
 	require.Equal(t, []string{""}, issuer, "one entry per batch, empty when no logo is published")
 	require.Equal(t, []string{""}, credential)
+}
+
+// failingMdocStoreBatch is an MdocStore whose StoreBatch fails, as a write can.
+type failingMdocStoreBatch struct {
+	db.MdocStore
+}
+
+func (failingMdocStoreBatch) StoreBatch(*models.MdocBatch) error {
+	return errors.New("disk full")
+}
+
+// A re-issuance replaces the stored batch with the same content. When storing
+// the new batch fails, the old one must still be there.
+func TestMdocCredentialService_FailedReissuanceKeepsTheStoredCredential(t *testing.T) {
+	env := newMdocTestEnv(t)
+	elements := map[string]any{"age_over_18": true}
+	devicePub := func() *ecdsa.PublicKey {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+		return &key.PublicKey
+	}
+	require.NoError(t, env.service.Store([]*ParsedCredential{env.issueFor(t, devicePub(), elements)}, "proof_of_age", env.metadata, false, nil))
+
+	failing := NewMdocCredentialService(failingMdocStoreBatch{env.store}, env.keys, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()), nil, clientmodels.NewCurrentLocale("en"))
+	err := failing.Store([]*ParsedCredential{env.issueFor(t, devicePub(), elements)}, "proof_of_age", env.metadata, false, nil)
+	require.ErrorContains(t, err, "disk full")
+
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	require.Len(t, batches, 1, "the stored credential must survive a re-issuance that failed to store")
 }

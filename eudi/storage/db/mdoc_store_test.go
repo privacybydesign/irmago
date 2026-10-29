@@ -84,10 +84,12 @@ func TestMdocSchema_TablesAndConstraints(t *testing.T) {
 	require.False(t, hasFormat, "an mdoc table needs no format discriminator: the table is the format")
 }
 
+// StoreBatch replaces a batch with the same hash, so the constraint is checked
+// with plain inserts.
 func TestMdocSchema_HashIsUnique(t *testing.T) {
-	store := NewMdocStore(newMdocTestDB(t))
-	require.NoError(t, store.StoreBatch(newMdocBatch("same", 1)))
-	require.Error(t, store.StoreBatch(newMdocBatch("same", 1)))
+	d := newMdocTestDB(t)
+	require.NoError(t, d.Create(newMdocBatch("same", 1)).Error)
+	require.Error(t, d.Create(newMdocBatch("same", 1)).Error)
 }
 
 func TestMdocSchema_ThumbprintIsUnique(t *testing.T) {
@@ -417,4 +419,36 @@ func TestMdocDeviceKeyStore_StoreGetLinkDelete(t *testing.T) {
 	var n int64
 	require.NoError(t, d.Model(&models.MdocDeviceKey{}).Count(&n).Error)
 	require.Zero(t, n)
+}
+
+func TestMdocStore_StoreBatchReplacesTheSameCredential(t *testing.T) {
+	store := NewMdocStore(newMdocTestDB(t))
+	require.NoError(t, store.StoreBatch(newMdocBatch("hash-a", 1)))
+	require.NoError(t, store.StoreBatch(newMdocBatch("hash-b", 1)))
+
+	reissued := newMdocBatch("hash-a", 1)
+	require.NoError(t, store.StoreBatch(reissued))
+
+	batches, err := store.ListBatches()
+	require.NoError(t, err)
+	require.Len(t, batches, 2, "the re-issuance replaces the batch with its hash, and only that one")
+	stored, err := store.GetBatchByHash("hash-a")
+	require.NoError(t, err)
+	require.Equal(t, reissued.ID, stored.ID)
+}
+
+// The batch a re-issuance replaces is deleted in the transaction that stores
+// the new one, so a failed store rolls the delete back.
+func TestMdocStore_FailedReplacementKeepsTheStoredCredential(t *testing.T) {
+	store := NewMdocStore(newMdocTestDB(t))
+	original := newMdocBatch("hash-a", 1)
+	require.NoError(t, store.StoreBatch(original))
+
+	broken := newMdocBatch("hash-a", 1)
+	broken.Instances[0].IssuerSigned = nil // refused by the instance's own validation
+	require.Error(t, store.StoreBatch(broken))
+
+	stored, err := store.GetBatchByHash("hash-a")
+	require.NoError(t, err, "the stored credential must survive a replacement that failed")
+	require.Equal(t, original.ID, stored.ID)
 }

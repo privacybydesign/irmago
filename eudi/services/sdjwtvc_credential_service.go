@@ -176,8 +176,8 @@ func (s *sdJwtVcCredentialService) Store(
 	// together. Per draft-ietf-oauth-status-list §13.2 each one-time-use copy
 	// MUST carry its OWN dedicated, distinct status entry (for unlinkability):
 	// require all-or-none presence and reject duplicate references. Reject here,
-	// before any side effects, so a malformed issuance can't delete the user's
-	// existing credential (computeHashAndDeleteExisting below is destructive).
+	// before anything is stored, so a malformed issuance fails before it
+	// touches the user's existing credential.
 	if err := validateStatusReferences(parsedCredentials); err != nil {
 		if requireCryptographicKeyBinding {
 			s.deleteOrphanedKeys(publicKeyIdentifiers)
@@ -213,9 +213,13 @@ func (s *sdJwtVcCredentialService) Store(
 		return fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
 	}
 
-	hash, err := s.computeHashAndDeleteExisting(first, processedPayload)
+	// A batch with this hash is the same credential issued before. The store
+	// replaces it in the transaction that stores this one: renewing is how a
+	// spent batch is topped up or a near-expiry one refreshed, since its claims
+	// do not change.
+	hash, err := hashForSdJwtVc(first.VerifiableCredentialType, first.IssuerIdentifier, processedPayload)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to compute credential hash: %w", err)
 	}
 
 	// Absent configuration is tolerated: everything read from it below is display
@@ -281,46 +285,6 @@ func (s *sdJwtVcCredentialService) Store(
 	}
 
 	return nil
-}
-
-// computeHashAndDeleteExisting computes the credential's content hash and makes
-// room for it: a stored batch with the same hash is deleted when it may be
-// replaced, and refused when it may not.
-//
-// A matching hash means the wallet already holds this credential: the hash
-// covers the credential type, the issuer identity and the resolved claims, so
-// re-issuing identical attributes from the same issuer lands here. What it
-// deliberately does not cover is anything that changes on every issuance of the
-// same content: salts, digest ids, holder keys, and the validity timestamps.
-//
-// Whether that is a duplicate worth refusing or a renewal worth accepting
-// depends on the batch already stored, which is why this is not a flat
-// rejection. Replacing a batch is destructive -- DeleteBatch cascades to the
-// instances and through them to the holder binding keys -- so replacing one
-// the wallet can still present throws away usable single-use attestations to
-// gain nothing but fresher timestamps.
-//
-// Refusing unconditionally would be worse, because attributes are exactly
-// what does not change on renewal. An age-verification credential asserts
-// age_over_18=true for as long as it exists, so every legitimate renewal --
-// batch spent, expiry approaching, new holder keys wanted -- carries the same
-// claims and arrives with this same hash. A wallet that refused them all
-// could never top up a spent batch and would go permanently unpresentable.
-//
-// So: refuse while the stored batch is still usable, replace once it is not.
-func (s *sdJwtVcCredentialService) computeHashAndDeleteExisting(p *ParsedCredential, processedPayload []byte) (string, error) {
-	hash, err := hashForSdJwtVc(p.VerifiableCredentialType, p.IssuerIdentifier, processedPayload)
-	if err != nil {
-		return "", fmt.Errorf("failed to compute credential hash: %w", err)
-	}
-
-	if existing, err := s.store.GetBatchByHash(hash); err == nil {
-		if err := s.store.DeleteBatch(existing.ID); err != nil {
-			return "", fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
-		}
-	}
-
-	return hash, nil
 }
 
 // statusReferenceOf returns the credential's Token Status List reference, for
