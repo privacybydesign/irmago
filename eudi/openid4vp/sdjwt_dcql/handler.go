@@ -1,10 +1,10 @@
-// Package sdjwtdcql is the data-model-agnostic engine behind the wallet's
+// Package sdjwt_dcql is the data-model-agnostic engine behind the wallet's
 // SD-JWT-secured DCQL query handlers. It walks the SD-JWT payload by claim path
 // and knows nothing about `vct` versus VCDM `type`; the format-specific bits are
 // supplied as a Profile. The thin per-format handlers — eudi_sdjwtvc_dcql
 // (dc+sd-jwt) and eudi_vcdm_dcql (vc+sd-jwt) — embed an Engine and add their own
 // CanHandleCredentialQuery routing.
-package sdjwtdcql
+package sdjwt_dcql
 
 import (
 	"context"

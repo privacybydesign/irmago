@@ -1,4 +1,4 @@
-package sdjwtdcql
+package sdjwt_dcql
 
 import (
 	"time"

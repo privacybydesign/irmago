@@ -87,7 +87,7 @@ func (s *sdJwtVcCredentialService) List() ([]*clientmodels.Credential, error) {
 		display := ResolveBatchDisplay(batch, locale)
 		// Fall back to the vct when the issuer published no display text this
 		// locale can resolve. The DCQL handler does exactly this
-		// (eudi_sdjwt_dcql.credentialDisplayName), so without it the same
+		// (sdjwt_dcql.Engine.credentialDisplayName), so without it the same
 		// credential shows as a blank row in this list while the consent screen
 		// names it.
 		//

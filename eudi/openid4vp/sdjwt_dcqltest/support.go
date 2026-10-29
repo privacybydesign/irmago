@@ -1,8 +1,8 @@
-// Package sdjwtdcqltest provides shared test scaffolding for the SD-JWT DCQL
+// Package sdjwt_dcqltest provides shared test scaffolding for the SD-JWT DCQL
 // engine and its per-format handlers: an in-memory SQLCipher store, a batch
 // builder, a DCQL query parser, and a claim-path assertion helper. It links cgo
 // (SQLCipher), so importing tests type-check locally but run in CI.
-package sdjwtdcqltest
+package sdjwt_dcqltest
 
 import (
 	"encoding/json"

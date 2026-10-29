@@ -27,7 +27,7 @@ import (
 // float64's exact integer range fall through to the structural comparison,
 // which still matches two identically-typed integers.
 //
-// Shared by the eudi_sdjwt_dcql and mdoc_dcql handlers: only the mdoc side can
+// Shared by the sdjwt_dcql and mdoc_dcql handlers: only the mdoc side can
 // reach the CBOR cases, but the uncomparable-type panic was reachable from both,
 // and it had already been fixed in one copy and not the other. One
 // implementation and one set of tests keeps them from drifting again.

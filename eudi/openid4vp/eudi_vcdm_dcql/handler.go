@@ -1,6 +1,6 @@
 // Package eudi_vcdm_dcql is the DCQL query handler for SD-JWT-secured W3C VCDM
 // 2.0 (vc+sd-jwt) credentials in the eudi SQLite storage. It is a thin routing
-// shell over the shared sdjwtdcql.Engine — the same machinery the SD-JWT VC
+// shell over the shared sdjwt_dcql.Engine — the same machinery the SD-JWT VC
 // handler uses, differing only in format routing and credentialSubject-rooted
 // claim scoping.
 package eudi_vcdm_dcql
@@ -12,7 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwtdcql"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -24,7 +24,7 @@ import (
 // credentials. It embeds the shared engine — gaining FindCandidates and
 // PrepareDisclosure — and adds VCDM routing.
 type Handler struct {
-	*sdjwtdcql.Engine
+	*sdjwt_dcql.Engine
 }
 
 var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
@@ -49,9 +49,9 @@ func NewVcdmDcqlHandler(
 	credentialStore db.VcdmStore,
 	keyBinder sdjwt.KeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
-	revocation sdjwtdcql.RevocationChecker,
+	revocation sdjwt_dcql.RevocationChecker,
 ) *Handler {
-	profile := sdjwtdcql.Profile{
+	profile := sdjwt_dcql.Profile{
 		StorageFormat: models.CredentialFormatSdJwtVcdm,
 		ClientFormat:  clientmodels.Format_SdJwtVcdm,
 		IsUserDataKey: func(key string) bool {
@@ -61,7 +61,7 @@ func NewVcdmDcqlHandler(
 		MatchesTypeValues: matchesTypeValues,
 		FallbackName:      fallbackName,
 	}
-	return &Handler{sdjwtdcql.NewEngine(profile, eudiStorage, sdjwtdcql.NewVcdmBatchStore(credentialStore, revocation), nil, nil, keyBinder, currentLocale)}
+	return &Handler{sdjwt_dcql.NewEngine(profile, eudiStorage, sdjwt_dcql.NewVcdmBatchStore(credentialStore, revocation), nil, nil, keyBinder, currentLocale)}
 }
 
 // CanHandleCredentialQuery claims every vc+sd-jwt query. Unlike SD-JWT VC there
@@ -89,7 +89,7 @@ func (h *Handler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
 //   - The comparison is against the `type` array only. The credential's
 //     `@context` is part of its stored identity (CredentialType), but §B.1.1
 //     constrains `type`, so @context is intentionally not folded in here.
-func matchesTypeValues(batch *sdjwtdcql.Batch, typeValues [][]string) bool {
+func matchesTypeValues(batch *sdjwt_dcql.Batch, typeValues [][]string) bool {
 	var doc vcdm.Document
 	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &doc); err != nil {
 		return false
@@ -114,6 +114,6 @@ func matchesTypeValues(batch *sdjwtdcql.Batch, typeValues [][]string) bool {
 
 // fallbackName is the credential's own `name`, for a credential whose
 // metadata gives it none.
-func fallbackName(batch *sdjwtdcql.Batch, locale string) string {
+func fallbackName(batch *sdjwt_dcql.Batch, locale string) string {
 	return services.VcdmPayloadName(batch.ProcessedPayload, locale)
 }

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwtdcql"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcql"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/datatypes"
 )
@@ -24,6 +24,6 @@ func TestCanHandleCredentialQuery(t *testing.T) {
 
 // Without display metadata, a VCDM credential is named by its own `name`.
 func TestFallbackName_IsTheDocumentName(t *testing.T) {
-	batch := &sdjwtdcql.Batch{ProcessedPayload: datatypes.JSON(`{"name": "Alumni card"}`)}
+	batch := &sdjwt_dcql.Batch{ProcessedPayload: datatypes.JSON(`{"name": "Alumni card"}`)}
 	assert.Equal(t, "Alumni card", fallbackName(batch, "en"))
 }

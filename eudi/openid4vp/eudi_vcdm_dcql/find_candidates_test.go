@@ -17,7 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwtdcqltest"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcqltest"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -35,7 +35,7 @@ const academicVcdmType = "https://www.w3.org/ns/credentials/v2 https://eduwallet
 // needs no key binder or revocation checker, so both are nil.
 func newTestHandler(t *testing.T) (*Handler, db.VcdmStore) {
 	t.Helper()
-	ts := sdjwtdcqltest.NewTestStorage(t)
+	ts := sdjwt_dcqltest.NewTestStorage(t)
 	store := db.NewVcdmStore(ts.Db())
 	h := NewVcdmDcqlHandler(ts, store, nil, clientmodels.NewCurrentLocale("en"), nil)
 	return h, store
@@ -45,7 +45,7 @@ func newTestHandler(t *testing.T) (*Handler, db.VcdmStore) {
 // binder, for disclosures that sign a Verifiable Presentation.
 func newTestHandlerWithKeyBinder(t *testing.T) (*Handler, db.VcdmStore, sdjwt.KeyBinder) {
 	t.Helper()
-	ts := sdjwtdcqltest.NewTestStorage(t)
+	ts := sdjwt_dcqltest.NewTestStorage(t)
 	store := db.NewVcdmStore(ts.Db())
 	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 	h := NewVcdmDcqlHandler(ts, store, keyBinder, clientmodels.NewCurrentLocale("en"), nil)
@@ -67,15 +67,15 @@ func issueHolderBoundAcademicCredential(t *testing.T, keyBinder sdjwt.KeyBinder)
 }
 
 func newTestBatch(hash, credType string, payload map[string]any) *models.VcdmBatch {
-	return sdjwtdcqltest.NewTestVcdmBatch(hash, credType, payload)
+	return sdjwt_dcqltest.NewTestVcdmBatch(hash, credType, payload)
 }
 
 func parseDcqlQuery(t *testing.T, raw string) dcql.CredentialQuery {
-	return sdjwtdcqltest.ParseDcqlQuery(t, raw)
+	return sdjwt_dcqltest.ParseDcqlQuery(t, raw)
 }
 
 func hasClaimPath(attrs []clientmodels.Attribute, path []any) bool {
-	return sdjwtdcqltest.HasClaimPath(attrs, path)
+	return sdjwt_dcqltest.HasClaimPath(attrs, path)
 }
 
 // ========================================================================
@@ -114,12 +114,12 @@ func TestVcdmFindCandidates_MatchesCompositeTypeAndSubjectClaims(t *testing.T) {
 }
 
 func TestVcdmFindCandidates_ExcludesSdJwtVcBatch(t *testing.T) {
-	ts := sdjwtdcqltest.NewTestStorage(t)
+	ts := sdjwt_dcqltest.NewTestStorage(t)
 	h := NewVcdmDcqlHandler(ts, db.NewVcdmStore(ts.Db()), nil, clientmodels.NewCurrentLocale("en"), nil)
 
 	// A dc+sd-jwt (SD-JWT VC) batch lives in the SD-JWT VC table and must not be
 	// served for a vc+sd-jwt query.
-	batch := sdjwtdcqltest.NewTestBatch("hash-sdjwtvc", "https://example.com/EmailCredential", map[string]any{
+	batch := sdjwt_dcqltest.NewTestBatch("hash-sdjwtvc", "https://example.com/EmailCredential", map[string]any{
 		"credentialSubject": map[string]any{"email": "test@example.com"},
 	})
 	require.NoError(t, db.NewSdJwtVcStore(ts.Db()).StoreBatch(batch))

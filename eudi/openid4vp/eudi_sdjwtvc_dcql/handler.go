@@ -1,6 +1,6 @@
 // Package eudi_sdjwtvc_dcql is the DCQL query handler for IETF SD-JWT VC
 // (dc+sd-jwt) credentials in the eudi SQLite storage (issued via OpenID4VCI).
-// It is a thin routing shell over the shared sdjwtdcql.Engine.
+// It is a thin routing shell over the shared sdjwt_dcql.Engine.
 package eudi_sdjwtvc_dcql
 
 import (
@@ -10,7 +10,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwtdcql"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -21,7 +21,7 @@ import (
 // embeds the shared engine — gaining FindCandidates and PrepareDisclosure — and
 // adds SD-JWT-VC-specific routing.
 type Handler struct {
-	*sdjwtdcql.Engine
+	*sdjwt_dcql.Engine
 }
 
 var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
@@ -38,19 +38,19 @@ func NewSdJwtVcDcqlHandler(
 	issuerFetcher typemetadata.IssuerFetcher,
 	keyBinder sdjwt.KeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
-	revocation sdjwtdcql.RevocationChecker,
+	revocation sdjwt_dcql.RevocationChecker,
 ) *Handler {
-	profile := sdjwtdcql.Profile{
+	profile := sdjwt_dcql.Profile{
 		StorageFormat: models.CredentialFormatSdJwtVc,
 		ClientFormat:  clientmodels.Format_SdJwtVc,
 		IsUserDataKey: func(key string) bool {
 			_, std := sdjwtvc.StandardClaims[key]
 			return !std
 		},
-		Present: sdjwtdcql.PresentWithKbJwt,
+		Present: sdjwt_dcql.PresentWithKbJwt,
 	}
-	batches := sdjwtdcql.NewSdJwtVcBatchStore(credentialStore, revocation)
-	return &Handler{sdjwtdcql.NewEngine(profile, eudiStorage, batches, vctFetcher, issuerFetcher, keyBinder, currentLocale)}
+	batches := sdjwt_dcql.NewSdJwtVcBatchStore(credentialStore, revocation)
+	return &Handler{sdjwt_dcql.NewEngine(profile, eudiStorage, batches, vctFetcher, issuerFetcher, keyBinder, currentLocale)}
 }
 
 // CanHandleCredentialQuery claims dc+sd-jwt queries whose vct_values are not

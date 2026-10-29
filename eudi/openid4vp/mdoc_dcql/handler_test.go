@@ -124,7 +124,7 @@ type stubRevocation struct{ revoked bool }
 func (s stubRevocation) IsStoredStatusRevoked(uint8) bool { return s.revoked }
 
 // TestRevokedMdocIsOfferedAndLoggedAsRevoked pins the IRMA-parity contract for
-// mso_mdoc, as eudi_sdjwt_dcql does for SD-JWT VC: a revoked credential is not
+// mso_mdoc, as sdjwt_dcql does for SD-JWT VC: a revoked credential is not
 // dropped from the plan. It is offered with Revoked=true, so the frontend can
 // decide, and the log records that what was shared had been revoked.
 func TestRevokedMdocIsOfferedAndLoggedAsRevoked(t *testing.T) {
@@ -309,7 +309,7 @@ func TestCanHandleCredentialQuery(t *testing.T) {
 }
 
 // TestFindCandidatesWithClaimSetsPicksFirstSatisfiableSet covers claim_sets,
-// which this handler implements by copying eudi_sdjwt_dcql and which, until now,
+// which this handler implements by copying sdjwt_dcql and which, until now,
 // had no test in any format's package except irma_sdjwt_dcql -- so the mdoc copy
 // had never executed.
 //
@@ -392,7 +392,7 @@ func TestFindCandidatesWithClaimSetsNoneSatisfiable(t *testing.T) {
 }
 
 // TestFindCandidatesRefusesQueryWithoutClaims pins the mso_mdoc reading of an
-// absent claims member. eudi_sdjwt_dcql treats it as "no selectively disclosable
+// absent claims member. sdjwt_dcql treats it as "no selectively disclosable
 // claims requested" and still matches, which leaves an SD-JWT its always-
 // disclosed payload to present; an mdoc has no such payload, so the same reading
 // would sign an empty namespaces map and offer the user an attribute-less

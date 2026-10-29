@@ -1,4 +1,4 @@
-package sdjwtdcql
+package sdjwt_dcql
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwtdcqltest"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcqltest"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -23,7 +23,7 @@ import (
 
 func newTestHandler(t *testing.T) (*Engine, db.SdJwtVcStore) {
 	t.Helper()
-	ts := sdjwtdcqltest.NewTestStorage(t)
+	ts := sdjwt_dcqltest.NewTestStorage(t)
 	credStore := db.NewSdJwtVcStore(ts.Db())
 	return &Engine{
 		storage:       ts,
@@ -48,11 +48,11 @@ func testSdJwtVcProfile() Profile {
 }
 
 func newTestBatch(hash, vct string, payload map[string]any) *models.SdJwtVcBatch {
-	return sdjwtdcqltest.NewTestBatch(hash, vct, payload)
+	return sdjwt_dcqltest.NewTestBatch(hash, vct, payload)
 }
 
 func parseDcqlQuery(t *testing.T, raw string) dcql.CredentialQuery {
-	return sdjwtdcqltest.ParseDcqlQuery(t, raw)
+	return sdjwt_dcqltest.ParseDcqlQuery(t, raw)
 }
 
 // ========================================================================
@@ -999,7 +999,7 @@ func TestFindCandidates_VcdmBatchExcluded(t *testing.T) {
 	h, _ := newTestHandler(t)
 
 	typeIdentity := "https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential"
-	batch := sdjwtdcqltest.NewTestVcdmBatch("hash-vcdm", typeIdentity, map[string]any{
+	batch := sdjwt_dcqltest.NewTestVcdmBatch("hash-vcdm", typeIdentity, map[string]any{
 		"credentialSubject": map[string]any{"email": "test@example.com"},
 	})
 	require.NoError(t, db.NewVcdmStore(h.storage.Db()).StoreBatch(batch))
