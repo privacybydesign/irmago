@@ -30,7 +30,8 @@
 // `x5c` header resolves and validates an X.509 chain, and a `kid` header
 // resolves a did:web / did:jwk issuer key. No VCDM-specific trust code.
 //
-// Holder binding reuses the shared `cnf` + KB-JWT machinery in eudi/sdjwt,
-// which resolves both the `cnf.jwk` and `cnf.kid` (did:jwk / did:key) forms;
-// this layer therefore does not reintroduce the jwk-only limitation.
+// Holder binding reuses the shared `cnf` handling in eudi/sdjwt, which resolves
+// both the `cnf.jwk` and `cnf.kid` (did:jwk / did:key) forms. The holder proof
+// at presentation is not a KB-JWT but a Verifiable Presentation signed with
+// that key, enveloping the SD-JWT (presentation.go; docs/adr/0011).
 package vcdmsdjwt

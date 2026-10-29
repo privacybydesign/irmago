@@ -266,9 +266,8 @@ func New(
 		StatusChecker: statusChecker,
 	}
 
-	// SD-JWT-secured VCDM credentials share the issuer trust anchors and clock
-	// with the SD-JWT VC context; a dc+sd-jwt credential is routed between the
-	// two verifiers by data model (#682).
+	// SD-JWT-secured VCDM (vc+sd-jwt) credentials share the issuer trust anchors
+	// and clock with the SD-JWT VC (dc+sd-jwt) context.
 	vcdmVerificationContextOpenID4VCI := vcdmsdjwt.VerificationContext{
 		X509VerificationContext: &eudiConf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),

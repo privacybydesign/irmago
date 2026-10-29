@@ -23,10 +23,9 @@ import (
 // exactly one of which is set — so no format's data has to be flattened into bytes to
 // cross this seam and re-parsed on the other side.
 type ParsedCredential struct {
-	// Format is the format of the credential as parsed, which decides the store
-	// it goes to. It can differ from the format the credential configuration
-	// advertises: a dc+sd-jwt configuration may deliver an SD-JWT-secured VCDM
-	// credential, which parses as vc+sd-jwt.
+	// Format is the format of the credential as parsed: the format of the
+	// credential configuration it was issued under, since each format has its
+	// own parser.
 	Format models.CredentialFormat
 
 	// VerifiableCredentialType is the vct claim (dc+sd-jwt), the @context+type

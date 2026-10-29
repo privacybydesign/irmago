@@ -90,11 +90,6 @@ type CredentialFormats map[models.CredentialFormat]CredentialFormatSupport
 // model is passed as a live lookup, not as the pool it currently holds: the
 // trust models are rebuilt whenever developer mode is toggled, and the registry
 // outlives that.
-//
-// The two SD-JWT-secured data models share one key binder: both bind the holder
-// through `cnf`. That is what lets a dc+sd-jwt configuration deliver a VCDM
-// credential (its parser dispatches on the payload): the keys were minted by
-// the dc+sd-jwt entry, and the vc+sd-jwt store links them all the same.
 func NewCredentialFormats(
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,

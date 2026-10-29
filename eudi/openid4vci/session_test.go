@@ -856,8 +856,8 @@ func toStr(v any) string {
 
 // createTestVcdmSdJwt builds an SD-JWT-secured VCDM credential signed with the
 // test issuer key, with one selectively-disclosable credentialSubject leaf and
-// a holder cnf key. typ distinguishes the `vc+sd-jwt` media type from a
-// VCDM-shaped `dc+sd-jwt`.
+// a holder cnf key, signed with the given typ: `vc+sd-jwt`, or `dc+sd-jwt` to
+// check that a VCDM payload under it is refused.
 func createTestVcdmSdJwt(t *testing.T, typ string, x5c []string) string {
 	t.Helper()
 	cnf, err := sdjwt.HolderKeyClaim(testdata.ParseHolderPubJwk())

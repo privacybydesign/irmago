@@ -258,9 +258,8 @@ func (s *session) perform() {
 
 // fetchedCredential holds the result of fetching and verifying credentials
 // for a single credential configuration, before they are stored. A batch is
-// homogeneous — all instances are copies of one logical credential — so
-// exactly one of verifiedSdJwtVcs and verifiedVcdms is populated, according to
-// the data model the batch was dispatched to (see obtainCredential).
+// homogeneous: all instances are copies of one logical credential, parsed by
+// the configuration's format.
 type fetchedCredential struct {
 	credentialConfigurationId      string
 	parsedCredentials              []*services.ParsedCredential
