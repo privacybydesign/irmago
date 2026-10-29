@@ -58,12 +58,14 @@ type RegisteredClaims struct {
 	NotBefore *int64
 }
 
-// secureSdAlgs are the _sd_alg values the wallet accepts: the full-length
-// digests. RFC 9901 §9.4 calls the truncated sha-256-* digests in the same
-// registry "unfit for security applications".
+// secureSdAlgs are the _sd_alg values the wallet accepts: full-length digests
+// of at least 256 bits. RFC 9901 §9.4 calls the truncated sha-256-* digests in
+// the same registry "unfit for security applications", and wants the digest at
+// least as collision resistant as the signature's hash, SHA-256 for ES256,
+// which sha3-224 is not.
 var secureSdAlgs = []iana.HashingAlgorithm{
 	iana.SHA256, iana.SHA384, iana.SHA512,
-	iana.SHA3_224, iana.SHA3_256, iana.SHA3_384, iana.SHA3_512,
+	iana.SHA3_256, iana.SHA3_384, iana.SHA3_512,
 }
 
 // ExtractRegisteredClaims reads the registered claims from a verified

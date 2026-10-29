@@ -41,10 +41,11 @@ func TestRegisteredClaims_AddDisclosedClaims_RejectsMalformedValues(t *testing.T
 }
 
 // RFC 9901 §9.4: the truncated sha-256-* digests of the IANA registry are unfit
-// for SD-JWT, so only full-length digests are accepted as _sd_alg.
+// for SD-JWT, and sha3-224 is less collision resistant than the ES256
+// signature, so only full-length digests of at least 256 bits are accepted.
 func TestExtractRegisteredClaims_SdAlg(t *testing.T) {
 	for _, alg := range []iana.HashingAlgorithm{
-		iana.SHA256, iana.SHA384, iana.SHA512, iana.SHA3_224, iana.SHA3_256, iana.SHA3_384, iana.SHA3_512,
+		iana.SHA256, iana.SHA384, iana.SHA512, iana.SHA3_256, iana.SHA3_384, iana.SHA3_512,
 	} {
 		t.Run(string(alg)+" is accepted", func(t *testing.T) {
 			token, err := jwt.NewBuilder().Claim(SdAlgKey, string(alg)).Build()
@@ -55,7 +56,7 @@ func TestExtractRegisteredClaims_SdAlg(t *testing.T) {
 		})
 	}
 	for _, alg := range []iana.HashingAlgorithm{
-		iana.SHA256_128, iana.SHA256_120, iana.SHA256_96, iana.SHA256_64, iana.SHA256_32, "md5",
+		iana.SHA256_128, iana.SHA256_120, iana.SHA256_96, iana.SHA256_64, iana.SHA256_32, iana.SHA3_224, "md5",
 	} {
 		t.Run(string(alg)+" is refused", func(t *testing.T) {
 			token, err := jwt.NewBuilder().Claim(SdAlgKey, string(alg)).Build()
