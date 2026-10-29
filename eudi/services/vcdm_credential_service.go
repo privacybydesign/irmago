@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmstatus"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -181,9 +182,9 @@ func (s *sdJwtVcdmCredentialService) Store(
 	// Each copy has its own status entries, so the references are read per
 	// copy. They are read and checked here, before anything is stored, so a
 	// malformed issuance fails before it touches the user's existing batch.
-	statusRefs := make([]vcdmsdjwt.StatusReferences, len(parsedCredentials))
+	statusRefs := make([]vcdmstatus.StatusReferences, len(parsedCredentials))
 	for i, p := range parsedCredentials {
-		refs, err := vcdmsdjwt.ParseStatusReferences(p.SdJwtVcdm.Document)
+		refs, err := vcdmstatus.ParseStatusReferences(p.SdJwtVcdm.Document)
 		if err != nil {
 			if requireCryptographicKeyBinding {
 				s.deleteOrphanedKeys(publicKeyIdentifiers)
@@ -344,7 +345,7 @@ func BuildAttributesFromVcdmDocument(
 // requireDedicatedStatusEntries) for both kinds of status reference a VCDM
 // credential can carry. A Bitstring entry is identified by its list and index:
 // two instances on one position share its bit, whatever their purposes.
-func validateVcdmStatusReferences(refs []vcdmsdjwt.StatusReferences) error {
+func validateVcdmStatusReferences(refs []vcdmstatus.StatusReferences) error {
 	type bitstringPosition struct {
 		list  string
 		index uint64
@@ -384,7 +385,7 @@ var vcdmNonContentKeys = map[string]struct{}{
 	sdjwt.ConfirmationKey:    {},
 	sdjwt.SdKey:              {},
 	sdjwt.SdAlgKey:           {},
-	vcdmsdjwt.StatusKey:      {},
+	vcdmstatus.StatusKey:     {},
 	vcdm.IDKey:               {},
 	vcdm.ValidFromKey:        {},
 	vcdm.ValidUntilKey:       {},

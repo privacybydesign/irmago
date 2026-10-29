@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmstatus"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
@@ -157,7 +158,7 @@ func (p *processor) processAndVerify(
 // cannot be read. Fail-closed, like sdjwtvc's runStatusListCheck, and for the
 // same reason without a caller context: the checkers bound their own requests.
 func (p *processor) runStatusCheck(document vcdm.Document) error {
-	refs, err := ParseStatusReferences(document)
+	refs, err := vcdmstatus.ParseStatusReferences(document)
 	if err != nil {
 		return fmt.Errorf("failed to parse status references: %w", err)
 	}
@@ -165,7 +166,7 @@ func (p *processor) runStatusCheck(document vcdm.Document) error {
 	if err != nil {
 		return err
 	}
-	status, err := CheckStatus(context.Background(), refs, issuer, p.verificationContext.StatusChecker, p.verificationContext.BitstringStatusChecker)
+	status, err := vcdmstatus.CheckStatus(context.Background(), refs, issuer, p.verificationContext.StatusChecker, p.verificationContext.BitstringStatusChecker)
 	if err != nil {
 		return err
 	}

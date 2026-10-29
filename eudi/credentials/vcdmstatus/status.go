@@ -1,4 +1,8 @@
-package vcdmsdjwt
+// Package vcdmstatus reads and checks the status of a W3C VCDM credential,
+// whatever secures it: the W3C Bitstring Status List entries in its
+// credentialStatus, and the IETF Token Status List reference a JWT-secured
+// credential can carry in its status claim.
+package vcdmstatus
 
 import (
 	"context"
@@ -12,10 +16,10 @@ import (
 // StatusKey is the JWT claim carrying an IETF Token Status List reference.
 const StatusKey = "status"
 
-// StatusReferences are the status mechanisms an SD-JWT-secured VCDM credential
-// can point to. VCDM's own is the W3C `credentialStatus` (Bitstring Status
-// List); as a JWT it can also carry the IETF `status.status_list` claim, which
-// is what veramo issues.
+// StatusReferences are the status mechanisms a VCDM credential can point to.
+// VCDM's own is the W3C `credentialStatus` (Bitstring Status List); as a JWT it
+// can also carry the IETF `status.status_list` claim, which is what veramo
+// issues.
 type StatusReferences struct {
 	TokenStatusList *statuslist.Reference
 
@@ -72,7 +76,7 @@ func CheckStatus(
 		if err != nil {
 			return statuslist.StatusUnknown, fmt.Errorf("status list check failed: %w", err)
 		}
-		status = WorseStatus(status, s)
+		status = statuslist.WorseStatus(status, s)
 	}
 	if bitstring == nil {
 		return status, nil
@@ -82,43 +86,7 @@ func CheckStatus(
 		if err != nil {
 			return statuslist.StatusUnknown, fmt.Errorf("bitstring status check failed: %w", err)
 		}
-		status = WorseStatus(status, BitstringEntryStatus(entry, value))
+		status = statuslist.WorseStatus(status, bitstringstatus.EntryStatus(entry, value))
 	}
 	return status, nil
-}
-
-// BitstringEntryStatus maps a revocation or suspension entry's value onto the
-// Token Status List statuses the wallet stores.
-func BitstringEntryStatus(entry bitstringstatus.Entry, value uint) statuslist.Status {
-	switch {
-	case value == 0:
-		return statuslist.StatusValid
-	case entry.StatusPurpose == bitstringstatus.PurposeSuspension:
-		return statuslist.StatusSuspended
-	default:
-		return statuslist.StatusInvalid
-	}
-}
-
-// WorseStatus combines two statuses: revoked outranks suspended outranks
-// anything else non-valid outranks valid.
-func WorseStatus(a, b statuslist.Status) statuslist.Status {
-	rank := func(s statuslist.Status) int {
-		switch s {
-		case statuslist.StatusValid:
-			return 0
-		case statuslist.StatusApplicationSpecific:
-			return 1
-		case statuslist.StatusSuspended:
-			return 2
-		case statuslist.StatusInvalid:
-			return 3
-		default:
-			return -1
-		}
-	}
-	if rank(b) > rank(a) {
-		return b
-	}
-	return a
 }

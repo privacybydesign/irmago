@@ -3,6 +3,8 @@ package bitstringstatus
 import (
 	"fmt"
 	"slices"
+
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 )
 
 // ListCredentialSubjectType is the `type` of a BitstringStatusListCredential's
@@ -79,4 +81,18 @@ func Check(entry Entry, subject ListCredentialSubject) (uint, error) {
 
 func coversPurpose(have []StatusPurpose, want StatusPurpose) bool {
 	return slices.Contains(have, want)
+}
+
+// EntryStatus maps a revocation or suspension entry's value onto the Token
+// Status List statuses the wallet stores, so both mechanisms share one
+// revocation policy.
+func EntryStatus(entry Entry, value uint) statuslist.Status {
+	switch {
+	case value == 0:
+		return statuslist.StatusValid
+	case entry.StatusPurpose == PurposeSuspension:
+		return statuslist.StatusSuspended
+	default:
+		return statuslist.StatusInvalid
+	}
 }

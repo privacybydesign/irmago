@@ -9,7 +9,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
-	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/internal/common"
 	"gorm.io/datatypes"
@@ -203,12 +202,12 @@ type batchStatus struct {
 }
 
 func (b *batchStatus) addChecked(s statuslist.Status) {
-	b.status = vcdmsdjwt.WorseStatus(b.status, s)
+	b.status = statuslist.WorseStatus(b.status, s)
 	b.checked = true
 }
 
 func (b *batchStatus) addStored(s uint8) {
-	b.status = vcdmsdjwt.WorseStatus(b.status, statuslist.Status(s))
+	b.status = statuslist.WorseStatus(b.status, statuslist.Status(s))
 }
 
 // storeBatchStatus writes a batch's combined status to every instance of the

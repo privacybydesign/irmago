@@ -9,7 +9,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
-	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmstatus"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -102,7 +102,7 @@ func (w *bitstringSweep) check(ctx context.Context, inst db.BitstringStatusInsta
 			return 0, false
 		}
 		w.refreshedTokenURIs[ref.URI] = true
-		status = vcdmsdjwt.WorseStatus(status, s)
+		status = statuslist.WorseStatus(status, s)
 	}
 
 	var entries []bitstringstatus.Entry
@@ -127,7 +127,7 @@ func (w *bitstringSweep) check(ctx context.Context, inst db.BitstringStatusInsta
 			eudi.Logger.Warnf("status refresh: %s: %v", common.SanitizeForLog(entry.StatusListCredential), err)
 			return 0, false
 		}
-		status = vcdmsdjwt.WorseStatus(status, vcdmsdjwt.BitstringEntryStatus(entry, value))
+		status = statuslist.WorseStatus(status, bitstringstatus.EntryStatus(entry, value))
 	}
 	return status, true
 }
@@ -135,7 +135,7 @@ func (w *bitstringSweep) check(ctx context.Context, inst db.BitstringStatusInsta
 // withStatusReferences fills a VCDM instance's status columns from the
 // references the credential carries. Called at issuance, right after the
 // holder verifier checked those references, so the status is seeded as valid.
-func withStatusReferences(inst models.VcdmBatchInstance, refs vcdmsdjwt.StatusReferences, now time.Time) (models.VcdmBatchInstance, error) {
+func withStatusReferences(inst models.VcdmBatchInstance, refs vcdmstatus.StatusReferences, now time.Time) (models.VcdmBatchInstance, error) {
 	if !refs.HasAny() {
 		return inst, nil
 	}

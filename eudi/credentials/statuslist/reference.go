@@ -126,6 +126,30 @@ func (s Status) String() string {
 	}
 }
 
+// WorseStatus combines two statuses, for a credential with more than one status
+// reference: revoked outranks suspended outranks anything else non-valid
+// outranks valid. Unknown, no status information, never outranks a known one.
+func WorseStatus(a, b Status) Status {
+	rank := func(s Status) int {
+		switch s {
+		case StatusValid:
+			return 0
+		case StatusApplicationSpecific:
+			return 1
+		case StatusSuspended:
+			return 2
+		case StatusInvalid:
+			return 3
+		default:
+			return -1
+		}
+	}
+	if rank(b) > rank(a) {
+		return b
+	}
+	return a
+}
+
 // fromRaw converts a decoded bit-value into a Status.
 func statusFromRaw(raw uint8) Status {
 	switch raw {

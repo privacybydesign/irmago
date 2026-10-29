@@ -35,6 +35,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmstatus"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
@@ -470,42 +471,42 @@ func TestValidateVcdmStatusReferences(t *testing.T) {
 	entry := func(list string, index uint64, purpose bitstringstatus.StatusPurpose) bitstringstatus.Entry {
 		return bitstringstatus.Entry{StatusListCredential: list, StatusListIndex: index, StatusPurpose: purpose, StatusSize: 1}
 	}
-	bitstring := func(entries ...bitstringstatus.Entry) vcdmsdjwt.StatusReferences {
-		return vcdmsdjwt.StatusReferences{Bitstring: entries}
+	bitstring := func(entries ...bitstringstatus.Entry) vcdmstatus.StatusReferences {
+		return vcdmstatus.StatusReferences{Bitstring: entries}
 	}
-	token := func(uri string, index uint64) vcdmsdjwt.StatusReferences {
-		return vcdmsdjwt.StatusReferences{TokenStatusList: &statuslist.Reference{URI: uri, Index: index}}
+	token := func(uri string, index uint64) vcdmstatus.StatusReferences {
+		return vcdmstatus.StatusReferences{TokenStatusList: &statuslist.Reference{URI: uri, Index: index}}
 	}
 	const list = "https://issuer.example/lists/1"
 
 	cases := []struct {
 		name    string
-		refs    []vcdmsdjwt.StatusReferences
+		refs    []vcdmstatus.StatusReferences
 		wantErr string
 	}{
-		{"distinct positions", []vcdmsdjwt.StatusReferences{
+		{"distinct positions", []vcdmstatus.StatusReferences{
 			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
 			bitstring(entry(list, 2, bitstringstatus.PurposeRevocation)),
 		}, ""},
-		{"one position for two purposes in one instance", []vcdmsdjwt.StatusReferences{
+		{"one position for two purposes in one instance", []vcdmstatus.StatusReferences{
 			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation), entry(list, 1, bitstringstatus.PurposeSuspension)),
 			bitstring(entry(list, 2, bitstringstatus.PurposeRevocation), entry(list, 2, bitstringstatus.PurposeSuspension)),
 		}, ""},
-		{"no status at all", []vcdmsdjwt.StatusReferences{{}, {}}, ""},
-		{"shared position", []vcdmsdjwt.StatusReferences{
+		{"no status at all", []vcdmstatus.StatusReferences{{}, {}}, ""},
+		{"shared position", []vcdmstatus.StatusReferences{
 			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
 			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
 		}, "duplicate credentialStatus reference"},
-		{"shared position, other purpose", []vcdmsdjwt.StatusReferences{
+		{"shared position, other purpose", []vcdmstatus.StatusReferences{
 			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
 			bitstring(entry(list, 1, bitstringstatus.PurposeSuspension)),
 		}, "duplicate credentialStatus reference"},
-		{"partial credentialStatus", []vcdmsdjwt.StatusReferences{
+		{"partial credentialStatus", []vcdmstatus.StatusReferences{
 			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
 			{},
 		}, "partial credentialStatus reference"},
-		{"shared status_list entry", []vcdmsdjwt.StatusReferences{token(list, 1), token(list, 1)}, "duplicate status_list reference"},
-		{"partial status_list", []vcdmsdjwt.StatusReferences{token(list, 1), {}}, "partial status_list reference"},
+		{"shared status_list entry", []vcdmstatus.StatusReferences{token(list, 1), token(list, 1)}, "duplicate status_list reference"},
+		{"partial status_list", []vcdmstatus.StatusReferences{token(list, 1), {}}, "partial status_list reference"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
