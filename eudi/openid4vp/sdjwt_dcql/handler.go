@@ -537,7 +537,7 @@ func computeDisclosurePreview(
 		view, err := sdjwt.PostDisclosureView(rawSdJwt, requestedPaths)
 		if err == nil {
 			values := sdjwt.ProcessedPayload(view)
-			return collectViewLeafPaths(view, isUserDataKey), &values
+			return collectViewLeafPaths(view, isUserDataKey, requestedPaths), &values
 		}
 		eudi.Logger.Warnf(
 			"failed to compute post-disclosure view for %q (falling back to requested-path flattening): %v",
@@ -635,12 +635,20 @@ func descendantLeafPaths(payload *sdjwt.ProcessedPayload, path []any) [][]any {
 // every visible scalar leaf. Top-level keys for which isUserDataKey returns
 // false are skipped entirely — including their subtrees — because they are
 // envelope/metadata, not user data (JWT/SD-JWT standard claims for SD-JWT VC;
-// everything but credentialSubject for VCDM). Nil placeholders (representing
-// hidden array-element digests) are skipped.
-func collectViewLeafPaths(view map[string]any, isUserDataKey func(string) bool) [][]any {
+// everything but credentialSubject for VCDM), unless one of requestedPaths
+// starts with them: a claim the verifier asks for is shown, so the user
+// consents to it, and is sent, as OpenID4VP §6.4.1 requires. Nil placeholders
+// (representing hidden array-element digests) are skipped.
+func collectViewLeafPaths(view map[string]any, isUserDataKey func(string) bool, requestedPaths [][]any) [][]any {
+	requested := make(map[string]struct{}, len(requestedPaths))
+	for _, path := range requestedPaths {
+		if key, ok := firstKey(path); ok {
+			requested[key] = struct{}{}
+		}
+	}
 	var leaves [][]any
 	for k, child := range view {
-		if !isUserDataKey(k) {
+		if _, ok := requested[k]; !ok && !isUserDataKey(k) {
 			continue
 		}
 		walkLeafPaths(child, []any{k}, func(path []any) {
@@ -648,6 +656,15 @@ func collectViewLeafPaths(view map[string]any, isUserDataKey func(string) bool) 
 		})
 	}
 	return leaves
+}
+
+// firstKey returns the top-level claim name a claim path starts with.
+func firstKey(path []any) (string, bool) {
+	if len(path) == 0 {
+		return "", false
+	}
+	key, ok := path[0].(string)
+	return key, ok
 }
 
 // walkLeafPaths visits every scalar leaf in value, calling visit with the
@@ -915,7 +932,7 @@ func (h *Engine) buildLogCredential(
 		resolved = sdjwt.ProcessedPayload(view)
 	}
 
-	leafPaths := collectViewLeafPaths(view, h.profile.IsUserDataKey)
+	leafPaths := collectViewLeafPaths(view, h.profile.IsUserDataKey, claimPaths)
 	pairs := buildPairsFromLeaves(leafPaths, nil)
 
 	locale := h.currentLocale.Get()

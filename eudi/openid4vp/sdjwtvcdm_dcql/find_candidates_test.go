@@ -442,6 +442,52 @@ func TestVcdmPrepareDisclosure_WithoutHolderBindingSendsTheSdJwt(t *testing.T) {
 	assert.NotContains(t, subject, "family_name", "unselected selectively-disclosable claims must stay hidden")
 }
 
+// A verifier may ask for a selectively disclosable claim outside
+// credentialSubject, such as the credential's own name. The wallet shows it,
+// so the user consents to it, and sends it: OpenID4VP §6.4.1 does not let it
+// return the credential without a claim the verifier asked for.
+func TestVcdmFindCandidates_RequestedClaimOutsideSubjectIsShownAndSent(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	payload := academicPayload(t)
+	payload["name"] = "Alumni card"
+	batch := newTestBatch("hash-vcdm-name", academicVcdmType, payload)
+	claims := append(vcdmsdjwt.AcademicBaseCredentialClaims(t), sdjwt.SdClaim("name", "Alumni card"))
+	batch.Instances[0].RawCredential = []byte(vcdmsdjwt.IssueTestSdJwtVcdm(t, claims))
+	require.NoError(t, store.StoreBatch(batch))
+
+	result, err := h.FindCandidates(parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "vc+sd-jwt",
+		"meta": {"vct_values": ["`+academicVcdmType+`"]},
+		"claims": [{"path": ["name"]}, {"path": ["credentialSubject", "given_name"]}]
+	}`))
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+	shown := result.OwnedCandidates[0].Attributes
+	require.True(t, hasClaimPath(shown, []any{"name"}), "the requested name should be shown")
+	require.True(t, hasClaimPath(shown, []any{"credentialSubject", "given_name"}))
+	for _, a := range shown {
+		top, _ := a.ClaimPath[0].(string)
+		assert.NotContains(t, []string{"@context", "type", "issuer", "validFrom", "validUntil"}, top,
+			"an unrequested envelope key leaked into the disclosure preview: %v", a.ClaimPath)
+	}
+
+	paths := make([][]any, len(shown))
+	for i, a := range shown {
+		paths[i] = a.ClaimPath
+	}
+	prepared, err := h.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId: "q1", CredentialHash: "hash-vcdm-name", ClaimPaths: paths,
+	}}, "nonce-1", "verifier-1")
+	require.NoError(t, err)
+	// The view can only show name when its disclosure is among those sent.
+	view, err := sdjwt.PostDisclosureView(sdjwt.SdJwt(prepared.QueryResponses[0].Credentials[0]), [][]any{{"name"}})
+	require.NoError(t, err)
+	assert.Equal(t, "Alumni card", view["name"], "the requested name should be sent")
+	assert.True(t, hasClaimPath(prepared.CredentialLogs[0].Attributes, []any{"name"}), "the sent name should be logged")
+}
+
 func TestVcdmPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	h, store, keyBinder := newTestHandlerWithKeyBinder(t)
 

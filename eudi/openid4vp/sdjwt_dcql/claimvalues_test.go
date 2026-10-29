@@ -127,7 +127,7 @@ func TestCollectViewLeafPaths_SkipsProtocolClaims(t *testing.T) {
 				"given_name": "Alice",
 			}
 
-			leaves := collectViewLeafPaths(view, testSdJwtVcProfile().IsUserDataKey)
+			leaves := collectViewLeafPaths(view, testSdJwtVcProfile().IsUserDataKey, nil)
 
 			if len(leaves) != 1 || len(leaves[0]) != 1 || leaves[0][0] != "given_name" {
 				t.Fatalf("want only [given_name], got %v", leaves)

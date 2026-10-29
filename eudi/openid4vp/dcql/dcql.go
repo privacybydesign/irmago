@@ -256,13 +256,16 @@ const mdocClaimPathLength = 2
 // shape check in mdoc_dcql's claim matching rejects the path, so no candidate
 // is offered and there is nothing to disclose.
 //
-// An SD-JWT-secured VCDM claim path is rooted at credentialSubject, so that
-// root is a container in the same way, and every relying party authorized for
-// any VCDM attribute would have to register it. It is dropped, and the rest of
-// the path contributes as for other formats. A path with nothing after the
-// root asks for the whole subject, which the wallet expands to every subject
-// claim; it contributes credentialSubject itself, so only a relying party that
-// registered it (or "*") may ask for that.
+// An SD-JWT-secured VCDM claim path is rooted at the credential, and its user
+// data sits under credentialSubject, so that root is a container in the same
+// way, and every relying party authorized for any VCDM attribute would have to
+// register it. It is dropped, and the rest of the path contributes as for other
+// formats. A path with nothing after the root asks for the whole subject, which
+// the wallet expands to every subject claim; it contributes credentialSubject
+// itself, so only a relying party that registered it (or "*") may ask for that.
+// A path outside credentialSubject, such as the credential's own name or id,
+// contributes its components unchanged, so a relying party authorized for a
+// credentialSubject attribute of the same name may ask for it too.
 //
 // Every other format keeps AllClaimPaths' behaviour of contributing every
 // string component of every path.
