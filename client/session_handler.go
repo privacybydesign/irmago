@@ -238,6 +238,7 @@ func findCredential(credentials []*clientmodels.Credential, hash string) *client
 					Revoked:                     c.Revoked,
 					RevocationSupported:         c.RevocationSupported,
 					IssueURL:                    c.IssueURL,
+					IsSingleton:                 c.IsSingleton,
 				}
 			}
 		}

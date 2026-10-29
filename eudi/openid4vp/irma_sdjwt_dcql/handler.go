@@ -281,6 +281,7 @@ func (h *SdJwtVcDcqlHandler) buildSelectableInstance(candidate sdJwtVcCredCandid
 		BatchInstanceCountRemaining: &remainingCount,
 		Attributes:                  attributes,
 		IssueURL:                    clientmodels.ResolvePtr(credType.IssueURL.ToClientmodels(), locale),
+		IsSingleton:                 credType.IsSingleton,
 	}
 
 	if metadata.SignedOn != nil {
@@ -479,6 +480,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		Image:        clientmodels.ImageFromFile(credType.Logo(h.config)),
 		Attributes:   attributes,
 		IssueURL:     issueURL,
+		IsSingleton:  credType.IsSingleton,
 	}, nil
 }
 

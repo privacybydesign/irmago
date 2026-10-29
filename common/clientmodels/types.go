@@ -302,6 +302,10 @@ type Credential struct {
 	RevocationSupported bool `json:"revocation_supported"`
 	// URL at which this credential can be issued (if any), resolved to the current locale.
 	IssueURL *string `json:"issue_url"`
+	// Whether the scheme allows only one credential of this type in the wallet
+	// (ShouldBeSingleton): issuing a new one replaces the old one. False for
+	// types without a scheme entry.
+	IsSingleton bool `json:"is_singleton"`
 	// Issuer-provided card styling, resolved to the current locale. Nil when
 	// nothing is known.
 	Display *CredentialDisplay `json:"display,omitempty"`
@@ -400,6 +404,10 @@ type CredentialDescriptor struct {
 	Image        *Image       `json:"image,omitempty"`
 	Attributes   []Attribute  `json:"attributes"`
 	IssueURL     *string      `json:"issue_url,omitempty"`
+	// Whether the scheme allows only one credential of this type in the wallet
+	// (ShouldBeSingleton): issuing a new one replaces the old one. False for
+	// types without a scheme entry.
+	IsSingleton bool `json:"is_singleton"`
 }
 
 // CredentialStoreItem is a credential descriptor with FAQ information.
@@ -451,6 +459,10 @@ type SelectableCredentialInstance struct {
 	RevocationSupported bool `json:"revocation_supported"`
 	// URL at which this credential can be issued (if any), resolved to the current locale.
 	IssueURL *string `json:"issue_url"`
+	// Whether the scheme allows only one credential of this type in the wallet
+	// (ShouldBeSingleton): issuing a new one replaces the old one. False for
+	// types without a scheme entry.
+	IsSingleton bool `json:"is_singleton"`
 }
 
 // NewTranslatedString returns a TranslatedString containing the specified string for each supported language,

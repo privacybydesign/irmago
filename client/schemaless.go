@@ -69,6 +69,7 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 				Category:     category,
 				Image:        clientmodels.ImageFromFile(cred.Logo(irmaConfig)),
 				Attributes:   attributes,
+				IsSingleton:  cred.IsSingleton,
 			},
 			Faq: clientmodels.Faq{
 				Intro:   clientmodels.PtrIfNonEmpty(introTS[faqLang]),
@@ -188,6 +189,7 @@ func createCredentialDescriptor(
 		Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
 		Attributes:   attributes,
 		IssueURL:     issueURL,
+		IsSingleton:  info.IsSingleton,
 	}, nil
 }
 
@@ -225,6 +227,7 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 		Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
 		Attributes:   attributes,
 		IssueURL:     issueURL,
+		IsSingleton:  info.IsSingleton,
 	}, nil
 }
 
@@ -332,6 +335,7 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 				Revoked:             cred.Revoked,
 				RevocationSupported: cred.RevocationSupported,
 				IssueURL:            issueURL,
+				IsSingleton:         info.IsSingleton,
 			}
 
 			issuanceDate := time.Time(cred.SignedOn).Unix()

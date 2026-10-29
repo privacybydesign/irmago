@@ -200,5 +200,6 @@ func checkWrongCredential(cred *clientmodels.Credential, option *clientmodels.Cr
 		CredentialId: cred.CredentialId,
 		Hash:         cred.Hash,
 		Attributes:   mismatched,
+		IsSingleton:  cred.IsSingleton,
 	}
 }
