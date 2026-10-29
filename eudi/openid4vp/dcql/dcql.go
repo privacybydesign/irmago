@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 )
 
 type DcqlQuery struct {
@@ -256,12 +257,49 @@ const mdocClaimPathLength = 2
 // shape check in mdoc_dcql's claim matching rejects the path, so no candidate
 // is offered and there is nothing to disclose.
 //
+// An SD-JWT-secured VCDM claim path is rooted at credentialSubject, so that
+// root is a container in the same way, and every relying party authorized for
+// any VCDM attribute would have to register it. It is dropped, and the rest of
+// the path contributes as for other formats. A path with nothing after the
+// root asks for the whole subject, which the wallet expands to every subject
+// claim; it contributes credentialSubject itself, so only a relying party that
+// registered it (or "*") may ask for that.
+//
 // Every other format keeps AllClaimPaths' behaviour of contributing every
 // string component of every path.
 func (c CredentialQuery) AuthorizationAttributeNames() []string {
-	if c.Format != string(clientmodels.Format_MsoMdoc) {
+	switch c.Format {
+	case string(clientmodels.Format_MsoMdoc):
+		return c.mdocAuthorizationAttributeNames()
+	case string(clientmodels.Format_SdJwtVcdm):
+		return c.vcdmAuthorizationAttributeNames()
+	default:
 		return slices.Collect(c.AllClaimPaths())
 	}
+}
+
+func (c CredentialQuery) vcdmAuthorizationAttributeNames() []string {
+	var names []string
+	for _, claim := range c.Claims {
+		path := claim.Path
+		if len(path) > 0 && path[0] == vcdm.CredentialSubjectKey {
+			path = path[1:]
+		}
+		var pathNames []string
+		for _, component := range path {
+			if name, ok := component.(string); ok {
+				pathNames = append(pathNames, name)
+			}
+		}
+		if len(pathNames) == 0 {
+			pathNames = []string{vcdm.CredentialSubjectKey}
+		}
+		names = append(names, pathNames...)
+	}
+	return names
+}
+
+func (c CredentialQuery) mdocAuthorizationAttributeNames() []string {
 
 	names := make([]string, 0, len(c.Claims))
 	for _, claim := range c.Claims {

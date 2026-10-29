@@ -88,4 +88,31 @@ func TestAuthorizationAttributeNames(t *testing.T) {
 			query.AuthorizationAttributeNames(),
 			"non-mdoc formats must keep the pre-existing flattening behaviour")
 	})
+
+	t.Run("vcdm drops the credentialSubject root", func(t *testing.T) {
+		query := CredentialQuery{
+			Format: "vc+sd-jwt",
+			Claims: []Claim{
+				{Path: []any{"credentialSubject", "email"}},
+				{Path: []any{"credentialSubject", "address", "street"}},
+				{Path: []any{"credentialSubject", nil, "given_name"}},
+			},
+		}
+
+		names := query.AuthorizationAttributeNames()
+
+		assert.Equal(t, []string{"email", "address", "street", "given_name"}, names)
+		assert.NotContains(t, names, "credentialSubject",
+			"every VCDM path starts with credentialSubject, so it is a container, not an attribute")
+	})
+
+	t.Run("vcdm request for the whole subject needs credentialSubject authorized", func(t *testing.T) {
+		// A path that stops at the root expands to every subject claim. It
+		// contributes credentialSubject itself, which a relying party
+		// authorized for single attributes does not have.
+		for _, path := range [][]any{{"credentialSubject"}, {"credentialSubject", nil}, {"credentialSubject", 0}} {
+			query := CredentialQuery{Format: "vc+sd-jwt", Claims: []Claim{{Path: path}}}
+			assert.Equal(t, []string{"credentialSubject"}, query.AuthorizationAttributeNames(), "path %v", path)
+		}
+	})
 }
