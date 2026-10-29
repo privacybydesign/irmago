@@ -24,8 +24,11 @@ const (
 	FederationKey                        string = "fed"
 
 	// SdJwtVcTyp is the only JWS `typ` accepted for an IETF SD-JWT VC. The
-	// pre-2024 `vc+sd-jwt` media type now denotes an SD-JWT-secured W3C VCDM
-	// credential and is handled by eudi/credentials/vcdmsdjwt (#678/#683).
+	// `vc+sd-jwt` it replaced in November 2024 now denotes an SD-JWT-secured
+	// W3C VCDM credential, as VC-JOSE-COSE registers it, and is handled by
+	// eudi/credentials/vcdmsdjwt. An SD-JWT VC signed with it is refused,
+	// although draft-ietf-oauth-sd-jwt-vc-13 §3.2.1 recommends accepting it for
+	// a transitional period: the two meanings cannot share the name.
 	SdJwtVcTyp string = "dc+sd-jwt"
 )
 

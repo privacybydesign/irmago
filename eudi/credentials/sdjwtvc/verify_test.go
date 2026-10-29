@@ -79,9 +79,22 @@ func Test_HolderVerificationProcessor_IssuerSignedJwt_WithKeyBindingJwt_Fails(t 
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 
 	holderVerifier := NewHolderVerificationProcessor(context)
+	_, err := holderVerifier.ParseAndVerifySdJwtVc(createTestSdJwtVcKb(t, newWorkingSdJwtVcKbTestConfig()))
+
+	require.ErrorContains(t, err, "holder should not receive one from the issuer")
+}
+
+// vc+sd-jwt was the SD-JWT VC typ until November 2024 and now means an
+// SD-JWT-secured W3C VCDM credential, so an SD-JWT VC signed with it is
+// refused, although draft-ietf-oauth-sd-jwt-vc-13 §3.2.1 recommends accepting
+// it for a transitional period.
+func Test_HolderVerificationProcessor_LegacyVcSdJwtTyp_Fails(t *testing.T) {
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	holderVerifier := NewHolderVerificationProcessor(context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_VcTypHeader_WithKbJwt))
 
-	require.Error(t, err, "failed to parse JWT: jwt.Parse: failed to parse token: jws.Verify: key provider 0 failed: invalid 'typ' header: jwt")
+	require.ErrorContains(t, err, "invalid 'typ' header: vc+sd-jwt")
 }
 
 func Test_HolderVerificationProcessor_IssuerSignedJwt_WithInvalidTypHeader_Fails(t *testing.T) {
