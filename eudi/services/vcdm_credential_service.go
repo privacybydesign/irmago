@@ -179,8 +179,8 @@ func (s *sdJwtVcdmCredentialService) Store(
 	}
 
 	// Each copy has its own status entries, so the references are read per
-	// copy. They are read and checked here, before computeHashAndDeleteExisting
-	// below, so a malformed issuance can't delete the user's existing batch.
+	// copy. They are read and checked here, before anything is stored, so a
+	// malformed issuance fails before it touches the user's existing batch.
 	statusRefs := make([]vcdmsdjwt.StatusReferences, len(parsedCredentials))
 	for i, p := range parsedCredentials {
 		refs, err := vcdmsdjwt.ParseStatusReferences(p.SdJwtVcdm.Document)
@@ -208,9 +208,11 @@ func (s *sdJwtVcdmCredentialService) Store(
 		return fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
 	}
 
-	hash, err := s.computeHashAndDeleteExisting(first)
+	// The store replaces a batch with this hash, the same credential issued
+	// before, in the transaction that stores this one.
+	hash, err := hashForVcdmCredential(first.VerifiableCredentialType, first.IssuerIdentifier, first.SdJwtVcdm.ProcessedSdJwtPayload)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to compute credential hash: %w", err)
 	}
 
 	// Absent configuration is tolerated: everything read from it below is
@@ -279,25 +281,6 @@ func (s *sdJwtVcdmCredentialService) Store(
 	}
 
 	return nil
-}
-
-// computeHashAndDeleteExisting computes the credential's content hash and, if
-// a batch with this (hash, format) already exists, deletes it so the new
-// issuance replaces it (e.g. with updated timestamps or a fresh holder binding
-// key).
-func (s *sdJwtVcdmCredentialService) computeHashAndDeleteExisting(p *ParsedCredential) (string, error) {
-	hash, err := hashForVcdmCredential(p.VerifiableCredentialType, p.IssuerIdentifier, p.SdJwtVcdm.ProcessedSdJwtPayload)
-	if err != nil {
-		return "", fmt.Errorf("failed to compute credential hash: %w", err)
-	}
-
-	if existing, err := s.store.GetBatchByHashAndFormat(hash, models.CredentialFormatSdJwtVcdm); err == nil {
-		if err := s.store.DeleteBatch(existing.ID); err != nil {
-			return "", fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
-		}
-	}
-
-	return hash, nil
 }
 
 func (s *sdJwtVcdmCredentialService) deleteOrphanedKeys(publicKeyIdentifiers []models.PublicHolderBindingKey) {

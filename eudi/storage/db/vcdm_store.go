@@ -17,7 +17,9 @@ import (
 // Like the mdoc store there are no display preloads: a VCDM batch carries its
 // display metadata as JSON columns that load with the row.
 type VcdmStore interface {
-	// StoreBatch inserts a VcdmBatch and all its instances atomically.
+	// StoreBatch inserts a VcdmBatch and all its instances, replacing any batch
+	// with the same hash and format, in one transaction: a re-issuance that
+	// fails to store leaves the batch it would have replaced in place.
 	// batch.Instances must be non-empty.
 	StoreBatch(batch *models.VcdmBatch) error
 
@@ -69,7 +71,20 @@ func (s *vcdmStore) StoreBatch(batch *models.VcdmBatch) error {
 	if len(batch.Instances) == 0 {
 		return fmt.Errorf("batch must contain at least one instance")
 	}
-	return s.db.Create(batch).Error
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var existing []datatypes.UUID
+		if err := tx.Model(&models.VcdmBatch{}).
+			Where("hash = ? AND format = ?", batch.Hash, batch.Format).
+			Pluck("id", &existing).Error; err != nil {
+			return err
+		}
+		for _, id := range existing {
+			if err := deleteVcdmBatch(tx, id); err != nil {
+				return fmt.Errorf("failed to delete the batch this one replaces: %w", err)
+			}
+		}
+		return tx.Create(batch).Error
+	})
 }
 
 func (s *vcdmStore) ListBatches() ([]*models.VcdmBatch, error) {
@@ -141,24 +156,30 @@ func (s *vcdmStore) DeleteBatch(batchID datatypes.UUID) error {
 		return fmt.Errorf("batchID is required")
 	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		// Delete the holder binding keys explicitly rather than relying on the
-		// cascade: the key table predates vcdm_batch_instance_id, and SQLite cannot
-		// add a foreign key to an existing table, so on a database created before
-		// VCDM support the column carries no constraint to cascade through.
-		if err := tx.
-			Where("vcdm_batch_instance_id IN (SELECT id FROM vcdm_batch_instances WHERE vcdm_batch_id = ?)", batchID).
-			Delete(&models.HolderBindingKey{}).Error; err != nil {
-			return err
-		}
-		res := tx.Delete(&models.VcdmBatch{}, "id = ?", batchID)
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return ErrNotFound
-		}
-		return nil
+		return deleteVcdmBatch(tx, batchID)
 	})
+}
+
+// deleteVcdmBatch deletes a batch, its instances and their holder binding keys
+// within tx. Returns ErrNotFound if no batch has that id.
+func deleteVcdmBatch(tx *gorm.DB, batchID datatypes.UUID) error {
+	// Delete the holder binding keys explicitly rather than relying on the
+	// cascade: the key table predates vcdm_batch_instance_id, and SQLite cannot
+	// add a foreign key to an existing table, so on a database created before
+	// VCDM support the column carries no constraint to cascade through.
+	if err := tx.
+		Where("vcdm_batch_instance_id IN (SELECT id FROM vcdm_batch_instances WHERE vcdm_batch_id = ?)", batchID).
+		Delete(&models.HolderBindingKey{}).Error; err != nil {
+		return err
+	}
+	res := tx.Delete(&models.VcdmBatch{}, "id = ?", batchID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *vcdmStore) DeleteBatchByHashAndFormat(hash string, format models.CredentialFormat) error {

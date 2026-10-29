@@ -3,6 +3,7 @@ package services
 import (
 	"crypto"
 	"encoding/hex"
+	"errors"
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -269,4 +270,30 @@ func TestResolveVcdmDisplay_FallsBackToDocumentName(t *testing.T) {
 
 	batch.CredentialMetadata = datatypes.JSON(`{"display": [{"name": "Diploma", "locale": "en"}]}`)
 	require.Equal(t, "Diploma", ResolveVcdmDisplay(batch, "en").CredentialName, "issuer metadata takes precedence")
+}
+
+// failingStoreBatch is a VcdmStore whose StoreBatch fails, as a write can.
+type failingStoreBatch struct {
+	db.VcdmStore
+}
+
+func (failingStoreBatch) StoreBatch(*models.VcdmBatch) error {
+	return errors.New("disk full")
+}
+
+// A re-issuance replaces the stored batch with the same content. When storing
+// the new batch fails, the old one must still be there: the user would
+// otherwise lose the credential they had.
+func TestSdJwtVcdmStore_FailedReissuanceKeepsTheStoredCredential(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	raw := newRawVcdm(t, sdjwt.SdClaim("given_name", "Alice"))
+	require.NoError(t, env.service.Store([]*ParsedCredential{env.parse(t, raw)}, "config-id", env.issuerMetadata(), false, nil))
+
+	failing := NewSdJwtVcdmCredentialService(failingStoreBatch{env.store}, env.keys, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()), nil, clientmodels.NewCurrentLocale("en"))
+	err := failing.Store([]*ParsedCredential{env.parse(t, raw)}, "config-id", env.issuerMetadata(), false, nil)
+	require.ErrorContains(t, err, "disk full")
+
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	require.Len(t, batches, 1, "the stored credential must survive a re-issuance that failed to store")
 }
