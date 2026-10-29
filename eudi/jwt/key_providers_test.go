@@ -1513,3 +1513,44 @@ func Test_DidKeyProvider_FetchKeys_EdDSANames_FeedKeyToSink(t *testing.T) {
 		})
 	}
 }
+
+// VC-JOSE-COSE §4.2: without an iss claim, an absolute kid names the
+// verification method, so its DID is resolved instead.
+func Test_DidKeyProvider_FetchKeys_NoIss_AbsoluteKidResolvesItsDid(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	didJwk := newTestDidJwk(t, privKey)
+	msg := newTestJWSMessageSigned(t, "", privKey, jwa.ES256())
+
+	p := NewDidKeyProvider(didJwk+"#0", false)
+	sink := &testKeySink{}
+	err = p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg)
+
+	require.NoError(t, err)
+	require.Len(t, sink.keys, 1)
+	require.Equal(t, didJwk, p.SignerDid, "the caller has to bind the signer DID to the issuer")
+}
+
+// A relative kid needs the iss DID to resolve against.
+func Test_DidKeyProvider_FetchKeys_NoIss_RelativeKid_ReturnsNoKeys(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	msg := newTestJWSMessageSigned(t, "", privKey, jwa.ES256())
+
+	p := NewDidKeyProvider("#0", false)
+	sink := &testKeySink{}
+	require.NoError(t, p.FetchKeys(context.Background(), sink, msg.Signatures()[0], msg))
+	require.Empty(t, sink.keys)
+	require.Empty(t, p.SignerDid)
+}
+
+func Test_DidKeyProvider_FetchKeys_Iss_SignerDidIsIss(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	didJwk := newTestDidJwk(t, privKey)
+	msg := newTestJWSMessageSigned(t, didJwk, privKey, jwa.ES256())
+
+	p := NewDidKeyProvider("#0", false)
+	require.NoError(t, p.FetchKeys(context.Background(), &testKeySink{}, msg.Signatures()[0], msg))
+	require.Equal(t, didJwk, p.SignerDid)
+}

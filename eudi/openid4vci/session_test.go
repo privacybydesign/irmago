@@ -17,8 +17,11 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
@@ -849,4 +852,180 @@ func toStr(v any) string {
 		return s
 	}
 	return ""
+}
+
+// createTestVcdmSdJwt builds an SD-JWT-secured VCDM credential signed with the
+// test issuer key, with one selectively-disclosable credentialSubject leaf and
+// a holder cnf key, signed with the given typ: `vc+sd-jwt`, or `dc+sd-jwt` to
+// check that a VCDM payload under it is refused.
+func createTestVcdmSdJwt(t *testing.T, typ string, x5c []string) string {
+	t.Helper()
+	cnf, err := sdjwt.HolderKeyClaim(testdata.ParseHolderPubJwk())
+	require.NoError(t, err)
+
+	claims := []*sdjwt.ClaimElement{
+		sdjwt.Array(vcdm.ContextKey, sdjwt.Item(vcdm.ContextV2)),
+		sdjwt.Array(vcdm.TypeKey, sdjwt.Item(vcdm.TypeVerifiableCredential), sdjwt.Item("ExampleCredential")),
+		sdjwt.Claim(vcdm.IssuerKey, "https://openid4vc.staging.yivi.app"),
+		sdjwt.Claim(vcdm.ValidFromKey, "2020-01-01T00:00:00Z"),
+		sdjwt.Claim(vcdm.ValidUntilKey, "2035-01-01T00:00:00Z"),
+		sdjwt.Object(vcdm.CredentialSubjectKey,
+			sdjwt.Claim("id", "did:example:holder"),
+			sdjwt.SdClaim("given_name", "Alice"),
+		),
+		cnf,
+	}
+
+	built, err := sdjwt.NewBuilder().
+		WithPayload(claims...).
+		WithIssuerCertificateChain(x5c).
+		WithTyp(typ).
+		Build(sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey())
+	require.NoError(t, err)
+	return string(built)
+}
+
+func testX5cChain(t *testing.T) []string {
+	t.Helper()
+	certChain, err := utils.ParsePemCertificateChainToX5cFormat(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	require.NoError(t, err)
+	return certChain
+}
+
+func Test_openid4vciSession_obtainCredential_vcdmSuccessResponse(t *testing.T) {
+	chain := testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes
+	testCredential := createTestVcdmSdJwt(t, vcdmsdjwt.MediaTypeVcSdJwt, testX5cChain(t))
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired, vcdmCredentialEndpoint(testCredential))
+	defer ts.Close()
+	setVcdmConfiguration(sess, metadata.CredentialFormatIdentifier_SdJwtVcdm)
+
+	vcdmStore := &sentinelFormatStore{}
+	sess.formats = services.CredentialFormats{
+		models.CredentialFormatSdJwtVcdm: {
+			Parser: services.NewSdJwtVcdmCredentialFormatParser(
+				vcdmsdjwt.NewHolderVerificationProcessor(vcdmsdjwt.CreateDefaultVerificationContext(chain)),
+			),
+			Store: vcdmStore,
+		},
+	}
+
+	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	require.Len(t, fetched.parsedCredentials, 1)
+	parsed := fetched.parsedCredentials[0]
+	require.Equal(t, models.CredentialFormatSdJwtVcdm, parsed.Format)
+	require.NotNil(t, parsed.SdJwtVcdm)
+	require.Nil(t, parsed.SdJwtVc)
+	require.Same(t, vcdmStore, fetched.support.Store)
+
+	doc := parsed.SdJwtVcdm.Document
+	require.Equal(t,
+		vcdm.ContextV2+" "+vcdm.TypeVerifiableCredential+" ExampleCredential",
+		doc.TypeIdentity())
+
+	subjects, err := doc.CredentialSubjects()
+	require.NoError(t, err)
+	require.Equal(t, "Alice", subjects[0]["given_name"])
+}
+
+// dc+sd-jwt is IETF SD-JWT VC only: a VCDM credential delivered under it is
+// refused, not moved to the VCDM tables.
+func Test_openid4vciSession_obtainCredential_vcdmUnderDcSdJwtRejected(t *testing.T) {
+	chain := testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes
+	testCredential := createTestVcdmSdJwt(t, "dc+sd-jwt", testX5cChain(t))
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired, vcdmCredentialEndpoint(testCredential))
+	defer ts.Close()
+	setVcdmConfiguration(sess, metadata.CredentialFormatIdentifier_SdJwtVc)
+
+	sess.formats = services.CredentialFormats{
+		models.CredentialFormatSdJwtVc: {
+			Parser: services.NewSdJwtVcCredentialFormatParser(
+				sdjwtvc.NewHolderVerificationProcessor(sdjwtvc.CreateDefaultVerificationContext(chain)),
+			),
+		},
+	}
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.ErrorContains(t, err, "missing vct")
+}
+
+func vcdmCredentialEndpoint(credential string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: credential}},
+		})
+		w.Write(resp)
+	})
+}
+
+func setVcdmConfiguration(sess *session, format metadata.CredentialFormatIdentifier) {
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.Format = format
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{
+		Context: []string{vcdm.ContextV2},
+		Type:    []string{vcdm.TypeVerifiableCredential, "ExampleCredential"},
+	}
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+}
+
+// sentinelFormatStore is a CredentialFormatStore that does nothing; tests
+// compare it by identity to see which store a session picked.
+type sentinelFormatStore struct {
+	services.CredentialFormatStore
+}
+
+// The issued credential must be of the type its configuration declares: an
+// issuer asked for one credential must not deliver another, which would then
+// be stored under the configuration's display metadata. It may carry more
+// types and contexts than declared, as a VCDM type is a set.
+func Test_openid4vciSession_obtainCredential_vcdmTypeMustMatchConfiguration(t *testing.T) {
+	chain := testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes
+	testCredential := createTestVcdmSdJwt(t, vcdmsdjwt.MediaTypeVcSdJwt, testX5cChain(t))
+
+	cases := map[string]struct {
+		definition metadata.W3CCredentialDefinition
+		wantErr    string
+	}{
+		"same type": {definition: metadata.W3CCredentialDefinition{
+			Context: []string{vcdm.ContextV2}, Type: []string{vcdm.TypeVerifiableCredential, "ExampleCredential"},
+		}},
+		"fewer types and no context": {definition: metadata.W3CCredentialDefinition{
+			Type: []string{vcdm.TypeVerifiableCredential},
+		}},
+		"another type": {definition: metadata.W3CCredentialDefinition{
+			Type: []string{vcdm.TypeVerifiableCredential, "DiplomaCredential"},
+		}, wantErr: `"DiplomaCredential"`},
+		"another context": {definition: metadata.W3CCredentialDefinition{
+			Context: []string{vcdm.ContextV2, "https://diploma.example/context/v1"}, Type: []string{vcdm.TypeVerifiableCredential, "ExampleCredential"},
+		}, wantErr: `"https://diploma.example/context/v1"`},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			sess, ts := setupTestEnvironment(t, NonceNotRequired, vcdmCredentialEndpoint(testCredential))
+			defer ts.Close()
+			setVcdmConfiguration(sess, metadata.CredentialFormatIdentifier_SdJwtVcdm)
+			config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+			config.CredentialDefinition = &c.definition
+			sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+			sess.formats = services.CredentialFormats{
+				models.CredentialFormatSdJwtVcdm: {
+					Parser: services.NewSdJwtVcdmCredentialFormatParser(
+						vcdmsdjwt.NewHolderVerificationProcessor(vcdmsdjwt.CreateDefaultVerificationContext(chain)),
+					),
+					Store: &sentinelFormatStore{},
+				},
+			}
+
+			_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+			if c.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, c.wantErr)
+		})
+	}
 }

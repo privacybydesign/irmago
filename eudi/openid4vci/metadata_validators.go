@@ -10,6 +10,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/internal/arrays"
@@ -169,8 +170,8 @@ func (v *CredentialConfigurationValidator) Verify(c *metadata.CredentialConfigur
 		verifier = &MdocFormatVerifier{}
 	case metadata.CredentialFormatIdentifier_SdJwtVc:
 		verifier = &SdJwtVcFormatVerifier{}
-	case metadata.CredentialFormatIdentifier_SdJwtVc_Legacy:
-		verifier = &SdJwtVcFormatVerifier{}
+	case metadata.CredentialFormatIdentifier_SdJwtVcdm:
+		verifier = &SdJwtVcdmFormatVerifier{}
 	default:
 		return fmt.Errorf("unsupported credential format %q", c.Format)
 	}
@@ -183,9 +184,12 @@ func (v *CredentialConfigurationValidator) Verify(c *metadata.CredentialConfigur
 func (v *CredentialConfigurationValidator) ValidateAndGetSupportedFeatures(c *metadata.CredentialConfiguration) (*sessionCredentialRequestPreferences, error) {
 	s := &sessionCredentialRequestPreferences{}
 
-	// We only support SD-JWT VC and mso_mdoc, for now
+	// We only support SD-JWT VC, SD-JWT-secured W3C VCDM and mso_mdoc, for now.
+	// IETF SD-JWT VC (`dc+sd-jwt`) and SD-JWT-secured VCDM (`vc+sd-jwt`) use the
+	// same securing mechanism, so the signing algorithm, binding method and
+	// proof type requirements below apply to both.
 	if c.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
-		c.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy &&
+		c.Format != metadata.CredentialFormatIdentifier_SdJwtVcdm &&
 		c.Format != metadata.CredentialFormatIdentifier_MsoMdoc {
 		return nil, fmt.Errorf("unsupported credential format %q", c.Format)
 	}
@@ -254,11 +258,32 @@ type W3CVCLDFormatVerifier struct{}
 type W3CDILDFormatVerifier struct{}
 type MdocFormatVerifier struct{}
 type SdJwtVcFormatVerifier struct{}
+type SdJwtVcdmFormatVerifier struct{}
 
 // Verify SD-JWT VC credential configuration according to the Credential Format Profile specification
 func (v *SdJwtVcFormatVerifier) Verify(credentialConfiguration *metadata.CredentialConfiguration) error {
 	if credentialConfiguration.VerifiableCredentialType == "" {
 		return fmt.Errorf("missing 'vct' field for SD-JWT VC credential format")
+	}
+	return nil
+}
+
+// Verify an SD-JWT-secured VCDM credential configuration (format id
+// `vc+sd-jwt`). The configuration must
+// describe a W3C VCDM credential: a 'credential_definition' whose 'type'
+// includes VerifiableCredential, and no 'vct' — a vct-typed configuration is an
+// IETF SD-JWT VC and belongs under `dc+sd-jwt`. The '@context' member of the
+// definition is optional; the issued credential's own `@context` is what the
+// verifier gates on (vcdm.IsVCDM), so its absence in metadata is not an error.
+func (v *SdJwtVcdmFormatVerifier) Verify(credentialConfiguration *metadata.CredentialConfiguration) error {
+	if credentialConfiguration.VerifiableCredentialType != "" {
+		return fmt.Errorf("'vct' is not allowed for SD-JWT-secured VCDM credential format")
+	}
+	if credentialConfiguration.CredentialDefinition == nil {
+		return fmt.Errorf("missing 'credential_definition' for SD-JWT-secured VCDM credential format")
+	}
+	if !slices.Contains(credentialConfiguration.CredentialDefinition.Type, vcdm.TypeVerifiableCredential) {
+		return fmt.Errorf("'credential_definition.type' must include %q for SD-JWT-secured VCDM credential format", vcdm.TypeVerifiableCredential)
 	}
 	return nil
 }

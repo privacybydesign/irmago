@@ -8,16 +8,26 @@ import (
 	"gorm.io/gorm"
 )
 
-// CredentialStatusInstance is an instance's status_list reference.
-// BatchID lets callers select a single representative instance per batch, and
+// CredentialStatusInstance is an instance's status references. BatchID lets
+// callers combine a batch's instances into one batch status, and
 // LastKnownStatus lets them tell a status change from a re-confirmation without
 // a second read.
 type CredentialStatusInstance struct {
 	InstanceID      datatypes.UUID
 	BatchID         datatypes.UUID
-	StatusListURI   string
-	StatusListIdx   uint64
 	LastKnownStatus uint8
+
+	// StatusListURI and StatusListIdx are the IETF Token Status List
+	// reference: both set, or both nil when the instance has none.
+	StatusListURI *string
+	StatusListIdx *uint64
+
+	// BitstringEntries are the W3C Bitstring Status List revocation and
+	// suspension entries, as JSON ([]bitstringstatus.Entry); only VCDM
+	// instances carry them. Issuer is the credential's `issuer`, which those
+	// lists must have.
+	BitstringEntries datatypes.JSON
+	Issuer           string
 }
 
 // BatchInstanceStatus pairs a batch's deterministic hash with one of its
@@ -29,23 +39,21 @@ type BatchInstanceStatus struct {
 }
 
 // CredentialStatusStore is the subset of a per-format credential store that
-// Token Status List revocation needs: reading which instances carry a
-// status_list reference and writing back what the wallet last observed for
-// one. SdJwtVcStore and MdocStore both implement it — their instance tables
+// revocation needs: reading which instances carry a status reference and
+// writing back what the wallet last observed for one. SdJwtVcStore and MdocStore both implement it — their instance tables
 // differ (issued_credential_instances vs mdoc_batch_instances, joined
 // through a different batch table for the hash), but the shape
 // RevocationService needs from either is identical, which is what lets one
 // RevocationService serve every credential format instead of each format
 // growing its own revocation sweep.
 type CredentialStatusStore interface {
-	// ListInstancesWithStatusReference returns every instance with a
-	// (status_list.uri, status_list.idx) pair, along with the status the
-	// wallet last recorded for it.
+	// ListInstancesWithStatusReference returns every instance with a status
+	// reference of either kind, along with the status the wallet last
+	// recorded for it.
 	ListInstancesWithStatusReference() ([]CredentialStatusInstance, error)
 
 	// ListStatusReferencedInstanceStatuses returns the (batch hash,
-	// last_known_status) pair for every instance carrying a Token Status List
-	// reference. Used to surface per-credential revocation in the credential
+	// last_known_status) pair for every instance carrying a status reference. Used to surface per-credential revocation in the credential
 	// list without loading full instances.
 	ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error)
 
@@ -73,6 +81,11 @@ var (
 		instances: "mdoc_batch_instances",
 		batches:   "mdoc_batches",
 		batchFK:   "mdoc_batch_id",
+	}
+	vcdmStatusTables = statusTables{
+		instances: "vcdm_batch_instances",
+		batches:   "vcdm_batches",
+		batchFK:   "vcdm_batch_id",
 	}
 )
 

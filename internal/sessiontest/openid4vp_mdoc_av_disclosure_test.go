@@ -1328,7 +1328,7 @@ func runMdocAvDisclosure(t *testing.T, verifierHost string) {
 // requireMdocAvDisclosureLog checks the wallet recorded the presentation in its
 // activity log.
 //
-// MdocDcqlHandler.buildLogCredential is the only mdoc-specific code on the
+// mdoc_dcql.Handler.buildLogCredential is the only mdoc-specific code on the
 // logging path, and nothing else in the suite runs it: it has to turn a
 // namespace/elementIdentifier claim selection into the qualified
 // [namespace, elementIdentifier] attribute paths the rest of the wallet

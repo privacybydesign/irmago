@@ -37,30 +37,12 @@ func isASCIIURLSafe(c rune) bool {
 
 type Jwk any
 
-type SdJwtVcClientMetadataVpFormat struct {
-	KbJwtAlgorithms []string `json:"kb-jwt_alg_values"`
-	SdJwtAlgorithms []string `json:"sd-jwt_alg_values"`
-}
-
 type MdocClientMedataVpFormat struct {
 	Algorithm []string `json:"alg"`
 }
 
 func GetMdocFromClientMetadataVpFormats(vpFormats map[string]any) *MdocClientMedataVpFormat {
 	result, ok := vpFormats["mso_mdoc"].(MdocClientMedataVpFormat)
-	if ok {
-		return &result
-	}
-	return nil
-}
-
-func GetSdJwtVcFromClientMedataVpFormats(vpFormats map[string]any) *SdJwtVcClientMetadataVpFormat {
-	result, ok := vpFormats["vc+sd-jwt"].(SdJwtVcClientMetadataVpFormat)
-	if ok {
-		return &result
-	}
-
-	result, ok = vpFormats["dc+sd-jwt"].(SdJwtVcClientMetadataVpFormat)
 	if ok {
 		return &result
 	}

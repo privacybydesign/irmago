@@ -61,7 +61,29 @@ func NewChecker(ctx VerificationContext, cache Cache) *Checker {
 // Check fetches/verifies the status list for ref (using the cache
 // when fresh) and returns the status at ref.Index.
 func (c *Checker) Check(ctx context.Context, ref Reference) (Status, error) {
-	return c.check(ctx, ref, false)
+	if ref.URI == "" {
+		return StatusUnknown, fmt.Errorf("%w: empty URI", ErrUnauthorized)
+	}
+
+	now := c.nowFn()
+
+	// Cache and singleflight are keyed on ref.URI alone; the verified list
+	// content does not depend on the caller.
+
+	// Cache fast-path.
+	if raw, expires, ok := c.cache.Get(ref.URI); ok && now.Before(expires) {
+		return c.verifyAndDecode(raw, ref, now)
+	}
+
+	v, err := c.fetchOnce(ctx, ref.URI, now)
+	if err != nil {
+		return StatusUnknown, err
+	}
+	list, err := v.decode(c.ctx.MaxBodyBytes)
+	if err != nil {
+		return StatusUnknown, err
+	}
+	return list.StatusAt(ref.Index)
 }
 
 // RequireValid is the fail-closed check a holder applies to a credential it is
@@ -84,54 +106,36 @@ func (c *Checker) RequireValid(ctx context.Context, ref Reference) error {
 // the background sweep to bring stored credential statuses up to
 // date independent of the Check-side TTL.
 func (c *Checker) Refresh(ctx context.Context, ref Reference) (Status, error) {
-	return c.check(ctx, ref, true)
-}
-
-// CheckCached returns the status for ref using only the local cache; it never
-// performs a network fetch. On a cache miss or expired entry it returns
-// (StatusUnknown, nil). A cached entry that no longer verifies is dropped (by
-// verifyAndDecode) and returned as (StatusUnknown, err) for logging. Callers
-// that rely on the background refresh to keep the cache warm treat any
-// non-definitive result as advisory (see services.RevocationService.IsRevoked).
-func (c *Checker) CheckCached(ref Reference) (Status, error) {
-	if ref.URI == "" {
-		return StatusUnknown, fmt.Errorf("%w: empty URI", ErrUnauthorized)
-	}
-	now := c.nowFn()
-	raw, expires, ok := c.cache.Get(ref.URI)
-	if !ok || !now.Before(expires) {
-		return StatusUnknown, nil
-	}
-	return c.verifyAndDecode(raw, ref, now)
-}
-
-func (c *Checker) check(ctx context.Context, ref Reference, bypassCache bool) (Status, error) {
-	if ref.URI == "" {
-		return StatusUnknown, fmt.Errorf("%w: empty URI", ErrUnauthorized)
-	}
-
-	now := c.nowFn()
-
-	// Cache and singleflight are keyed on ref.URI alone; the verified list
-	// content does not depend on the caller.
-
-	// Cache fast-path.
-	if !bypassCache {
-		if raw, expires, ok := c.cache.Get(ref.URI); ok && now.Before(expires) {
-			return c.verifyAndDecode(raw, ref, now)
-		}
-	}
-
-	// Singleflight: collapse concurrent fetches for the same URI.
-	resAny, err, _ := c.sf.Do(ref.URI, func() (any, error) {
-		return c.fetchVerifyStore(ctx, ref.URI, now)
-	})
+	list, err := c.RefreshList(ctx, ref.URI)
 	if err != nil {
 		return StatusUnknown, err
 	}
-	v := resAny.(verifiedStatusListToken)
+	return list.StatusAt(ref.Index)
+}
 
-	return v.statusAt(ref, c.ctx.MaxBodyBytes)
+// RefreshList ignores any cached entry, re-fetches the list at uri and returns
+// it decoded, for a caller that reads many indices of one list.
+func (c *Checker) RefreshList(ctx context.Context, uri string) (*List, error) {
+	if uri == "" {
+		return nil, fmt.Errorf("%w: empty URI", ErrUnauthorized)
+	}
+	v, err := c.fetchOnce(ctx, uri, c.nowFn())
+	if err != nil {
+		return nil, err
+	}
+	return v.decode(c.ctx.MaxBodyBytes)
+}
+
+// fetchOnce runs fetchVerifyStore, collapsing concurrent fetches for the same
+// URI into one.
+func (c *Checker) fetchOnce(ctx context.Context, uri string, now time.Time) (verifiedStatusListToken, error) {
+	resAny, err, _ := c.sf.Do(uri, func() (any, error) {
+		return c.fetchVerifyStore(ctx, uri, now)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resAny.(verifiedStatusListToken), nil
 }
 
 // fetchVerifyStore runs one fetch+verify cycle and writes the raw
@@ -180,5 +184,9 @@ func (c *Checker) verifyAndDecode(raw []byte, ref Reference, now time.Time) (Sta
 		_ = c.cache.Delete(ref.URI)
 		return StatusUnknown, err
 	}
-	return v.statusAt(ref, c.ctx.MaxBodyBytes)
+	list, err := v.decode(c.ctx.MaxBodyBytes)
+	if err != nil {
+		return StatusUnknown, err
+	}
+	return list.StatusAt(ref.Index)
 }

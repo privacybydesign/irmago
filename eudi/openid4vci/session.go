@@ -257,7 +257,9 @@ func (s *session) perform() {
 }
 
 // fetchedCredential holds the result of fetching and verifying credentials
-// for a single credential configuration, before they are stored.
+// for a single credential configuration, before they are stored. A batch is
+// homogeneous: all instances are copies of one logical credential, parsed by
+// the configuration's format.
 type fetchedCredential struct {
 	credentialConfigurationId      string
 	parsedCredentials              []*services.ParsedCredential
@@ -472,6 +474,9 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		switch {
 		case first.SdJwtVc != nil:
 			attrs = buildAttributesWithValues(claims, first.SdJwtVc.ProcessedSdJwtPayload, s.locale)
+		case first.SdJwtVcdm != nil:
+			claimDisplays, claimOrder := claimDisplayLookups(claims, s.locale)
+			attrs = services.BuildAttributesFromVcdmDocument(first.SdJwtVcdm.Document, claimDisplays, claimOrder)
 		case first.Mdoc != nil:
 			attrs = services.BuildMdocAttributesFromResolvedClaims(claims, first.Mdoc.Namespaces, s.locale)
 		}
@@ -522,19 +527,24 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		issuanceDate, expiryDate := first.IssuedAt, first.ExpiresAt
 
 		// The issued credential is authoritative for the credential id — it is
-		// what was signed and what the stored batch is keyed by. Both format
-		// parsers populate ParsedCredential.VerifiableCredentialType with it:
-		// the vct claim for dc+sd-jwt, the docType out of the signed MSO for
-		// mso_mdoc.
+		// what was signed and what the stored batch is keyed by. Every format
+		// parser populates ParsedCredential.VerifiableCredentialType with it:
+		// the vct claim for dc+sd-jwt, the @context+type identity for
+		// SD-JWT-secured VCDM, the docType out of the signed MSO for mso_mdoc.
 		//
 		// The issuer's well-known document is only a fallback, and a weak one.
 		// For dc+sd-jwt it may carry a placeholder (e.g. veramo's "unknown"),
 		// and an mso_mdoc configuration has no vct field at all to carry —
 		// which is why reading it there yielded an empty id, leaving both the
 		// permission dialog and the issuance log naming nothing.
-		credentialId := config.VerifiableCredentialType
+		credentialId := credentialConfigurationTypeIdentity(config)
 		if first.VerifiableCredentialType != "" {
 			credentialId = first.VerifiableCredentialType
+		}
+
+		// Without display metadata, a VCDM credential can still name itself.
+		if name == "" && first.SdJwtVcdm != nil {
+			name = services.VcdmDocumentName(first.SdJwtVcdm.Document, s.locale)
 		}
 
 		// Never offer a nameless credential: fall back to the credential id (the
@@ -577,6 +587,14 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 // appear in declared order, payload-only claims are appended alphabetically.
 // Claims without a metadata display entry produce attributes with DisplayName: nil.
 func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwt.ProcessedPayload, locale string) []clientmodels.Attribute {
+	displayLookup, metadataOrder := claimDisplayLookups(claims, locale)
+	return services.BuildAttributesFromPayload(&payload, displayLookup, metadataOrder)
+}
+
+// claimDisplayLookups derives the display-name lookup (resolved to the given
+// locale) and declared-order index from the issuer metadata's claim
+// descriptions, keyed by claim path.
+func claimDisplayLookups(claims []metadata.ClaimsDescription, locale string) (map[string]string, map[string]int) {
 	displayLookup := map[string]string{}
 	metadataOrder := map[string]int{}
 	for i, c := range claims {
@@ -587,8 +605,7 @@ func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjw
 		}
 		displayLookup[key] = clientmodels.Resolve(claimDisplayToTranslatedString(c.Display), locale)
 	}
-
-	return services.BuildAttributesFromPayload(&payload, displayLookup, metadataOrder)
+	return displayLookup, metadataOrder
 }
 
 func claimDisplayToTranslatedString(displays []metadata.Display) clientmodels.TranslatedString {
@@ -937,15 +954,18 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		if err := requireMdocDocTypeMatchesMetadata(&credentialConfig, parsed); err != nil {
 			return nil, fmt.Errorf("credential %d of configuration %q: %v", i+1, credentialConfigurationId, err)
 		}
+		if err := requireVcdmTypeMatchesMetadata(&credentialConfig, parsed); err != nil {
+			return nil, fmt.Errorf("credential %d of configuration %q: %v", i+1, credentialConfigurationId, err)
+		}
 		if err := requireMandatoryMdocElements(&credentialConfig, parsed); err != nil {
 			return nil, fmt.Errorf("credential %d of configuration %q: %v", i+1, credentialConfigurationId, err)
 		}
 		parsedCredentials[i] = parsed
 	}
 
-	err = parser.CheckBatchUniqueness(parsedCredentials)
+	err = parser.CheckBatch(parsedCredentials)
 	if err != nil {
-		return nil, fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
+		return nil, fmt.Errorf("credential batch rejected: %v", err)
 	}
 
 	return &fetchedCredential{
@@ -990,6 +1010,35 @@ func requireMdocDocTypeMatchesMetadata(config *metadata.CredentialConfiguration,
 			"was issued with docType %q but the issuer's metadata declares doctype %q",
 			parsed.VerifiableCredentialType, config.Doctype,
 		)
+	}
+	return nil
+}
+
+// requireVcdmTypeMatchesMetadata is requireMdocDocTypeMatchesMetadata for
+// SD-JWT-secured VCDM: it refuses a credential whose `type` lacks a type, or
+// whose `@context` lacks a context, that its configuration's
+// credential_definition declares. Otherwise an issuer asked for one credential
+// could deliver another, stored under the configuration's name and logo, while
+// DCQL matching and relying-party authorization key off the type it sent.
+//
+// The credential may carry more types and contexts than declared: a VCDM type
+// is a set, and a credential of a subtype is still of the declared type.
+func requireVcdmTypeMatchesMetadata(config *metadata.CredentialConfiguration, parsed *services.ParsedCredential) error {
+	if models.CredentialFormat(config.Format) != models.CredentialFormatSdJwtVcdm || config.CredentialDefinition == nil || parsed.SdJwtVcdm == nil {
+		return nil
+	}
+	document := parsed.SdJwtVcdm.Document
+	types := document.Types()
+	for _, want := range config.CredentialDefinition.Type {
+		if !slices.Contains(types, want) {
+			return fmt.Errorf("was issued with type %q, which lacks the type %q the issuer's metadata declares", types, want)
+		}
+	}
+	contexts := document.Contexts()
+	for _, want := range config.CredentialDefinition.Context {
+		if !slices.Contains(contexts, any(want)) {
+			return fmt.Errorf("was issued with @context %v, which lacks the context %q the issuer's metadata declares", contexts, want)
+		}
 	}
 	return nil
 }

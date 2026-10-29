@@ -6,16 +6,6 @@ import (
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
-
-	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
-)
-
-// CredentialFormat represents the credential format identifier as defined in the OID4VCI spec.
-type CredentialFormat string
-
-const (
-	CredentialFormatSdJwtVc CredentialFormat = "dc+sd-jwt"
-	CredentialFormatMsoMdoc CredentialFormat = "mso_mdoc"
 )
 
 // SdJwtVcBatch is one logical SD-JWT VC credential: every credential issued from
@@ -71,7 +61,7 @@ type SdJwtVcBatch struct {
 	// AutoMigrate (the only schema mechanism here, see
 	// storage.autoMigrateHolderModels) cannot rename a column, and would ADD a
 	// NOT NULL one instead, which SQLite rejects once the table has rows. See
-	// credentials_schema_test.go, which pins this.
+	// sdjwtvc_schema_test.go, which pins this.
 	ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`
 
 	// IssuedAt is the iat claim of the issuer-signed JWT.
@@ -177,7 +167,7 @@ type SdJwtVcBatchInstance struct {
 
 	// HolderBindingKey is the key pair bound to this credential instance during issuance.
 	// Nil if the credential configuration did not require cryptographic key binding.
-	HolderBindingKey *HolderBindingKey `gorm:"foreignKey:IssuedCredentialInstanceID;constraint:OnDelete:CASCADE"`
+	HolderBindingKey *HolderBindingKey `gorm:"foreignKey:SdJwtVcBatchInstanceID;constraint:OnDelete:CASCADE"`
 
 	// RawCredential is the SD-JWT VC token as issued, without its key binding JWT
 	// (the holder creates that per presentation). The surrounding SQLCipher layer
@@ -212,31 +202,16 @@ type SdJwtVcBatchInstance struct {
 // TableName pins the deployed table name; see SdJwtVcBatch.TableName.
 func (SdJwtVcBatchInstance) TableName() string { return "issued_credential_instances" }
 
-// StatusReference is the instance's Token Status List reference, nil when it
-// carries none.
-func (i *SdJwtVcBatchInstance) StatusReference() *statuslist.Reference {
-	return statusReference(i.StatusListURI, i.StatusListIdx)
-}
-
-// statusReference builds a reference from the two nullable columns every
-// credential instance table stores it in. Both are set or neither is.
-func statusReference(uri *string, idx *uint64) *statuslist.Reference {
-	if uri == nil || idx == nil {
-		return nil
-	}
-	return &statuslist.Reference{URI: *uri, Index: *idx}
-}
-
 func (i *SdJwtVcBatchInstance) BeforeCreate(tx *gorm.DB) error {
 	if i.ID.IsNil() {
 		i.ID = datatypes.NewUUIDv4()
 	}
 	if i.HolderBindingKey != nil {
-		if i.HolderBindingKey.IssuedCredentialInstanceID != nil && !i.HolderBindingKey.IssuedCredentialInstanceID.IsNil() {
+		if i.HolderBindingKey.SdJwtVcBatchInstanceID != nil && !i.HolderBindingKey.SdJwtVcBatchInstanceID.IsNil() {
 			return fmt.Errorf("holder binding key %s is already bound to credential instance %s",
-				i.HolderBindingKey.ID, *i.HolderBindingKey.IssuedCredentialInstanceID)
+				i.HolderBindingKey.ID, *i.HolderBindingKey.SdJwtVcBatchInstanceID)
 		}
-		i.HolderBindingKey.IssuedCredentialInstanceID = &i.ID
+		i.HolderBindingKey.SdJwtVcBatchInstanceID = &i.ID
 	}
 	return i.validate()
 }

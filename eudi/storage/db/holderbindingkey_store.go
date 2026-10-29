@@ -16,7 +16,8 @@ type HolderBindingKeyStore interface {
 	GetByID(id datatypes.UUID) (*models.HolderBindingKey, error)
 	GetByThumbprint(thumbprint string) (*models.HolderBindingKey, error)
 	GetByDidUrl(didUrl string) (*models.HolderBindingKey, error)
-	LinkToInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error
+	LinkToSdJwtVcInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error
+	LinkToVcdmInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error
 	DeleteKey(id datatypes.UUID) error
 	DeleteKeys(ids []datatypes.UUID) error
 	DeleteAll() error
@@ -84,12 +85,22 @@ func (r *holderBindingKeyStore) GetByThumbprint(thumbprint string) (*models.Hold
 	return &key, nil
 }
 
-// LinkToInstance sets the IssuedCredentialInstanceID on the given holder binding key,
-// binding it to the specified credential instance.
-func (r *holderBindingKeyStore) LinkToInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
+// LinkToSdJwtVcInstance sets the SdJwtVcBatchInstanceID on the given holder
+// binding key, binding it to the specified SD-JWT VC instance.
+func (r *holderBindingKeyStore) LinkToSdJwtVcInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
+	return r.linkTo("issued_credential_instance_id", keyID, instanceID)
+}
+
+// LinkToVcdmInstance sets the VcdmBatchInstanceID on the given holder binding
+// key, binding it to the specified VCDM credential instance.
+func (r *holderBindingKeyStore) LinkToVcdmInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
+	return r.linkTo("vcdm_batch_instance_id", keyID, instanceID)
+}
+
+func (r *holderBindingKeyStore) linkTo(column string, keyID datatypes.UUID, instanceID datatypes.UUID) error {
 	res := r.db.Model(&models.HolderBindingKey{}).
 		Where("id = ?", keyID).
-		Update("issued_credential_instance_id", instanceID)
+		Update(column, instanceID)
 	if res.Error != nil {
 		return res.Error
 	}

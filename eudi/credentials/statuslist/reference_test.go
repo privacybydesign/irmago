@@ -52,3 +52,40 @@ func Test_Errors_AreDistinctSentinels(t *testing.T) {
 	require.False(t, errors.Is(ErrFetch, ErrIndexBounds))
 	require.True(t, errors.Is(ErrFetch, ErrFetch))
 }
+
+func TestParseStatusClaim(t *testing.T) {
+	decode := func(js string) any {
+		var v any
+		require.NoError(t, json.Unmarshal([]byte(js), &v))
+		return v
+	}
+
+	ref, err := ParseStatusClaim(decode(`{"status_list": {"idx": 42, "uri": "https://issuer.example/list/1"}}`))
+	require.NoError(t, err)
+	require.Equal(t, &Reference{Index: 42, URI: "https://issuer.example/list/1"}, ref)
+
+	// A claim set built in code holds the index as an integer, not a float64.
+	for _, idx := range []any{42, int64(42), uint64(42)} {
+		ref, err = ParseStatusClaim(map[string]any{"status_list": map[string]any{"idx": idx, "uri": "https://issuer.example/list/1"}})
+		require.NoError(t, err)
+		require.Equal(t, uint64(42), ref.Index)
+	}
+	_, err = ParseStatusClaim(map[string]any{"status_list": map[string]any{"idx": -1, "uri": "https://issuer.example/list/1"}})
+	require.Error(t, err)
+
+	ref, err = ParseStatusClaim(decode(`{"other_mechanism": {}}`))
+	require.NoError(t, err)
+	require.Nil(t, ref, "a status claim without status_list names no list")
+
+	for _, bad := range []string{
+		`"not an object"`,
+		`{"status_list": []}`,
+		`{"status_list": {"idx": 1}}`,
+		`{"status_list": {"uri": "https://issuer.example/list/1"}}`,
+		`{"status_list": {"idx": -1, "uri": "https://issuer.example/list/1"}}`,
+		`{"status_list": {"idx": 1.5, "uri": "https://issuer.example/list/1"}}`,
+	} {
+		_, err := ParseStatusClaim(decode(bad))
+		require.Error(t, err, bad)
+	}
+}

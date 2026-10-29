@@ -1,7 +1,7 @@
 // Package sdjwtvc implements the SD-JWT VC (SD-JWT-based Verifiable
 // Credential) format from draft-ietf-oauth-sd-jwt-vc, layered on top of
-// eudi/sdjwt's SD-JWT core: `vct`, `vct#integrity`, the `dc+sd-jwt` (and
-// legacy `vc+sd-jwt`) media types, issuer identification via the `x5c`
+// eudi/sdjwt's SD-JWT core: `vct`, `vct#integrity`, the `dc+sd-jwt` media
+// type, issuer identification via the `x5c`
 // certificate chain and `iss`, the `status` claim, and the
 // SdJwtVcBuilder/verification-processor policy that enforces them.
 //

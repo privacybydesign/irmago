@@ -180,7 +180,11 @@ const (
 	CredentialFormatIdentifier_W3CVCLD_ProofSuite CredentialFormatIdentifier = "ldp_vc"
 	CredentialFormatIdentifier_MsoMdoc            CredentialFormatIdentifier = "mso_mdoc"
 	CredentialFormatIdentifier_SdJwtVc            CredentialFormatIdentifier = "dc+sd-jwt"
-	CredentialFormatIdentifier_SdJwtVc_Legacy     CredentialFormatIdentifier = "vc+sd-jwt"
+	// CredentialFormatIdentifier_SdJwtVcdm is an SD-JWT-secured W3C VCDM 2.0
+	// credential (VC-JOSE-COSE §3.2). `dc+sd-jwt` is IETF SD-JWT VC only: a
+	// VCDM payload under it has no `vct`, so it fits neither spec and is
+	// rejected.
+	CredentialFormatIdentifier_SdJwtVcdm CredentialFormatIdentifier = "vc+sd-jwt"
 
 	ProofTypeIdentifier_JWT         ProofTypeIdentifier = "jwt"
 	ProofTypeIdentifier_DIVP        ProofTypeIdentifier = "di_vp"

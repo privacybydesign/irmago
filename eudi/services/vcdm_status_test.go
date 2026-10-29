@@ -1,0 +1,686 @@
+package services
+
+// W3C Bitstring Status List checking for SD-JWT-secured VCDM credentials.
+//
+// No issuer in the e2e stack puts a W3C credentialStatus on a vc+sd-jwt
+// credential (veramo only writes the IETF status claim), so this mechanism is
+// pinned here, against an in-process status list server. The IETF mechanism on
+// VCDM is pinned end to end in internal/sessiontest.
+//
+// The test environment (newVcdmTestEnv) checks status like the wallet does. The
+// status list credential is signed by the same test issuer as the credential
+// itself, so trusting that issuer is enough to verify it.
+//
+// The expectations mirror SD-JWT VC's Token Status List: issuance refuses a
+// credential whose status is not valid or cannot be verified, and a stored
+// credential with a status reference supports revocation.
+
+import (
+	"bytes"
+	"compress/gzip"
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmstatus"
+	"github.com/privacybydesign/irmago/eudi/didjwk"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/utils"
+	"github.com/privacybydesign/irmago/testdata"
+	"github.com/stretchr/testify/require"
+	"gorm.io/datatypes"
+)
+
+// testStatusListIndex is the index every test credential gets on the list.
+const testStatusListIndex = 5
+
+// bitstringStatusListServer serves one JWT-secured BitstringStatusListCredential.
+type bitstringStatusListServer struct {
+	server   *httptest.Server
+	body     []byte
+	status   int
+	requests int
+}
+
+func newBitstringStatusListServer(t *testing.T) *bitstringStatusListServer {
+	t.Helper()
+	s := &bitstringStatusListServer{status: http.StatusOK}
+	s.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.requests++
+		if s.status != http.StatusOK {
+			w.WriteHeader(s.status)
+			return
+		}
+		w.Header().Set("Content-Type", "application/vc+jwt")
+		_, _ = w.Write(s.body)
+	}))
+	t.Cleanup(s.server.Close)
+	return s
+}
+
+func (s *bitstringStatusListServer) url() string { return s.server.URL + "/lists/1" }
+
+// serve signs a status list with the test issuer key, with the bit at
+// testStatusListIndex set or clear.
+func (s *bitstringStatusListServer) serve(t *testing.T, revoked bool) {
+	t.Helper()
+	s.body = signBitstringStatusList(t, sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey(), s.url(), revoked, true)
+}
+
+// signBitstringStatusList builds a BitstringStatusListCredential secured as
+// vc+jwt (VC-JOSE-COSE §3.1.1). withX5c attaches the test issuer's chain, which
+// is what makes the list verifiable.
+func signBitstringStatusList(t *testing.T, signer sdjwt.JwtCreator, listURL string, revoked bool, withX5c bool) []byte {
+	t.Helper()
+	header := map[string]any{"typ": "vc+jwt"}
+	if withX5c {
+		x5c, err := utils.ParsePemCertificateChainToX5cFormat(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+		require.NoError(t, err)
+		header["x5c"] = x5c
+	}
+	return signBitstringStatusListAs(t, signer, header, listURL, testVcdmIssuer, "", revoked)
+}
+
+// signBitstringStatusListAs is signBitstringStatusList with the JOSE header,
+// the list's `issuer` and its JWT `iss` (left out when empty) chosen by the
+// caller. An empty listURL leaves the list's `id` out, and mutate changes the
+// claims before they are signed.
+func signBitstringStatusListAs(t *testing.T, signer sdjwt.JwtCreator, header map[string]any, listURL, issuer, iss string, revoked bool, mutate ...func(claims map[string]any)) []byte {
+	t.Helper()
+
+	// The W3C minimum list size: 16 KB, 131,072 entries. Bits are MSB-first.
+	bits := make([]byte, 16*1024)
+	if revoked {
+		bits[testStatusListIndex/8] |= 0x80 >> (testStatusListIndex % 8)
+	}
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	_, err := gz.Write(bits)
+	require.NoError(t, err)
+	require.NoError(t, gz.Close())
+
+	claims := map[string]any{
+		vcdm.ContextKey:   []any{vcdm.ContextV2},
+		vcdm.IDKey:        listURL,
+		vcdm.TypeKey:      []any{vcdm.TypeVerifiableCredential, "BitstringStatusListCredential"},
+		vcdm.IssuerKey:    issuer,
+		vcdm.ValidFromKey: "2020-01-01T00:00:00Z",
+		vcdm.CredentialSubjectKey: map[string]any{
+			"id":            listURL + "#list",
+			"type":          "BitstringStatusList",
+			"statusPurpose": "revocation",
+			"encodedList":   "u" + base64.RawURLEncoding.EncodeToString(buf.Bytes()),
+		},
+	}
+	if iss != "" {
+		claims["iss"] = iss
+	}
+	if listURL == "" {
+		delete(claims, vcdm.IDKey)
+		delete(claims[vcdm.CredentialSubjectKey].(map[string]any), "id")
+	}
+	for _, m := range mutate {
+		m(claims)
+	}
+	payload, err := json.Marshal(claims)
+	require.NoError(t, err)
+
+	jwt, err := signer.CreateSignedJwt(header, string(payload))
+	require.NoError(t, err)
+	return []byte(jwt)
+}
+
+// newRawVcdmWithStatus is newRawVcdm with a revocation BitstringStatusListEntry
+// pointing at testStatusListIndex of the list at listURL.
+func newRawVcdmWithStatus(t *testing.T, listURL string) string {
+	t.Helper()
+	x5c, err := utils.ParsePemCertificateChainToX5cFormat(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	require.NoError(t, err)
+	cnf, err := sdjwt.HolderKeyClaim(testdata.ParseHolderPubJwk())
+	require.NoError(t, err)
+
+	claims := []*sdjwt.ClaimElement{
+		sdjwt.Array(vcdm.ContextKey, sdjwt.Item(vcdm.ContextV2)),
+		sdjwt.Array(vcdm.TypeKey, sdjwt.Item(vcdm.TypeVerifiableCredential), sdjwt.Item("ExampleCredential")),
+		sdjwt.Claim(vcdm.IssuerKey, testVcdmIssuer),
+		sdjwt.Claim(vcdm.ValidFromKey, "2020-01-01T00:00:00Z"),
+		sdjwt.Claim(vcdm.ValidUntilKey, "2035-01-01T00:00:00Z"),
+		sdjwt.Object(vcdm.CredentialSubjectKey,
+			sdjwt.Claim("id", "did:example:holder"),
+			sdjwt.SdClaim("given_name", "Alice"),
+		),
+		sdjwt.Object(vcdm.CredentialStatusKey,
+			sdjwt.Claim("id", listURL+"#"+strconv.Itoa(testStatusListIndex)),
+			sdjwt.Claim("type", "BitstringStatusListEntry"),
+			sdjwt.Claim("statusPurpose", "revocation"),
+			sdjwt.Claim("statusListIndex", strconv.Itoa(testStatusListIndex)),
+			sdjwt.Claim("statusListCredential", listURL),
+		),
+		cnf,
+	}
+
+	built, err := sdjwt.NewBuilder().
+		WithPayload(claims...).
+		WithIssuerCertificateChain(x5c).
+		WithTyp(vcdmsdjwt.MediaTypeVcSdJwt).
+		Build(sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey())
+	require.NoError(t, err)
+	return string(built)
+}
+
+func (e *vcdmTestEnv) parseErr(raw string) error {
+	_, err := e.parser.ParseAndVerify(raw, testVcdmIssuer, false)
+	return err
+}
+
+func TestVcdmBitstringStatus_IssuanceAcceptsValid(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	server := newBitstringStatusListServer(t)
+	server.serve(t, false)
+
+	require.NoError(t, env.parseErr(newRawVcdmWithStatus(t, server.url())))
+}
+
+func TestVcdmBitstringStatus_IssuanceRefusesRevoked(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	server := newBitstringStatusListServer(t)
+	server.serve(t, true)
+
+	require.Error(t, env.parseErr(newRawVcdmWithStatus(t, server.url())),
+		"a credential the issuer already revoked must not be stored")
+}
+
+func TestVcdmBitstringStatus_IssuanceRefusesUnreachableList(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	server := newBitstringStatusListServer(t)
+	server.status = http.StatusNotFound
+
+	require.Error(t, env.parseErr(newRawVcdmWithStatus(t, server.url())),
+		"a status that cannot be read is not a valid status")
+}
+
+func TestVcdmBitstringStatus_IssuanceRefusesUntrustedList(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	server := newBitstringStatusListServer(t)
+
+	// A valid-looking list signed by a key the wallet does not trust: the bit
+	// says valid, but nothing vouches for it.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	server.body = signBitstringStatusList(t, sdjwt.NewJwtCreator(key), server.url(), false, false)
+
+	require.Error(t, env.parseErr(newRawVcdmWithStatus(t, server.url())),
+		"a status list must verify before its bit is believed")
+}
+
+func TestVcdmBitstringStatus_StoredCredentialSupportsRevocation(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	server := newBitstringStatusListServer(t)
+	server.serve(t, false)
+
+	parsed := env.parse(t, newRawVcdmWithStatus(t, server.url()))
+	require.NoError(t, env.service.Store([]*ParsedCredential{parsed}, "config-id", env.issuerMetadata(), false, nil))
+
+	list, err := env.service.List()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.True(t, list[0].RevocationSupported, "a credential carrying a status reference supports revocation")
+	require.False(t, list[0].Revoked)
+}
+
+// TestVcdmBitstringStatus_FixtureReadsAsSigned guards the fixtures above, so a
+// red test means a missing status check and not a malformed list: the entry
+// and the list resolve through the bitstringstatus package to the bit served.
+func TestVcdmBitstringStatus_FixtureReadsAsSigned(t *testing.T) {
+	for _, revoked := range []bool{false, true} {
+		server := newBitstringStatusListServer(t)
+		server.serve(t, revoked)
+
+		var list vcdm.Document
+		parts := bytes.Split(server.body, []byte("."))
+		require.Len(t, parts, 3)
+		payload, err := base64.RawURLEncoding.DecodeString(string(parts[1]))
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal(payload, &list))
+		require.NoError(t, list.Validate())
+		subject, err := bitstringstatus.ParseListCredentialSubject(list[vcdm.CredentialSubjectKey].(map[string]any))
+		require.NoError(t, err)
+
+		// Parsed without a status check: a revoked credential is refused otherwise.
+		parser := NewSdJwtVcdmCredentialFormatParser(vcdmsdjwt.NewHolderVerificationProcessor(
+			vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)))
+		credential, err := parser.ParseAndVerify(newRawVcdmWithStatus(t, server.url()), testVcdmIssuer, false)
+		require.NoError(t, err)
+		entries, err := bitstringstatus.ParseEntries(credential.SdJwtVcdm.Document[vcdm.CredentialStatusKey])
+		require.NoError(t, err)
+		require.Len(t, entries, 1)
+
+		value, err := bitstringstatus.Check(entries[0], subject)
+		require.NoError(t, err)
+		require.Equal(t, map[bool]uint{false: 0, true: 1}[revoked], value)
+	}
+}
+
+// storeVcdmWithStatus issues a credential on the server's list into env and
+// returns a revocation service over env's store and a W3C checker.
+func storeVcdmWithStatus(t *testing.T, env *vcdmTestEnv, server *bitstringStatusListServer) *RevocationService {
+	t.Helper()
+	parsed := env.parse(t, newRawVcdmWithStatus(t, server.url()))
+	require.NoError(t, env.service.Store([]*ParsedCredential{parsed}, "config-id", env.issuerMetadata(), false, nil))
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	checker := newTestBitstringChecker(ctx)
+	return NewRevocationService(nil, checker, env.store)
+}
+
+func requireVcdmRevoked(t *testing.T, env *vcdmTestEnv, want bool) {
+	t.Helper()
+	list, err := env.service.List()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.Equal(t, want, list[0].Revoked)
+}
+
+func TestRevocationService_BitstringRefreshFindsRevocationOnce(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	server := newBitstringStatusListServer(t)
+	server.serve(t, false)
+	revocation := storeVcdmWithStatus(t, env, server)
+
+	changed, err := revocation.RefreshStatuses(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, changed, "issuance already recorded the valid status")
+
+	server.serve(t, true)
+	changed, err = revocation.RefreshStatuses(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, changed)
+	requireVcdmRevoked(t, env, true)
+
+	changed, err = revocation.RefreshStatuses(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, changed, "a known revocation is not re-reported")
+}
+
+func TestRevocationService_BitstringUnreachableListKeepsStatus(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	server := newBitstringStatusListServer(t)
+	server.serve(t, false)
+	revocation := storeVcdmWithStatus(t, env, server)
+
+	server.status = http.StatusServiceUnavailable
+	changed, err := revocation.RefreshStatuses(context.Background())
+	require.NoError(t, err, "a failing list is logged, not fatal")
+	require.Zero(t, changed)
+	requireVcdmRevoked(t, env, false)
+}
+
+func TestBitstringChecker_RejectsListServedUnderAnotherURL(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	// A genuine, trusted list, but for another URL: substituting it must not
+	// work, or one valid list could vouch for every credential.
+	server.body = signBitstringStatusList(t, sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey(), "https://issuer.example/lists/other", false, true)
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	checker := newTestBitstringChecker(ctx)
+	_, err := checker.Fetch(context.Background(), server.url(), testVcdmIssuer)
+	require.ErrorIs(t, err, bitstringstatus.ErrUnauthorized)
+	require.ErrorContains(t, err, "does not match status list url")
+}
+
+// W3C §2.2 makes a status list's id optional, so a list without one is
+// accepted.
+func TestBitstringChecker_AcceptsListWithoutId(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	server.body = signBitstringStatusList(t, sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey(), "", false, true)
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	checker := newTestBitstringChecker(ctx)
+	subject, err := checker.Fetch(context.Background(), server.url(), testVcdmIssuer)
+	require.NoError(t, err)
+	require.Equal(t, []bitstringstatus.StatusPurpose{bitstringstatus.PurposeRevocation}, subject.StatusPurposes)
+}
+
+// signSdJwtBitstringStatusList secures the test list at listURL as an SD-JWT
+// signed with typ, its statusPurpose a Disclosure, so the list can only be read
+// with the Disclosures applied. kbJwt, when set, is appended as a key binding JWT.
+func signSdJwtBitstringStatusList(t *testing.T, listURL, typ, kbJwt string) []byte {
+	t.Helper()
+	purpose, err := sdjwt.NewDisclosureContent("statusPurpose", "revocation")
+	require.NoError(t, err)
+	encoded, err := sdjwt.EncodeDisclosure(purpose)
+	require.NoError(t, err)
+	digest, err := sdjwt.HashEncodedDisclosure("sha-256", encoded)
+	require.NoError(t, err)
+
+	x5c, err := utils.ParsePemCertificateChainToX5cFormat(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	require.NoError(t, err)
+	header := map[string]any{"typ": typ, "x5c": x5c}
+	signed := signBitstringStatusListAs(t, sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey(), header, listURL, testVcdmIssuer, "", false,
+		func(claims map[string]any) {
+			subject := claims[vcdm.CredentialSubjectKey].(map[string]any)
+			delete(subject, "statusPurpose")
+			subject[sdjwt.SdKey] = []any{string(digest)}
+		})
+	return []byte(string(signed) + "~" + string(encoded) + "~" + kbJwt)
+}
+
+// W3C §3.6 has an issuer secure its status list as it secures its
+// credentials, so a list may be an SD-JWT (vc+sd-jwt), read with its
+// Disclosures applied.
+func TestBitstringChecker_AcceptsSdJwtList(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	server.body = signSdJwtBitstringStatusList(t, server.url(), "vc+sd-jwt", "")
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	subject, err := newTestBitstringChecker(ctx).Fetch(context.Background(), server.url(), testVcdmIssuer)
+	require.NoError(t, err)
+	require.Equal(t, []bitstringstatus.StatusPurpose{bitstringstatus.PurposeRevocation}, subject.StatusPurposes)
+}
+
+func TestBitstringChecker_RejectsMalformedSdJwtList(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body func(url string) []byte
+		err  string
+	}{
+		// The typ must name the securing the list is in.
+		"an SD-JWT typed vc+jwt": {func(url string) []byte { return signSdJwtBitstringStatusList(t, url, "vc+jwt", "") }, "invalid 'typ' header"},
+		"a JWT typed vc+sd-jwt": {func(url string) []byte {
+			x5c, err := utils.ParsePemCertificateChainToX5cFormat(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+			require.NoError(t, err)
+			return signBitstringStatusListAs(t, sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey(), map[string]any{"typ": "vc+sd-jwt", "x5c": x5c}, url, testVcdmIssuer, "", false)
+		}, "invalid 'typ' header"},
+		"an SD-JWT with a key binding JWT": {func(url string) []byte {
+			return signSdJwtBitstringStatusList(t, url, "vc+sd-jwt", "eyJhbGciOiJFUzI1NiJ9.e30.c2ln")
+		}, "carries no key binding JWT"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := newBitstringStatusListServer(t)
+			server.body = tc.body(server.url())
+
+			ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+			_, err := newTestBitstringChecker(ctx).Fetch(context.Background(), server.url(), testVcdmIssuer)
+			require.ErrorIs(t, err, bitstringstatus.ErrUnauthorized)
+			require.ErrorContains(t, err, tc.err)
+		})
+	}
+}
+
+// newTestBitstringChecker trusts the test issuer.
+func newTestBitstringChecker(ctx vcdmsdjwt.VerificationContext) *bitstringstatus.Checker {
+	return bitstringstatus.NewChecker(bitstringstatus.VerificationContext{X509Context: ctx.X509VerificationContext})
+}
+
+func TestBitstringChecker_RejectsListOfAnotherIssuer(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	server.serve(t, false)
+
+	// A genuine list of the test issuer, asked for on behalf of a credential of
+	// another issuer: the test issuer cannot speak for that credential.
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	_, err := newTestBitstringChecker(ctx).Fetch(context.Background(), server.url(), "https://other-issuer.example")
+	require.ErrorIs(t, err, bitstringstatus.ErrUnauthorized)
+	require.ErrorContains(t, err, "is not the credential issuer")
+}
+
+// Without iss, the absolute kid's DID is the signer, and it must be the
+// issuer too: otherwise leaving out iss would get round the check above.
+func TestBitstringChecker_RejectsListSignedWithAnotherDidKeyWithoutIss(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	publicJwk, err := jwk.Import[jwk.Key](key.Public())
+	require.NoError(t, err)
+	doc, err := (&didjwk.DocumentBuilder{}).FromJwk(publicJwk)
+	require.NoError(t, err)
+	header := map[string]any{"typ": "vc+jwt", "kid": doc.VerificationMethod[0].ID}
+	server.body = signBitstringStatusListAs(t, sdjwt.NewJwtCreator(key), header, server.url(), testVcdmIssuer, "", false)
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	_, err = newTestBitstringChecker(ctx).Fetch(context.Background(), server.url(), testVcdmIssuer)
+	require.ErrorIs(t, err, bitstringstatus.ErrUnauthorized)
+	require.ErrorContains(t, err, "not of the list issuer")
+}
+
+func TestBitstringChecker_RejectsListSignedWithAnotherDidKey(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+
+	// A list naming the credential's issuer, but signed by whoever controls
+	// the list URL, with a did:jwk key of their own. did:jwk is
+	// self-certifying, so its signature alone proves nothing.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	publicJwk, err := jwk.Import[jwk.Key](key.Public())
+	require.NoError(t, err)
+	doc, err := (&didjwk.DocumentBuilder{}).FromJwk(publicJwk)
+	require.NoError(t, err)
+	header := map[string]any{"typ": "vc+jwt", "kid": doc.VerificationMethod[0].ID}
+	server.body = signBitstringStatusListAs(t, sdjwt.NewJwtCreator(key), header, server.url(), testVcdmIssuer, doc.ID, false)
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	_, err = newTestBitstringChecker(ctx).Fetch(context.Background(), server.url(), testVcdmIssuer)
+	require.ErrorIs(t, err, bitstringstatus.ErrUnauthorized)
+	require.ErrorContains(t, err, "does not match list issuer")
+}
+
+// The VCDM store lists an instance once, with all of its references and its
+// issuer, whichever kind of status list it names.
+func TestVcdmStore_ListsBitstringInstancesWithTheirIssuer(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	server := newBitstringStatusListServer(t)
+	server.serve(t, false)
+	storeVcdmWithStatus(t, env, server)
+
+	instances, err := env.store.ListInstancesWithStatusReference()
+	require.NoError(t, err)
+	require.Len(t, instances, 1)
+	require.NotEmpty(t, instances[0].BitstringEntries)
+	require.Nil(t, instances[0].StatusListURI)
+	require.Equal(t, testVcdmIssuer, instances[0].Issuer)
+
+	referenced, err := env.store.ListStatusReferencedInstanceStatuses()
+	require.NoError(t, err)
+	require.Len(t, referenced, 1, "the credential list sees the instance as revocable")
+}
+
+// recordingStatusStore is a CredentialStatusStore over fixed instances that
+// records the status written to each.
+type recordingStatusStore struct {
+	instances []db.CredentialStatusInstance
+	written   map[datatypes.UUID]uint8
+}
+
+func (s *recordingStatusStore) ListInstancesWithStatusReference() ([]db.CredentialStatusInstance, error) {
+	return s.instances, nil
+}
+
+func (s *recordingStatusStore) ListStatusReferencedInstanceStatuses() ([]db.BatchInstanceStatus, error) {
+	return nil, nil
+}
+
+func (s *recordingStatusStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, _ time.Time) error {
+	s.written[instanceID] = status
+	return nil
+}
+
+// Disclosure reads the stored status of the instance it sends, so a sweep that
+// finds a batch revoked must record that on every instance of the batch, not
+// only on the one it checked.
+func TestRevocationService_BitstringRefreshWritesEveryInstanceOfABatch(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	server.serve(t, true)
+
+	entries, err := json.Marshal([]bitstringstatus.Entry{{
+		StatusPurpose:        bitstringstatus.PurposeRevocation,
+		StatusListIndex:      testStatusListIndex,
+		StatusListCredential: server.url(),
+		StatusSize:           1,
+	}})
+	require.NoError(t, err)
+	batchID := datatypes.NewUUIDv4()
+	valid := uint8(statuslist.StatusValid)
+	store := &recordingStatusStore{
+		instances: []db.CredentialStatusInstance{
+			{InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: valid, Issuer: testVcdmIssuer, BitstringEntries: entries},
+			{InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: valid, Issuer: testVcdmIssuer, BitstringEntries: entries},
+		},
+		written: map[datatypes.UUID]uint8{},
+	}
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	checker := newTestBitstringChecker(ctx)
+	changed, err := NewRevocationService(nil, checker, store).RefreshStatuses(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, changed, "one batch changed")
+
+	for _, inst := range store.instances {
+		require.Equal(t, uint8(statuslist.StatusInvalid), store.written[inst.InstanceID], "instance %s", inst.InstanceID)
+	}
+}
+
+// A batch whose instances share a status entry, or carry status references
+// only in part, is refused: each one-time-use instance needs an entry of its
+// own. One instance may use one position for several purposes.
+func TestValidateVcdmStatusReferences(t *testing.T) {
+	entry := func(list string, index uint64, purpose bitstringstatus.StatusPurpose) bitstringstatus.Entry {
+		return bitstringstatus.Entry{StatusListCredential: list, StatusListIndex: index, StatusPurpose: purpose, StatusSize: 1}
+	}
+	bitstring := func(entries ...bitstringstatus.Entry) vcdmstatus.StatusReferences {
+		return vcdmstatus.StatusReferences{Bitstring: entries}
+	}
+	token := func(uri string, index uint64) vcdmstatus.StatusReferences {
+		return vcdmstatus.StatusReferences{TokenStatusList: &statuslist.Reference{URI: uri, Index: index}}
+	}
+	const list = "https://issuer.example/lists/1"
+
+	cases := []struct {
+		name    string
+		refs    []vcdmstatus.StatusReferences
+		wantErr string
+	}{
+		{"distinct positions", []vcdmstatus.StatusReferences{
+			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
+			bitstring(entry(list, 2, bitstringstatus.PurposeRevocation)),
+		}, ""},
+		{"one position for two purposes in one instance", []vcdmstatus.StatusReferences{
+			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation), entry(list, 1, bitstringstatus.PurposeSuspension)),
+			bitstring(entry(list, 2, bitstringstatus.PurposeRevocation), entry(list, 2, bitstringstatus.PurposeSuspension)),
+		}, ""},
+		{"no status at all", []vcdmstatus.StatusReferences{{}, {}}, ""},
+		{"shared position", []vcdmstatus.StatusReferences{
+			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
+			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
+		}, "duplicate credentialStatus reference"},
+		{"shared position, other purpose", []vcdmstatus.StatusReferences{
+			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
+			bitstring(entry(list, 1, bitstringstatus.PurposeSuspension)),
+		}, "duplicate credentialStatus reference"},
+		{"partial credentialStatus", []vcdmstatus.StatusReferences{
+			bitstring(entry(list, 1, bitstringstatus.PurposeRevocation)),
+			{},
+		}, "partial credentialStatus reference"},
+		{"shared status_list entry", []vcdmstatus.StatusReferences{token(list, 1), token(list, 1)}, "duplicate status_list reference"},
+		{"partial status_list", []vcdmstatus.StatusReferences{token(list, 1), {}}, "partial status_list reference"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := validateVcdmStatusReferences(c.refs)
+			if c.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, c.wantErr)
+			}
+		})
+	}
+}
+
+// The check runs before Store deletes anything, so a re-issuance that fails it
+// leaves the stored credential in place.
+func TestVcdmStore_RejectedStatusReferencesKeepTheStoredCredential(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	server := newBitstringStatusListServer(t)
+	server.serve(t, false)
+	storeVcdmWithStatus(t, env, server)
+
+	// Two instances on the same position: same content, so the same hash as
+	// the stored credential, which a re-issuance would replace.
+	raw := newRawVcdmWithStatus(t, server.url())
+	batch := []*ParsedCredential{env.parse(t, raw), env.parse(t, raw)}
+	err := env.service.Store(batch, "config-id", env.issuerMetadata(), false, nil)
+	require.ErrorContains(t, err, "duplicate credentialStatus reference")
+
+	list, err := env.service.List()
+	require.NoError(t, err)
+	require.Len(t, list, 1, "the stored credential must survive the refused re-issuance")
+}
+
+// recordingStatusStoreOnOneList is a recordingStatusStore with two batches of
+// two instances, all on the list at listURL.
+func recordingStatusStoreOnOneList(t *testing.T, listURL string) *recordingStatusStore {
+	t.Helper()
+	entries, err := json.Marshal([]bitstringstatus.Entry{{
+		StatusPurpose:        bitstringstatus.PurposeRevocation,
+		StatusListIndex:      testStatusListIndex,
+		StatusListCredential: listURL,
+		StatusSize:           1,
+	}})
+	require.NoError(t, err)
+	store := &recordingStatusStore{written: map[datatypes.UUID]uint8{}}
+	for range 2 {
+		batchID := datatypes.NewUUIDv4()
+		for range 2 {
+			store.instances = append(store.instances, db.CredentialStatusInstance{
+				InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: uint8(statuslist.StatusValid),
+				Issuer: testVcdmIssuer, BitstringEntries: entries,
+			})
+		}
+	}
+	return store
+}
+
+// A sweep reads each list once, however many instances point at it, and that
+// holds for a list it cannot read too: a slow or broken list costs one fetch
+// per sweep, not one per instance.
+func TestRevocationService_BrokenListIsFetchedOncePerSweep(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	server.status = http.StatusServiceUnavailable
+	store := recordingStatusStoreOnOneList(t, server.url())
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	changed, err := NewRevocationService(nil, newTestBitstringChecker(ctx), store).RefreshStatuses(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, changed)
+	require.Equal(t, 1, server.requests)
+	require.Empty(t, store.written, "nothing was learned, so nothing is written")
+}
+
+// An instance whose list kind has no checker keeps its stored status, rather
+// than being skipped unnoticed or read as valid.
+func TestRevocationService_InstanceWithoutItsCheckerKeepsItsStatus(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	server.serve(t, true)
+	store := recordingStatusStoreOnOneList(t, server.url())
+
+	tokenStatusList := statuslist.NewChecker(statuslist.VerificationContext{}, nil)
+	changed, err := NewRevocationService(tokenStatusList, nil, store).RefreshStatuses(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, changed)
+	require.Zero(t, server.requests)
+	require.Empty(t, store.written)
+}

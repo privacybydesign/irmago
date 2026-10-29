@@ -19,7 +19,7 @@ import (
 
 // newRefreshService builds a RevocationService for the status-refresh tests.
 func newRefreshService(db *gorm.DB, checker *statuslist.Checker) *RevocationService {
-	return NewRevocationService(checker, dbpkg.NewSdJwtVcStore(db))
+	return NewRevocationService(checker, nil, dbpkg.NewSdJwtVcStore(db))
 }
 
 func seedBatch(t *testing.T, db *gorm.DB, hash, issuer string, instances []models.SdJwtVcBatchInstance) *models.SdJwtVcBatch {
@@ -79,10 +79,10 @@ func Test_RefreshStatuses_NoInstancesWithStatus_NoOp(t *testing.T) {
 	require.Zero(t, refresh(t, svc))
 }
 
-func Test_RefreshStatuses_OneFetchPerSharedURI_OneRepresentativePerBatch(t *testing.T) {
+func Test_RefreshStatuses_OneFetchPerSharedURI_EveryInstanceChecked(t *testing.T) {
 	db := newTestHolderDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
-	// One status list shared across batches, all copies Valid.
+	// One status list shared across batches, all instances Valid.
 	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
@@ -94,8 +94,8 @@ func Test_RefreshStatuses_OneFetchPerSharedURI_OneRepresentativePerBatch(t *test
 
 	// Two batches sharing one status list URI: batch A has two instances
 	// (idx 0,1), batch B one (idx 2). The sweep must fetch the shared URI once
-	// and refresh exactly one representative per batch.
-	batchA := seedBatch(t, db, "hA", "https://issuer.example", []models.SdJwtVcBatchInstance{
+	// and check every instance.
+	seedBatch(t, db, "hA", "https://issuer.example", []models.SdJwtVcBatchInstance{
 		instanceWithStatus(srv.URL(), 0),
 		instanceWithStatus(srv.URL(), 1),
 	})
@@ -104,53 +104,36 @@ func Test_RefreshStatuses_OneFetchPerSharedURI_OneRepresentativePerBatch(t *test
 	})
 
 	svc := newRefreshService(db, checker)
-	// One change per batch, not per row: both representatives moved off their
-	// seeded default, and batch A's second instance was never looked at.
+	// One change per batch, not per row: both batches moved off their seeded
+	// default.
 	require.Equal(t, 2, refresh(t, svc))
 
 	// Shared URI fetched exactly once (Refresh warms the cache; each
-	// representative's Check reads from it).
+	// instance's Check reads from it).
 	require.Equal(t, int64(1), srv.Hits())
 
-	// Exactly one instance per batch was refreshed (LastStatusCheckAt set),
-	// i.e. two across the two batches, each reading Valid.
 	var all []models.SdJwtVcBatchInstance
 	require.NoError(t, db.Find(&all).Error)
-	checked := 0
+	require.Len(t, all, 3)
 	for _, r := range all {
-		if r.LastStatusCheckAt != nil {
-			checked++
-			require.Equal(t, uint8(statuslist.StatusValid), r.LastKnownStatus)
-		}
+		require.NotNil(t, r.LastStatusCheckAt, "every instance is checked")
+		require.Equal(t, uint8(statuslist.StatusValid), r.LastKnownStatus)
 	}
-	require.Equal(t, 2, checked, "one representative per batch (2 batches)")
-
-	// The multi-instance batch A had only one of its two instances refreshed.
-	var batchARows []models.SdJwtVcBatchInstance
-	require.NoError(t, db.Where("credential_batch_id = ?", batchA.ID).Find(&batchARows).Error)
-	require.Len(t, batchARows, 2)
-	batchAChecked := 0
-	for _, r := range batchARows {
-		if r.LastStatusCheckAt != nil {
-			batchAChecked++
-		}
-	}
-	require.Equal(t, 1, batchAChecked, "only one representative refreshed in a multi-instance batch")
 }
 
-// Test_RefreshStatuses_MultiInstanceBatch_OneRepresentativeDrivesRevocation
-// verifies that for a batch with several instances the sweep refreshes only a
-// single representative, yet the batch is still reported revoked once that
-// representative's bit reads Invalid (the read path's "any invalid" rule).
-func Test_RefreshStatuses_MultiInstanceBatch_OneRepresentativeDrivesRevocation(t *testing.T) {
+// Test_RefreshStatuses_MultiInstanceBatch_EveryInstanceGetsTheBatchStatus
+// verifies that one revoked instance revokes its batch: the sweep stores the
+// batch's worst status on every instance, so disclosure, which reads the
+// instance it sends, agrees with the credential list.
+func Test_RefreshStatuses_MultiInstanceBatch_EveryInstanceGetsTheBatchStatus(t *testing.T) {
 	db := newTestHolderDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
 
-	// All three copies of the batch are revoked together by the issuer.
+	// Only the second of the batch's three instances is revoked.
 	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
-		Statuses: map[uint64]uint8{0: 1, 1: 1, 2: 1},
+		Statuses: map[uint64]uint8{0: 0, 1: 1, 2: 0},
 	})
 	checker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: signer.X509VerificationContext(),
@@ -164,36 +147,54 @@ func Test_RefreshStatuses_MultiInstanceBatch_OneRepresentativeDrivesRevocation(t
 
 	svc := newRefreshService(db, checker)
 	// A three-instance batch yields one change, not three: the count is per
-	// batch, because only the representative is ever checked.
+	// batch.
 	require.Equal(t, 1, refresh(t, svc))
 
-	// Only one representative was checked and flipped to Invalid; the others
-	// keep their default status.
 	var rows []models.SdJwtVcBatchInstance
 	require.NoError(t, db.Find(&rows).Error)
-	checked, invalid := 0, 0
+	require.Len(t, rows, 3)
 	for _, r := range rows {
-		if r.LastStatusCheckAt != nil {
-			checked++
-		}
-		if statuslist.Status(r.LastKnownStatus) == statuslist.StatusInvalid {
-			invalid++
-		}
+		require.Equal(t, statuslist.StatusInvalid, statuslist.Status(r.LastKnownStatus), "instance %s", r.ID)
 	}
-	require.Equal(t, 1, checked, "exactly one representative refreshed")
-	require.Equal(t, 1, invalid, "only the representative flipped to Invalid")
+}
 
-	// The batch's derived revocation ("any status-referenced instance Invalid")
-	// is still true from the single representative.
-	statuses, err := dbpkg.NewSdJwtVcStore(db).ListStatusReferencedInstanceStatuses()
-	require.NoError(t, err)
-	revoked := false
-	for _, st := range statuses {
-		if st.Hash == "h1" && statuslist.Status(st.LastKnownStatus) == statuslist.StatusInvalid {
-			revoked = true
-		}
+// An instance whose list cannot be read counts with its stored status, so a
+// failing list never clears a revocation the wallet already knows about.
+func Test_RefreshStatuses_UnreadableListKeepsAStoredRevocation(t *testing.T) {
+	db := newTestHolderDB(t)
+	signer := statuslist.NewTestStatusListSigner(t)
+	valid := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
+		Issuer:   "https://issuer.example",
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0},
+	})
+	broken := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
+		Issuer:   "https://issuer.example",
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0},
+	})
+	broken.SetBody([]byte("not-a-status-list-jwt"))
+	checker := statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: signer.X509VerificationContext(),
+	}, statuslist.NewInMemoryCache())
+
+	// The batch spans two lists; the instance on the broken one was found
+	// revoked by an earlier sweep.
+	revoked := instanceWithStatus(broken.URL(), 0)
+	revoked.LastKnownStatus = uint8(statuslist.StatusInvalid)
+	seedBatch(t, db, "h1", "https://issuer.example", []models.SdJwtVcBatchInstance{
+		instanceWithStatus(valid.URL(), 0),
+		revoked,
+	})
+
+	refresh(t, newRefreshService(db, checker))
+
+	var rows []models.SdJwtVcBatchInstance
+	require.NoError(t, db.Find(&rows).Error)
+	require.Len(t, rows, 2)
+	for _, r := range rows {
+		require.Equal(t, statuslist.StatusInvalid, statuslist.Status(r.LastKnownStatus), "instance %s", r.ID)
 	}
-	require.True(t, revoked, "batch revoked once its representative reads Invalid")
 }
 
 // Test_RefreshStatuses_DetectsRevocationTransition is the end-to-end guarantee
@@ -312,7 +313,7 @@ func Test_RefreshStatuses_OneStoreFailure_DoesNotAbortSweep(t *testing.T) {
 
 	// The failing store comes first, so a sweep that stops at it never
 	// reaches the working one.
-	svc := NewRevocationService(checker, failingStatusStore{}, dbpkg.NewSdJwtVcStore(db))
+	svc := NewRevocationService(checker, nil, failingStatusStore{}, dbpkg.NewSdJwtVcStore(db))
 	changed, err := svc.RefreshStatuses(context.Background())
 	require.ErrorContains(t, err, "store unavailable", "the failing store is still reported")
 	require.Equal(t, 1, changed, "the working store is swept anyway")

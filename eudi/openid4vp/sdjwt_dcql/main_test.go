@@ -1,4 +1,4 @@
-package eudi_sdjwt_dcql
+package sdjwt_dcql
 
 import (
 	"os"

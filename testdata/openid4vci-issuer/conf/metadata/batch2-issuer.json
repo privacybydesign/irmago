@@ -6,6 +6,24 @@
     "batch_size": 2
   },
   "credential_configurations_supported": {
+    "TestCredentialVcdm": {
+      "format": "vc+sd-jwt",
+      "scope": "TestVcdmCredential",
+      "extends": "TestVcdmCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      }
+    },
     "EmailCredentialSdJwt": {
       "format": "dc+sd-jwt",
       "scope": "EmailCredentialSdJwt",

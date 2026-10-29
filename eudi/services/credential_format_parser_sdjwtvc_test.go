@@ -72,7 +72,7 @@ func TestSdJwtVcCredentialFormatParser_ParseAndVerify_InvalidCredential(t *testi
 	require.Error(t, err)
 }
 
-func TestSdJwtVcCredentialFormatParser_CheckBatchUniqueness_RejectsDuplicateKeyBinding(t *testing.T) {
+func TestSdJwtVcCredentialFormatParser_CheckBatch_RejectsDuplicateKeyBinding(t *testing.T) {
 	pubKey, _ := generateTestJwk(t)
 	cnf := &sdjwt.CnfField{Jwk: &pubKey}
 
@@ -80,7 +80,7 @@ func TestSdJwtVcCredentialFormatParser_CheckBatchUniqueness_RejectsDuplicateKeyB
 	vc2 := newVerifiedVcWithCnf("vct-1", "https://issuer.example.com", cnf)
 
 	parser := NewSdJwtVcCredentialFormatParser(nil)
-	err := parser.CheckBatchUniqueness([]*ParsedCredential{
+	err := parser.CheckBatch([]*ParsedCredential{
 		{SdJwtVc: vc1},
 		{SdJwtVc: vc2},
 	})
