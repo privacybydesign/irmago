@@ -439,6 +439,16 @@ func Test_HolderVerificationProcessor_UnsupportedSdAlg_Fails(t *testing.T) {
 	errorTestCaseHolder(t, wrongSdAlgField, "unsupported _sd_alg: SHA-null")
 }
 
+func Test_HolderVerificationProcessor_TruncatedSdAlg_Fails(t *testing.T) {
+	disclosures, err := sdjwt.MultipleNewDisclosureContents(map[string]string{"email": "test@gmail.com"})
+	require.NoError(t, err)
+	truncated := newWorkingSdJwtVcTestConfig().
+		withSdAlg(iana.SHA256_64).
+		withSdClaims(disclosures, iana.SHA256_64).
+		withDisclosures(disclosures)
+	errorTestCaseHolder(t, truncated, "unsupported _sd_alg: sha-256-64")
+}
+
 func Test_HolderVerificationProcessor_ValidSdJwtVc_NoDisclosures_NoKbJwt_Succeeds(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)

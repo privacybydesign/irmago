@@ -3,6 +3,7 @@ package sdjwt
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwt"
@@ -57,6 +58,14 @@ type RegisteredClaims struct {
 	NotBefore *int64
 }
 
+// secureSdAlgs are the _sd_alg values the wallet accepts: the full-length
+// digests. RFC 9901 §9.4 calls the truncated sha-256-* digests in the same
+// registry "unfit for security applications".
+var secureSdAlgs = []iana.HashingAlgorithm{
+	iana.SHA256, iana.SHA384, iana.SHA512,
+	iana.SHA3_224, iana.SHA3_256, iana.SHA3_384, iana.SHA3_512,
+}
+
 // ExtractRegisteredClaims reads the registered claims from a verified
 // issuer-signed JWT. `_sd_alg` defaults to SHA-256 when absent; Issuer is set
 // only when the token carries `iss`.
@@ -65,7 +74,7 @@ func ExtractRegisteredClaims(token jwt.Token) (*RegisteredClaims, error) {
 
 	if token.Has(SdAlgKey) {
 		h, _ := jwt.Get[string](token, SdAlgKey)
-		if !iana.IsSupportedHashingAlgorithm(iana.HashingAlgorithm(h)) {
+		if !slices.Contains(secureSdAlgs, iana.HashingAlgorithm(h)) {
 			return nil, fmt.Errorf("unsupported _sd_alg: %s", h)
 		}
 		claims.SdAlg = iana.HashingAlgorithm(h)

@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - An SD-JWT VC that makes `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity` or `status` selectively disclosable is now refused, as SD-JWT VC requires. These claims were only checked when the issuer signed them in plain, so a disclosed `exp` or `status` went unchecked. An SD-JWT-secured VCDM credential may disclose its JWT `iss`, `iat`, `nbf` and `exp`; they are then checked as if signed in plain.
+- An SD-JWT credential whose `_sd_alg` is a truncated digest (`sha-256-128` down to `sha-256-32`) is now refused. Such short digests are unfit for security use (RFC 9901 §9.4); the wallet accepts `sha-256`, `sha-384`, `sha-512` and the SHA-3 digests.
 - An SD-JWT credential with a selectively disclosable claim inside a selectively disclosable array element, or inside an array nested in an array, is now accepted. The wallet used to refuse it with "one or more disclosures were not referenced", because it did not look for disclosures in those places.
 - An SD-JWT VC whose `status.status_list` has a fractional `idx` or an empty `uri` is now refused, as it already was for SD-JWT-secured VCDM. The index used to be truncated and the empty URI accepted.
 - A re-issued credential, of any format, now replaces the stored one in a single transaction. The old batch used to be deleted before the new one was stored, so a re-issuance that failed to store lost the credential the user already had.

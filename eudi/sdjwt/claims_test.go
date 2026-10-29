@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/lestrrat-go/jwx/v4/jwt"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,6 +36,32 @@ func TestRegisteredClaims_AddDisclosedClaims_RejectsMalformedValues(t *testing.T
 		t.Run(name, func(t *testing.T) {
 			var claims RegisteredClaims
 			require.Error(t, claims.AddDisclosedClaims(processed))
+		})
+	}
+}
+
+// RFC 9901 §9.4: the truncated sha-256-* digests of the IANA registry are unfit
+// for SD-JWT, so only full-length digests are accepted as _sd_alg.
+func TestExtractRegisteredClaims_SdAlg(t *testing.T) {
+	for _, alg := range []iana.HashingAlgorithm{
+		iana.SHA256, iana.SHA384, iana.SHA512, iana.SHA3_224, iana.SHA3_256, iana.SHA3_384, iana.SHA3_512,
+	} {
+		t.Run(string(alg)+" is accepted", func(t *testing.T) {
+			token, err := jwt.NewBuilder().Claim(SdAlgKey, string(alg)).Build()
+			require.NoError(t, err)
+			claims, err := ExtractRegisteredClaims(token)
+			require.NoError(t, err)
+			require.Equal(t, alg, claims.SdAlg)
+		})
+	}
+	for _, alg := range []iana.HashingAlgorithm{
+		iana.SHA256_128, iana.SHA256_120, iana.SHA256_96, iana.SHA256_64, iana.SHA256_32, "md5",
+	} {
+		t.Run(string(alg)+" is refused", func(t *testing.T) {
+			token, err := jwt.NewBuilder().Claim(SdAlgKey, string(alg)).Build()
+			require.NoError(t, err)
+			_, err = ExtractRegisteredClaims(token)
+			require.ErrorContains(t, err, "unsupported _sd_alg")
 		})
 	}
 }
