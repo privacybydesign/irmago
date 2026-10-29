@@ -122,81 +122,88 @@ func processEmbeddedDisclosures(claims *map[string]any, decodedDisclosures map[H
 
 	// Then process all other claims
 	for claimKey, claimValue := range *claims {
-		// If the property is a nested object, recursively process it
-		if claimMap, ok := claimValue.(map[string]any); ok {
-			err := processEmbeddedDisclosures(&claimMap, decodedDisclosures)
-			if err != nil {
-				return err
-			}
-			(*claims)[claimKey] = claimMap
-			continue
+		processed, err := processValue(claimValue, decodedDisclosures)
+		if err != nil {
+			return err
 		}
-
-		// Or, of it is an array, process each element
-		if arrayValue, ok := claimValue.([]any); ok {
-			processedArray := []any{}
-			for _, arrayElemValue := range arrayValue {
-				// Check if the value is a disclosure (format should be {"...":"<digest>"}) or not, and if so,
-				// verify the array element disclosure exists
-				if valMap, ok := arrayElemValue.(map[string]any); ok {
-					if arrayElemDisclosureDigestVal, ok := valMap[EllipsisKey]; ok {
-						// It's an embedded disclosure digest...
-						arrayElemDisclosureDigestStr, ok := arrayElemDisclosureDigestVal.(string)
-						if !ok {
-							return fmt.Errorf(
-								"array element, which should be an embedded disclosure digest, is not a valid digest: %v",
-								arrayElemDisclosureDigestStr,
-							)
-						}
-
-						disclosureDigest := HashedDisclosure(arrayElemDisclosureDigestStr)
-						if embeddedDisclosure, ok := decodedDisclosures[disclosureDigest]; ok {
-							// Check for array element validity (i.e. should be in format ["...": "<digest>"])
-							if embeddedDisclosure.IsTouched() {
-								return fmt.Errorf(
-									"digest %s has been referenced multiple time in the SD-JWT",
-									disclosureDigest,
-								)
-							}
-							if !embeddedDisclosure.IsArrayElement() {
-								return fmt.Errorf(
-									"embedded disclosure %s is expected to be an array element, but is not",
-									embeddedDisclosure.Key,
-								)
-							}
-
-							// Otherwise, replace the array element with the actual value from the disclosure
-							embeddedDisclosure.Touch()
-							processedArray = append(processedArray, embeddedDisclosure.Value)
-						}
-
-						// In case no disclosure is found for the digest; the value will be ignored (potential decoy digest)
-						// Either way; we can continue to the next array element
-						continue
-					}
-
-					// Complex value, but no embedded digest: just copy it
-					// Recursively process the claim map to find further embedded digests
-					err := processEmbeddedDisclosures(&valMap, decodedDisclosures)
-					if err != nil {
-						return err
-					}
-					processedArray = append(processedArray, valMap)
-				} else {
-					// Simple value, just copy it
-					processedArray = append(processedArray, arrayElemValue)
-				}
-			}
-
-			(*claims)[claimKey] = processedArray
-			continue
-		}
-
-		// No embedded disclosures found, just copy the claim as is
-		(*claims)[claimKey] = claimValue
+		(*claims)[claimKey] = processed
 	}
 
 	return nil
+}
+
+// processValue replaces the digests in value, at any depth, with what their
+// Disclosures carry (RFC 9901 §7.1 step 3).
+func processValue(value any, decodedDisclosures map[HashedDisclosure]*DisclosureContent) (any, error) {
+	switch v := value.(type) {
+	case map[string]any:
+		err := processEmbeddedDisclosures(&v, decodedDisclosures)
+		return v, err
+	case []any:
+		return processArray(v, decodedDisclosures)
+	default:
+		return value, nil
+	}
+}
+
+// processArray replaces each {"...": "<digest>"} element with the value of its
+// Disclosure, dropping decoys, and processes every element recursively,
+// including the values Disclosures bring in (RFC 9901 §7.1 step 3.c.iii).
+func processArray(array []any, decodedDisclosures map[HashedDisclosure]*DisclosureContent) ([]any, error) {
+	processedArray := []any{}
+	for _, arrayElemValue := range array {
+		// Check if the value is a disclosure (format should be {"...":"<digest>"}) or not, and if so,
+		// verify the array element disclosure exists
+		if valMap, ok := arrayElemValue.(map[string]any); ok {
+			if arrayElemDisclosureDigestVal, ok := valMap[EllipsisKey]; ok {
+				// It's an embedded disclosure digest...
+				arrayElemDisclosureDigestStr, ok := arrayElemDisclosureDigestVal.(string)
+				if !ok {
+					return nil, fmt.Errorf(
+						"array element, which should be an embedded disclosure digest, is not a valid digest: %v",
+						arrayElemDisclosureDigestVal,
+					)
+				}
+
+				disclosureDigest := HashedDisclosure(arrayElemDisclosureDigestStr)
+				if embeddedDisclosure, ok := decodedDisclosures[disclosureDigest]; ok {
+					// Check for array element validity (i.e. should be in format ["...": "<digest>"])
+					if embeddedDisclosure.IsTouched() {
+						return nil, fmt.Errorf(
+							"digest %s has been referenced multiple time in the SD-JWT",
+							disclosureDigest,
+						)
+					}
+					if !embeddedDisclosure.IsArrayElement() {
+						return nil, fmt.Errorf(
+							"embedded disclosure %s is expected to be an array element, but is not",
+							embeddedDisclosure.Key,
+						)
+					}
+
+					// Otherwise, replace the array element with the actual value from the disclosure,
+					// itself processed for the digests it may hold
+					embeddedDisclosure.Touch()
+					value, err := processValue(embeddedDisclosure.Value, decodedDisclosures)
+					if err != nil {
+						return nil, err
+					}
+					processedArray = append(processedArray, value)
+				}
+
+				// In case no disclosure is found for the digest; the value will be ignored (potential decoy digest)
+				// Either way; we can continue to the next array element
+				continue
+			}
+		}
+
+		value, err := processValue(arrayElemValue, decodedDisclosures)
+		if err != nil {
+			return nil, err
+		}
+		processedArray = append(processedArray, value)
+	}
+	return processedArray, nil
 }
 
 func processSdClaim(claims *map[string]any, decodedDisclosures map[HashedDisclosure]*DisclosureContent) error {

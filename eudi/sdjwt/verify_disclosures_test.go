@@ -32,6 +32,7 @@ import (
 // - [x] structured SD-JWT: without array
 // - [x] structured SD-JWT: with array, containing decoy digests
 // - [x] structured SD-JWT: with recursive disclosure structures
+// - [x] array element Disclosure whose value holds digests, and digests in nested arrays
 
 func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_EmptySdField_Fails(t *testing.T) {
 	// Arrange
@@ -709,4 +710,55 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_RecursiveDisclosures
 	require.Len(t, housenumberMap, 2)
 	require.Contains(t, housenumberMap["number"], "12")
 	require.Contains(t, housenumberMap["extension"], "bis")
+}
+
+// encodeAndHash encodes a Disclosure and returns it with its sha-256 digest.
+func encodeAndHash(t *testing.T, content DisclosureContent) (EncodedDisclosure, string) {
+	t.Helper()
+	encoded, err := EncodeDisclosure(content)
+	require.NoError(t, err)
+	digest, err := HashEncodedDisclosure(iana.SHA256, encoded)
+	require.NoError(t, err)
+	return encoded, string(digest)
+}
+
+// RFC 9901 §7.1 step 3.c.iii: the value an array element Disclosure brings in,
+// and an array nested in an array, are processed recursively like any other
+// value, so digests in them are replaced too.
+func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_DigestsInsideArrayElements_Succeeds(t *testing.T) {
+	name, err := NewDisclosureContent("name", "Alice")
+	require.NoError(t, err)
+	encodedName, nameDigest := encodeAndHash(t, name)
+
+	// An array element whose value is an object with a selectively disclosable claim.
+	person, err := NewArrayItemDisclosureContent(map[string]any{"_sd": []any{nameDigest}, "age": float64(30)})
+	require.NoError(t, err)
+	encodedPerson, personDigest := encodeAndHash(t, person)
+
+	nested, err := NewArrayItemDisclosureContent("nested")
+	require.NoError(t, err)
+	encodedNested, nestedDigest := encodeAndHash(t, nested)
+
+	inner, err := NewArrayItemDisclosureContent("inner")
+	require.NoError(t, err)
+	encodedInner, innerDigest := encodeAndHash(t, inner)
+
+	// An array element whose value is an array with a selectively disclosable element.
+	list, err := NewArrayItemDisclosureContent([]any{map[string]any{"...": innerDigest}, "plain"})
+	require.NoError(t, err)
+	encodedList, listDigest := encodeAndHash(t, list)
+
+	payload := map[string]any{
+		"people": []any{map[string]any{"...": personDigest}},
+		"matrix": []any{[]any{map[string]any{"...": nestedDigest}, map[string]any{"...": "decoy"}}},
+		"lists":  []any{map[string]any{"...": listDigest}},
+	}
+
+	processed, disclosures, err := VerifyAndProcessDisclosures(iana.SHA256, &payload,
+		[]EncodedDisclosure{encodedName, encodedPerson, encodedNested, encodedInner, encodedList})
+	require.NoError(t, err)
+	require.Len(t, disclosures, 5)
+	require.Equal(t, []any{map[string]any{"name": "Alice", "age": float64(30)}}, processed["people"])
+	require.Equal(t, []any{[]any{"nested"}}, processed["matrix"])
+	require.Equal(t, []any{[]any{"inner", "plain"}}, processed["lists"])
 }
