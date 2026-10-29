@@ -180,7 +180,7 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 	disclosures []sdjwt.EncodedDisclosure,
 ) (*sdjwt.RegisteredClaims, vcdm.Document, []sdjwt.DisclosureContent, *sdjwt.ProcessedPayload, error) {
 	// Step 1: verify the issuer signature (X.509 x5c or DID kid) and the `typ`.
-	token, leafCert, err := p.decodeJwtAndVerifyFromHeader([]byte(signedJwt))
+	token, leafCert, signerDid, err := p.decodeJwtAndVerifyFromHeader([]byte(signedJwt))
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -246,10 +246,21 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 		}
 	}
 
-	// Step 7: an x5c-authenticated issuer must not be able to claim another
-	// issuer's identity, so the VCDM `issuer` (and with it `iss`, equal per step
-	// 6) must name the leaf certificate. A DID `kid` needs no such check: its key
-	// is resolved from the `iss` DID itself.
+	// Step 7: the signer must be the issuer. An x5c-authenticated issuer must
+	// not be able to claim another issuer's identity, so the VCDM `issuer` (and
+	// with it `iss`, equal per step 6) must name the leaf certificate. A DID key
+	// is the key of the DID it was resolved from: `iss`, or, without `iss`, the
+	// DID of an absolute `kid` (VC-JOSE-COSE §4.2), which must then be the
+	// `issuer` itself.
+	if signerDid != "" {
+		issuerID, err := document.IssuerID()
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		if signerDid != issuerID {
+			return nil, nil, nil, nil, fmt.Errorf("signed with a key of %q, not of the VCDM issuer %q", signerDid, issuerID)
+		}
+	}
 	if leafCert != nil {
 		issuerID, err := document.IssuerID()
 		if err != nil {
@@ -273,8 +284,9 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 // its `typ` against the SD-JWT-secured VCDM media type. When an X.509 chain is
 // used, the whole chain is additionally verified against the trusted
 // roots/intermediates and revocation lists, and its leaf certificate is
-// returned; it is nil when the key came from a DID.
-func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, *x509.Certificate, error) {
+// returned; it is nil when the key came from a DID. When it did, the DID it
+// came from is returned instead, for the caller to bind to the issuer.
+func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, *x509.Certificate, string, error) {
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{MediaTypeVcSdJwt}, p.allowInsecureDidWeb)
 
 	token, err := jwt.Parse(signedJwt,
@@ -284,23 +296,27 @@ func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, *
 		jwt.WithVerify(true),
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
+		return nil, nil, "", fmt.Errorf("failed to parse JWT: %v", err)
 	}
 
-	// If an X.509 chain was used, validate it against the trust anchors + CRLs.
-	// (A DID `kid` resolves its key from the DID document, no chain to check.)
+	// A DID `kid` resolves its key from the DID document: no chain to check,
+	// but the DID to bind. If an X.509 chain was used, validate it against the
+	// trust anchors + CRLs.
+	if didKeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.DidKeyProvider); ok {
+		return token, nil, didKeyProvider.SignerDid, nil
+	}
 	x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider)
 	if !ok {
-		return token, nil, nil
+		return token, nil, "", nil
 	}
 	chain, err := x509KeyProvider.GetChain()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get certificate chain from provider: %v", err)
+		return nil, nil, "", fmt.Errorf("failed to get certificate chain from provider: %v", err)
 	}
 	if err := eudi_jwt.VerifyCertificateChain(p.verificationContext.X509VerificationContext, chain, nil); err != nil {
-		return nil, nil, fmt.Errorf("failed to verify certificate: %v", err)
+		return nil, nil, "", fmt.Errorf("failed to verify certificate: %v", err)
 	}
-	return token, chain[0], nil
+	return token, chain[0], "", nil
 }
 
 // extractRegisteredClaims reads the SD-JWT / JWT registered claims from a

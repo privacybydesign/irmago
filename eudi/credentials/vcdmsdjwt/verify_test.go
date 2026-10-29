@@ -1,8 +1,14 @@
 package vcdmsdjwt
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"fmt"
 	"testing"
+
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/privacybydesign/irmago/eudi/didjwk"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
@@ -207,4 +213,60 @@ func TestHolder_SelectivelyDisclosableId_Accepted(t *testing.T) {
 	credential := signCredential(t, MediaTypeVcSdJwt, claims)
 	_, err := NewHolderVerificationProcessor(CreateTestVerificationContext()).ParseAndVerifySdJwtVcdm(credential)
 	require.NoError(t, err)
+}
+
+// withKid is a JwtCreator that names the signing key with a kid header.
+type withKid struct {
+	sdjwt.JwtCreator
+	kid string
+}
+
+func (c withKid) CreateSignedJwt(header map[string]any, payload string) (string, error) {
+	delete(header, "x5c") // the builder sets it, empty, when there is no chain
+	header["kid"] = c.kid
+	return c.JwtCreator.CreateSignedJwt(header, payload)
+}
+
+// signWithDidJwk signs a credential with a fresh did:jwk key, named by an
+// absolute kid and no iss, and with the given VCDM issuer; issuer "" means the
+// did:jwk itself.
+func signWithDidJwk(t *testing.T, issuer string) SdJwtVcdmKb {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	publicJwk, err := jwk.Import[jwk.Key](key.Public())
+	require.NoError(t, err)
+	doc, err := (&didjwk.DocumentBuilder{}).FromJwk(publicJwk)
+	require.NoError(t, err)
+	if issuer == "" {
+		issuer = doc.ID
+	}
+	cnf, err := sdjwt.HolderKeyClaim(testdata.ParseHolderPubJwk())
+	require.NoError(t, err)
+
+	built, err := sdjwt.NewBuilder().
+		WithPayload(
+			sdjwt.Array(vcdm.ContextKey, sdjwt.Item(vcdm.ContextV2)),
+			sdjwt.Array(vcdm.TypeKey, sdjwt.Item(vcdm.TypeVerifiableCredential), sdjwt.Item("ExampleCredential")),
+			sdjwt.Claim(vcdm.IssuerKey, issuer),
+			sdjwt.Object(vcdm.CredentialSubjectKey, sdjwt.SdClaim("given_name", "Alice")),
+			cnf,
+		).
+		WithTyp(MediaTypeVcSdJwt).
+		Build(withKid{sdjwt.NewJwtCreator(key), doc.VerificationMethod[0].ID})
+	require.NoError(t, err)
+	return SdJwtVcdmKb(built)
+}
+
+// VC-JOSE-COSE §4.2: without iss, the kid is an absolute URL to the issuer's
+// verification method. The key is then its DID's, which must be the issuer.
+func TestHolder_DidKidWithoutIss(t *testing.T) {
+	t.Run("the issuer's own key is accepted", func(t *testing.T) {
+		_, err := NewHolderVerificationProcessor(CreateTestVerificationContext()).ParseAndVerifySdJwtVcdm(signWithDidJwk(t, ""))
+		require.NoError(t, err)
+	})
+	t.Run("another DID's key is refused", func(t *testing.T) {
+		_, err := NewHolderVerificationProcessor(CreateTestVerificationContext()).ParseAndVerifySdJwtVcdm(signWithDidJwk(t, "did:web:issuer.example"))
+		require.ErrorContains(t, err, `not of the VCDM issuer "did:web:issuer.example"`)
+	})
 }

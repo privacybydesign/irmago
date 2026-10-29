@@ -220,10 +220,13 @@ func (c *Checker) verify(raw []byte, issuer string) (vcdm.Document, error) {
 	if listIssuer != issuer {
 		return nil, fmt.Errorf("%w: list issuer %q is not the credential issuer %q", ErrUnauthorized, listIssuer, issuer)
 	}
-	// A DID kid resolves its key from `iss`, so with `iss` equal to the issuer
-	// the key is the issuer's own.
 	if iss, ok := token.Issuer(); ok && iss != listIssuer {
 		return nil, fmt.Errorf("%w: JWT iss %q does not match list issuer %q", ErrUnauthorized, iss, listIssuer)
+	}
+	// A DID key is the key of the DID it was resolved from: `iss`, or, without
+	// `iss`, the DID of an absolute kid. That DID must be the issuer.
+	if didKeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.DidKeyProvider); ok && didKeyProvider.SignerDid != listIssuer {
+		return nil, fmt.Errorf("%w: signed with a key of %q, not of the list issuer %q", ErrUnauthorized, didKeyProvider.SignerDid, listIssuer)
 	}
 	if leafCert != nil {
 		if err := utils.VerifyCertificateUri(leafCert, listIssuer); err != nil {

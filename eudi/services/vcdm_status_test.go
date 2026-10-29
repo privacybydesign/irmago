@@ -349,6 +349,26 @@ func TestBitstringChecker_RejectsListOfAnotherIssuer(t *testing.T) {
 	require.ErrorContains(t, err, "is not the credential issuer")
 }
 
+// Without iss, the absolute kid's DID is the signer, and it must be the
+// issuer too: otherwise leaving out iss would get round the check above.
+func TestBitstringChecker_RejectsListSignedWithAnotherDidKeyWithoutIss(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	publicJwk, err := jwk.Import[jwk.Key](key.Public())
+	require.NoError(t, err)
+	doc, err := (&didjwk.DocumentBuilder{}).FromJwk(publicJwk)
+	require.NoError(t, err)
+	header := map[string]any{"typ": "vc+jwt", "kid": doc.VerificationMethod[0].ID}
+	server.body = signBitstringStatusListAs(t, sdjwt.NewJwtCreator(key), header, server.url(), testVcdmIssuer, "", false)
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	_, err = newTestBitstringChecker(ctx).Fetch(context.Background(), server.url(), testVcdmIssuer)
+	require.ErrorIs(t, err, bitstringstatus.ErrUnauthorized)
+	require.ErrorContains(t, err, "not of the list issuer")
+}
+
 func TestBitstringChecker_RejectsListSignedWithAnotherDidKey(t *testing.T) {
 	server := newBitstringStatusListServer(t)
 
