@@ -27,6 +27,7 @@ require (
 	github.com/mdp/qrterminal v1.0.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/mr-tron/base58 v1.1.3
+	github.com/piprate/json-gold v0.9.1
 	github.com/privacybydesign/gabi v0.0.0-20221212095008-68a086907750
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sirupsen/logrus v1.9.4
@@ -55,6 +56,7 @@ require (
 	github.com/bwesterb/go-exptable v1.0.0 // indirect
 	github.com/bwesterb/go-pow v1.0.0 // indirect
 	github.com/bwesterb/go-xmssmt v1.5.2 // indirect
+	github.com/cayleygraph/quad v1.3.0 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
@@ -87,6 +89,7 @@ require (
 	github.com/multiformats/go-multihash v0.0.11 // indirect
 	github.com/nightlyone/lockfile v1.0.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
+	github.com/pquerna/cachecontrol v0.2.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect

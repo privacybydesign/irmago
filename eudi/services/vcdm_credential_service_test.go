@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"encoding/hex"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -66,14 +67,24 @@ func newTestVcdmHolderVerifier() *vcdmsdjwt.HolderVerificationProcessor {
 // issuer key and bound to the test holder key.
 func newRawVcdm(t *testing.T, subjectClaims ...*sdjwt.ClaimElement) string {
 	t.Helper()
+	return newRawVcdmWithContexts(t, []string{vcdm.ContextV2}, subjectClaims...)
+}
+
+// newRawVcdmWithContexts is newRawVcdm with the given @context.
+func newRawVcdmWithContexts(t *testing.T, contexts []string, subjectClaims ...*sdjwt.ClaimElement) string {
+	t.Helper()
 	x5c, err := utils.ParsePemCertificateChainToX5cFormat(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	require.NoError(t, err)
 	cnf, err := sdjwt.HolderKeyClaim(testdata.ParseHolderPubJwk())
 	require.NoError(t, err)
 
 	subject := append([]*sdjwt.ClaimElement{sdjwt.Claim("id", "did:example:holder")}, subjectClaims...)
+	contextItems := make([]*sdjwt.ClaimElement, len(contexts))
+	for i, c := range contexts {
+		contextItems[i] = sdjwt.Item(c)
+	}
 	claims := []*sdjwt.ClaimElement{
-		sdjwt.Array(vcdm.ContextKey, sdjwt.Item(vcdm.ContextV2)),
+		sdjwt.Array(vcdm.ContextKey, contextItems...),
 		sdjwt.Array(vcdm.TypeKey, sdjwt.Item(vcdm.TypeVerifiableCredential), sdjwt.Item("ExampleCredential")),
 		sdjwt.Claim(vcdm.IssuerKey, testVcdmIssuer),
 		sdjwt.Claim(vcdm.ValidFromKey, "2020-01-01T00:00:00Z"),
@@ -151,6 +162,8 @@ func TestSdJwtVcdmStore_StoresBatch(t *testing.T) {
 	assert.Equal(t, int64(1577836800), batch.IssuedAt.Unix())
 	require.True(t, batch.ExpiresAt.Valid)
 	assert.Equal(t, int64(2051222400), batch.ExpiresAt.V.Unix())
+	// The base context is bundled, so expanding the types needs no network.
+	assert.JSONEq(t, `["https://www.w3.org/2018/credentials#VerifiableCredential", "ExampleCredential"]`, string(batch.ExpandedTypes))
 
 	instance, err := env.store.GetUnusedInstance(batch.ID)
 	require.NoError(t, err)
@@ -187,6 +200,38 @@ func TestSdJwtVcdmStore_KeyBindingMismatch(t *testing.T) {
 	batches, err := env.store.ListBatches()
 	require.NoError(t, err)
 	assert.Empty(t, batches)
+}
+
+// A credential whose types cannot be expanded, because one of its contexts
+// cannot be fetched, is refused rather than stored where no type_values query
+// would find it, and the holder binding key made for it is deleted.
+func TestSdJwtVcdmStore_UnexpandableTypesRefused(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	env.service.contextClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("context host unreachable")
+	})}
+	parsed := env.parse(t, newRawVcdmWithContexts(t, []string{vcdm.ContextV2, "https://contexts.example/unreachable"}))
+
+	thumbprintBytes, err := testdata.ParseHolderPubJwk().Thumbprint(crypto.SHA256)
+	require.NoError(t, err)
+	thumbprint := hex.EncodeToString(thumbprintBytes)
+	key := &models.HolderBindingKey{
+		Algorithm:           models.KeyAlgorithmECDSA,
+		PublicKeyThumbprint: datatypes.NullString{V: thumbprint, Valid: true},
+		PrivateKey:          []byte("not-a-real-key"),
+		ECDSA:               &models.ECDSAKeyMetadata{CurveName: "P-256"},
+	}
+	require.NoError(t, env.keys.StoreKey(key))
+
+	err = env.service.Store([]*ParsedCredential{parsed}, "config-id", env.issuerMetadata(),
+		true, []models.PublicHolderBindingKey{{ID: key.ID, PublicKeyThumbprint: &thumbprint}})
+	require.ErrorContains(t, err, "context host unreachable")
+
+	batches, err := env.store.ListBatches()
+	require.NoError(t, err)
+	assert.Empty(t, batches)
+	_, err = env.keys.GetByID(key.ID)
+	require.ErrorIs(t, err, db.ErrNotFound)
 }
 
 // The holder binding key is linked to the VCDM instance, and deleting the
@@ -344,3 +389,7 @@ func TestVcdmIssuanceValidity(t *testing.T) {
 		})
 	}
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

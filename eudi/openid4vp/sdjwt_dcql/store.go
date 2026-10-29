@@ -1,6 +1,8 @@
 package sdjwt_dcql
 
 import (
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -33,6 +35,11 @@ type Batch struct {
 
 	// ProcessedPayload is the SD-JWT payload with every disclosure resolved.
 	ProcessedPayload datatypes.JSON
+
+	// ExpandedTypes are a W3C VCDM credential's types with its @context
+	// applied, which DCQL type_values name. Nil for other formats, and for a
+	// VCDM credential stored before the wallet expanded types.
+	ExpandedTypes []string
 
 	IssuedAt  datatypes.NullTime
 	ExpiresAt datatypes.NullTime
@@ -146,10 +153,17 @@ func (s *vcdmBatchStore) ListBatches() ([]*Batch, error) {
 	}
 	result := make([]*Batch, len(batches))
 	for i, b := range batches {
+		var expandedTypes []string
+		if len(b.ExpandedTypes) > 0 {
+			if err := json.Unmarshal(b.ExpandedTypes, &expandedTypes); err != nil {
+				return nil, fmt.Errorf("batch %s: expanded types: %w", b.ID, err)
+			}
+		}
 		result[i] = &Batch{
 			ID:                 b.ID,
 			Format:             b.Format,
 			CredentialType:     b.TypeIdentity,
+			ExpandedTypes:      expandedTypes,
 			Hash:               b.Hash,
 			CredentialIssuer:   b.CredentialIssuer,
 			IssuerVerified:     b.IssuerVerified,

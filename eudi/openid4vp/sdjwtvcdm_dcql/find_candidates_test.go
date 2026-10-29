@@ -203,10 +203,26 @@ func TestVcdmFindCandidates_EmptyMetaMatchesByClaims(t *testing.T) {
 	assert.Equal(t, clientmodels.Format_SdJwtVcdm, result.OwnedCandidates[0].Format)
 }
 
+// The fully expanded types of a credential with the VCDM base context and a
+// domain context that defines ExampleCredential.
+const (
+	vcIri      = "https://www.w3.org/2018/credentials#VerifiableCredential"
+	exampleIri = "https://eduwallet.nl/academic#ExampleCredential"
+)
+
+// withExpandedTypes sets the types issuance would have expanded for batch.
+func withExpandedTypes(t *testing.T, batch *models.VcdmBatch, types ...string) *models.VcdmBatch {
+	t.Helper()
+	encoded, err := json.Marshal(types)
+	require.NoError(t, err)
+	batch.ExpandedTypes = encoded
+	return batch
+}
+
 // TestVcdmFindCandidates_TypeValuesSupersetMatch pins OpenID4VP §B.1.1: a
-// vc+sd-jwt query targets a VCDM credential by its JSON-LD `type` set. The match
-// is on the `type` array — not the @context-fused CredentialType — so a domain
-// @context and an unrelated stored composite identity do not prevent it.
+// vc+sd-jwt query targets a VCDM credential by its fully expanded types, the
+// `type` array with the @context applied. A compact term a context defines does
+// not match; an unrelated stored composite identity does not prevent a match.
 func TestVcdmFindCandidates_TypeValuesSupersetMatch(t *testing.T) {
 	h, store := newTestHandler(t)
 
@@ -215,11 +231,13 @@ func TestVcdmFindCandidates_TypeValuesSupersetMatch(t *testing.T) {
 		"type":              []any{"VerifiableCredential", "ExampleCredential"},
 		"credentialSubject": map[string]any{"given_name": "Alice"},
 	})
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, store.StoreBatch(withExpandedTypes(t, batch, vcIri, exampleIri)))
 
-	for _, tv := range []string{
-		`[["ExampleCredential"]]`,                         // one requested type, present
-		`[["VerifiableCredential", "ExampleCredential"]]`, // full superset
+	for tv, wantMatch := range map[string]bool{
+		`[["` + exampleIri + `"]]`:                  true,  // one requested type, present
+		`[["` + vcIri + `", "` + exampleIri + `"]]`: true,  // full superset
+		`[["ExampleCredential"]]`:                   false, // compact term of a defined type
+		`[["VerifiableCredential"]]`:                false,
 	} {
 		res, err := h.FindCandidates(parseDcqlQuery(t, `{
 			"id": "q1", "format": "vc+sd-jwt",
@@ -227,19 +245,45 @@ func TestVcdmFindCandidates_TypeValuesSupersetMatch(t *testing.T) {
 			"claims": [{"path": ["credentialSubject", "given_name"]}]
 		}`))
 		require.NoError(t, err)
-		require.Len(t, res.OwnedCandidates, 1, "type_values %s should match by the type array", tv)
+		if wantMatch {
+			require.Len(t, res.OwnedCandidates, 1, "type_values %s should match the expanded types", tv)
+		} else {
+			require.Empty(t, res.OwnedCandidates, "type_values %s should not match", tv)
+		}
 	}
 }
 
-func TestVcdmFindCandidates_TypeValuesDisjunctionAndNonMatch(t *testing.T) {
+// A credential stored before the wallet expanded types has none, so no
+// type_values query matches it, though its claims would.
+func TestVcdmFindCandidates_TypeValuesWithoutExpandedTypes_NoMatch(t *testing.T) {
 	h, store := newTestHandler(t)
 
-	batch := newTestBatch("hash-vcdm-tv2", "composite", map[string]any{
+	batch := newTestBatch("hash-vcdm-unexpanded", "composite", map[string]any{
 		"@context":          []any{"https://www.w3.org/ns/credentials/v2"},
 		"type":              []any{"VerifiableCredential", "ExampleCredential"},
 		"credentialSubject": map[string]any{"given_name": "Alice"},
 	})
 	require.NoError(t, store.StoreBatch(batch))
+
+	res, err := h.FindCandidates(parseDcqlQuery(t, `{
+		"id": "q1", "format": "vc+sd-jwt",
+		"meta": {"type_values": [["ExampleCredential"]]},
+		"claims": [{"path": ["credentialSubject", "given_name"]}]
+	}`))
+	require.NoError(t, err)
+	require.Empty(t, res.OwnedCandidates)
+}
+
+func TestVcdmFindCandidates_TypeValuesDisjunctionAndNonMatch(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	// No context defines ExampleCredential, so it stays as written.
+	batch := newTestBatch("hash-vcdm-tv2", "composite", map[string]any{
+		"@context":          []any{"https://www.w3.org/ns/credentials/v2"},
+		"type":              []any{"VerifiableCredential", "ExampleCredential"},
+		"credentialSubject": map[string]any{"given_name": "Alice"},
+	})
+	require.NoError(t, store.StoreBatch(withExpandedTypes(t, batch, vcIri, "ExampleCredential")))
 
 	cases := []struct {
 		name       string
@@ -277,7 +321,7 @@ func TestVcdmFindCandidates_TypeValuesAndVctValuesBothApply(t *testing.T) {
 		"type":              []any{"VerifiableCredential", "ExampleCredential"},
 		"credentialSubject": map[string]any{"given_name": "Alice"},
 	})
-	require.NoError(t, store.StoreBatch(batch))
+	require.NoError(t, store.StoreBatch(withExpandedTypes(t, batch, vcIri, "ExampleCredential")))
 
 	cases := []struct {
 		name      string

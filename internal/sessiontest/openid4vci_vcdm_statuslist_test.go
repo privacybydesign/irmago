@@ -55,7 +55,7 @@ func issueVcdmStatusListCredential(t *testing.T, c *client.Client, sessionHandle
 
 // vcdmStatusListDcql asks for the status-list VCDM credential's email.
 var vcdmStatusListDcql = vcdmDcqlQuery(
-	`"meta": {"type_values": [["VerifiableCredential", "`+vcdmCredentialType+`"]]}`,
+	`"meta": {"type_values": [["`+vcdmVerifiableCredentialIri+`", "`+vcdmCredentialType+`"]]}`,
 	[]any{"credentialSubject", "email"},
 )
 

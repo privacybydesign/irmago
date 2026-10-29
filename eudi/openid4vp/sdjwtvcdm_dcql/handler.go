@@ -6,7 +6,7 @@
 package sdjwtvcdm_dcql
 
 import (
-	"encoding/json"
+	"slices"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
@@ -70,37 +70,27 @@ func (h *Handler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
 	return query.Format == string(models.CredentialFormatSdJwtVcdm)
 }
 
-// matchesTypeValues matches a stored credential's JSON-LD `type` against DCQL
-// type_values (OpenID4VP §B.1.1).
+// matchesTypeValues matches a stored credential's types against DCQL
+// type_values (OpenID4VP Appendix B.1.1):
 //
-// The @context / JSON-LD processing rules honored here, within the wallet's
-// lightweight (non-dereferencing, §6.3) model:
-//
-//   - `type` is a JSON-LD @type SET: the match is order-independent and by
-//     membership. A credential satisfies an inner array when its type set is a
-//     SUPERSET of it (every requested type present); the outer array is a
-//     disjunction. An empty inner array is ignored rather than matching all.
-//   - Type values are compared as literal strings (terms or IRIs). We do NOT
-//     dereference `@context` to expand terms into IRIs, so verifier and issuer
-//     must share the term vocabulary — guaranteed for the core term
-//     VerifiableCredential by VCDM 2.0's mandatory base context (ContextV2,
-//     enforced at receipt by vcdm.Document.Validate), and assumed for domain
-//     terms via a shared domain `@context`.
-//   - The comparison is against the `type` array only. The credential's
-//     `@context` is part of its stored identity (CredentialType), but §B.1.1
-//     constrains `type`, so @context is intentionally not folded in here.
+//   - Both sides are fully expanded types: the credential's `type` with its
+//     `@context` applied, expanded once at issuance (vcdm.ExpandTypes), against
+//     the IRIs the verifier lists. A compact term such as "VerifiableCredential"
+//     in a query only matches a type no context defines, which stays as written.
+//   - `type` is a JSON-LD @type set: the match is order-independent and by
+//     membership. A credential satisfies an inner array when its types include
+//     every type in it; the outer array is a disjunction. An empty inner array
+//     is ignored rather than matching all.
+//   - A credential stored before the wallet expanded types has none, so it
+//     matches no type_values query until it is issued again.
 func matchesTypeValues(batch *sdjwt_dcql.Batch, typeValues [][]string) bool {
-	var doc vcdm.Document
-	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &doc); err != nil {
-		return false
-	}
 	for _, requested := range typeValues {
 		if len(requested) == 0 {
 			continue
 		}
 		all := true
 		for _, t := range requested {
-			if !doc.HasType(t) {
+			if !slices.Contains(batch.ExpandedTypes, t) {
 				all = false
 				break
 			}

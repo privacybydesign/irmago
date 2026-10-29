@@ -25,6 +25,10 @@ const (
 	// vcdmCredentialId is the @context+type identity the wallet stores the
 	// credential under.
 	vcdmCredentialId = "https://www.w3.org/ns/credentials/v2 VerifiableCredential " + vcdmCredentialType
+	// vcdmVerifiableCredentialIri is VerifiableCredential as the base context
+	// expands it, which a DCQL type_values query names (OpenID4VP Appendix
+	// B.1.1). No context defines vcdmCredentialType, so it stays as written.
+	vcdmVerifiableCredentialIri = "https://www.w3.org/2018/credentials#VerifiableCredential"
 
 	vcdmTestClaims = `{
 		"given_name": "Vera",

@@ -57,6 +57,13 @@ type VcdmBatch struct {
 	// display do not re-parse the raw credential.
 	ProcessedPayload datatypes.JSON `gorm:"type:JSON;not null"`
 
+	// ExpandedTypes is the credential's `type` with its `@context` applied, as
+	// a JSON array of IRIs (vcdm.ExpandTypes): what a DCQL type_values query
+	// names. Expanded at issuance, which fails when they cannot be, so
+	// disclosure needs no network. Null only for a batch stored before the
+	// wallet expanded types.
+	ExpandedTypes datatypes.JSON `gorm:"type:JSON"`
+
 	// IssuedAt is the JWT iat, or the document's validFrom when iat is absent,
 	// or the receipt time when neither is present.
 	IssuedAt time.Time `gorm:"not null"`

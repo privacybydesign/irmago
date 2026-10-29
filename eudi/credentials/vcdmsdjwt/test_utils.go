@@ -105,7 +105,7 @@ func vcdmClaims(t *testing.T, validFrom, validUntil string) []*sdjwt.ClaimElemen
 // AcademicBaseCredentialClaims is an eduwallet-shaped VCDM 2.0 fixture: an
 // AcademicBaseCredential carrying eduPerson-style claims (a representative
 // subset), all selectively disclosable. The second `@context` entry is an
-// illustrative domain context — the §6.3 lightweight path never dereferences it.
+// illustrative domain context.
 func AcademicBaseCredentialClaims(t *testing.T) []*sdjwt.ClaimElement {
 	t.Helper()
 	cnf, err := sdjwt.HolderKeyClaim(testdata.ParseHolderPubJwk())

@@ -37,7 +37,7 @@ func testDiscloseVcdmToVeramoVerifier(t *testing.T) {
 	holderDid := vcdmHolderDid(t, requireSingleVcdmCredential(t, c).Attributes)
 
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, vcdmDcqlQuery(
-		`"meta": {"type_values": [["VerifiableCredential", "`+vcdmCredentialType+`"]]}`,
+		`"meta": {"type_values": [["`+vcdmVerifiableCredentialIri+`", "`+vcdmCredentialType+`"]]}`,
 		[]any{"credentialSubject", "given_name"},
 		[]any{"credentialSubject", "email"},
 	))
@@ -117,7 +117,7 @@ func testVcdmTypeValuesMismatchOffersNoCandidate(t *testing.T) {
 	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, vcdmCredentialConfigId, vcdmTestClaims)
 
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, vcdmDcqlQuery(
-		`"meta": {"type_values": [["VerifiableCredential", "SomeOtherCredential"]]}`,
+		`"meta": {"type_values": [["`+vcdmVerifiableCredentialIri+`", "SomeOtherCredential"]]}`,
 		[]any{"credentialSubject", "given_name"},
 	))
 	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
@@ -171,7 +171,7 @@ func testVcdmAndSdJwtVcInOneRequest(t *testing.T) {
 				{
 					"id": "`+vcdmQueryId+`",
 					"format": "vc+sd-jwt",
-					"meta": {"type_values": [["VerifiableCredential", "`+vcdmCredentialType+`"]]},
+					"meta": {"type_values": [["`+vcdmVerifiableCredentialIri+`", "`+vcdmCredentialType+`"]]},
 					"claims": [
 						{ "path": ["credentialSubject", "given_name"] }
 					]
