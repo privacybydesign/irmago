@@ -106,6 +106,11 @@ func parseEntry(m map[string]any) (Entry, error) {
 			return Entry{}, fmt.Errorf("%w: statusSize: %v", ErrEntry, err)
 		}
 	}
+	// statusMessage is not checked. W3C §2.1 makes the issuer include it when
+	// statusSize is greater than 1, one {status, message} per possible value,
+	// but its messages are for developers and not shown to users, and the
+	// wallet reads only the status value. A credential is not refused for
+	// leaving it out or getting it wrong.
 
 	id, _ := m["id"].(string)
 	return Entry{

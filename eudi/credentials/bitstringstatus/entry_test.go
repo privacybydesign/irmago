@@ -76,6 +76,26 @@ func TestParseEntries_StatusSizeParsed(t *testing.T) {
 	assert.Equal(t, 2, entries[0].StatusSize)
 }
 
+// W3C §2.1 has the issuer include a statusMessage with a statusSize above 1,
+// but the wallet reads only the status value, so it accepts an entry without
+// one, or with one that is malformed.
+func TestParseEntries_StatusMessageNotRequired(t *testing.T) {
+	for name, statusMessage := range map[string]string{
+		"absent":    ``,
+		"malformed": `, "statusMessage": [{"status": "zero"}]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			entries, err := ParseEntries(fromJSON(t, `{
+				"type": "BitstringStatusListEntry", "statusPurpose": "message",
+				"statusListIndex": "1", "statusListCredential": "https://example.com/s", "statusSize": 2`+statusMessage+`
+			}`))
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			assert.Equal(t, 2, entries[0].StatusSize)
+		})
+	}
+}
+
 func TestParseEntries_NilIsEmpty(t *testing.T) {
 	entries, err := ParseEntries(nil)
 	require.NoError(t, err)
