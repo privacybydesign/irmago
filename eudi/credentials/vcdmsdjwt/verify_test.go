@@ -86,11 +86,28 @@ func TestHolder_KeyBindingJwtPresent_Rejected(t *testing.T) {
 	require.Contains(t, err.Error(), "holder should not receive one")
 }
 
-func TestHolder_ExpiredValidUntil_Rejected(t *testing.T) {
-	credential := signCredential(t, MediaTypeVcSdJwt, vcdmClaims(t, "2000-01-01T00:00:00Z", "2001-01-01T00:00:00Z"))
+// validFrom/validUntil are the validity of the data, which a verifier judges;
+// the wallet accepts the credential whatever they say.
+func TestHolder_DocumentValidityIsLeftToTheVerifier(t *testing.T) {
+	for name, window := range map[string][2]string{
+		"validUntil in the past":  {"2000-01-01T00:00:00Z", "2001-01-01T00:00:00Z"},
+		"validFrom in the future": {"2099-01-01T00:00:00Z", "2100-01-01T00:00:00Z"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			credential := signCredential(t, MediaTypeVcSdJwt, vcdmClaims(t, window[0], window[1]))
+			_, err := NewHolderVerificationProcessor(CreateTestVerificationContext()).ParseAndVerifySdJwtVcdm(credential)
+			require.NoError(t, err)
+		})
+	}
+}
+
+// exp is when the signature stops being valid: past it, the credential itself
+// is no longer valid, so the wallet refuses it.
+func TestHolder_ExpiredJwt_Rejected(t *testing.T) {
+	claims := append(vcdmClaims(t, "2020-01-01T00:00:00Z", "2035-01-01T00:00:00Z"), sdjwt.Claim("exp", int64(978307200))) // 2001-01-01
+	credential := signCredential(t, MediaTypeVcSdJwt, claims)
 	_, err := NewHolderVerificationProcessor(CreateTestVerificationContext()).ParseAndVerifySdJwtVcdm(credential)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "expired")
+	require.ErrorContains(t, err, "expired")
 }
 
 func TestHolder_UntrustedIssuerCert_Rejected(t *testing.T) {

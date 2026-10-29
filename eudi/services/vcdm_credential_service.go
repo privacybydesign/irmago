@@ -294,19 +294,18 @@ func (s *sdJwtVcdmCredentialService) deleteOrphanedKeys(publicKeyIdentifiers []m
 }
 
 // VcdmIssuanceValidity derives the wallet's issuance/validity timestamps for a
-// verified SD-JWT-secured VCDM credential. The JWT-level iat/nbf are preferred
-// when present (VC-JOSE-COSE keeps them optional), falling back to the
-// document's validFrom; the expiry prefers the document's validUntil — the
-// credential's own validity end — over the JWT exp. All time checks already
-// happened at receipt; this only decides which timestamps the wallet records
-// and displays.
+// verified SD-JWT-secured VCDM credential. They are the credential's own, the
+// JWT iat, nbf and exp, which VC-JOSE-COSE makes the issuance and validity of
+// the signature, as SD-JWT VC records them. The document's validFrom and
+// validUntil are the validity of the data, which is for a verifier to judge;
+// they stand in only when the JWT carries no such claim. This only decides
+// which timestamps the wallet records and displays.
 func VcdmIssuanceValidity(v *vcdmsdjwt.VerifiedSdJwtVcdm) (issuedAt, expiresAt, notBefore *int64) {
 	// Document.Validate ran at receipt, so the error returns are impossible.
 	validFrom, hasValidFrom, _ := v.Document.ValidFrom()
 	validUntil, hasValidUntil, _ := v.Document.ValidUntil()
 
-	issuedAt = v.RegisteredClaims.IssuedAt
-	notBefore = v.RegisteredClaims.NotBefore
+	issuedAt, notBefore, expiresAt = v.RegisteredClaims.IssuedAt, v.RegisteredClaims.NotBefore, v.RegisteredClaims.Expiry
 	if hasValidFrom {
 		unix := validFrom.Unix()
 		if issuedAt == nil {
@@ -316,9 +315,7 @@ func VcdmIssuanceValidity(v *vcdmsdjwt.VerifiedSdJwtVcdm) (issuedAt, expiresAt, 
 			notBefore = &unix
 		}
 	}
-
-	expiresAt = v.RegisteredClaims.Expiry
-	if hasValidUntil {
+	if hasValidUntil && expiresAt == nil {
 		unix := validUntil.Unix()
 		expiresAt = &unix
 	}

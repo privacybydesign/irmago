@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
@@ -296,4 +297,50 @@ func TestSdJwtVcdmStore_FailedReissuanceKeepsTheStoredCredential(t *testing.T) {
 	batches, err := env.store.ListBatches()
 	require.NoError(t, err)
 	require.Len(t, batches, 1, "the stored credential must survive a re-issuance that failed to store")
+}
+
+// The wallet records the credential's own dates, the JWT nbf and exp, as
+// SD-JWT VC does. The document's validFrom/validUntil are the validity of the
+// data, which is for a verifier to judge; they stand in only when the JWT has
+// no such claim.
+func TestVcdmIssuanceValidity(t *testing.T) {
+	const (
+		day1 = int64(1577836800) // 2020-01-01
+		day2 = day1 + 86400
+		day3 = day2 + 86400
+		day4 = day3 + 86400
+	)
+	stamp := func(unix int64) string { return time.Unix(unix, 0).UTC().Format(time.RFC3339) }
+	ptr := func(v int64) *int64 { return &v }
+
+	cases := map[string]struct {
+		nbf, exp              *int64
+		validFrom, validUntil string
+		wantNotBefore         *int64
+		wantExpires           *int64
+	}{
+		"exp before validUntil": {exp: ptr(day2), validUntil: stamp(day4), wantExpires: ptr(day2)},
+		"exp after validUntil":  {exp: ptr(day4), validUntil: stamp(day2), wantExpires: ptr(day4)},
+		"only validUntil":       {validUntil: stamp(day3), wantExpires: ptr(day3)},
+		"nbf before validFrom":  {nbf: ptr(day1), validFrom: stamp(day3), wantNotBefore: ptr(day1)},
+		"only validFrom":        {validFrom: stamp(day3), wantNotBefore: ptr(day3)},
+		"neither":               {},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			document := vcdm.Document{}
+			if c.validFrom != "" {
+				document[vcdm.ValidFromKey] = c.validFrom
+			}
+			if c.validUntil != "" {
+				document[vcdm.ValidUntilKey] = c.validUntil
+			}
+			_, expiresAt, notBefore := VcdmIssuanceValidity(&vcdmsdjwt.VerifiedSdJwtVcdm{
+				Document:         document,
+				RegisteredClaims: sdjwt.RegisteredClaims{NotBefore: c.nbf, Expiry: c.exp},
+			})
+			assert.Equal(t, c.wantExpires, expiresAt)
+			assert.Equal(t, c.wantNotBefore, notBefore)
+		})
+	}
 }

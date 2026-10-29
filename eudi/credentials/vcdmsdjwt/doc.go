@@ -33,5 +33,6 @@
 // Holder binding reuses the shared `cnf` handling in eudi/sdjwt, which resolves
 // both the `cnf.jwk` and `cnf.kid` (did:jwk / did:key) forms. The holder proof
 // at presentation is not a KB-JWT but a Verifiable Presentation signed with
-// that key, enveloping the SD-JWT (presentation.go; docs/adr/0011).
+// that key, enveloping the SD-JWT (see presentation.go): the shape verifiers of
+// vc+sd-jwt expect, as OpenID4VP defines no presentation format for it.
 package vcdmsdjwt

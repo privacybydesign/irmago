@@ -228,13 +228,12 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 		return nil, nil, nil, nil, err
 	}
 
-	// Step 6: point-in-time validity of the VCDM document (validFrom/validUntil).
-	now := p.verificationContext.Clock.Now()
-	if err := document.VerifyValidityPeriod(now, ClockSkewInSeconds*time.Second); err != nil {
-		return nil, nil, nil, nil, err
-	}
+	// The document's validFrom/validUntil are not checked against the clock:
+	// they are the validity of the data, which is for a verifier to judge
+	// (VCDM 2.0 Appendix A.7). The wallet checks the credential itself, whose
+	// signature validity the JWT exp/nbf carry (step 2).
 
-	// Step 7 (VC-JOSE-COSE §3.2.1): when the JWT `iss` claim is present it MUST
+	// Step 6 (VC-JOSE-COSE §3.2.1): when the JWT `iss` claim is present it MUST
 	// equal the VCDM `issuer`.
 	if registered.Issuer != nil {
 		issuerID, err := document.IssuerID()
@@ -247,9 +246,9 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 		}
 	}
 
-	// Step 8: an x5c-authenticated issuer must not be able to claim another
+	// Step 7: an x5c-authenticated issuer must not be able to claim another
 	// issuer's identity, so the VCDM `issuer` (and with it `iss`, equal per step
-	// 7) must name the leaf certificate. A DID `kid` needs no such check: its key
+	// 6) must name the leaf certificate. A DID `kid` needs no such check: its key
 	// is resolved from the `iss` DID itself.
 	if leafCert != nil {
 		issuerID, err := document.IssuerID()
@@ -306,7 +305,7 @@ func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, *
 
 // extractRegisteredClaims reads the SD-JWT / JWT registered claims from a
 // verified token. `iss` is optional here (the VCDM `issuer` field is the
-// authoritative issuer; iss is cross-checked against it in step 7 when present).
+// authoritative issuer; iss is cross-checked against it in step 6 when present).
 func extractRegisteredClaims(token jwt.Token) (*sdjwt.RegisteredClaims, error) {
 	sub, subPresent := token.Subject()
 	iss, issPresent := token.Issuer()
