@@ -85,12 +85,12 @@ func VerifyAndProcessDisclosures(sdAlg iana.HashingAlgorithm,
 	decodedDisclosures := slices.Collect(maps.Values(decodedDisclosuresMap))
 
 	// Step 3.b - 3.e: Identify all digests in the Issuer-Signed JWT recursively and replace them with the actual disclosure values
-	err := processEmbeddedDisclosures(issuerSignedJwtClaims, decodedDisclosuresMap)
+	// Step 4: a digest encountered twice is signalled as soon as it is found (disclosureIndex.resolve)
+	index := &disclosureIndex{byDigest: decodedDisclosuresMap, seen: map[HashedDisclosure]struct{}{}}
+	err := processEmbeddedDisclosures(issuerSignedJwtClaims, index)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	// Step 4: double encountered digests are signalled as soon as they are found during processing
 
 	// Step 5: if a disclosure was not referenced (i.e. removed from the map), the SD-JWT is invalid
 	for _, disclosure := range decodedDisclosuresMap {
@@ -108,7 +108,24 @@ func VerifyAndProcessDisclosures(sdAlg iana.HashingAlgorithm,
 	return ProcessedPayload(*issuerSignedJwtClaims), decodedDisclosures, nil
 }
 
-func processEmbeddedDisclosures(claims *map[string]any, decodedDisclosures map[HashedDisclosure]*DisclosureContent) error {
+// disclosureIndex holds the Disclosures by digest and the digests met so far.
+type disclosureIndex struct {
+	byDigest map[HashedDisclosure]*DisclosureContent
+	seen     map[HashedDisclosure]struct{}
+}
+
+// resolve returns the Disclosure for digest, or nil for a decoy, and refuses a
+// digest met before: RFC 9901 §7.1 step 4 rejects any digest encountered more
+// than once, whether or not a Disclosure matches it.
+func (d *disclosureIndex) resolve(digest HashedDisclosure) (*DisclosureContent, error) {
+	if _, ok := d.seen[digest]; ok {
+		return nil, fmt.Errorf("digest %s has been referenced multiple time in the SD-JWT", digest)
+	}
+	d.seen[digest] = struct{}{}
+	return d.byDigest[digest], nil
+}
+
+func processEmbeddedDisclosures(claims *map[string]any, decodedDisclosures *disclosureIndex) error {
 	// Only process if there are any claims
 	if claims == nil {
 		return nil
@@ -134,7 +151,7 @@ func processEmbeddedDisclosures(claims *map[string]any, decodedDisclosures map[H
 
 // processValue replaces the digests in value, at any depth, with what their
 // Disclosures carry (RFC 9901 §7.1 step 3).
-func processValue(value any, decodedDisclosures map[HashedDisclosure]*DisclosureContent) (any, error) {
+func processValue(value any, decodedDisclosures *disclosureIndex) (any, error) {
 	switch v := value.(type) {
 	case map[string]any:
 		err := processEmbeddedDisclosures(&v, decodedDisclosures)
@@ -149,7 +166,7 @@ func processValue(value any, decodedDisclosures map[HashedDisclosure]*Disclosure
 // processArray replaces each {"...": "<digest>"} element with the value of its
 // Disclosure, dropping decoys, and processes every element recursively,
 // including the values Disclosures bring in (RFC 9901 §7.1 step 3.c.iii).
-func processArray(array []any, decodedDisclosures map[HashedDisclosure]*DisclosureContent) ([]any, error) {
+func processArray(array []any, decodedDisclosures *disclosureIndex) ([]any, error) {
 	processedArray := []any{}
 	for _, arrayElemValue := range array {
 		// Check if the value is a disclosure (format should be {"...":"<digest>"}) or not, and if so,
@@ -165,15 +182,12 @@ func processArray(array []any, decodedDisclosures map[HashedDisclosure]*Disclosu
 					)
 				}
 
-				disclosureDigest := HashedDisclosure(arrayElemDisclosureDigestStr)
-				if embeddedDisclosure, ok := decodedDisclosures[disclosureDigest]; ok {
+				embeddedDisclosure, err := decodedDisclosures.resolve(HashedDisclosure(arrayElemDisclosureDigestStr))
+				if err != nil {
+					return nil, err
+				}
+				if embeddedDisclosure != nil {
 					// Check for array element validity (i.e. should be in format ["...": "<digest>"])
-					if embeddedDisclosure.IsTouched() {
-						return nil, fmt.Errorf(
-							"digest %s has been referenced multiple time in the SD-JWT",
-							disclosureDigest,
-						)
-					}
 					if !embeddedDisclosure.IsArrayElement() {
 						return nil, fmt.Errorf(
 							"embedded disclosure %s is expected to be an array element, but is not",
@@ -206,7 +220,7 @@ func processArray(array []any, decodedDisclosures map[HashedDisclosure]*Disclosu
 	return processedArray, nil
 }
 
-func processSdClaim(claims *map[string]any, decodedDisclosures map[HashedDisclosure]*DisclosureContent) error {
+func processSdClaim(claims *map[string]any, decodedDisclosures *disclosureIndex) error {
 	// Only process if there are any claims
 	if claims == nil {
 		return nil
@@ -225,11 +239,12 @@ func processSdClaim(claims *map[string]any, decodedDisclosures map[HashedDisclos
 	}
 
 	for _, sdDigest := range sdDigests {
+		embeddedDisclosure, err := decodedDisclosures.resolve(sdDigest)
+		if err != nil {
+			return err
+		}
 		// Disclosure cannot be found for digest; ignore the digest
-		if embeddedDisclosure, ok := decodedDisclosures[sdDigest]; ok {
-			if embeddedDisclosure.IsTouched() {
-				return fmt.Errorf("digest %s has been referenced multiple time in the SD-JWT", sdDigest)
-			}
+		if embeddedDisclosure != nil {
 			if embeddedDisclosure.IsArrayElement() {
 				return fmt.Errorf("embedded disclosure %s appears to be an array element, which is not expected here", embeddedDisclosure.Key)
 			}

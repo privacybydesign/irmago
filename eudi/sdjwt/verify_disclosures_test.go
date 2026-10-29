@@ -22,6 +22,7 @@ import (
 // - [x] flat SD-JWT: digest is processed multiple times (in single array)
 // - [x] flat SD-JWT: digest is processed multiple times (in multiple array)
 // - [x] structured SD-JWT: disclosure structures, digest is processed multiple times
+// - [x] a digest without a Disclosure (a decoy) is encountered more than once
 
 // success for:
 // - [x] flat SD-JWT: disclosures for non-array claims
@@ -761,4 +762,38 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_DigestsInsideArrayEl
 	require.Equal(t, []any{map[string]any{"name": "Alice", "age": float64(30)}}, processed["people"])
 	require.Equal(t, []any{[]any{"nested"}}, processed["matrix"])
 	require.Equal(t, []any{[]any{"inner", "plain"}}, processed["lists"])
+}
+
+// RFC 9901 §7.1 step 4: any digest encountered more than once is rejected,
+// whether or not a Disclosure matches it, so a repeated decoy is refused too.
+func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_RepeatedDecoyDigest_Fails(t *testing.T) {
+	const decoy = "c29tZSBkZWNveSBkaWdlc3QgdGhhdCBtYXRjaGVzIG5vdGhpbmc"
+
+	nested, err := NewDisclosureContent("nested", map[string]any{"_sd": []any{decoy}})
+	require.NoError(t, err)
+	encodedNested, nestedDigest := encodeAndHash(t, nested)
+
+	for name, tc := range map[string]struct {
+		payload     map[string]any
+		disclosures []EncodedDisclosure
+	}{
+		"twice in one _sd": {
+			payload: map[string]any{"_sd": []any{decoy, decoy}},
+		},
+		"twice in one array": {
+			payload: map[string]any{"arr": []any{map[string]any{"...": decoy}, map[string]any{"...": decoy}}},
+		},
+		"in an _sd and in an array": {
+			payload: map[string]any{"_sd": []any{decoy}, "arr": []any{map[string]any{"...": decoy}}},
+		},
+		"again inside a Disclosure's value": {
+			payload:     map[string]any{"_sd": []any{decoy, nestedDigest}},
+			disclosures: []EncodedDisclosure{encodedNested},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := VerifyAndProcessDisclosures(iana.SHA256, &tc.payload, tc.disclosures)
+			require.ErrorContains(t, err, "digest "+decoy+" has been referenced multiple time")
+		})
+	}
 }
