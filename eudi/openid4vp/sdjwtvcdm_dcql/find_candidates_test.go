@@ -1,7 +1,7 @@
-package eudi_vcdm_dcql
+package sdjwtvcdm_dcql
 
 // VCDM FindCandidates/PrepareDisclosure behaviour, exercised through the real
-// handler (NewVcdmDcqlHandler + the production VCDM profile) rather than a mirror
+// handler (New + the production VCDM profile) rather than a mirror
 // profile. These link SQLCipher (cgo) via the shared scaffolding, so they
 // type-check locally but run in CI.
 
@@ -37,7 +37,7 @@ func newTestHandler(t *testing.T) (*Handler, db.VcdmStore) {
 	t.Helper()
 	ts := sdjwt_dcqltest.NewTestStorage(t)
 	store := db.NewVcdmStore(ts.Db())
-	h := NewVcdmDcqlHandler(ts, store, nil, clientmodels.NewCurrentLocale("en"), nil)
+	h := New(ts, store, nil, clientmodels.NewCurrentLocale("en"), nil)
 	return h, store
 }
 
@@ -48,7 +48,7 @@ func newTestHandlerWithKeyBinder(t *testing.T) (*Handler, db.VcdmStore, sdjwt.Ke
 	ts := sdjwt_dcqltest.NewTestStorage(t)
 	store := db.NewVcdmStore(ts.Db())
 	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
-	h := NewVcdmDcqlHandler(ts, store, keyBinder, clientmodels.NewCurrentLocale("en"), nil)
+	h := New(ts, store, keyBinder, clientmodels.NewCurrentLocale("en"), nil)
 	return h, store, keyBinder
 }
 
@@ -115,7 +115,7 @@ func TestVcdmFindCandidates_MatchesCompositeTypeAndSubjectClaims(t *testing.T) {
 
 func TestVcdmFindCandidates_ExcludesSdJwtVcBatch(t *testing.T) {
 	ts := sdjwt_dcqltest.NewTestStorage(t)
-	h := NewVcdmDcqlHandler(ts, db.NewVcdmStore(ts.Db()), nil, clientmodels.NewCurrentLocale("en"), nil)
+	h := New(ts, db.NewVcdmStore(ts.Db()), nil, clientmodels.NewCurrentLocale("en"), nil)
 
 	// A dc+sd-jwt (SD-JWT VC) batch lives in the SD-JWT VC table and must not be
 	// served for a vc+sd-jwt query.

@@ -1,4 +1,4 @@
-package eudi_sdjwtvc_dcql
+package sdjwtvc_dcql
 
 import (
 	"testing"

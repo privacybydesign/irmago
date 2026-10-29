@@ -24,10 +24,10 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwtvc_dcql"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_vcdm_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/mdoc_dcql"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwtvc_dcql"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwtvcdm_dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -45,7 +45,7 @@ import (
 type Client struct {
 	storage           *clientstorage.Storage
 	eudiStorage       storage.Storage
-	sdjwtvcStorage    irmaclient.SdJwtVcStorage
+	irmaSdjwtStorage  irmaclient.SdJwtVcStorage
 	openid4vpClient   *openid4vp.Client
 	openid4vciClient  *openid4vci.Client
 	irmaClient        *irmaclient.IrmaClient
@@ -181,14 +181,14 @@ func New(
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
 	didValidator := openid4vp.NewDidVerifierValidator(false)
 	verifierValidator := openid4vp.NewCompositeVerifierValidator(x509Validator, didValidator)
-	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(s)
+	irmaSdJwtStorage := irmaclient.NewBboltSdJwtVcStorage(s)
 
 	// Register the EUDI SD-JWT handler for credentials issued via OID4VCI.
 	// The fetchers describe credentials the wallet has never seen so the
 	// frontend can tell the user what is missing instead of stalling on a
 	// blank permission prompt.
 	eudiKeyBinder := sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db()))
-	eudiSdJwtDcqlHandler := eudi_sdjwtvc_dcql.NewSdJwtVcDcqlHandler(
+	sdJwtVcDcqlHandler := sdjwtvc_dcql.New(
 		eudiStorage,
 		sdjwtCredentialStore,
 		typemetadata.NewDefaultVctFetcher(nil),
@@ -200,14 +200,14 @@ func New(
 	// The VCDM handler serves vc+sd-jwt queries (SD-JWT-secured W3C VCDM 2.0)
 	// from the VCDM tables, while the SD-JWT VC handler above serves dc+sd-jwt.
 	// It shares the storage and key binder; the holder key was linked at receipt.
-	eudiVcdmDcqlHandler := eudi_vcdm_dcql.NewVcdmDcqlHandler(
+	sdJwtVcdmDcqlHandler := sdjwtvcdm_dcql.New(
 		eudiStorage,
 		vcdmCredentialStore,
 		eudiKeyBinder,
 		currentLocale,
 		revocationService,
 	)
-	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
+	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.New(irmaSdJwtStorage, irmaConf, irmaKeyBinder, currentLocale)
 
 	// Register the mso_mdoc handler for credentials issued via OID4VCI (e.g. the AV
 	// Blueprint's proof_of_age credential). No fetchers here (unlike the SD-JWT
@@ -216,10 +216,10 @@ func New(
 	// The device key binder is the software one: it reads the PKCS#8 key issuance
 	// stored. Replacing it with a StrongBox / Secure Enclave implementation is the
 	// one change needed to keep mdoc device keys out of this process.
-	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, mdocCredentialStore, currentLocale,
+	mdocDcqlHandler := mdoc_dcql.New(eudiStorage, mdocCredentialStore, currentLocale,
 		services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(eudiStorage.Db())), revocationService)
 
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler, eudiVcdmDcqlHandler, mdocDcqlHandler}, verifierValidator, currentLocale)
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, sdJwtVcDcqlHandler, sdJwtVcdmDcqlHandler, mdocDcqlHandler}, verifierValidator, currentLocale)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -233,7 +233,7 @@ func New(
 		StatusChecker: statusChecker,
 	}
 
-	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, newIrmaHandler(handler), signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
+	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, newIrmaHandler(handler), signer, irmaStorage, sdJwtVcVerificationContext, irmaSdJwtStorage, irmaKeyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
@@ -303,7 +303,7 @@ func New(
 
 	client := &Client{
 		storage:           s,
-		sdjwtvcStorage:    sdjwtvcStorage,
+		irmaSdjwtStorage:  irmaSdJwtStorage,
 		eudiStorage:       eudiStorage,
 		openid4vpClient:   openid4vpClient,
 		openid4vciClient:  openid4vciClient,
@@ -461,7 +461,7 @@ func sdjwtvcBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMe
 }
 
 func (client *Client) getIrmaCredentialInfoList() irma.CredentialInfoList {
-	sdjwtvcs := client.sdjwtvcStorage.GetCredentialMetdataList()
+	sdjwtvcs := client.irmaSdjwtStorage.GetCredentialMetdataList()
 	idemix := client.irmaClient.CredentialInfoList()
 
 	result := irma.CredentialInfoList{}
@@ -574,7 +574,7 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 			}
 		}
 		if format == clientmodels.Format_SdJwtVc {
-			holderPubKeys, err := client.sdjwtvcStorage.RemoveCredentialByHash(hash)
+			holderPubKeys, err := client.irmaSdjwtStorage.RemoveCredentialByHash(hash)
 			if err != nil {
 				return fmt.Errorf("error while deleting sdjwtvc credential: %v", err)
 			}
@@ -688,7 +688,7 @@ func (client *Client) InstallScheme(url string, publickey []byte) error {
 }
 
 func (client *Client) RemoveStorage() error {
-	if err := client.sdjwtvcStorage.RemoveAll(); err != nil {
+	if err := client.irmaSdjwtStorage.RemoveAll(); err != nil {
 		return fmt.Errorf("failed to remove sdjwtvc storage: %v", err)
 	}
 	if err := client.keyBinder.RemoveAllPrivateKeys(); err != nil {

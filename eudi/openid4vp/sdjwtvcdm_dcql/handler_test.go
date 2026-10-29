@@ -1,4 +1,4 @@
-package eudi_vcdm_dcql
+package sdjwtvcdm_dcql
 
 import (
 	"testing"

@@ -1,9 +1,9 @@
-// Package eudi_vcdm_dcql is the DCQL query handler for SD-JWT-secured W3C VCDM
+// Package sdjwtvcdm_dcql is the DCQL query handler for SD-JWT-secured W3C VCDM
 // 2.0 (vc+sd-jwt) credentials in the eudi SQLite storage. It is a thin routing
 // shell over the shared sdjwt_dcql.Engine — the same machinery the SD-JWT VC
 // handler uses, differing only in format routing and credentialSubject-rooted
 // claim scoping.
-package eudi_vcdm_dcql
+package sdjwtvcdm_dcql
 
 import (
 	"encoding/json"
@@ -29,7 +29,7 @@ type Handler struct {
 
 var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 
-// NewVcdmDcqlHandler creates the VCDM handler over the VCDM store. keyBinder is
+// New creates the VCDM handler over the VCDM store. keyBinder is
 // the same holder key signer the SD-JWT VC handler uses — the holder private key
 // was linked to the instance at VCDM receipt. With holder binding, a disclosed
 // credential is enveloped in a Verifiable Presentation signed with the holder
@@ -44,7 +44,7 @@ var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 // revocation decides each candidate's Revoked flag from the status the
 // revocation sweep last stored, as for every format. A revoked credential is
 // still offered, flagged.
-func NewVcdmDcqlHandler(
+func New(
 	eudiStorage storage.Storage,
 	credentialStore db.VcdmStore,
 	keyBinder sdjwt.KeyBinder,

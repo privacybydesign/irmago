@@ -34,7 +34,7 @@ func newTestHandler(t *testing.T) (*Engine, db.SdJwtVcStore) {
 }
 
 // testSdJwtVcProfile mirrors the real SD-JWT VC profile (which now lives in the
-// eudi_sdjwtvc_dcql package) so the engine tests can build an Engine directly.
+// sdjwtvc_dcql package) so the engine tests can build an Engine directly.
 func testSdJwtVcProfile() Profile {
 	return Profile{
 		StorageFormat: models.CredentialFormatSdJwtVc,

@@ -50,9 +50,9 @@ type RevocationChecker interface {
 	IsStoredStatusRevoked(status uint8) bool
 }
 
-// MdocDcqlHandler implements dcql.DcqlCredentialQueryHandler for mso_mdoc
+// Handler implements dcql.DcqlCredentialQueryHandler for mso_mdoc
 // credentials stored in the eudi storage (SQLite).
-type MdocDcqlHandler struct {
+type Handler struct {
 	storage       storage.Storage
 	store         db.MdocStore
 	deviceKeys    DeviceKeyBinder
@@ -63,7 +63,7 @@ type MdocDcqlHandler struct {
 	revocation RevocationChecker
 }
 
-// NewMdocDcqlHandler creates a new handler.
+// New creates a new handler.
 //
 // store is the mdoc credential store this handler reads batches and instances
 // from -- pass the same db.MdocStore instance the caller already built for
@@ -77,14 +77,14 @@ type MdocDcqlHandler struct {
 //
 // revocation sets the Revoked flag on candidates and log entries; pass the
 // wallet's services.RevocationService, or nil to never flag anything revoked.
-func NewMdocDcqlHandler(
+func New(
 	eudiStorage storage.Storage,
 	store db.MdocStore,
 	currentLocale *clientmodels.CurrentLocale,
 	deviceKeys DeviceKeyBinder,
 	revocation RevocationChecker,
-) *MdocDcqlHandler {
-	return &MdocDcqlHandler{
+) *Handler {
+	return &Handler{
 		storage:       eudiStorage,
 		store:         store,
 		deviceKeys:    deviceKeys,
@@ -93,17 +93,17 @@ func NewMdocDcqlHandler(
 	}
 }
 
-var _ dcql.DcqlCredentialQueryHandler = (*MdocDcqlHandler)(nil)
+var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 
 // CanHandleCredentialQuery returns true for any query requesting the
 // "mso_mdoc" format -- this package's only responsibility is that one
 // format, unlike sdjwt_dcql/irma_sdjwt_dcql which split SD-JWT-VC
 // between two stores by vct shape.
-func (h *MdocDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
+func (h *Handler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
 	return query.Format == string(clientmodels.Format_MsoMdoc)
 }
 
-func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQueryResult, error) {
+func (h *Handler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQueryResult, error) {
 	result := &dcql.CredentialQueryResult{}
 
 	docType := ""
@@ -215,7 +215,7 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 // PrepareDisclosure builds a device-signed presentation per selection. The audience is the
 // value the presentation is bound to, which for a URL-invoked session is the verifier's
 // client identifier -- the value the OpenID4VP session transcript signs over.
-func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
+func (h *Handler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
 	for _, sel := range selections {
@@ -323,7 +323,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 // means the transport was reported without the origin that authenticates it,
 // which cannot produce a verifiable signature, so it fails here rather than
 // silently signing over "".
-func (h *MdocDcqlHandler) sessionTranscript(sel dcql.DisclosureSelection, nonce, audience string) (stdmdoc.SessionTranscript, error) {
+func (h *Handler) sessionTranscript(sel dcql.DisclosureSelection, nonce, audience string) (stdmdoc.SessionTranscript, error) {
 	if !sel.OverDcApi {
 		return newOpenID4VPSessionTranscript(audience, nonce, sel.ResponseUri, sel.ResponseEncryptionKeyThumbprint)
 	}
@@ -616,7 +616,7 @@ func unobtainableClaimName(elementIdentifier string) *string {
 // credentialImage loads the credential logo that resolves for the locale
 // from the batch's display metadata, mirroring sdjwt_dcql's identical
 // helper.
-func (h *MdocDcqlHandler) credentialImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
+func (h *Handler) credentialImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
 	cm := services.MdocCredentialMetadata(batch)
 	if cm == nil {
 		return nil
@@ -627,7 +627,7 @@ func (h *MdocDcqlHandler) credentialImage(batch *models.MdocBatch, locale string
 
 // issuerTrustedParty builds a TrustedParty from the stored issuer display
 // metadata, mirroring sdjwt_dcql's identical helper.
-func (h *MdocDcqlHandler) issuerTrustedParty(batch *models.MdocBatch, locale string) clientmodels.TrustedParty {
+func (h *Handler) issuerTrustedParty(batch *models.MdocBatch, locale string) clientmodels.TrustedParty {
 	return clientmodels.TrustedParty{
 		Id:       batch.CredentialIssuer,
 		Name:     clientmodels.Resolve(services.MdocIssuerNamesByLanguage(services.MdocIssuerDisplays(batch)), locale),
@@ -639,7 +639,7 @@ func (h *MdocDcqlHandler) issuerTrustedParty(batch *models.MdocBatch, locale str
 // issuerImage loads the issuer logo that resolves for the locale from the
 // batch's issuer display metadata, mirroring sdjwt_dcql's identical
 // helper.
-func (h *MdocDcqlHandler) issuerImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
+func (h *Handler) issuerImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
 	logoManager := h.storage.FileSystem().Issuers().LogoManager()
 	return services.LoadResolvedLogo(logoManager, services.MdocIssuerLogoURIsByLanguage(services.MdocIssuerDisplays(batch)), locale)
 }
@@ -679,7 +679,7 @@ func batchExpiryUnix(batch *models.MdocBatch) *int64 {
 // The verifier's intent to retain is recorded with each row, as the screen
 // showed it: a log that forgets it leaves the user unable to see later what
 // they agreed to.
-func (h *MdocDcqlHandler) buildLogCredential(
+func (h *Handler) buildLogCredential(
 	batch *models.MdocBatch,
 	instance *models.MdocBatchInstance,
 	claimPaths [][]any,
@@ -707,6 +707,6 @@ func (h *MdocDcqlHandler) buildLogCredential(
 	}
 }
 
-func (h *MdocDcqlHandler) isRevoked(instance *models.MdocBatchInstance) bool {
+func (h *Handler) isRevoked(instance *models.MdocBatchInstance) bool {
 	return h.revocation != nil && h.revocation.IsStoredStatusRevoked(instance.LastKnownStatus)
 }

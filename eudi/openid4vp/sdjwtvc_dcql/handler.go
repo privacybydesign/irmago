@@ -1,7 +1,7 @@
-// Package eudi_sdjwtvc_dcql is the DCQL query handler for IETF SD-JWT VC
+// Package sdjwtvc_dcql is the DCQL query handler for IETF SD-JWT VC
 // (dc+sd-jwt) credentials in the eudi SQLite storage (issued via OpenID4VCI).
 // It is a thin routing shell over the shared sdjwt_dcql.Engine.
-package eudi_sdjwtvc_dcql
+package sdjwtvc_dcql
 
 import (
 	"strings"
@@ -26,12 +26,12 @@ type Handler struct {
 
 var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 
-// NewSdJwtVcDcqlHandler creates the SD-JWT VC handler. vctFetcher and
+// New creates the SD-JWT VC handler. vctFetcher and
 // issuerFetcher describe credentials the wallet has never seen (the "obtainable
 // descriptor" path); pass nil to disable it. keyBinder is the KB-JWT signer used
 // when a presentation requires holder binding — e.g.
 // sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())).
-func NewSdJwtVcDcqlHandler(
+func New(
 	eudiStorage storage.Storage,
 	credentialStore db.SdJwtVcStore,
 	vctFetcher typemetadata.VctFetcher,

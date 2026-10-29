@@ -301,7 +301,7 @@ func TestPrepareDisclosureKeepsBatchOfOneReusable(t *testing.T) {
 // CanHandleCredentialQuery is the dispatch every other handler relies on to not
 // be handed an mdoc, and vice versa.
 func TestCanHandleCredentialQuery(t *testing.T) {
-	handler := &MdocDcqlHandler{}
+	handler := &Handler{}
 
 	require.True(t, handler.CanHandleCredentialQuery(dcql.CredentialQuery{Format: "mso_mdoc"}))
 	require.False(t, handler.CanHandleCredentialQuery(dcql.CredentialQuery{Format: "dc+sd-jwt"}))
@@ -612,7 +612,7 @@ func TestSelectiveDiscloseByPathsRevealsOnlyNamedElements(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 type testEnv struct {
-	handler  *MdocDcqlHandler
+	handler  *Handler
 	verifier *stdmdoc.Verifier
 	store    db.MdocStore
 	hash     string
@@ -631,7 +631,7 @@ type testEnv struct {
 // this process cannot extract.
 func (e *testEnv) withDeviceKeyBinder(binder DeviceKeyBinder) *testEnv {
 	withBinder := *e
-	withBinder.handler = NewMdocDcqlHandler(e.eudiStorage, e.store, clientmodels.NewCurrentLocale("en"), binder, nil)
+	withBinder.handler = New(e.eudiStorage, e.store, clientmodels.NewCurrentLocale("en"), binder, nil)
 	return &withBinder
 }
 
@@ -739,7 +739,7 @@ func newTestEnvWithExpiry(t *testing.T, batchSize uint, expiresAt *time.Time) *t
 	return &testEnv{
 		// The production binder, wired as client.New wires it, so every test that
 		// does not substitute one is covering the real path.
-		handler: NewMdocDcqlHandler(eudiStorage, store, clientmodels.NewCurrentLocale("en"),
+		handler: New(eudiStorage, store, clientmodels.NewCurrentLocale("en"),
 			services.NewMdocDeviceKeyBinder(keyStore), nil),
 		verifier:    verifier,
 		store:       store,
