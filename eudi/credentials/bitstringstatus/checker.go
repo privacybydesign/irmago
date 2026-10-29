@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
@@ -23,8 +25,13 @@ const (
 	ListCredentialType = "BitstringStatusListCredential"
 
 	// MediaTypeVcJwt is the JOSE `typ` of a JWT-secured VCDM 2.0 credential
-	// (VC-JOSE-COSE §3.1.1), the one securing this package verifies.
+	// (VC-JOSE-COSE §3.1.1).
 	MediaTypeVcJwt = "vc+jwt"
+	// MediaTypeVcSdJwt is the JOSE `typ` of an SD-JWT-secured VCDM 2.0
+	// credential (VC-JOSE-COSE §3.2), as vcdmsdjwt.MediaTypeVcSdJwt, which this
+	// package cannot import. A status list may be secured either way: W3C §3.6
+	// has an issuer secure it as it secures the credentials that point to it.
+	MediaTypeVcSdJwt = "vc+sd-jwt"
 
 	MaxBodyDefault      = 5 * 1024 * 1024
 	FetchTimeoutDefault = 10 * time.Second
@@ -85,8 +92,9 @@ func (c *Checker) Check(ctx context.Context, entry Entry, issuer string) (uint, 
 
 // Fetch dereferences the status list credential at listURL, verifies it, and
 // returns its credentialSubject. Verification is the W3C §3.2 validate
-// algorithm's proof step for a vc+jwt list: a trusted signature, a valid VCDM
-// document of type BitstringStatusListCredential within its validity period,
+// algorithm's proof step for a vc+jwt or vc+sd-jwt list: a trusted signature,
+// a valid VCDM document of type BitstringStatusListCredential within its
+// validity period,
 // and, when it has an `id`, one equal to listURL, so a valid list for another
 // URL cannot be substituted. W3C §2.2 makes the `id` optional, so a list
 // without one is accepted.
@@ -142,7 +150,7 @@ func (c *Checker) fetch(ctx context.Context, listURL string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: build request: %v", ErrFetch, err)
 	}
-	req.Header.Set("Accept", "application/"+MediaTypeVcJwt)
+	req.Header.Set("Accept", "application/"+MediaTypeVcJwt+", application/"+MediaTypeVcSdJwt)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -163,11 +171,26 @@ func (c *Checker) fetch(ctx context.Context, listURL string) ([]byte, error) {
 	return bytes.TrimSpace(body), nil
 }
 
-// verify checks the vc+jwt signature (x5c chained to the trust anchors, or a DID
-// kid) and that the list was issued by issuer, and returns the credential it
-// secures: the JWT claims set is the VCDM document (VC-JOSE-COSE §3.1.1).
+// verify checks the signature of a vc+jwt or vc+sd-jwt list (x5c chained to
+// the trust anchors, or a DID kid) and that the list was issued by issuer, and
+// returns the credential it secures: the JWT claims set (VC-JOSE-COSE §3.1.1),
+// with the Disclosures of an SD-JWT applied (§3.2).
 func (c *Checker) verify(raw []byte, issuer string) (vcdm.Document, error) {
-	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{MediaTypeVcJwt}, c.ctx.AllowInsecureDidWeb)
+	// A compact JWS never contains a '~'; an SD-JWT always does.
+	signed, disclosures, isSdJwt := raw, []sdjwt.EncodedDisclosure(nil), bytes.ContainsRune(raw, '~')
+	typ := MediaTypeVcJwt
+	if isSdJwt {
+		issuerSignedJwt, encoded, _, kbJwt, err := sdjwt.SplitKb(sdjwt.SdJwtKb(raw))
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrUnauthorized, err)
+		}
+		if kbJwt != nil {
+			return nil, fmt.Errorf("%w: a status list carries no key binding JWT", ErrUnauthorized)
+		}
+		signed, disclosures, typ = []byte(issuerSignedJwt), encoded, MediaTypeVcSdJwt
+	}
+
+	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{typ}, c.ctx.AllowInsecureDidWeb)
 	options := []jwt.ParseOption{
 		jwt.WithKeyProvider(keyProvider),
 		jwt.WithAcceptableSkew(ClockSkewSeconds * time.Second),
@@ -176,7 +199,7 @@ func (c *Checker) verify(raw []byte, issuer string) (vcdm.Document, error) {
 	if c.ctx.Clock != nil {
 		options = append(options, jwt.WithClock(c.ctx.Clock))
 	}
-	token, err := jwt.Parse(raw, options...)
+	token, err := jwt.Parse(signed, options...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: parse/verify: %v", ErrUnauthorized, err)
 	}
@@ -196,19 +219,9 @@ func (c *Checker) verify(raw []byte, issuer string) (vcdm.Document, error) {
 		leafCert = chain[0]
 	}
 
-	// The signature verified over these exact bytes, so the payload segment
-	// can be read directly.
-	parts := bytes.Split(raw, []byte("."))
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("%w: not a compact JWS", ErrUnauthorized)
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(string(parts[1]))
+	document, err := c.listDocument(token, signed, disclosures)
 	if err != nil {
-		return nil, fmt.Errorf("%w: payload: %v", ErrUnauthorized, err)
-	}
-	var document vcdm.Document
-	if err := json.Unmarshal(payload, &document); err != nil {
-		return nil, fmt.Errorf("%w: payload: %v", ErrUnauthorized, err)
+		return nil, fmt.Errorf("%w: %v", ErrUnauthorized, err)
 	}
 	if err := document.Validate(); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnauthorized, err)
@@ -235,6 +248,45 @@ func (c *Checker) verify(raw []byte, issuer string) (vcdm.Document, error) {
 		}
 	}
 	return document, nil
+}
+
+// listDocument returns the VCDM document a verified list token secures: its
+// claims set, with the Disclosures of an SD-JWT applied and their disclosed
+// time claims checked as the signed ones are (RFC 9901 §7.1 step 6).
+func (c *Checker) listDocument(token jwt.Token, signed []byte, disclosures []sdjwt.EncodedDisclosure) (vcdm.Document, error) {
+	// The signature verified over these exact bytes, so the payload segment
+	// can be read directly.
+	parts := bytes.Split(signed, []byte("."))
+	if len(parts) != 3 {
+		return nil, errors.New("not a compact JWS")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(string(parts[1]))
+	if err != nil {
+		return nil, fmt.Errorf("payload: %v", err)
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil, fmt.Errorf("payload: %v", err)
+	}
+	if disclosures == nil {
+		return vcdm.Document(claims), nil
+	}
+
+	registered, err := sdjwt.ExtractRegisteredClaims(token)
+	if err != nil {
+		return nil, err
+	}
+	processed, _, err := sdjwt.VerifyAndProcessDisclosures(registered.SdAlg, &claims, disclosures)
+	if err != nil {
+		return nil, err
+	}
+	if err := registered.AddDisclosedClaims(processed); err != nil {
+		return nil, err
+	}
+	if err := registered.VerifyTimes(c.now(), ClockSkewSeconds*time.Second); err != nil {
+		return nil, err
+	}
+	return vcdm.Document(processed), nil
 }
 
 func (c *Checker) now() time.Time {

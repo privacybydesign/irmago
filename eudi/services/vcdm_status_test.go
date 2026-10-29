@@ -98,8 +98,9 @@ func signBitstringStatusList(t *testing.T, signer sdjwt.JwtCreator, listURL stri
 
 // signBitstringStatusListAs is signBitstringStatusList with the JOSE header,
 // the list's `issuer` and its JWT `iss` (left out when empty) chosen by the
-// caller. An empty listURL leaves the list's `id` out.
-func signBitstringStatusListAs(t *testing.T, signer sdjwt.JwtCreator, header map[string]any, listURL, issuer, iss string, revoked bool) []byte {
+// caller. An empty listURL leaves the list's `id` out, and mutate changes the
+// claims before they are signed.
+func signBitstringStatusListAs(t *testing.T, signer sdjwt.JwtCreator, header map[string]any, listURL, issuer, iss string, revoked bool, mutate ...func(claims map[string]any)) []byte {
 	t.Helper()
 
 	// The W3C minimum list size: 16 KB, 131,072 entries. Bits are MSB-first.
@@ -132,6 +133,9 @@ func signBitstringStatusListAs(t *testing.T, signer sdjwt.JwtCreator, header map
 	if listURL == "" {
 		delete(claims, vcdm.IDKey)
 		delete(claims[vcdm.CredentialSubjectKey].(map[string]any), "id")
+	}
+	for _, m := range mutate {
+		m(claims)
 	}
 	payload, err := json.Marshal(claims)
 	require.NoError(t, err)
@@ -350,6 +354,71 @@ func TestBitstringChecker_AcceptsListWithoutId(t *testing.T) {
 	subject, err := checker.Fetch(context.Background(), server.url(), testVcdmIssuer)
 	require.NoError(t, err)
 	require.Equal(t, []bitstringstatus.StatusPurpose{bitstringstatus.PurposeRevocation}, subject.StatusPurposes)
+}
+
+// signSdJwtBitstringStatusList secures the test list at listURL as an SD-JWT
+// signed with typ, its statusPurpose a Disclosure, so the list can only be read
+// with the Disclosures applied. kbJwt, when set, is appended as a key binding JWT.
+func signSdJwtBitstringStatusList(t *testing.T, listURL, typ, kbJwt string) []byte {
+	t.Helper()
+	purpose, err := sdjwt.NewDisclosureContent("statusPurpose", "revocation")
+	require.NoError(t, err)
+	encoded, err := sdjwt.EncodeDisclosure(purpose)
+	require.NoError(t, err)
+	digest, err := sdjwt.HashEncodedDisclosure("sha-256", encoded)
+	require.NoError(t, err)
+
+	x5c, err := utils.ParsePemCertificateChainToX5cFormat(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	require.NoError(t, err)
+	header := map[string]any{"typ": typ, "x5c": x5c}
+	signed := signBitstringStatusListAs(t, sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey(), header, listURL, testVcdmIssuer, "", false,
+		func(claims map[string]any) {
+			subject := claims[vcdm.CredentialSubjectKey].(map[string]any)
+			delete(subject, "statusPurpose")
+			subject[sdjwt.SdKey] = []any{string(digest)}
+		})
+	return []byte(string(signed) + "~" + string(encoded) + "~" + kbJwt)
+}
+
+// W3C §3.6 has an issuer secure its status list as it secures its
+// credentials, so a list may be an SD-JWT (vc+sd-jwt), read with its
+// Disclosures applied.
+func TestBitstringChecker_AcceptsSdJwtList(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	server.body = signSdJwtBitstringStatusList(t, server.url(), "vc+sd-jwt", "")
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	subject, err := newTestBitstringChecker(ctx).Fetch(context.Background(), server.url(), testVcdmIssuer)
+	require.NoError(t, err)
+	require.Equal(t, []bitstringstatus.StatusPurpose{bitstringstatus.PurposeRevocation}, subject.StatusPurposes)
+}
+
+func TestBitstringChecker_RejectsMalformedSdJwtList(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body func(url string) []byte
+		err  string
+	}{
+		// The typ must name the securing the list is in.
+		"an SD-JWT typed vc+jwt": {func(url string) []byte { return signSdJwtBitstringStatusList(t, url, "vc+jwt", "") }, "invalid 'typ' header"},
+		"a JWT typed vc+sd-jwt": {func(url string) []byte {
+			x5c, err := utils.ParsePemCertificateChainToX5cFormat(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+			require.NoError(t, err)
+			return signBitstringStatusListAs(t, sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey(), map[string]any{"typ": "vc+sd-jwt", "x5c": x5c}, url, testVcdmIssuer, "", false)
+		}, "invalid 'typ' header"},
+		"an SD-JWT with a key binding JWT": {func(url string) []byte {
+			return signSdJwtBitstringStatusList(t, url, "vc+sd-jwt", "eyJhbGciOiJFUzI1NiJ9.e30.c2ln")
+		}, "carries no key binding JWT"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := newBitstringStatusListServer(t)
+			server.body = tc.body(server.url())
+
+			ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+			_, err := newTestBitstringChecker(ctx).Fetch(context.Background(), server.url(), testVcdmIssuer)
+			require.ErrorIs(t, err, bitstringstatus.ErrUnauthorized)
+			require.ErrorContains(t, err, tc.err)
+		})
+	}
 }
 
 // newTestBitstringChecker trusts the test issuer.
