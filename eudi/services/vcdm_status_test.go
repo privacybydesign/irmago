@@ -98,7 +98,7 @@ func signBitstringStatusList(t *testing.T, signer sdjwt.JwtCreator, listURL stri
 
 // signBitstringStatusListAs is signBitstringStatusList with the JOSE header,
 // the list's `issuer` and its JWT `iss` (left out when empty) chosen by the
-// caller.
+// caller. An empty listURL leaves the list's `id` out.
 func signBitstringStatusListAs(t *testing.T, signer sdjwt.JwtCreator, header map[string]any, listURL, issuer, iss string, revoked bool) []byte {
 	t.Helper()
 
@@ -128,6 +128,10 @@ func signBitstringStatusListAs(t *testing.T, signer sdjwt.JwtCreator, header map
 	}
 	if iss != "" {
 		claims["iss"] = iss
+	}
+	if listURL == "" {
+		delete(claims, vcdm.IDKey)
+		delete(claims[vcdm.CredentialSubjectKey].(map[string]any), "id")
 	}
 	payload, err := json.Marshal(claims)
 	require.NoError(t, err)
@@ -333,6 +337,19 @@ func TestBitstringChecker_RejectsListServedUnderAnotherURL(t *testing.T) {
 	_, err := checker.Fetch(context.Background(), server.url(), testVcdmIssuer)
 	require.ErrorIs(t, err, bitstringstatus.ErrUnauthorized)
 	require.ErrorContains(t, err, "does not match status list url")
+}
+
+// W3C §2.2 makes a status list's id optional, so a list without one is
+// accepted.
+func TestBitstringChecker_AcceptsListWithoutId(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	server.body = signBitstringStatusList(t, sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey(), "", false, true)
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	checker := newTestBitstringChecker(ctx)
+	subject, err := checker.Fetch(context.Background(), server.url(), testVcdmIssuer)
+	require.NoError(t, err)
+	require.Equal(t, []bitstringstatus.StatusPurpose{bitstringstatus.PurposeRevocation}, subject.StatusPurposes)
 }
 
 // newTestBitstringChecker trusts the test issuer.

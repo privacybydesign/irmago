@@ -87,8 +87,9 @@ func (c *Checker) Check(ctx context.Context, entry Entry, issuer string) (uint, 
 // returns its credentialSubject. Verification is the W3C §3.2 validate
 // algorithm's proof step for a vc+jwt list: a trusted signature, a valid VCDM
 // document of type BitstringStatusListCredential within its validity period,
-// and an `id` equal to listURL, so a valid list for another URL cannot be
-// substituted.
+// and, when it has an `id`, one equal to listURL, so a valid list for another
+// URL cannot be substituted. W3C §2.2 makes the `id` optional, so a list
+// without one is accepted.
 //
 // The list must also come from issuer, the issuer of the credential that points
 // to it: its `issuer` equals issuer, a JWT `iss` equals that `issuer`
@@ -108,8 +109,8 @@ func (c *Checker) Fetch(ctx context.Context, listURL, issuer string) (ListCreden
 	if !document.HasType(ListCredentialType) {
 		return ListCredentialSubject{}, fmt.Errorf("%w: type does not include %s", ErrUnauthorized, ListCredentialType)
 	}
-	if id, _ := document.ID(); id != listURL {
-		return ListCredentialSubject{}, fmt.Errorf("%w: id %q does not match status list url %q", ErrUnauthorized, id, listURL)
+	if id, present := document[vcdm.IDKey]; present && id != listURL {
+		return ListCredentialSubject{}, fmt.Errorf("%w: id %v does not match status list url %q", ErrUnauthorized, id, listURL)
 	}
 	if err := document.VerifyValidityPeriod(c.now(), ClockSkewSeconds*time.Second); err != nil {
 		return ListCredentialSubject{}, fmt.Errorf("%w: %v", ErrUnauthorized, err)
