@@ -1,6 +1,7 @@
 package vcdmsdjwt
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
@@ -136,4 +137,57 @@ func TestHolder_VcdmIssuerMustNameTheX5cCertificate(t *testing.T) {
 			require.ErrorContains(t, err, `VCDM issuer "https://someone.else.example" is not a SAN of the issuer certificate`)
 		})
 	}
+}
+
+// The properties a verifier needs to validate a credential must not be
+// selectively disclosable: VC-JOSE-COSE §3.2.1 says they SHOULD NOT be, and
+// OpenID4VP §6.4 does not let the wallet disclose them when the verifier did
+// not ask, so a presentation would lack them.
+func TestHolder_SelectivelyDisclosableValidationProperty_Rejected(t *testing.T) {
+	cnf, err := sdjwt.HolderKeyClaim(testdata.ParseHolderPubJwk())
+	require.NoError(t, err)
+	subject := sdjwt.Object(vcdm.CredentialSubjectKey, sdjwt.SdClaim("given_name", "Alice"))
+	contextClaim := sdjwt.Array(vcdm.ContextKey, sdjwt.Item(vcdm.ContextV2))
+	typeClaim := sdjwt.Array(vcdm.TypeKey, sdjwt.Item(vcdm.TypeVerifiableCredential), sdjwt.Item("ExampleCredential"))
+	issuer := sdjwt.Claim(vcdm.IssuerKey, TestIssuerURL)
+
+	cases := map[string]struct {
+		property string
+		claims   []*sdjwt.ClaimElement
+	}{
+		"type as a whole": {"type", []*sdjwt.ClaimElement{
+			contextClaim, sdjwt.SdArray(vcdm.TypeKey, sdjwt.Item(vcdm.TypeVerifiableCredential), sdjwt.Item("ExampleCredential")), issuer, subject, cnf,
+		}},
+		"one type value": {"type", []*sdjwt.ClaimElement{
+			contextClaim, sdjwt.Array(vcdm.TypeKey, sdjwt.Item(vcdm.TypeVerifiableCredential), sdjwt.SdItem("ExampleCredential")), issuer, subject, cnf,
+		}},
+		"a field of credentialStatus": {"credentialStatus", []*sdjwt.ClaimElement{
+			contextClaim, typeClaim, issuer, subject, cnf,
+			sdjwt.Object(vcdm.CredentialStatusKey,
+				sdjwt.Claim("type", "BitstringStatusListEntry"),
+				sdjwt.Claim("statusPurpose", "revocation"),
+				sdjwt.SdClaim("statusListIndex", "7"),
+				sdjwt.Claim("statusListCredential", "https://issuer.example/lists/1"),
+			),
+		}},
+		"validUntil": {"validUntil", []*sdjwt.ClaimElement{
+			contextClaim, typeClaim, issuer, subject, cnf, sdjwt.SdClaim(vcdm.ValidUntilKey, "2035-01-01T00:00:00Z"),
+		}},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			credential := signCredential(t, MediaTypeVcSdJwt, c.claims)
+			_, err := NewHolderVerificationProcessor(CreateTestVerificationContext()).ParseAndVerifySdJwtVcdm(credential)
+			require.ErrorContains(t, err, fmt.Sprintf("%q is selectively disclosable", c.property))
+		})
+	}
+}
+
+// Other envelope properties may be selectively disclosable: a verifier does not
+// need the credential id to validate it.
+func TestHolder_SelectivelyDisclosableId_Accepted(t *testing.T) {
+	claims := append(vcdmClaims(t, "2020-01-01T00:00:00Z", "2035-01-01T00:00:00Z"), sdjwt.SdClaim(vcdm.IDKey, "urn:uuid:5d2c3c9e-6c9f-4bb0-8a7e-1c1e2c3d4e5f"))
+	credential := signCredential(t, MediaTypeVcSdJwt, claims)
+	_, err := NewHolderVerificationProcessor(CreateTestVerificationContext()).ParseAndVerifySdJwtVcdm(credential)
+	require.NoError(t, err)
 }

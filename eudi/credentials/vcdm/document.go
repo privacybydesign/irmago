@@ -39,7 +39,27 @@ const (
 	TermsOfUseKey        = "termsOfUse"
 	EvidenceKey          = "evidence"
 	RefreshServiceKey    = "refreshService"
+	RelatedResourceKey   = "relatedResource"
 )
+
+// ValidationProperties are the top-level properties a verifier needs to
+// validate and verify a credential. VC-JOSE-COSE §3.2.1 says they SHOULD NOT
+// be selectively disclosable and lists @context, type, credentialStatus,
+// credentialSchema and relatedResource; issuer and the validity period are
+// what VCDM 2.0 §7.1 checks. A wallet refuses a credential that makes any of
+// them, or anything in them, selectively disclosable: OpenID4VP §6.4 does not
+// let it disclose them when the verifier did not ask, so its presentations
+// would lack them.
+var ValidationProperties = []string{
+	ContextKey,
+	TypeKey,
+	IssuerKey,
+	ValidFromKey,
+	ValidUntilKey,
+	CredentialStatusKey,
+	CredentialSchemaKey,
+	RelatedResourceKey,
+}
 
 // ErrMalformed is returned (wrapped) by Validate when the decoded document is
 // not a conforming VCDM 2.0 document. It corresponds to the VCDM 2.0 §7.1

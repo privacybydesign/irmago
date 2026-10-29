@@ -199,9 +199,18 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
 	}
+	signedInPlain, err := validationPropertiesInPlain(claims)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	processed, decodedDisclosures, err := sdjwt.VerifyAndProcessDisclosures(registered.SdAlg, &claims, disclosures)
 	if err != nil {
 		return nil, nil, nil, nil, err
+	}
+	for _, key := range vcdm.ValidationProperties {
+		if _, ok := processed[key]; ok && !signedInPlain[key] {
+			return nil, nil, nil, nil, errSelectivelyDisclosable(key)
+		}
 	}
 
 	// Step 4: the decoded payload must actually be a VCDM document. A
@@ -433,4 +442,57 @@ func timeToUnixOrZero(t time.Time) int64 {
 		return 0
 	}
 	return t.Unix()
+}
+
+// validationPropertiesInPlain returns which of vcdm.ValidationProperties the
+// issuer-signed claims carry, before any disclosure is applied, and refuses one
+// that has a selectively-disclosable value nested in it. Together with the
+// check that no such property appears only after the disclosures are applied,
+// this keeps them all out of the disclosures: VC-JOSE-COSE §3.2.1 says they
+// SHOULD NOT be selectively disclosable, and OpenID4VP §6.4 does not let the
+// wallet disclose them when the verifier did not ask, so a presentation would
+// lack what the verifier needs to validate the credential.
+func validationPropertiesInPlain(claims map[string]any) (map[string]bool, error) {
+	inPlain := map[string]bool{}
+	for _, key := range vcdm.ValidationProperties {
+		value, ok := claims[key]
+		if !ok {
+			continue
+		}
+		if hasDisclosureDigest(value) {
+			return nil, errSelectivelyDisclosable(key)
+		}
+		inPlain[key] = true
+	}
+	return inPlain, nil
+}
+
+// hasDisclosureDigest reports whether value holds a digest of a disclosure:
+// an `_sd` array in an object, or a `{"...": digest}` array element.
+func hasDisclosureDigest(value any) bool {
+	switch v := value.(type) {
+	case map[string]any:
+		if _, ok := v[sdjwt.SdKey]; ok {
+			return true
+		}
+		if _, ok := v[sdjwt.EllipsisKey]; ok {
+			return true
+		}
+		for _, child := range v {
+			if hasDisclosureDigest(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range v {
+			if hasDisclosureDigest(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func errSelectivelyDisclosable(key string) error {
+	return fmt.Errorf("%w: %q is selectively disclosable, but a verifier needs it to validate the credential (VC-JOSE-COSE §3.2.1)", vcdm.ErrMalformed, key)
 }
