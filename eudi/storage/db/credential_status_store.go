@@ -64,6 +64,9 @@ type BitstringStatusInstance struct {
 	StatusListIdx   *uint64
 	LastKnownStatus uint8
 
+	// Issuer is the credential's `issuer`, which its status lists must have.
+	Issuer string
+
 	// Entries are the revocation and suspension entries, as JSON
 	// ([]bitstringstatus.Entry).
 	Entries datatypes.JSON

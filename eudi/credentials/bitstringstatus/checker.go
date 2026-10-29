@@ -3,6 +3,7 @@ package bitstringstatus
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
 const (
@@ -71,9 +73,10 @@ func NewChecker(ctx VerificationContext) *Checker {
 
 // Check fetches the entry's status list credential and returns the status value
 // at the entry's index. For a revocation or suspension entry, non-zero means
-// revoked or suspended.
-func (c *Checker) Check(ctx context.Context, entry Entry) (uint, error) {
-	subject, err := c.Fetch(ctx, entry.StatusListCredential)
+// revoked or suspended. issuer is the `issuer` of the credential carrying the
+// entry; see Fetch.
+func (c *Checker) Check(ctx context.Context, entry Entry, issuer string) (uint, error) {
+	subject, err := c.Fetch(ctx, entry.StatusListCredential, issuer)
 	if err != nil {
 		return 0, err
 	}
@@ -86,12 +89,18 @@ func (c *Checker) Check(ctx context.Context, entry Entry) (uint, error) {
 // document of type BitstringStatusListCredential within its validity period,
 // and an `id` equal to listURL, so a valid list for another URL cannot be
 // substituted.
-func (c *Checker) Fetch(ctx context.Context, listURL string) (ListCredentialSubject, error) {
+//
+// The list must also come from issuer, the issuer of the credential that points
+// to it: its `issuer` equals issuer, a JWT `iss` equals that `issuer`
+// (VC-JOSE-COSE §4.1.2), and an x5c leaf certificate names it. Otherwise any
+// trusted party, or anyone with a self-certifying DID key, could publish the
+// status of another issuer's credentials.
+func (c *Checker) Fetch(ctx context.Context, listURL, issuer string) (ListCredentialSubject, error) {
 	raw, err := c.fetch(ctx, listURL)
 	if err != nil {
 		return ListCredentialSubject{}, err
 	}
-	document, err := c.verify(raw)
+	document, err := c.verify(raw, issuer)
 	if err != nil {
 		return ListCredentialSubject{}, err
 	}
@@ -154,9 +163,9 @@ func (c *Checker) fetch(ctx context.Context, listURL string) ([]byte, error) {
 }
 
 // verify checks the vc+jwt signature (x5c chained to the trust anchors, or a DID
-// kid) and returns the credential it secures: the JWT claims set is the VCDM
-// document (VC-JOSE-COSE §3.1.1).
-func (c *Checker) verify(raw []byte) (vcdm.Document, error) {
+// kid) and that the list was issued by issuer, and returns the credential it
+// secures: the JWT claims set is the VCDM document (VC-JOSE-COSE §3.1.1).
+func (c *Checker) verify(raw []byte, issuer string) (vcdm.Document, error) {
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{MediaTypeVcJwt}, c.ctx.AllowInsecureDidWeb)
 	options := []jwt.ParseOption{
 		jwt.WithKeyProvider(keyProvider),
@@ -166,10 +175,12 @@ func (c *Checker) verify(raw []byte) (vcdm.Document, error) {
 	if c.ctx.Clock != nil {
 		options = append(options, jwt.WithClock(c.ctx.Clock))
 	}
-	if _, err := jwt.Parse(raw, options...); err != nil {
+	token, err := jwt.Parse(raw, options...)
+	if err != nil {
 		return nil, fmt.Errorf("%w: parse/verify: %v", ErrUnauthorized, err)
 	}
 
+	var leafCert *x509.Certificate
 	if x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider); ok {
 		chain, err := x509KeyProvider.GetChain()
 		if err != nil {
@@ -181,6 +192,7 @@ func (c *Checker) verify(raw []byte) (vcdm.Document, error) {
 		if err := eudi_jwt.VerifyCertificateChain(c.ctx.X509Context, chain, nil); err != nil {
 			return nil, fmt.Errorf("%w: certificate validation: %v", ErrUnauthorized, err)
 		}
+		leafCert = chain[0]
 	}
 
 	// The signature verified over these exact bytes, so the payload segment
@@ -199,6 +211,24 @@ func (c *Checker) verify(raw []byte) (vcdm.Document, error) {
 	}
 	if err := document.Validate(); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnauthorized, err)
+	}
+
+	listIssuer, err := document.IssuerID()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnauthorized, err)
+	}
+	if listIssuer != issuer {
+		return nil, fmt.Errorf("%w: list issuer %q is not the credential issuer %q", ErrUnauthorized, listIssuer, issuer)
+	}
+	// A DID kid resolves its key from `iss`, so with `iss` equal to the issuer
+	// the key is the issuer's own.
+	if iss, ok := token.Issuer(); ok && iss != listIssuer {
+		return nil, fmt.Errorf("%w: JWT iss %q does not match list issuer %q", ErrUnauthorized, iss, listIssuer)
+	}
+	if leafCert != nil {
+		if err := utils.VerifyCertificateUri(leafCert, listIssuer); err != nil {
+			return nil, fmt.Errorf("%w: list issuer %q is not a SAN of the signing certificate: %v", ErrUnauthorized, listIssuer, err)
+		}
 	}
 	return document, nil
 }

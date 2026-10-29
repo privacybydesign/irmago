@@ -39,7 +39,7 @@ func (s *RevocationService) refreshBitstringStatuses(ctx context.Context, store 
 	sweep := &bitstringSweep{
 		service:            s,
 		refreshedTokenURIs: map[string]bool{},
-		lists:              map[string]bitstringstatus.ListCredentialSubject{},
+		lists:              map[bitstringListKey]bitstringstatus.ListCredentialSubject{},
 	}
 	for _, batch := range groupByBatch(instances, func(inst db.BitstringStatusInstance) datatypes.UUID { return inst.BatchID }) {
 		var combined batchStatus
@@ -67,12 +67,15 @@ func (s *RevocationService) refreshBitstringStatuses(ctx context.Context, store 
 }
 
 // bitstringSweep is the state of one store's Bitstring sweep: which lists it
-// has already fetched.
+// has already fetched. Lists are kept per URL and issuer, because a list is
+// only accepted for credentials of its own issuer.
 type bitstringSweep struct {
 	service            *RevocationService
 	refreshedTokenURIs map[string]bool
-	lists              map[string]bitstringstatus.ListCredentialSubject
+	lists              map[bitstringListKey]bitstringstatus.ListCredentialSubject
 }
+
+type bitstringListKey struct{ url, issuer string }
 
 // check returns the instance's current status, or false when it could not be
 // determined (logged), including when its IETF reference has no checker.
@@ -108,15 +111,16 @@ func (w *bitstringSweep) check(ctx context.Context, inst db.BitstringStatusInsta
 		return 0, false
 	}
 	for _, entry := range entries {
-		subject, ok := w.lists[entry.StatusListCredential]
+		key := bitstringListKey{url: entry.StatusListCredential, issuer: inst.Issuer}
+		subject, ok := w.lists[key]
 		if !ok {
 			var err error
-			subject, err = w.service.bitstring.Fetch(ctx, entry.StatusListCredential)
+			subject, err = w.service.bitstring.Fetch(ctx, entry.StatusListCredential, inst.Issuer)
 			if err != nil {
 				eudi.Logger.Warnf("status refresh: %s: %v", common.SanitizeForLog(entry.StatusListCredential), err)
 				return 0, false
 			}
-			w.lists[entry.StatusListCredential] = subject
+			w.lists[key] = subject
 		}
 		value, err := bitstringstatus.Check(entry, subject)
 		if err != nil {

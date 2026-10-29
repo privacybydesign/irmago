@@ -161,7 +161,11 @@ func (p *processor) runStatusCheck(document vcdm.Document) error {
 	if err != nil {
 		return fmt.Errorf("failed to parse status references: %w", err)
 	}
-	status, err := CheckStatus(context.Background(), refs, p.verificationContext.StatusChecker, p.verificationContext.BitstringStatusChecker)
+	issuer, err := document.IssuerID()
+	if err != nil {
+		return err
+	}
+	status, err := CheckStatus(context.Background(), refs, issuer, p.verificationContext.StatusChecker, p.verificationContext.BitstringStatusChecker)
 	if err != nil {
 		return err
 	}

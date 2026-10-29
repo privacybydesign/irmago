@@ -30,10 +30,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
+	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -82,6 +84,20 @@ func (s *bitstringStatusListServer) serve(t *testing.T, revoked bool) {
 // is what makes the list verifiable.
 func signBitstringStatusList(t *testing.T, signer sdjwt.JwtCreator, listURL string, revoked bool, withX5c bool) []byte {
 	t.Helper()
+	header := map[string]any{"typ": "vc+jwt"}
+	if withX5c {
+		x5c, err := utils.ParsePemCertificateChainToX5cFormat(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+		require.NoError(t, err)
+		header["x5c"] = x5c
+	}
+	return signBitstringStatusListAs(t, signer, header, listURL, testVcdmIssuer, "", revoked)
+}
+
+// signBitstringStatusListAs is signBitstringStatusList with the JOSE header,
+// the list's `issuer` and its JWT `iss` (left out when empty) chosen by the
+// caller.
+func signBitstringStatusListAs(t *testing.T, signer sdjwt.JwtCreator, header map[string]any, listURL, issuer, iss string, revoked bool) []byte {
+	t.Helper()
 
 	// The W3C minimum list size: 16 KB, 131,072 entries. Bits are MSB-first.
 	bits := make([]byte, 16*1024)
@@ -94,11 +110,11 @@ func signBitstringStatusList(t *testing.T, signer sdjwt.JwtCreator, listURL stri
 	require.NoError(t, err)
 	require.NoError(t, gz.Close())
 
-	payload, err := json.Marshal(map[string]any{
+	claims := map[string]any{
 		vcdm.ContextKey:   []any{vcdm.ContextV2},
 		vcdm.IDKey:        listURL,
 		vcdm.TypeKey:      []any{vcdm.TypeVerifiableCredential, "BitstringStatusListCredential"},
-		vcdm.IssuerKey:    testVcdmIssuer,
+		vcdm.IssuerKey:    issuer,
 		vcdm.ValidFromKey: "2020-01-01T00:00:00Z",
 		vcdm.CredentialSubjectKey: map[string]any{
 			"id":            listURL + "#list",
@@ -106,15 +122,13 @@ func signBitstringStatusList(t *testing.T, signer sdjwt.JwtCreator, listURL stri
 			"statusPurpose": "revocation",
 			"encodedList":   "u" + base64.RawURLEncoding.EncodeToString(buf.Bytes()),
 		},
-	})
+	}
+	if iss != "" {
+		claims["iss"] = iss
+	}
+	payload, err := json.Marshal(claims)
 	require.NoError(t, err)
 
-	header := map[string]any{"typ": "vc+jwt"}
-	if withX5c {
-		x5c, err := utils.ParsePemCertificateChainToX5cFormat(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
-		require.NoError(t, err)
-		header["x5c"] = x5c
-	}
 	jwt, err := signer.CreateSignedJwt(header, string(payload))
 	require.NoError(t, err)
 	return []byte(jwt)
@@ -259,7 +273,7 @@ func storeVcdmWithStatus(t *testing.T, env *vcdmTestEnv, server *bitstringStatus
 	require.NoError(t, env.service.Store([]*ParsedCredential{parsed}, "config-id", env.issuerMetadata(), false, nil))
 
 	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
-	checker := bitstringstatus.NewChecker(bitstringstatus.VerificationContext{X509Context: ctx.X509VerificationContext})
+	checker := newTestBitstringChecker(ctx)
 	return NewRevocationService(nil, env.store).WithBitstringStatus(checker, env.store)
 }
 
@@ -312,10 +326,48 @@ func TestBitstringChecker_RejectsListServedUnderAnotherURL(t *testing.T) {
 	server.body = signBitstringStatusList(t, sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey(), "https://issuer.example/lists/other", false, true)
 
 	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
-	checker := bitstringstatus.NewChecker(bitstringstatus.VerificationContext{X509Context: ctx.X509VerificationContext})
-	_, err := checker.Fetch(context.Background(), server.url())
+	checker := newTestBitstringChecker(ctx)
+	_, err := checker.Fetch(context.Background(), server.url(), testVcdmIssuer)
 	require.ErrorIs(t, err, bitstringstatus.ErrUnauthorized)
 	require.ErrorContains(t, err, "does not match status list url")
+}
+
+// newTestBitstringChecker trusts the test issuer.
+func newTestBitstringChecker(ctx vcdmsdjwt.VerificationContext) *bitstringstatus.Checker {
+	return bitstringstatus.NewChecker(bitstringstatus.VerificationContext{X509Context: ctx.X509VerificationContext})
+}
+
+func TestBitstringChecker_RejectsListOfAnotherIssuer(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+	server.serve(t, false)
+
+	// A genuine list of the test issuer, asked for on behalf of a credential of
+	// another issuer: the test issuer cannot speak for that credential.
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	_, err := newTestBitstringChecker(ctx).Fetch(context.Background(), server.url(), "https://other-issuer.example")
+	require.ErrorIs(t, err, bitstringstatus.ErrUnauthorized)
+	require.ErrorContains(t, err, "is not the credential issuer")
+}
+
+func TestBitstringChecker_RejectsListSignedWithAnotherDidKey(t *testing.T) {
+	server := newBitstringStatusListServer(t)
+
+	// A list naming the credential's issuer, but signed by whoever controls
+	// the list URL, with a did:jwk key of their own. did:jwk is
+	// self-certifying, so its signature alone proves nothing.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	publicJwk, err := jwk.Import[jwk.Key](key.Public())
+	require.NoError(t, err)
+	doc, err := (&didjwk.DocumentBuilder{}).FromJwk(publicJwk)
+	require.NoError(t, err)
+	header := map[string]any{"typ": "vc+jwt", "kid": doc.VerificationMethod[0].ID}
+	server.body = signBitstringStatusListAs(t, sdjwt.NewJwtCreator(key), header, server.url(), testVcdmIssuer, doc.ID, false)
+
+	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	_, err = newTestBitstringChecker(ctx).Fetch(context.Background(), server.url(), testVcdmIssuer)
+	require.ErrorIs(t, err, bitstringstatus.ErrUnauthorized)
+	require.ErrorContains(t, err, "does not match list issuer")
 }
 
 // TestVcdmStore_BitstringInstancesAreSweptOnce pins the split between the two
@@ -374,14 +426,14 @@ func TestRevocationService_BitstringRefreshWritesEveryInstanceOfABatch(t *testin
 	valid := uint8(statuslist.StatusValid)
 	store := &recordingBitstringStore{
 		instances: []db.BitstringStatusInstance{
-			{InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: valid, Entries: entries},
-			{InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: valid, Entries: entries},
+			{InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: valid, Issuer: testVcdmIssuer, Entries: entries},
+			{InstanceID: datatypes.NewUUIDv4(), BatchID: batchID, LastKnownStatus: valid, Issuer: testVcdmIssuer, Entries: entries},
 		},
 		written: map[datatypes.UUID]uint8{},
 	}
 
 	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
-	checker := bitstringstatus.NewChecker(bitstringstatus.VerificationContext{X509Context: ctx.X509VerificationContext})
+	checker := newTestBitstringChecker(ctx)
 	changed, err := NewRevocationService(nil).WithBitstringStatus(checker, store).RefreshStatuses(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, 1, changed, "one batch changed")

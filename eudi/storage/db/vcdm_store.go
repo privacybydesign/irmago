@@ -177,13 +177,15 @@ func (s *vcdmStore) ListInstancesWithBitstringStatus() ([]BitstringStatusInstanc
 	var out []BitstringStatusInstance
 	err := s.db.
 		Model(&models.VcdmBatchInstance{}).
-		Select("id AS instance_id, " +
-			"vcdm_batch_id AS batch_id, " +
-			"status_list_uri AS status_list_uri, " +
-			"status_list_idx AS status_list_idx, " +
-			"last_known_status AS last_known_status, " +
-			"bitstring_status_entries AS entries").
-		Where("bitstring_status_entries IS NOT NULL").
+		Select("vcdm_batch_instances.id AS instance_id, " +
+			"vcdm_batch_instances.vcdm_batch_id AS batch_id, " +
+			"vcdm_batch_instances.status_list_uri AS status_list_uri, " +
+			"vcdm_batch_instances.status_list_idx AS status_list_idx, " +
+			"vcdm_batch_instances.last_known_status AS last_known_status, " +
+			"vcdm_batches.issuer_identifier AS issuer, " +
+			"vcdm_batch_instances.bitstring_status_entries AS entries").
+		Joins("JOIN vcdm_batches ON vcdm_batches.id = vcdm_batch_instances.vcdm_batch_id").
+		Where("vcdm_batch_instances.bitstring_status_entries IS NOT NULL").
 		Scan(&out).Error
 	return out, err
 }

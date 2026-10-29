@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
@@ -57,7 +56,7 @@ func newVcdmTestEnv(t *testing.T) *vcdmTestEnv {
 func newTestVcdmHolderVerifier() *vcdmsdjwt.HolderVerificationProcessor {
 	ctx := vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	ctx.StatusChecker = statuslist.NewChecker(statuslist.VerificationContext{X509Context: ctx.X509VerificationContext}, nil)
-	ctx.BitstringStatusChecker = bitstringstatus.NewChecker(bitstringstatus.VerificationContext{X509Context: ctx.X509VerificationContext})
+	ctx.BitstringStatusChecker = newTestBitstringChecker(ctx)
 	return vcdmsdjwt.NewHolderVerificationProcessor(ctx)
 }
 

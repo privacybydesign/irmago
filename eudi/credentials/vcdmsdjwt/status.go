@@ -57,10 +57,12 @@ func ParseStatusReferences(document vcdm.Document) (StatusReferences, error) {
 // CheckStatus returns the credential's current status: StatusValid only when
 // every reference reads valid. A reference whose checker is not configured is
 // skipped, as SD-JWT VC skips its check without a StatusChecker. A fetch or
-// verification failure is an error.
+// verification failure is an error. issuer is the credential's `issuer`, which
+// a Bitstring status list must also have.
 func CheckStatus(
 	ctx context.Context,
 	refs StatusReferences,
+	issuer string,
 	tokenStatusList *statuslist.Checker,
 	bitstring *bitstringstatus.Checker,
 ) (statuslist.Status, error) {
@@ -76,7 +78,7 @@ func CheckStatus(
 		return status, nil
 	}
 	for _, entry := range refs.Bitstring {
-		value, err := bitstring.Check(ctx, entry)
+		value, err := bitstring.Check(ctx, entry, issuer)
 		if err != nil {
 			return statuslist.StatusUnknown, fmt.Errorf("bitstring status check failed: %w", err)
 		}
