@@ -1,6 +1,7 @@
 package sdjwt
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -98,6 +99,50 @@ func ExtractRegisteredClaims(token jwt.Token) (*RegisteredClaims, error) {
 		claims.NotBefore = unixOrZero(nbf)
 	}
 	return claims, nil
+}
+
+// AddDisclosedClaims sets iss, iat, nbf and exp from the processed payload where
+// a Disclosure, not the issuer-signed JWT, carries them, so they are checked like
+// the signed ones: RFC 9901 §7.1 step 6 checks nbf and exp "in the processed
+// payload". A claim the issuer-signed JWT carries is kept as read from it.
+func (c *RegisteredClaims) AddDisclosedClaims(processed ProcessedPayload) error {
+	if raw, ok := processed[jwt.IssuerKey]; ok && c.Issuer == nil {
+		iss, ok := raw.(string)
+		if !ok {
+			return fmt.Errorf("disclosed %s is not a string", jwt.IssuerKey)
+		}
+		c.Issuer = &iss
+	}
+	for key, field := range map[string]**int64{
+		jwt.IssuedAtKey:   &c.IssuedAt,
+		jwt.NotBeforeKey:  &c.NotBefore,
+		jwt.ExpirationKey: &c.Expiry,
+	} {
+		raw, ok := processed[key]
+		if !ok || *field != nil {
+			continue
+		}
+		v, err := numericDate(raw)
+		if err != nil {
+			return fmt.Errorf("disclosed %s: %w", key, err)
+		}
+		*field = &v
+	}
+	return nil
+}
+
+// numericDate reads a JSON NumericDate (RFC 7519 §2), dropping any fraction of
+// a second.
+func numericDate(raw any) (int64, error) {
+	switch v := raw.(type) {
+	case float64:
+		return int64(v), nil
+	case json.Number:
+		f, err := v.Float64()
+		return int64(f), err
+	default:
+		return 0, fmt.Errorf("not a NumericDate: %T", raw)
+	}
 }
 
 // unixOrZero returns 0 for the zero time (a missing claim), so that

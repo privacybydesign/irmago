@@ -115,6 +115,35 @@ func TestHolder_ExpiredJwt_Rejected(t *testing.T) {
 	require.ErrorContains(t, err, "expired")
 }
 
+// RFC 9901 §7.1 step 6 checks nbf and exp in the processed payload, so an
+// issuer cannot escape the time and iss checks by making those claims
+// selectively disclosable.
+func TestHolder_SelectivelyDisclosableJwtClaimsAreChecked(t *testing.T) {
+	for name, tc := range map[string]struct {
+		claim *sdjwt.ClaimElement
+		err   string
+	}{
+		"expired exp":     {sdjwt.SdClaim("exp", int64(978307200)), "verification after expiry"}, // 2001-01-01
+		"future nbf":      {sdjwt.SdClaim("nbf", int64(4102444800)), "verification before nbf"},  // 2100-01-01
+		"mismatching iss": {sdjwt.SdClaim("iss", "https://someone.else.example"), "does not match VCDM issuer"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			claims := append(vcdmClaims(t, "2020-01-01T00:00:00Z", "2035-01-01T00:00:00Z"), tc.claim)
+			credential := signCredential(t, MediaTypeVcSdJwt, claims)
+			_, err := NewHolderVerificationProcessor(CreateTestVerificationContext()).ParseAndVerifySdJwtVcdm(credential)
+			require.ErrorContains(t, err, tc.err)
+		})
+	}
+
+	t.Run("a valid disclosed exp is kept", func(t *testing.T) {
+		claims := append(vcdmClaims(t, "2020-01-01T00:00:00Z", "2035-01-01T00:00:00Z"), sdjwt.SdClaim("exp", int64(4102444800)))
+		credential := signCredential(t, MediaTypeVcSdJwt, claims)
+		verified, err := NewHolderVerificationProcessor(CreateTestVerificationContext()).ParseAndVerifySdJwtVcdm(credential)
+		require.NoError(t, err)
+		require.Equal(t, int64(4102444800), *verified.RegisteredClaims.Expiry)
+	})
+}
+
 func TestHolder_UntrustedIssuerCert_Rejected(t *testing.T) {
 	credential := signCredential(t, MediaTypeVcSdJwt, vcdmClaims(t, "2020-01-01T00:00:00Z", "2035-01-01T00:00:00Z"))
 	// Trust a different chain than the one that signed the credential.

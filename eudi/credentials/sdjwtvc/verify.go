@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
@@ -242,6 +243,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	if err != nil {
 		return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
 	}
+	signedClaims := maps.Clone(issuerSignedJwtClaims)
 
 	payload := &IssuerSignedJwtPayload{
 		RegisteredClaims:         *registered,
@@ -277,6 +279,12 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	if err != nil {
 		return issuerIdentifier, nil, nil, nil, nil, err
 	}
+	for _, key := range nonDisclosableClaims {
+		_, signed := signedClaims[key]
+		if _, present := processedSdJwtPayload[key]; present && !signed {
+			return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("claim %q is selectively disclosable, which an SD-JWT VC does not allow", key)
+		}
+	}
 
 	// Convert pointer to disclosures to values for return  (TODO: optimize to avoid this copy?)
 	decodedDisclosuresValues := make([]sdjwt.DisclosureContent, len(decodedDisclosures))
@@ -285,6 +293,19 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	}
 
 	return issuerIdentifier, payload, requestorInfo, decodedDisclosuresValues, &processedSdJwtPayload, nil
+}
+
+// nonDisclosableClaims are the claims SD-JWT VC keeps out of the Disclosures
+// (draft-ietf-oauth-sd-jwt-vc-13 §3.2.2.2), so a Holder and a Verifier always
+// see, and check, them.
+var nonDisclosableClaims = []string{
+	jwt.IssuerKey,
+	jwt.NotBeforeKey,
+	jwt.ExpirationKey,
+	sdjwt.ConfirmationKey,
+	VerifiableCredentialTypeKey,
+	VerifiableCredentialTypeIntegrityKey,
+	statuslist.StatusClaimKey,
 }
 
 // parseStatusClaim reads the `status` claim from a verified jwt.Token, with

@@ -159,12 +159,9 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 		return nil, nil, nil, err
 	}
 
-	// Step 2: extract SD-JWT / JWT registered claims and verify JWT time fields.
+	// Step 2: extract SD-JWT / JWT registered claims.
 	registered, err := sdjwt.ExtractRegisteredClaims(token)
 	if err != nil {
-		return nil, nil, nil, err
-	}
-	if err := registered.VerifyTimes(p.verificationContext.Clock.Now(), ClockSkewInSeconds*time.Second); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -185,6 +182,16 @@ func (p *processor) parseAndVerifyIssuerSignedJwt(
 		if _, ok := processed[key]; ok && !signedInPlain[key] {
 			return nil, nil, nil, errSelectivelyDisclosable(key)
 		}
+	}
+
+	// The JWT time fields and iss are checked in the processed payload (RFC 9901
+	// §7.1 step 6), so making them selectively disclosable does not escape the
+	// checks.
+	if err := registered.AddDisclosedClaims(processed); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := registered.VerifyTimes(p.verificationContext.Clock.Now(), ClockSkewInSeconds*time.Second); err != nil {
+		return nil, nil, nil, err
 	}
 
 	// Step 4: the decoded payload must actually be a VCDM document. A

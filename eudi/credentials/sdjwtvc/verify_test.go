@@ -3,6 +3,7 @@ package sdjwtvc
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"testing"
 	"time"
 
@@ -398,6 +399,32 @@ func Test_HolderVerificationProcessor_VerificationIsBeforeNotBefore_Fails(t *tes
 
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
 	require.Error(t, err)
+}
+
+// SD-JWT VC keeps iss, nbf, exp, cnf, vct, vct#integrity and status out of the
+// Disclosures (draft-ietf-oauth-sd-jwt-vc-13 §3.2.2.2); a credential that
+// discloses one is rejected.
+func Test_HolderVerificationProcessor_DisclosedNonDisclosableClaim_Fails(t *testing.T) {
+	for _, tc := range []struct {
+		key   string
+		value any
+	}{
+		{"exp", int64(1945394126)},
+		{"nbf", int64(50)},
+		{"status", map[string]any{"status_list": map[string]any{"idx": 0, "uri": "https://issuer.example/status"}}},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			disclosure, err := sdjwt.NewDisclosureContent(tc.key, tc.value)
+			require.NoError(t, err)
+			disclosures := []sdjwt.DisclosureContent{disclosure}
+			config := newWorkingSdJwtVcTestConfig().
+				withExpiryTime(nil).
+				withNotBefore(nil).
+				withSdClaims(disclosures, iana.SHA256).
+				withDisclosures(disclosures)
+			errorTestCaseHolder(t, config, fmt.Sprintf("claim %q is selectively disclosable", tc.key))
+		})
+	}
 }
 
 func Test_HolderVerificationProcessor_EmptyButNotMissingSdField_Fails(t *testing.T) {
