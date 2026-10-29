@@ -10,17 +10,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 )
 
-// CredentialFormat represents the credential format identifier as defined in the OID4VCI spec.
-type CredentialFormat string
-
-const (
-	CredentialFormatSdJwtVc CredentialFormat = "dc+sd-jwt"
-	// CredentialFormatSdJwtVcdm is an SD-JWT-secured W3C VCDM 2.0 credential
-	// (VC-JOSE-COSE §3.2). It has its own tables (VcdmBatch).
-	CredentialFormatSdJwtVcdm CredentialFormat = "vc+sd-jwt"
-	CredentialFormatMsoMdoc   CredentialFormat = "mso_mdoc"
-)
-
 // SdJwtVcBatch is one logical SD-JWT VC credential: every credential issued from
 // a single credential_configuration_id within one OID4VCI issuance session. When
 // the issuer supports batch issuance, BatchSize > 1 and multiple
@@ -74,7 +63,7 @@ type SdJwtVcBatch struct {
 	// AutoMigrate (the only schema mechanism here, see
 	// storage.autoMigrateHolderModels) cannot rename a column, and would ADD a
 	// NOT NULL one instead, which SQLite rejects once the table has rows. See
-	// credentials_schema_test.go, which pins this.
+	// sdjwtvc_schema_test.go, which pins this.
 	ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`
 
 	// IssuedAt is the iat claim of the issuer-signed JWT.
