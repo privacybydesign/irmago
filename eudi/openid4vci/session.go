@@ -954,6 +954,9 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		if err := requireMdocDocTypeMatchesMetadata(&credentialConfig, parsed); err != nil {
 			return nil, fmt.Errorf("credential %d of configuration %q: %v", i+1, credentialConfigurationId, err)
 		}
+		if err := requireVcdmTypeMatchesMetadata(&credentialConfig, parsed); err != nil {
+			return nil, fmt.Errorf("credential %d of configuration %q: %v", i+1, credentialConfigurationId, err)
+		}
 		if err := requireMandatoryMdocElements(&credentialConfig, parsed); err != nil {
 			return nil, fmt.Errorf("credential %d of configuration %q: %v", i+1, credentialConfigurationId, err)
 		}
@@ -1007,6 +1010,35 @@ func requireMdocDocTypeMatchesMetadata(config *metadata.CredentialConfiguration,
 			"was issued with docType %q but the issuer's metadata declares doctype %q",
 			parsed.VerifiableCredentialType, config.Doctype,
 		)
+	}
+	return nil
+}
+
+// requireVcdmTypeMatchesMetadata is requireMdocDocTypeMatchesMetadata for
+// SD-JWT-secured VCDM: it refuses a credential whose `type` lacks a type, or
+// whose `@context` lacks a context, that its configuration's
+// credential_definition declares. Otherwise an issuer asked for one credential
+// could deliver another, stored under the configuration's name and logo, while
+// DCQL matching and relying-party authorization key off the type it sent.
+//
+// The credential may carry more types and contexts than declared: a VCDM type
+// is a set, and a credential of a subtype is still of the declared type.
+func requireVcdmTypeMatchesMetadata(config *metadata.CredentialConfiguration, parsed *services.ParsedCredential) error {
+	if models.CredentialFormat(config.Format) != models.CredentialFormatSdJwtVcdm || config.CredentialDefinition == nil || parsed.SdJwtVcdm == nil {
+		return nil
+	}
+	document := parsed.SdJwtVcdm.Document
+	types := document.Types()
+	for _, want := range config.CredentialDefinition.Type {
+		if !slices.Contains(types, want) {
+			return fmt.Errorf("was issued with type %q, which lacks the type %q the issuer's metadata declares", types, want)
+		}
+	}
+	contexts := document.Contexts()
+	for _, want := range config.CredentialDefinition.Context {
+		if !slices.Contains(contexts, any(want)) {
+			return fmt.Errorf("was issued with @context %v, which lacks the context %q the issuer's metadata declares", contexts, want)
+		}
 	}
 	return nil
 }

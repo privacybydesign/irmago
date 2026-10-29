@@ -977,3 +977,55 @@ func setVcdmConfiguration(sess *session, format metadata.CredentialFormatIdentif
 type sentinelFormatStore struct {
 	services.CredentialFormatStore
 }
+
+// The issued credential must be of the type its configuration declares: an
+// issuer asked for one credential must not deliver another, which would then
+// be stored under the configuration's display metadata. It may carry more
+// types and contexts than declared, as a VCDM type is a set.
+func Test_openid4vciSession_obtainCredential_vcdmTypeMustMatchConfiguration(t *testing.T) {
+	chain := testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes
+	testCredential := createTestVcdmSdJwt(t, vcdmsdjwt.MediaTypeVcSdJwt, testX5cChain(t))
+
+	cases := map[string]struct {
+		definition metadata.W3CCredentialDefinition
+		wantErr    string
+	}{
+		"same type": {definition: metadata.W3CCredentialDefinition{
+			Context: []string{vcdm.ContextV2}, Type: []string{vcdm.TypeVerifiableCredential, "ExampleCredential"},
+		}},
+		"fewer types and no context": {definition: metadata.W3CCredentialDefinition{
+			Type: []string{vcdm.TypeVerifiableCredential},
+		}},
+		"another type": {definition: metadata.W3CCredentialDefinition{
+			Type: []string{vcdm.TypeVerifiableCredential, "DiplomaCredential"},
+		}, wantErr: `"DiplomaCredential"`},
+		"another context": {definition: metadata.W3CCredentialDefinition{
+			Context: []string{vcdm.ContextV2, "https://diploma.example/context/v1"}, Type: []string{vcdm.TypeVerifiableCredential, "ExampleCredential"},
+		}, wantErr: `"https://diploma.example/context/v1"`},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			sess, ts := setupTestEnvironment(t, NonceNotRequired, vcdmCredentialEndpoint(testCredential))
+			defer ts.Close()
+			setVcdmConfiguration(sess, metadata.CredentialFormatIdentifier_SdJwtVcdm)
+			config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+			config.CredentialDefinition = &c.definition
+			sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+			sess.formats = services.CredentialFormats{
+				models.CredentialFormatSdJwtVcdm: {
+					Parser: services.NewSdJwtVcdmCredentialFormatParser(
+						vcdmsdjwt.NewHolderVerificationProcessor(vcdmsdjwt.CreateDefaultVerificationContext(chain)),
+					),
+					Store: &sentinelFormatStore{},
+				},
+			}
+
+			_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+			if c.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, c.wantErr)
+		})
+	}
+}
