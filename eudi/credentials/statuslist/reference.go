@@ -61,11 +61,31 @@ func ParseStatusClaim(status any) (*Reference, error) {
 	if !ok || uri == "" {
 		return nil, fmt.Errorf("status_list.uri is missing or not a string")
 	}
-	idx, ok := list["idx"].(float64)
-	if !ok || idx < 0 || idx != math.Trunc(idx) {
+	idx, ok := nonNegativeInteger(list["idx"])
+	if !ok {
 		return nil, fmt.Errorf("status_list.idx is missing or not a non-negative integer")
 	}
-	return &Reference{URI: uri, Index: uint64(idx)}, nil
+	return &Reference{URI: uri, Index: idx}, nil
+}
+
+// nonNegativeInteger reads a JSON number as a uint64. A decoded payload holds
+// it as a float64; a claim set built in code may hold an integer type.
+func nonNegativeInteger(v any) (uint64, bool) {
+	switch n := v.(type) {
+	case float64:
+		if n < 0 || n != math.Trunc(n) {
+			return 0, false
+		}
+		return uint64(n), true
+	case int:
+		return uint64(n), n >= 0
+	case int64:
+		return uint64(n), n >= 0
+	case uint64:
+		return n, true
+	default:
+		return 0, false
+	}
 }
 
 // Status is the typed value returned by Checker.Check.

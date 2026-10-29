@@ -442,6 +442,24 @@ func Test_HolderVerificationProcessor_StatusClaim_RoundtripsThroughPayload(t *te
 	require.Equal(t, uint64(42), verified.IssuerSignedJwtPayload.Status.StatusList.Index)
 }
 
+// The status claim is read by the same parser as for SD-JWT-secured VCDM, so
+// both formats accept and refuse the same claims.
+func Test_HolderVerificationProcessor_StatusClaim_Malformed_Rejected(t *testing.T) {
+	for name, statusList := range map[string]map[string]any{
+		"fractional idx": {"idx": 1.5, "uri": "https://issuer.example/sl/1"},
+		"empty uri":      {"idx": 1, "uri": ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			config := newWorkingSdJwtVcTestConfig().withRawStatusClaim(map[string]any{"status_list": statusList})
+			sdjwtvc := createTestSdJwtVc(t, config)
+			context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+			_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+			require.ErrorContains(t, err, "failed to parse status claim")
+		})
+	}
+}
+
 func Test_HolderVerificationProcessor_StatusClaim_AbsentLeavesPayloadStatusNil(t *testing.T) {
 	config := newWorkingSdJwtVcTestConfig() // no status reference
 	sdjwtvc := createTestSdJwtVc(t, config)

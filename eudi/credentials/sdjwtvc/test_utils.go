@@ -349,6 +349,8 @@ type testSdJwtVcConfig struct {
 	vct           *string
 	disclosures   []sdjwt.DisclosureContent
 	status        *statuslist.StatusClaim
+	// rawStatus, when set, is written as the status claim instead of status.
+	rawStatus any
 
 	// stuff inside the issuer signed header
 	typHeader *string
@@ -358,6 +360,11 @@ type testSdJwtVcConfig struct {
 	// general signing stuff
 	holderPrivateKey *ecdsa.PrivateKey
 	issuerPrivateKey *ecdsa.PrivateKey
+}
+
+func (c *testSdJwtVcConfig) withRawStatusClaim(status any) *testSdJwtVcConfig {
+	c.rawStatus = status
+	return c
 }
 
 func (c *testSdJwtVcConfig) withStatusListReference(uri string, idx uint64) *testSdJwtVcConfig {
@@ -457,7 +464,9 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (sdjwt.IssuerSignedJwt,
 		issuerPayload[VerifiableCredentialTypeKey] = *config.vct
 	}
 
-	if config.status != nil && config.status.StatusList != nil {
+	if config.rawStatus != nil {
+		issuerPayload[StatusKey] = config.rawStatus
+	} else if config.status != nil && config.status.StatusList != nil {
 		issuerPayload[StatusKey] = map[string]any{
 			"status_list": map[string]any{
 				"idx": config.status.StatusList.Index,

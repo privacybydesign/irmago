@@ -379,61 +379,19 @@ func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *IssuerSigned
 	return nil
 }
 
-// parseStatusClaim reads the `status` claim from a verified jwt.Token
-// into the structured form expected by the Token Status List
-// pipeline. Only the `status_list` member is parsed in v1; other
-// sibling members defined by future specs are silently ignored.
+// parseStatusClaim reads the `status` claim from a verified jwt.Token, with
+// the parser SD-JWT-secured VCDM uses too. A status claim without a
+// `status_list` member is a well-formed extension point and names no list.
 func parseStatusClaim(token jwt.Token) (*statuslist.StatusClaim, error) {
-	raw, err := jwt.Get[map[string]any](token, StatusKey)
+	raw, err := jwt.Get[any](token, StatusKey)
 	if err != nil {
-		return nil, fmt.Errorf("status claim is not an object: %v", err)
+		return nil, err
 	}
-	slRaw, ok := raw["status_list"]
-	if !ok {
-		// status object present without a status_list member is a
-		// well-formed extension point; treat as "no status list
-		// reference on this credential".
-		return &statuslist.StatusClaim{}, nil
+	ref, err := statuslist.ParseStatusClaim(raw)
+	if err != nil {
+		return nil, err
 	}
-	slMap, ok := slRaw.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("status_list is not an object: %T", slRaw)
-	}
-	idxRaw, ok := slMap["idx"]
-	if !ok {
-		return nil, fmt.Errorf("status_list.idx missing")
-	}
-	uriRaw, ok := slMap["uri"]
-	if !ok {
-		return nil, fmt.Errorf("status_list.uri missing")
-	}
-	uri, ok := uriRaw.(string)
-	if !ok {
-		return nil, fmt.Errorf("status_list.uri is not a string: %T", uriRaw)
-	}
-	var idx uint64
-	switch n := idxRaw.(type) {
-	case float64:
-		if n < 0 {
-			return nil, fmt.Errorf("status_list.idx is negative: %v", n)
-		}
-		idx = uint64(n)
-	case int:
-		if n < 0 {
-			return nil, fmt.Errorf("status_list.idx is negative: %v", n)
-		}
-		idx = uint64(n)
-	case int64:
-		if n < 0 {
-			return nil, fmt.Errorf("status_list.idx is negative: %v", n)
-		}
-		idx = uint64(n)
-	case uint64:
-		idx = n
-	default:
-		return nil, fmt.Errorf("status_list.idx is not a number: %T", idxRaw)
-	}
-	return &statuslist.StatusClaim{StatusList: &statuslist.Reference{Index: idx, URI: uri}}, nil
+	return &statuslist.StatusClaim{StatusList: ref}, nil
 }
 
 // Decode the JWT into a token, verify the signature with the X.509 certificate in the header and verify the certificate is trusted (both against root/intermediate certs and CRLs).

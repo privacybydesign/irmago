@@ -64,6 +64,15 @@ func TestParseStatusClaim(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, &Reference{Index: 42, URI: "https://issuer.example/list/1"}, ref)
 
+	// A claim set built in code holds the index as an integer, not a float64.
+	for _, idx := range []any{42, int64(42), uint64(42)} {
+		ref, err = ParseStatusClaim(map[string]any{"status_list": map[string]any{"idx": idx, "uri": "https://issuer.example/list/1"}})
+		require.NoError(t, err)
+		require.Equal(t, uint64(42), ref.Index)
+	}
+	_, err = ParseStatusClaim(map[string]any{"status_list": map[string]any{"idx": -1, "uri": "https://issuer.example/list/1"}})
+	require.Error(t, err)
+
 	ref, err = ParseStatusClaim(decode(`{"other_mechanism": {}}`))
 	require.NoError(t, err)
 	require.Nil(t, ref, "a status claim without status_list names no list")

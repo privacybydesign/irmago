@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Revocation works the same way for every credential format. The status refresh sweep checks every instance of a batch, still fetching each status list once, and stores the batch's worst status on all of its instances, so one revoked instance revokes the batch. An instance whose list cannot be read counts with its stored status, so a failure never clears a revocation. The credential list, the disclosure screen and the log all read that stored status; SD-JWT VC and mso_mdoc disclosure no longer read the status list cache, so they show the status as of the last sweep, like the credential list.
 
 ### Fixed
+- An SD-JWT VC whose `status.status_list` has a fractional `idx` or an empty `uri` is now refused, as it already was for SD-JWT-secured VCDM. The index used to be truncated and the empty URI accepted.
 - A re-issued credential, of any format, now replaces the stored one in a single transaction. The old batch used to be deleted before the new one was stored, so a re-issuance that failed to store lost the credential the user already had.
 - Removing all storage now also deletes holder binding keys minted for an issuance that never completed. They are bound to no credential, so deleting the credentials did not reach them.
 - The disclosure screen and the log now read a batch credential's values from the copy that is sent, not from the copy the batch was stored from.
