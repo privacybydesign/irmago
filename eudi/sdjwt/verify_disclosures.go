@@ -16,9 +16,11 @@ func ParseSdField(value any) ([]HashedDisclosure, error) {
 	if !ok {
 		return []HashedDisclosure{}, fmt.Errorf("failed to convert _sd field to []any (%s)", value)
 	}
-	if len(strs) == 0 {
-		return []HashedDisclosure{}, fmt.Errorf("when the _sd field is present it may not be empty")
-	}
+	// An empty _sd array is accepted: RFC 9901 §4.2.4.1 allows it, only
+	// recommending to omit it. SD-JWT VC (draft-ietf-oauth-sd-jwt-vc-13
+	// §3.2.2.4) has the issuer leave _sd out of a credential without
+	// selectively disclosable claims, but an empty array discloses nothing, so
+	// the wallet does not refuse a credential for it.
 	result := []HashedDisclosure{}
 	for _, s := range strs {
 		sStr, ok := s.(string)

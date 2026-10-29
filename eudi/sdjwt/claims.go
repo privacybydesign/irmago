@@ -38,7 +38,7 @@ type RegisteredClaims struct {
 
 	// OPTIONAL: list of hashed -> base64url encoded disclosures
 	// hashing algorithm is defined by `_sd_alg` field
-	// is allowed to be omitted, and is not allowed to be empty (should be omitted in that case)
+	// is allowed to be omitted, and may be empty (RFC 9901 §4.2.4.1)
 	Sd []HashedDisclosure
 
 	// OPTIONAL: hashing algorithm to be used for the disclosure hashes in `_sd` and the hash over

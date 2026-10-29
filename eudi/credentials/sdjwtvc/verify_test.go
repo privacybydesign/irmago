@@ -451,11 +451,13 @@ func Test_HolderVerificationProcessor_DisclosedNonDisclosableClaim_Fails(t *test
 	}
 }
 
-func Test_HolderVerificationProcessor_EmptyButNotMissingSdField_Fails(t *testing.T) {
+// SD-JWT VC has the issuer leave out an empty _sd, but an empty array discloses
+// nothing, so the wallet accepts it (RFC 9901 §4.2.4.1 allows it).
+func Test_HolderVerificationProcessor_EmptyButNotMissingSdField_Succeeds(t *testing.T) {
 	emptyNotMissingSdField := newWorkingSdJwtVcTestConfig().
 		withSdClaims([]sdjwt.DisclosureContent{}, iana.SHA256).
 		withDisclosures([]sdjwt.DisclosureContent{})
-	errorTestCaseHolder(t, emptyNotMissingSdField, "failed to parse sd field: when the _sd field is present it may not be empty")
+	noErrorTestCaseHolder(t, emptyNotMissingSdField, "an empty _sd array is accepted")
 }
 
 func Test_HolderVerificationProcessor_UnsupportedSdAlg_Fails(t *testing.T) {

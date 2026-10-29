@@ -10,7 +10,6 @@ import (
 
 // ========================== Base Processor Tests ================================
 // fails for:
-// - [x] flat SD-JWT: _sd field is present but empty
 // - [x] flat SD-JWT: _sd field is not an array
 // - [x] flat SD-JWT: _sd field contains non-string values
 // - [x] flat SD-JWT: disclosure contains an _sd field
@@ -34,8 +33,10 @@ import (
 // - [x] structured SD-JWT: with array, containing decoy digests
 // - [x] structured SD-JWT: with recursive disclosure structures
 // - [x] array element Disclosure whose value holds digests, and digests in nested arrays
+// - [x] flat SD-JWT: _sd field is present but empty
 
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_EmptySdField_Fails(t *testing.T) {
+// RFC 9901 §4.2.4.1: the _sd array MAY be empty.
+func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_EmptySdField_Succeeds(t *testing.T) {
 	// Arrange
 	encodedDisclosures := []EncodedDisclosure{}
 	issuerSignedJwtPayload := map[string]any{
@@ -43,10 +44,11 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_EmptySdFie
 	}
 
 	// Act
-	_, _, err := VerifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
+	processed, _, err := VerifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
 
 	// Assert
-	require.ErrorContains(t, err, "when the _sd field is present it may not be empty")
+	require.NoError(t, err)
+	require.NotContains(t, processed, SdKey)
 }
 
 func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_SdFieldIsNotAnArray_Fails(t *testing.T) {
