@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 )
 
@@ -71,7 +72,7 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 		if !ok {
 			return nil, fmt.Errorf("auth request JWT needs 'typ' in header")
 		}
-		if typ != AuthRequestJwtTyp {
+		if !eudi_jwt.TypMatches(typ, AuthRequestJwtTyp) {
 			return nil, fmt.Errorf("auth request JWT typ should be %v but was %v", AuthRequestJwtTyp, typ)
 		}
 		return pubKey, nil

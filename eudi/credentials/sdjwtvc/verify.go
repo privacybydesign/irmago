@@ -481,7 +481,7 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 		return nil, fmt.Errorf("invalid kbjwt signature: %v (holder key: %v)", err, holderKey)
 	}
 
-	if typ := header["typ"]; typ != sdjwt.KbJwtTyp {
+	if typ := header["typ"]; !eudi_jwt.TypMatches(typ, sdjwt.KbJwtTyp) {
 		return nil, fmt.Errorf(
 			"key binding jwt header is expected to have 'typ' of '%s', but has %s (header: %v)",
 			sdjwt.KbJwtTyp,

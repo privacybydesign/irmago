@@ -81,6 +81,27 @@ func TestHolder_UnsupportedTypHeader_Rejected(t *testing.T) {
 	require.Error(t, err)
 }
 
+// RFC 7515 §4.1.9: the typ is a media type, so the application/ form and any
+// capitalization of vc+sd-jwt are accepted, and dc+sd-jwt is refused in any.
+func TestHolder_TypComparedAsMediaType(t *testing.T) {
+	for typ, accepted := range map[string]bool{
+		"application/vc+sd-jwt": true,
+		"VC+SD-JWT":             true,
+		"application/dc+sd-jwt": false,
+		"DC+SD-JWT":             false,
+	} {
+		t.Run(typ, func(t *testing.T) {
+			credential := signCredential(t, typ, vcdmClaims(t, "2020-01-01T00:00:00Z", "2035-01-01T00:00:00Z"))
+			_, err := NewHolderVerificationProcessor(CreateTestVerificationContext()).ParseAndVerifySdJwtVcdm(credential)
+			if accepted {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "invalid 'typ' header")
+			}
+		})
+	}
+}
+
 func TestHolder_KeyBindingJwtPresent_Rejected(t *testing.T) {
 	credential := signCredential(t, MediaTypeVcSdJwt, vcdmClaims(t, "2020-01-01T00:00:00Z", "2035-01-01T00:00:00Z"))
 	// Append a (fake) KB-JWT so the credential no longer ends in `~`.

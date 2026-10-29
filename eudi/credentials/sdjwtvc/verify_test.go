@@ -88,6 +88,17 @@ func Test_HolderVerificationProcessor_IssuerSignedJwt_WithKeyBindingJwt_Fails(t 
 // SD-JWT-secured W3C VCDM credential, so an SD-JWT VC signed with it is
 // refused, although draft-ietf-oauth-sd-jwt-vc-13 §3.2.1 recommends accepting
 // it for a transitional period.
+// RFC 7515 §4.1.9: the typ is a media type, so the application/ form and any
+// capitalization of dc+sd-jwt are accepted.
+func Test_HolderVerificationProcessor_TypComparedAsMediaType(t *testing.T) {
+	for _, typ := range []string{"application/dc+sd-jwt", "DC+SD-JWT"} {
+		t.Run(typ, func(t *testing.T) {
+			noErrorTestCaseHolder(t, newWorkingSdJwtVcTestConfig().withTypHeader(typ), "typ "+typ)
+		})
+	}
+	errorTestCaseHolder(t, newWorkingSdJwtVcTestConfig().withTypHeader("application/vc+sd-jwt"), "invalid 'typ' header")
+}
+
 func Test_HolderVerificationProcessor_LegacyVcSdJwtTyp_Fails(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 

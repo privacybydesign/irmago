@@ -54,7 +54,8 @@ func NewJwtKeyProvider(allowedTyps []string, allowInsecure bool) *JwtKeyProvider
 
 // FetchKeys validates the 'typ' header against allowedTyps and dispatches to
 // X509KeyProvider or KidKeyProvider depending on which header is present.
-// 'typ' MUST be present in the protected header and MUST be one of allowedTyps.
+// 'typ' MUST be present in the protected header and MUST name one of
+// allowedTyps, compared as media types (TypMatches).
 func (p *JwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
 	// If no signature is present, we cannot/do not need resolve the key to verify the signature.
 	if sig == nil {
@@ -62,7 +63,7 @@ func (p *JwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 	}
 
 	typ, ok := sig.ProtectedHeaders().Type()
-	if !ok || !slices.Contains(p.allowedTyps, typ) {
+	if !ok || !slices.ContainsFunc(p.allowedTyps, func(allowed string) bool { return TypMatches(typ, allowed) }) {
 		return fmt.Errorf("invalid 'typ' header: %v", typ)
 	}
 
