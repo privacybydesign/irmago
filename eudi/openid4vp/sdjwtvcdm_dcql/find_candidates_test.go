@@ -21,6 +21,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcqltest"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/stretchr/testify/assert"
@@ -684,13 +685,18 @@ func TestVcdmClaimImage_DisclosureScreenAndLog(t *testing.T) {
 // in the log once its image is cached, also when only its id is requested and
 // disclosed on its own: the verifier's view then lacks the type that makes it
 // an Image, the credential does not.
-func TestVcdmClaimImage_CachedOpenBadgesImageOnlyItsIdRequested(t *testing.T) {
+const testBadgeImageURL = "https://images.example/badge.png"
+
+// storeBadgeWithSeparateImageDisclosures stores an Open Badges credential under
+// hash whose achievement.image is an Image object with its id and its type as
+// separate disclosures, and returns the handler over it and its storage.
+func storeBadgeWithSeparateImageDisclosures(t *testing.T, hash string) (*Handler, storage.Storage) {
+	t.Helper()
 	ts := sdjwt_dcqltest.NewTestStorage(t)
 	store := db.NewVcdmStore(ts.Db())
 	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 	h := New(ts, store, keyBinder, clientmodels.NewCurrentLocale("en"), nil)
 
-	const imageURL = "https://images.example/badge.png"
 	holderKeys, err := keyBinder.CreateKeyPairs(1)
 	require.NoError(t, err)
 	cnf, err := sdjwt.HolderKeyClaim(holderKeys[0])
@@ -701,7 +707,7 @@ func TestVcdmClaimImage_CachedOpenBadgesImageOnlyItsIdRequested(t *testing.T) {
 			claims[i] = sdjwt.Object("credentialSubject",
 				sdjwt.Claim("id", "did:example:holder"),
 				sdjwt.Object("achievement",
-					sdjwt.Object("image", sdjwt.SdClaim("id", imageURL), sdjwt.SdClaim("type", "Image")),
+					sdjwt.Object("image", sdjwt.SdClaim("id", testBadgeImageURL), sdjwt.SdClaim("type", "Image")),
 				),
 			)
 		}
@@ -711,12 +717,43 @@ func TestVcdmClaimImage_CachedOpenBadgesImageOnlyItsIdRequested(t *testing.T) {
 	payload := academicPayload(t)
 	payload["credentialSubject"] = map[string]any{
 		"id":          "did:example:holder",
-		"achievement": map[string]any{"image": map[string]any{"id": imageURL, "type": "Image"}},
+		"achievement": map[string]any{"image": map[string]any{"id": testBadgeImageURL, "type": "Image"}},
 	}
-	batch := newTestBatch("hash-vcdm-badge", academicVcdmType, payload)
+	batch := newTestBatch(hash, academicVcdmType, payload)
 	batch.ExpandedTypes = datatypes.JSON(`["https://www.w3.org/2018/credentials#VerifiableCredential", "` + vcdm.OpenBadgeCredentialType + `"]`)
 	batch.Instances[0].RawCredential = []byte(vcdmsdjwt.IssueTestSdJwtVcdm(t, claims))
 	require.NoError(t, store.StoreBatch(batch))
+	return h, ts
+}
+
+// A selected path that points to an object sends everything under it
+// (OpenID4VP §7.1), also the values inside it that are disclosures of their own.
+func TestVcdmPrepareDisclosure_ObjectPathSendsItsValues(t *testing.T) {
+	h, _ := storeBadgeWithSeparateImageDisclosures(t, "hash-vcdm-badge")
+	imagePath := []any{"credentialSubject", "achievement", "image"}
+
+	prepared, err := h.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:              "q1",
+		CredentialHash:       "hash-vcdm-badge",
+		ClaimPaths:           [][]any{imagePath},
+		RequireHolderBinding: true,
+	}}, "nonce-1", "verifier-1")
+	require.NoError(t, err)
+
+	_, vp, err := sdjwt.DecodeJwtWithoutCheckingSignature(prepared.QueryResponses[0].Credentials[0])
+	require.NoError(t, err)
+	view, err := sdjwt.PostDisclosureView(envelopedSdJwt(t, vp), [][]any{
+		{"credentialSubject", "achievement", "image", "id"},
+		{"credentialSubject", "achievement", "image", "type"},
+	})
+	require.NoError(t, err)
+	image := view["credentialSubject"].(map[string]any)["achievement"].(map[string]any)["image"].(map[string]any)
+	assert.Equal(t, map[string]any{"id": testBadgeImageURL, "type": "Image"}, image)
+}
+
+func TestVcdmClaimImage_CachedOpenBadgesImageOnlyItsIdRequested(t *testing.T) {
+	h, ts := storeBadgeWithSeparateImageDisclosures(t, "hash-vcdm-badge")
+	const imageURL = testBadgeImageURL
 
 	png, err := base64.StdEncoding.DecodeString(testPhotoBase64)
 	require.NoError(t, err)

@@ -399,3 +399,35 @@ func TestFetchClaimImages_StopsWhenTheTimeIsUp(t *testing.T) {
 	require.Equal(t, 0, FetchClaimImages(ctx, cache, server.Client(), badgePayload(server.URL+"/a.png"), true, false))
 	require.Empty(t, requests)
 }
+
+func TestLeafPaths(t *testing.T) {
+	payload := payloadFromJSON(t, `{
+		"credentialSubject": {
+			"name": "Vera",
+			"achievement": {
+				"image": {"type": "Image", "id": "https://example.com/a.png"},
+				"alignment": [{"targetCode": "A"}, {"targetCode": "B"}],
+				"tags": [],
+				"extra": {}
+			}
+		}
+	}`)
+	cs := "credentialSubject"
+
+	require.Equal(t, [][]any{{cs, "name"}}, LeafPaths(payload, []any{cs, "name"}), "a value is its own leaf")
+	require.Equal(t, [][]any{
+		{cs, "achievement", "image", "id"},
+		{cs, "achievement", "image", "type"},
+	}, LeafPaths(payload, []any{cs, "achievement", "image"}), "an object's values, keys sorted")
+	require.Equal(t, [][]any{
+		{cs, "achievement", "alignment", 0, "targetCode"},
+		{cs, "achievement", "alignment", 1, "targetCode"},
+	}, LeafPaths(payload, []any{cs, "achievement", "alignment"}))
+	require.Equal(t, [][]any{{cs, "achievement", "alignment", float64(1), "targetCode"}},
+		LeafPaths(payload, []any{cs, "achievement", "alignment", float64(1)}), "an index decoded from JSON")
+	require.Equal(t, [][]any{{cs, "achievement", "tags"}}, LeafPaths(payload, []any{cs, "achievement", "tags"}), "an empty array is its own leaf")
+	require.Equal(t, [][]any{{cs, "achievement", "extra"}}, LeafPaths(payload, []any{cs, "achievement", "extra"}))
+	require.Nil(t, LeafPaths(payload, []any{cs, "missing"}))
+	require.Nil(t, LeafPaths(payload, []any{cs, "achievement", "alignment", 5}))
+	require.Nil(t, LeafPaths(payload, []any{cs, "name", "deeper"}))
+}

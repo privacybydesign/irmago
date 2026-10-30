@@ -1,6 +1,9 @@
 package services
 
 import (
+	"maps"
+	"math"
+	"slices"
 	"sort"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -175,4 +178,84 @@ func lookupDisplayName(lookup map[string]string, path []any) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// LeafPaths returns the paths of the values at or under path in payload: path
+// itself when it holds a scalar or an empty object or array, every scalar below
+// it when it holds a non-empty one, and none when payload has nothing there.
+// An index in path may be an int or, as in a path decoded from JSON, a
+// float64.
+func LeafPaths(payload map[string]any, path []any) [][]any {
+	value, ok := valueAtPath(payload, path)
+	if !ok {
+		return nil
+	}
+	var leaves [][]any
+	var walk func(path []any, value any)
+	walk = func(path []any, value any) {
+		switch v := value.(type) {
+		case map[string]any:
+			if len(v) == 0 {
+				leaves = append(leaves, path)
+				return
+			}
+			for _, key := range slices.Sorted(maps.Keys(v)) {
+				walk(append(slices.Clone(path), key), v[key])
+			}
+		case []any:
+			if len(v) == 0 {
+				leaves = append(leaves, path)
+				return
+			}
+			for i, element := range v {
+				walk(append(slices.Clone(path), i), element)
+			}
+		default:
+			leaves = append(leaves, path)
+		}
+	}
+	walk(slices.Clone(path), value)
+	return leaves
+}
+
+// valueAtPath returns the value payload holds at path, and whether it holds
+// one.
+func valueAtPath(payload map[string]any, path []any) (any, bool) {
+	var value any = payload
+	for _, segment := range path {
+		switch v := value.(type) {
+		case map[string]any:
+			key, ok := segment.(string)
+			if !ok {
+				return nil, false
+			}
+			if value, ok = v[key]; !ok {
+				return nil, false
+			}
+		case []any:
+			i, ok := arrayIndex(segment)
+			if !ok || i < 0 || i >= len(v) {
+				return nil, false
+			}
+			value = v[i]
+		default:
+			return nil, false
+		}
+	}
+	return value, true
+}
+
+// arrayIndex reads a claim path segment as an array index.
+func arrayIndex(segment any) (int, bool) {
+	switch s := segment.(type) {
+	case int:
+		return s, true
+	case float64:
+		if s != math.Trunc(s) {
+			return 0, false
+		}
+		return int(s), true
+	default:
+		return 0, false
+	}
 }
