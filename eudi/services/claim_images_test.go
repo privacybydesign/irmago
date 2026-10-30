@@ -1,12 +1,20 @@
 package services
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/stretchr/testify/require"
 )
 
@@ -254,4 +262,140 @@ func TestShowClaimImages_KeepsTheRestOfTheAttribute(t *testing.T) {
 	require.Equal(t, &hint, attrs[0].Value.DisplayHint)
 	requireImage(t, attrs[0].RequestedValue, testPNGBase64, clientmodels.MimeTypePNG)
 	require.Nil(t, attrs[1].Value, "a header stays a header")
+}
+
+// imageHost serves the test PNG at every path, over TLS, padded with zero bytes
+// to the size a path's "size" query asks for, and counts the requests per path.
+func imageHost(t *testing.T) (*httptest.Server, map[string]int) {
+	t.Helper()
+	png, err := base64.StdEncoding.DecodeString(testPNGBase64)
+	require.NoError(t, err)
+	var mu sync.Mutex
+	requests := map[string]int{}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests[r.URL.Path]++
+		mu.Unlock()
+		if strings.HasPrefix(r.URL.Path, "/missing") {
+			http.NotFound(w, r)
+			return
+		}
+		body := png
+		if size, err := strconv.Atoi(r.URL.Query().Get("size")); err == nil && size > len(png) {
+			body = append(slices.Clone(png), make([]byte, size-len(png))...)
+		}
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(server.Close)
+	return server, requests
+}
+
+func badgePayload(urls ...string) map[string]any {
+	images := make([]any, len(urls))
+	for i, url := range urls {
+		images[i] = map[string]any{"id": url, "type": "Image"}
+	}
+	return map[string]any{"credentialSubject": map[string]any{"images": images}}
+}
+
+func newClaimImageCache(t *testing.T) filesystem.LogoManager {
+	t.Helper()
+	return filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()).Credentials().LogoManager()
+}
+
+func TestFetchClaimImages_CachesTheImagesOfAnOpenBadge(t *testing.T) {
+	server, requests := imageHost(t)
+	cache := newClaimImageCache(t)
+	payload := badgePayload(server.URL+"/a.png", server.URL+"/b.png")
+
+	require.Equal(t, 2, FetchClaimImages(context.Background(), cache, server.Client(), payload, true, false))
+	cached := CachedClaimImages(cache, payload, true)
+	require.Len(t, cached, 2)
+
+	require.Equal(t, 0, FetchClaimImages(context.Background(), cache, server.Client(), payload, true, false),
+		"a cached image is not downloaded again")
+	require.Equal(t, map[string]int{"/a.png": 1, "/b.png": 1}, requests)
+}
+
+func TestFetchClaimImages_NothingOutsideAnOpenBadge(t *testing.T) {
+	server, requests := imageHost(t)
+	cache := newClaimImageCache(t)
+	require.Equal(t, 0, FetchClaimImages(context.Background(), cache, server.Client(), badgePayload(server.URL+"/a.png"), false, false))
+	require.Empty(t, requests)
+}
+
+func TestFetchClaimImages_AtMostTenImages(t *testing.T) {
+	server, _ := imageHost(t)
+	cache := newClaimImageCache(t)
+	var urls []string
+	for i := range 12 {
+		urls = append(urls, server.URL+"/"+strconv.Itoa(i)+".png")
+	}
+	payload := badgePayload(urls...)
+
+	require.Equal(t, 10, FetchClaimImages(context.Background(), cache, server.Client(), payload, true, false))
+	cached := CachedClaimImages(cache, payload, true)
+	require.Len(t, cached, 10)
+	require.NotContains(t, cached, urls[10], "the images past the tenth stay text")
+}
+
+// The images of one credential together fit in 2 MB: the first that does not
+// fit, and every one after it, stays text, also when it would fit on its own.
+func TestFetchClaimImages_TwoMegabytesPerCredential(t *testing.T) {
+	server, requests := imageHost(t)
+	cache := newClaimImageCache(t)
+	size := strconv.Itoa(3 << 19) // 1.5 MB
+	first := server.URL + "/first.png?size=" + size
+	second := server.URL + "/second.png?size=" + size
+	small := server.URL + "/small.png"
+	payload := badgePayload(first, second, small)
+
+	require.Equal(t, 1, FetchClaimImages(context.Background(), cache, server.Client(), payload, true, false))
+	require.Equal(t, 0, requests["/small.png"], "nothing past the image that did not fit is downloaded")
+	cached := CachedClaimImages(cache, payload, true)
+	require.Contains(t, cached, first)
+	require.NotContains(t, cached, second)
+	require.NotContains(t, cached, small)
+}
+
+// The budget holds when showing too, also for images another credential put in
+// the shared cache.
+func TestCachedClaimImages_TwoMegabytesPerCredential(t *testing.T) {
+	cache := newClaimImageCache(t)
+	big := make([]byte, 3<<19) // 1.5 MB
+	require.NoError(t, cache.Save("https://example.com/a.png", big, "image/png"))
+	require.NoError(t, cache.Save("https://example.com/b.png", big, "image/png"))
+
+	cached := CachedClaimImages(cache, badgePayload("https://example.com/a.png", "https://example.com/b.png"), true)
+	require.Equal(t, map[string][]byte{"https://example.com/a.png": big}, cached)
+}
+
+func TestFetchClaimImages_AFailingURLLeavesTheOthers(t *testing.T) {
+	server, _ := imageHost(t)
+	cache := newClaimImageCache(t)
+	payload := badgePayload(server.URL+"/missing.png", server.URL+"/b.png")
+
+	require.Equal(t, 1, FetchClaimImages(context.Background(), cache, server.Client(), payload, true, false))
+	cached := CachedClaimImages(cache, payload, true)
+	require.NotContains(t, cached, server.URL+"/missing.png")
+	require.Contains(t, cached, server.URL+"/b.png")
+}
+
+func TestFetchClaimImages_DataURIsAreNotDownloaded(t *testing.T) {
+	server, requests := imageHost(t)
+	cache := newClaimImageCache(t)
+	payload := badgePayload(testImageDataURI, server.URL+"/b.png")
+
+	require.Equal(t, 1, FetchClaimImages(context.Background(), cache, server.Client(), payload, true, false))
+	require.Equal(t, map[string]int{"/b.png": 1}, requests)
+}
+
+func TestFetchClaimImages_StopsWhenTheTimeIsUp(t *testing.T) {
+	server, requests := imageHost(t)
+	cache := newClaimImageCache(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	require.Equal(t, 0, FetchClaimImages(ctx, cache, server.Client(), badgePayload(server.URL+"/a.png"), true, false))
+	require.Empty(t, requests)
 }

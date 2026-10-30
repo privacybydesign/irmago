@@ -1,13 +1,17 @@
 package services
 
 import (
+	"context"
 	"encoding/base64"
+	"net/http"
 	"slices"
 	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 )
 
 // ClaimImage is a claim the wallet shows as a picture rather than as text:
@@ -189,4 +193,97 @@ func payloadMap(payload *sdjwt.ProcessedPayload) map[string]any {
 		return nil
 	}
 	return *payload
+}
+
+// The images behind a URL a credential shows at most: how many, and how many
+// bytes together. Every image of a credential travels to the app with it in
+// each credential list, so a credential must not be able to make that large.
+const (
+	maxClaimImagesPerCredential     = 10
+	maxClaimImageBytesPerCredential = helpers.MaxImageSize
+)
+
+// remoteClaimImageURLs returns the URLs of the claim images that are behind a
+// URL, in the order FindClaimImages finds them, each once, at most
+// maxClaimImagesPerCredential of them. Data URIs are in the credential itself
+// and need no URL.
+func remoteClaimImageURLs(images []ClaimImage) []string {
+	var urls []string
+	for _, image := range images {
+		if image.IsDataURI() || slices.Contains(urls, image.Source) {
+			continue
+		}
+		if len(urls) == maxClaimImagesPerCredential {
+			break
+		}
+		urls = append(urls, image.Source)
+	}
+	return urls
+}
+
+// CachedClaimImages returns, keyed by URL, the cached images of the claim
+// images in payload that are behind a URL: those among the first
+// maxClaimImagesPerCredential that are in manager, in order, as long as
+// together they fit in maxClaimImageBytesPerCredential. What does not fit stays
+// text, as an image that was never downloaded does. manager is the credential
+// logo cache, which claim images share with credential logos.
+func CachedClaimImages(manager filesystem.LogoManager, payload map[string]any, openBadges bool) map[string][]byte {
+	images := map[string][]byte{}
+	used := 0
+	for _, url := range remoteClaimImageURLs(FindClaimImages(payload, openBadges)) {
+		data, _, err := manager.Get(url)
+		if err != nil {
+			continue
+		}
+		if used+len(data) > maxClaimImageBytesPerCredential {
+			break
+		}
+		used += len(data)
+		images[url] = data
+	}
+	return images
+}
+
+// FetchClaimImages downloads into manager, the credential logo cache, the
+// claim images in payload that are behind a URL and missing from it, under the
+// limits CachedClaimImages shows them by, and returns how many it cached. Like
+// a credential logo, an image already cached is not downloaded again. ctx
+// bounds the time all downloads together may take.
+func FetchClaimImages(
+	ctx context.Context,
+	manager filesystem.LogoManager,
+	httpClient *http.Client,
+	payload map[string]any,
+	openBadges bool,
+	allowInsecureHTTP bool,
+) int {
+	cached := 0
+	used := 0
+	for _, url := range remoteClaimImageURLs(FindClaimImages(payload, openBadges)) {
+		if ctx.Err() != nil {
+			return cached
+		}
+		if data, _, err := manager.Get(url); err == nil {
+			used += len(data)
+		} else {
+			data, mimeType, err := helpers.DownloadRemoteImage(ctx, httpClient, url, allowInsecureHTTP)
+			if err != nil {
+				eudi.Logger.Warnf("failed to download claim image from %q: %v", url, err)
+				continue
+			}
+			if used+len(data) > maxClaimImageBytesPerCredential {
+				return cached
+			}
+			if err := manager.Save(url, data, mimeType); err != nil {
+				eudi.Logger.Warnf("failed to cache claim image from %q: %v", url, err)
+				continue
+			}
+			used += len(data)
+			cached++
+		}
+		if used >= maxClaimImageBytesPerCredential {
+			return cached
+		}
+	}
+	return cached
 }

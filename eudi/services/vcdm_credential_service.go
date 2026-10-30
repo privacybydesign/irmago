@@ -3,7 +3,6 @@ package services
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"slices"
 	"time"
 
@@ -33,9 +32,6 @@ import (
 // maintains.
 type sdJwtVcdmCredentialService struct {
 	sdJwtVcdmDisplaySource
-	// contextClient fetches the JSON-LD contexts the credential's types are
-	// expanded with (vcdm.ExpandTypes).
-	contextClient         *http.Client
 	holderBindingKeyStore db.HolderBindingKeyStore
 	fileStorage           filesystem.FileSystemStorage
 	revocation            *RevocationService
@@ -54,7 +50,6 @@ func NewSdJwtVcdmCredentialService(
 ) *sdJwtVcdmCredentialService {
 	return &sdJwtVcdmCredentialService{
 		sdJwtVcdmDisplaySource: newSdJwtVcdmDisplaySource(store),
-		contextClient:          &http.Client{Timeout: 10 * time.Second},
 		holderBindingKeyStore:  holderBindingKeyStore,
 		fileStorage:            fileStorage,
 		revocation:             revocation,
@@ -209,14 +204,18 @@ func (s *sdJwtVcdmCredentialService) Store(
 	// is the source of truth for batch-level metadata.
 	first := parsedCredentials[0]
 
-	// A credential whose types cannot be expanded is refused, rather than
-	// stored where no DCQL type_values query would find it.
-	expandedTypes, err := s.expandedTypes(first.SdJwtVcdm.Document)
-	if err != nil {
+	// The parser's CheckBatch expanded the types, or refused the batch.
+	if len(first.ExpandedTypes) == 0 {
+		err := fmt.Errorf("the credential's types were not expanded")
 		if requireCryptographicKeyBinding {
 			deleteOrphanedKeys(s.holderBindingKeyStore, publicKeyIdentifiers)
 		}
 		return err
+	}
+
+	expandedTypes, err := json.Marshal(first.ExpandedTypes)
+	if err != nil {
+		return fmt.Errorf("failed to marshal the expanded types: %w", err)
 	}
 
 	processedPayload, err := json.Marshal(first.SdJwtVcdm.Document)
@@ -298,16 +297,6 @@ func (s *sdJwtVcdmCredentialService) Store(
 	}
 
 	return nil
-}
-
-// expandedTypes returns the credential's types with its @context applied, as
-// JSON, for matching DCQL type_values.
-func (s *sdJwtVcdmCredentialService) expandedTypes(document vcdm.Document) (datatypes.JSON, error) {
-	types, err := vcdm.ExpandTypes(document, vcdm.NewContextLoader(s.contextClient))
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(types)
 }
 
 // VcdmIssuanceValidity derives the wallet's issuance/validity timestamps for a

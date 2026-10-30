@@ -4,7 +4,9 @@ import (
 	"crypto"
 	"encoding/hex"
 	"errors"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,7 +104,16 @@ func newRawVcdmWithContexts(t *testing.T, contexts []string, subjectClaims ...*s
 	return string(built)
 }
 
+// parse parses raw and checks it as a batch of one, as issuance does, which
+// also expands its types.
 func (e *vcdmTestEnv) parse(t *testing.T, raw string) *ParsedCredential {
+	t.Helper()
+	parsed := e.parseUnchecked(t, raw)
+	require.NoError(t, e.parser.CheckBatch([]*ParsedCredential{parsed}))
+	return parsed
+}
+
+func (e *vcdmTestEnv) parseUnchecked(t *testing.T, raw string) *ParsedCredential {
 	t.Helper()
 	parsed, err := e.parser.ParseAndVerify(raw, testVcdmIssuer, false)
 	require.NoError(t, err)
@@ -202,15 +213,46 @@ func TestSdJwtVcdmStore_KeyBindingMismatch(t *testing.T) {
 	assert.Empty(t, batches)
 }
 
-// A credential whose types cannot be expanded, because one of its contexts
-// cannot be fetched, is refused rather than stored where no type_values query
-// would find it, and the holder binding key made for it is deleted.
-func TestSdJwtVcdmStore_UnexpandableTypesRefused(t *testing.T) {
+// A credential whose types cannot be expanded, because a context it names
+// cannot be fetched, is refused before the permission screen, rather than
+// stored where no type_values query would find it.
+func TestSdJwtVcdmCheckBatch_UnexpandableTypesRefused(t *testing.T) {
 	env := newVcdmTestEnv(t)
-	env.service.contextClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+	env.parser.(*sdJwtVcdmCredentialFormatParser).contextClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("context host unreachable")
 	})}
-	parsed := env.parse(t, newRawVcdmWithContexts(t, []string{vcdm.ContextV2, "https://contexts.example/unreachable"}))
+	parsed := env.parseUnchecked(t, newRawVcdmWithContexts(t, []string{vcdm.ContextV2, "https://contexts.example/unreachable"}))
+
+	err := env.parser.CheckBatch([]*ParsedCredential{parsed})
+	require.ErrorContains(t, err, "context host unreachable")
+	require.Empty(t, parsed.ExpandedTypes)
+}
+
+// The batch check expands the types, fetching the contexts the credential
+// names.
+func TestSdJwtVcdmCheckBatch_ExpandsTheTypes(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	requests := 0
+	env.parser.(*sdJwtVcdmCredentialFormatParser).contextClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/ld+json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"@context": {"ExampleCredential": "https://contexts.example/vocab#ExampleCredential"}}`)),
+		}, nil
+	})}
+	parsed := env.parseUnchecked(t, newRawVcdmWithContexts(t, []string{vcdm.ContextV2, "https://contexts.example/v1"}))
+
+	require.NoError(t, env.parser.CheckBatch([]*ParsedCredential{parsed}))
+	require.Equal(t, []string{"https://www.w3.org/2018/credentials#VerifiableCredential", "https://contexts.example/vocab#ExampleCredential"}, parsed.ExpandedTypes)
+	require.Equal(t, 1, requests)
+}
+
+// A batch whose types were not expanded is refused, and the holder binding key
+// made for it is deleted.
+func TestSdJwtVcdmStore_UnexpandedTypesRefused(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	parsed := env.parseUnchecked(t, newRawVcdm(t))
 
 	thumbprintBytes, err := testdata.ParseHolderPubJwk().Thumbprint(crypto.SHA256)
 	require.NoError(t, err)
@@ -225,7 +267,7 @@ func TestSdJwtVcdmStore_UnexpandableTypesRefused(t *testing.T) {
 
 	err = env.service.Store([]*ParsedCredential{parsed}, "config-id", env.issuerMetadata(),
 		true, []models.PublicHolderBindingKey{{ID: key.ID, PublicKeyThumbprint: &thumbprint}})
-	require.ErrorContains(t, err, "context host unreachable")
+	require.ErrorContains(t, err, "not expanded")
 
 	batches, err := env.store.ListBatches()
 	require.NoError(t, err)
