@@ -24,6 +24,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/server/usage"
 	"github.com/sirupsen/logrus"
 )
 
@@ -101,6 +102,14 @@ type Configuration struct {
 
 	// Production mode: enables safer and stricter defaults and config checking
 	Production bool `json:"production" mapstructure:"production"`
+
+	// UsageReporting configures reporting session counts to the Yivi Portal. In production mode it
+	// is enabled once an account key is configured (a state dir or key file), unless explicitly
+	// disabled; outside production mode only when a portal URL is set.
+	UsageReporting *usage.Settings `json:"usage_reporting,omitempty" mapstructure:"usage_reporting"`
+	// UsageCounter receives every session that reaches a final status. It is set up by Check()
+	// from UsageReporting.
+	UsageCounter usage.Counter `json:"-"`
 
 	SdJwtIssuanceSettings *SdJwtIssuanceSettings `json:"sdjwtvc,omitempty" mapstructure:"sdjwtvc,omitempty"`
 }
@@ -213,7 +222,57 @@ func (conf *Configuration) Check() error {
 		return errors.New("Currently server-sent events (SSE) cannot be used simultaneously with the Redis session store.")
 	}
 
+	// Last, so that an invalid configuration never contacts the Portal.
+	if err := conf.verifyUsageReporting(); err != nil {
+		_ = LogError(err)
+		return err
+	}
+
 	return nil
+}
+
+func (conf *Configuration) verifyUsageReporting() error {
+	if conf.UsageCounter != nil {
+		// Already set up by an earlier Check(), or provided by the caller.
+		return nil
+	}
+	settings := conf.UsageReporting
+	if settings == nil {
+		settings = &usage.Settings{}
+	}
+	if settings.Disabled {
+		if conf.Production {
+			conf.Logger.Warn("Usage reporting to the Yivi Portal is disabled. This is only meant for internal Yivi services.")
+		}
+		conf.UsageCounter = usage.NoopCounter{}
+		return nil
+	}
+	if !conf.Production && settings.PortalURL == "" {
+		conf.UsageCounter = usage.NoopCounter{}
+		return nil
+	}
+	if settings.StateDir == "" && settings.AccountKeyFile == "" && settings.PortalURL == "" {
+		// Not configured at all: keep the behaviour of earlier versions, so an upgrade never
+		// stops a production server from starting.
+		conf.Logger.Warn("Usage reporting to the Yivi Portal is not configured. Set a usage reporting state dir " +
+			"or account key file and register the key in the Yivi Portal; this will become required in a future version.")
+		conf.UsageCounter = usage.NoopCounter{}
+		return nil
+	}
+
+	reporter, err := usage.New(*settings, conf.Logger)
+	if err != nil {
+		return errors.WrapPrefix(err, "usage reporting", 0)
+	}
+	conf.UsageCounter = reporter
+	return nil
+}
+
+// StopUsageReporting sends the final usage report of this run, if usage reporting is enabled.
+func (conf *Configuration) StopUsageReporting() {
+	if reporter, ok := conf.UsageCounter.(*usage.Reporter); ok {
+		reporter.Stop()
+	}
 }
 
 func (conf *Configuration) HavePrivateKeys() bool {

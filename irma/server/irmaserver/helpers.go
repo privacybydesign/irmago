@@ -30,6 +30,7 @@ import (
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
+	"github.com/privacybydesign/irmago/irma/server/usage"
 	"github.com/sirupsen/logrus"
 )
 
@@ -54,6 +55,77 @@ func (session *sessionData) setStatus(status irma.ServerStatus, conf *server.Con
 	if session.Status.Finished() {
 		session.doResultCallback(conf)
 	}
+}
+
+// recordUsage counts a session whose final status was just saved. It is called by the session
+// stores, so that a status set on a copy that is never saved, or saved twice by a retry, is not
+// counted.
+func recordUsage(conf *server.Configuration, before irma.ServerStatus, after *sessionData) {
+	if conf.UsageCounter == nil || before.Finished() || !after.Status.Finished() {
+		return
+	}
+	conf.UsageCounter.Record(after.usageEvent(after.Status))
+}
+
+// usageEvent describes the session as one that ended with the given status.
+func (session *sessionData) usageEvent(status irma.ServerStatus) usage.Event {
+	e := usage.Event{
+		Time:      time.Now(),
+		Requestor: session.Requestor,
+		Action:    session.Action,
+	}
+	switch {
+	case status == irma.ServerStatusDone:
+		e.Outcome = usage.OutcomeDone
+	case status == irma.ServerStatusTimeout:
+		e.Outcome = usage.OutcomeTimeout
+	case session.Result != nil && session.Result.Err != nil:
+		e.Outcome = usage.OutcomeFailed
+	default:
+		e.Outcome = usage.OutcomeCancelled
+	}
+
+	seen := map[irma.CredentialTypeIdentifier]struct{}{}
+	add := func(id irma.CredentialTypeIdentifier) {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			e.CredentialTypes = append(e.CredentialTypes, id)
+		}
+	}
+	if e.Outcome == usage.OutcomeDone {
+		if session.Action == irma.ActionIssuing {
+			if request, ok := session.Rrequest.SessionRequest().(*irma.IssuanceRequest); ok {
+				for _, cred := range request.Credentials {
+					add(cred.CredentialTypeID)
+				}
+			}
+		}
+		if session.Result != nil {
+			for _, con := range session.Result.Disclosed {
+				for _, attr := range con {
+					if attr != nil && attr.Status == irma.AttributeProofStatusPresent {
+						add(attr.Identifier.CredentialTypeIdentifier())
+					}
+				}
+			}
+		}
+		return e
+	}
+
+	// Nothing was disclosed, so count the credential types the request asked for.
+	if session.Rrequest == nil || session.Rrequest.SessionRequest() == nil {
+		return e
+	}
+	if disclosure := session.Rrequest.SessionRequest().Disclosure(); disclosure != nil {
+		for _, discon := range disclosure.Disclose {
+			for _, con := range discon {
+				for _, attr := range con {
+					add(attr.Type.CredentialTypeIdentifier())
+				}
+			}
+		}
+	}
+	return e
 }
 
 func (session *sessionData) doResultCallback(conf *server.Configuration) {
