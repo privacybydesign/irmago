@@ -130,7 +130,7 @@ func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) 
 				clientmodels.Format_SdJwtVcdm: batch.Hash,
 			},
 			BatchInstanceCountsRemaining: batchInstanceCounts(models.CredentialFormatSdJwtVcdm, batch.BatchSize, &batch.RemainingCount),
-			Attributes:                   BuildAttributesFromVcdmDocument(document, display.ClaimNames, display.ClaimOrder),
+			Attributes:                   ShowClaimImages(BuildAttributesFromVcdmDocument(document, display.ClaimNames, display.ClaimOrder), document, isOpenBadgesBatch(batch), nil),
 			ExpiryDate:                   exp,
 			IssuanceDate:                 &issuedAt,
 			Revoked:                      revoked[batch.Hash],
@@ -537,4 +537,15 @@ func (s sdJwtVcdmDisplaySource) LogoURIs(locale string) (issuer []string, creden
 		}
 	}
 	return issuer, credential
+}
+
+// isOpenBadgesBatch reports whether a stored VCDM batch is an Open Badges
+// credential, by the expanded types stored with it at issuance. A batch whose
+// types cannot be read is not.
+func isOpenBadgesBatch(batch *models.VcdmBatch) bool {
+	var types []string
+	if err := json.Unmarshal(batch.ExpandedTypes, &types); err != nil {
+		return false
+	}
+	return vcdm.IsOpenBadgesCredential(types)
 }

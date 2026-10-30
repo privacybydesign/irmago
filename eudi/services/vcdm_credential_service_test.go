@@ -393,3 +393,22 @@ func TestVcdmIssuanceValidity(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// A data:image/ claim in credentialSubject is listed as a picture, under its
+// own path.
+func TestSdJwtVcdmList_DataURIClaimIsAnImage(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	parsed := env.parse(t, newRawVcdm(t, sdjwt.SdClaim("given_name", "Alice"), sdjwt.SdClaim("photo", testImageDataURI)))
+	require.NoError(t, env.service.Store([]*ParsedCredential{parsed}, "config-id", env.issuerMetadata(), false, nil))
+
+	list, err := env.service.List()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+
+	byPath := map[string]clientmodels.Attribute{}
+	for _, a := range list[0].Attributes {
+		byPath[clientmodels.ClaimPathKey(a.ClaimPath)] = a
+	}
+	requireImage(t, byPath[clientmodels.ClaimPathKey([]any{vcdm.CredentialSubjectKey, "photo"})].Value, testPNGBase64, clientmodels.MimeTypePNG)
+	requireText(t, byPath[clientmodels.ClaimPathKey([]any{vcdm.CredentialSubjectKey, "given_name"})].Value, "Alice")
+}

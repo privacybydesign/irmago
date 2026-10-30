@@ -1029,3 +1029,79 @@ func Test_openid4vciSession_obtainCredential_vcdmTypeMustMatchConfiguration(t *t
 		})
 	}
 }
+
+// The permission screen shows a data:image/ claim as a picture, for both
+// SD-JWT formats, under the claim's own path.
+func Test_buildOfferedCredentials_DataURIClaimIsAnImage(t *testing.T) {
+	const configId = "credential-config-1"
+	const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+	photo := "data:image/png;base64," + png
+
+	tests := []struct {
+		name      string
+		parsed    *services.ParsedCredential
+		photoPath []any
+	}{
+		{
+			name: "dc+sd-jwt",
+			parsed: &services.ParsedCredential{
+				Format:                   models.CredentialFormatSdJwtVc,
+				VerifiableCredentialType: "https://issuer.example.com/vct/pid",
+				SdJwtVc: &sdjwtvc.VerifiedSdJwtVc{
+					ProcessedSdJwtPayload: sdjwt.ProcessedPayload{"given_name": "Alice", "photo": photo},
+				},
+			},
+			photoPath: []any{"photo"},
+		},
+		{
+			name: "vc+sd-jwt",
+			parsed: &services.ParsedCredential{
+				Format:                   models.CredentialFormatSdJwtVcdm,
+				VerifiableCredentialType: "https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential",
+				SdJwtVcdm: &vcdmsdjwt.VerifiedSdJwtVcdm{
+					Document: vcdm.Document{
+						vcdm.CredentialSubjectKey: map[string]any{"given_name": "Alice", "photo": photo},
+					},
+				},
+			},
+			photoPath: []any{vcdm.CredentialSubjectKey, "photo"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var aesKey [32]byte
+			copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+			eudiStorage, err := sqlcipherstorage.New(aesKey, ":memory:", t.TempDir())
+			require.NoError(t, err)
+
+			s := &session{
+				storage: eudiStorage,
+				locale:  "en",
+				credentialIssuerMetadata: &metadata.CredentialIssuerMetadata{
+					CredentialIssuer: "https://issuer.example.com",
+					CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+						configId: {CredentialMetadata: &metadata.CredentialMetadata{}},
+					},
+				},
+			}
+
+			offered := s.buildOfferedCredentials([]*fetchedCredential{{
+				credentialConfigurationId: configId,
+				parsedCredentials:         []*services.ParsedCredential{tt.parsed},
+			}})
+			require.Len(t, offered, 1)
+
+			var photoValue *clientmodels.AttributeValue
+			for _, a := range offered[0].Attributes {
+				if clientmodels.ClaimPathKey(a.ClaimPath) == clientmodels.ClaimPathKey(tt.photoPath) {
+					photoValue = a.Value
+				}
+			}
+			require.NotNil(t, photoValue, "the photo keeps its path")
+			require.Equal(t, clientmodels.AttributeType_Base64Image, photoValue.Type)
+			require.Equal(t, png, *photoValue.Base64Image)
+			require.Equal(t, clientmodels.MimeTypePNG, *photoValue.MimeType)
+		})
+	}
+}

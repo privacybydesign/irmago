@@ -1632,3 +1632,22 @@ func TestHashForSdJwtVc_IgnoresProtocolClaims(t *testing.T) {
 		})
 	}
 }
+
+// A data:image/ claim is listed as a picture, under its own path.
+func TestGetCredentialMetadataList_DataURIClaimIsAnImage(t *testing.T) {
+	batch := newStorageBatch()
+	batch.ProcessedSdJwtPayload = datatypes.JSON(`{"given_name": "Alice", "photo": "` + testImageDataURI + `"}`)
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
+	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+
+	result, err := svc.List()
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	byPath := map[string]clientmodels.Attribute{}
+	for _, a := range result[0].Attributes {
+		byPath[clientmodels.ClaimPathKey(a.ClaimPath)] = a
+	}
+	requireImage(t, byPath[clientmodels.ClaimPathKey([]any{"photo"})].Value, testPNGBase64, clientmodels.MimeTypePNG)
+	requireText(t, byPath[clientmodels.ClaimPathKey([]any{"given_name"})].Value, "Alice")
+}

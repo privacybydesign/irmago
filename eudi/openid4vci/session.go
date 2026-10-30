@@ -474,9 +474,13 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		switch {
 		case first.SdJwtVc != nil:
 			attrs = buildAttributesWithValues(claims, first.SdJwtVc.ProcessedSdJwtPayload, s.locale)
+			attrs = services.ShowClaimImages(attrs, first.SdJwtVc.ProcessedSdJwtPayload, false, nil)
 		case first.SdJwtVcdm != nil:
 			claimDisplays, claimOrder := claimDisplayLookups(claims, s.locale)
 			attrs = services.BuildAttributesFromVcdmDocument(first.SdJwtVcdm.Document, claimDisplays, claimOrder)
+			// Only its data URIs: whether it is an Open Badges credential is
+			// decided when it is stored, from its expanded types.
+			attrs = services.ShowClaimImages(attrs, first.SdJwtVcdm.Document, false, nil)
 		case first.Mdoc != nil:
 			attrs = services.BuildMdocAttributesFromResolvedClaims(claims, first.Mdoc.Namespaces, s.locale)
 		}

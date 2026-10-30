@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -513,6 +514,7 @@ func parseBatchAttributes(batch *Batch, query dcql.CredentialQuery, rawSdJwt sdj
 	attributes := make([]clientmodels.Attribute, 0)
 	requestedKeys := make(map[string]struct{})
 	attributes = flattenPathsForDisplay(attributes, requestedKeys, batch, values, pairs, metadataOrder, locale)
+	attributes = showClaimImages(attributes, batch, resolved)
 
 	return attributes, nil
 }
@@ -920,6 +922,8 @@ func (h *Engine) buildLogCredential(
 	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &resolved); err != nil {
 		eudi.Logger.Warnf("failed to unmarshal processed SD-JWT payload for %q: %v", batch.CredentialType, err)
 	}
+	// What is an image is read off the whole credential, not off the view below.
+	payload := resolved
 
 	// Compute the verifier-side view for the user's authorized paths so the
 	// log records exactly what was transmitted, including any sibling
@@ -941,6 +945,7 @@ func (h *Engine) buildLogCredential(
 	metadataOrder := buildMetadataOrder(batch)
 	requestedKeys := make(map[string]struct{})
 	attrs = flattenPathsForDisplay(attrs, requestedKeys, batch, &resolved, pairs, metadataOrder, locale)
+	attrs = showClaimImages(attrs, batch, payload)
 
 	log := clientmodels.LogCredential{
 		CredentialId: batch.CredentialType,
@@ -1287,4 +1292,12 @@ func claimPathMatchesMetadataPath(claimPath []any, metadataPath []any) bool {
 		}
 	}
 	return true
+}
+
+// showClaimImages turns the batch's claim images among attrs into pictures
+// (services.ShowClaimImages). payload is the batch's whole processed payload:
+// a disclosure's view of it may hold an Open Badges Image's id without the
+// type that makes it one.
+func showClaimImages(attrs []clientmodels.Attribute, batch *Batch, payload sdjwt.ProcessedPayload) []clientmodels.Attribute {
+	return services.ShowClaimImages(attrs, payload, vcdm.IsOpenBadgesCredential(batch.ExpandedTypes), nil)
 }

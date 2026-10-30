@@ -1,9 +1,12 @@
 package services
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"net/url"
 	"testing"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/stretchr/testify/require"
 )
 
@@ -139,4 +142,116 @@ func TestFindClaimImages_PathsDoNotAlias(t *testing.T) {
 func TestFindClaimImages_NoImages(t *testing.T) {
 	require.Empty(t, FindClaimImages(payloadFromJSON(t, `{"given_name": "Vera", "age": 30}`), true))
 	require.Empty(t, FindClaimImages(nil, true))
+}
+
+const testPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+
+func textAttr(path []any, value string) clientmodels.Attribute {
+	return clientmodels.Attribute{ClaimPath: path, Value: clientmodels.NewAttributeValue(value)}
+}
+
+func requireImage(t *testing.T, value *clientmodels.AttributeValue, wantBase64, wantMimeType string) {
+	t.Helper()
+	require.NotNil(t, value)
+	require.Equal(t, clientmodels.AttributeType_Base64Image, value.Type)
+	require.Nil(t, value.String)
+	require.NotNil(t, value.Base64Image)
+	require.Equal(t, wantBase64, *value.Base64Image)
+	require.NotNil(t, value.MimeType)
+	require.Equal(t, wantMimeType, *value.MimeType)
+}
+
+func requireText(t *testing.T, value *clientmodels.AttributeValue, want string) {
+	t.Helper()
+	require.NotNil(t, value)
+	require.Equal(t, clientmodels.AttributeType_String, value.Type)
+	require.NotNil(t, value.String)
+	require.Equal(t, want, *value.String)
+}
+
+func TestShowClaimImages_DataURIs(t *testing.T) {
+	svg := `<svg xmlns="http://www.w3.org/2000/svg"/>`
+	svgURI := "data:image/svg+xml," + url.PathEscape(svg)
+	notAnImage := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("hello"))
+	badBase64 := "data:image/png;base64,not base64!"
+	payload := map[string]any{
+		"photo":    testImageDataURI,
+		"logo":     svgURI,
+		"fake":     notAnImage,
+		"broken":   badBase64,
+		"document": "data:application/pdf;base64,JVBERi0=",
+		"name":     "Vera",
+	}
+	attrs := ShowClaimImages([]clientmodels.Attribute{
+		textAttr([]any{"photo"}, testImageDataURI),
+		textAttr([]any{"logo"}, svgURI),
+		textAttr([]any{"fake"}, notAnImage),
+		textAttr([]any{"broken"}, badBase64),
+		textAttr([]any{"document"}, "data:application/pdf;base64,JVBERi0="),
+		textAttr([]any{"name"}, "Vera"),
+	}, payload, false, nil)
+
+	requireImage(t, attrs[0].Value, testPNGBase64, clientmodels.MimeTypePNG)
+	requireImage(t, attrs[1].Value, base64.StdEncoding.EncodeToString([]byte(svg)), clientmodels.MimeTypeSVG)
+	requireText(t, attrs[2].Value, notAnImage)
+	requireText(t, attrs[3].Value, badBase64)
+	requireText(t, attrs[4].Value, "data:application/pdf;base64,JVBERi0=")
+	requireText(t, attrs[5].Value, "Vera")
+}
+
+func TestShowClaimImages_DownloadedImages(t *testing.T) {
+	png, err := base64.StdEncoding.DecodeString(testPNGBase64)
+	require.NoError(t, err)
+	imageURL := "https://example.com/badge.png"
+	payload := map[string]any{
+		"image":     map[string]any{"id": imageURL, "type": "Image"},
+		"targetUrl": imageURL,
+		"other":     map[string]any{"id": "https://example.com/missing.png", "type": "Image"},
+	}
+	attrs := func() []clientmodels.Attribute {
+		return []clientmodels.Attribute{
+			textAttr([]any{"image", "id"}, imageURL),
+			textAttr([]any{"image", "type"}, "Image"),
+			textAttr([]any{"targetUrl"}, imageURL),
+			textAttr([]any{"other", "id"}, "https://example.com/missing.png"),
+		}
+	}
+	downloaded := map[string][]byte{imageURL: png}
+
+	shown := ShowClaimImages(attrs(), payload, true, downloaded)
+	requireImage(t, shown[0].Value, testPNGBase64, clientmodels.MimeTypePNG)
+	requireText(t, shown[1].Value, "Image")
+	requireText(t, shown[2].Value, imageURL)
+	requireText(t, shown[3].Value, "https://example.com/missing.png")
+
+	notBadge := ShowClaimImages(attrs(), payload, false, downloaded)
+	requireText(t, notBadge[0].Value, imageURL)
+}
+
+// A disclosure may show an Image's id alone; the payload still says it is one.
+func TestShowClaimImages_OnlyTheIdShown(t *testing.T) {
+	payload := map[string]any{"image": map[string]any{"id": testImageDataURI, "type": "Image"}}
+	attrs := ShowClaimImages([]clientmodels.Attribute{
+		textAttr([]any{"image", "id"}, testImageDataURI),
+	}, payload, true, nil)
+	requireImage(t, attrs[0].Value, testPNGBase64, clientmodels.MimeTypePNG)
+}
+
+func TestShowClaimImages_KeepsTheRestOfTheAttribute(t *testing.T) {
+	name := "Photo"
+	hint := "portraitPhoto"
+	requested := clientmodels.NewAttributeValue(testImageDataURI)
+	value := clientmodels.NewAttributeValue(testImageDataURI)
+	value.DisplayHint = &hint
+	attrs := ShowClaimImages([]clientmodels.Attribute{
+		{ClaimPath: []any{"photo"}, DisplayName: &name, Value: value, RequestedValue: requested},
+		{ClaimPath: []any{"photo", "header"}},
+	}, map[string]any{"photo": testImageDataURI}, false, nil)
+
+	require.Equal(t, []any{"photo"}, attrs[0].ClaimPath, "the path is unchanged")
+	require.Equal(t, &name, attrs[0].DisplayName)
+	requireImage(t, attrs[0].Value, testPNGBase64, clientmodels.MimeTypePNG)
+	require.Equal(t, &hint, attrs[0].Value.DisplayHint)
+	requireImage(t, attrs[0].RequestedValue, testPNGBase64, clientmodels.MimeTypePNG)
+	require.Nil(t, attrs[1].Value, "a header stays a header")
 }

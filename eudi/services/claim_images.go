@@ -1,8 +1,13 @@
 package services
 
 import (
+	"encoding/base64"
+	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
 
 // ClaimImage is a claim the wallet shows as a picture rather than as text:
@@ -110,4 +115,100 @@ func isHTTPURL(s string) bool {
 
 func childPath(path []any, segment any) []any {
 	return append(slices.Clone(path), segment)
+}
+
+// ShowClaimImages turns the attributes that are claim images in payload
+// (FindClaimImages) into base64_image values, in place, and returns attrs. A
+// data URI is decoded from the attribute itself; a URL takes its image from
+// downloaded, which maps a URL to the bytes the wallet downloaded from it, and
+// stays text when it has none there. An image
+// whose bytes are no PNG, JPEG, GIF, WebP or SVG stays text too. Only the
+// value changes, not the path, so what is shown is still what is disclosed and
+// logged.
+//
+// payload must be the credential's full processed payload, not a disclosure's
+// view of it: a view may hold an Image's id without the type that makes it one.
+func ShowClaimImages(
+	attrs []clientmodels.Attribute,
+	payload map[string]any,
+	openBadges bool,
+	downloaded map[string][]byte,
+) []clientmodels.Attribute {
+	images := FindClaimImages(payload, openBadges)
+	if len(images) == 0 {
+		return attrs
+	}
+	isImage := make(map[string]struct{}, len(images))
+	for _, image := range images {
+		isImage[clientmodels.ClaimPathKey(image.Path)] = struct{}{}
+	}
+	for i := range attrs {
+		if _, ok := isImage[clientmodels.ClaimPathKey(attrs[i].ClaimPath)]; !ok {
+			continue
+		}
+		attrs[i].Value = claimImageValue(attrs[i].Value, downloaded)
+		attrs[i].RequestedValue = claimImageValue(attrs[i].RequestedValue, downloaded)
+	}
+	return attrs
+}
+
+// claimImageValue returns the base64_image value for a claim image's text
+// value, or the value unchanged when its image is not available or not one
+// the app can draw.
+func claimImageValue(value *clientmodels.AttributeValue, downloaded map[string][]byte) *clientmodels.AttributeValue {
+	if value == nil || value.Type != clientmodels.AttributeType_String || value.String == nil {
+		return value
+	}
+	var data []byte
+	if isImageDataURI(*value.String) {
+		decoded, ok := decodeDataURI(*value.String)
+		if !ok {
+			return value
+		}
+		data = decoded
+	} else {
+		data = downloaded[*value.String]
+	}
+	mimeType := clientmodels.ImageMimeType(data)
+	if mimeType == "" {
+		return value
+	}
+	encoded := base64.StdEncoding.EncodeToString(data)
+	return &clientmodels.AttributeValue{
+		Type:        clientmodels.AttributeType_Base64Image,
+		Base64Image: &encoded,
+		MimeType:    &mimeType,
+		DisplayHint: value.DisplayHint,
+	}
+}
+
+// decodeDataURI returns the bytes a data URI holds (RFC 2397): base64 when its
+// media type ends in ";base64", percent-encoded text otherwise. The caller has
+// checked that uri starts with "data:".
+func decodeDataURI(uri string) ([]byte, bool) {
+	meta, data, ok := strings.Cut(uri[len("data:"):], ",")
+	if !ok {
+		return nil, false
+	}
+	if strings.HasSuffix(strings.ToLower(meta), ";base64") {
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(data))
+		if err != nil {
+			return nil, false
+		}
+		return decoded, true
+	}
+	decoded, err := url.PathUnescape(data)
+	if err != nil {
+		return nil, false
+	}
+	return []byte(decoded), true
+}
+
+// payloadMap returns a processed SD-JWT payload as the map FindClaimImages
+// reads, or nil for none.
+func payloadMap(payload *sdjwt.ProcessedPayload) map[string]any {
+	if payload == nil {
+		return nil
+	}
+	return *payload
 }
