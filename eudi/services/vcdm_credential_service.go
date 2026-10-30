@@ -125,7 +125,7 @@ func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) 
 				clientmodels.Format_SdJwtVcdm: batch.Hash,
 			},
 			BatchInstanceCountsRemaining: batchInstanceCounts(models.CredentialFormatSdJwtVcdm, batch.BatchSize, &batch.RemainingCount),
-			Attributes:                   ShowClaimImages(BuildAttributesFromVcdmDocument(document, display.ClaimNames, display.ClaimOrder), document, isOpenBadgesBatch(batch), nil),
+			Attributes:                   showVcdmClaimImages(BuildAttributesFromVcdmDocument(document, display.ClaimNames, display.ClaimOrder), document, batch, credentialLogoManager),
 			ExpiryDate:                   exp,
 			IssuanceDate:                 &issuedAt,
 			Revoked:                      revoked[batch.Hash],
@@ -537,4 +537,12 @@ func isOpenBadgesBatch(batch *models.VcdmBatch) bool {
 		return false
 	}
 	return vcdm.IsOpenBadgesCredential(types)
+}
+
+// showVcdmClaimImages turns a stored VCDM batch's claim images among attrs
+// into pictures, with the images behind a URL from logos, the credential logo
+// cache they share with the credential logos.
+func showVcdmClaimImages(attrs []clientmodels.Attribute, document vcdm.Document, batch *models.VcdmBatch, logos filesystem.LogoManager) []clientmodels.Attribute {
+	openBadges := isOpenBadgesBatch(batch)
+	return ShowClaimImages(attrs, document, openBadges, CachedClaimImages(logos, document, openBadges))
 }

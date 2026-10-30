@@ -153,6 +153,7 @@ func (h *Engine) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQue
 		if attributes == nil {
 			continue
 		}
+		attributes = h.showClaimImages(attributes, batch)
 
 		image := h.credentialImage(batch, locale)
 
@@ -514,7 +515,6 @@ func parseBatchAttributes(batch *Batch, query dcql.CredentialQuery, rawSdJwt sdj
 	attributes := make([]clientmodels.Attribute, 0)
 	requestedKeys := make(map[string]struct{})
 	attributes = flattenPathsForDisplay(attributes, requestedKeys, batch, values, pairs, metadataOrder, locale)
-	attributes = showClaimImages(attributes, batch, resolved)
 
 	return attributes, nil
 }
@@ -922,8 +922,6 @@ func (h *Engine) buildLogCredential(
 	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &resolved); err != nil {
 		eudi.Logger.Warnf("failed to unmarshal processed SD-JWT payload for %q: %v", batch.CredentialType, err)
 	}
-	// What is an image is read off the whole credential, not off the view below.
-	payload := resolved
 
 	// Compute the verifier-side view for the user's authorized paths so the
 	// log records exactly what was transmitted, including any sibling
@@ -945,7 +943,7 @@ func (h *Engine) buildLogCredential(
 	metadataOrder := buildMetadataOrder(batch)
 	requestedKeys := make(map[string]struct{})
 	attrs = flattenPathsForDisplay(attrs, requestedKeys, batch, &resolved, pairs, metadataOrder, locale)
-	attrs = showClaimImages(attrs, batch, payload)
+	attrs = h.showClaimImages(attrs, batch)
 
 	log := clientmodels.LogCredential{
 		CredentialId: batch.CredentialType,
@@ -1295,9 +1293,16 @@ func claimPathMatchesMetadataPath(claimPath []any, metadataPath []any) bool {
 }
 
 // showClaimImages turns the batch's claim images among attrs into pictures
-// (services.ShowClaimImages). payload is the batch's whole processed payload:
-// a disclosure's view of it may hold an Open Badges Image's id without the
-// type that makes it one.
-func showClaimImages(attrs []clientmodels.Attribute, batch *Batch, payload sdjwt.ProcessedPayload) []clientmodels.Attribute {
-	return services.ShowClaimImages(attrs, payload, vcdm.IsOpenBadgesCredential(batch.ExpandedTypes), nil)
+// (services.ShowClaimImages), with the images behind a URL from the credential
+// logo cache, which they share with the credential logos. What is an image is
+// read off the batch's whole processed payload: a disclosure's view of it may
+// hold an Open Badges Image's id without the type that makes it one.
+func (h *Engine) showClaimImages(attrs []clientmodels.Attribute, batch *Batch) []clientmodels.Attribute {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &payload); err != nil {
+		return attrs
+	}
+	openBadges := vcdm.IsOpenBadgesCredential(batch.ExpandedTypes)
+	cached := services.CachedClaimImages(h.storage.FileSystem().Credentials().LogoManager(), payload, openBadges)
+	return services.ShowClaimImages(attrs, payload, openBadges, cached)
 }

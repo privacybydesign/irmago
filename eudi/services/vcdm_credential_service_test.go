@@ -2,7 +2,9 @@ package services
 
 import (
 	"crypto"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -453,4 +455,46 @@ func TestSdJwtVcdmList_DataURIClaimIsAnImage(t *testing.T) {
 	}
 	requireImage(t, byPath[clientmodels.ClaimPathKey([]any{vcdm.CredentialSubjectKey, "photo"})].Value, testPNGBase64, clientmodels.MimeTypePNG)
 	requireText(t, byPath[clientmodels.ClaimPathKey([]any{vcdm.CredentialSubjectKey, "given_name"})].Value, "Alice")
+}
+
+// An Open Badges Image behind a URL is listed as a picture once its image is in
+// the credential logo cache, under the path of its id; until then it is text.
+func TestSdJwtVcdmList_CachedOpenBadgesImageIsAnImage(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	imageURL := "https://images.example/badge.png"
+	expandedTypes, err := json.Marshal([]string{"https://www.w3.org/2018/credentials#VerifiableCredential", vcdm.OpenBadgeCredentialType})
+	require.NoError(t, err)
+	require.NoError(t, env.store.StoreBatch(&models.VcdmBatch{
+		TypeIdentity:     testVcdmTypeIdentity,
+		IssuerIdentifier: testVcdmIssuer,
+		CredentialIssuer: testVcdmIssuer,
+		Format:           models.CredentialFormatSdJwtVcdm,
+		Hash:             "hash-badge",
+		ProcessedPayload: datatypes.JSON(`{"credentialSubject": {"achievement": {"image": {"id": "` + imageURL + `", "type": "Image"}}}}`),
+		ExpandedTypes:    expandedTypes,
+		IssuedAt:         time.Now(),
+		BatchSize:        1,
+		RemainingCount:   1,
+		Instances:        []models.VcdmBatchInstance{{RawCredential: []byte("raw")}},
+	}))
+	imagePath := clientmodels.ClaimPathKey([]any{vcdm.CredentialSubjectKey, "achievement", "image", "id"})
+	imageAttr := func() *clientmodels.AttributeValue {
+		list, err := env.service.List()
+		require.NoError(t, err)
+		require.Len(t, list, 1)
+		for _, a := range list[0].Attributes {
+			if clientmodels.ClaimPathKey(a.ClaimPath) == imagePath {
+				return a.Value
+			}
+		}
+		t.Fatal("no image attribute")
+		return nil
+	}
+
+	requireText(t, imageAttr(), imageURL)
+
+	png, err := base64.StdEncoding.DecodeString(testPNGBase64)
+	require.NoError(t, err)
+	require.NoError(t, env.service.fileStorage.Credentials().LogoManager().Save(imageURL, png, clientmodels.MimeTypePNG))
+	requireImage(t, imageAttr(), testPNGBase64, clientmodels.MimeTypePNG)
 }
