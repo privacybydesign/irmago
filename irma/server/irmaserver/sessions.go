@@ -195,6 +195,8 @@ func (s *memorySessionStore) handleTransaction(memSes *memorySessionData, handle
 	memSes.sessionData = sesAfter
 	memSes.Unlock()
 
+	recordUsage(s.conf, sesBefore.Status, sesAfter)
+
 	// Notify any subscribers of the update. We take the read lock so that the set
 	// of update channels cannot be modified while we iterate it, and, crucially,
 	// so that none of these channels can be closed (which only happens under the
@@ -300,6 +302,11 @@ func (s *memorySessionStore) deleteExpired() {
 		// be swapped concurrently by handleTransaction, so read it under that lock.
 		session.Lock()
 		clientToken := session.ClientToken
+		// A session that expired without anyone reading it afterwards never had its timeout
+		// saved, so it is counted here, from the status that was last saved.
+		if s.conf.UsageCounter != nil && !session.Status.Finished() {
+			s.conf.UsageCounter.Record(session.usageEvent(irma.ServerStatusTimeout))
+		}
 		session.Unlock()
 		delete(s.client, clientToken)
 		delete(s.requestor, token)
@@ -383,7 +390,13 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 		return err
 	}
 
+	// The status before the transaction and the session as saved, to count the session once its
+	// final status is saved. A retry overwrites both.
+	var statusBefore irma.ServerStatus
+	var saved *sessionData
+
 	err := s.client.WatchWithRetry(ctx, []string{key}, func(tx *server.RedisTx) error {
+		saved = nil
 		before, err := tx.Get(ctx, key).Bytes()
 		if err == redis.Nil {
 			return &UnknownSessionError{"", t}
@@ -395,6 +408,7 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 		if err := json.Unmarshal(before, &session); err != nil {
 			return err
 		}
+		statusBefore = session.Status
 
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session received from Redis datastore")
 
@@ -447,12 +461,16 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 				return errConcurrentSessionUpdate
 			}
 		})
+		saved = session
 		return write(tx, after, session.RequestorToken, ttl)
 	})
 	if _, ok := err.(*UnknownSessionError); ok {
 		return err
 	} else if err != nil {
 		return &RedisError{err}
+	}
+	if saved != nil {
+		recordUsage(s.conf, statusBefore, saved)
 	}
 	return nil
 }

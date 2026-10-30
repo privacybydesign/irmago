@@ -195,6 +195,7 @@ func (s *Server) Stop() {
 	}
 	s.scheduler.Stop()
 	s.sessions.stop()
+	s.conf.StopUsageReporting()
 }
 
 // StartSession starts an IRMA session, running the handler on completion, if specified.
