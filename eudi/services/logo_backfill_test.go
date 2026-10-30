@@ -3,12 +3,17 @@ package services
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -314,4 +319,128 @@ func TestLogoBackfiller_SetAllowInsecureHttp(t *testing.T) {
 	b.SetAllowInsecureHttp(true)
 	b.Request("nl")
 	require.Equal(t, 2, <-sweeps)
+}
+
+// storeBackfillBadge stores a VCDM credential whose subject has an Open Badges
+// Image object per URL, as an Open Badges credential unless openBadges is
+// false.
+func storeBackfillBadge(t *testing.T, s *backfillTestStorage, hash string, openBadges bool, urls ...string) {
+	t.Helper()
+	types := []string{"https://www.w3.org/2018/credentials#VerifiableCredential"}
+	if openBadges {
+		types = append(types, vcdm.OpenBadgeCredentialType)
+	}
+	expandedTypes, err := json.Marshal(types)
+	require.NoError(t, err)
+	payload, err := json.Marshal(badgePayload(urls...))
+	require.NoError(t, err)
+	require.NoError(t, db.NewVcdmStore(s.Db()).StoreBatch(&models.VcdmBatch{
+		TypeIdentity:     "https://www.w3.org/ns/credentials/v2 VerifiableCredential OpenBadgeCredential",
+		IssuerIdentifier: "https://issuer.example.com",
+		CredentialIssuer: "https://issuer.example.com",
+		Format:           models.CredentialFormatSdJwtVcdm,
+		Hash:             hash,
+		ProcessedPayload: payload,
+		ExpandedTypes:    expandedTypes,
+		IssuedAt:         time.Now(),
+		BatchSize:        1,
+		RemainingCount:   1,
+		Instances:        []models.VcdmBatchInstance{{RawCredential: []byte("raw")}},
+	}))
+}
+
+func TestBackfillLogos_FillsInMissingClaimImages(t *testing.T) {
+	server, requests := imageHost(t)
+	s := newBackfillTestStorage(t)
+	storeBackfillBadge(t, s, "badge", true, server.URL+"/a.png")
+
+	require.Equal(t, 1, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	exists, err := s.FileSystem().Credentials().LogoManager().Exists(server.URL + "/a.png")
+	require.NoError(t, err)
+	require.True(t, exists, "a claim image lands in the credential logo cache")
+
+	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 1, requests["/a.png"], "a cached image is not downloaded again")
+}
+
+func TestBackfillLogos_DoesNotReplaceACachedClaimImage(t *testing.T) {
+	server, requests := imageHost(t)
+	s := newBackfillTestStorage(t)
+	storeBackfillBadge(t, s, "badge", true, server.URL+"/a.png")
+	cached := append(slices.Clone(testLogoPNG), 0xFF)
+	require.NoError(t, s.FileSystem().Credentials().LogoManager().Save(server.URL+"/a.png", cached, clientmodels.MimeTypePNG))
+
+	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Zero(t, requests["/a.png"])
+	data, _, err := s.FileSystem().Credentials().LogoManager().Get(server.URL + "/a.png")
+	require.NoError(t, err)
+	require.Equal(t, cached, data)
+}
+
+func TestBackfillLogos_NoClaimImagesOutsideAnOpenBadge(t *testing.T) {
+	server, requests := imageHost(t)
+	s := newBackfillTestStorage(t)
+	storeBackfillBadge(t, s, "not-a-badge", false, server.URL+"/a.png")
+
+	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Empty(t, requests)
+}
+
+// A failed download is tried again at the next sweep, also after a 404.
+func TestBackfillLogos_RetriesAFailedClaimImage(t *testing.T) {
+	server, requests := imageHost(t)
+	s := newBackfillTestStorage(t)
+	storeBackfillBadge(t, s, "badge", true, server.URL+"/missing.png")
+
+	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 2, requests["/missing.png"])
+}
+
+// One sweep handles at most maxClaimImageCredentialsPerSweep credentials that
+// miss an image; the next sweep takes the rest. A credential whose images are
+// all cached does not count.
+func TestBackfillLogos_ClaimImageCredentialsPerSweep(t *testing.T) {
+	server, _ := imageHost(t)
+	s := newBackfillTestStorage(t)
+	complete := server.URL + "/complete.png"
+	require.NoError(t, s.FileSystem().Credentials().LogoManager().Save(complete, testLogoPNG, clientmodels.MimeTypePNG))
+	for i := range 5 {
+		storeBackfillBadge(t, s, "complete-"+strconv.Itoa(i), true, complete)
+	}
+	missing := maxClaimImageCredentialsPerSweep + 3
+	for i := range missing {
+		storeBackfillBadge(t, s, "badge-"+strconv.Itoa(i), true, server.URL+"/"+strconv.Itoa(i)+".png")
+	}
+
+	require.Equal(t, maxClaimImageCredentialsPerSweep, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 3, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+}
+
+// The limits per credential hold in a sweep too: an image past the tenth
+// stays out.
+func TestBackfillLogos_ClaimImageLimitsPerCredential(t *testing.T) {
+	server, requests := imageHost(t)
+	s := newBackfillTestStorage(t)
+	var urls []string
+	for i := range 12 {
+		urls = append(urls, server.URL+"/"+strconv.Itoa(i)+".png")
+	}
+	storeBackfillBadge(t, s, "badge", true, urls...)
+
+	require.Equal(t, 10, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Zero(t, requests["/10.png"])
+	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Zero(t, requests["/10.png"], "an image a limit left out is not fetched later either")
+}
+
+func TestBackfillLogos_ClaimImagesStopWhenCancelled(t *testing.T) {
+	server, requests := imageHost(t)
+	s := newBackfillTestStorage(t)
+	storeBackfillBadge(t, s, "badge", true, server.URL+"/a.png")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	require.Equal(t, 0, backfillLogos(ctx, s, server.Client(), "nl", false))
+	require.Empty(t, requests)
 }

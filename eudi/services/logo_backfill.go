@@ -2,13 +2,16 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 )
 
@@ -17,8 +20,10 @@ import (
 //
 // The wallet downloads only the logos that resolve for the locale in use, so
 // switching language leaves stored credentials pointing at logos that were
-// never fetched. Owners Request a sweep on startup and on every locale change,
-// and Close the backfiller before the storage it reads.
+// never fetched. It also fills in the claim images an issuance could not
+// download, which share the credential logo cache. Owners Request a sweep on
+// startup and on every locale change, and Close the backfiller before the
+// storage it reads.
 //
 // One worker, one pending locale. Sweeps therefore never overlap, and a burst
 // of language changes collapses into a sweep for the language the user landed
@@ -112,8 +117,9 @@ func (b *LogoBackfiller) Close() {
 }
 
 // backfillLogos downloads the logos that resolve for the given locale but are
-// missing from the on-disk cache, for every stored credential batch. Returns
-// the number of logos newly cached.
+// missing from the on-disk cache, for every stored credential batch, and the
+// claim images of Open Badges credentials missing from it (backfillClaimImages).
+// Returns the number of logos and images newly cached.
 //
 // Cancelling ctx aborts the sweep: the download in flight returns immediately
 // and the loop stops at the next batch.
@@ -151,6 +157,50 @@ func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Clie
 				return added
 			}
 			added += fetchOnce(seenCredential, credentialLogos, uri)
+		}
+	}
+	return added + backfillClaimImages(ctx, s, httpClient, credentialLogos, allowInsecureHTTP)
+}
+
+// The claim images one sweep fills in at most: for how many credentials, and
+// in how much time. A sweep runs at every start, so a wallet with many badges
+// whose image hosts are down must not spend minutes on the network each time.
+const (
+	maxClaimImageCredentialsPerSweep = 20
+	claimImagesSweepBudget           = 30 * time.Second
+)
+
+// backfillClaimImages downloads the claim images of the stored Open Badges
+// credentials that are missing from the credential logo cache, under the same
+// limits per credential as at issuance (FetchClaimImages): an image a limit
+// left out stays out. Every failure is tried again at the next sweep. Only a
+// credential still missing an image counts towards the credentials a sweep
+// handles. Returns the number of images newly cached.
+func backfillClaimImages(ctx context.Context, s storage.Storage, httpClient *http.Client, credentialLogos filesystem.LogoManager, allowInsecureHTTP bool) int {
+	ctx, cancel := context.WithTimeout(ctx, claimImagesSweepBudget)
+	defer cancel()
+
+	batches, err := db.NewVcdmStore(s.Db()).ListBatches()
+	if err != nil {
+		eudi.Logger.Warnf("failed to load VCDM batches for the claim image backfill: %v", err)
+		return 0
+	}
+	added, handled := 0, 0
+	for _, batch := range batches {
+		if ctx.Err() != nil || handled == maxClaimImageCredentialsPerSweep {
+			break
+		}
+		if !isOpenBadgesBatch(batch) {
+			continue
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(batch.ProcessedPayload, &payload); err != nil {
+			continue
+		}
+		cached, tried := fetchClaimImages(ctx, credentialLogos, httpClient, payload, true, allowInsecureHTTP)
+		added += cached
+		if tried > 0 {
+			handled++
 		}
 	}
 	return added

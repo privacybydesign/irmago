@@ -257,22 +257,36 @@ func FetchClaimImages(
 	openBadges bool,
 	allowInsecureHTTP bool,
 ) int {
-	cached := 0
+	cached, _ := fetchClaimImages(ctx, manager, httpClient, payload, openBadges, allowInsecureHTTP)
+	return cached
+}
+
+// fetchClaimImages is FetchClaimImages, also returning how many downloads it
+// tried: none when every image it may show was cached already.
+func fetchClaimImages(
+	ctx context.Context,
+	manager filesystem.LogoManager,
+	httpClient *http.Client,
+	payload map[string]any,
+	openBadges bool,
+	allowInsecureHTTP bool,
+) (cached, tried int) {
 	used := 0
 	for _, url := range remoteClaimImageURLs(FindClaimImages(payload, openBadges)) {
 		if ctx.Err() != nil {
-			return cached
+			return cached, tried
 		}
 		if data, _, err := manager.Get(url); err == nil {
 			used += len(data)
 		} else {
+			tried++
 			data, mimeType, err := helpers.DownloadRemoteImage(ctx, httpClient, url, allowInsecureHTTP)
 			if err != nil {
 				eudi.Logger.Warnf("failed to download claim image from %q: %v", url, err)
 				continue
 			}
 			if used+len(data) > maxClaimImageBytesPerCredential {
-				return cached
+				return cached, tried
 			}
 			if err := manager.Save(url, data, mimeType); err != nil {
 				eudi.Logger.Warnf("failed to cache claim image from %q: %v", url, err)
@@ -282,8 +296,8 @@ func FetchClaimImages(
 			cached++
 		}
 		if used >= maxClaimImageBytesPerCredential {
-			return cached
+			return cached, tried
 		}
 	}
-	return cached
+	return cached, tried
 }
