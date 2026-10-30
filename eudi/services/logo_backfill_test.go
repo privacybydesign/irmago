@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -20,6 +21,15 @@ type backfillTestStorage struct {
 	db *gorm.DB
 	fs filesystem.FileSystemStorage
 }
+
+// testLogoPNG is a logo the download accepts: an image, not just bytes.
+var testLogoPNG = func() []byte {
+	png, err := base64.StdEncoding.DecodeString(testPNGBase64)
+	if err != nil {
+		panic(err)
+	}
+	return png
+}()
 
 func (s *backfillTestStorage) Db() *gorm.DB                             { return s.db }
 func (s *backfillTestStorage) FileSystem() filesystem.FileSystemStorage { return s.fs }
@@ -84,10 +94,10 @@ func backfillBatch(baseURL string) *models.SdJwtVcBatch {
 
 func TestBackfillLogos_FetchesOnlyMissingResolvingLogos(t *testing.T) {
 	requests := map[string]int{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests[r.URL.Path]++
 		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("logo-bytes"))
+		_, _ = w.Write(testLogoPNG)
 	}))
 	defer server.Close()
 
@@ -97,7 +107,7 @@ func TestBackfillLogos_FetchesOnlyMissingResolvingLogos(t *testing.T) {
 	// Pre-cache the nl issuer logo: the sweep must not re-download it.
 	require.NoError(t, s.FileSystem().Issuers().LogoManager().Save(server.URL+"/issuer-nl.png", []byte("cached"), ""))
 
-	added := backfillLogos(context.Background(), s, server.Client(), "nl")
+	added := backfillLogos(context.Background(), s, server.Client(), "nl", false)
 
 	require.Equal(t, 1, added, "only the missing nl credential logo should be fetched")
 	require.Equal(t, map[string]int{"/cred-nl.png": 1}, requests,
@@ -108,7 +118,7 @@ func TestBackfillLogos_FetchesOnlyMissingResolvingLogos(t *testing.T) {
 	require.True(t, exists, "fetched logo must land in the cache")
 
 	// A second sweep with a warm cache downloads nothing.
-	added = backfillLogos(context.Background(), s, server.Client(), "nl")
+	added = backfillLogos(context.Background(), s, server.Client(), "nl", false)
 	require.Equal(t, 0, added)
 	require.Equal(t, 1, requests["/cred-nl.png"])
 }
@@ -118,10 +128,10 @@ func TestBackfillLogos_FetchesOnlyMissingResolvingLogos(t *testing.T) {
 // both — deduplicating downloads per manager rather than across the whole sweep.
 func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
 	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("logo-bytes"))
+		_, _ = w.Write(testLogoPNG)
 	}))
 	defer server.Close()
 
@@ -142,7 +152,7 @@ func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
 	}
 	require.NoError(t, db.NewSdJwtVcStore(s.Db()).StoreBatch(batch))
 
-	added := backfillLogos(context.Background(), s, server.Client(), "nl")
+	added := backfillLogos(context.Background(), s, server.Client(), "nl", false)
 
 	require.Equal(t, 2, added, "the shared logo must be cached once per manager")
 	require.Equal(t, 2, requests, "one download per manager that needs it")
@@ -157,7 +167,7 @@ func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
 	}
 
 	// Warm cache: nothing further downloaded.
-	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl"))
+	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
 	require.Equal(t, 2, requests)
 }
 
@@ -171,7 +181,7 @@ func TestLogoBackfiller_SupersededRequestsCoalesceIntoOneSweep(t *testing.T) {
 	var mu sync.Mutex
 	requests := map[string]int{}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Hold the first download open so the test can pile requests up behind
 		// a sweep it knows is running.
 		firstDownload.Do(func() {
@@ -184,7 +194,7 @@ func TestLogoBackfiller_SupersededRequestsCoalesceIntoOneSweep(t *testing.T) {
 		mu.Unlock()
 
 		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("logo-bytes"))
+		_, _ = w.Write(testLogoPNG)
 	}))
 	// server.Close waits for live handlers, so the blocked one must be let go
 	// first — including on a failure path that never reaches the release below.
@@ -227,14 +237,14 @@ func TestLogoBackfiller_CloseAbortsAnInFlightDownload(t *testing.T) {
 	entered := make(chan struct{}, 1)
 	release := make(chan struct{})
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case entered <- struct{}{}:
 		default:
 		}
 		<-release
 		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("logo-bytes"))
+		_, _ = w.Write(testLogoPNG)
 	}))
 	defer server.Close()
 	defer close(release)
@@ -267,4 +277,41 @@ func TestLogoBackfiller_CloseAbortsAnInFlightDownload(t *testing.T) {
 	exists, err := s.FileSystem().Issuers().LogoManager().Exists(server.URL + "/issuer-nl.png")
 	require.NoError(t, err)
 	require.False(t, exists, "an aborted download must not leave a partial logo cached")
+}
+
+// A logo over plain http is fetched only in developer mode, as issuance only
+// talks plain http then.
+func TestBackfillLogos_PlainHTTPOnlyInDeveloperMode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(testLogoPNG)
+	}))
+	defer server.Close()
+
+	s := newBackfillTestStorage(t)
+	storeBackfillBatch(t, s, server.URL)
+
+	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 2, backfillLogos(context.Background(), s, server.Client(), "nl", true),
+		"the nl issuer and credential logos, over plain http")
+}
+
+// The backfiller sweeps with the developer mode setting it was last given.
+func TestLogoBackfiller_SetAllowInsecureHttp(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(testLogoPNG)
+	}))
+	defer server.Close()
+
+	s := newBackfillTestStorage(t)
+	storeBackfillBatch(t, s, server.URL)
+	sweeps := make(chan int, 4)
+	b := NewLogoBackfiller(s, server.Client(), func(cached int) { sweeps <- cached })
+	defer b.Close()
+
+	b.Request("nl")
+	require.Equal(t, 0, <-sweeps, "plain http is refused outside developer mode")
+
+	b.SetAllowInsecureHttp(true)
+	b.Request("nl")
+	require.Equal(t, 2, <-sweeps)
 }

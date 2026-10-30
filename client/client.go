@@ -330,6 +330,7 @@ func New(
 			client.handler.CredentialsChanged()
 		}
 	})
+	client.logoBackfill.SetAllowInsecureHttp(developerMode)
 
 	// Startup backfill: fetch logos that resolve for the current locale but
 	// are missing from the cache (credentials issued before the wallet became
@@ -807,6 +808,7 @@ func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
 	// already set at startup.
 	setDeveloperModeOnConfiguration(client.openid4vpClient.Configuration, prefs.DeveloperMode)
 	setDeveloperModeOnClients(client.openid4vciClient, client.didValidator, prefs.DeveloperMode)
+	client.logoBackfill.SetAllowInsecureHttp(prefs.DeveloperMode)
 
 	if !developerModeChanged {
 		return

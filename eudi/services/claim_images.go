@@ -2,11 +2,11 @@ package services
 
 import (
 	"encoding/base64"
-	"net/url"
 	"slices"
 	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
 
@@ -161,8 +161,8 @@ func claimImageValue(value *clientmodels.AttributeValue, downloaded map[string][
 	}
 	var data []byte
 	if isImageDataURI(*value.String) {
-		decoded, ok := decodeDataURI(*value.String)
-		if !ok {
+		decoded, err := helpers.DecodeDataURI(*value.String)
+		if err != nil {
 			return value
 		}
 		data = decoded
@@ -180,28 +180,6 @@ func claimImageValue(value *clientmodels.AttributeValue, downloaded map[string][
 		MimeType:    &mimeType,
 		DisplayHint: value.DisplayHint,
 	}
-}
-
-// decodeDataURI returns the bytes a data URI holds (RFC 2397): base64 when its
-// media type ends in ";base64", percent-encoded text otherwise. The caller has
-// checked that uri starts with "data:".
-func decodeDataURI(uri string) ([]byte, bool) {
-	meta, data, ok := strings.Cut(uri[len("data:"):], ",")
-	if !ok {
-		return nil, false
-	}
-	if strings.HasSuffix(strings.ToLower(meta), ";base64") {
-		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(data))
-		if err != nil {
-			return nil, false
-		}
-		return decoded, true
-	}
-	decoded, err := url.PathUnescape(data)
-	if err != nil {
-		return nil, false
-	}
-	return []byte(decoded), true
 }
 
 // payloadMap returns a processed SD-JWT payload as the map FindClaimImages

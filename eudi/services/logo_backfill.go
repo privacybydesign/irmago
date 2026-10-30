@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"sync/atomic"
 
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
@@ -26,6 +27,10 @@ type LogoBackfiller struct {
 	mu        sync.Mutex
 	requested string        // locale for the next sweep; a newer one overwrites it
 	wake      chan struct{} // cap 1, sent to non-blockingly, so Request never waits
+
+	// allowInsecureHTTP lets a sweep download logos over plain http, as
+	// developer mode lets issuance do.
+	allowInsecureHTTP atomic.Bool
 
 	stop    context.CancelFunc
 	stopped chan struct{}
@@ -65,7 +70,7 @@ func NewLogoBackfiller(s storage.Storage, httpClient *http.Client, onSweepDone f
 				continue // leftover wake from a request already taken with a newer one
 			}
 
-			cached := backfillLogos(ctx, s, httpClient, locale)
+			cached := backfillLogos(ctx, s, httpClient, locale, b.allowInsecureHTTP.Load())
 
 			// A cut-short sweep reports nothing: the owner is shutting down, and
 			// the last thing it needs is a callback into a UI that is going away.
@@ -76,6 +81,12 @@ func NewLogoBackfiller(s storage.Storage, httpClient *http.Client, onSweepDone f
 	}()
 
 	return b
+}
+
+// SetAllowInsecureHttp lets the sweeps download logos over plain http, for
+// developer mode, or stops them from doing so.
+func (b *LogoBackfiller) SetAllowInsecureHttp(allow bool) {
+	b.allowInsecureHTTP.Store(allow)
 }
 
 // Request asks for a sweep of the logos that resolve for locale. It returns
@@ -106,7 +117,7 @@ func (b *LogoBackfiller) Close() {
 //
 // Cancelling ctx aborts the sweep: the download in flight returns immediately
 // and the loop stops at the next batch.
-func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Client, locale string) int {
+func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Client, locale string, allowInsecureHTTP bool) int {
 	credentialLogos := s.FileSystem().Credentials().LogoManager()
 	issuerLogos := s.FileSystem().Issuers().LogoManager()
 
@@ -123,7 +134,7 @@ func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Clie
 			return 0
 		}
 		seen[uri] = struct{}{}
-		return FetchLogoIfMissing(ctx, manager, httpClient, uri)
+		return FetchLogoIfMissing(ctx, manager, httpClient, uri, allowInsecureHTTP)
 	}
 
 	added := 0
@@ -149,14 +160,14 @@ func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Clie
 // the logo is already cached. Returns 1 when a logo was newly cached, 0
 // otherwise. An Exists error is treated as a miss: a redundant download beats
 // permanently skipping the logo.
-func FetchLogoIfMissing(ctx context.Context, manager filesystem.LogoManager, httpClient *http.Client, uri string) int {
+func FetchLogoIfMissing(ctx context.Context, manager filesystem.LogoManager, httpClient *http.Client, uri string, allowInsecureHTTP bool) int {
 	if uri == "" {
 		return 0
 	}
 	if exists, err := manager.Exists(uri); err == nil && exists {
 		return 0
 	}
-	data, mimeType, err := helpers.DownloadRemoteImage(ctx, httpClient, uri)
+	data, mimeType, err := helpers.DownloadRemoteImage(ctx, httpClient, uri, allowInsecureHTTP)
 	if err != nil {
 		eudi.Logger.Warnf("failed to download logo from %q: %v", uri, err)
 		return 0
