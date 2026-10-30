@@ -131,8 +131,8 @@ func testOpenBadgesClaimImages(t *testing.T) {
 		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
 	})
 
-	// The permission screen: the data URI and the two images that download are
-	// pictures, the one that does not is its URL.
+	// The permission screen: the data URI and the two Images that download are
+	// pictures, the one that does not is its URL, each Image one attribute.
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 	require.Len(t, session.OfferedCredentials, 1)
@@ -190,17 +190,24 @@ func testOpenBadgesClaimImages(t *testing.T) {
 }
 
 // requireOpenBadgeImages checks the claim images of the test badge among
-// attrs: the photo and two Image ids are pictures of their type, under their
-// own path, and the Image whose URL does not resolve is that URL.
+// attrs: the photo is a picture under its own path, each Image object is one
+// attribute at its own path, its picture, and the Image whose URL does not
+// resolve is its URL. No Image shows its id or type apart.
 func requireOpenBadgeImages(t *testing.T, attrs []clientmodels.Attribute) {
 	t.Helper()
 	requireImageAttr(t, attrs, []any{"credentialSubject", "photo"}, clientmodels.MimeTypePNG)
-	requireImageAttr(t, attrs, []any{"credentialSubject", "achievement", "image", "id"}, clientmodels.MimeTypePNG)
-	requireImageAttr(t, attrs, []any{"credentialSubject", "logo", "id"}, clientmodels.MimeTypeSVG)
+	requireImageAttr(t, attrs, []any{"credentialSubject", "achievement", "image"}, clientmodels.MimeTypePNG)
+	requireImageAttr(t, attrs, []any{"credentialSubject", "logo"}, clientmodels.MimeTypeSVG)
 
-	broken := requireAttrAt(t, attrs, []any{"credentialSubject", "broken", "id"})
+	broken := requireAttrAt(t, attrs, []any{"credentialSubject", "broken"})
 	require.Equal(t, clientmodels.AttributeType_String, broken.Value.Type)
 	require.Equal(t, missingImageURL, *broken.Value.String)
+
+	for _, a := range attrs {
+		if last, ok := a.ClaimPath[len(a.ClaimPath)-1].(string); ok && (last == "id" || last == "type") && len(a.ClaimPath) > 2 {
+			t.Fatalf("an Image shows %v apart", a.ClaimPath)
+		}
+	}
 }
 
 func requireImageAttr(t *testing.T, attrs []clientmodels.Attribute, path []any, mimeType string) {

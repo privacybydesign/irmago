@@ -8,6 +8,7 @@ package sdjwtvcdm_dcql
 import (
 	"encoding/base64"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -800,4 +801,50 @@ func TestVcdmClaimImage_CachedOpenBadgesImageOnlyItsIdRequested(t *testing.T) {
 	require.NoError(t, err)
 	image := view["credentialSubject"].(map[string]any)["achievement"].(map[string]any)["image"].(map[string]any)
 	assert.Equal(t, map[string]any{"id": imageURL}, image)
+}
+
+// Asked for whole, an Open Badges Image is one attribute on the disclosure
+// screen and in the log, at the object's path, which the app then sends back:
+// it discloses the id and the type.
+func TestVcdmClaimImage_WholeImageIsOneAttribute(t *testing.T) {
+	h, ts := storeBadgeWithSeparateImageDisclosures(t, "hash-vcdm-badge")
+	png, err := base64.StdEncoding.DecodeString(testPhotoBase64)
+	require.NoError(t, err)
+	require.NoError(t, ts.FileSystem().Credentials().LogoManager().Save(testBadgeImageURL, png, clientmodels.MimeTypePNG))
+	imagePath := []any{"credentialSubject", "achievement", "image"}
+
+	requireOneImageAttribute := func(attrs []clientmodels.Attribute) {
+		t.Helper()
+		var image *clientmodels.Attribute
+		for i, a := range attrs {
+			key := clientmodels.ClaimPathKey(a.ClaimPath)
+			require.NotEqual(t, clientmodels.ClaimPathKey(append(slices.Clone(imagePath), "id")), key, "no separate id")
+			require.NotEqual(t, clientmodels.ClaimPathKey(append(slices.Clone(imagePath), "type")), key, "no separate type")
+			if key == clientmodels.ClaimPathKey(imagePath) {
+				image = &attrs[i]
+			}
+		}
+		require.NotNil(t, image, "one attribute at the Image's path")
+		require.Equal(t, clientmodels.AttributeType_Base64Image, image.Value.Type)
+		require.Equal(t, testPhotoBase64, *image.Value.Base64Image)
+	}
+
+	result, err := h.FindCandidates(parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "vc+sd-jwt",
+		"meta": {"vct_values": ["`+academicVcdmType+`"]},
+		"claims": [{"path": ["credentialSubject", "achievement", "image"]}]
+	}`))
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+	requireOneImageAttribute(result.OwnedCandidates[0].Attributes)
+
+	prepared, err := h.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:              "q1",
+		CredentialHash:       "hash-vcdm-badge",
+		ClaimPaths:           [][]any{imagePath},
+		RequireHolderBinding: true,
+	}}, "nonce-1", "verifier-1")
+	require.NoError(t, err)
+	requireOneImageAttribute(prepared.CredentialLogs[0].Attributes)
 }

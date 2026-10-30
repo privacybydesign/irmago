@@ -25,6 +25,11 @@ type ClaimImage struct {
 	// Source is the leaf's value: a data:image/ URI, or the URL of an image
 	// to download.
 	Source string
+
+	// Object is the path of the Open Badges Image object the image is the id
+	// of, nil for a data URI claim of its own. Shown whole, the object is one
+	// attribute: its image.
+	Object []any
 }
 
 // IsDataURI reports whether the image is in the claim itself, so it needs no
@@ -64,7 +69,7 @@ func FindClaimImages(payload map[string]any, openBadges bool) []ClaimImage {
 		case map[string]any:
 			if openBadges {
 				if source, ok := openBadgesImageSource(v); ok {
-					images = append(images, ClaimImage{Path: childPath(path, "id"), Source: source})
+					images = append(images, ClaimImage{Path: childPath(path, "id"), Source: source, Object: slices.Clone(path)})
 					// Its other fields, such as its caption, are text.
 					return
 				}
@@ -122,13 +127,19 @@ func childPath(path []any, segment any) []any {
 }
 
 // ShowClaimImages turns the attributes that are claim images in payload
-// (FindClaimImages) into base64_image values, in place, and returns attrs. A
+// (FindClaimImages) into base64_image values and returns the attributes. A
 // data URI is decoded from the attribute itself; a URL takes its image from
 // downloaded, which maps a URL to the bytes the wallet downloaded from it, and
-// stays text when it has none there. An image
-// whose bytes are no PNG, JPEG, GIF, WebP or SVG stays text too. Only the
-// value changes, not the path, so what is shown is still what is disclosed and
-// logged.
+// stays text when it has none there. An image whose bytes are no PNG, JPEG,
+// GIF, WebP or SVG stays text too.
+//
+// An Open Badges Image object whose values are all among attrs becomes one
+// attribute at the object's path, its image, with the object's caption as its
+// description, rather than a section with an id and a type. That attribute is
+// what the user discloses, and selecting an object discloses everything in it,
+// so it is shown only when all of it would be sent. An Image whose id is shown
+// without the rest, as when a verifier asks for the id alone, keeps its id
+// attribute, which becomes the image.
 //
 // payload must be the credential's full processed payload, not a disclosure's
 // view of it: a view may hold an Image's id without the type that makes it one.
@@ -142,6 +153,11 @@ func ShowClaimImages(
 	if len(images) == 0 {
 		return attrs
 	}
+	for _, image := range images {
+		if image.Object != nil {
+			attrs = collapseImageObject(attrs, payload, image, downloaded)
+		}
+	}
 	isImage := make(map[string]struct{}, len(images))
 	for _, image := range images {
 		isImage[clientmodels.ClaimPathKey(image.Path)] = struct{}{}
@@ -154,6 +170,64 @@ func ShowClaimImages(
 		attrs[i].RequestedValue = claimImageValue(attrs[i].RequestedValue, downloaded)
 	}
 	return attrs
+}
+
+// collapseImageObject replaces the attributes of an Open Badges Image object,
+// and the header of the object when attrs has one, by one attribute at the
+// object's path that holds its image, at the place of the first of them. It
+// leaves attrs as they are unless every value of the object is among them.
+func collapseImageObject(attrs []clientmodels.Attribute, payload map[string]any, image ClaimImage, downloaded map[string][]byte) []clientmodels.Attribute {
+	index := make(map[string]int, len(attrs))
+	for i, attr := range attrs {
+		index[clientmodels.ClaimPathKey(attr.ClaimPath)] = i
+	}
+	idIndex, ok := index[clientmodels.ClaimPathKey(image.Path)]
+	if !ok {
+		return attrs
+	}
+	replaced := map[int]struct{}{}
+	for _, leaf := range LeafPaths(payload, image.Object) {
+		i, ok := index[clientmodels.ClaimPathKey(leaf)]
+		if !ok {
+			return attrs
+		}
+		replaced[i] = struct{}{}
+	}
+
+	id := attrs[idIndex]
+	collapsed := clientmodels.Attribute{
+		ClaimPath:      slices.Clone(image.Object),
+		Value:          claimImageValue(id.Value, downloaded),
+		RequestedValue: claimImageValue(id.RequestedValue, downloaded),
+		IntentToRetain: id.IntentToRetain,
+	}
+	// The issuer's name for the object, when its metadata gives one, names the
+	// image; without it the app names it after its key, "image".
+	if header, ok := index[clientmodels.ClaimPathKey(image.Object)]; ok && attrs[header].Value == nil {
+		replaced[header] = struct{}{}
+		collapsed.DisplayName = attrs[header].DisplayName
+		collapsed.Description = attrs[header].Description
+	}
+	if object, ok := valueAtPath(payload, image.Object); ok {
+		if caption, ok := object.(map[string]any)["caption"].(string); ok && caption != "" {
+			collapsed.Description = &caption
+		}
+	}
+
+	first := len(attrs)
+	for i := range replaced {
+		first = min(first, i)
+	}
+	result := make([]clientmodels.Attribute, 0, len(attrs)-len(replaced)+1)
+	for i, attr := range attrs {
+		if i == first {
+			result = append(result, collapsed)
+		}
+		if _, ok := replaced[i]; !ok {
+			result = append(result, attr)
+		}
+	}
+	return result
 }
 
 // claimImageValue returns the base64_image value for a claim image's text
