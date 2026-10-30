@@ -600,6 +600,7 @@ func unobtainableDescriptor(docType string, query dcql.CredentialQuery) *clientm
 	return &clientmodels.CredentialDescriptor{
 		CredentialId: docType,
 		Attributes:   attrs,
+		Format:       clientmodels.Format_MsoMdoc,
 	}
 }
 

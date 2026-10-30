@@ -230,12 +230,12 @@ func (h *Engine) composeUnobtainableDescriptor(query dcql.CredentialQuery) *clie
 			eudi.Logger.Warnf("failed to fetch VCT type metadata from %q: %v", vct, err)
 			continue
 		}
-		return buildUnobtainableDescriptor(vct, vctMeta, h.fetchIssuerMetadata(ctx, vctMeta.IssuerURL), query, h.currentLocale.Get())
+		return buildUnobtainableDescriptor(vct, vctMeta, h.fetchIssuerMetadata(ctx, vctMeta.IssuerURL), query, h.profile.ClientFormat, h.currentLocale.Get())
 	}
 
 	// All VCT fetches failed: emit a URL-only descriptor for the first VCT so
 	// the user still sees what was asked for.
-	return buildUnobtainableDescriptor(vctValues[0], nil, nil, query, h.currentLocale.Get())
+	return buildUnobtainableDescriptor(vctValues[0], nil, nil, query, h.profile.ClientFormat, h.currentLocale.Get())
 }
 
 func (h *Engine) fetchIssuerMetadata(ctx context.Context, issuerURL string) *typemetadata.IssuerMetadata {
@@ -260,6 +260,7 @@ func buildUnobtainableDescriptor(
 	vctMeta *typemetadata.VctTypeMetadata,
 	issuerMeta *typemetadata.IssuerMetadata,
 	query dcql.CredentialQuery,
+	format clientmodels.CredentialFormat,
 	locale string,
 ) *clientmodels.CredentialDescriptor {
 	desc := &clientmodels.CredentialDescriptor{
@@ -267,6 +268,7 @@ func buildUnobtainableDescriptor(
 		Name:         vctName(vctMeta, locale),
 		Issuer:       issuerTrustedParty(issuerMeta, locale),
 		Attributes:   queryAttributes(query, vctMeta, locale),
+		Format:       format,
 	}
 	return desc
 }

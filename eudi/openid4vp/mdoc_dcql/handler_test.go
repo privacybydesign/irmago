@@ -223,6 +223,8 @@ func TestFindCandidatesDescribesUnownedDocType(t *testing.T) {
 	require.Empty(t, result.OwnedCandidates)
 	require.Len(t, result.ObtainableDescriptors, 1)
 	require.Equal(t, "eu.europa.ec.eudi.pid.1", result.ObtainableDescriptors[0].CredentialId)
+	// The app reads the first claim path segment as a namespace only for mso_mdoc.
+	require.Equal(t, clientmodels.Format_MsoMdoc, result.ObtainableDescriptors[0].Format)
 }
 
 func TestFindCandidatesSkipsCredentialMissingRequestedClaim(t *testing.T) {

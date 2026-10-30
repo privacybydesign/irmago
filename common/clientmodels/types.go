@@ -294,6 +294,11 @@ type CredentialDescriptor struct {
 	Image        *Image       `json:"image,omitempty"`
 	Attributes   []Attribute  `json:"attributes"`
 	IssueURL     *string      `json:"issue_url,omitempty"`
+	// Format is the format the described credential is offered or requested
+	// in, which tells the app how to read the attributes' claim paths: those
+	// of an mso_mdoc start with a namespace. Empty when the descriptor is not
+	// tied to one format, as for an IRMA credential type.
+	Format CredentialFormat `json:"format,omitempty"`
 }
 
 // CredentialStoreItem is a credential descriptor with FAQ information.

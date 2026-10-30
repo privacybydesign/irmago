@@ -417,6 +417,7 @@ func (client *Client) convertToCredentialInfoList(
 				},
 				Attributes: convertClaimsToAttributes(config.CredentialMetadata.Claims, locale),
 				Image:      image,
+				Format:     clientmodels.CredentialFormat(config.Format),
 			})
 		}
 	}

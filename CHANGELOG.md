@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - An mdoc's MSO can now carry a `status.status_list` reference.
   - As for SD-JWT VC, issuance refuses an mdoc whose status is not valid or cannot be verified, the status refresh sweep keeps each mdoc's status up to date, and a revoked mdoc is shown as revoked in the credential list, on the disclosure screen and in the log.
 - Status List Tokens can now be CWT-encoded as well as JWT-encoded; the wallet accepts either, for both formats. A CWT token is only believed when its x5chain verifies against the trusted issuers.
+- `CredentialDescriptor` has a new optional `format` field: the format a credential is offered in over OpenID4VCI, or requested in over OpenID4VP when the wallet does not hold it yet (`mso_mdoc`, `dc+sd-jwt` or `vc+sd-jwt`). Clients can use it to read the attributes' claim paths, which start with a namespace for `mso_mdoc`. Descriptors from the IRMA credential store and from IRMA sessions, which are not tied to one format, leave it out ([privacybydesign/irmamobile#790](https://github.com/privacybydesign/irmamobile/issues/790))
 
 ### Changed
 - OpenID4VCI issuance now refuses a batch whose instances are not instances of one credential. The wallet shows and logs a batch as one credential but sends a different instance each time, so an instance with other values would show the user one thing and send the verifier another.

@@ -479,6 +479,7 @@ func (h *Handler) buildCredentialDescriptor(credTypeId irma.CredentialTypeIdenti
 		Image:        clientmodels.ImageFromFile(credType.Logo(h.config)),
 		Attributes:   attributes,
 		IssueURL:     issueURL,
+		Format:       clientmodels.Format_SdJwtVc,
 	}, nil
 }
 
