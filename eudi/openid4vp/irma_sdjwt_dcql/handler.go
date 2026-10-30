@@ -587,6 +587,7 @@ func buildAttributeValue(displayHint string, rawValue *string) *clientmodels.Att
 	switch attrType {
 	case clientmodels.AttributeType_Base64Image:
 		val.Base64Image = rawValue
+		val.SetImageMimeType()
 	case clientmodels.AttributeType_Bool:
 		switch strings.ToLower(*rawValue) {
 		case "yes":

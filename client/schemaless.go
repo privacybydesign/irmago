@@ -440,6 +440,7 @@ func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString) *c
 	switch attrType {
 	case clientmodels.AttributeType_Base64Image:
 		val.Base64Image = &s
+		val.SetImageMimeType()
 	case clientmodels.AttributeType_Bool:
 		switch strings.ToLower(s) {
 		case "yes":
