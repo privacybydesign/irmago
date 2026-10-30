@@ -166,11 +166,7 @@ func (r *Reporter) Stop() {
 
 func (r *Reporter) run() {
 	defer close(r.done)
-	tick := r.settings.Interval
-	if tick > 10*time.Second {
-		tick = 10 * time.Second
-	}
-	ticker := time.NewTicker(tick)
+	ticker := time.NewTicker(min(r.settings.Interval, 10*time.Second))
 	defer ticker.Stop()
 	for {
 		select {
