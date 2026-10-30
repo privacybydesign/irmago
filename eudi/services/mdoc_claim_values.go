@@ -192,7 +192,9 @@ func promoteMdocDataURI(value *clientmodels.AttributeValue) *clientmodels.Attrib
 		return value
 	}
 	if strings.HasPrefix(mime, "image/") {
-		return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Base64Image, Base64Image: &payload}
+		// The MIME type the app is told comes from the image, not from the
+		// data URI, which only records how the bytes were classified.
+		return clientmodels.NewBase64ImageValue(payload)
 	}
 	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &payload}
 }

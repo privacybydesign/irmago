@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -152,6 +153,7 @@ func (h *Engine) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQue
 		if attributes == nil {
 			continue
 		}
+		attributes = h.showClaimImages(attributes, batch)
 
 		image := h.credentialImage(batch, locale)
 
@@ -230,12 +232,12 @@ func (h *Engine) composeUnobtainableDescriptor(query dcql.CredentialQuery) *clie
 			eudi.Logger.Warnf("failed to fetch VCT type metadata from %q: %v", vct, err)
 			continue
 		}
-		return buildUnobtainableDescriptor(vct, vctMeta, h.fetchIssuerMetadata(ctx, vctMeta.IssuerURL), query, h.currentLocale.Get())
+		return buildUnobtainableDescriptor(vct, vctMeta, h.fetchIssuerMetadata(ctx, vctMeta.IssuerURL), query, h.profile.ClientFormat, h.currentLocale.Get())
 	}
 
 	// All VCT fetches failed: emit a URL-only descriptor for the first VCT so
 	// the user still sees what was asked for.
-	return buildUnobtainableDescriptor(vctValues[0], nil, nil, query, h.currentLocale.Get())
+	return buildUnobtainableDescriptor(vctValues[0], nil, nil, query, h.profile.ClientFormat, h.currentLocale.Get())
 }
 
 func (h *Engine) fetchIssuerMetadata(ctx context.Context, issuerURL string) *typemetadata.IssuerMetadata {
@@ -260,6 +262,7 @@ func buildUnobtainableDescriptor(
 	vctMeta *typemetadata.VctTypeMetadata,
 	issuerMeta *typemetadata.IssuerMetadata,
 	query dcql.CredentialQuery,
+	format clientmodels.CredentialFormat,
 	locale string,
 ) *clientmodels.CredentialDescriptor {
 	desc := &clientmodels.CredentialDescriptor{
@@ -267,6 +270,7 @@ func buildUnobtainableDescriptor(
 		Name:         vctName(vctMeta, locale),
 		Issuer:       issuerTrustedParty(issuerMeta, locale),
 		Attributes:   queryAttributes(query, vctMeta, locale),
+		Format:       format,
 	}
 	return desc
 }
@@ -409,6 +413,29 @@ func (h *Engine) batchMatchesTypeConstraint(batch *Batch, typeValues [][]string,
 	return true // §6.1: empty meta matches any credential of the format
 }
 
+// selectedLeafPaths expands each selected claim path that points to an object
+// or an array to the paths of the values under it: OpenID4VP §7.1 has such a
+// path select the claim with everything under it, and the user saw it shown
+// whole. sdjwt.CreatePresentation includes only the disclosures on the way to
+// the node a path ends at, so without this a selectively disclosable value
+// inside the object would not be sent. A path to a value stays as it is, and so
+// does one the credential has no claim at.
+func selectedLeafPaths(batch *Batch, claimPaths [][]any) [][]any {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &payload); err != nil {
+		return claimPaths
+	}
+	var expanded [][]any
+	for _, path := range claimPaths {
+		leaves := services.LeafPaths(payload, path)
+		if len(leaves) == 0 {
+			leaves = [][]any{path}
+		}
+		expanded = append(expanded, leaves...)
+	}
+	return expanded
+}
+
 func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
@@ -434,8 +461,9 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 		}
 
 		rawSdJwt := sdjwt.SdJwt(instance.RawCredential)
+		claimPaths := selectedLeafPaths(batch, sel.ClaimPaths)
 
-		selected, err := sdjwt.CreatePresentation(rawSdJwt, sel.ClaimPaths)
+		selected, err := sdjwt.CreatePresentation(rawSdJwt, claimPaths)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
@@ -461,7 +489,7 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 			}
 		}
 
-		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, instance, sel.ClaimPaths))
+		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, instance, claimPaths))
 	}
 
 	return result, nil
@@ -939,6 +967,7 @@ func (h *Engine) buildLogCredential(
 	metadataOrder := buildMetadataOrder(batch)
 	requestedKeys := make(map[string]struct{})
 	attrs = flattenPathsForDisplay(attrs, requestedKeys, batch, &resolved, pairs, metadataOrder, locale)
+	attrs = h.showClaimImages(attrs, batch)
 
 	log := clientmodels.LogCredential{
 		CredentialId: batch.CredentialType,
@@ -1285,4 +1314,19 @@ func claimPathMatchesMetadataPath(claimPath []any, metadataPath []any) bool {
 		}
 	}
 	return true
+}
+
+// showClaimImages turns the batch's claim images among attrs into pictures
+// (services.ShowClaimImages), with the images behind a URL from the credential
+// logo cache, which they share with the credential logos. What is an image is
+// read off the batch's whole processed payload: a disclosure's view of it may
+// hold an Open Badges Image's id without the type that makes it one.
+func (h *Engine) showClaimImages(attrs []clientmodels.Attribute, batch *Batch) []clientmodels.Attribute {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &payload); err != nil {
+		return attrs
+	}
+	openBadges := vcdm.IsOpenBadgesCredential(batch.ExpandedTypes)
+	cached := services.CachedClaimImages(h.storage.FileSystem().Credentials().LogoManager(), payload, openBadges)
+	return services.ShowClaimImages(attrs, payload, openBadges, cached)
 }

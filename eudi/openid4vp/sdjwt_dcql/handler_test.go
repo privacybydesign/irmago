@@ -817,7 +817,12 @@ func (s *stubIssuerFetcher) Fetch(_ context.Context, issuerURL string) (*typemet
 }
 
 func newHandlerWithFetchers(vct typemetadata.VctFetcher, issuer typemetadata.IssuerFetcher) *Engine {
-	return &Engine{vctFetcher: vct, issuerFetcher: issuer, currentLocale: clientmodels.NewCurrentLocale("en")}
+	return &Engine{
+		vctFetcher:    vct,
+		issuerFetcher: issuer,
+		currentLocale: clientmodels.NewCurrentLocale("en"),
+		profile:       Profile{ClientFormat: clientmodels.Format_SdJwtVc},
+	}
 }
 
 func TestComposeUnobtainableDescriptor_VctFetchFails_UrlOnlyFallback(t *testing.T) {
@@ -838,6 +843,7 @@ func TestComposeUnobtainableDescriptor_VctFetchFails_UrlOnlyFallback(t *testing.
 	assert.Empty(t, desc.Name, "no Name when VCT fetch fails")
 	assert.Empty(t, desc.Issuer.Id, "no Issuer when VCT fetch fails")
 	assert.Nil(t, desc.IssueURL, "IssueURL signals unobtainable")
+	assert.Equal(t, clientmodels.Format_SdJwtVc, desc.Format, "the engine's format")
 	require.Len(t, desc.Attributes, 1)
 	assert.Equal(t, []any{"email"}, desc.Attributes[0].ClaimPath)
 }

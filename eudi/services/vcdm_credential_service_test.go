@@ -2,9 +2,13 @@ package services
 
 import (
 	"crypto"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,7 +106,16 @@ func newRawVcdmWithContexts(t *testing.T, contexts []string, subjectClaims ...*s
 	return string(built)
 }
 
+// parse parses raw and checks it as a batch of one, as issuance does, which
+// also expands its types.
 func (e *vcdmTestEnv) parse(t *testing.T, raw string) *ParsedCredential {
+	t.Helper()
+	parsed := e.parseUnchecked(t, raw)
+	require.NoError(t, e.parser.CheckBatch([]*ParsedCredential{parsed}))
+	return parsed
+}
+
+func (e *vcdmTestEnv) parseUnchecked(t *testing.T, raw string) *ParsedCredential {
 	t.Helper()
 	parsed, err := e.parser.ParseAndVerify(raw, testVcdmIssuer, false)
 	require.NoError(t, err)
@@ -202,15 +215,46 @@ func TestSdJwtVcdmStore_KeyBindingMismatch(t *testing.T) {
 	assert.Empty(t, batches)
 }
 
-// A credential whose types cannot be expanded, because one of its contexts
-// cannot be fetched, is refused rather than stored where no type_values query
-// would find it, and the holder binding key made for it is deleted.
-func TestSdJwtVcdmStore_UnexpandableTypesRefused(t *testing.T) {
+// A credential whose types cannot be expanded, because a context it names
+// cannot be fetched, is refused before the permission screen, rather than
+// stored where no type_values query would find it.
+func TestSdJwtVcdmCheckBatch_UnexpandableTypesRefused(t *testing.T) {
 	env := newVcdmTestEnv(t)
-	env.service.contextClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+	env.parser.(*sdJwtVcdmCredentialFormatParser).contextClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("context host unreachable")
 	})}
-	parsed := env.parse(t, newRawVcdmWithContexts(t, []string{vcdm.ContextV2, "https://contexts.example/unreachable"}))
+	parsed := env.parseUnchecked(t, newRawVcdmWithContexts(t, []string{vcdm.ContextV2, "https://contexts.example/unreachable"}))
+
+	err := env.parser.CheckBatch([]*ParsedCredential{parsed})
+	require.ErrorContains(t, err, "context host unreachable")
+	require.Empty(t, parsed.ExpandedTypes)
+}
+
+// The batch check expands the types, fetching the contexts the credential
+// names.
+func TestSdJwtVcdmCheckBatch_ExpandsTheTypes(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	requests := 0
+	env.parser.(*sdJwtVcdmCredentialFormatParser).contextClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/ld+json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"@context": {"ExampleCredential": "https://contexts.example/vocab#ExampleCredential"}}`)),
+		}, nil
+	})}
+	parsed := env.parseUnchecked(t, newRawVcdmWithContexts(t, []string{vcdm.ContextV2, "https://contexts.example/v1"}))
+
+	require.NoError(t, env.parser.CheckBatch([]*ParsedCredential{parsed}))
+	require.Equal(t, []string{"https://www.w3.org/2018/credentials#VerifiableCredential", "https://contexts.example/vocab#ExampleCredential"}, parsed.ExpandedTypes)
+	require.Equal(t, 1, requests)
+}
+
+// A batch whose types were not expanded is refused, and the holder binding key
+// made for it is deleted.
+func TestSdJwtVcdmStore_UnexpandedTypesRefused(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	parsed := env.parseUnchecked(t, newRawVcdm(t))
 
 	thumbprintBytes, err := testdata.ParseHolderPubJwk().Thumbprint(crypto.SHA256)
 	require.NoError(t, err)
@@ -225,7 +269,7 @@ func TestSdJwtVcdmStore_UnexpandableTypesRefused(t *testing.T) {
 
 	err = env.service.Store([]*ParsedCredential{parsed}, "config-id", env.issuerMetadata(),
 		true, []models.PublicHolderBindingKey{{ID: key.ID, PublicKeyThumbprint: &thumbprint}})
-	require.ErrorContains(t, err, "context host unreachable")
+	require.ErrorContains(t, err, "not expanded")
 
 	batches, err := env.store.ListBatches()
 	require.NoError(t, err)
@@ -393,3 +437,64 @@ func TestVcdmIssuanceValidity(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// A data:image/ claim in credentialSubject is listed as a picture, under its
+// own path.
+func TestSdJwtVcdmList_DataURIClaimIsAnImage(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	parsed := env.parse(t, newRawVcdm(t, sdjwt.SdClaim("given_name", "Alice"), sdjwt.SdClaim("photo", testImageDataURI)))
+	require.NoError(t, env.service.Store([]*ParsedCredential{parsed}, "config-id", env.issuerMetadata(), false, nil))
+
+	list, err := env.service.List()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+
+	byPath := map[string]clientmodels.Attribute{}
+	for _, a := range list[0].Attributes {
+		byPath[clientmodels.ClaimPathKey(a.ClaimPath)] = a
+	}
+	requireImage(t, byPath[clientmodels.ClaimPathKey([]any{vcdm.CredentialSubjectKey, "photo"})].Value, testPNGBase64, clientmodels.MimeTypePNG)
+	requireText(t, byPath[clientmodels.ClaimPathKey([]any{vcdm.CredentialSubjectKey, "given_name"})].Value, "Alice")
+}
+
+// An Open Badges Image behind a URL is listed as one attribute: its picture
+// once its image is in the credential logo cache, its URL until then.
+func TestSdJwtVcdmList_CachedOpenBadgesImageIsAnImage(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	imageURL := "https://images.example/badge.png"
+	expandedTypes, err := json.Marshal([]string{"https://www.w3.org/2018/credentials#VerifiableCredential", vcdm.OpenBadgeCredentialType})
+	require.NoError(t, err)
+	require.NoError(t, env.store.StoreBatch(&models.VcdmBatch{
+		TypeIdentity:     testVcdmTypeIdentity,
+		IssuerIdentifier: testVcdmIssuer,
+		CredentialIssuer: testVcdmIssuer,
+		Format:           models.CredentialFormatSdJwtVcdm,
+		Hash:             "hash-badge",
+		ProcessedPayload: datatypes.JSON(`{"credentialSubject": {"achievement": {"image": {"id": "` + imageURL + `", "type": "Image"}}}}`),
+		ExpandedTypes:    expandedTypes,
+		IssuedAt:         time.Now(),
+		BatchSize:        1,
+		RemainingCount:   1,
+		Instances:        []models.VcdmBatchInstance{{RawCredential: []byte("raw")}},
+	}))
+	imagePath := clientmodels.ClaimPathKey([]any{vcdm.CredentialSubjectKey, "achievement", "image"})
+	imageAttr := func() *clientmodels.AttributeValue {
+		list, err := env.service.List()
+		require.NoError(t, err)
+		require.Len(t, list, 1)
+		for _, a := range list[0].Attributes {
+			if clientmodels.ClaimPathKey(a.ClaimPath) == imagePath {
+				return a.Value
+			}
+		}
+		t.Fatal("no image attribute")
+		return nil
+	}
+
+	requireText(t, imageAttr(), imageURL)
+
+	png, err := base64.StdEncoding.DecodeString(testPNGBase64)
+	require.NoError(t, err)
+	require.NoError(t, env.service.fileStorage.Credentials().LogoManager().Save(imageURL, png, clientmodels.MimeTypePNG))
+	requireImage(t, imageAttr(), testPNGBase64, clientmodels.MimeTypePNG)
+}

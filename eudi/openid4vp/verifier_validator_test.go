@@ -52,6 +52,7 @@ func TestVerifierValidator(t *testing.T) {
 	t.Run("ParseAndVerifyAuthorizationRequest uses client_metadata client_name when present", testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_UsesClientMetadataName)
 	t.Run("ParseAndVerifyAuthorizationRequest downloads the logo referenced in client_metadata", testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLogo)
 	t.Run("ParseAndVerifyAuthorizationRequest continues without a logo when it fails to download", testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_ContinuesWithoutLogo)
+	t.Run("ParseAndVerifyAuthorizationRequest continues without a logo when it is no image", testParseAndVerifyAuthorizationRequestClientMetadataWithLogoThatIsNoImage_ContinuesWithoutLogo)
 
 	// Certificate authorization is independent of how the verifier presents itself
 	t.Run("ParseAndVerifyAuthorizationRequest still validates certificate authorization when client_metadata names the verifier", testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_StillValidatesCertificateAuthorization)
@@ -352,10 +353,11 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_UsesClie
 func testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLogo(t *testing.T) {
 	// Setup test data with client_metadata.client_name and a data-uri logo_uri, so the
 	// logo can be "downloaded" without a real network call.
+	const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
 	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
 		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
 			"client_name": "Acme Verifier",
-			"logo_uri":    "data:image/png;base64,aGVsbG8=",
+			"logo_uri":    "data:image/png;base64," + png,
 		}
 	}, testdata.PkiOption_None)
 
@@ -366,7 +368,26 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLo
 	require.Equal(t, "Acme Verifier", requestorInfo.Organization.LegalName["en"])
 	require.NotNil(t, requestorInfo.Organization.Logo)
 	require.Equal(t, "image/png", requestorInfo.Organization.Logo.MimeType)
-	require.Equal(t, []byte("hello"), requestorInfo.Organization.Logo.Data)
+	want, err := base64.StdEncoding.DecodeString(png)
+	require.NoError(t, err)
+	require.Equal(t, want, requestorInfo.Organization.Logo.Data)
+}
+
+// A logo_uri whose content is no image leaves the verifier without a logo,
+// whatever its media type claims.
+func testParseAndVerifyAuthorizationRequestClientMetadataWithLogoThatIsNoImage_ContinuesWithoutLogo(t *testing.T) {
+	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+			"client_name": "Acme Verifier",
+			"logo_uri":    "data:image/png;base64,aGVsbG8=",
+		}
+	}, testdata.PkiOption_None)
+
+	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.NoError(t, err)
+	require.Equal(t, "Acme Verifier", requestorInfo.Organization.LegalName["en"])
+	require.Nil(t, requestorInfo.Organization.Logo)
 }
 
 func testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_ContinuesWithoutLogo(t *testing.T) {

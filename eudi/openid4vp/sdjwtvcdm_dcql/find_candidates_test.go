@@ -6,7 +6,9 @@ package sdjwtvcdm_dcql
 // type-check locally but run in CI.
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,10 +17,12 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcqltest"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/stretchr/testify/assert"
@@ -584,4 +588,263 @@ func envelopedSdJwt(t *testing.T, vp map[string]any) sdjwt.SdJwt {
 	require.True(t, ok, "enveloped credential id should be a string")
 	require.True(t, strings.HasPrefix(id, vcdmsdjwt.EnvelopedCredentialDataUrlPrefix), "id should be a vc+sd-jwt data URL, got %q", id)
 	return sdjwt.SdJwt(strings.TrimPrefix(id, vcdmsdjwt.EnvelopedCredentialDataUrlPrefix))
+}
+
+// ========================================================================
+// Claim images: a data:image/ claim is a picture on the disclosure screen
+// and in the log
+// ========================================================================
+
+const testPhotoBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+
+const testPhotoDataURI = "data:image/png;base64," + testPhotoBase64
+
+// issueHolderBoundPhotoCredential issues the academic test credential with a
+// selectively disclosable photo, bound to a fresh holder key of keyBinder.
+func issueHolderBoundPhotoCredential(t *testing.T, keyBinder sdjwt.KeyBinder) string {
+	t.Helper()
+	holderKeys, err := keyBinder.CreateKeyPairs(1)
+	require.NoError(t, err)
+	cnf, err := sdjwt.HolderKeyClaim(holderKeys[0])
+	require.NoError(t, err)
+
+	claims := vcdmsdjwt.AcademicBaseCredentialClaims(t)
+	for i, claim := range claims {
+		if claim.Key == "credentialSubject" {
+			claims[i] = sdjwt.Object("credentialSubject",
+				sdjwt.Claim("id", "did:example:holder"),
+				sdjwt.SdClaim("given_name", "Alice"),
+				sdjwt.SdClaim("photo", testPhotoDataURI),
+			)
+		}
+	}
+	claims[len(claims)-1] = cnf
+	return string(vcdmsdjwt.IssueTestSdJwtVcdm(t, claims))
+}
+
+func photoPayload(t *testing.T) map[string]any {
+	t.Helper()
+	payload := academicPayload(t)
+	payload["credentialSubject"] = map[string]any{
+		"id":         "did:example:holder",
+		"given_name": "Alice",
+		"photo":      testPhotoDataURI,
+	}
+	return payload
+}
+
+func requirePhotoImage(t *testing.T, attrs []clientmodels.Attribute) {
+	t.Helper()
+	for _, a := range attrs {
+		if len(a.ClaimPath) == 2 && a.ClaimPath[0] == "credentialSubject" && a.ClaimPath[1] == "photo" {
+			require.NotNil(t, a.Value)
+			require.Equal(t, clientmodels.AttributeType_Base64Image, a.Value.Type)
+			require.Equal(t, testPhotoBase64, *a.Value.Base64Image)
+			require.Equal(t, clientmodels.MimeTypePNG, *a.Value.MimeType)
+			return
+		}
+	}
+	t.Fatalf("no credentialSubject.photo among %v", attrs)
+}
+
+func TestVcdmClaimImage_DisclosureScreenAndLog(t *testing.T) {
+	h, store, keyBinder := newTestHandlerWithKeyBinder(t)
+
+	batch := newTestBatch("hash-vcdm-photo", academicVcdmType, photoPayload(t))
+	batch.Instances[0].RawCredential = []byte(issueHolderBoundPhotoCredential(t, keyBinder))
+	require.NoError(t, store.StoreBatch(batch))
+
+	result, err := h.FindCandidates(parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "vc+sd-jwt",
+		"meta": {"vct_values": ["`+academicVcdmType+`"]},
+		"claims": [{"path": ["credentialSubject", "photo"]}]
+	}`))
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+	requirePhotoImage(t, result.OwnedCandidates[0].Attributes)
+
+	prepared, err := h.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:              "q1",
+		CredentialHash:       "hash-vcdm-photo",
+		ClaimPaths:           [][]any{{"credentialSubject", "photo"}},
+		RequireHolderBinding: true,
+	}}, "nonce-1", "verifier-1")
+	require.NoError(t, err)
+	require.Len(t, prepared.CredentialLogs, 1)
+	requirePhotoImage(t, prepared.CredentialLogs[0].Attributes)
+
+	// What is sent is the claim itself, the data URI, not the picture.
+	_, vp, err := sdjwt.DecodeJwtWithoutCheckingSignature(prepared.QueryResponses[0].Credentials[0])
+	require.NoError(t, err)
+	view, err := sdjwt.PostDisclosureView(envelopedSdJwt(t, vp), [][]any{{"credentialSubject", "photo"}})
+	require.NoError(t, err)
+	assert.Equal(t, testPhotoDataURI, view["credentialSubject"].(map[string]any)["photo"])
+}
+
+// An Open Badges Image behind a URL is a picture on the disclosure screen and
+// in the log once its image is cached, also when only its id is requested and
+// disclosed on its own: the verifier's view then lacks the type that makes it
+// an Image, the credential does not.
+const testBadgeImageURL = "https://images.example/badge.png"
+
+// storeBadgeWithSeparateImageDisclosures stores an Open Badges credential under
+// hash whose achievement.image is an Image object with its id and its type as
+// separate disclosures, and returns the handler over it and its storage.
+func storeBadgeWithSeparateImageDisclosures(t *testing.T, hash string) (*Handler, storage.Storage) {
+	t.Helper()
+	ts := sdjwt_dcqltest.NewTestStorage(t)
+	store := db.NewVcdmStore(ts.Db())
+	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
+	h := New(ts, store, keyBinder, clientmodels.NewCurrentLocale("en"), nil)
+
+	holderKeys, err := keyBinder.CreateKeyPairs(1)
+	require.NoError(t, err)
+	cnf, err := sdjwt.HolderKeyClaim(holderKeys[0])
+	require.NoError(t, err)
+	claims := vcdmsdjwt.AcademicBaseCredentialClaims(t)
+	for i, claim := range claims {
+		if claim.Key == "credentialSubject" {
+			claims[i] = sdjwt.Object("credentialSubject",
+				sdjwt.Claim("id", "did:example:holder"),
+				sdjwt.Object("achievement",
+					sdjwt.Object("image", sdjwt.SdClaim("id", testBadgeImageURL), sdjwt.SdClaim("type", "Image")),
+				),
+			)
+		}
+	}
+	claims[len(claims)-1] = cnf
+
+	payload := academicPayload(t)
+	payload["credentialSubject"] = map[string]any{
+		"id":          "did:example:holder",
+		"achievement": map[string]any{"image": map[string]any{"id": testBadgeImageURL, "type": "Image"}},
+	}
+	batch := newTestBatch(hash, academicVcdmType, payload)
+	batch.ExpandedTypes = datatypes.JSON(`["https://www.w3.org/2018/credentials#VerifiableCredential", "` + vcdm.OpenBadgeCredentialType + `"]`)
+	batch.Instances[0].RawCredential = []byte(vcdmsdjwt.IssueTestSdJwtVcdm(t, claims))
+	require.NoError(t, store.StoreBatch(batch))
+	return h, ts
+}
+
+// A selected path that points to an object sends everything under it
+// (OpenID4VP §7.1), also the values inside it that are disclosures of their own.
+func TestVcdmPrepareDisclosure_ObjectPathSendsItsValues(t *testing.T) {
+	h, _ := storeBadgeWithSeparateImageDisclosures(t, "hash-vcdm-badge")
+	imagePath := []any{"credentialSubject", "achievement", "image"}
+
+	prepared, err := h.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:              "q1",
+		CredentialHash:       "hash-vcdm-badge",
+		ClaimPaths:           [][]any{imagePath},
+		RequireHolderBinding: true,
+	}}, "nonce-1", "verifier-1")
+	require.NoError(t, err)
+
+	_, vp, err := sdjwt.DecodeJwtWithoutCheckingSignature(prepared.QueryResponses[0].Credentials[0])
+	require.NoError(t, err)
+	view, err := sdjwt.PostDisclosureView(envelopedSdJwt(t, vp), [][]any{
+		{"credentialSubject", "achievement", "image", "id"},
+		{"credentialSubject", "achievement", "image", "type"},
+	})
+	require.NoError(t, err)
+	image := view["credentialSubject"].(map[string]any)["achievement"].(map[string]any)["image"].(map[string]any)
+	assert.Equal(t, map[string]any{"id": testBadgeImageURL, "type": "Image"}, image)
+}
+
+func TestVcdmClaimImage_CachedOpenBadgesImageOnlyItsIdRequested(t *testing.T) {
+	h, ts := storeBadgeWithSeparateImageDisclosures(t, "hash-vcdm-badge")
+	const imageURL = testBadgeImageURL
+
+	png, err := base64.StdEncoding.DecodeString(testPhotoBase64)
+	require.NoError(t, err)
+	require.NoError(t, ts.FileSystem().Credentials().LogoManager().Save(imageURL, png, clientmodels.MimeTypePNG))
+
+	idPath := []any{"credentialSubject", "achievement", "image", "id"}
+	requireBadgeImage := func(attrs []clientmodels.Attribute) {
+		t.Helper()
+		for _, a := range attrs {
+			if clientmodels.ClaimPathKey(a.ClaimPath) == clientmodels.ClaimPathKey(idPath) {
+				require.Equal(t, clientmodels.AttributeType_Base64Image, a.Value.Type)
+				require.Equal(t, testPhotoBase64, *a.Value.Base64Image)
+				require.Equal(t, clientmodels.MimeTypePNG, *a.Value.MimeType)
+				return
+			}
+		}
+		t.Fatalf("no image id among %v", attrs)
+	}
+
+	result, err := h.FindCandidates(parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "vc+sd-jwt",
+		"meta": {"vct_values": ["`+academicVcdmType+`"]},
+		"claims": [{"path": ["credentialSubject", "achievement", "image", "id"]}]
+	}`))
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+	requireBadgeImage(result.OwnedCandidates[0].Attributes)
+
+	prepared, err := h.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:              "q1",
+		CredentialHash:       "hash-vcdm-badge",
+		ClaimPaths:           [][]any{idPath},
+		RequireHolderBinding: true,
+	}}, "nonce-1", "verifier-1")
+	require.NoError(t, err)
+	require.Len(t, prepared.CredentialLogs, 1)
+	requireBadgeImage(prepared.CredentialLogs[0].Attributes)
+
+	// What is sent is the URL alone, not its type and not the picture.
+	_, vp, err := sdjwt.DecodeJwtWithoutCheckingSignature(prepared.QueryResponses[0].Credentials[0])
+	require.NoError(t, err)
+	view, err := sdjwt.PostDisclosureView(envelopedSdJwt(t, vp), [][]any{idPath})
+	require.NoError(t, err)
+	image := view["credentialSubject"].(map[string]any)["achievement"].(map[string]any)["image"].(map[string]any)
+	assert.Equal(t, map[string]any{"id": imageURL}, image)
+}
+
+// Asked for whole, an Open Badges Image is one attribute on the disclosure
+// screen and in the log, at the object's path, which the app then sends back:
+// it discloses the id and the type.
+func TestVcdmClaimImage_WholeImageIsOneAttribute(t *testing.T) {
+	h, ts := storeBadgeWithSeparateImageDisclosures(t, "hash-vcdm-badge")
+	png, err := base64.StdEncoding.DecodeString(testPhotoBase64)
+	require.NoError(t, err)
+	require.NoError(t, ts.FileSystem().Credentials().LogoManager().Save(testBadgeImageURL, png, clientmodels.MimeTypePNG))
+	imagePath := []any{"credentialSubject", "achievement", "image"}
+
+	requireOneImageAttribute := func(attrs []clientmodels.Attribute) {
+		t.Helper()
+		var image *clientmodels.Attribute
+		for i, a := range attrs {
+			key := clientmodels.ClaimPathKey(a.ClaimPath)
+			require.NotEqual(t, clientmodels.ClaimPathKey(append(slices.Clone(imagePath), "id")), key, "no separate id")
+			require.NotEqual(t, clientmodels.ClaimPathKey(append(slices.Clone(imagePath), "type")), key, "no separate type")
+			if key == clientmodels.ClaimPathKey(imagePath) {
+				image = &attrs[i]
+			}
+		}
+		require.NotNil(t, image, "one attribute at the Image's path")
+		require.Equal(t, clientmodels.AttributeType_Base64Image, image.Value.Type)
+		require.Equal(t, testPhotoBase64, *image.Value.Base64Image)
+	}
+
+	result, err := h.FindCandidates(parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "vc+sd-jwt",
+		"meta": {"vct_values": ["`+academicVcdmType+`"]},
+		"claims": [{"path": ["credentialSubject", "achievement", "image"]}]
+	}`))
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+	requireOneImageAttribute(result.OwnedCandidates[0].Attributes)
+
+	prepared, err := h.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:              "q1",
+		CredentialHash:       "hash-vcdm-badge",
+		ClaimPaths:           [][]any{imagePath},
+		RequireHolderBinding: true,
+	}}, "nonce-1", "verifier-1")
+	require.NoError(t, err)
+	requireOneImageAttribute(prepared.CredentialLogs[0].Attributes)
 }

@@ -136,12 +136,13 @@ func (s *sdJwtVcCredentialService) List() ([]*clientmodels.Credential, error) {
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,
 			},
 			BatchInstanceCountsRemaining: batchInstanceCounts(batch.Format, batch.BatchSize, &batch.RemainingCount),
-			Attributes:                   BuildAttributesFromPayload(payload, display.ClaimNames, display.ClaimOrder),
-			ExpiryDate:                   exp,
-			IssuanceDate:                 iat,
-			Revoked:                      revoked[batch.Hash],
-			RevocationSupported:          revocable[batch.Hash],
-			IssueURL:                     nil, // TODO: add issue URL to storage model so this can be filled in here
+			// An SD-JWT VC is never an Open Badges credential: only its data URIs are images.
+			Attributes:          ShowClaimImages(BuildAttributesFromPayload(payload, display.ClaimNames, display.ClaimOrder), payloadMap(payload), false, nil),
+			ExpiryDate:          exp,
+			IssuanceDate:        iat,
+			Revoked:             revoked[batch.Hash],
+			RevocationSupported: revocable[batch.Hash],
+			IssueURL:            nil, // TODO: add issue URL to storage model so this can be filled in here
 		})
 	}
 

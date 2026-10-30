@@ -4,10 +4,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
@@ -28,6 +31,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
+	"gorm.io/datatypes"
 )
 
 func Test_openid4vciSession_obtainCredential_checksFail(t *testing.T) {
@@ -1028,4 +1032,217 @@ func Test_openid4vciSession_obtainCredential_vcdmTypeMustMatchConfiguration(t *t
 			require.ErrorContains(t, err, c.wantErr)
 		})
 	}
+}
+
+// The permission screen shows a data:image/ claim as a picture, for both
+// SD-JWT formats, under the claim's own path.
+func Test_buildOfferedCredentials_DataURIClaimIsAnImage(t *testing.T) {
+	const configId = "credential-config-1"
+	const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+	photo := "data:image/png;base64," + png
+
+	tests := []struct {
+		name      string
+		parsed    *services.ParsedCredential
+		photoPath []any
+	}{
+		{
+			name: "dc+sd-jwt",
+			parsed: &services.ParsedCredential{
+				Format:                   models.CredentialFormatSdJwtVc,
+				VerifiableCredentialType: "https://issuer.example.com/vct/pid",
+				SdJwtVc: &sdjwtvc.VerifiedSdJwtVc{
+					ProcessedSdJwtPayload: sdjwt.ProcessedPayload{"given_name": "Alice", "photo": photo},
+				},
+			},
+			photoPath: []any{"photo"},
+		},
+		{
+			name: "vc+sd-jwt",
+			parsed: &services.ParsedCredential{
+				Format:                   models.CredentialFormatSdJwtVcdm,
+				VerifiableCredentialType: "https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential",
+				SdJwtVcdm: &vcdmsdjwt.VerifiedSdJwtVcdm{
+					Document: vcdm.Document{
+						vcdm.CredentialSubjectKey: map[string]any{"given_name": "Alice", "photo": photo},
+					},
+				},
+			},
+			photoPath: []any{vcdm.CredentialSubjectKey, "photo"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var aesKey [32]byte
+			copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+			eudiStorage, err := sqlcipherstorage.New(aesKey, ":memory:", t.TempDir())
+			require.NoError(t, err)
+
+			s := &session{
+				storage: eudiStorage,
+				locale:  "en",
+				credentialIssuerMetadata: &metadata.CredentialIssuerMetadata{
+					CredentialIssuer: "https://issuer.example.com",
+					CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+						configId: {CredentialMetadata: &metadata.CredentialMetadata{}},
+					},
+				},
+			}
+
+			offered := s.buildOfferedCredentials([]*fetchedCredential{{
+				credentialConfigurationId: configId,
+				parsedCredentials:         []*services.ParsedCredential{tt.parsed},
+			}})
+			require.Len(t, offered, 1)
+
+			var photoValue *clientmodels.AttributeValue
+			for _, a := range offered[0].Attributes {
+				if clientmodels.ClaimPathKey(a.ClaimPath) == clientmodels.ClaimPathKey(tt.photoPath) {
+					photoValue = a.Value
+				}
+			}
+			require.NotNil(t, photoValue, "the photo keeps its path")
+			require.Equal(t, clientmodels.AttributeType_Base64Image, photoValue.Type)
+			require.Equal(t, png, *photoValue.Base64Image)
+			require.Equal(t, clientmodels.MimeTypePNG, *photoValue.MimeType)
+		})
+	}
+}
+
+// The permission screen shows an Open Badges image from its URL: it is
+// downloaded before the screen is built, into the credential logo cache. The
+// same object in a credential that is no Open Badge stays text, and nothing is
+// downloaded for it.
+func Test_fetchClaimImages_OpenBadgesImageOnThePermissionScreen(t *testing.T) {
+	const configId = "credential-config-1"
+	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC")
+	require.NoError(t, err)
+	requests := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_, _ = w.Write(png)
+	}))
+	t.Cleanup(server.Close)
+	imageURL := server.URL + "/badge.png"
+	imageObject := []any{vcdm.CredentialSubjectKey, "achievement", "image"}
+
+	for _, tc := range []struct {
+		name          string
+		expandedTypes []string
+		wantImage     bool
+		path          []any
+	}{
+		// The Image object is one attribute, its image.
+		{"an Open Badges credential", []string{"https://www.w3.org/2018/credentials#VerifiableCredential", vcdm.OpenBadgeCredentialType}, true, imageObject},
+		// An object like any other: its id is text.
+		{"another credential", []string{"https://www.w3.org/2018/credentials#VerifiableCredential", "https://example.com/vocab#Badge"}, false, append(slices.Clone(imageObject), "id")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requests = 0
+			var aesKey [32]byte
+			copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+			eudiStorage, err := sqlcipherstorage.New(aesKey, ":memory:", t.TempDir())
+			require.NoError(t, err)
+
+			s := &session{
+				storage:    eudiStorage,
+				locale:     "en",
+				httpClient: server.Client(),
+				credentialIssuerMetadata: &metadata.CredentialIssuerMetadata{
+					CredentialIssuer: "https://issuer.example.com",
+					CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+						configId: {CredentialMetadata: &metadata.CredentialMetadata{}},
+					},
+				},
+			}
+			fetched := []*fetchedCredential{{
+				credentialConfigurationId: configId,
+				parsedCredentials: []*services.ParsedCredential{{
+					Format:                   models.CredentialFormatSdJwtVcdm,
+					VerifiableCredentialType: "https://www.w3.org/ns/credentials/v2 VerifiableCredential OpenBadgeCredential",
+					ExpandedTypes:            tc.expandedTypes,
+					SdJwtVcdm: &vcdmsdjwt.VerifiedSdJwtVcdm{
+						Document: vcdm.Document{vcdm.CredentialSubjectKey: map[string]any{
+							"achievement": map[string]any{"image": map[string]any{"id": imageURL, "type": "Image"}},
+						}},
+					},
+				}},
+			}}
+
+			s.fetchClaimImages(fetched)
+			offered := s.buildOfferedCredentials(fetched)
+			require.Len(t, offered, 1)
+
+			var image *clientmodels.AttributeValue
+			for _, a := range offered[0].Attributes {
+				if clientmodels.ClaimPathKey(a.ClaimPath) == clientmodels.ClaimPathKey(tc.path) {
+					image = a.Value
+				}
+			}
+			require.NotNil(t, image, "no attribute at %v", tc.path)
+			if tc.wantImage {
+				require.Equal(t, clientmodels.AttributeType_Base64Image, image.Type)
+				require.Equal(t, clientmodels.MimeTypePNG, *image.MimeType)
+				require.Equal(t, 1, requests)
+			} else {
+				require.Equal(t, clientmodels.AttributeType_String, image.Type)
+				require.Equal(t, imageURL, *image.String)
+				require.Zero(t, requests)
+			}
+		})
+	}
+}
+
+// recordingKeyBinder mints placeholder holder keys and records which it is
+// asked to remove.
+type recordingKeyBinder struct {
+	minted  []datatypes.UUID
+	removed []datatypes.UUID
+}
+
+func (b *recordingKeyBinder) CreateKeyPairsWithProofs(num uint, _ proofs.ProofBuilder) ([]models.PublicHolderBindingKey, []string, error) {
+	keys := make([]models.PublicHolderBindingKey, num)
+	proofsOut := make([]string, num)
+	for i := range keys {
+		keys[i] = models.PublicHolderBindingKey{ID: datatypes.NewUUIDv4()}
+		b.minted = append(b.minted, keys[i].ID)
+		proofsOut[i] = "proof"
+	}
+	return keys, proofsOut, nil
+}
+
+func (b *recordingKeyBinder) RemoveKeys(ids []datatypes.UUID) error {
+	b.removed = append(b.removed, ids...)
+	return nil
+}
+
+// The holder keys minted for a credential the wallet then refuses bind
+// nothing, so they are removed. A credential refused by its batch check, such
+// as one whose types cannot be expanded, used to leave them behind.
+func Test_openid4vciSession_obtainCredential_refusedCredentialRemovesItsKeys(t *testing.T) {
+	sess, ts := setupTestEnvironment(t, NonceNotRequired, vcdmCredentialEndpoint("not-a-credential"))
+	defer ts.Close()
+	setVcdmConfiguration(sess, metadata.CredentialFormatIdentifier_SdJwtVcdm)
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CryptographicBindingMethodsSupported = []proofs.CryptographicBindingMethod{proofs.CryptographicBindingMethod_JWK}
+	config.ProofTypesSupported = map[metadata.ProofTypeIdentifier]metadata.ProofType{
+		metadata.ProofTypeIdentifier_JWT: {ProofSigningAlgValuesSupported: []string{"ES256"}},
+	}
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+	keys := &recordingKeyBinder{}
+	sess.formats = services.CredentialFormats{
+		models.CredentialFormatSdJwtVcdm: {
+			Parser: services.NewSdJwtVcdmCredentialFormatParser(
+				vcdmsdjwt.NewHolderVerificationProcessor(vcdmsdjwt.CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)),
+			),
+			Keys:  keys,
+			Store: &sentinelFormatStore{},
+		},
+	}
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.ErrorContains(t, err, "failed to verify credential")
+	require.Len(t, keys.minted, 1, "a key was minted for the credential request")
+	require.Equal(t, keys.minted, keys.removed)
 }

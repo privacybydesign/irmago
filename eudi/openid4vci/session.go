@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwe"
@@ -18,6 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/internal/httpext"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
@@ -223,6 +225,10 @@ func (s *session) perform() {
 		return
 	}
 
+	// Download the images Open Badges claims point to, so the permission screen
+	// shows them, as it shows the logos.
+	s.fetchClaimImages(fetched)
+
 	// Build offered credentials with actual attribute values from the verified SD-JWTs.
 	offeredCredentials := s.buildOfferedCredentials(fetched)
 
@@ -381,9 +387,35 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 		s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId] = config
 
 		uri := clientmodels.Resolve(metadata.LogoURIsByLanguage(merged.Display), s.locale)
-		services.FetchLogoIfMissing(ctx, logoManager, s.httpClient, uri)
+		services.FetchLogoIfMissing(ctx, logoManager, s.httpClient, uri, s.allowInsecureHttp)
 	}
 	return nil
+}
+
+// claimImagesBudget is how long downloading the claim images of an issuance may
+// take altogether, so the permission screen does not wait on a slow image host.
+const claimImagesBudget = 10 * time.Second
+
+// fetchClaimImages downloads, into the credential logo cache, the images the
+// claims of each fetched Open Badges credential point to, under the limits the
+// cards show them by (services.FetchClaimImages). A credential's instances show
+// the same claims, so its first instance is read. Like the logos, they are
+// cached whether or not the user then accepts the credential; a download that
+// fails leaves the URL as text, and the logo backfill tries it again.
+func (s *session) fetchClaimImages(fetched []*fetchedCredential) {
+	ctx, cancel := context.WithTimeout(context.Background(), claimImagesBudget)
+	defer cancel()
+	logoManager := s.storage.FileSystem().Credentials().LogoManager()
+	for _, fc := range fetched {
+		if len(fc.parsedCredentials) == 0 {
+			continue
+		}
+		first := fc.parsedCredentials[0]
+		if first.SdJwtVcdm == nil || !vcdm.IsOpenBadgesCredential(first.ExpandedTypes) {
+			continue
+		}
+		services.FetchClaimImages(ctx, logoManager, s.httpClient, first.SdJwtVcdm.Document, true, s.allowInsecureHttp)
+	}
 }
 
 // verifyVctIntegrity checks each fetched credential's vct#integrity claim
@@ -474,9 +506,13 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		switch {
 		case first.SdJwtVc != nil:
 			attrs = buildAttributesWithValues(claims, first.SdJwtVc.ProcessedSdJwtPayload, s.locale)
+			attrs = services.ShowClaimImages(attrs, first.SdJwtVc.ProcessedSdJwtPayload, false, nil)
 		case first.SdJwtVcdm != nil:
 			claimDisplays, claimOrder := claimDisplayLookups(claims, s.locale)
 			attrs = services.BuildAttributesFromVcdmDocument(first.SdJwtVcdm.Document, claimDisplays, claimOrder)
+			openBadges := vcdm.IsOpenBadgesCredential(first.ExpandedTypes)
+			cached := services.CachedClaimImages(s.storage.FileSystem().Credentials().LogoManager(), first.SdJwtVcdm.Document, openBadges)
+			attrs = services.ShowClaimImages(attrs, first.SdJwtVcdm.Document, openBadges, cached)
 		case first.Mdoc != nil:
 			attrs = services.BuildMdocAttributesFromResolvedClaims(claims, first.Mdoc.Namespaces, s.locale)
 		}
@@ -797,6 +833,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	}
 
 	var publicKeyIdentifiers []models.PublicHolderBindingKey
+	obtained := false
 	if requireCryptographicKeyBinding {
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
@@ -815,6 +852,17 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		if err != nil {
 			return nil, fmt.Errorf("could not create key pairs: %v", err)
 		}
+		// A credential that is refused from here on, by the issuer or by its
+		// verification, binds none of these keys: remove them.
+		defer func() {
+			if !obtained {
+				(&fetchedCredential{
+					requireCryptographicKeyBinding: true,
+					publicKeyIdentifiers:           publicKeyIdentifiers,
+					support:                        support,
+				}).cleanupKeys()
+			}
+		}()
 
 		x := make([]any, len(proofs))
 		for i, v := range proofs {
@@ -968,6 +1016,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		return nil, fmt.Errorf("credential batch rejected: %v", err)
 	}
 
+	obtained = true
 	return &fetchedCredential{
 		credentialConfigurationId:      credentialConfigurationId,
 		parsedCredentials:              parsedCredentials,

@@ -3,7 +3,6 @@ package services
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"slices"
 	"time"
 
@@ -33,9 +32,6 @@ import (
 // maintains.
 type sdJwtVcdmCredentialService struct {
 	sdJwtVcdmDisplaySource
-	// contextClient fetches the JSON-LD contexts the credential's types are
-	// expanded with (vcdm.ExpandTypes).
-	contextClient         *http.Client
 	holderBindingKeyStore db.HolderBindingKeyStore
 	fileStorage           filesystem.FileSystemStorage
 	revocation            *RevocationService
@@ -54,7 +50,6 @@ func NewSdJwtVcdmCredentialService(
 ) *sdJwtVcdmCredentialService {
 	return &sdJwtVcdmCredentialService{
 		sdJwtVcdmDisplaySource: newSdJwtVcdmDisplaySource(store),
-		contextClient:          &http.Client{Timeout: 10 * time.Second},
 		holderBindingKeyStore:  holderBindingKeyStore,
 		fileStorage:            fileStorage,
 		revocation:             revocation,
@@ -130,7 +125,7 @@ func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) 
 				clientmodels.Format_SdJwtVcdm: batch.Hash,
 			},
 			BatchInstanceCountsRemaining: batchInstanceCounts(models.CredentialFormatSdJwtVcdm, batch.BatchSize, &batch.RemainingCount),
-			Attributes:                   BuildAttributesFromVcdmDocument(document, display.ClaimNames, display.ClaimOrder),
+			Attributes:                   showVcdmClaimImages(BuildAttributesFromVcdmDocument(document, display.ClaimNames, display.ClaimOrder), document, batch, credentialLogoManager),
 			ExpiryDate:                   exp,
 			IssuanceDate:                 &issuedAt,
 			Revoked:                      revoked[batch.Hash],
@@ -209,14 +204,18 @@ func (s *sdJwtVcdmCredentialService) Store(
 	// is the source of truth for batch-level metadata.
 	first := parsedCredentials[0]
 
-	// A credential whose types cannot be expanded is refused, rather than
-	// stored where no DCQL type_values query would find it.
-	expandedTypes, err := s.expandedTypes(first.SdJwtVcdm.Document)
-	if err != nil {
+	// The parser's CheckBatch expanded the types, or refused the batch.
+	if len(first.ExpandedTypes) == 0 {
+		err := fmt.Errorf("the credential's types were not expanded")
 		if requireCryptographicKeyBinding {
 			deleteOrphanedKeys(s.holderBindingKeyStore, publicKeyIdentifiers)
 		}
 		return err
+	}
+
+	expandedTypes, err := json.Marshal(first.ExpandedTypes)
+	if err != nil {
+		return fmt.Errorf("failed to marshal the expanded types: %w", err)
 	}
 
 	processedPayload, err := json.Marshal(first.SdJwtVcdm.Document)
@@ -298,16 +297,6 @@ func (s *sdJwtVcdmCredentialService) Store(
 	}
 
 	return nil
-}
-
-// expandedTypes returns the credential's types with its @context applied, as
-// JSON, for matching DCQL type_values.
-func (s *sdJwtVcdmCredentialService) expandedTypes(document vcdm.Document) (datatypes.JSON, error) {
-	types, err := vcdm.ExpandTypes(document, vcdm.NewContextLoader(s.contextClient))
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(types)
 }
 
 // VcdmIssuanceValidity derives the wallet's issuance/validity timestamps for a
@@ -537,4 +526,23 @@ func (s sdJwtVcdmDisplaySource) LogoURIs(locale string) (issuer []string, creden
 		}
 	}
 	return issuer, credential
+}
+
+// isOpenBadgesBatch reports whether a stored VCDM batch is an Open Badges
+// credential, by the expanded types stored with it at issuance. A batch whose
+// types cannot be read is not.
+func isOpenBadgesBatch(batch *models.VcdmBatch) bool {
+	var types []string
+	if err := json.Unmarshal(batch.ExpandedTypes, &types); err != nil {
+		return false
+	}
+	return vcdm.IsOpenBadgesCredential(types)
+}
+
+// showVcdmClaimImages turns a stored VCDM batch's claim images among attrs
+// into pictures, with the images behind a URL from logos, the credential logo
+// cache they share with the credential logos.
+func showVcdmClaimImages(attrs []clientmodels.Attribute, document vcdm.Document, batch *models.VcdmBatch, logos filesystem.LogoManager) []clientmodels.Attribute {
+	openBadges := isOpenBadgesBatch(batch)
+	return ShowClaimImages(attrs, document, openBadges, CachedClaimImages(logos, document, openBadges))
 }

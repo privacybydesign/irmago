@@ -34,6 +34,24 @@
         }
       }
     },
+    "TestOpenBadgeCredential": {
+      "format": "vc+sd-jwt",
+      "scope": "OpenBadgeCredential",
+      "extends": "TestOpenBadgeCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      }
+    },
     "StatusListCredentialVcdm": {
       "format": "vc+sd-jwt",
       "scope": "TestVcdmCredential",

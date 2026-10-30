@@ -417,6 +417,7 @@ func (client *Client) convertToCredentialInfoList(
 				},
 				Attributes: convertClaimsToAttributes(config.CredentialMetadata.Claims, locale),
 				Image:      image,
+				Format:     clientmodels.CredentialFormat(config.Format),
 			})
 		}
 	}
@@ -575,7 +576,7 @@ func (client *Client) downloadLogos(
 ) {
 	fs := client.Configuration.Storage.FileSystem()
 	services.FetchLogoIfMissing(ctx, fs.Issuers().LogoManager(), client.httpClient,
-		clientmodels.Resolve(metadata.LogoURIsByLanguage(issuerMetadata.Display), locale))
+		clientmodels.Resolve(metadata.LogoURIsByLanguage(issuerMetadata.Display), locale), client.allowInsecureHttp)
 
 	for _, configID := range offer.CredentialConfigurationIds {
 		config, ok := issuerMetadata.CredentialConfigurationsSupported[configID]
@@ -583,7 +584,7 @@ func (client *Client) downloadLogos(
 			continue
 		}
 		services.FetchLogoIfMissing(ctx, fs.Credentials().LogoManager(), client.httpClient,
-			clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale))
+			clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale), client.allowInsecureHttp)
 	}
 }
 
