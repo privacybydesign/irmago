@@ -79,6 +79,8 @@ type LogStoreFilter struct {
 	// TextTokens are normalised words that must all occur in SearchText.
 	TextTokens  []string
 	TextOrTypes []string
+	// ValueTokens are normalised words that must all occur in ValueText.
+	ValueTokens []string
 	FromNs      *int64
 	ToNs        *int64
 	// IncludeHidden also matches hidden entries.
@@ -237,6 +239,9 @@ func apply(q *gorm.DB, f LogStoreFilter, withTypes bool) *gorm.DB {
 		}
 		q = q.Where("("+text+")", textArgs...)
 	}
+	for _, token := range f.ValueTokens {
+		q = q.Where("e.value_text LIKE ? ESCAPE '\\'", "%"+likeEscape(token)+"%")
+	}
 	return q
 }
 
@@ -393,6 +398,7 @@ func (s *eudiLogStore) SaveIndex(entries []*models.EudiLogEntry) error {
 				"created_at_ns": e.CreatedAtNs,
 				"party_key":     e.PartyKey,
 				"search_text":   e.SearchText,
+				"value_text":    e.ValueText,
 				"index_version": e.IndexVersion,
 			}).Error; err != nil {
 				return err

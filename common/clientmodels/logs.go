@@ -114,6 +114,10 @@ type LogFilter struct {
 	// TextOrTypes also keeps entries of these types when Text does not match.
 	// The app matches its own translated type labels and passes the types here.
 	TextOrTypes []LogType `json:"text_or_types,omitempty"`
+	// Value keeps entries with an attribute value that, together, contain
+	// every word of it, ignoring case and accents: only the data, not names
+	// or messages.
+	Value string `json:"value,omitempty"`
 	// From and To keep entries at or after From, and strictly before To.
 	From *time.Time `json:"from,omitempty"`
 	To   *time.Time `json:"to,omitempty"`

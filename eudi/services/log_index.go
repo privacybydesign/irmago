@@ -21,7 +21,8 @@ import (
 //   - 1: the derived columns and attribute rows.
 //   - 2: attribute rows gained their pattern key.
 //   - 3: a requestor without an id is keyed by its name.
-const logIndexVersion = 3
+//   - 4: the values' own search text (ValueText).
+const logIndexVersion = 4
 
 // logIndexBatch is how many entries the index pass handles per transaction.
 const logIndexBatch = 200
@@ -42,7 +43,7 @@ func indexEntry(e *models.EudiLogEntry) {
 	}
 	e.PartyKey = &partyKey
 
-	var text []string
+	var text, values []string
 	text = append(text, e.RequestorId)
 	text = append(text, storedTexts(e.RequestorName)...)
 	if e.SignedMessage != nil {
@@ -73,11 +74,14 @@ func indexEntry(e *models.EudiLogEntry) {
 			c.AttributeRows = append(c.AttributeRows, db.NewAttributeRow(e.ID, c.ID, clientmodels.ClaimPathKey(a.ClaimPath), clientmodels.ClaimPatternKey(a.ClaimPath)))
 			text = append(text, storedTexts(a.DisplayName)...)
 			text = append(text, attributeValueText(a.Value))
+			values = append(values, attributeValueText(a.Value))
 		}
 	}
 
 	searchText := normaliseForSearch(strings.Join(text, " "))
 	e.SearchText = &searchText
+	valueText := normaliseForSearch(strings.Join(values, " "))
+	e.ValueText = &valueText
 	version := logIndexVersion
 	e.IndexVersion = &version
 }

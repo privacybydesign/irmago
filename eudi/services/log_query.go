@@ -26,6 +26,7 @@ func toStoreFilter(f clientmodels.LogFilter) db.LogStoreFilter {
 		PartyKey:       f.PartyKey,
 		TextTokens:     searchTokens(f.Text),
 		TextOrTypes:    stringsOf(f.TextOrTypes),
+		ValueTokens:    searchTokens(f.Value),
 		IncludeHidden:  f.IncludeHidden,
 	}
 	paths := f.ClaimPaths

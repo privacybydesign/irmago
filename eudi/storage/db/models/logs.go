@@ -49,8 +49,13 @@ type EudiLogEntry struct {
 	// every stored language, attribute values and the signed message.
 	SearchText *string
 
+	// ValueText is the normalised text of the attribute values alone, for a
+	// search in the data that was shared, received or signed with.
+	ValueText *string
+
 	// IndexVersion is the version of the log index pass that last filled the
-	// derived columns (PartyKey, SearchText, roles, positions, attribute rows).
+	// derived columns (PartyKey, SearchText, ValueText, roles, positions,
+	// attribute rows).
 	IndexVersion *int
 
 	// Source is "irma-bbolt" for entries moved over from the IRMA store.

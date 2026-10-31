@@ -144,6 +144,14 @@ func TestQueryLogs_Filters(t *testing.T) {
 	require.Empty(t, ids(clientmodels.LogFilter{Text: "cafe bank"}))
 	// What the app matched in its own type labels widens the search.
 	require.Len(t, ids(clientmodels.LogFilter{Text: "terms", TextOrTypes: []clientmodels.LogType{clientmodels.LogType_CredentialRemoval}}), 2)
+
+	// A value search looks in the data only: the party's name and the
+	// signed message do not count.
+	require.Len(t, ids(clientmodels.LogFilter{Value: "B@EXAMPLE"}), 2)
+	require.Len(t, ids(clientmodels.LogFilter{Value: "example"}), 5)
+	require.Empty(t, ids(clientmodels.LogFilter{Value: "cafe"}))
+	require.Empty(t, ids(clientmodels.LogFilter{Value: "terms"}))
+	require.Len(t, ids(clientmodels.LogFilter{Value: "a@example", Types: []clientmodels.LogType{clientmodels.LogType_Disclosure}}), 1)
 }
 
 func TestQueryLogs_CountsIgnoreTheTypeFilter(t *testing.T) {
