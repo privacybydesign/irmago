@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 
@@ -1127,18 +1126,16 @@ func Test_fetchDocumentImages_OpenBadgesImageOnThePermissionScreen(t *testing.T)
 	}))
 	t.Cleanup(server.Close)
 	imageURL := server.URL + "/badge.png"
-	imageObject := []any{vcdm.CredentialSubjectKey, "achievement", "image"}
+	imageID := []any{vcdm.CredentialSubjectKey, "achievement", "image", "id"}
 
 	for _, tc := range []struct {
 		name          string
 		expandedTypes []string
 		wantImage     bool
-		path          []any
 	}{
-		// The Image object is one attribute, its image.
-		{"an Open Badges credential", []string{"https://www.w3.org/2018/credentials#VerifiableCredential", vcdm.OpenBadgeCredentialType}, true, imageObject},
+		{"an Open Badges credential", []string{"https://www.w3.org/2018/credentials#VerifiableCredential", vcdm.OpenBadgeCredentialType}, true},
 		// An object like any other: its id is text.
-		{"another credential", []string{"https://www.w3.org/2018/credentials#VerifiableCredential", "https://example.com/vocab#Badge"}, false, append(slices.Clone(imageObject), "id")},
+		{"another credential", []string{"https://www.w3.org/2018/credentials#VerifiableCredential", "https://example.com/vocab#Badge"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			requests = 0
@@ -1178,11 +1175,11 @@ func Test_fetchDocumentImages_OpenBadgesImageOnThePermissionScreen(t *testing.T)
 
 			var image *clientmodels.AttributeValue
 			for _, a := range offered[0].Attributes {
-				if clientmodels.ClaimPathKey(a.ClaimPath) == clientmodels.ClaimPathKey(tc.path) {
+				if clientmodels.ClaimPathKey(a.ClaimPath) == clientmodels.ClaimPathKey(imageID) {
 					image = a.Value
 				}
 			}
-			require.NotNil(t, image, "no attribute at %v", tc.path)
+			require.NotNil(t, image, "no attribute at %v", imageID)
 			if tc.wantImage {
 				require.Equal(t, clientmodels.AttributeType_Base64Image, image.Type)
 				require.Equal(t, clientmodels.MimeTypePNG, *image.MimeType)

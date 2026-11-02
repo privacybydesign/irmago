@@ -74,7 +74,6 @@ func TestFindClaimImages_OpenBadgesImage(t *testing.T) {
 	require.Equal(t, []claimImage{{
 		Path:   []any{"credentialSubject", "achievement", "image", "id"},
 		Source: "https://pba.dev.eduwallet.nl/images/mbob/microcredentials/11br.001.01.png",
-		Object: []any{"credentialSubject", "achievement", "image"},
 	}}, images, "the id leaf is the image; the caption and other URLs are not")
 	require.False(t, helpers.IsImageDataURI(images[0].Source))
 }
@@ -91,11 +90,11 @@ func TestFindClaimImages_OpenBadgesImageShapes(t *testing.T) {
 		want  []claimImage
 	}{
 		{"type in an array", `{"id": "https://example.com/a.png", "type": ["Image"]}`,
-			[]claimImage{{Path: []any{"image", "id"}, Source: "https://example.com/a.png", Object: []any{"image"}}}},
+			[]claimImage{{Path: []any{"image", "id"}, Source: "https://example.com/a.png"}}},
 		{"id that is a data URI", `{"id": "` + testImageDataURI + `", "type": "Image"}`,
-			[]claimImage{{Path: []any{"image", "id"}, Source: testImageDataURI, Object: []any{"image"}}}},
+			[]claimImage{{Path: []any{"image", "id"}, Source: testImageDataURI}}},
 		{"http URL, which the download refuses later", `{"id": "http://example.com/a.png", "type": "Image"}`,
-			[]claimImage{{Path: []any{"image", "id"}, Source: "http://example.com/a.png", Object: []any{"image"}}}},
+			[]claimImage{{Path: []any{"image", "id"}, Source: "http://example.com/a.png"}}},
 		{"no id", `{"type": "Image", "caption": "x"}`, nil},
 		{"id that is not a string", `{"id": 5, "type": "Image"}`, nil},
 		{"id that is no URL", `{"id": "urn:uuid:1234", "type": "Image"}`, nil},
@@ -119,8 +118,8 @@ func TestFindClaimImages_NestedInArrays(t *testing.T) {
 		]
 	}`)
 	require.Equal(t, []claimImage{
-		{Path: []any{"evidence", 0, "image", "id"}, Source: "https://example.com/1.png", Object: []any{"evidence", 0, "image"}},
-		{Path: []any{"evidence", 1, "image", "id"}, Source: "https://example.com/2.png", Object: []any{"evidence", 1, "image"}},
+		{Path: []any{"evidence", 0, "image", "id"}, Source: "https://example.com/1.png"},
+		{Path: []any{"evidence", 1, "image", "id"}, Source: "https://example.com/2.png"},
 	}, findClaimImages(payload, true))
 }
 
@@ -232,60 +231,28 @@ func TestShowClaimImages_DownloadedImages(t *testing.T) {
 	downloaded := map[string][]byte{imageURL: png}
 
 	shown := showClaimImages(attrs(), payload, true, downloaded)
-	require.Len(t, shown, 3, "each Image object is one attribute")
-	require.Equal(t, []any{"image"}, shown[0].ClaimPath)
 	requireImage(t, shown[0].Value, testPNGBase64, clientmodels.MimeTypePNG)
-	require.Equal(t, []any{"other"}, shown[1].ClaimPath)
-	requireText(t, shown[1].Value, "https://example.com/missing.png")
-	require.Equal(t, []any{"targetUrl"}, shown[2].ClaimPath)
-	requireText(t, shown[2].Value, imageURL)
+	requireText(t, shown[2].Value, "https://example.com/missing.png")
+	requireText(t, shown[4].Value, imageURL)
 
 	notBadge := showClaimImages(attrs(), payload, false, downloaded)
 	require.Len(t, notBadge, 5, "outside an Open Badge nothing is an Image")
 	requireText(t, notBadge[0].Value, imageURL)
 }
 
-// The Image object's attribute takes the place of its first value, the
-// issuer's name for the object and the object's caption.
-func TestShowClaimImages_ImageObjectAttribute(t *testing.T) {
-	name := "Badge"
-	payload := map[string]any{
-		"before": "a",
-		"image":  map[string]any{"id": testImageDataURI, "type": "Image", "caption": "The badge"},
-		"after":  "b",
-	}
+// An Image object's id becomes its picture; its other fields stay text.
+func TestShowClaimImages_ImageObject(t *testing.T) {
+	payload := map[string]any{"image": map[string]any{"id": testImageDataURI, "type": "Image", "caption": "The badge"}}
 	shown := showClaimImages([]clientmodels.Attribute{
-		textAttr([]any{"before"}, "a"),
-		{ClaimPath: []any{"image"}, DisplayName: &name},
 		textAttr([]any{"image", "caption"}, "The badge"),
 		textAttr([]any{"image", "id"}, testImageDataURI),
 		textAttr([]any{"image", "type"}, "Image"),
-		textAttr([]any{"after"}, "b"),
 	}, payload, true, nil)
 
 	require.Len(t, shown, 3)
-	require.Equal(t, []any{"before"}, shown[0].ClaimPath)
-	image := shown[1]
-	require.Equal(t, []any{"image"}, image.ClaimPath)
-	require.Equal(t, &name, image.DisplayName, "the issuer's name for the object")
-	require.NotNil(t, image.Description)
-	require.Equal(t, "The badge", *image.Description, "the caption")
-	requireImage(t, image.Value, testPNGBase64, clientmodels.MimeTypePNG)
-	require.Equal(t, []any{"after"}, shown[2].ClaimPath)
-}
-
-// Shown partly, an Image object stays apart: its attribute would disclose what
-// is not shown.
-func TestShowClaimImages_PartlyShownImageObject(t *testing.T) {
-	payload := map[string]any{"image": map[string]any{"id": testImageDataURI, "type": "Image", "caption": "x"}}
-	shown := showClaimImages([]clientmodels.Attribute{
-		textAttr([]any{"image", "id"}, testImageDataURI),
-		textAttr([]any{"image", "type"}, "Image"),
-	}, payload, true, nil)
-
-	require.Len(t, shown, 2)
-	require.Equal(t, []any{"image", "id"}, shown[0].ClaimPath)
-	requireImage(t, shown[0].Value, testPNGBase64, clientmodels.MimeTypePNG)
+	requireText(t, shown[0].Value, "The badge")
+	requireImage(t, shown[1].Value, testPNGBase64, clientmodels.MimeTypePNG)
+	requireText(t, shown[2].Value, "Image")
 }
 
 // A disclosure may show an Image's id alone; the payload still says it is one.
@@ -464,38 +431,6 @@ func TestFetchClaimImages_StopsWhenTheTimeIsUp(t *testing.T) {
 	require.Empty(t, requests)
 }
 
-func TestLeafPaths(t *testing.T) {
-	payload := payloadFromJSON(t, `{
-		"credentialSubject": {
-			"name": "Vera",
-			"achievement": {
-				"image": {"type": "Image", "id": "https://example.com/a.png"},
-				"alignment": [{"targetCode": "A"}, {"targetCode": "B"}],
-				"tags": [],
-				"extra": {}
-			}
-		}
-	}`)
-	cs := "credentialSubject"
-
-	require.Equal(t, [][]any{{cs, "name"}}, LeafPaths(payload, []any{cs, "name"}), "a value is its own leaf")
-	require.Equal(t, [][]any{
-		{cs, "achievement", "image", "id"},
-		{cs, "achievement", "image", "type"},
-	}, LeafPaths(payload, []any{cs, "achievement", "image"}), "an object's values, keys sorted")
-	require.Equal(t, [][]any{
-		{cs, "achievement", "alignment", 0, "targetCode"},
-		{cs, "achievement", "alignment", 1, "targetCode"},
-	}, LeafPaths(payload, []any{cs, "achievement", "alignment"}))
-	require.Equal(t, [][]any{{cs, "achievement", "alignment", float64(1), "targetCode"}},
-		LeafPaths(payload, []any{cs, "achievement", "alignment", float64(1)}), "an index decoded from JSON")
-	require.Equal(t, [][]any{{cs, "achievement", "tags"}}, LeafPaths(payload, []any{cs, "achievement", "tags"}), "an empty array is its own leaf")
-	require.Equal(t, [][]any{{cs, "achievement", "extra"}}, LeafPaths(payload, []any{cs, "achievement", "extra"}))
-	require.Nil(t, LeafPaths(payload, []any{cs, "missing"}))
-	require.Nil(t, LeafPaths(payload, []any{cs, "achievement", "alignment", 5}))
-	require.Nil(t, LeafPaths(payload, []any{cs, "name", "deeper"}))
-}
-
 // badgeDocument is an Open Badges credential with an Image in its
 // credentialSubject, and Images elsewhere in the document: its own, its
 // issuer's and its evidence's, the latter all from host.
@@ -560,8 +495,7 @@ func TestShowClaimImages_OutsideTheCredentialSubject(t *testing.T) {
 		textAttr([]any{"logo", "type"}, "Image"),
 	}, document, true, nil)
 
-	require.Len(t, shown, 2)
+	require.Len(t, shown, 3)
 	requireImage(t, shown[0].Value, testPNGBase64, clientmodels.MimeTypePNG)
-	require.Equal(t, []any{"logo"}, shown[1].ClaimPath)
 	requireText(t, shown[1].Value, "https://example.com/logo.png")
 }

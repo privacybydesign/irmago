@@ -415,29 +415,6 @@ func (h *Engine) batchMatchesTypeConstraint(batch *Batch, typeValues [][]string,
 	return true // §6.1: empty meta matches any credential of the format
 }
 
-// selectedLeafPaths expands each selected claim path that points to an object
-// or an array to the paths of the values under it: OpenID4VP §7.1 has such a
-// path select the claim with everything under it, and the user saw it shown
-// whole. sdjwt.CreatePresentation includes only the disclosures on the way to
-// the node a path ends at, so without this a selectively disclosable value
-// inside the object would not be sent. A path to a value stays as it is, and so
-// does one the credential has no claim at.
-func selectedLeafPaths(batch *Batch, claimPaths [][]any) [][]any {
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &payload); err != nil {
-		return claimPaths
-	}
-	var expanded [][]any
-	for _, path := range claimPaths {
-		leaves := services.LeafPaths(payload, path)
-		if len(leaves) == 0 {
-			leaves = [][]any{path}
-		}
-		expanded = append(expanded, leaves...)
-	}
-	return expanded
-}
-
 func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
@@ -463,7 +440,7 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 		}
 
 		rawSdJwt := sdjwt.SdJwt(instance.RawCredential)
-		claimPaths := selectedLeafPaths(batch, sel.ClaimPaths)
+		claimPaths := sel.ClaimPaths
 
 		selected, err := sdjwt.CreatePresentation(rawSdJwt, claimPaths)
 		if err != nil {

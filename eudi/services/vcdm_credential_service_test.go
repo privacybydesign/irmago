@@ -597,8 +597,8 @@ func TestSdJwtVcdmList_DataURIClaimIsAnImage(t *testing.T) {
 	requireText(t, byPath[clientmodels.ClaimPathKey([]any{vcdm.CredentialSubjectKey, "given_name"})].Value, "Alice")
 }
 
-// An Open Badges Image behind a URL is listed as one attribute: its picture
-// once its image is in the credential logo cache, its URL until then.
+// An Open Badges Image's id is listed as its picture once its image is in the
+// credential logo cache, its URL until then.
 func TestSdJwtVcdmList_CachedOpenBadgesImageIsAnImage(t *testing.T) {
 	env := newVcdmTestEnv(t)
 	imageURL := "https://images.example/badge.png"
@@ -617,7 +617,7 @@ func TestSdJwtVcdmList_CachedOpenBadgesImageIsAnImage(t *testing.T) {
 		RemainingCount:   1,
 		Instances:        []models.VcdmBatchInstance{{RawCredential: []byte("raw")}},
 	}))
-	imagePath := clientmodels.ClaimPathKey([]any{vcdm.CredentialSubjectKey, "achievement", "image"})
+	imagePath := clientmodels.ClaimPathKey([]any{vcdm.CredentialSubjectKey, "achievement", "image", "id"})
 	imageAttr := func() *clientmodels.AttributeValue {
 		list, err := env.service.List()
 		require.NoError(t, err)
