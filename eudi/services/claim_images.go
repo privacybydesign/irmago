@@ -9,6 +9,7 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -295,8 +296,25 @@ func remoteClaimImageURLs(images []ClaimImage) []string {
 	return urls
 }
 
+// downloadableClaimImageURLs returns the URLs of the claim images the wallet
+// downloads for a credential, and shows from the credential logo cache: those
+// of the Open Badges Image objects in its credentialSubject, as
+// remoteClaimImageURLs selects them. Only the credentialSubject becomes the
+// credential's attributes; an Image elsewhere in the document, such as the
+// issuer's or the credential's own, is not downloaded, so the wallet does not
+// contact the hosts an issuer names for images the user would not see. Only an
+// Open Badges credential, always a VCDM one, has images behind a URL.
+func downloadableClaimImageURLs(payload map[string]any, openBadges bool) []string {
+	subject, ok := payload[vcdm.CredentialSubjectKey]
+	if !openBadges || !ok {
+		return nil
+	}
+	return remoteClaimImageURLs(FindClaimImages(map[string]any{vcdm.CredentialSubjectKey: subject}, true))
+}
+
 // CachedClaimImages returns, keyed by URL, the cached images of the claim
-// images in payload that are behind a URL: those among the first
+// images in payload's credentialSubject that are behind a URL
+// (downloadableClaimImageURLs): those among the first
 // maxClaimImagesPerCredential that are in manager, in order, as long as
 // together they fit in maxClaimImageBytesPerCredential. What does not fit stays
 // text, as an image that was never downloaded does. manager is the credential
@@ -304,7 +322,7 @@ func remoteClaimImageURLs(images []ClaimImage) []string {
 func CachedClaimImages(manager filesystem.LogoManager, payload map[string]any, openBadges bool) map[string][]byte {
 	images := map[string][]byte{}
 	used := 0
-	for _, url := range remoteClaimImageURLs(FindClaimImages(payload, openBadges)) {
+	for _, url := range downloadableClaimImageURLs(payload, openBadges) {
 		data, _, err := manager.Get(url)
 		if err != nil {
 			continue
@@ -319,7 +337,8 @@ func CachedClaimImages(manager filesystem.LogoManager, payload map[string]any, o
 }
 
 // FetchClaimImages downloads into manager, the credential logo cache, the
-// claim images in payload that are behind a URL and missing from it, under the
+// claim images in payload's credentialSubject that are behind a URL and missing
+// from it (downloadableClaimImageURLs), under the
 // limits CachedClaimImages shows them by, and returns how many it cached. Like
 // a credential logo, an image already cached is not downloaded again. ctx
 // bounds the time all downloads together may take.
@@ -346,7 +365,7 @@ func fetchClaimImages(
 	allowInsecureHTTP bool,
 ) (cached, tried int) {
 	used := 0
-	for _, url := range remoteClaimImageURLs(FindClaimImages(payload, openBadges)) {
+	for _, url := range downloadableClaimImageURLs(payload, openBadges) {
 		if ctx.Err() != nil {
 			return cached, tried
 		}

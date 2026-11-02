@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -479,4 +480,74 @@ func TestLeafPaths(t *testing.T) {
 	require.Nil(t, LeafPaths(payload, []any{cs, "missing"}))
 	require.Nil(t, LeafPaths(payload, []any{cs, "achievement", "alignment", 5}))
 	require.Nil(t, LeafPaths(payload, []any{cs, "name", "deeper"}))
+}
+
+// badgeDocument is an Open Badges credential with an Image in its
+// credentialSubject, and Images elsewhere in the document: its own, its
+// issuer's and its evidence's, the latter all from host.
+func badgeDocument(host string) map[string]any {
+	image := func(name string) map[string]any { return map[string]any{"id": host + "/" + name, "type": "Image"} }
+	return map[string]any{
+		"credentialSubject": map[string]any{"achievement": map[string]any{"image": image("subject.png")}},
+		"image":             image("credential.png"),
+		"issuer":            map[string]any{"id": "https://issuer.example", "image": image("issuer.png")},
+		"evidence":          []any{map[string]any{"image": image("evidence.png")}},
+	}
+}
+
+// Only the credentialSubject becomes attributes, so only its images are
+// downloaded: the wallet does not contact hosts for images the user would not
+// see.
+func TestFetchClaimImages_OnlyTheCredentialSubjects(t *testing.T) {
+	server, requests := imageHost(t)
+	cache := newClaimImageCache(t)
+	document := badgeDocument(server.URL)
+
+	require.Equal(t, 1, FetchClaimImages(context.Background(), cache, server.Client(), document, true, false))
+	require.Equal(t, map[string]int{"/subject.png": 1}, requests)
+	require.Equal(t, []string{server.URL + "/subject.png"}, slices.Collect(maps.Keys(CachedClaimImages(cache, document, true))))
+}
+
+// The images outside the credentialSubject do not count towards its budget
+// either: ten images in it are all shown, also with others elsewhere.
+func TestCachedClaimImages_TheBudgetIsTheCredentialSubjects(t *testing.T) {
+	cache := newClaimImageCache(t)
+	png, err := base64.StdEncoding.DecodeString(testPNGBase64)
+	require.NoError(t, err)
+	var subjectImages []any
+	for i := range 10 {
+		url := "https://example.com/" + strconv.Itoa(i) + ".png"
+		require.NoError(t, cache.Save(url, png, clientmodels.MimeTypePNG))
+		subjectImages = append(subjectImages, map[string]any{"id": url, "type": "Image"})
+	}
+	require.NoError(t, cache.Save("https://example.com/aaa-issuer.png", png, clientmodels.MimeTypePNG))
+	document := map[string]any{
+		"credentialSubject": map[string]any{"images": subjectImages},
+		"aaa":               map[string]any{"image": map[string]any{"id": "https://example.com/aaa-issuer.png", "type": "Image"}},
+	}
+
+	cached := CachedClaimImages(cache, document, true)
+	require.Len(t, cached, 10)
+	require.NotContains(t, cached, "https://example.com/aaa-issuer.png")
+}
+
+// A data URI is an image wherever it is, also outside the credentialSubject,
+// where a verifier may ask for it: it needs no download. An Image there that
+// is behind a URL is its URL.
+func TestShowClaimImages_OutsideTheCredentialSubject(t *testing.T) {
+	document := map[string]any{
+		"credentialSubject": map[string]any{"name": "Vera"},
+		"image":             testImageDataURI,
+		"logo":              map[string]any{"id": "https://example.com/logo.png", "type": "Image"},
+	}
+	shown := ShowClaimImages([]clientmodels.Attribute{
+		textAttr([]any{"image"}, testImageDataURI),
+		textAttr([]any{"logo", "id"}, "https://example.com/logo.png"),
+		textAttr([]any{"logo", "type"}, "Image"),
+	}, document, true, nil)
+
+	require.Len(t, shown, 2)
+	requireImage(t, shown[0].Value, testPNGBase64, clientmodels.MimeTypePNG)
+	require.Equal(t, []any{"logo"}, shown[1].ClaimPath)
+	requireText(t, shown[1].Value, "https://example.com/logo.png")
 }

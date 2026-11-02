@@ -444,3 +444,29 @@ func TestBackfillLogos_ClaimImagesStopWhenCancelled(t *testing.T) {
 	require.Equal(t, 0, backfillLogos(ctx, s, server.Client(), "nl", false))
 	require.Empty(t, requests)
 }
+
+// The backfill too downloads only the images of a badge's credentialSubject.
+func TestBackfillLogos_OnlyTheCredentialSubjectsClaimImages(t *testing.T) {
+	server, requests := imageHost(t)
+	s := newBackfillTestStorage(t)
+	expandedTypes, err := json.Marshal([]string{"https://www.w3.org/2018/credentials#VerifiableCredential", vcdm.OpenBadgeCredentialType})
+	require.NoError(t, err)
+	payload, err := json.Marshal(badgeDocument(server.URL))
+	require.NoError(t, err)
+	require.NoError(t, db.NewVcdmStore(s.Db()).StoreBatch(&models.VcdmBatch{
+		TypeIdentity:     "https://www.w3.org/ns/credentials/v2 VerifiableCredential OpenBadgeCredential",
+		IssuerIdentifier: "https://issuer.example.com",
+		CredentialIssuer: "https://issuer.example.com",
+		Format:           models.CredentialFormatSdJwtVcdm,
+		Hash:             "badge",
+		ProcessedPayload: payload,
+		ExpandedTypes:    expandedTypes,
+		IssuedAt:         time.Now(),
+		BatchSize:        1,
+		RemainingCount:   1,
+		Instances:        []models.VcdmBatchInstance{{RawCredential: []byte("raw")}},
+	}))
+
+	require.Equal(t, 1, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, map[string]int{"/subject.png": 1}, requests)
+}
