@@ -27,17 +27,6 @@ const (
 	SHA3_512   HashingAlgorithm = "sha3-512"
 )
 
-func IsSupportedHashingAlgorithm(name HashingAlgorithm) bool {
-	switch name {
-	case SHA256, SHA256_128, SHA256_120, SHA256_96, SHA256_64, SHA256_32,
-		SHA384, SHA512,
-		SHA3_224, SHA3_256, SHA3_384, SHA3_512:
-		return true
-	default:
-		return false
-	}
-}
-
 func getHashByIANA(name HashingAlgorithm) (hash.Hash, error) {
 	switch name {
 	case SHA256:

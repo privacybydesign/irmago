@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
@@ -66,9 +67,15 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
 
+	vcdmVerificationContext := vcdmsdjwt.VerificationContext{
+		X509VerificationContext: &conf.Issuers,
+		Clock:                   eudi_jwt.NewSystemClock(),
+	}
+	vcdmHolderVerifier := vcdmsdjwt.NewHolderVerificationProcessor(vcdmVerificationContext)
+
 	credStore := db.NewSdJwtVcStore(s.Db())
-	formats := services.NewCredentialFormats(conf, holderVerifier, nil, s.Db(), s.FileSystem(), services.NewRevocationService(nil, credStore), nil, nil)
-	client, err := NewClient(&http.Client{}, conf, holderVerifier, formats, nil, nil)
+	formats := services.NewCredentialFormats(conf, holderVerifier, vcdmHolderVerifier, nil, s.Db(), s.FileSystem(), services.NewRevocationService(nil, nil, credStore, db.NewVcdmStore(s.Db())), nil, nil)
+	client, err := NewClient(&http.Client{}, conf, holderVerifier, vcdmHolderVerifier, formats, nil, nil)
 	require.NoError(t, err)
 	client.SetAllowInsecureHttp(true)
 
@@ -103,10 +110,10 @@ func TestNewClientRegistersEveryCredentialFormat(t *testing.T) {
 // NewClient refuses a registry that would fail at runtime: none at all, or a
 // format missing one of its three parts.
 func TestNewClientRefusesIncompleteRegistry(t *testing.T) {
-	_, err := NewClient(&http.Client{}, &eudi.Configuration{}, nil, nil, nil, nil)
+	_, err := NewClient(&http.Client{}, &eudi.Configuration{}, nil, nil, nil, nil, nil)
 	require.Error(t, err)
 
-	_, err = NewClient(&http.Client{}, &eudi.Configuration{}, nil, services.CredentialFormats{
+	_, err = NewClient(&http.Client{}, &eudi.Configuration{}, nil, nil, services.CredentialFormats{
 		models.CredentialFormatSdJwtVc: {Parser: services.NewSdJwtVcCredentialFormatParser(nil)},
 	}, nil, nil)
 	require.Error(t, err)

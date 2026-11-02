@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -4527,7 +4528,29 @@ func createVeramoVerifierDcqlSessionWithQuery(t *testing.T, dcqlQuery string) ve
 	return result
 }
 
+// veramoVerifierProcessingStatus is the status the veramo verifier (v1.6.4+)
+// reports while it is still validating a vp_token. It answers the wallet before
+// it processes the response, so the result is only there once it reports
+// RESPONSE_RECEIVED.
+const veramoVerifierProcessingStatus = "RESPONSE_PROCESSING"
+
+// checkVeramoVerifierOfferStatus returns the verifier session status, waiting
+// (up to 10s) for the verifier to finish processing a received response.
 func checkVeramoVerifierOfferStatus(t *testing.T, state string) veramoCheckResult {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		result := getVeramoVerifierOfferStatus(t, state)
+		if result.Status != veramoVerifierProcessingStatus {
+			return result
+		}
+		require.True(t, time.Now().Before(deadline), "veramo verifier still processing the response after 10s")
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func getVeramoVerifierOfferStatus(t *testing.T, state string) veramoCheckResult {
 	t.Helper()
 
 	checkURL := fmt.Sprintf("%s/%s/api/check-offer/%s", veramoVerifierBaseURL, veramoVerifierName, state)

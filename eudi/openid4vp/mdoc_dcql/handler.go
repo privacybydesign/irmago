@@ -1,6 +1,6 @@
 // Package mdoc_dcql implements a DcqlCredentialQueryHandler for mso_mdoc
 // credentials stored in the wallet's mdoc tables (issued via OpenID4VCI),
-// mirroring eudi_sdjwt_dcql for the mdoc format. It reads models.MdocBatch
+// mirroring sdjwt_dcql for the mdoc format. It reads models.MdocBatch
 // through db.MdocStore and nothing of the SD-JWT storage.
 package mdoc_dcql
 
@@ -14,7 +14,6 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
-	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/holdersigning"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -34,23 +33,23 @@ import (
 // key and a key in a wallet provider's HSM to the provider's reference; either
 // way this handler only sees a holdersigning.Key, and the DeviceAuthentication
 // is signed through the disclosure's holdersigning.Signer. This mirrors
-// eudi_sdjwt_dcql.HolderKeys, which is why neither handler touches key
+// sdjwt_dcql.HolderKeys, which is why neither handler touches key
 // material.
 type DeviceKeys interface {
 	ResolveDeviceKey(deviceKey *ecdsa.PublicKey) (holdersigning.Key, error)
 }
 
-// RevocationChecker reports whether a status list entry is currently revoked,
-// mirroring eudi_sdjwt_dcql.RevocationChecker: the disclosure planner depends
-// only on this narrow verb, keeping the Token Status List mechanics out of this
+// RevocationChecker applies the revocation policy to an instance's stored
+// status, mirroring sdjwt_dcql.RevocationChecker: the disclosure planner depends
+// only on this narrow verb, keeping the status list mechanics out of this
 // package (see services.RevocationService).
 type RevocationChecker interface {
-	IsRevoked(ref *statuslist.Reference) bool
+	IsStoredStatusRevoked(status uint8) bool
 }
 
-// MdocDcqlHandler implements dcql.DcqlCredentialQueryHandler for mso_mdoc
+// Handler implements dcql.DcqlCredentialQueryHandler for mso_mdoc
 // credentials stored in the eudi storage (SQLite).
-type MdocDcqlHandler struct {
+type Handler struct {
 	storage    storage.Storage
 	store      db.MdocStore
 	deviceKeys DeviceKeys
@@ -64,7 +63,7 @@ type MdocDcqlHandler struct {
 	revocation RevocationChecker
 }
 
-// NewMdocDcqlHandler creates a new handler.
+// New creates a new handler.
 //
 // store is the mdoc credential store this handler reads batches and instances
 // from -- pass the same db.MdocStore instance the caller already built for
@@ -79,15 +78,15 @@ type MdocDcqlHandler struct {
 //
 // revocation sets the Revoked flag on candidates and log entries; pass the
 // wallet's services.RevocationService, or nil to never flag anything revoked.
-func NewMdocDcqlHandler(
+func New(
 	eudiStorage storage.Storage,
 	store db.MdocStore,
 	currentLocale *clientmodels.CurrentLocale,
 	deviceKeys DeviceKeys,
 	usedKeys services.KeyRemover,
 	revocation RevocationChecker,
-) *MdocDcqlHandler {
-	return &MdocDcqlHandler{
+) *Handler {
+	return &Handler{
 		storage:       eudiStorage,
 		store:         store,
 		deviceKeys:    deviceKeys,
@@ -97,17 +96,17 @@ func NewMdocDcqlHandler(
 	}
 }
 
-var _ dcql.DcqlCredentialQueryHandler = (*MdocDcqlHandler)(nil)
+var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 
 // CanHandleCredentialQuery returns true for any query requesting the
 // "mso_mdoc" format -- this package's only responsibility is that one
-// format, unlike eudi_sdjwt_dcql/irma_sdjwt_dcql which split SD-JWT-VC
+// format, unlike sdjwt_dcql/irma_sdjwt_dcql which split SD-JWT-VC
 // between two stores by vct shape.
-func (h *MdocDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
+func (h *Handler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
 	return query.Format == string(clientmodels.Format_MsoMdoc)
 }
 
-func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQueryResult, error) {
+func (h *Handler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQueryResult, error) {
 	result := &dcql.CredentialQueryResult{}
 
 	docType := ""
@@ -118,7 +117,7 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 		return nil, fmt.Errorf("mso_mdoc credential query %q has no doctype_value", query.Id)
 	}
 
-	// An absent claims member is refused for mso_mdoc, where eudi_sdjwt_dcql
+	// An absent claims member is refused for mso_mdoc, where sdjwt_dcql
 	// treats it as "no selectively disclosable claims requested" and still
 	// matches the credential.
 	//
@@ -174,7 +173,7 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 			continue
 		}
 
-		// Revocation is per instance, like in eudi_sdjwt_dcql: each copy in a
+		// Revocation is per instance, like in sdjwt_dcql: each copy in a
 		// batch carries its own status list entry. The copy asked about is the
 		// one PrepareDisclosure will present.
 		instance, err := h.store.GetUnusedInstance(batch.ID)
@@ -206,7 +205,7 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 	}
 
 	// When nothing is owned, emit a URL-less descriptor from the query itself so the
-	// user sees what's being requested. Unlike eudi_sdjwt_dcql there's no standardized
+	// user sees what's being requested. Unlike sdjwt_dcql there's no standardized
 	// online discovery document for an mdoc doctype to enrich this with, so it's built
 	// purely from the DCQL query's own claim paths.
 	if len(result.OwnedCandidates) == 0 {
@@ -220,7 +219,7 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 // signature. The audience is the value the presentation is bound to, which for
 // a URL-invoked session is the verifier's client identifier -- the value the
 // OpenID4VP session transcript signs over.
-func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PendingDisclosure, error) {
+func (h *Handler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PendingDisclosure, error) {
 	// One pending presentation per selection, whole once its DeviceAuth is
 	// signed.
 	type pendingPresentation struct {
@@ -334,7 +333,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 		// and the credential would silently lose a use.
 		//
 		// Only mark the instance as used when the original batch had multiple instances.
-		// A batch of 1 keeps its single instance reusable, mirroring eudi_sdjwt_dcql. A
+		// A batch of 1 keeps its single instance reusable, mirroring sdjwt_dcql. A
 		// used instance is never presented again, so its device key goes, unless it
 		// was the batch's last: the wallet keeps a key for every credential it holds
 		// (ARF 3.0, WIAM_21). The count is read after the marking; when it cannot
@@ -367,7 +366,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 // means the transport was reported without the origin that authenticates it,
 // which cannot produce a verifiable signature, so it fails here rather than
 // silently signing over "".
-func (h *MdocDcqlHandler) sessionTranscript(sel dcql.DisclosureSelection, nonce, audience string) (stdmdoc.SessionTranscript, error) {
+func (h *Handler) sessionTranscript(sel dcql.DisclosureSelection, nonce, audience string) (stdmdoc.SessionTranscript, error) {
 	if !sel.OverDcApi {
 		return newOpenID4VPSessionTranscript(audience, nonce, sel.ResponseUri, sel.ResponseEncryptionKeyThumbprint)
 	}
@@ -403,7 +402,7 @@ func mdocPathParts(path []any) (namespace, elementIdentifier string, err error) 
 }
 
 // selectClaims determines which claims to use for matching, mirroring
-// eudi_sdjwt_dcql.selectClaims. When claim_sets is present, tries each set in
+// sdjwt_dcql.selectClaims. When claim_sets is present, tries each set in
 // order and returns the claims from the first fully satisfiable set. Without
 // claim_sets, all claims must match. Returns nil if the credential doesn't
 // satisfy the query.
@@ -583,7 +582,7 @@ func buildAttributes(batch *models.MdocBatch, claims []dcql.Claim, locale string
 //
 // The requested value is stamped only where asked (withRequested): on the
 // permission screen a candidate exists because its value satisfied the
-// constraint, so the value it holds is the requested one, as eudi_sdjwt_dcql
+// constraint, so the value it holds is the requested one, as sdjwt_dcql
 // records it. A section header has no value to stamp.
 func stampRequestFacts(attrs []clientmodels.Attribute, claims []dcql.Claim, withRequested bool) []clientmodels.Attribute {
 	claimByRef := make(map[services.MdocElementRef]dcql.Claim, len(claims))
@@ -658,9 +657,9 @@ func unobtainableClaimName(elementIdentifier string) *string {
 }
 
 // credentialImage loads the credential logo that resolves for the locale
-// from the batch's display metadata, mirroring eudi_sdjwt_dcql's identical
+// from the batch's display metadata, mirroring sdjwt_dcql's identical
 // helper.
-func (h *MdocDcqlHandler) credentialImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
+func (h *Handler) credentialImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
 	cm := services.MdocCredentialMetadata(batch)
 	if cm == nil {
 		return nil
@@ -670,8 +669,8 @@ func (h *MdocDcqlHandler) credentialImage(batch *models.MdocBatch, locale string
 }
 
 // issuerTrustedParty builds a TrustedParty from the stored issuer display
-// metadata, mirroring eudi_sdjwt_dcql's identical helper.
-func (h *MdocDcqlHandler) issuerTrustedParty(batch *models.MdocBatch, locale string) clientmodels.TrustedParty {
+// metadata, mirroring sdjwt_dcql's identical helper.
+func (h *Handler) issuerTrustedParty(batch *models.MdocBatch, locale string) clientmodels.TrustedParty {
 	return clientmodels.TrustedParty{
 		Id:       batch.CredentialIssuer,
 		Name:     clientmodels.Resolve(services.MdocIssuerNamesByLanguage(services.MdocIssuerDisplays(batch)), locale),
@@ -681,9 +680,9 @@ func (h *MdocDcqlHandler) issuerTrustedParty(batch *models.MdocBatch, locale str
 }
 
 // issuerImage loads the issuer logo that resolves for the locale from the
-// batch's issuer display metadata, mirroring eudi_sdjwt_dcql's identical
+// batch's issuer display metadata, mirroring sdjwt_dcql's identical
 // helper.
-func (h *MdocDcqlHandler) issuerImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
+func (h *Handler) issuerImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
 	logoManager := h.storage.FileSystem().Issuers().LogoManager()
 	return services.LoadResolvedLogo(logoManager, services.MdocIssuerLogoURIsByLanguage(services.MdocIssuerDisplays(batch)), locale)
 }
@@ -723,7 +722,7 @@ func batchExpiryUnix(batch *models.MdocBatch) *int64 {
 // The verifier's intent to retain is recorded with each row, as the screen
 // showed it: a log that forgets it leaves the user unable to see later what
 // they agreed to.
-func (h *MdocDcqlHandler) buildLogCredential(
+func (h *Handler) buildLogCredential(
 	batch *models.MdocBatch,
 	instance *models.MdocBatchInstance,
 	claimPaths [][]any,
@@ -751,6 +750,6 @@ func (h *MdocDcqlHandler) buildLogCredential(
 	}
 }
 
-func (h *MdocDcqlHandler) isRevoked(instance *models.MdocBatchInstance) bool {
-	return h.revocation != nil && h.revocation.IsRevoked(instance.StatusReference())
+func (h *Handler) isRevoked(instance *models.MdocBatchInstance) bool {
+	return h.revocation != nil && h.revocation.IsStoredStatusRevoked(instance.LastKnownStatus)
 }

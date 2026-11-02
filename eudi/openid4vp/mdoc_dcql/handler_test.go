@@ -17,7 +17,6 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
-	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/holdersigning"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -125,10 +124,10 @@ func TestFindCandidatesAndPrepareDisclosureRoundTrip(t *testing.T) {
 // lives with services.RevocationService).
 type stubRevocation struct{ revoked bool }
 
-func (s stubRevocation) IsRevoked(*statuslist.Reference) bool { return s.revoked }
+func (s stubRevocation) IsStoredStatusRevoked(uint8) bool { return s.revoked }
 
 // TestRevokedMdocIsOfferedAndLoggedAsRevoked pins the IRMA-parity contract for
-// mso_mdoc, as eudi_sdjwt_dcql does for SD-JWT VC: a revoked credential is not
+// mso_mdoc, as sdjwt_dcql does for SD-JWT VC: a revoked credential is not
 // dropped from the plan. It is offered with Revoked=true, so the frontend can
 // decide, and the log records that what was shared had been revoked.
 func TestRevokedMdocIsOfferedAndLoggedAsRevoked(t *testing.T) {
@@ -310,7 +309,7 @@ func TestPrepareDisclosureKeepsBatchOfOneReusable(t *testing.T) {
 // CanHandleCredentialQuery is the dispatch every other handler relies on to not
 // be handed an mdoc, and vice versa.
 func TestCanHandleCredentialQuery(t *testing.T) {
-	handler := &MdocDcqlHandler{}
+	handler := &Handler{}
 
 	require.True(t, handler.CanHandleCredentialQuery(dcql.CredentialQuery{Format: "mso_mdoc"}))
 	require.False(t, handler.CanHandleCredentialQuery(dcql.CredentialQuery{Format: "dc+sd-jwt"}))
@@ -318,7 +317,7 @@ func TestCanHandleCredentialQuery(t *testing.T) {
 }
 
 // TestFindCandidatesWithClaimSetsPicksFirstSatisfiableSet covers claim_sets,
-// which this handler implements by copying eudi_sdjwt_dcql and which, until now,
+// which this handler implements by copying sdjwt_dcql and which, until now,
 // had no test in any format's package except irma_sdjwt_dcql -- so the mdoc copy
 // had never executed.
 //
@@ -401,7 +400,7 @@ func TestFindCandidatesWithClaimSetsNoneSatisfiable(t *testing.T) {
 }
 
 // TestFindCandidatesRefusesQueryWithoutClaims pins the mso_mdoc reading of an
-// absent claims member. eudi_sdjwt_dcql treats it as "no selectively disclosable
+// absent claims member. sdjwt_dcql treats it as "no selectively disclosable
 // claims requested" and still matches, which leaves an SD-JWT its always-
 // disclosed payload to present; an mdoc has no such payload, so the same reading
 // would sign an empty namespaces map and offer the user an attribute-less
@@ -621,7 +620,7 @@ func TestSelectiveDiscloseByPathsRevealsOnlyNamedElements(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 type testEnv struct {
-	handler  *MdocDcqlHandler
+	handler  *Handler
 	verifier *stdmdoc.Verifier
 	store    db.MdocStore
 	hash     string
@@ -653,7 +652,7 @@ func (e *testEnv) storedKeys(t *testing.T) int {
 // process cannot extract.
 func (e *testEnv) withDeviceKeys(keys DeviceKeys) *testEnv {
 	withKeys := *e
-	withKeys.handler = NewMdocDcqlHandler(e.eudiStorage, e.store, clientmodels.NewCurrentLocale("en"), keys,
+	withKeys.handler = New(e.eudiStorage, e.store, clientmodels.NewCurrentLocale("en"), keys,
 		services.NewMdocKeyService(e.keyStore, nil), nil)
 	return &withKeys
 }
@@ -661,11 +660,11 @@ func (e *testEnv) withDeviceKeys(keys DeviceKeys) *testEnv {
 // prepareSigned runs the handler's two-phase PrepareDisclosure to the end,
 // signing with software keys, the way the dispatcher does with the wallet's
 // signer for a wallet without a wallet provider.
-func prepareSigned(h *MdocDcqlHandler, selections []dcql.DisclosureSelection, nonce, audience string) (*dcql.PreparedDisclosure, error) {
+func prepareSigned(h *Handler, selections []dcql.DisclosureSelection, nonce, audience string) (*dcql.PreparedDisclosure, error) {
 	return prepareSignedWith(h, services.NewHolderSigner(nil), selections, nonce, audience)
 }
 
-func prepareSignedWith(h *MdocDcqlHandler, signer holdersigning.Signer, selections []dcql.DisclosureSelection, nonce, audience string) (*dcql.PreparedDisclosure, error) {
+func prepareSignedWith(h *Handler, signer holdersigning.Signer, selections []dcql.DisclosureSelection, nonce, audience string) (*dcql.PreparedDisclosure, error) {
 	pending, err := h.PrepareDisclosure(selections, nonce, audience)
 	if err != nil {
 		return nil, err
@@ -783,7 +782,7 @@ func newTestEnvWithExpiry(t *testing.T, batchSize uint, expiresAt *time.Time) *t
 	return &testEnv{
 		// The production binder, wired as client.New wires it, so every test that
 		// does not substitute one is covering the real path.
-		handler: NewMdocDcqlHandler(eudiStorage, store, clientmodels.NewCurrentLocale("en"),
+		handler: New(eudiStorage, store, clientmodels.NewCurrentLocale("en"),
 			services.NewMdocDeviceKeyResolver(keyStore), services.NewMdocKeyService(keyStore, nil), nil),
 		verifier:    verifier,
 		store:       store,

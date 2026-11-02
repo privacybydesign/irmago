@@ -20,6 +20,7 @@ import (
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/privacybydesign/irmago/irma/server/irmaserver"
 	"github.com/privacybydesign/irmago/irma/server/requestorserver"
+	"github.com/privacybydesign/irmago/irma/server/usage"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
@@ -391,6 +392,7 @@ func RequestorServerPermissionsConfiguration() *requestorserver.Configuration {
 	irmaServerConf.URL = requestorServerURL + "/irma"
 	conf.DisableRequestorAuthentication = false
 	conf.Production = true
+	conf.UsageReporting = &usage.Settings{Disabled: true}
 	conf.DisableTLS = true
 	conf.AllowUnsignedCallbacks = true
 	conf.Permissions = requestorserver.Permissions{}

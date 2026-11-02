@@ -43,8 +43,9 @@ func CreatePresentation(fullSdJwt SdJwt, claimPaths [][]any) (SdJwt, error) {
 // presentation were built for the given claim paths. The returned map has the
 // same shape as the JWT payload with the selected disclosures applied: bundled
 // fields from a single disclosure value appear inline, hidden _sd entries are
-// dropped, and hidden array-element digests stay as nil placeholders so array
-// indices remain stable. Standard JWT/SD-JWT meta keys (_sd, _sd_alg) are
+// dropped, and hidden array elements stay as nil placeholders so array indices
+// remain stable. Decoy digests are dropped, as in the processed payload, so an
+// index means the same here as in a claim path. Standard JWT/SD-JWT meta keys (_sd, _sd_alg) are
 // stripped from objects in the returned view.
 //
 // Use this to drive UI/log flattening: the disclosure plan and disclosure log
@@ -180,8 +181,9 @@ func collectSelectedDisclosures(
 
 // applyDisclosures returns the JSON value a verifier would see after the
 // selected disclosures are applied to the payload. _sd arrays are replaced by
-// their disclosed children, _sd_alg is dropped, and unselected array-element
-// digests stay as nil placeholders so array indices remain stable.
+// their disclosed children, _sd_alg is dropped, unselected array elements stay
+// as nil placeholders so array indices remain stable, and decoy digests are
+// dropped (see arrayElements).
 func applyDisclosures(value any, selected map[string]struct{}, byHash map[string]indexedDisclosure) any {
 	switch v := value.(type) {
 	case map[string]any:
@@ -215,23 +217,17 @@ func applyDisclosures(value any, selected map[string]struct{}, byHash map[string
 		}
 		return out
 	case []any:
-		// Preserve length and indices: hidden array-element digests stay as
-		// nil placeholders so callers can compare authorized leaf paths
-		// against the verifier-side view without index-shift surprises.
-		out := make([]any, len(v))
-		for i, elem := range v {
-			if obj, ok := elem.(map[string]any); ok {
-				if digest, ok := obj["..."].(string); ok {
-					if _, sel := selected[digest]; !sel {
-						continue
-					}
-					entry, ok := byHash[digest]
-					if !ok {
-						continue
-					}
-					out[i] = applyDisclosures(entry.decoded.Value, selected, byHash)
-					continue
+		// Preserve indices: hidden array elements stay as nil placeholders so
+		// callers can compare authorized leaf paths against the verifier-side
+		// view without index-shift surprises.
+		elems := arrayElements(v, byHash)
+		out := make([]any, len(elems))
+		for i, elem := range elems {
+			if digest, ok := arrayElementDigest(elem); ok {
+				if _, sel := selected[digest]; sel {
+					out[i] = applyDisclosures(byHash[digest].decoded.Value, selected, byHash)
 				}
+				continue
 			}
 			out[i] = applyDisclosures(elem, selected, byHash)
 		}
@@ -308,28 +304,56 @@ func collectReachableHashes(value any, selectedSet map[string]struct{}, byHash m
 	}
 }
 
-// resolveArrayIndex navigates to a specific index in an array value.
-// If the element at that index is an SD-JWT array element digest ({"...": hash}),
-// the corresponding disclosure is added via addFn and the disclosed value is returned
-// so that deeper path components can continue navigating into it.
+// resolveArrayIndex navigates to a specific index in an array value, counting
+// past decoy digests (see arrayElements). If the element at that index is an
+// SD-JWT array element digest ({"...": hash}), the corresponding disclosure is
+// added via addFn and the disclosed value is returned so that deeper path
+// components can continue navigating into it.
 func resolveArrayIndex(currentValue any, idx int, addFn func(string), byHash map[string]indexedDisclosure) any {
 	arr, ok := currentValue.([]any)
-	if !ok || idx < 0 || idx >= len(arr) {
+	if !ok {
 		return nil
 	}
-	elem := arr[idx]
+	elems := arrayElements(arr, byHash)
+	if idx < 0 || idx >= len(elems) {
+		return nil
+	}
+	elem := elems[idx]
 
-	// Check if this is an SD array element: {"...": "<digest>"}
-	if obj, ok := elem.(map[string]any); ok {
-		if digest, ok := obj["..."].(string); ok {
-			addFn(digest)
-			// Return the disclosed value so deeper path components can navigate into it.
-			if entry, ok := byHash[digest]; ok {
-				return entry.decoded.Value
-			}
-			return nil
-		}
+	if digest, ok := arrayElementDigest(elem); ok {
+		addFn(digest)
+		// Return the disclosed value so deeper path components can navigate into it.
+		return byHash[digest].decoded.Value
 	}
 
 	return elem
+}
+
+// arrayElements returns the elements of an issuer-signed array without its
+// decoy digests: digests the wallet holds no disclosure for (RFC 9901 §4.2.5).
+// The wallet holds every disclosure of its own credential, so these are the
+// elements of the credential, and a claim path's index counts them, as the
+// processed payload does.
+func arrayElements(arr []any, byHash map[string]indexedDisclosure) []any {
+	elems := make([]any, 0, len(arr))
+	for _, elem := range arr {
+		if digest, ok := arrayElementDigest(elem); ok {
+			if _, known := byHash[digest]; !known {
+				continue
+			}
+		}
+		elems = append(elems, elem)
+	}
+	return elems
+}
+
+// arrayElementDigest returns the digest of an SD-JWT array element
+// {"...": "<digest>"}.
+func arrayElementDigest(elem any) (string, bool) {
+	obj, ok := elem.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	digest, ok := obj[EllipsisKey].(string)
+	return digest, ok
 }

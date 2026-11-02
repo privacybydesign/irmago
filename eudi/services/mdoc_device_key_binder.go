@@ -20,7 +20,7 @@ type mdocDeviceKeyResolver struct {
 }
 
 // NewMdocDeviceKeyResolver creates the storage-backed device key resolver to
-// hand to mdoc_dcql.NewMdocDcqlHandler.
+// hand to mdoc_dcql.New.
 func NewMdocDeviceKeyResolver(store db.MdocDeviceKeyStore) *mdocDeviceKeyResolver {
 	return &mdocDeviceKeyResolver{store: store}
 }

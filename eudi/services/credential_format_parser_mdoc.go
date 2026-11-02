@@ -126,10 +126,13 @@ func (p *mdocCredentialFormatParser) ParseAndVerify(raw, _ string, holderBinding
 	}, nil
 }
 
-func (p *mdocCredentialFormatParser) CheckBatchUniqueness(batch []*ParsedCredential) error {
+func (p *mdocCredentialFormatParser) CheckBatch(batch []*ParsedCredential) error {
 	seen := make(map[string]bool, len(batch))
 	for i, pc := range batch {
-		if pc.Mdoc == nil || pc.Mdoc.DeviceKeyThumbprint == "" {
+		if pc.Mdoc == nil {
+			return fmt.Errorf("credential %d is not an mdoc (format %q)", i, pc.Format)
+		}
+		if pc.Mdoc.DeviceKeyThumbprint == "" {
 			continue
 		}
 		if seen[pc.Mdoc.DeviceKeyThumbprint] {
@@ -137,7 +140,7 @@ func (p *mdocCredentialFormatParser) CheckBatchUniqueness(batch []*ParsedCredent
 		}
 		seen[pc.Mdoc.DeviceKeyThumbprint] = true
 	}
-	return nil
+	return requireIdenticalBatchInstances(batch, mdocBatchInstanceContent)
 }
 
 func jwkThumbprintFromECDSAPublicKey(pub any) (string, error) {

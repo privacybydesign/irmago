@@ -6,11 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
+	"maps"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
-	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
@@ -38,16 +37,6 @@ type VerifiedSdJwtVc struct {
 // validation vs. Status List Token time-field validation) that happen to
 // coincide at 180s — do not deduplicate them into a shared constant.
 const ClockSkewInSeconds = 180
-
-// timeToUnixOrZero returns 0 if t is the zero time (i.e. the claim was missing),
-// otherwise returns t.Unix(). This prevents time.Time{}.Unix() (-62135596800)
-// from being treated as a real timestamp.
-func timeToUnixOrZero(t time.Time) int64 {
-	if t.IsZero() {
-		return 0
-	}
-	return t.Unix()
-}
 
 // SdJwtVcVerificationContext contains some options and configuration for verifying SD-JWT VCs.
 type SdJwtVcVerificationContext struct {
@@ -233,44 +222,15 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 		return issuerIdentifier, nil, nil, nil, nil, errors.New("missing vct field")
 	}
 
-	// Get optional fields
-	sub, subPresent := token.Subject()
-	exp, expPresent := token.Expiration()
-	iat, iatPresent := token.IssuedAt()
-	nbf, nbfPresent := token.NotBefore()
+	registered, err := sdjwt.ExtractRegisteredClaims(token)
+	if err != nil {
+		return issuerIdentifier, nil, nil, nil, nil, err
+	}
 	iss, issPresent := token.Issuer()
-
-	// Check if the hashing algorithm was specified and supported, or use SHA-256 as default if the claim is not present
-	sdAlg := iana.SHA256
-	if token.Has(sdjwt.SdAlgKey) {
-		if h := getOptional[string](token, sdjwt.SdAlgKey); iana.IsSupportedHashingAlgorithm(iana.HashingAlgorithm(h)) {
-			sdAlg = iana.HashingAlgorithm(h)
-		} else {
-			return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("unsupported _sd_alg: %s", h)
-		}
-	}
-
-	var sd []sdjwt.HashedDisclosure
-	sdRaw, err := jwt.Get[any](token, sdjwt.SdKey)
-	if err == nil {
-		sd, err = sdjwt.ParseSdField(sdRaw)
-		if err != nil {
-			return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("failed to parse sd field: %v", err)
-		}
-	}
-
-	var cnf *sdjwt.CnfField
-	cnfRaw, err := jwt.Get[any](token, sdjwt.ConfirmationKey)
-	if err == nil {
-		cnf, err = sdjwt.ParseConfirmField(cnfRaw)
-		if err != nil {
-			return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("failed to parse cnf field: %v", err)
-		}
-	}
 
 	// Optional Token Status List reference (draft-ietf-oauth-status-list-15 §5.1).
 	var status *statuslist.StatusClaim
-	if token.Has(StatusKey) {
+	if token.Has(statuslist.StatusClaimKey) {
 		status, err = parseStatusClaim(token)
 		if err != nil {
 			return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("failed to parse status claim: %v", err)
@@ -283,12 +243,10 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	if err != nil {
 		return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
 	}
+	signedClaims := maps.Clone(issuerSignedJwtClaims)
 
-	// Construct payload — use 0 for missing time claims instead of time.Time{}.Unix()
 	payload := &IssuerSignedJwtPayload{
-		Sd:                       sd,
-		SdAlg:                    iana.HashingAlgorithm(sdAlg),
-		Confirm:                  cnf,
+		RegisteredClaims:         *registered,
 		VerifiableCredentialType: vct,
 		Status:                   status,
 	}
@@ -297,7 +255,6 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 		if !issPresent {
 			return issuerIdentifier, nil, nil, nil, nil, errors.New("missing iss: issuer cannot be determined without an x5c header")
 		}
-		payload.Issuer = &iss
 		issuerIdentifier = iss
 	} else {
 		if issPresent {
@@ -305,38 +262,15 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 			if err := utils.VerifyCertificateUri(cert, iss); err != nil {
 				return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("iss %q is not a SAN of the issuer certificate: %w", iss, err)
 			}
-			payload.Issuer = &iss
 			issuerIdentifier = iss
 		} else if issuerIdentity, err := utils.ObtainIssuerFromCert(cert); err != nil {
 			return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("failed to obtain issuer URL from certificate: %v", err)
 		} else {
 			issuerIdentifier = issuerIdentity
-			// Explicitly do not set payload.Issuer, as this is not part of the JWT claimset.
 		}
 	}
 
-	if subPresent {
-		payload.Subject = &sub
-	}
-
-	if expPresent {
-		expInt := timeToUnixOrZero(exp)
-		payload.Expiry = &expInt
-	}
-
-	if iatPresent {
-		iatInt := timeToUnixOrZero(iat)
-		payload.IssuedAt = &iatInt
-	}
-
-	if nbfPresent {
-		nbfInt := timeToUnixOrZero(nbf)
-		payload.NotBefore = &nbfInt
-	}
-
-	// Verify times
-	err = v.verifyTimeFields(payload)
-	if err != nil {
+	if err := payload.VerifyTimes(v.verificationContext.Clock.Now(), ClockSkewInSeconds*time.Second); err != nil {
 		return issuerIdentifier, nil, nil, nil, nil, err
 	}
 
@@ -344,6 +278,12 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	processedSdJwtPayload, decodedDisclosures, err := sdjwt.VerifyAndProcessDisclosures(payload.SdAlg, &issuerSignedJwtClaims, disclosures)
 	if err != nil {
 		return issuerIdentifier, nil, nil, nil, nil, err
+	}
+	for _, key := range nonDisclosableClaims {
+		_, signed := signedClaims[key]
+		if _, present := processedSdJwtPayload[key]; present && !signed {
+			return issuerIdentifier, nil, nil, nil, nil, fmt.Errorf("claim %q is selectively disclosable, which an SD-JWT VC does not allow", key)
+		}
 	}
 
 	// Convert pointer to disclosures to values for return  (TODO: optimize to avoid this copy?)
@@ -355,85 +295,32 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	return issuerIdentifier, payload, requestorInfo, decodedDisclosuresValues, &processedSdJwtPayload, nil
 }
 
-func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *IssuerSignedJwtPayload) error {
-	now := v.verificationContext.Clock.Now().Unix()
-	minSkewNow := now - ClockSkewInSeconds
-	maxSkewNow := now + ClockSkewInSeconds
-
-	iat := issuerSignedJwtPayload.IssuedAt
-	exp := issuerSignedJwtPayload.Expiry
-	nbf := issuerSignedJwtPayload.NotBefore
-
-	if nbf != nil && maxSkewNow < *nbf {
-		return fmt.Errorf("verification before nbf: now: %v + skew: %v < nbf: %v", now, ClockSkewInSeconds, *nbf)
-	}
-
-	if iat != nil && maxSkewNow < *iat {
-		return fmt.Errorf("verification before issued at: %v + skew: %v < %v", now, ClockSkewInSeconds, *iat)
-	}
-
-	if exp != nil && minSkewNow > *exp {
-		return fmt.Errorf("verification after expiry of issuer signed jwt: %v - skew: %v > %v", now, ClockSkewInSeconds, *exp)
-	}
-
-	return nil
+// nonDisclosableClaims are the claims SD-JWT VC keeps out of the Disclosures
+// (draft-ietf-oauth-sd-jwt-vc-13 §3.2.2.2), so a Holder and a Verifier always
+// see, and check, them.
+var nonDisclosableClaims = []string{
+	jwt.IssuerKey,
+	jwt.NotBeforeKey,
+	jwt.ExpirationKey,
+	sdjwt.ConfirmationKey,
+	VerifiableCredentialTypeKey,
+	VerifiableCredentialTypeIntegrityKey,
+	statuslist.StatusClaimKey,
 }
 
-// parseStatusClaim reads the `status` claim from a verified jwt.Token
-// into the structured form expected by the Token Status List
-// pipeline. Only the `status_list` member is parsed in v1; other
-// sibling members defined by future specs are silently ignored.
+// parseStatusClaim reads the `status` claim from a verified jwt.Token, with
+// the parser SD-JWT-secured VCDM uses too. A status claim without a
+// `status_list` member is a well-formed extension point and names no list.
 func parseStatusClaim(token jwt.Token) (*statuslist.StatusClaim, error) {
-	raw, err := jwt.Get[map[string]any](token, StatusKey)
+	raw, err := jwt.Get[any](token, statuslist.StatusClaimKey)
 	if err != nil {
-		return nil, fmt.Errorf("status claim is not an object: %v", err)
+		return nil, err
 	}
-	slRaw, ok := raw["status_list"]
-	if !ok {
-		// status object present without a status_list member is a
-		// well-formed extension point; treat as "no status list
-		// reference on this credential".
-		return &statuslist.StatusClaim{}, nil
+	ref, err := statuslist.ParseStatusClaim(raw)
+	if err != nil {
+		return nil, err
 	}
-	slMap, ok := slRaw.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("status_list is not an object: %T", slRaw)
-	}
-	idxRaw, ok := slMap["idx"]
-	if !ok {
-		return nil, fmt.Errorf("status_list.idx missing")
-	}
-	uriRaw, ok := slMap["uri"]
-	if !ok {
-		return nil, fmt.Errorf("status_list.uri missing")
-	}
-	uri, ok := uriRaw.(string)
-	if !ok {
-		return nil, fmt.Errorf("status_list.uri is not a string: %T", uriRaw)
-	}
-	var idx uint64
-	switch n := idxRaw.(type) {
-	case float64:
-		if n < 0 {
-			return nil, fmt.Errorf("status_list.idx is negative: %v", n)
-		}
-		idx = uint64(n)
-	case int:
-		if n < 0 {
-			return nil, fmt.Errorf("status_list.idx is negative: %v", n)
-		}
-		idx = uint64(n)
-	case int64:
-		if n < 0 {
-			return nil, fmt.Errorf("status_list.idx is negative: %v", n)
-		}
-		idx = uint64(n)
-	case uint64:
-		idx = n
-	default:
-		return nil, fmt.Errorf("status_list.idx is not a number: %T", idxRaw)
-	}
-	return &statuslist.StatusClaim{StatusList: &statuslist.Reference{Index: idx, URI: uri}}, nil
+	return &statuslist.StatusClaim{StatusList: ref}, nil
 }
 
 // Decode the JWT into a token, verify the signature with the X.509 certificate in the header and verify the certificate is trusted (both against root/intermediate certs and CRLs).
@@ -441,7 +328,10 @@ func parseStatusClaim(token jwt.Token) (*statuslist.StatusClaim, error) {
 func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 	signedJwt []byte,
 ) (jwt.Token, *x509.Certificate, *scheme.AttestationProviderRequestor, error) {
-	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{SdJwtVcTyp, SdJwtVcTyp_Legacy}, v.allowInsecureDidWeb)
+	// Only `dc+sd-jwt` is an IETF SD-JWT VC: `vc+sd-jwt` — the pre-2024 media
+	// type — now denotes an SD-JWT-secured W3C VCDM credential and is handled
+	// by eudi/credentials/vcdmsdjwt (#678/#683).
+	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{SdJwtVcTyp}, v.allowInsecureDidWeb)
 
 	// Create a context for the verification where we can retrieve the requestor info back
 	token, err := jwt.Parse(signedJwt,
@@ -485,27 +375,16 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 }
 
 func CheckKeyBindingConfirmationUniqueness(verifiedSdJwtVcs []*VerifiedSdJwtVc) error {
-	for _, verifiedSdJwtVc := range verifiedSdJwtVcs {
-		cnf := verifiedSdJwtVc.IssuerSignedJwtPayload.Confirm
-		if cnf == nil {
-			continue
-		}
-
-		duplicateCryptographicKey := slices.ContainsFunc(verifiedSdJwtVcs, func(otherSdJwtVc *VerifiedSdJwtVc) bool {
-			return otherSdJwtVc != verifiedSdJwtVc &&
-				otherSdJwtVc.IssuerSignedJwtPayload.Confirm != nil &&
-				((cnf.Jwk != nil && otherSdJwtVc.IssuerSignedJwtPayload.Confirm.Jwk != nil && jwk.Equal(*otherSdJwtVc.IssuerSignedJwtPayload.Confirm.Jwk, *cnf.Jwk)) ||
-					(cnf.Kid != nil && otherSdJwtVc.IssuerSignedJwtPayload.Confirm.Kid != nil && *otherSdJwtVc.IssuerSignedJwtPayload.Confirm.Kid == *cnf.Kid))
-		})
-
-		if duplicateCryptographicKey {
-			return fmt.Errorf(
-				"duplicate cryptographic key binding confirmation found for SD-JWT with vct %q",
-				verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType,
-			)
-		}
+	cnfs := make([]*sdjwt.CnfField, len(verifiedSdJwtVcs))
+	for i, vc := range verifiedSdJwtVcs {
+		cnfs[i] = vc.IssuerSignedJwtPayload.Confirm
 	}
-
+	if i := sdjwt.DuplicateConfirmation(cnfs); i >= 0 {
+		return fmt.Errorf(
+			"duplicate cryptographic key binding confirmation found for SD-JWT with vct %q",
+			verifiedSdJwtVcs[i].IssuerSignedJwtPayload.VerifiableCredentialType,
+		)
+	}
 	return nil
 }
 
@@ -602,7 +481,7 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 		return nil, fmt.Errorf("invalid kbjwt signature: %v (holder key: %v)", err, holderKey)
 	}
 
-	if typ := header["typ"]; typ != sdjwt.KbJwtTyp {
+	if typ := header["typ"]; !eudi_jwt.TypMatches(typ, sdjwt.KbJwtTyp) {
 		return nil, fmt.Errorf(
 			"key binding jwt header is expected to have 'typ' of '%s', but has %s (header: %v)",
 			sdjwt.KbJwtTyp,
@@ -680,14 +559,4 @@ func (p *holderVerifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt 
 // ParseAndVerifySdJwtVc is used to verify an SD-JWT VC using the verification options passed via the context parameter.
 func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (*VerifiedSdJwtVc, error) {
 	return v.sdJwtVcProcessor.ProcessAndVerifySdJwtVc(sdjwtvc, &holderVerifierKeyBindingProcessor{})
-}
-
-// ====== Utils ======
-
-func getOptional[T any](token jwt.Token, key string) T {
-	value, err := jwt.Get[T](token, key)
-	if err != nil {
-		return *new(T)
-	}
-	return value
 }

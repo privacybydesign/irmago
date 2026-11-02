@@ -15,16 +15,19 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/mdoc_dcql"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwtvc_dcql"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwtvcdm_dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -43,7 +46,7 @@ import (
 type Client struct {
 	storage           *clientstorage.Storage
 	eudiStorage       storage.Storage
-	sdjwtvcStorage    irmaclient.SdJwtVcStorage
+	irmaSdjwtStorage  irmaclient.SdJwtVcStorage
 	openid4vpClient   *openid4vp.Client
 	openid4vciClient  *openid4vci.Client
 	irmaClient        *irmaclient.IrmaClient
@@ -201,7 +204,15 @@ func New(cfg Config) (*Client, error) {
 		X509Context: &eudiConf.Issuers,
 		Clock:       eudi_jwt.NewSystemClock(),
 	}, statusListCache)
-	revocationService := services.NewRevocationService(statusChecker, sdjwtCredentialStore, mdocCredentialStore)
+
+	// SD-JWT-secured VCDM credentials can name either Token Status List or W3C
+	// Bitstring Status List; the latter's checker trusts the same issuers.
+	bitstringStatusChecker := bitstringstatus.NewChecker(bitstringstatus.VerificationContext{
+		X509Context: &eudiConf.Issuers,
+		Clock:       eudi_jwt.NewSystemClock(),
+	})
+	vcdmCredentialStore := db.NewVcdmStore(eudiStorage.Db())
+	revocationService := services.NewRevocationService(statusChecker, bitstringStatusChecker, sdjwtCredentialStore, mdocCredentialStore, vcdmCredentialStore)
 
 	// Rewrite any credential hash still computed under an older definition, and
 	// drop the duplicates that older definition let in. Runs before
@@ -218,7 +229,7 @@ func New(cfg Config) (*Client, error) {
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
 	didValidator := openid4vp.NewDidVerifierValidator(false)
 	verifierValidator := openid4vp.NewCompositeVerifierValidator(x509Validator, didValidator)
-	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(s)
+	irmaSdJwtStorage := irmaclient.NewBboltSdJwtVcStorage(s)
 
 	// Register the EUDI SD-JWT handler for credentials issued via OID4VCI.
 	// The fetchers describe credentials the wallet has never seen so the
@@ -227,7 +238,7 @@ func New(cfg Config) (*Client, error) {
 	// The holder key service also removes the key of an instance a disclosure
 	// used up, as the mdoc key service does below.
 	holderKeys := services.NewHolderBindingKeyService(eudiStorage.Db(), walletProvider)
-	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(
+	sdJwtVcDcqlHandler := sdjwtvc_dcql.New(
 		eudiStorage,
 		sdjwtCredentialStore,
 		typemetadata.NewDefaultVctFetcher(nil),
@@ -237,7 +248,18 @@ func New(cfg Config) (*Client, error) {
 		currentLocale,
 		revocationService,
 	)
-	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
+	// The VCDM handler serves vc+sd-jwt queries (SD-JWT-secured W3C VCDM 2.0)
+	// from the VCDM tables, while the SD-JWT VC handler above serves dc+sd-jwt.
+	// It shares the storage and holder keys; the holder key was linked at receipt.
+	sdJwtVcdmDcqlHandler := sdjwtvcdm_dcql.New(
+		eudiStorage,
+		vcdmCredentialStore,
+		holderKeys,
+		holderKeys,
+		currentLocale,
+		revocationService,
+	)
+	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.New(irmaSdJwtStorage, irmaConf, irmaKeyBinder, currentLocale)
 
 	// Register the mso_mdoc handler for credentials issued via OID4VCI (e.g. the AV
 	// Blueprint's proof_of_age credential). No fetchers here (unlike the SD-JWT
@@ -246,14 +268,14 @@ func New(cfg Config) (*Client, error) {
 	// The device key resolver hands back the stored software key, or the wallet
 	// provider's reference to a key in its HSM; the holder signer signs either.
 	mdocDeviceKeys := db.NewMdocDeviceKeyStore(eudiStorage.Db())
-	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, mdocCredentialStore, currentLocale,
+	mdocDcqlHandler := mdoc_dcql.New(eudiStorage, mdocCredentialStore, currentLocale,
 		services.NewMdocDeviceKeyResolver(mdocDeviceKeys),
 		services.NewMdocKeyService(mdocDeviceKeys, walletProvider),
 		revocationService)
 
 	openid4vpClient, err := openid4vp.NewClient(
 		eudiConf,
-		[]dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler, mdocDcqlHandler},
+		[]dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, sdJwtVcDcqlHandler, sdJwtVcdmDcqlHandler, mdocDcqlHandler},
 		services.NewHolderSigner(walletProvider),
 		verifierValidator,
 		currentLocale,
@@ -272,7 +294,7 @@ func New(cfg Config) (*Client, error) {
 	}
 
 	irmaHandler := newIrmaHandler(cfg.Handler)
-	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, irmaHandler, cfg.Signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
+	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, irmaHandler, cfg.Signer, irmaStorage, sdJwtVcVerificationContext, irmaSdJwtStorage, irmaKeyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
@@ -304,16 +326,27 @@ func New(cfg Config) (*Client, error) {
 		StatusChecker: statusChecker,
 	}
 
+	// SD-JWT-secured VCDM (vc+sd-jwt) credentials share the issuer trust anchors
+	// and clock with the SD-JWT VC (dc+sd-jwt) context.
+	vcdmVerificationContextOpenID4VCI := vcdmsdjwt.VerificationContext{
+		X509VerificationContext: &eudiConf.Issuers,
+		Clock:                   eudi_jwt.NewSystemClock(),
+		StatusChecker:           statusChecker,
+		BitstringStatusChecker:  bitstringStatusChecker,
+	}
+
 	// The per-format registry: how each credential format is verified, which
 	// keys it is bound to, and where it is stored. Derived in one place
 	// (services.NewCredentialFormats), so adding a format is one entry there and
 	// nothing to register here.
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI)
-	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, statusChecker, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, currentLocale, walletProvider)
+	vcdmHolderVerifier := vcdmsdjwt.NewHolderVerificationProcessor(vcdmVerificationContextOpenID4VCI)
+	credentialFormats := services.NewCredentialFormats(eudiConf, holderVerifier, vcdmHolderVerifier, statusChecker, eudiStorage.Db(), eudiStorage.FileSystem(), revocationService, currentLocale, walletProvider)
 	openid4vciClient, err := openid4vci.NewClient(
 		common.HTTPClient,
 		eudiConf,
 		holderVerifier,
+		vcdmHolderVerifier,
 		credentialFormats,
 		currentLocale,
 		services.NewClientAttester(walletProvider),
@@ -332,7 +365,7 @@ func New(cfg Config) (*Client, error) {
 
 	client := &Client{
 		storage:           s,
-		sdjwtvcStorage:    sdjwtvcStorage,
+		irmaSdjwtStorage:  irmaSdJwtStorage,
 		eudiStorage:       eudiStorage,
 		openid4vpClient:   openid4vpClient,
 		openid4vciClient:  openid4vciClient,
@@ -403,8 +436,9 @@ func (client *Client) Close() error {
 	return client.storage.Close()
 }
 
-// RefreshStatuses re-fetches the Token Status List for one representative
-// instance per stored SD-JWT VC batch and updates its LastKnownStatus column.
+// RefreshStatuses re-fetches the status lists of every stored credential,
+// checks each instance, and stores its batch's status on every instance of the
+// batch (see services.RevocationService.RefreshStatuses).
 // Use this on app resume or when the UI exposes an explicit refresh action.
 // Errors during the sweep are logged; the previous LastKnownStatus persists for
 // any URI that fails to refresh.
@@ -498,7 +532,7 @@ func sdjwtvcBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMe
 }
 
 func (client *Client) getIrmaCredentialInfoList() irma.CredentialInfoList {
-	sdjwtvcs := client.sdjwtvcStorage.GetCredentialMetdataList()
+	sdjwtvcs := client.irmaSdjwtStorage.GetCredentialMetdataList()
 	idemix := client.irmaClient.CredentialInfoList()
 
 	result := irma.CredentialInfoList{}
@@ -621,7 +655,7 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 			}
 		}
 		if format == clientmodels.Format_SdJwtVc {
-			holderPubKeys, err := client.sdjwtvcStorage.RemoveCredentialByHash(hash)
+			holderPubKeys, err := client.irmaSdjwtStorage.RemoveCredentialByHash(hash)
 			if err != nil {
 				return fmt.Errorf("error while deleting sdjwtvc credential: %v", err)
 			}
@@ -764,7 +798,7 @@ func (client *Client) RemoveStorage() error {
 		cancel()
 	}
 
-	if err := client.sdjwtvcStorage.RemoveAll(); err != nil {
+	if err := client.irmaSdjwtStorage.RemoveAll(); err != nil {
 		return fmt.Errorf("failed to remove sdjwtvc storage: %v", err)
 	}
 	if err := client.keyBinder.RemoveAllPrivateKeys(); err != nil {
@@ -920,9 +954,9 @@ func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInte
 		common.Logger.Warnf("failed to create new cron job for updating CRLs: %v", err)
 	}
 
-	// Periodically re-fetch referenced Token Status Lists and update one
-	// representative instance's LastKnownStatus per credential batch (a batch is
-	// revoked all at once, so one entry stands in for the whole batch). Skipped
+	// Periodically re-fetch referenced status lists and update every instance's
+	// LastKnownStatus with its batch's status (a batch is revoked all at once,
+	// so one revoked instance revokes the whole batch). Skipped
 	// when the interval is non-positive. The sweep is fail-soft: per-URI errors
 	// are logged inside RefreshStatuses and the previous status is kept. A sweep
 	// that finds a status change signals the app through RefreshStatuses.
