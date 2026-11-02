@@ -534,22 +534,6 @@ func LoadDocumentLogo(manager filesystem.LogoManager, documentURI string, metada
 	return LoadResolvedLogo(manager, metadataURIs, locale)
 }
 
-// VcdmDocumentName resolves the credential's own `name` (VCDM 2.0 §4.6) for the
-// locale, or "" when it has none.
-func VcdmDocumentName(document vcdm.Document, locale string) string {
-	return clientmodels.Resolve(byBaseLanguage(document.Names()), locale)
-}
-
-// VcdmPayloadName is VcdmDocumentName over a stored processed payload. An
-// unreadable payload has no name.
-func VcdmPayloadName(payload datatypes.JSON, locale string) string {
-	var document vcdm.Document
-	if err := json.Unmarshal(payload, &document); err != nil {
-		return ""
-	}
-	return VcdmDocumentName(document, locale)
-}
-
 // sdJwtVcdmDisplaySource is the SD-JWT-secured VCDM CredentialDisplaySource:
 // the read side that needs only the store.
 type sdJwtVcdmDisplaySource struct {

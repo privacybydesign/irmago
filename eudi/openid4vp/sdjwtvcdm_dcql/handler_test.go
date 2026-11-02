@@ -3,8 +3,11 @@ package sdjwtvcdm_dcql
 import (
 	"testing"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcql"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/datatypes"
 )
@@ -22,8 +25,15 @@ func TestCanHandleCredentialQuery(t *testing.T) {
 		"VCDM handler must not serve mdoc")
 }
 
-// Without display metadata, a VCDM credential is named by its own `name`.
-func TestFallbackName_IsTheDocumentName(t *testing.T) {
-	batch := &sdjwt_dcql.Batch{ProcessedPayload: datatypes.JSON(`{"name": "Alumni card"}`)}
-	assert.Equal(t, "Alumni card", fallbackName(batch, "en"))
+// The profile reads a stored credential's own display from its payload, an
+// Open Badges credential's achievement image included, by its expanded types.
+func TestDocumentDisplay(t *testing.T) {
+	payload := datatypes.JSON(`{"name": "Alumni card", "credentialSubject": {"achievement": {"image": "https://example.com/badge.png"}}}`)
+
+	display := documentDisplay(&sdjwt_dcql.Batch{ProcessedPayload: payload, ExpandedTypes: []string{vcdm.OpenBadgeCredentialType}})
+	assert.Equal(t, clientmodels.TranslatedString{"": "Alumni card"}, display.CredentialNames)
+	assert.Equal(t, "https://example.com/badge.png", display.CredentialImage)
+
+	assert.Empty(t, documentDisplay(&sdjwt_dcql.Batch{ProcessedPayload: payload}).CredentialImage, "not an Open Badges credential")
+	assert.Equal(t, services.VcdmDocumentDisplay{}, documentDisplay(&sdjwt_dcql.Batch{ProcessedPayload: datatypes.JSON(`not json`)}))
 }

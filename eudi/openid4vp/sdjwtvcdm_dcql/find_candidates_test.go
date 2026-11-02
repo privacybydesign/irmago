@@ -25,6 +25,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
@@ -847,4 +848,76 @@ func TestVcdmClaimImage_WholeImageIsOneAttribute(t *testing.T) {
 	}}, "nonce-1", "verifier-1")
 	require.NoError(t, err)
 	requireOneImageAttribute(prepared.CredentialLogs[0].Attributes)
+}
+
+// The disclosure screen and the log show the credential's own name, image,
+// issuer name and issuer logo over the issuer metadata's, and the metadata's
+// logos while the credential's images are not cached.
+func TestVcdmDocumentDisplay_DisclosureScreenAndLog(t *testing.T) {
+	ts := sdjwt_dcqltest.NewTestStorage(t)
+	store := db.NewVcdmStore(ts.Db())
+	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
+	h := New(ts, store, keyBinder, clientmodels.NewCurrentLocale("en"), nil)
+
+	payload := academicPayload(t)
+	payload["name"] = "Alumni card"
+	payload["image"] = "https://document.example/card.png"
+	payload["issuer"] = map[string]any{
+		"id":    payload["issuer"],
+		"name":  "Example University",
+		"image": map[string]any{"id": "https://document.example/issuer.png", "type": "Image"},
+	}
+	batch := newTestBatch("hash-vcdm-display", academicVcdmType, payload)
+	batch.IssuerDisplay = datatypes.JSON(`[{"name": "Metadata Issuer", "locale": "en", "logo": {"uri": "https://metadata.example/issuer.png"}}]`)
+	batch.CredentialMetadata = datatypes.JSON(`{"display": [{"name": "Metadata Card", "locale": "en", "logo": {"uri": "https://metadata.example/card.png"}}]}`)
+	raw, _ := issueHolderBoundAcademicCredential(t, keyBinder)
+	batch.Instances[0].RawCredential = []byte(raw)
+	require.NoError(t, store.StoreBatch(batch))
+
+	credentialLogos := ts.FileSystem().Credentials().LogoManager()
+	issuerLogos := ts.FileSystem().Issuers().LogoManager()
+	cache := func(manager filesystem.LogoManager, uri, content string) {
+		require.NoError(t, manager.Save(uri, []byte(content), clientmodels.MimeTypePNG))
+	}
+	requireLogo := func(image *clientmodels.Image, content string) {
+		t.Helper()
+		require.NotNil(t, image)
+		require.Equal(t, base64.StdEncoding.EncodeToString([]byte(content)), image.Base64)
+	}
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "vc+sd-jwt",
+		"meta": {"vct_values": ["`+academicVcdmType+`"]},
+		"claims": [{"path": ["credentialSubject", "given_name"]}]
+	}`)
+	candidate := func() *clientmodels.SelectableCredentialInstance {
+		t.Helper()
+		result, err := h.FindCandidates(query)
+		require.NoError(t, err)
+		require.Len(t, result.OwnedCandidates, 1)
+		return result.OwnedCandidates[0]
+	}
+
+	cache(credentialLogos, "https://metadata.example/card.png", "metadata card")
+	cache(issuerLogos, "https://metadata.example/issuer.png", "metadata issuer")
+	c := candidate()
+	require.Equal(t, "Alumni card", c.Name)
+	require.Equal(t, "Example University", c.Issuer.Name)
+	requireLogo(c.Image, "metadata card")
+	requireLogo(c.Issuer.Image, "metadata issuer")
+
+	cache(credentialLogos, "https://document.example/card.png", "document card")
+	cache(issuerLogos, "https://document.example/issuer.png", "document issuer")
+	c = candidate()
+	requireLogo(c.Image, "document card")
+	requireLogo(c.Issuer.Image, "document issuer")
+
+	prepared, err := h.PrepareDisclosure(givenNameSelection("hash-vcdm-display"), "nonce-1", "verifier-1")
+	require.NoError(t, err)
+	require.Len(t, prepared.CredentialLogs, 1)
+	log := prepared.CredentialLogs[0]
+	require.Equal(t, "Alumni card", log.Name)
+	require.Equal(t, "Example University", log.Issuer.Name)
+	requireLogo(log.Image, "document card")
+	requireLogo(log.Issuer.Image, "document issuer")
 }

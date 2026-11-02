@@ -337,18 +337,29 @@ func TestSdJwtVcdmList_SubjectRootedAttributes(t *testing.T) {
 	}, paths)
 }
 
-func TestVcdmDocumentName(t *testing.T) {
-	doc := vcdm.Document{vcdm.NameKey: []any{
-		map[string]any{"@value": "Alumni card", "@language": "en-GB"},
-		map[string]any{"@value": "Alumnikaart", "@language": "nl-NL"},
-	}}
-	require.Equal(t, "Alumnikaart", VcdmDocumentName(doc, "nl"), "region tags resolve by base language")
-	require.Equal(t, "Alumni card", VcdmDocumentName(doc, "de"), "unknown locale falls back to English")
+func TestNewVcdmDocumentDisplay(t *testing.T) {
+	doc := vcdm.Document{
+		vcdm.NameKey: []any{
+			map[string]any{"@value": "Alumni card", "@language": "en-GB"},
+			map[string]any{"@value": "Alumnikaart", "@language": "nl-NL"},
+		},
+		vcdm.IssuerKey: map[string]any{"id": "https://issuer.example", "name": "Example University", "image": "https://example.com/logo.png"},
+		vcdm.CredentialSubjectKey: map[string]any{
+			"achievement": map[string]any{"image": map[string]any{"id": "https://example.com/badge.png", "type": "Image"}},
+		},
+	}
+	display := NewVcdmDocumentDisplay(doc, true)
+	require.Equal(t, clientmodels.TranslatedString{"en": "Alumni card", "nl": "Alumnikaart"}, display.CredentialNames, "region tags are keyed by base language")
+	require.Equal(t, clientmodels.TranslatedString{"": "Example University"}, display.IssuerNames, "a plain string is used for every locale")
+	require.Equal(t, "https://example.com/logo.png", display.IssuerImage)
+	require.Equal(t, "https://example.com/badge.png", display.CredentialImage, "a badge without an image of its own is pictured by its achievement")
 
-	plain := vcdm.Document{vcdm.NameKey: "Alumni card"}
-	require.Equal(t, "Alumni card", VcdmDocumentName(plain, "nl"), "a plain string is used for every locale")
+	require.Empty(t, NewVcdmDocumentDisplay(doc, false).CredentialImage, "outside Open Badges, an achievement is just a claim")
 
-	require.Empty(t, VcdmDocumentName(vcdm.Document{}, "en"))
+	doc[vcdm.ImageKey] = "https://example.com/card.png"
+	require.Equal(t, "https://example.com/card.png", NewVcdmDocumentDisplay(doc, true).CredentialImage, "the credential's own image comes first")
+
+	require.Equal(t, VcdmDocumentDisplay{}, NewVcdmDocumentDisplay(vcdm.Document{}, true))
 }
 
 // The credential's and the issuer's name come from the document first, and

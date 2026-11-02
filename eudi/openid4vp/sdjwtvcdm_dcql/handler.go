@@ -6,6 +6,7 @@
 package sdjwtvcdm_dcql
 
 import (
+	"encoding/json"
 	"slices"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -59,7 +60,7 @@ func New(
 		},
 		Present:           vcdmsdjwt.CreateEnvelopedPresentation,
 		MatchesTypeValues: matchesTypeValues,
-		FallbackName:      fallbackName,
+		DocumentDisplay:   documentDisplay,
 	}
 	return &Handler{sdjwt_dcql.NewEngine(profile, eudiStorage, sdjwt_dcql.NewVcdmBatchStore(credentialStore, revocation), nil, nil, keyBinder, currentLocale)}
 }
@@ -102,8 +103,12 @@ func matchesTypeValues(batch *sdjwt_dcql.Batch, typeValues [][]string) bool {
 	return false
 }
 
-// fallbackName is the credential's own `name`, for a credential whose
-// metadata gives it none.
-func fallbackName(batch *sdjwt_dcql.Batch, locale string) string {
-	return services.VcdmPayloadName(batch.ProcessedPayload, locale)
+// documentDisplay is how the stored VCDM document says it looks. An
+// unreadable payload says nothing.
+func documentDisplay(batch *sdjwt_dcql.Batch) services.VcdmDocumentDisplay {
+	var document vcdm.Document
+	if err := json.Unmarshal(batch.ProcessedPayload, &document); err != nil {
+		return services.VcdmDocumentDisplay{}
+	}
+	return services.NewVcdmDocumentDisplay(document, vcdm.IsOpenBadgesCredential(batch.ExpandedTypes))
 }
