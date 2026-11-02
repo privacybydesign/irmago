@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Like SD-JWT VC, the wallet checks and records the credential's own validity, the JWT `iat`, `nbf` and `exp`. The document's `validFrom` and `validUntil`, the validity of the data, are left for the verifier to judge; they stand in for the wallet's dates only when the JWT has no such claim.
   - **Storage and display**
     - A verified credential is stored in its own tables (`vcdm_batches`, `vcdm_batch_instances`), next to the SD-JWT VC and mso_mdoc ones, keyed by its `@context`+`type` identity, with claim paths rooted at `credentialSubject`.
-    - When the issuer metadata gives no display name, the credential's own `name` is shown, before falling back to the type identity.
+    - The credential's own `name` and its issuer's `name` are shown over the issuer metadata's display names, as an SD-JWT VC's type metadata is; the type identity is shown when neither names the credential.
+    - The credential's own `image` (in an Open Badges credential without one, its achievement's image) and its issuer's `image` are its logos, downloaded like the metadata's logos and shown over them; the metadata's logo shows when the credential's image cannot be downloaded.
   - **Status**
     - Both mechanisms a VCDM credential can name are checked: the W3C Bitstring Status List (`credentialStatus`) and the IETF Token Status List (`status.status_list`, which is what veramo issues).
     - As for SD-JWT VC, issuance refuses a credential whose status is not valid or cannot be verified, the status refresh sweep keeps the status up to date and tells the app when it changes, and a revoked credential is shown as revoked in the credential list, on the disclosure screen and in the log.

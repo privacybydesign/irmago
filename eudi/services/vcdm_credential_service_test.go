@@ -351,15 +351,143 @@ func TestVcdmDocumentName(t *testing.T) {
 	require.Empty(t, VcdmDocumentName(vcdm.Document{}, "en"))
 }
 
-func TestResolveVcdmDisplay_FallsBackToDocumentName(t *testing.T) {
+// The credential's and the issuer's name come from the document first, and
+// from the issuer metadata where the document has none.
+func TestResolveVcdmDisplay_DocumentFirst(t *testing.T) {
 	batch := &models.VcdmBatch{
-		CredentialIssuer: testVcdmIssuer,
-		ProcessedPayload: datatypes.JSON(`{"name": "Alumni card"}`),
+		CredentialIssuer:   testVcdmIssuer,
+		IssuerDisplay:      datatypes.JSON(`[{"name": "Metadata Issuer", "locale": "en"}, {"name": "Metadata Uitgever", "locale": "nl"}]`),
+		CredentialMetadata: datatypes.JSON(`{"display": [{"name": "Diploma", "locale": "en"}]}`),
 	}
-	require.Equal(t, "Alumni card", ResolveVcdmDisplay(batch, "en").CredentialName)
+	d := ResolveVcdmDisplay(batch, "en")
+	require.Equal(t, "Diploma", d.CredentialName, "the metadata's name where the document has none")
+	require.Equal(t, "Metadata Issuer", d.IssuerName)
 
-	batch.CredentialMetadata = datatypes.JSON(`{"display": [{"name": "Diploma", "locale": "en"}]}`)
-	require.Equal(t, "Diploma", ResolveVcdmDisplay(batch, "en").CredentialName, "issuer metadata takes precedence")
+	batch.ProcessedPayload = datatypes.JSON(`{"name": "Alumni card", "issuer": "https://issuer.example"}`)
+	d = ResolveVcdmDisplay(batch, "en")
+	require.Equal(t, "Alumni card", d.CredentialName, "the document's name over the metadata's")
+	require.Equal(t, "Metadata Issuer", d.IssuerName, "an issuer that is only an id names nothing")
+
+	batch.ProcessedPayload = datatypes.JSON(`{"name": "Alumni card", "issuer": {
+		"id": "https://issuer.example",
+		"name": [{"@value": "Example University", "@language": "en-GB"}, {"@value": "Voorbeelduniversiteit", "@language": "nl"}]
+	}}`)
+	d = ResolveVcdmDisplay(batch, "nl")
+	require.Equal(t, "Voorbeelduniversiteit", d.IssuerName, "the document's issuer name over the metadata's")
+	require.Equal(t, clientmodels.TranslatedString{"en": "Example University", "nl": "Voorbeelduniversiteit"}, d.IssuerNames)
+	require.True(t, canReResolveIssuerName("https://other.example", "Example University", d),
+		"the log recognises the issuer by the names shown")
+	require.False(t, canReResolveIssuerName("https://other.example", "Metadata Uitgever", d))
+}
+
+// storeDisplayBatch stores a VCDM batch with this payload and metadata naming
+// and picturing the credential and its issuer, as an Open Badges credential
+// when openBadges is set.
+func (e *vcdmTestEnv) storeDisplayBatch(t *testing.T, payload string, openBadges bool) {
+	t.Helper()
+	types := []string{"https://www.w3.org/2018/credentials#VerifiableCredential"}
+	if openBadges {
+		types = append(types, vcdm.OpenBadgeCredentialType)
+	}
+	expandedTypes, err := json.Marshal(types)
+	require.NoError(t, err)
+	require.NoError(t, e.store.StoreBatch(&models.VcdmBatch{
+		TypeIdentity:       testVcdmTypeIdentity,
+		IssuerIdentifier:   testVcdmIssuer,
+		CredentialIssuer:   testVcdmIssuer,
+		Format:             models.CredentialFormatSdJwtVcdm,
+		Hash:               "hash-display",
+		ProcessedPayload:   datatypes.JSON(payload),
+		ExpandedTypes:      expandedTypes,
+		IssuerDisplay:      datatypes.JSON(`[{"name": "Metadata Issuer", "locale": "en", "logo": {"uri": "https://metadata.example/issuer.png"}}]`),
+		CredentialMetadata: datatypes.JSON(`{"display": [{"name": "Metadata Card", "locale": "en", "logo": {"uri": "https://metadata.example/card.png"}}]}`),
+		IssuedAt:           time.Now(),
+		BatchSize:          1,
+		RemainingCount:     1,
+		Instances:          []models.VcdmBatchInstance{{RawCredential: []byte("raw")}},
+	}))
+}
+
+// listOne lists the one stored credential.
+func (e *vcdmTestEnv) listOne(t *testing.T) *clientmodels.Credential {
+	t.Helper()
+	list, err := e.service.List()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	return list[0]
+}
+
+// cacheLogo puts content in a logo cache under uri.
+func cacheLogo(t *testing.T, manager filesystem.LogoManager, uri, content string) {
+	t.Helper()
+	require.NoError(t, manager.Save(uri, []byte(content), clientmodels.MimeTypePNG))
+}
+
+func requireLogo(t *testing.T, image *clientmodels.Image, content string) {
+	t.Helper()
+	require.NotNil(t, image)
+	require.Equal(t, base64.StdEncoding.EncodeToString([]byte(content)), image.Base64)
+}
+
+// The list shows the document's name, image, issuer name and issuer logo over
+// the metadata's, and the metadata's logos while the document's images are not
+// cached.
+func TestSdJwtVcdmList_DocumentDisplayFirst(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	env.storeDisplayBatch(t, `{
+		"name": "Alumni card",
+		"image": "https://document.example/card.png",
+		"issuer": {"id": "https://issuer.example", "name": "Example University", "image": {"id": "https://document.example/issuer.png", "type": "Image"}}
+	}`, false)
+	credentialLogos := env.service.fileStorage.Credentials().LogoManager()
+	issuerLogos := env.service.fileStorage.Issuers().LogoManager()
+	cacheLogo(t, credentialLogos, "https://metadata.example/card.png", "metadata card")
+	cacheLogo(t, issuerLogos, "https://metadata.example/issuer.png", "metadata issuer")
+
+	cred := env.listOne(t)
+	require.Equal(t, "Alumni card", cred.Name)
+	require.Equal(t, "Example University", cred.Issuer.Name)
+	requireLogo(t, cred.Image, "metadata card")
+	requireLogo(t, cred.Issuer.Image, "metadata issuer")
+
+	cacheLogo(t, credentialLogos, "https://document.example/card.png", "document card")
+	cacheLogo(t, issuerLogos, "https://document.example/issuer.png", "document issuer")
+	cred = env.listOne(t)
+	requireLogo(t, cred.Image, "document card")
+	requireLogo(t, cred.Issuer.Image, "document issuer")
+}
+
+// Where the document says nothing, the list shows the metadata's display.
+func TestSdJwtVcdmList_MetadataDisplayWhereTheDocumentHasNone(t *testing.T) {
+	env := newVcdmTestEnv(t)
+	env.storeDisplayBatch(t, `{"issuer": "https://issuer.example"}`, false)
+	cacheLogo(t, env.service.fileStorage.Credentials().LogoManager(), "https://metadata.example/card.png", "metadata card")
+	cacheLogo(t, env.service.fileStorage.Issuers().LogoManager(), "https://metadata.example/issuer.png", "metadata issuer")
+
+	cred := env.listOne(t)
+	require.Equal(t, "Metadata Card", cred.Name)
+	require.Equal(t, "Metadata Issuer", cred.Issuer.Name)
+	requireLogo(t, cred.Image, "metadata card")
+	requireLogo(t, cred.Issuer.Image, "metadata issuer")
+}
+
+// An Open Badges credential without an image of its own is pictured by its
+// badge: its achievement's image. Outside Open Badges, an achievement is just
+// a claim.
+func TestSdJwtVcdmList_AchievementImageIsTheCardOfABadge(t *testing.T) {
+	payload := `{"credentialSubject": {"achievement": {"image": {"id": "https://document.example/badge.png", "type": "Image"}}}}`
+	for _, openBadges := range []bool{true, false} {
+		env := newVcdmTestEnv(t)
+		env.storeDisplayBatch(t, payload, openBadges)
+		cacheLogo(t, env.service.fileStorage.Credentials().LogoManager(), "https://metadata.example/card.png", "metadata card")
+		cacheLogo(t, env.service.fileStorage.Credentials().LogoManager(), "https://document.example/badge.png", "badge")
+
+		if openBadges {
+			requireLogo(t, env.listOne(t).Image, "badge")
+		} else {
+			requireLogo(t, env.listOne(t).Image, "metadata card")
+		}
+	}
 }
 
 // failingStoreBatch is a VcdmStore whose StoreBatch fails, as a write can.

@@ -445,7 +445,9 @@ func TestBackfillLogos_ClaimImagesStopWhenCancelled(t *testing.T) {
 	require.Empty(t, requests)
 }
 
-// The backfill too downloads only the images of a badge's credentialSubject.
+// The backfill too downloads only the claim images of a badge's
+// credentialSubject. The credential's own image and its issuer's are its
+// logos, and fetched as those; the evidence's image is never downloaded.
 func TestBackfillLogos_OnlyTheCredentialSubjectsClaimImages(t *testing.T) {
 	server, requests := imageHost(t)
 	s := newBackfillTestStorage(t)
@@ -467,6 +469,43 @@ func TestBackfillLogos_OnlyTheCredentialSubjectsClaimImages(t *testing.T) {
 		Instances:        []models.VcdmBatchInstance{{RawCredential: []byte("raw")}},
 	}))
 
-	require.Equal(t, 1, backfillLogos(context.Background(), s, server.Client(), "nl", false))
-	require.Equal(t, map[string]int{"/subject.png": 1}, requests)
+	require.Equal(t, 3, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, map[string]int{"/subject.png": 1, "/credential.png": 1, "/issuer.png": 1}, requests)
+}
+
+// The backfill fetches a VCDM credential's own image and its issuer's logo,
+// each into its logo cache, and the metadata's logos shown when those cannot be.
+func TestBackfillLogos_TheVcdmDocumentsImages(t *testing.T) {
+	server, requests := imageHost(t)
+	s := newBackfillTestStorage(t)
+	payload, err := json.Marshal(map[string]any{
+		"image":  server.URL + "/card.png",
+		"issuer": map[string]any{"id": "https://issuer.example.com", "image": map[string]any{"id": server.URL + "/issuer.png", "type": "Image"}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.NewVcdmStore(s.Db()).StoreBatch(&models.VcdmBatch{
+		TypeIdentity:       "https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential",
+		IssuerIdentifier:   "https://issuer.example.com",
+		CredentialIssuer:   "https://issuer.example.com",
+		Format:             models.CredentialFormatSdJwtVcdm,
+		Hash:               "hash-document-images",
+		ProcessedPayload:   payload,
+		IssuerDisplay:      datatypes.JSON(`[{"name": "Issuer", "locale": "en", "logo": {"uri": "` + server.URL + `/metadata-issuer.png"}}]`),
+		CredentialMetadata: datatypes.JSON(`{"display": [{"name": "Card", "locale": "en", "logo": {"uri": "` + server.URL + `/metadata-card.png"}}]}`),
+		IssuedAt:           time.Now(),
+		BatchSize:          1,
+		RemainingCount:     1,
+		Instances:          []models.VcdmBatchInstance{{RawCredential: []byte("raw")}},
+	}))
+
+	require.Equal(t, 4, backfillLogos(context.Background(), s, server.Client(), "en", false))
+	require.Equal(t, map[string]int{"/card.png": 1, "/issuer.png": 1, "/metadata-card.png": 1, "/metadata-issuer.png": 1}, requests)
+	for manager, uri := range map[filesystem.LogoManager]string{
+		s.FileSystem().Credentials().LogoManager(): server.URL + "/card.png",
+		s.FileSystem().Issuers().LogoManager():     server.URL + "/issuer.png",
+	} {
+		exists, err := manager.Exists(uri)
+		require.NoError(t, err)
+		require.True(t, exists, uri)
+	}
 }
