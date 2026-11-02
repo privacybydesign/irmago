@@ -6,6 +6,7 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 )
 
@@ -73,6 +74,26 @@ func (p *ParsedCredential) Document() CredentialDocument {
 	default:
 		return CredentialDocument{}
 	}
+}
+
+// Attributes are the attributes a freshly issued credential shows on the
+// permission screen: its claim values, named and ordered by its metadata's
+// claims, with its claim images as pictures (CredentialDocument.ShowImages,
+// with the images behind a URL from credentialLogos).
+func (p *ParsedCredential) Attributes(claims []metadata.ClaimsDescription, locale string, credentialLogos filesystem.LogoManager) []clientmodels.Attribute {
+	claimNames, claimOrder := claimDisplayLookups(claims, locale)
+	var attrs []clientmodels.Attribute
+	switch {
+	case p.SdJwtVc != nil:
+		attrs = BuildAttributesFromPayload(&p.SdJwtVc.ProcessedSdJwtPayload, claimNames, claimOrder)
+	case p.SdJwtVcdm != nil:
+		attrs = buildAttributesFromVcdmDocument(p.SdJwtVcdm.Document, claimNames, claimOrder)
+	case p.Mdoc != nil:
+		attrs = buildMdocAttributesFromResolvedClaims(claims, p.Mdoc.Namespaces, locale)
+	default:
+		return []clientmodels.Attribute{}
+	}
+	return p.Document().ShowImages(attrs, credentialLogos)
 }
 
 // Display is how the credential says it looks; empty where it says nothing.

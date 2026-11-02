@@ -8,6 +8,7 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
 
@@ -97,6 +98,34 @@ func FlattenClaimValue(
 		})
 	}
 	return attrs
+}
+
+// claimDisplayLookups derives the display-name lookup (resolved to the given
+// locale) and declared-order index from the issuer metadata's claim
+// descriptions, keyed by claim path. A display entry without a locale is
+// clientmodels.DefaultFallbackLanguage's.
+func claimDisplayLookups(claims []metadata.ClaimsDescription, locale string) (map[string]string, map[string]int) {
+	displayLookup := map[string]string{}
+	metadataOrder := map[string]int{}
+	for i, c := range claims {
+		key := clientmodels.ClaimPathKey(c.Path)
+		metadataOrder[key] = i
+		if len(c.Display) == 0 {
+			continue
+		}
+		display := clientmodels.TranslatedString{}
+		for _, d := range c.Display {
+			entryLocale := clientmodels.DefaultFallbackLanguage
+			if d.Locale != nil {
+				if base, ok := metadata.TryGetBaseLanguageFromLocale(*d.Locale); ok {
+					entryLocale = base
+				}
+			}
+			display[entryLocale] = d.Name
+		}
+		displayLookup[key] = clientmodels.Resolve(display, locale)
+	}
+	return displayLookup, metadataOrder
 }
 
 // sortObjectKeys returns the keys of an object sorted by their position in the

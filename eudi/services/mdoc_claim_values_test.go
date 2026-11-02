@@ -244,7 +244,7 @@ func strPtrValue(s string) *clientmodels.AttributeValue {
 	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &s}
 }
 
-// ========== BuildMdocAttributesFromResolvedClaims ==========
+// ========== buildMdocAttributesFromResolvedClaims ==========
 
 func TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames(t *testing.T) {
 	claims := []metadata.ClaimsDescription{
@@ -272,7 +272,7 @@ func TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames(t *
 		},
 	}
 
-	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "en")
+	attrs := buildMdocAttributesFromResolvedClaims(claims, resolved, "en")
 
 	require.Len(t, attrs, 2)
 
@@ -299,7 +299,7 @@ func TestBuildMdocAttributesFromResolvedClaims_NoMetadataStillEmitsValues(t *tes
 		},
 	}
 
-	attrs := BuildMdocAttributesFromResolvedClaims(nil, resolved, "en")
+	attrs := buildMdocAttributesFromResolvedClaims(nil, resolved, "en")
 
 	require.Len(t, attrs, 2)
 
@@ -330,7 +330,7 @@ func TestBuildMdocAttributesFromResolvedClaims_DerivesUnadvertisedAgeOver(t *tes
 		},
 	}
 
-	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "en")
+	attrs := buildMdocAttributesFromResolvedClaims(claims, resolved, "en")
 
 	require.Len(t, attrs, 2)
 
@@ -358,7 +358,7 @@ func TestBuildMdocAttributesFromResolvedClaims_PublishedBareElementNameWins(t *t
 		"eu.europa.ec.av.1": {"age_over_18": true},
 	}
 
-	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "nl")
+	attrs := buildMdocAttributesFromResolvedClaims(claims, resolved, "nl")
 
 	require.Len(t, attrs, 1)
 	require.Nil(t, attrs[0].DisplayName, "a bare-element publication is not overridden by the derived English name")

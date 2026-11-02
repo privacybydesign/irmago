@@ -23,7 +23,6 @@ import (
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
-	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -506,21 +505,10 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 
 		// Use the first credential in the batch as source of attribute values.
 		first := fc.parsedCredentials[0]
-		attrs := []clientmodels.Attribute{}
-		switch {
-		case first.SdJwtVc != nil:
-			attrs = buildAttributesWithValues(claims, first.SdJwtVc.ProcessedSdJwtPayload, s.locale)
-		case first.SdJwtVcdm != nil:
-			claimDisplays, claimOrder := claimDisplayLookups(claims, s.locale)
-			attrs = services.BuildAttributesFromVcdmDocument(first.SdJwtVcdm.Document, claimDisplays, claimOrder)
-		case first.Mdoc != nil:
-			attrs = services.BuildMdocAttributesFromResolvedClaims(claims, first.Mdoc.Namespaces, s.locale)
-		}
-		document := first.Document()
-		attrs = document.ShowImages(attrs, s.storage.FileSystem().Credentials().LogoManager())
+		attrs := first.Attributes(claims, s.locale, s.storage.FileSystem().Credentials().LogoManager())
 		// The credential's own display comes before the metadata's
 		// (services.DocumentDisplay).
-		documentDisplay := document.Display()
+		documentDisplay := first.Document().Display()
 
 		displays := metadata.ToTranslateableList(credentialDisplay)
 		names := metadata.ConvertDisplayToTranslatedString(displays)
@@ -619,47 +607,6 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		}
 
 		result = append(result, &cred)
-	}
-	return result
-}
-
-// buildAttributesWithValues builds an attribute list directly from the credential
-// payload. The claim metadata is consulted only for display-name translations
-// (resolved to the given locale) and for ordering: claims declared in metadata
-// appear in declared order, payload-only claims are appended alphabetically.
-// Claims without a metadata display entry produce attributes with DisplayName: nil.
-func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwt.ProcessedPayload, locale string) []clientmodels.Attribute {
-	displayLookup, metadataOrder := claimDisplayLookups(claims, locale)
-	return services.BuildAttributesFromPayload(&payload, displayLookup, metadataOrder)
-}
-
-// claimDisplayLookups derives the display-name lookup (resolved to the given
-// locale) and declared-order index from the issuer metadata's claim
-// descriptions, keyed by claim path.
-func claimDisplayLookups(claims []metadata.ClaimsDescription, locale string) (map[string]string, map[string]int) {
-	displayLookup := map[string]string{}
-	metadataOrder := map[string]int{}
-	for i, c := range claims {
-		key := clientmodels.ClaimPathKey(c.Path)
-		metadataOrder[key] = i
-		if len(c.Display) == 0 {
-			continue
-		}
-		displayLookup[key] = clientmodels.Resolve(claimDisplayToTranslatedString(c.Display), locale)
-	}
-	return displayLookup, metadataOrder
-}
-
-func claimDisplayToTranslatedString(displays []metadata.Display) clientmodels.TranslatedString {
-	result := clientmodels.TranslatedString{}
-	for _, d := range displays {
-		locale := clientmodels.DefaultFallbackLanguage
-		if d.Locale != nil {
-			if base, ok := metadata.TryGetBaseLanguageFromLocale(*d.Locale); ok {
-				locale = base
-			}
-		}
-		result[locale] = d.Name
 	}
 	return result
 }

@@ -299,38 +299,15 @@ func UniqueMdocElementRefs(paths [][]any) []MdocElementRef {
 	return refs
 }
 
-// BuildMdocAttributesFromResolvedClaims builds an attribute list directly
+// buildMdocAttributesFromResolvedClaims builds an attribute list directly
 // from a resolved mso_mdoc claims map (namespace -> elementIdentifier ->
 // value), for the permission-dialog display at issuance time. mso_mdoc's
 // resolved claims are just a two-level nested map -- a degenerate case of
 // the same arbitrary-depth structure FlattenClaimValue/sortObjectKeys
 // already walk for dc+sd-jwt -- so this reuses them directly rather than
 // re-implementing sort/flatten from scratch.
-func BuildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, resolved map[string]map[string]any, locale string) []clientmodels.Attribute {
-	displayLookup := map[string]string{}
-	metadataOrder := map[string]int{}
-	for i, c := range claims {
-		key := clientmodels.ClaimPathKey(c.Path)
-		metadataOrder[key] = i
-		if len(c.Display) == 0 {
-			continue
-		}
-		// Falls back to clientmodels.DefaultFallbackLanguage when a display
-		// entry carries no locale -- the same convention every other
-		// display-name conversion in this package uses. Resolved to a single
-		// string for the caller's locale, matching FlattenClaimValue's lookup.
-		display := clientmodels.TranslatedString{}
-		for _, d := range c.Display {
-			entryLocale := clientmodels.DefaultFallbackLanguage
-			if d.Locale != nil {
-				if base, ok := metadata.TryGetBaseLanguageFromLocale(*d.Locale); ok {
-					entryLocale = base
-				}
-			}
-			display[entryLocale] = d.Name
-		}
-		displayLookup[key] = clientmodels.Resolve(display, locale)
-	}
+func buildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, resolved map[string]map[string]any, locale string) []clientmodels.Attribute {
+	displayLookup, metadataOrder := claimDisplayLookups(claims, locale)
 
 	// Elements the metadata named no usable text for fall back to a name derived
 	// from the element identifier; see DerivedMdocClaimName. Both key shapes are

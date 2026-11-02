@@ -122,7 +122,7 @@ func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) 
 				clientmodels.Format_SdJwtVcdm: batch.Hash,
 			},
 			BatchInstanceCountsRemaining: batchInstanceCounts(models.CredentialFormatSdJwtVcdm, batch.BatchSize, &batch.RemainingCount),
-			Attributes:                   credentialDocument.ShowImages(BuildAttributesFromVcdmDocument(document, display.ClaimNames, display.ClaimOrder), credentialLogoManager),
+			Attributes:                   credentialDocument.ShowImages(buildAttributesFromVcdmDocument(document, display.ClaimNames, display.ClaimOrder), credentialLogoManager),
 			ExpiryDate:                   exp,
 			IssuanceDate:                 &issuedAt,
 			Revoked:                      revoked[batch.Hash],
@@ -325,12 +325,12 @@ func VcdmIssuanceValidity(v *vcdmsdjwt.VerifiedSdJwtVcdm) (issuedAt, expiresAt, 
 	return issuedAt, expiresAt, notBefore
 }
 
-// BuildAttributesFromVcdmDocument emits attributes for the credentialSubject
+// buildAttributesFromVcdmDocument emits attributes for the credentialSubject
 // tree of a VCDM document, with document-rooted claim paths
 // (["credentialSubject", ...]). The envelope properties (@context, type,
 // issuer, validity, status, ...) are not attributes; they surface through the
 // credential's own metadata fields.
-func BuildAttributesFromVcdmDocument(
+func buildAttributesFromVcdmDocument(
 	doc vcdm.Document,
 	lookup map[string]string,
 	metadataOrder map[string]int,

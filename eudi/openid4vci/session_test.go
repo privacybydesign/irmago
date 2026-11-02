@@ -27,6 +27,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
@@ -779,7 +780,7 @@ func Test_buildOfferedCredentials_ReportsInstancesObtainedNotAdvertisedCeiling(t
 	}
 }
 
-func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
+func TestParsedCredentialAttributes_PayloadDrives(t *testing.T) {
 	en := "en"
 	claims := []metadata.ClaimsDescription{
 		{
@@ -800,7 +801,8 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 		"sub":         "u1",
 	}
 
-	attrs := buildAttributesWithValues(claims, payload, "en")
+	parsed := &services.ParsedCredential{SdJwtVc: &sdjwtvc.VerifiedSdJwtVc{ProcessedSdJwtPayload: payload}}
+	attrs := parsed.Attributes(claims, "en", filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()).Credentials().LogoManager())
 
 	byPath := map[string]int{}
 	for i, a := range attrs {
