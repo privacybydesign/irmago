@@ -39,6 +39,29 @@ func TestExpandTypes_BaseContext(t *testing.T) {
 	require.Equal(t, []string{vcIri, "TestVcdmCredential"}, types)
 }
 
+// Every bundled Open Badges 3.0 context is served from memory, and expands
+// both names of the Open Badges credential type to OpenBadgeCredentialType.
+func TestExpandTypes_BundledOpenBadgesContexts(t *testing.T) {
+	failing := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, fmt.Errorf("no network in this test")
+	})}
+	for url := range bundledContexts {
+		if url == ContextV2 {
+			continue
+		}
+		t.Run(url, func(t *testing.T) {
+			for _, term := range []string{"OpenBadgeCredential", "AchievementCredential"} {
+				types, err := ExpandTypes(Document{
+					ContextKey: []any{ContextV2, url},
+					TypeKey:    []any{TypeVerifiableCredential, term},
+				}, NewContextLoader(failing))
+				require.NoError(t, err)
+				require.Equal(t, []string{vcIri, OpenBadgeCredentialType}, types, term)
+			}
+		})
+	}
+}
+
 func TestExpandTypes_InlineContext(t *testing.T) {
 	types, err := ExpandTypes(Document{
 		ContextKey: []any{ContextV2, map[string]any{"ex": "https://example.org/vocab#", "Diploma": "ex:Diploma"}},
