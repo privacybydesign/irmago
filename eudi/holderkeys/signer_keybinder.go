@@ -13,11 +13,13 @@ import (
 )
 
 // signerKeyBinder implements sdjwt.KeyBinder on top of a HolderSigner, so the
-// KB-JWT signed at OpenID4VP presentation time is produced by whatever backs the
-// HolderSigner (software keys, or a WSCA/HSM). It replaces DefaultKeyBinder,
-// which requires a raw *ecdsa.PrivateKey pulled from storage.
+// JWTs signed with the holder key at OpenID4VP presentation time (the KB-JWT,
+// or the Verifiable Presentation that envelopes an SD-JWT-secured VCDM
+// credential) are produced by whatever backs the HolderSigner (software keys,
+// or a WSCA/HSM). It replaces DefaultKeyBinder, which requires a raw
+// *ecdsa.PrivateKey pulled from storage.
 //
-// The KB-JWT compact serialization is assembled by hand (header.payload.sig)
+// The JWT compact serialization is assembled by hand (header.payload.sig)
 // rather than via a JWT library, because the signature comes from an external
 // signer that only exposes "sign these bytes" — never a private key the library
 // could consume.
