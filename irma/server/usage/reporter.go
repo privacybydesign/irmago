@@ -93,6 +93,8 @@ func New(settings Settings, logger *logrus.Logger) (*Reporter, error) {
 	}
 	if settings.Interval <= 0 {
 		settings.Interval = DefaultInterval
+	} else if settings.Interval < time.Second {
+		return nil, errors.Errorf("usage reporting interval %s is too short, give it a unit such as 5m", settings.Interval)
 	}
 	if settings.ServerInstance == "" {
 		settings.ServerInstance, _ = os.Hostname()
