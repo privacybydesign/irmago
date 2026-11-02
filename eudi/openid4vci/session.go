@@ -225,9 +225,9 @@ func (s *session) perform() {
 		return
 	}
 
-	// Download the images Open Badges claims point to, so the permission screen
-	// shows them, as it shows the logos.
-	s.fetchClaimImages(fetched)
+	// Download the images VCDM credentials point to, so the permission screen
+	// shows them, as it shows the metadata's logos.
+	s.fetchDocumentImages(fetched)
 
 	// Build offered credentials with actual attribute values from the verified SD-JWTs.
 	offeredCredentials := s.buildOfferedCredentials(fetched)
@@ -392,29 +392,38 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 	return nil
 }
 
-// claimImagesBudget is how long downloading the claim images of an issuance may
-// take altogether, so the permission screen does not wait on a slow image host.
-const claimImagesBudget = 10 * time.Second
+// documentImagesBudget is how long downloading the images the VCDM documents of
+// an issuance point to may take altogether, so the permission screen does not
+// wait on a slow image host.
+const documentImagesBudget = 10 * time.Second
 
-// fetchClaimImages downloads, into the credential logo cache, the images the
-// claims of each fetched Open Badges credential point to, under the limits the
-// cards show them by (services.FetchClaimImages). A credential's instances show
-// the same claims, so its first instance is read. Like the logos, they are
-// cached whether or not the user then accepts the credential; a download that
-// fails leaves the URL as text, and the logo backfill tries it again.
-func (s *session) fetchClaimImages(fetched []*fetchedCredential) {
-	ctx, cancel := context.WithTimeout(context.Background(), claimImagesBudget)
+// fetchDocumentImages downloads the images each fetched VCDM credential points
+// to: its own image into the credential logo cache and its issuer's into the
+// issuer logo cache (services.VcdmDocumentDisplay), and the images an Open
+// Badges credential's claims point to into the credential logo cache, under the
+// limits the cards show them by (services.FetchClaimImages). A credential's
+// instances are the same document but for their subject id, so its first
+// instance is read. Like the metadata's logos, they are cached whether or not
+// the user then accepts the credential; a download that fails leaves the
+// metadata's logo or the URL as text in its place, and the logo backfill tries
+// it again.
+func (s *session) fetchDocumentImages(fetched []*fetchedCredential) {
+	ctx, cancel := context.WithTimeout(context.Background(), documentImagesBudget)
 	defer cancel()
-	logoManager := s.storage.FileSystem().Credentials().LogoManager()
+	credentialLogos := s.storage.FileSystem().Credentials().LogoManager()
+	issuerLogos := s.storage.FileSystem().Issuers().LogoManager()
 	for _, fc := range fetched {
-		if len(fc.parsedCredentials) == 0 {
+		if len(fc.parsedCredentials) == 0 || fc.parsedCredentials[0].SdJwtVcdm == nil {
 			continue
 		}
 		first := fc.parsedCredentials[0]
-		if first.SdJwtVcdm == nil || !vcdm.IsOpenBadgesCredential(first.ExpandedTypes) {
-			continue
+		openBadges := vcdm.IsOpenBadgesCredential(first.ExpandedTypes)
+		display := services.NewVcdmDocumentDisplay(first.SdJwtVcdm.Document, openBadges)
+		services.FetchLogoIfMissing(ctx, credentialLogos, s.httpClient, display.CredentialImage, s.allowInsecureHttp)
+		services.FetchLogoIfMissing(ctx, issuerLogos, s.httpClient, display.IssuerImage, s.allowInsecureHttp)
+		if openBadges {
+			services.FetchClaimImages(ctx, credentialLogos, s.httpClient, first.SdJwtVcdm.Document, true, s.allowInsecureHttp)
 		}
-		services.FetchClaimImages(ctx, logoManager, s.httpClient, first.SdJwtVcdm.Document, true, s.allowInsecureHttp)
 	}
 }
 
@@ -503,6 +512,9 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		// Use the first credential in the batch as source of attribute values.
 		first := fc.parsedCredentials[0]
 		attrs := []clientmodels.Attribute{}
+		// A VCDM document's own display comes before the metadata's
+		// (services.VcdmDocumentDisplay); other formats have none.
+		var documentDisplay services.VcdmDocumentDisplay
 		switch {
 		case first.SdJwtVc != nil:
 			attrs = buildAttributesWithValues(claims, first.SdJwtVc.ProcessedSdJwtPayload, s.locale)
@@ -511,6 +523,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			claimDisplays, claimOrder := claimDisplayLookups(claims, s.locale)
 			attrs = services.BuildAttributesFromVcdmDocument(first.SdJwtVcdm.Document, claimDisplays, claimOrder)
 			openBadges := vcdm.IsOpenBadgesCredential(first.ExpandedTypes)
+			documentDisplay = services.NewVcdmDocumentDisplay(first.SdJwtVcdm.Document, openBadges)
 			cached := services.CachedClaimImages(s.storage.FileSystem().Credentials().LogoManager(), first.SdJwtVcdm.Document, openBadges)
 			attrs = services.ShowClaimImages(attrs, first.SdJwtVcdm.Document, openBadges, cached)
 		case first.Mdoc != nil:
@@ -520,16 +533,22 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		displays := metadata.ToTranslateableList(credentialDisplay)
 		names := metadata.ConvertDisplayToTranslatedString(displays)
 		name := clientmodels.Resolve(names, s.locale)
+		if documentName := clientmodels.Resolve(documentDisplay.CredentialNames, s.locale); documentName != "" {
+			name = documentName
+		}
 
 		issuerDisplays := metadata.ToTranslateableList(s.credentialIssuerMetadata.Display)
 		issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
+		if documentIssuerName := clientmodels.Resolve(documentDisplay.IssuerNames, s.locale); documentIssuerName != "" {
+			issuerName = documentIssuerName
+		}
 
 		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
-		image := services.LoadResolvedLogo(credentialLogoManager,
+		image := services.LoadDocumentLogo(credentialLogoManager, documentDisplay.CredentialImage,
 			metadata.LogoURIsByLanguage(credentialDisplay), s.locale)
 
 		issuerLogoManager := s.storage.FileSystem().Issuers().LogoManager()
-		issuerImage := services.LoadResolvedLogo(issuerLogoManager,
+		issuerImage := services.LoadDocumentLogo(issuerLogoManager, documentDisplay.IssuerImage,
 			metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale)
 
 		// How many instances were actually obtained, not how many the issuer said it
@@ -576,11 +595,6 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		credentialId := credentialConfigurationTypeIdentity(config)
 		if first.VerifiableCredentialType != "" {
 			credentialId = first.VerifiableCredentialType
-		}
-
-		// Without display metadata, a VCDM credential can still name itself.
-		if name == "" && first.SdJwtVcdm != nil {
-			name = services.VcdmDocumentName(first.SdJwtVcdm.Document, s.locale)
 		}
 
 		// Never offer a nameless credential: fall back to the credential id (the

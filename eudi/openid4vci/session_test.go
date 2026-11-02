@@ -1114,7 +1114,7 @@ func Test_buildOfferedCredentials_DataURIClaimIsAnImage(t *testing.T) {
 // downloaded before the screen is built, into the credential logo cache. The
 // same object in a credential that is no Open Badge stays text, and nothing is
 // downloaded for it.
-func Test_fetchClaimImages_OpenBadgesImageOnThePermissionScreen(t *testing.T) {
+func Test_fetchDocumentImages_OpenBadgesImageOnThePermissionScreen(t *testing.T) {
 	const configId = "credential-config-1"
 	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC")
 	require.NoError(t, err)
@@ -1170,7 +1170,7 @@ func Test_fetchClaimImages_OpenBadgesImageOnThePermissionScreen(t *testing.T) {
 				}},
 			}}
 
-			s.fetchClaimImages(fetched)
+			s.fetchDocumentImages(fetched)
 			offered := s.buildOfferedCredentials(fetched)
 			require.Len(t, offered, 1)
 
@@ -1192,6 +1192,107 @@ func Test_fetchClaimImages_OpenBadgesImageOnThePermissionScreen(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The permission screen shows a VCDM credential's own name, image, issuer name
+// and issuer logo over the issuer metadata's: its images are downloaded before
+// the screen is built, and the metadata's logos show while they are not.
+// Where the document says nothing, the metadata's display shows.
+func Test_buildOfferedCredentials_VcdmDocumentDisplayFirst(t *testing.T) {
+	const configId = "credential-config-1"
+	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC")
+	require.NoError(t, err)
+	requests := map[string]int{}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests[r.URL.Path]++
+		_, _ = w.Write(png)
+	}))
+	t.Cleanup(server.Close)
+
+	newSession := func(t *testing.T) *session {
+		var aesKey [32]byte
+		copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+		eudiStorage, err := sqlcipherstorage.New(aesKey, ":memory:", t.TempDir())
+		require.NoError(t, err)
+		en := "en"
+		s := &session{
+			storage:    eudiStorage,
+			locale:     "en",
+			httpClient: server.Client(),
+			credentialIssuerMetadata: &metadata.CredentialIssuerMetadata{
+				CredentialIssuer: "https://issuer.example.com",
+				Display: metadata.CredentialIssuerDisplays{{
+					Name: "Metadata Issuer", Locale: &en,
+					Logo: &metadata.RemoteImage{Uri: "https://metadata.example/issuer.png"},
+				}},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+					configId: {CredentialMetadata: &metadata.CredentialMetadata{Display: metadata.CredentialDisplays{{
+						Name: "Metadata Card", Locale: &en,
+						Logo: &metadata.RemoteImage{Uri: "https://metadata.example/card.png"},
+					}}}},
+				},
+			},
+		}
+		// The metadata's logos, as the client downloads them before the session.
+		fs := eudiStorage.FileSystem()
+		require.NoError(t, fs.Credentials().LogoManager().Save("https://metadata.example/card.png", []byte("metadata card"), clientmodels.MimeTypePNG))
+		require.NoError(t, fs.Issuers().LogoManager().Save("https://metadata.example/issuer.png", []byte("metadata issuer"), clientmodels.MimeTypePNG))
+		return s
+	}
+	fetchedDocument := func(document vcdm.Document) []*fetchedCredential {
+		return []*fetchedCredential{{
+			credentialConfigurationId: configId,
+			parsedCredentials: []*services.ParsedCredential{{
+				Format:                   models.CredentialFormatSdJwtVcdm,
+				VerifiableCredentialType: "https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential",
+				SdJwtVcdm:                &vcdmsdjwt.VerifiedSdJwtVcdm{Document: document},
+			}},
+		}}
+	}
+	requireLogo := func(t *testing.T, image *clientmodels.Image, content []byte) {
+		t.Helper()
+		require.NotNil(t, image)
+		require.Equal(t, base64.StdEncoding.EncodeToString(content), image.Base64)
+	}
+
+	t.Run("the document's display", func(t *testing.T) {
+		s := newSession(t)
+		fetched := fetchedDocument(vcdm.Document{
+			vcdm.NameKey:              "Alumni card",
+			vcdm.ImageKey:             server.URL + "/card.png",
+			vcdm.IssuerKey:            map[string]any{"id": "https://issuer.example", "name": "Example University", "image": map[string]any{"id": server.URL + "/issuer.png", "type": "Image"}},
+			vcdm.CredentialSubjectKey: map[string]any{"given_name": "Alice"},
+		})
+
+		offered := s.buildOfferedCredentials(fetched)
+		require.Len(t, offered, 1)
+		require.Equal(t, "Alumni card", offered[0].Name)
+		require.Equal(t, "Example University", offered[0].Issuer.Name)
+		requireLogo(t, offered[0].Image, []byte("metadata card"))
+		requireLogo(t, offered[0].Issuer.Image, []byte("metadata issuer"))
+
+		s.fetchDocumentImages(fetched)
+		require.Equal(t, map[string]int{"/card.png": 1, "/issuer.png": 1}, requests)
+		offered = s.buildOfferedCredentials(fetched)
+		requireLogo(t, offered[0].Image, png)
+		requireLogo(t, offered[0].Issuer.Image, png)
+	})
+
+	t.Run("the metadata's display where the document has none", func(t *testing.T) {
+		s := newSession(t)
+		fetched := fetchedDocument(vcdm.Document{
+			vcdm.IssuerKey:            "https://issuer.example",
+			vcdm.CredentialSubjectKey: map[string]any{"given_name": "Alice"},
+		})
+
+		s.fetchDocumentImages(fetched)
+		offered := s.buildOfferedCredentials(fetched)
+		require.Len(t, offered, 1)
+		require.Equal(t, "Metadata Card", offered[0].Name)
+		require.Equal(t, "Metadata Issuer", offered[0].Issuer.Name)
+		requireLogo(t, offered[0].Image, []byte("metadata card"))
+		requireLogo(t, offered[0].Issuer.Image, []byte("metadata issuer"))
+	})
 }
 
 // recordingKeyBinder mints placeholder holder keys and records which it is

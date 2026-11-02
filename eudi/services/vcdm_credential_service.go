@@ -109,12 +109,12 @@ func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) 
 		result = append(result, &clientmodels.Credential{
 			CredentialId: batch.TypeIdentity,
 			Hash:         batch.Hash,
-			Image:        loadDocumentLogo(credentialLogoManager, documentDisplay.CredentialImage, vcdmCredentialLogoURIs(batch), locale),
+			Image:        LoadDocumentLogo(credentialLogoManager, documentDisplay.CredentialImage, vcdmCredentialLogoURIs(batch), locale),
 			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
 				Id:       batch.CredentialIssuer,
 				Name:     display.IssuerName,
-				Image:    loadDocumentLogo(issuerLogoManager, documentDisplay.IssuerImage, IssuerLogoURIsByLanguage(VcdmIssuerDisplays(batch)), locale),
+				Image:    LoadDocumentLogo(issuerLogoManager, documentDisplay.IssuerImage, IssuerLogoURIsByLanguage(VcdmIssuerDisplays(batch)), locale),
 				Verified: batch.IssuerVerified,
 			},
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
@@ -524,10 +524,10 @@ func vcdmCredentialLogoURIs(batch *models.VcdmBatch) clientmodels.TranslatedStri
 	return nil
 }
 
-// loadDocumentLogo loads the document's image from the logo cache or, when it
+// LoadDocumentLogo loads the document's image from the logo cache or, when it
 // is not there (not downloaded yet, or it cannot be), the metadata's logo as
 // LoadResolvedLogo resolves it: a logo we have is shown.
-func loadDocumentLogo(manager filesystem.LogoManager, documentURI string, metadataURIs clientmodels.TranslatedString, locale string) *clientmodels.Image {
+func LoadDocumentLogo(manager filesystem.LogoManager, documentURI string, metadataURIs clientmodels.TranslatedString, locale string) *clientmodels.Image {
 	if img := eudi.LoadLogoImage(manager, documentURI); img != nil {
 		return img
 	}
