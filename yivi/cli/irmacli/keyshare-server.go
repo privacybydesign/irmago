@@ -124,6 +124,8 @@ func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration,
 	if err != nil {
 		return nil, err
 	}
+	// Keyshare and MyYivi servers are Yivi's own services, so they do not report usage.
+	irmaServerConf.UsageReporting.Disabled = true
 
 	// And build the configuration
 	conf := &keyshareserver.Configuration{
