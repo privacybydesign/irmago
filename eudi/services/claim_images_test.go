@@ -299,11 +299,7 @@ func imageHost(t *testing.T) (*httptest.Server, map[string]int) {
 			http.NotFound(w, r)
 			return
 		}
-		body := png
-		if size, err := strconv.Atoi(r.URL.Query().Get("size")); err == nil && size > len(png) {
-			body = append(slices.Clone(png), make([]byte, size-len(png))...)
-		}
-		_, _ = w.Write(body)
+		_, _ = w.Write(png)
 	}))
 	t.Cleanup(server.Close)
 	return server, requests
@@ -370,37 +366,6 @@ func TestFetchClaimImages_AtMostTenImages(t *testing.T) {
 	require.NotContains(t, cached, urls[10], "the images past the tenth stay text")
 }
 
-// The images of one credential together fit in 2 MB: the first that does not
-// fit, and every one after it, stays text, also when it would fit on its own.
-func TestFetchClaimImages_TwoMegabytesPerCredential(t *testing.T) {
-	server, requests := imageHost(t)
-	cache := newClaimImageCache(t)
-	size := strconv.Itoa(3 << 19) // 1.5 MB
-	first := server.URL + "/first.png?size=" + size
-	second := server.URL + "/second.png?size=" + size
-	small := server.URL + "/small.png"
-	payload := badgePayload(first, second, small)
-
-	require.Equal(t, 1, fetchBadgeImages(context.Background(), cache, server.Client(), payload, true))
-	require.Equal(t, 0, requests["/small.png"], "nothing past the image that did not fit is downloaded")
-	cached := claimImagesDocument(payload, true).cachedClaimImages(cache)
-	require.Contains(t, cached, first)
-	require.NotContains(t, cached, second)
-	require.NotContains(t, cached, small)
-}
-
-// The budget holds when showing too, also for images another credential put in
-// the shared cache.
-func TestCachedClaimImages_TwoMegabytesPerCredential(t *testing.T) {
-	cache := newClaimImageCache(t)
-	big := make([]byte, 3<<19) // 1.5 MB
-	require.NoError(t, cache.Save("https://example.com/a.png", big, "image/png"))
-	require.NoError(t, cache.Save("https://example.com/b.png", big, "image/png"))
-
-	cached := claimImagesDocument(badgePayload("https://example.com/a.png", "https://example.com/b.png"), true).cachedClaimImages(cache)
-	require.Equal(t, map[string][]byte{"https://example.com/a.png": big}, cached)
-}
-
 func TestFetchClaimImages_AFailingURLLeavesTheOthers(t *testing.T) {
 	server, _ := imageHost(t)
 	cache := newClaimImageCache(t)
@@ -457,8 +422,8 @@ func TestFetchClaimImages_OnlyTheCredentialSubjects(t *testing.T) {
 	require.Equal(t, []string{server.URL + "/subject.png"}, slices.Collect(maps.Keys(claimImagesDocument(document, true).cachedClaimImages(cache))))
 }
 
-// The images outside the credentialSubject do not count towards its budget
-// either: ten images in it are all shown, also with others elsewhere.
+// The images outside the credentialSubject do not count towards its ten: ten
+// images in it are all shown, also with others elsewhere.
 func TestCachedClaimImages_TheBudgetIsTheCredentialSubjects(t *testing.T) {
 	cache := newClaimImageCache(t)
 	png, err := base64.StdEncoding.DecodeString(testPNGBase64)

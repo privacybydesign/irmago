@@ -6,7 +6,6 @@ import (
 	"slices"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
@@ -168,13 +167,10 @@ func payloadMap(payload *sdjwt.ProcessedPayload) map[string]any {
 	return *payload
 }
 
-// The images behind a URL a credential shows at most: how many, and how many
-// bytes together. Every image of a credential travels to the app with it in
+// maxClaimImagesPerCredential is how many images behind a URL a credential
+// shows at most. Every image of a credential travels to the app with it in
 // each credential list, so a credential must not be able to make that large.
-const (
-	maxClaimImagesPerCredential     = 10
-	maxClaimImageBytesPerCredential = helpers.MaxImageSize
-)
+const maxClaimImagesPerCredential = 10
 
 // remoteClaimImageURLs returns the URLs of the claim images that are behind a
 // URL, in the order findClaimImages finds them, each once, at most
@@ -212,63 +208,33 @@ func (d CredentialDocument) downloadableClaimImageURLs() []string {
 
 // cachedClaimImages returns, keyed by URL, the cached images of the claim
 // images in the credentialSubject that are behind a URL
-// (downloadableClaimImageURLs): those among the first
-// maxClaimImagesPerCredential that are in manager, in order, as long as
-// together they fit in maxClaimImageBytesPerCredential. What does not fit stays
-// text, as an image that was never downloaded does. manager is the credential
-// logo cache, which claim images share with credential logos.
+// (downloadableClaimImageURLs) that are in manager, the credential logo cache,
+// which claim images share with credential logos.
 func (d CredentialDocument) cachedClaimImages(manager filesystem.LogoManager) map[string][]byte {
 	images := map[string][]byte{}
-	used := 0
 	for _, url := range d.downloadableClaimImageURLs() {
-		data, _, err := manager.Get(url)
-		if err != nil {
-			continue
+		if data, _, err := manager.Get(url); err == nil {
+			images[url] = data
 		}
-		if used+len(data) > maxClaimImageBytesPerCredential {
-			break
-		}
-		used += len(data)
-		images[url] = data
 	}
 	return images
 }
 
 // fetchClaimImages downloads into manager, the credential logo cache, the
 // claim images in the credentialSubject that are behind a URL and missing
-// from it (downloadableClaimImageURLs), under the limits cachedClaimImages
-// shows them by. It returns how many it cached, and how many downloads it
-// tried: none when every image it may show was cached already. Like a
-// credential logo, an image already cached is not downloaded again. ctx bounds
-// the time all downloads together may take.
+// from it (downloadableClaimImageURLs). It returns how many it cached, and how
+// many downloads it tried: none when every image was cached already. ctx
+// bounds the time all downloads together may take.
 func (d CredentialDocument) fetchClaimImages(ctx context.Context, manager filesystem.LogoManager, fetcher LogoFetcher) (cached, tried int) {
-	used := 0
 	for _, url := range d.downloadableClaimImageURLs() {
 		if ctx.Err() != nil {
 			return cached, tried
 		}
-		if data, _, err := manager.Get(url); err == nil {
-			used += len(data)
-		} else {
-			tried++
-			data, mimeType, err := helpers.DownloadRemoteImage(ctx, fetcher.HTTPClient, url, fetcher.AllowInsecureHTTP)
-			if err != nil {
-				eudi.Logger.Warnf("failed to download claim image from %q: %v", url, err)
-				continue
-			}
-			if used+len(data) > maxClaimImageBytesPerCredential {
-				return cached, tried
-			}
-			if err := manager.Save(url, data, mimeType); err != nil {
-				eudi.Logger.Warnf("failed to cache claim image from %q: %v", url, err)
-				continue
-			}
-			used += len(data)
-			cached++
+		if exists, err := manager.Exists(url); err == nil && exists {
+			continue
 		}
-		if used >= maxClaimImageBytesPerCredential {
-			return cached, tried
-		}
+		tried++
+		cached += fetcher.FetchIfMissing(ctx, manager, url)
 	}
 	return cached, tried
 }
