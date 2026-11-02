@@ -60,7 +60,7 @@ func New(
 		},
 		Present:           vcdmsdjwt.CreateEnvelopedPresentation,
 		MatchesTypeValues: matchesTypeValues,
-		DocumentDisplay:   documentDisplay,
+		Document:          document,
 	}
 	return &Handler{sdjwt_dcql.NewEngine(profile, eudiStorage, sdjwt_dcql.NewVcdmBatchStore(credentialStore, revocation), nil, nil, keyBinder, currentLocale)}
 }
@@ -103,12 +103,11 @@ func matchesTypeValues(batch *sdjwt_dcql.Batch, typeValues [][]string) bool {
 	return false
 }
 
-// documentDisplay is how the stored VCDM document says it looks. An
-// unreadable payload says nothing.
-func documentDisplay(batch *sdjwt_dcql.Batch) services.VcdmDocumentDisplay {
+// document is the stored VCDM document. An unreadable payload says nothing.
+func document(batch *sdjwt_dcql.Batch) services.CredentialDocument {
 	var document vcdm.Document
 	if err := json.Unmarshal(batch.ProcessedPayload, &document); err != nil {
-		return services.VcdmDocumentDisplay{}
+		return services.CredentialDocument{}
 	}
-	return services.NewVcdmDocumentDisplay(document, vcdm.IsOpenBadgesCredential(batch.ExpandedTypes))
+	return services.NewVcdmDocument(document, batch.ExpandedTypes)
 }

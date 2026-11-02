@@ -112,7 +112,7 @@ func TestBackfillLogos_FetchesOnlyMissingResolvingLogos(t *testing.T) {
 	// Pre-cache the nl issuer logo: the sweep must not re-download it.
 	require.NoError(t, s.FileSystem().Issuers().LogoManager().Save(server.URL+"/issuer-nl.png", []byte("cached"), ""))
 
-	added := backfillLogos(context.Background(), s, server.Client(), "nl", false)
+	added := backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl")
 
 	require.Equal(t, 1, added, "only the missing nl credential logo should be fetched")
 	require.Equal(t, map[string]int{"/cred-nl.png": 1}, requests,
@@ -123,7 +123,7 @@ func TestBackfillLogos_FetchesOnlyMissingResolvingLogos(t *testing.T) {
 	require.True(t, exists, "fetched logo must land in the cache")
 
 	// A second sweep with a warm cache downloads nothing.
-	added = backfillLogos(context.Background(), s, server.Client(), "nl", false)
+	added = backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl")
 	require.Equal(t, 0, added)
 	require.Equal(t, 1, requests["/cred-nl.png"])
 }
@@ -157,7 +157,7 @@ func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
 	}
 	require.NoError(t, db.NewSdJwtVcStore(s.Db()).StoreBatch(batch))
 
-	added := backfillLogos(context.Background(), s, server.Client(), "nl", false)
+	added := backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl")
 
 	require.Equal(t, 2, added, "the shared logo must be cached once per manager")
 	require.Equal(t, 2, requests, "one download per manager that needs it")
@@ -172,7 +172,7 @@ func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
 	}
 
 	// Warm cache: nothing further downloaded.
-	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Equal(t, 2, requests)
 }
 
@@ -295,8 +295,8 @@ func TestBackfillLogos_PlainHTTPOnlyInDeveloperMode(t *testing.T) {
 	s := newBackfillTestStorage(t)
 	storeBackfillBatch(t, s, server.URL)
 
-	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
-	require.Equal(t, 2, backfillLogos(context.Background(), s, server.Client(), "nl", true),
+	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 2, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client(), AllowInsecureHTTP: true}, "nl"),
 		"the nl issuer and credential logos, over plain http")
 }
 
@@ -354,12 +354,12 @@ func TestBackfillLogos_FillsInMissingClaimImages(t *testing.T) {
 	s := newBackfillTestStorage(t)
 	storeBackfillBadge(t, s, "badge", true, server.URL+"/a.png")
 
-	require.Equal(t, 1, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 1, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
 	exists, err := s.FileSystem().Credentials().LogoManager().Exists(server.URL + "/a.png")
 	require.NoError(t, err)
 	require.True(t, exists, "a claim image lands in the credential logo cache")
 
-	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Equal(t, 1, requests["/a.png"], "a cached image is not downloaded again")
 }
 
@@ -370,7 +370,7 @@ func TestBackfillLogos_DoesNotReplaceACachedClaimImage(t *testing.T) {
 	cached := append(slices.Clone(testLogoPNG), 0xFF)
 	require.NoError(t, s.FileSystem().Credentials().LogoManager().Save(server.URL+"/a.png", cached, clientmodels.MimeTypePNG))
 
-	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Zero(t, requests["/a.png"])
 	data, _, err := s.FileSystem().Credentials().LogoManager().Get(server.URL + "/a.png")
 	require.NoError(t, err)
@@ -382,7 +382,7 @@ func TestBackfillLogos_NoClaimImagesOutsideAnOpenBadge(t *testing.T) {
 	s := newBackfillTestStorage(t)
 	storeBackfillBadge(t, s, "not-a-badge", false, server.URL+"/a.png")
 
-	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Empty(t, requests)
 }
 
@@ -392,8 +392,8 @@ func TestBackfillLogos_RetriesAFailedClaimImage(t *testing.T) {
 	s := newBackfillTestStorage(t)
 	storeBackfillBadge(t, s, "badge", true, server.URL+"/missing.png")
 
-	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
-	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Equal(t, 2, requests["/missing.png"])
 }
 
@@ -413,8 +413,8 @@ func TestBackfillLogos_ClaimImageCredentialsPerSweep(t *testing.T) {
 		storeBackfillBadge(t, s, "badge-"+strconv.Itoa(i), true, server.URL+"/"+strconv.Itoa(i)+".png")
 	}
 
-	require.Equal(t, maxClaimImageCredentialsPerSweep, backfillLogos(context.Background(), s, server.Client(), "nl", false))
-	require.Equal(t, 3, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, maxClaimImageCredentialsPerSweep, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 3, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
 }
 
 // The limits per credential hold in a sweep too: an image past the tenth
@@ -428,9 +428,9 @@ func TestBackfillLogos_ClaimImageLimitsPerCredential(t *testing.T) {
 	}
 	storeBackfillBadge(t, s, "badge", true, urls...)
 
-	require.Equal(t, 10, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 10, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Zero(t, requests["/10.png"])
-	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Zero(t, requests["/10.png"], "an image a limit left out is not fetched later either")
 }
 
@@ -441,7 +441,7 @@ func TestBackfillLogos_ClaimImagesStopWhenCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	require.Equal(t, 0, backfillLogos(ctx, s, server.Client(), "nl", false))
+	require.Equal(t, 0, backfillLogos(ctx, s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Empty(t, requests)
 }
 
@@ -469,7 +469,7 @@ func TestBackfillLogos_OnlyTheCredentialSubjectsClaimImages(t *testing.T) {
 		Instances:        []models.VcdmBatchInstance{{RawCredential: []byte("raw")}},
 	}))
 
-	require.Equal(t, 3, backfillLogos(context.Background(), s, server.Client(), "nl", false))
+	require.Equal(t, 3, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Equal(t, map[string]int{"/subject.png": 1, "/credential.png": 1, "/issuer.png": 1}, requests)
 }
 
@@ -498,7 +498,7 @@ func TestBackfillLogos_TheVcdmDocumentsImages(t *testing.T) {
 		Instances:          []models.VcdmBatchInstance{{RawCredential: []byte("raw")}},
 	}))
 
-	require.Equal(t, 4, backfillLogos(context.Background(), s, server.Client(), "en", false))
+	require.Equal(t, 4, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "en"))
 	require.Equal(t, map[string]int{"/card.png": 1, "/issuer.png": 1, "/metadata-card.png": 1, "/metadata-issuer.png": 1}, requests)
 	for manager, uri := range map[filesystem.LogoManager]string{
 		s.FileSystem().Credentials().LogoManager(): server.URL + "/card.png",

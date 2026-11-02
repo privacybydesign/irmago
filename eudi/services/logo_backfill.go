@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -11,7 +10,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/storage"
-	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 )
 
@@ -75,7 +73,8 @@ func NewLogoBackfiller(s storage.Storage, httpClient *http.Client, onSweepDone f
 				continue // leftover wake from a request already taken with a newer one
 			}
 
-			cached := backfillLogos(ctx, s, httpClient, locale, b.allowInsecureHTTP.Load())
+			fetcher := LogoFetcher{HTTPClient: httpClient, AllowInsecureHTTP: b.allowInsecureHTTP.Load()}
+			cached := backfillLogos(ctx, s, fetcher, locale)
 
 			// A cut-short sweep reports nothing: the owner is shutting down, and
 			// the last thing it needs is a callback into a UI that is going away.
@@ -118,12 +117,12 @@ func (b *LogoBackfiller) Close() {
 
 // backfillLogos downloads the logos that resolve for the given locale but are
 // missing from the on-disk cache, for every stored credential batch, and the
-// claim images of Open Badges credentials missing from it (backfillClaimImages).
+// claim images missing from it (backfillClaimImages).
 // Returns the number of logos and images newly cached.
 //
 // Cancelling ctx aborts the sweep: the download in flight returns immediately
 // and the loop stops at the next batch.
-func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Client, locale string, allowInsecureHTTP bool) int {
+func backfillLogos(ctx context.Context, s storage.Storage, fetcher LogoFetcher, locale string) int {
 	credentialLogos := s.FileSystem().Credentials().LogoManager()
 	issuerLogos := s.FileSystem().Issuers().LogoManager()
 
@@ -140,7 +139,7 @@ func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Clie
 			return 0
 		}
 		seen[uri] = struct{}{}
-		return FetchLogoIfMissing(ctx, manager, httpClient, uri, allowInsecureHTTP)
+		return fetcher.FetchIfMissing(ctx, manager, uri)
 	}
 
 	added := 0
@@ -159,7 +158,7 @@ func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Clie
 			added += fetchOnce(seenCredential, credentialLogos, uri)
 		}
 	}
-	return added + backfillClaimImages(ctx, s, httpClient, credentialLogos, allowInsecureHTTP)
+	return added + backfillClaimImages(ctx, s, fetcher, credentialLogos)
 }
 
 // The claim images one sweep fills in at most: for how many credentials, and
@@ -170,54 +169,44 @@ const (
 	claimImagesSweepBudget           = 30 * time.Second
 )
 
-// backfillClaimImages downloads the claim images of the stored Open Badges
-// credentials that are missing from the credential logo cache, under the same
-// limits per credential as at issuance (FetchClaimImages): an image a limit
+// backfillClaimImages downloads the claim images of the stored credentials
+// that are missing from the credential logo cache, under the same limits per
+// credential as at issuance (CredentialDocument.FetchImages): an image a limit
 // left out stays out. Every failure is tried again at the next sweep. Only a
 // credential still missing an image counts towards the credentials a sweep
 // handles. Returns the number of images newly cached.
-func backfillClaimImages(ctx context.Context, s storage.Storage, httpClient *http.Client, credentialLogos filesystem.LogoManager, allowInsecureHTTP bool) int {
+func backfillClaimImages(ctx context.Context, s storage.Storage, fetcher LogoFetcher, credentialLogos filesystem.LogoManager) int {
 	ctx, cancel := context.WithTimeout(ctx, claimImagesSweepBudget)
 	defer cancel()
 
-	batches, err := db.NewVcdmStore(s.Db()).ListBatches()
-	if err != nil {
-		eudi.Logger.Warnf("failed to load VCDM batches for the claim image backfill: %v", err)
-		return 0
-	}
 	added, handled := 0, 0
-	for _, batch := range batches {
-		if ctx.Err() != nil || handled == maxClaimImageCredentialsPerSweep {
-			break
-		}
-		if !isOpenBadgesBatch(batch) {
-			continue
-		}
-		var payload map[string]any
-		if err := json.Unmarshal(batch.ProcessedPayload, &payload); err != nil {
-			continue
-		}
-		cached, tried := fetchClaimImages(ctx, credentialLogos, httpClient, payload, true, allowInsecureHTTP)
-		added += cached
-		if tried > 0 {
-			handled++
+	for _, source := range NewCredentialDisplaySources(s.Db()) {
+		for _, document := range source.Documents() {
+			if ctx.Err() != nil || handled == maxClaimImageCredentialsPerSweep {
+				return added
+			}
+			cached, tried := document.fetchClaimImages(ctx, credentialLogos, fetcher)
+			added += cached
+			if tried > 0 {
+				handled++
+			}
 		}
 	}
 	return added
 }
 
-// FetchLogoIfMissing downloads and caches a logo unless the URI is empty or
-// the logo is already cached. Returns 1 when a logo was newly cached, 0
-// otherwise. An Exists error is treated as a miss: a redundant download beats
-// permanently skipping the logo.
-func FetchLogoIfMissing(ctx context.Context, manager filesystem.LogoManager, httpClient *http.Client, uri string, allowInsecureHTTP bool) int {
+// FetchIfMissing downloads and caches a logo unless the URI is empty or the
+// logo is already cached. Returns 1 when a logo was newly cached, 0 otherwise.
+// An Exists error is treated as a miss: a redundant download beats permanently
+// skipping the logo.
+func (f LogoFetcher) FetchIfMissing(ctx context.Context, manager filesystem.LogoManager, uri string) int {
 	if uri == "" {
 		return 0
 	}
 	if exists, err := manager.Exists(uri); err == nil && exists {
 		return 0
 	}
-	data, mimeType, err := helpers.DownloadRemoteImage(ctx, httpClient, uri, allowInsecureHTTP)
+	data, mimeType, err := helpers.DownloadRemoteImage(ctx, f.HTTPClient, uri, f.AllowInsecureHTTP)
 	if err != nil {
 		eudi.Logger.Warnf("failed to download logo from %q: %v", uri, err)
 		return 0

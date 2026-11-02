@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"encoding/base64"
-	"net/http"
 	"slices"
 	"strings"
 
@@ -15,9 +14,9 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 )
 
-// ClaimImage is a claim the wallet shows as a picture rather than as text:
+// claimImage is a claim the wallet shows as a picture rather than as text:
 // the leaf that holds the image, and where the image is.
-type ClaimImage struct {
+type claimImage struct {
 	// Path is the claim path of the leaf that holds the image: a data URI
 	// claim itself, or the `id` of an Open Badges Image object. That leaf
 	// becomes the picture, so what is disclosed and logged keeps its path.
@@ -35,7 +34,7 @@ type ClaimImage struct {
 
 // IsDataURI reports whether the image is in the claim itself, so it needs no
 // download.
-func (c ClaimImage) IsDataURI() bool {
+func (c claimImage) IsDataURI() bool {
 	return isImageDataURI(c.Source)
 }
 
@@ -43,7 +42,7 @@ func (c ClaimImage) IsDataURI() bool {
 // (Open Badges 3.0 B.1.13).
 const openBadgesImageType = "Image"
 
-// FindClaimImages returns the claim images in a processed SD-JWT VC or VCDM
+// findClaimImages returns the claim images in a processed SD-JWT VC or VCDM
 // payload, in the order the credential list shows claims without metadata
 // (object keys sorted, array elements in order). A data:image/ string is an
 // image in any credential. An Open Badges Image object, `type` "Image" with a
@@ -54,14 +53,14 @@ const openBadgesImageType = "Image"
 // It reads the payload rather than the attributes, because a disclosure shows
 // only the requested leaves: an Image's `id` can be requested without its
 // `type`, and then the attributes alone cannot tell it from any other URL.
-func FindClaimImages(payload map[string]any, openBadges bool) []ClaimImage {
-	var images []ClaimImage
+func findClaimImages(payload map[string]any, openBadges bool) []claimImage {
+	var images []claimImage
 	var walk func(path []any, value any)
 	walk = func(path []any, value any) {
 		switch v := value.(type) {
 		case string:
 			if isImageDataURI(v) {
-				images = append(images, ClaimImage{Path: path, Source: v})
+				images = append(images, claimImage{Path: path, Source: v})
 			}
 		case []any:
 			for i, element := range v {
@@ -70,7 +69,7 @@ func FindClaimImages(payload map[string]any, openBadges bool) []ClaimImage {
 		case map[string]any:
 			if openBadges {
 				if source, ok := openBadgesImageSource(v); ok {
-					images = append(images, ClaimImage{Path: childPath(path, "id"), Source: source, Object: slices.Clone(path)})
+					images = append(images, claimImage{Path: childPath(path, "id"), Source: source, Object: slices.Clone(path)})
 					// Its other fields, such as its caption, are text.
 					return
 				}
@@ -127,8 +126,8 @@ func childPath(path []any, segment any) []any {
 	return append(slices.Clone(path), segment)
 }
 
-// ShowClaimImages turns the attributes that are claim images in payload
-// (FindClaimImages) into base64_image values and returns the attributes. A
+// showClaimImages turns the attributes that are claim images in payload
+// (findClaimImages) into base64_image values and returns the attributes. A
 // data URI is decoded from the attribute itself; a URL takes its image from
 // downloaded, which maps a URL to the bytes the wallet downloaded from it, and
 // stays text when it has none there. An image whose bytes are no PNG, JPEG,
@@ -144,13 +143,13 @@ func childPath(path []any, segment any) []any {
 //
 // payload must be the credential's full processed payload, not a disclosure's
 // view of it: a view may hold an Image's id without the type that makes it one.
-func ShowClaimImages(
+func showClaimImages(
 	attrs []clientmodels.Attribute,
 	payload map[string]any,
 	openBadges bool,
 	downloaded map[string][]byte,
 ) []clientmodels.Attribute {
-	images := FindClaimImages(payload, openBadges)
+	images := findClaimImages(payload, openBadges)
 	if len(images) == 0 {
 		return attrs
 	}
@@ -177,7 +176,7 @@ func ShowClaimImages(
 // and the header of the object when attrs has one, by one attribute at the
 // object's path that holds its image, at the place of the first of them. It
 // leaves attrs as they are unless every value of the object is among them.
-func collapseImageObject(attrs []clientmodels.Attribute, payload map[string]any, image ClaimImage, downloaded map[string][]byte) []clientmodels.Attribute {
+func collapseImageObject(attrs []clientmodels.Attribute, payload map[string]any, image claimImage, downloaded map[string][]byte) []clientmodels.Attribute {
 	index := make(map[string]int, len(attrs))
 	for i, attr := range attrs {
 		index[clientmodels.ClaimPathKey(attr.ClaimPath)] = i
@@ -248,20 +247,15 @@ func claimImageValue(value *clientmodels.AttributeValue, downloaded map[string][
 	} else {
 		data = downloaded[*value.String]
 	}
-	mimeType := clientmodels.ImageMimeType(data)
-	if mimeType == "" {
+	if clientmodels.ImageMimeType(data) == "" {
 		return value
 	}
-	encoded := base64.StdEncoding.EncodeToString(data)
-	return &clientmodels.AttributeValue{
-		Type:        clientmodels.AttributeType_Base64Image,
-		Base64Image: &encoded,
-		MimeType:    &mimeType,
-		DisplayHint: value.DisplayHint,
-	}
+	image := clientmodels.NewBase64ImageValue(base64.StdEncoding.EncodeToString(data))
+	image.DisplayHint = value.DisplayHint
+	return image
 }
 
-// payloadMap returns a processed SD-JWT payload as the map FindClaimImages
+// payloadMap returns a processed SD-JWT payload as the map findClaimImages
 // reads, or nil for none.
 func payloadMap(payload *sdjwt.ProcessedPayload) map[string]any {
 	if payload == nil {
@@ -279,10 +273,10 @@ const (
 )
 
 // remoteClaimImageURLs returns the URLs of the claim images that are behind a
-// URL, in the order FindClaimImages finds them, each once, at most
+// URL, in the order findClaimImages finds them, each once, at most
 // maxClaimImagesPerCredential of them. Data URIs are in the credential itself
 // and need no URL.
-func remoteClaimImageURLs(images []ClaimImage) []string {
+func remoteClaimImageURLs(images []claimImage) []string {
 	var urls []string
 	for _, image := range images {
 		if image.IsDataURI() || slices.Contains(urls, image.Source) {
@@ -309,17 +303,17 @@ func downloadableClaimImageURLs(payload map[string]any, openBadges bool) []strin
 	if !openBadges || !ok {
 		return nil
 	}
-	return remoteClaimImageURLs(FindClaimImages(map[string]any{vcdm.CredentialSubjectKey: subject}, true))
+	return remoteClaimImageURLs(findClaimImages(map[string]any{vcdm.CredentialSubjectKey: subject}, true))
 }
 
-// CachedClaimImages returns, keyed by URL, the cached images of the claim
+// cachedClaimImages returns, keyed by URL, the cached images of the claim
 // images in payload's credentialSubject that are behind a URL
 // (downloadableClaimImageURLs): those among the first
 // maxClaimImagesPerCredential that are in manager, in order, as long as
 // together they fit in maxClaimImageBytesPerCredential. What does not fit stays
 // text, as an image that was never downloaded does. manager is the credential
 // logo cache, which claim images share with credential logos.
-func CachedClaimImages(manager filesystem.LogoManager, payload map[string]any, openBadges bool) map[string][]byte {
+func cachedClaimImages(manager filesystem.LogoManager, payload map[string]any, openBadges bool) map[string][]byte {
 	images := map[string][]byte{}
 	used := 0
 	for _, url := range downloadableClaimImageURLs(payload, openBadges) {
@@ -336,33 +330,19 @@ func CachedClaimImages(manager filesystem.LogoManager, payload map[string]any, o
 	return images
 }
 
-// FetchClaimImages downloads into manager, the credential logo cache, the
+// fetchClaimImages downloads into manager, the credential logo cache, the
 // claim images in payload's credentialSubject that are behind a URL and missing
-// from it (downloadableClaimImageURLs), under the
-// limits CachedClaimImages shows them by, and returns how many it cached. Like
-// a credential logo, an image already cached is not downloaded again. ctx
-// bounds the time all downloads together may take.
-func FetchClaimImages(
-	ctx context.Context,
-	manager filesystem.LogoManager,
-	httpClient *http.Client,
-	payload map[string]any,
-	openBadges bool,
-	allowInsecureHTTP bool,
-) int {
-	cached, _ := fetchClaimImages(ctx, manager, httpClient, payload, openBadges, allowInsecureHTTP)
-	return cached
-}
-
-// fetchClaimImages is FetchClaimImages, also returning how many downloads it
-// tried: none when every image it may show was cached already.
+// from it (downloadableClaimImageURLs), under the limits cachedClaimImages
+// shows them by. It returns how many it cached, and how many downloads it
+// tried: none when every image it may show was cached already. Like a
+// credential logo, an image already cached is not downloaded again. ctx bounds
+// the time all downloads together may take.
 func fetchClaimImages(
 	ctx context.Context,
 	manager filesystem.LogoManager,
-	httpClient *http.Client,
+	fetcher LogoFetcher,
 	payload map[string]any,
 	openBadges bool,
-	allowInsecureHTTP bool,
 ) (cached, tried int) {
 	used := 0
 	for _, url := range downloadableClaimImageURLs(payload, openBadges) {
@@ -373,7 +353,7 @@ func fetchClaimImages(
 			used += len(data)
 		} else {
 			tried++
-			data, mimeType, err := helpers.DownloadRemoteImage(ctx, httpClient, url, allowInsecureHTTP)
+			data, mimeType, err := helpers.DownloadRemoteImage(ctx, fetcher.HTTPClient, url, fetcher.AllowInsecureHTTP)
 			if err != nil {
 				eudi.Logger.Warnf("failed to download claim image from %q: %v", url, err)
 				continue

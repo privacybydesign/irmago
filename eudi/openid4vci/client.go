@@ -575,16 +575,17 @@ func (client *Client) downloadLogos(
 	locale string,
 ) {
 	fs := client.Configuration.Storage.FileSystem()
-	services.FetchLogoIfMissing(ctx, fs.Issuers().LogoManager(), client.httpClient,
-		clientmodels.Resolve(metadata.LogoURIsByLanguage(issuerMetadata.Display), locale), client.allowInsecureHttp)
+	fetcher := services.LogoFetcher{HTTPClient: client.httpClient, AllowInsecureHTTP: client.allowInsecureHttp}
+	fetcher.FetchIfMissing(ctx, fs.Issuers().LogoManager(),
+		clientmodels.Resolve(metadata.LogoURIsByLanguage(issuerMetadata.Display), locale))
 
 	for _, configID := range offer.CredentialConfigurationIds {
 		config, ok := issuerMetadata.CredentialConfigurationsSupported[configID]
 		if !ok || config.CredentialMetadata == nil {
 			continue
 		}
-		services.FetchLogoIfMissing(ctx, fs.Credentials().LogoManager(), client.httpClient,
-			clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale), client.allowInsecureHttp)
+		fetcher.FetchIfMissing(ctx, fs.Credentials().LogoManager(),
+			clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale))
 	}
 }
 

@@ -27,13 +27,13 @@ func TestCanHandleCredentialQuery(t *testing.T) {
 
 // The profile reads a stored credential's own display from its payload, an
 // Open Badges credential's achievement image included, by its expanded types.
-func TestDocumentDisplay(t *testing.T) {
+func TestDocument(t *testing.T) {
 	payload := datatypes.JSON(`{"name": "Alumni card", "credentialSubject": {"achievement": {"image": "https://example.com/badge.png"}}}`)
 
-	display := documentDisplay(&sdjwt_dcql.Batch{ProcessedPayload: payload, ExpandedTypes: []string{vcdm.OpenBadgeCredentialType}})
+	display := document(&sdjwt_dcql.Batch{ProcessedPayload: payload, ExpandedTypes: []string{vcdm.OpenBadgeCredentialType}}).Display()
 	assert.Equal(t, clientmodels.TranslatedString{"": "Alumni card"}, display.CredentialNames)
 	assert.Equal(t, "https://example.com/badge.png", display.CredentialImage)
 
-	assert.Empty(t, documentDisplay(&sdjwt_dcql.Batch{ProcessedPayload: payload}).CredentialImage, "not an Open Badges credential")
-	assert.Equal(t, services.VcdmDocumentDisplay{}, documentDisplay(&sdjwt_dcql.Batch{ProcessedPayload: datatypes.JSON(`not json`)}))
+	assert.Empty(t, document(&sdjwt_dcql.Batch{ProcessedPayload: payload}).Display().CredentialImage, "not an Open Badges credential")
+	assert.Equal(t, services.CredentialDocument{}, document(&sdjwt_dcql.Batch{ProcessedPayload: datatypes.JSON(`not json`)}))
 }

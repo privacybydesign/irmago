@@ -4,6 +4,7 @@
 package sdjwtvc_dcql
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -12,6 +13,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -47,7 +49,8 @@ func New(
 			_, std := sdjwtvc.StandardClaims[key]
 			return !std
 		},
-		Present: sdjwt_dcql.PresentWithKbJwt,
+		Present:  sdjwt_dcql.PresentWithKbJwt,
+		Document: document,
 	}
 	batches := sdjwt_dcql.NewSdJwtVcBatchStore(credentialStore, revocation)
 	return &Handler{sdjwt_dcql.NewEngine(profile, eudiStorage, batches, vctFetcher, issuerFetcher, keyBinder, currentLocale)}
@@ -92,4 +95,14 @@ func isIrmaStyleVct(vct string) bool {
 		}
 	}
 	return true
+}
+
+// document is the stored SD-JWT VC's document. An unreadable payload says
+// nothing.
+func document(batch *sdjwt_dcql.Batch) services.CredentialDocument {
+	var payload map[string]any
+	if err := json.Unmarshal(batch.ProcessedPayload, &payload); err != nil {
+		return services.CredentialDocument{}
+	}
+	return services.NewSdJwtVcDocument(payload)
 }

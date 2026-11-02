@@ -88,7 +88,8 @@ func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) 
 		if err := json.Unmarshal(batch.ProcessedPayload, &document); err != nil {
 			document = nil
 		}
-		documentDisplay := NewVcdmDocumentDisplay(document, isOpenBadgesBatch(batch))
+		credentialDocument := NewVcdmDocument(document, vcdmExpandedTypes(batch))
+		documentDisplay := credentialDocument.Display()
 
 		display := resolveVcdmDisplay(batch, documentDisplay, locale)
 		// Fall back to the type identity when neither the credential nor the
@@ -121,7 +122,7 @@ func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) 
 				clientmodels.Format_SdJwtVcdm: batch.Hash,
 			},
 			BatchInstanceCountsRemaining: batchInstanceCounts(models.CredentialFormatSdJwtVcdm, batch.BatchSize, &batch.RemainingCount),
-			Attributes:                   showVcdmClaimImages(BuildAttributesFromVcdmDocument(document, display.ClaimNames, display.ClaimOrder), document, batch, credentialLogoManager),
+			Attributes:                   credentialDocument.ShowImages(BuildAttributesFromVcdmDocument(document, display.ClaimNames, display.ClaimOrder), credentialLogoManager),
 			ExpiryDate:                   exp,
 			IssuanceDate:                 &issuedAt,
 			Revoked:                      revoked[batch.Hash],
@@ -439,12 +440,12 @@ func VcdmCredentialMetadata(batch *models.VcdmBatch) *models.CredentialMetadata 
 
 // ResolveVcdmDisplay is ResolveBatchDisplay for a VCDM batch, with the
 // credential's and the issuer's name taken from the document first
-// (VcdmDocumentDisplay).
+// (DocumentDisplay).
 func ResolveVcdmDisplay(batch *models.VcdmBatch, locale string) ResolvedBatchDisplay {
-	return resolveVcdmDisplay(batch, vcdmBatchDocumentDisplay(batch), locale)
+	return resolveVcdmDisplay(batch, vcdmBatchDocument(batch).Display(), locale)
 }
 
-func resolveVcdmDisplay(batch *models.VcdmBatch, document VcdmDocumentDisplay, locale string) ResolvedBatchDisplay {
+func resolveVcdmDisplay(batch *models.VcdmBatch, document DocumentDisplay, locale string) ResolvedBatchDisplay {
 	d := resolveSdJwtBatchDisplay(batch.CredentialIssuer, VcdmIssuerDisplays(batch), VcdmCredentialMetadata(batch), locale)
 	if name := clientmodels.Resolve(document.CredentialNames, locale); name != "" {
 		d.CredentialName = name
@@ -456,28 +457,13 @@ func resolveVcdmDisplay(batch *models.VcdmBatch, document VcdmDocumentDisplay, l
 	return d
 }
 
-// VcdmDocumentDisplay is how a VCDM document says it looks: the credential's
-// name and image, and its issuer's name and logo. Each comes before what the
-// OpenID4VCI metadata says, per field, as an SD-JWT VC's type metadata does:
-// OpenID4VCI 1.0 §12.2.4 says "Format-specific mechanisms ... are always
-// preferred by the Wallet over the information in this object, which serves as
-// the default fallback". The document is also the more specific of the two: the
-// metadata describes a credential configuration, the document one credential.
-//
-// Names are keyed by base language; an image is a URI to download or a data
-// URI, "" when there is none.
-type VcdmDocumentDisplay struct {
-	CredentialNames clientmodels.TranslatedString
-	CredentialImage string
-	IssuerNames     clientmodels.TranslatedString
-	IssuerImage     string
-}
-
-// NewVcdmDocumentDisplay reads a document's display. The credential's image is
-// its `image`, or in an Open Badges credential without one, its achievement's
-// image: the badge's picture.
-func NewVcdmDocumentDisplay(document vcdm.Document, openBadges bool) VcdmDocumentDisplay {
-	d := VcdmDocumentDisplay{
+// vcdmDocumentDisplay reads how a VCDM document says it looks. The
+// credential's name is its `name`, and its image its `image` or, in an Open
+// Badges credential without one, its achievement's image: the badge's picture.
+// The issuer's name and logo are those of its `issuer`, when that is an
+// object.
+func vcdmDocumentDisplay(document vcdm.Document, openBadges bool) DocumentDisplay {
+	d := DocumentDisplay{
 		CredentialNames: byBaseLanguage(document.Names()),
 		IssuerNames:     byBaseLanguage(document.IssuerNames()),
 	}
@@ -489,14 +475,24 @@ func NewVcdmDocumentDisplay(document vcdm.Document, openBadges bool) VcdmDocumen
 	return d
 }
 
-// vcdmBatchDocumentDisplay is NewVcdmDocumentDisplay over a stored batch. An
-// unreadable payload says nothing.
-func vcdmBatchDocumentDisplay(batch *models.VcdmBatch) VcdmDocumentDisplay {
+// vcdmBatchDocument is the document of a stored VCDM batch. An unreadable
+// payload gives an empty one.
+func vcdmBatchDocument(batch *models.VcdmBatch) CredentialDocument {
 	var document vcdm.Document
 	if err := json.Unmarshal(batch.ProcessedPayload, &document); err != nil {
-		return VcdmDocumentDisplay{}
+		return CredentialDocument{}
 	}
-	return NewVcdmDocumentDisplay(document, isOpenBadgesBatch(batch))
+	return NewVcdmDocument(document, vcdmExpandedTypes(batch))
+}
+
+// vcdmExpandedTypes returns the expanded types stored with a VCDM batch at
+// issuance; none when they cannot be read.
+func vcdmExpandedTypes(batch *models.VcdmBatch) []string {
+	var types []string
+	if err := json.Unmarshal(batch.ExpandedTypes, &types); err != nil {
+		return nil
+	}
+	return types
 }
 
 // byBaseLanguage keys language-tagged values by base language ("nl-NL" →
@@ -579,28 +575,23 @@ func (s sdJwtVcdmDisplaySource) LogoURIs(locale string) (issuer []string, creden
 		return nil, nil
 	}
 	for _, batch := range batches {
-		document := vcdmBatchDocumentDisplay(batch)
+		document := vcdmBatchDocument(batch).Display()
 		issuer = append(issuer, document.IssuerImage, clientmodels.Resolve(IssuerLogoURIsByLanguage(VcdmIssuerDisplays(batch)), locale))
 		credential = append(credential, document.CredentialImage, clientmodels.Resolve(vcdmCredentialLogoURIs(batch), locale))
 	}
 	return issuer, credential
 }
 
-// isOpenBadgesBatch reports whether a stored VCDM batch is an Open Badges
-// credential, by the expanded types stored with it at issuance. A batch whose
-// types cannot be read is not.
-func isOpenBadgesBatch(batch *models.VcdmBatch) bool {
-	var types []string
-	if err := json.Unmarshal(batch.ExpandedTypes, &types); err != nil {
-		return false
+// Documents returns the document of every stored batch.
+func (s sdJwtVcdmDisplaySource) Documents() []CredentialDocument {
+	batches, err := s.store.ListBatches()
+	if err != nil {
+		eudi.Logger.Warnf("failed to load VCDM batches for the claim image backfill: %v", err)
+		return nil
 	}
-	return vcdm.IsOpenBadgesCredential(types)
-}
-
-// showVcdmClaimImages turns a stored VCDM batch's claim images among attrs
-// into pictures, with the images behind a URL from logos, the credential logo
-// cache they share with the credential logos.
-func showVcdmClaimImages(attrs []clientmodels.Attribute, document vcdm.Document, batch *models.VcdmBatch, logos filesystem.LogoManager) []clientmodels.Attribute {
-	openBadges := isOpenBadgesBatch(batch)
-	return ShowClaimImages(attrs, document, openBadges, CachedClaimImages(logos, document, openBadges))
+	documents := make([]CredentialDocument, 0, len(batches))
+	for _, batch := range batches {
+		documents = append(documents, vcdmBatchDocument(batch))
+	}
+	return documents
 }

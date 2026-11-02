@@ -337,7 +337,8 @@ func TestSdJwtVcdmList_SubjectRootedAttributes(t *testing.T) {
 	}, paths)
 }
 
-func TestNewVcdmDocumentDisplay(t *testing.T) {
+func TestNewVcdmDocument(t *testing.T) {
+	openBadges := []string{vcdm.OpenBadgeCredentialType}
 	doc := vcdm.Document{
 		vcdm.NameKey: []any{
 			map[string]any{"@value": "Alumni card", "@language": "en-GB"},
@@ -348,18 +349,18 @@ func TestNewVcdmDocumentDisplay(t *testing.T) {
 			"achievement": map[string]any{"image": map[string]any{"id": "https://example.com/badge.png", "type": "Image"}},
 		},
 	}
-	display := NewVcdmDocumentDisplay(doc, true)
+	display := NewVcdmDocument(doc, openBadges).Display()
 	require.Equal(t, clientmodels.TranslatedString{"en": "Alumni card", "nl": "Alumnikaart"}, display.CredentialNames, "region tags are keyed by base language")
 	require.Equal(t, clientmodels.TranslatedString{"": "Example University"}, display.IssuerNames, "a plain string is used for every locale")
 	require.Equal(t, "https://example.com/logo.png", display.IssuerImage)
 	require.Equal(t, "https://example.com/badge.png", display.CredentialImage, "a badge without an image of its own is pictured by its achievement")
 
-	require.Empty(t, NewVcdmDocumentDisplay(doc, false).CredentialImage, "outside Open Badges, an achievement is just a claim")
+	require.Empty(t, NewVcdmDocument(doc, nil).Display().CredentialImage, "outside Open Badges, an achievement is just a claim")
 
 	doc[vcdm.ImageKey] = "https://example.com/card.png"
-	require.Equal(t, "https://example.com/card.png", NewVcdmDocumentDisplay(doc, true).CredentialImage, "the credential's own image comes first")
+	require.Equal(t, "https://example.com/card.png", NewVcdmDocument(doc, openBadges).Display().CredentialImage, "the credential's own image comes first")
 
-	require.Equal(t, VcdmDocumentDisplay{}, NewVcdmDocumentDisplay(vcdm.Document{}, true))
+	require.Equal(t, DocumentDisplay{}, NewVcdmDocument(vcdm.Document{}, openBadges).Display())
 }
 
 // The credential's and the issuer's name come from the document first, and

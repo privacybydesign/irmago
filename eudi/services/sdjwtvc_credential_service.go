@@ -136,13 +136,12 @@ func (s *sdJwtVcCredentialService) List() ([]*clientmodels.Credential, error) {
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,
 			},
 			BatchInstanceCountsRemaining: batchInstanceCounts(batch.Format, batch.BatchSize, &batch.RemainingCount),
-			// An SD-JWT VC is never an Open Badges credential: only its data URIs are images.
-			Attributes:          ShowClaimImages(BuildAttributesFromPayload(payload, display.ClaimNames, display.ClaimOrder), payloadMap(payload), false, nil),
-			ExpiryDate:          exp,
-			IssuanceDate:        iat,
-			Revoked:             revoked[batch.Hash],
-			RevocationSupported: revocable[batch.Hash],
-			IssueURL:            nil, // TODO: add issue URL to storage model so this can be filled in here
+			Attributes:                   NewSdJwtVcDocument(payloadMap(payload)).ShowImages(BuildAttributesFromPayload(payload, display.ClaimNames, display.ClaimOrder), credentialLogoManager),
+			ExpiryDate:                   exp,
+			IssuanceDate:                 iat,
+			Revoked:                      revoked[batch.Hash],
+			RevocationSupported:          revocable[batch.Hash],
+			IssueURL:                     nil, // TODO: add issue URL to storage model so this can be filled in here
 		})
 	}
 
@@ -569,4 +568,23 @@ func (s sdJwtVcDisplaySource) LogoURIs(locale string) (issuer []string, credenti
 		}
 	}
 	return issuer, credential
+}
+
+// Documents returns the document of every stored batch. An unreadable payload
+// gives an empty one.
+func (s sdJwtVcDisplaySource) Documents() []CredentialDocument {
+	batches, err := s.store.GetCredentialBatchList()
+	if err != nil {
+		eudi.Logger.Warnf("failed to load SD-JWT VC batches for the claim image backfill: %v", err)
+		return nil
+	}
+	documents := make([]CredentialDocument, 0, len(batches))
+	for _, batch := range batches {
+		var payload map[string]any
+		if err := json.Unmarshal(batch.ProcessedSdJwtPayload, &payload); err != nil {
+			payload = nil
+		}
+		documents = append(documents, NewSdJwtVcDocument(payload))
+	}
+	return documents
 }

@@ -18,7 +18,6 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
-	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -59,11 +58,10 @@ type Profile struct {
 	// MatchesTypeValues reports whether a batch satisfies DCQL type_values
 	// (OpenID4VP §B.1.1, W3C VCDM only). Nil means no batch ever does.
 	MatchesTypeValues func(batch *Batch, typeValues [][]string) bool
-	// DocumentDisplay is how the credential says it looks itself, which comes
-	// before its metadata's display, per field (services.VcdmDocumentDisplay).
-	// Nil means the credential says nothing: an SD-JWT VC's type metadata is
-	// merged into its metadata at issuance.
-	DocumentDisplay func(batch *Batch) services.VcdmDocumentDisplay
+	// Document is what the credential says about itself
+	// (services.CredentialDocument): its own display, which comes before its
+	// metadata's, per field, and its claim images. Nil means it says nothing.
+	Document func(batch *Batch) services.CredentialDocument
 }
 
 // PresentWithKbJwt is the SD-JWT VC Present: the selected SD-JWT with a KB-JWT
@@ -155,9 +153,10 @@ func (h *Engine) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQue
 		if attributes == nil {
 			continue
 		}
-		attributes = h.showClaimImages(attributes, batch)
+		credentialDocument := h.document(batch)
+		attributes = credentialDocument.ShowImages(attributes, h.storage.FileSystem().Credentials().LogoManager())
 
-		document := h.documentDisplay(batch)
+		document := credentialDocument.Display()
 		image := h.credentialImage(batch, document, locale)
 
 		candidate := clientmodels.SelectableCredentialInstance{
@@ -970,9 +969,10 @@ func (h *Engine) buildLogCredential(
 	metadataOrder := buildMetadataOrder(batch)
 	requestedKeys := make(map[string]struct{})
 	attrs = flattenPathsForDisplay(attrs, requestedKeys, batch, &resolved, pairs, metadataOrder, locale)
-	attrs = h.showClaimImages(attrs, batch)
+	credentialDocument := h.document(batch)
+	attrs = credentialDocument.ShowImages(attrs, h.storage.FileSystem().Credentials().LogoManager())
 
-	document := h.documentDisplay(batch)
+	document := credentialDocument.Display()
 	log := clientmodels.LogCredential{
 		CredentialId: batch.CredentialType,
 		Formats:      []clientmodels.CredentialFormat{h.profile.ClientFormat},
@@ -1224,12 +1224,15 @@ func pathLess(a, b []any, metadataOrder map[string]int) bool {
 	return len(a) < len(b)
 }
 
-// documentDisplay is the batch's own display by the profile, or nothing.
-func (h *Engine) documentDisplay(batch *Batch) services.VcdmDocumentDisplay {
-	if h.profile.DocumentDisplay == nil {
-		return services.VcdmDocumentDisplay{}
+// document is the batch's document by the profile, or one that says nothing.
+// Its claim images are read off the batch's whole processed payload: a
+// disclosure's view of it may hold an Open Badges Image's id without the type
+// that makes it one.
+func (h *Engine) document(batch *Batch) services.CredentialDocument {
+	if h.profile.Document == nil {
+		return services.CredentialDocument{}
 	}
-	return h.profile.DocumentDisplay(batch)
+	return h.profile.Document(batch)
 }
 
 // credentialImage loads the credential's own image from the logo cache or,
@@ -1237,7 +1240,7 @@ func (h *Engine) documentDisplay(batch *Batch) services.VcdmDocumentDisplay {
 // the locale from the batch's display metadata (falling back to any cached
 // display logo while the backfill fetches the preferred one). Returns nil when
 // no logo is configured or none is cached.
-func (h *Engine) credentialImage(batch *Batch, document services.VcdmDocumentDisplay, locale string) *clientmodels.Image {
+func (h *Engine) credentialImage(batch *Batch, document services.DocumentDisplay, locale string) *clientmodels.Image {
 	var metadataURIs clientmodels.TranslatedString
 	if batch.CredentialMetadata != nil {
 		metadataURIs = services.CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display)
@@ -1249,7 +1252,7 @@ func (h *Engine) credentialImage(batch *Batch, document services.VcdmDocumentDis
 // issuerTrustedParty builds a TrustedParty from the credential's own issuer
 // name, or else the stored issuer display metadata, including the issuer logo
 // if available on disk.
-func (h *Engine) issuerTrustedParty(batch *Batch, document services.VcdmDocumentDisplay, locale string) clientmodels.TrustedParty {
+func (h *Engine) issuerTrustedParty(batch *Batch, document services.DocumentDisplay, locale string) clientmodels.TrustedParty {
 	name := clientmodels.Resolve(document.IssuerNames, locale)
 	if name == "" {
 		name = clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale)
@@ -1266,7 +1269,7 @@ func (h *Engine) issuerTrustedParty(batch *Batch, document services.VcdmDocument
 // when it has none or it is not cached, the issuer logo that resolves for the
 // locale from the batch's issuer display metadata (falling back to any cached
 // display logo while the backfill fetches the preferred one).
-func (h *Engine) issuerImage(batch *Batch, document services.VcdmDocumentDisplay, locale string) *clientmodels.Image {
+func (h *Engine) issuerImage(batch *Batch, document services.DocumentDisplay, locale string) *clientmodels.Image {
 	logoManager := h.storage.FileSystem().Issuers().LogoManager()
 	return services.LoadDocumentLogo(logoManager, document.IssuerImage, services.IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale)
 }
@@ -1274,7 +1277,7 @@ func (h *Engine) issuerImage(batch *Batch, document services.VcdmDocumentDisplay
 // credentialDisplayName resolves a credential's display name: its own name,
 // else its stored metadata's, else its type (the VCT or the VCDM type
 // identity).
-func (h *Engine) credentialDisplayName(batch *Batch, document services.VcdmDocumentDisplay, locale string) string {
+func (h *Engine) credentialDisplayName(batch *Batch, document services.DocumentDisplay, locale string) string {
 	if name := clientmodels.Resolve(document.CredentialNames, locale); name != "" {
 		return name
 	}
@@ -1332,19 +1335,4 @@ func claimPathMatchesMetadataPath(claimPath []any, metadataPath []any) bool {
 		}
 	}
 	return true
-}
-
-// showClaimImages turns the batch's claim images among attrs into pictures
-// (services.ShowClaimImages), with the images behind a URL from the credential
-// logo cache, which they share with the credential logos. What is an image is
-// read off the batch's whole processed payload: a disclosure's view of it may
-// hold an Open Badges Image's id without the type that makes it one.
-func (h *Engine) showClaimImages(attrs []clientmodels.Attribute, batch *Batch) []clientmodels.Attribute {
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(batch.ProcessedPayload), &payload); err != nil {
-		return attrs
-	}
-	openBadges := vcdm.IsOpenBadgesCredential(batch.ExpandedTypes)
-	cached := services.CachedClaimImages(h.storage.FileSystem().Credentials().LogoManager(), payload, openBadges)
-	return services.ShowClaimImages(attrs, payload, openBadges, cached)
 }
