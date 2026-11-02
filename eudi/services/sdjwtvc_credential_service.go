@@ -570,21 +570,8 @@ func (s sdJwtVcDisplaySource) LogoURIs(locale string) (issuer []string, credenti
 	return issuer, credential
 }
 
-// Documents returns the document of every stored batch. An unreadable payload
-// gives an empty one.
+// Documents returns no documents: an SD-JWT VC's claim images are data URIs in
+// the credential itself, so it has none to download (CredentialDocument).
 func (s sdJwtVcDisplaySource) Documents() []CredentialDocument {
-	batches, err := s.store.GetCredentialBatchList()
-	if err != nil {
-		eudi.Logger.Warnf("failed to load SD-JWT VC batches for the claim image backfill: %v", err)
-		return nil
-	}
-	documents := make([]CredentialDocument, 0, len(batches))
-	for _, batch := range batches {
-		var payload map[string]any
-		if err := json.Unmarshal(batch.ProcessedSdJwtPayload, &payload); err != nil {
-			payload = nil
-		}
-		documents = append(documents, NewSdJwtVcDocument(payload))
-	}
-	return documents
+	return nil
 }

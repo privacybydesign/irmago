@@ -4,7 +4,6 @@
 package sdjwtvc_dcql
 
 import (
-	"encoding/json"
 	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -100,9 +99,5 @@ func isIrmaStyleVct(vct string) bool {
 // document is the stored SD-JWT VC's document. An unreadable payload says
 // nothing.
 func document(batch *sdjwt_dcql.Batch) services.CredentialDocument {
-	var payload map[string]any
-	if err := json.Unmarshal(batch.ProcessedPayload, &payload); err != nil {
-		return services.CredentialDocument{}
-	}
-	return services.NewSdJwtVcDocument(payload)
+	return services.NewSdJwtVcDocumentFromJSON(batch.ProcessedPayload)
 }

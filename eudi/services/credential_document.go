@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -51,6 +52,16 @@ func NewSdJwtVcDocument(payload map[string]any) CredentialDocument {
 	return CredentialDocument{payload: payload}
 }
 
+// NewSdJwtVcDocumentFromJSON is NewSdJwtVcDocument over a stored processed
+// payload. An unreadable payload says nothing.
+func NewSdJwtVcDocumentFromJSON(payload []byte) CredentialDocument {
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return CredentialDocument{}
+	}
+	return NewSdJwtVcDocument(decoded)
+}
+
 // NewVcdmDocument is the document of a VCDM credential with these expanded
 // types (vcdm.ExpandTypes). Its display is read off it (vcdmDocumentDisplay);
 // its images are its data URI claims and, in an Open Badges credential, the
@@ -62,6 +73,16 @@ func NewVcdmDocument(document vcdm.Document, expandedTypes []string) CredentialD
 		openBadges: openBadges,
 		display:    vcdmDocumentDisplay(document, openBadges),
 	}
+}
+
+// NewVcdmDocumentFromJSON is NewVcdmDocument over a stored document. An
+// unreadable document says nothing.
+func NewVcdmDocumentFromJSON(document []byte, expandedTypes []string) CredentialDocument {
+	var decoded vcdm.Document
+	if err := json.Unmarshal(document, &decoded); err != nil {
+		return CredentialDocument{}
+	}
+	return NewVcdmDocument(decoded, expandedTypes)
 }
 
 // Document is the document of a freshly issued credential, by its format.
@@ -107,7 +128,7 @@ func (d CredentialDocument) Display() DocumentDisplay {
 // logos. attrs may be any of the credential's attributes, such as those a
 // disclosure shows.
 func (d CredentialDocument) ShowImages(attrs []clientmodels.Attribute, credentialLogos filesystem.LogoManager) []clientmodels.Attribute {
-	return showClaimImages(attrs, d.payload, d.openBadges, cachedClaimImages(credentialLogos, d.payload, d.openBadges))
+	return showClaimImages(attrs, d.payload, d.openBadges, d.cachedClaimImages(credentialLogos))
 }
 
 // FetchImages downloads the images the credential points to that are missing
@@ -120,13 +141,6 @@ func (d CredentialDocument) FetchImages(ctx context.Context, credentialLogos, is
 	cached += fetcher.FetchIfMissing(ctx, issuerLogos, d.display.IssuerImage)
 	claimImages, _ := d.fetchClaimImages(ctx, credentialLogos, fetcher)
 	return cached + claimImages
-}
-
-// fetchClaimImages downloads the credential's claim images into
-// credentialLogos (fetchClaimImages), also returning how many downloads it
-// tried.
-func (d CredentialDocument) fetchClaimImages(ctx context.Context, credentialLogos filesystem.LogoManager, fetcher LogoFetcher) (cached, tried int) {
-	return fetchClaimImages(ctx, credentialLogos, fetcher, d.payload, d.openBadges)
 }
 
 // LogoFetcher downloads logos and images into a logo cache.

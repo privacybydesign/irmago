@@ -478,11 +478,7 @@ func vcdmDocumentDisplay(document vcdm.Document, openBadges bool) DocumentDispla
 // vcdmBatchDocument is the document of a stored VCDM batch. An unreadable
 // payload gives an empty one.
 func vcdmBatchDocument(batch *models.VcdmBatch) CredentialDocument {
-	var document vcdm.Document
-	if err := json.Unmarshal(batch.ProcessedPayload, &document); err != nil {
-		return CredentialDocument{}
-	}
-	return NewVcdmDocument(document, vcdmExpandedTypes(batch))
+	return NewVcdmDocumentFromJSON(batch.ProcessedPayload, vcdmExpandedTypes(batch))
 }
 
 // vcdmExpandedTypes returns the expanded types stored with a VCDM batch at

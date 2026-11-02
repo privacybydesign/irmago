@@ -98,6 +98,7 @@ func TestFindClaimImages_OpenBadgesImageShapes(t *testing.T) {
 		{"no id", `{"type": "Image", "caption": "x"}`, nil},
 		{"id that is not a string", `{"id": 5, "type": "Image"}`, nil},
 		{"id that is no URL", `{"id": "urn:uuid:1234", "type": "Image"}`, nil},
+		{"URL without a host", `{"id": "https:///a.png", "type": "Image"}`, nil},
 		{"id that is a data URI of no image", `{"id": "data:text/plain,hello", "type": "Image"}`, nil},
 		{"another type", `{"id": "https://example.com/a.png", "type": "Profile"}`, nil},
 		{"no type", `{"id": "https://example.com/a.png"}`, nil},
@@ -348,9 +349,15 @@ func badgePayload(urls ...string) map[string]any {
 	return map[string]any{"credentialSubject": map[string]any{"images": images}}
 }
 
+// claimImagesDocument is the document of a credential with this payload whose
+// claim images are found as in an Open Badges credential when openBadges.
+func claimImagesDocument(payload map[string]any, openBadges bool) CredentialDocument {
+	return CredentialDocument{payload: payload, openBadges: openBadges}
+}
+
 // fetchBadgeImages is fetchClaimImages, returning how many images it cached.
 func fetchBadgeImages(ctx context.Context, cache filesystem.LogoManager, client *http.Client, payload map[string]any, openBadges bool) int {
-	cached, _ := fetchClaimImages(ctx, cache, LogoFetcher{HTTPClient: client}, payload, openBadges)
+	cached, _ := claimImagesDocument(payload, openBadges).fetchClaimImages(ctx, cache, LogoFetcher{HTTPClient: client})
 	return cached
 }
 
@@ -365,7 +372,7 @@ func TestFetchClaimImages_CachesTheImagesOfAnOpenBadge(t *testing.T) {
 	payload := badgePayload(server.URL+"/a.png", server.URL+"/b.png")
 
 	require.Equal(t, 2, fetchBadgeImages(context.Background(), cache, server.Client(), payload, true))
-	cached := cachedClaimImages(cache, payload, true)
+	cached := claimImagesDocument(payload, true).cachedClaimImages(cache)
 	require.Len(t, cached, 2)
 
 	require.Equal(t, 0, fetchBadgeImages(context.Background(), cache, server.Client(), payload, true),
@@ -390,7 +397,7 @@ func TestFetchClaimImages_AtMostTenImages(t *testing.T) {
 	payload := badgePayload(urls...)
 
 	require.Equal(t, 10, fetchBadgeImages(context.Background(), cache, server.Client(), payload, true))
-	cached := cachedClaimImages(cache, payload, true)
+	cached := claimImagesDocument(payload, true).cachedClaimImages(cache)
 	require.Len(t, cached, 10)
 	require.NotContains(t, cached, urls[10], "the images past the tenth stay text")
 }
@@ -408,7 +415,7 @@ func TestFetchClaimImages_TwoMegabytesPerCredential(t *testing.T) {
 
 	require.Equal(t, 1, fetchBadgeImages(context.Background(), cache, server.Client(), payload, true))
 	require.Equal(t, 0, requests["/small.png"], "nothing past the image that did not fit is downloaded")
-	cached := cachedClaimImages(cache, payload, true)
+	cached := claimImagesDocument(payload, true).cachedClaimImages(cache)
 	require.Contains(t, cached, first)
 	require.NotContains(t, cached, second)
 	require.NotContains(t, cached, small)
@@ -422,7 +429,7 @@ func TestCachedClaimImages_TwoMegabytesPerCredential(t *testing.T) {
 	require.NoError(t, cache.Save("https://example.com/a.png", big, "image/png"))
 	require.NoError(t, cache.Save("https://example.com/b.png", big, "image/png"))
 
-	cached := cachedClaimImages(cache, badgePayload("https://example.com/a.png", "https://example.com/b.png"), true)
+	cached := claimImagesDocument(badgePayload("https://example.com/a.png", "https://example.com/b.png"), true).cachedClaimImages(cache)
 	require.Equal(t, map[string][]byte{"https://example.com/a.png": big}, cached)
 }
 
@@ -432,7 +439,7 @@ func TestFetchClaimImages_AFailingURLLeavesTheOthers(t *testing.T) {
 	payload := badgePayload(server.URL+"/missing.png", server.URL+"/b.png")
 
 	require.Equal(t, 1, fetchBadgeImages(context.Background(), cache, server.Client(), payload, true))
-	cached := cachedClaimImages(cache, payload, true)
+	cached := claimImagesDocument(payload, true).cachedClaimImages(cache)
 	require.NotContains(t, cached, server.URL+"/missing.png")
 	require.Contains(t, cached, server.URL+"/b.png")
 }
@@ -511,7 +518,7 @@ func TestFetchClaimImages_OnlyTheCredentialSubjects(t *testing.T) {
 
 	require.Equal(t, 1, fetchBadgeImages(context.Background(), cache, server.Client(), document, true))
 	require.Equal(t, map[string]int{"/subject.png": 1}, requests)
-	require.Equal(t, []string{server.URL + "/subject.png"}, slices.Collect(maps.Keys(cachedClaimImages(cache, document, true))))
+	require.Equal(t, []string{server.URL + "/subject.png"}, slices.Collect(maps.Keys(claimImagesDocument(document, true).cachedClaimImages(cache))))
 }
 
 // The images outside the credentialSubject do not count towards its budget
@@ -532,7 +539,7 @@ func TestCachedClaimImages_TheBudgetIsTheCredentialSubjects(t *testing.T) {
 		"aaa":               map[string]any{"image": map[string]any{"id": "https://example.com/aaa-issuer.png", "type": "Image"}},
 	}
 
-	cached := cachedClaimImages(cache, document, true)
+	cached := claimImagesDocument(document, true).cachedClaimImages(cache)
 	require.Len(t, cached, 10)
 	require.NotContains(t, cached, "https://example.com/aaa-issuer.png")
 }

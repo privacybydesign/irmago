@@ -6,7 +6,6 @@
 package sdjwtvcdm_dcql
 
 import (
-	"encoding/json"
 	"slices"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -105,9 +104,5 @@ func matchesTypeValues(batch *sdjwt_dcql.Batch, typeValues [][]string) bool {
 
 // document is the stored VCDM document. An unreadable payload says nothing.
 func document(batch *sdjwt_dcql.Batch) services.CredentialDocument {
-	var document vcdm.Document
-	if err := json.Unmarshal(batch.ProcessedPayload, &document); err != nil {
-		return services.CredentialDocument{}
-	}
-	return services.NewVcdmDocument(document, batch.ExpandedTypes)
+	return services.NewVcdmDocumentFromJSON(batch.ProcessedPayload, batch.ExpandedTypes)
 }

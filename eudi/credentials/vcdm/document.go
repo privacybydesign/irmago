@@ -3,10 +3,10 @@ package vcdm
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"slices"
-	"strings"
 	"time"
+
+	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 )
 
 const (
@@ -181,27 +181,17 @@ func (d Document) IssuerImage() (string, bool) {
 }
 
 // imageURI reads an image property: a URL or data URI string, or an Open
-// Badges `Image` object, whose `id` is that string. The URL must be
-// http(s) and the data URI an image; whether an http URL may be downloaded is
-// for the download to decide. Anything else is no image.
+// Badges `Image` object, whose `id` is that string, as helpers.IsImageURI
+// accepts it. Anything else is no image.
 func imageURI(raw any) (string, bool) {
 	uri, ok := raw.(string)
 	if object, isObject := raw.(map[string]any); isObject {
 		uri, ok = object[IDKey].(string)
 	}
-	if !ok {
+	if !ok || !helpers.IsImageURI(uri) {
 		return "", false
 	}
-	lower := strings.ToLower(uri)
-	switch {
-	case strings.HasPrefix(lower, "data:image/"):
-		return uri, true
-	case strings.HasPrefix(lower, "https://"), strings.HasPrefix(lower, "http://"):
-		if parsed, err := url.Parse(uri); err == nil && parsed.Host != "" {
-			return uri, true
-		}
-	}
-	return "", false
+	return uri, true
 }
 
 // languageValues reads a property that VCDM 2.0 §11.1 lets be a plain string,

@@ -289,14 +289,22 @@ func sdJwtVcsOf(parsed []*services.ParsedCredential) []*sdjwtvc.VerifiedSdJwtVc 
 }
 
 func (fc *fetchedCredential) cleanupKeys() {
-	if !fc.requireCryptographicKeyBinding || len(fc.publicKeyIdentifiers) == 0 || fc.support.Keys == nil {
+	if fc.requireCryptographicKeyBinding {
+		removeHolderKeys(fc.support, fc.publicKeyIdentifiers)
+	}
+}
+
+// removeHolderKeys deletes holder binding keys minted for a credential the
+// wallet does not keep.
+func removeHolderKeys(support services.CredentialFormatSupport, keys []models.PublicHolderBindingKey) {
+	if len(keys) == 0 || support.Keys == nil {
 		return
 	}
-	keyIds := make([]datatypes.UUID, len(fc.publicKeyIdentifiers))
-	for i, key := range fc.publicKeyIdentifiers {
+	keyIds := make([]datatypes.UUID, len(keys))
+	for i, key := range keys {
 		keyIds[i] = key.ID
 	}
-	if err := fc.support.Keys.RemoveKeys(keyIds); err != nil {
+	if err := support.Keys.RemoveKeys(keyIds); err != nil {
 		eudi.Logger.Warnf("failed to remove holder binding keys: %v", err)
 	}
 }
@@ -809,11 +817,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		// verification, binds none of these keys: remove them.
 		defer func() {
 			if !obtained {
-				(&fetchedCredential{
-					requireCryptographicKeyBinding: true,
-					publicKeyIdentifiers:           publicKeyIdentifiers,
-					support:                        support,
-				}).cleanupKeys()
+				removeHolderKeys(support, publicKeyIdentifiers)
 			}
 		}()
 

@@ -89,6 +89,27 @@ func download(ctx context.Context, httpClient *http.Client, uri string, allowIns
 	return data, nil
 }
 
+// IsImageDataURI reports whether s is a data URI of an image type. The scheme
+// and the media type are case-insensitive (RFC 2397).
+func IsImageDataURI(s string) bool {
+	return len(s) > len("data:image/") && strings.EqualFold(s[:len("data:image/")], "data:image/")
+}
+
+// IsImageURI reports whether s can point to an image the wallet shows: an
+// image data URI, or an http(s) URL with a host. Whether an http URL may be
+// downloaded is for the download to decide.
+func IsImageURI(s string) bool {
+	if IsImageDataURI(s) {
+		return true
+	}
+	lower := strings.ToLower(s)
+	if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
+		return false
+	}
+	parsed, err := url.Parse(s)
+	return err == nil && parsed.Host != ""
+}
+
 // DecodeDataURI returns the bytes a data URI holds (RFC 2397): base64 when its
 // media type ends in ";base64", percent-encoded text otherwise.
 func DecodeDataURI(uri string) ([]byte, error) {

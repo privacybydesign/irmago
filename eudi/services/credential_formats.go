@@ -59,8 +59,9 @@ type CredentialDisplaySource interface {
 	// that resolve for the locale; "" where a batch has none.
 	LogoURIs(locale string) (issuer []string, credential []string)
 
-	// Documents returns the document of every stored batch, whose claim images
-	// the logo backfill downloads.
+	// Documents returns the documents of the stored batches whose claim images
+	// the logo backfill downloads: none for a format whose claim images are all
+	// in the credential itself.
 	Documents() []CredentialDocument
 }
 
