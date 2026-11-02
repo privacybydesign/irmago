@@ -109,6 +109,8 @@ func testOpenBadgesClaimImages(t *testing.T) {
 		"credentialDataSupplierInput": {},
 		"credential": {
 			"@context": [%q, %q],
+			"image": {"id": %q, "type": "Image"},
+			"issuer": {"image": %q},
 			"credentialSubject": {
 				"photo": %q,
 				"achievement": {
@@ -120,6 +122,7 @@ func testOpenBadgesClaimImages(t *testing.T) {
 			}
 		}
 	}`, openBadgeCredentialConfigId, vcdm.ContextV2, openBadgeContextURL,
+		logoImageURL, logoImageURL,
 		photoDataURI, badgeImageURL, logoImageURL, missingImageURL))
 	startOpenID4VCISession(t, c, 1, offer.URI)
 
@@ -138,6 +141,7 @@ func testOpenBadgesClaimImages(t *testing.T) {
 	require.Len(t, session.OfferedCredentials, 1)
 	require.Equal(t, openBadgeCredentialName, session.OfferedCredentials[0].Name)
 	requireOpenBadgeImages(t, session.OfferedCredentials[0].Attributes)
+	requireDocumentLogos(t, session.OfferedCredentials[0].Image, session.OfferedCredentials[0].Issuer)
 
 	grantPermission(t, c, session.Id)
 	session = awaitSessionState(t, sessionHandler)
@@ -147,6 +151,7 @@ func testOpenBadgesClaimImages(t *testing.T) {
 	cred := requireSingleVcdmCredential(t, c)
 	require.Equal(t, openBadgeCredentialName, cred.Name)
 	requireOpenBadgeImages(t, cred.Attributes)
+	requireDocumentLogos(t, cred.Image, cred.Issuer)
 	holderDid := vcdmHolderDid(t, cred.Attributes)
 
 	// The disclosure screen, and what the verifier receives: the claims as
@@ -162,6 +167,7 @@ func testOpenBadgesClaimImages(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	option := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	requireOpenBadgeImages(t, option.Credentials[0].Attributes)
+	requireDocumentLogos(t, option.Credentials[0].Image, option.Credentials[0].Issuer)
 
 	grantPermission(t, c, session.Id, makeDisclosureChoice(option))
 	session = awaitSessionState(t, sessionHandler)
@@ -183,10 +189,24 @@ func testOpenBadgesClaimImages(t *testing.T) {
 	)
 
 	// The log shows the pictures, also once the credential is deleted.
-	requireOpenBadgeImages(t, newestDisclosureLogAttrs(t, c, cred.CredentialId))
+	logged := newestDisclosureLogCredential(t, c, cred.CredentialId)
+	requireOpenBadgeImages(t, logged.Attributes)
+	requireDocumentLogos(t, logged.Image, logged.Issuer)
 	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
 	require.Empty(t, vcdmCredentials(t, c))
-	requireOpenBadgeImages(t, newestDisclosureLogAttrs(t, c, cred.CredentialId))
+	requireOpenBadgeImages(t, newestDisclosureLogCredential(t, c, cred.CredentialId).Attributes)
+}
+
+// requireDocumentLogos checks that the test badge is pictured by its own image
+// and its issuer by the issuer's image in the credential, both the SVG: over
+// the badge's achievement image and the issuer metadata's logo, both a PNG.
+func requireDocumentLogos(t *testing.T, image *clientmodels.Image, issuer clientmodels.TrustedParty) {
+	t.Helper()
+	for name, logo := range map[string]*clientmodels.Image{"credential": image, "issuer": issuer.Image} {
+		require.NotNil(t, logo, "the %s logo", name)
+		require.NotNil(t, logo.MimeType, "the %s logo has a MIME type", name)
+		require.Equal(t, clientmodels.MimeTypeSVG, *logo.MimeType, "the %s logo is the credential's own", name)
+	}
 }
 
 // requireOpenBadgeImages checks the claim images of the test badge among
@@ -230,9 +250,9 @@ func requireAttrAt(t *testing.T, attrs []clientmodels.Attribute, path []any) cli
 	return clientmodels.Attribute{}
 }
 
-// newestDisclosureLogAttrs returns the attributes of credentialId in the newest
-// disclosure log entry.
-func newestDisclosureLogAttrs(t *testing.T, c *client.Client, credentialId string) []clientmodels.Attribute {
+// newestDisclosureLogCredential returns credentialId as the newest disclosure
+// log entry records it.
+func newestDisclosureLogCredential(t *testing.T, c *client.Client, credentialId string) clientmodels.LogCredential {
 	t.Helper()
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -242,10 +262,10 @@ func newestDisclosureLogAttrs(t *testing.T, c *client.Client, credentialId strin
 		}
 		for _, cred := range entry.DisclosureLog.Credentials {
 			if cred.CredentialId == credentialId {
-				return cred.Attributes
+				return cred
 			}
 		}
 	}
 	t.Fatalf("no disclosure log entry for %q", credentialId)
-	return nil
+	return clientmodels.LogCredential{}
 }
