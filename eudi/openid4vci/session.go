@@ -223,8 +223,7 @@ func (s *session) perform() {
 		return
 	}
 
-	// Download the images the credentials point to, so the permission screen
-	// shows them, as it shows the metadata's logos.
+	// Download the credentials' own images for the permission screen.
 	s.fetchDocumentImages(fetched)
 
 	// Build offered credentials with actual attribute values from the verified SD-JWTs.
@@ -398,19 +397,12 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 	return nil
 }
 
-// documentImagesBudget is how long downloading the images the credentials of an
-// issuance point to may take altogether, so the permission screen does not
-// wait on a slow image host.
+// documentImagesBudget is how long the permission screen waits for images.
 const documentImagesBudget = 10 * time.Second
 
-// fetchDocumentImages downloads the images each fetched credential points to
-// (services.CredentialDocument.FetchImages): its own image and its issuer's,
-// and its claim images, so the permission screen shows them. A credential's
-// instances are the same document but for their subject id, so its first
-// instance is read. Like the metadata's logos, they are cached whether or not
-// the user then accepts the credential; a download that fails leaves the
-// metadata's logo or the URL as text in its place, and the logo backfill tries
-// it again.
+// fetchDocumentImages downloads the images of each fetched credential's first
+// instance. A failed download shows the metadata's logo or the URL instead,
+// and the logo backfill tries it again.
 func (s *session) fetchDocumentImages(fetched []*fetchedCredential) {
 	ctx, cancel := context.WithTimeout(context.Background(), documentImagesBudget)
 	defer cancel()
@@ -514,8 +506,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		// Use the first credential in the batch as source of attribute values.
 		first := fc.parsedCredentials[0]
 		attrs := first.Attributes(claims, s.locale, s.storage.FileSystem().Credentials().LogoManager())
-		// The credential's own display comes before the metadata's
-		// (services.DocumentDisplay).
+		// The credential's own display wins over the metadata's.
 		documentDisplay := first.Document().Display()
 
 		displays := metadata.ToTranslateableList(credentialDisplay)

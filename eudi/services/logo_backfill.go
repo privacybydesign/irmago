@@ -17,8 +17,7 @@ import (
 //
 // The wallet downloads only the logos that resolve for the locale in use, so
 // switching language leaves stored credentials pointing at logos that were
-// never fetched. It also fills in the claim images an issuance could not
-// download, which share the credential logo cache. Owners Request a sweep on
+// never fetched. It also fills in missing claim images. Owners Request a sweep on
 // startup and on every locale change, and Close the backfiller before the
 // storage it reads.
 //
@@ -30,8 +29,7 @@ type LogoBackfiller struct {
 	requested string        // locale for the next sweep; a newer one overwrites it
 	wake      chan struct{} // cap 1, sent to non-blockingly, so Request never waits
 
-	// allowInsecureHTTP lets a sweep download logos over plain http, as
-	// developer mode lets issuance do.
+	// allowInsecureHTTP allows plain http, for developer mode.
 	allowInsecureHTTP atomic.Bool
 
 	stop    context.CancelFunc
@@ -86,8 +84,7 @@ func NewLogoBackfiller(s storage.Storage, httpClient *http.Client, onSweepDone f
 	return b
 }
 
-// SetAllowInsecureHttp lets the sweeps download logos over plain http, for
-// developer mode, or stops them from doing so.
+// SetAllowInsecureHttp allows or forbids plain http, for developer mode.
 func (b *LogoBackfiller) SetAllowInsecureHttp(allow bool) {
 	b.allowInsecureHTTP.Store(allow)
 }

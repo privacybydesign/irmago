@@ -457,11 +457,8 @@ func resolveVcdmDisplay(batch *models.VcdmBatch, document DocumentDisplay, local
 	return d
 }
 
-// vcdmDocumentDisplay reads how a VCDM document says it looks. The
-// credential's name is its `name`, and its image its `image` or, in an Open
-// Badges credential without one, its achievement's image: the badge's picture.
-// The issuer's name and logo are those of its `issuer`, when that is an
-// object.
+// vcdmDocumentDisplay reads a VCDM document's `name` and `image`, and its
+// issuer's. An Open Badge without an `image` is pictured by its achievement's.
 func vcdmDocumentDisplay(document vcdm.Document, openBadges bool) DocumentDisplay {
 	d := DocumentDisplay{
 		CredentialNames: byBaseLanguage(document.Names()),
@@ -517,8 +514,7 @@ func vcdmCredentialLogoURIs(batch *models.VcdmBatch) clientmodels.TranslatedStri
 }
 
 // LoadDocumentLogo loads the document's image from the logo cache or, when it
-// is not there (not downloaded yet, or it cannot be), the metadata's logo as
-// LoadResolvedLogo resolves it: a logo we have is shown.
+// is not cached, the metadata's logo.
 func LoadDocumentLogo(manager filesystem.LogoManager, documentURI string, metadataURIs clientmodels.TranslatedString, locale string) *clientmodels.Image {
 	if img := eudi.LoadLogoImage(manager, documentURI); img != nil {
 		return img
@@ -561,10 +557,8 @@ func (s sdJwtVcdmDisplaySource) LiveDisplaysByType(locale string) map[string]Res
 	return result
 }
 
-// LogoURIs returns the issuer and credential logo URIs that resolve for the
-// locale, per stored batch: the document's images, the metadata's logos shown
-// when those cannot be, and the claim images, which share the credential logo
-// cache.
+// LogoURIs returns, per stored batch, the document's and the metadata's logo
+// URIs, and the claim image URLs, which share the credential logo cache.
 func (s sdJwtVcdmDisplaySource) LogoURIs(locale string) (issuer []string, credential []string) {
 	batches, err := s.store.ListBatches()
 	if err != nil {

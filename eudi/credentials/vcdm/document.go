@@ -157,32 +157,26 @@ func (d Document) Names() map[string]string {
 	return languageValues(d[NameKey])
 }
 
-// Image returns the credential's `image`: Open Badges 3.0 defines it as "the
-// image representing the credential for display purposes in wallets" (B.1.2).
-// See imageURI for the shapes it reads.
+// Image returns the credential's `image` (Open Badges 3.0 B.1.2).
 func (d Document) Image() (string, bool) {
 	return imageURI(d[ImageKey])
 }
 
-// IssuerNames returns the issuer's `name` per language tag (VCDM 2.0 §4.7),
-// read as Names reads the credential's. Only an `issuer` object has one; nil
-// when `issuer` is a string or has no usable name.
+// IssuerNames returns the issuer's `name` per language tag (VCDM 2.0 §4.7);
+// nil when `issuer` is a string or has none.
 func (d Document) IssuerNames() map[string]string {
 	issuer, _ := d[IssuerKey].(map[string]any)
 	return languageValues(issuer[NameKey])
 }
 
-// IssuerImage returns the issuer's `image`, as the Open Badges 3.0 Profile
-// that an issuer is gives it. Only an `issuer` object has one. See
-// imageURI for the shapes it reads.
+// IssuerImage returns the issuer's `image` (an Open Badges 3.0 Profile's).
 func (d Document) IssuerImage() (string, bool) {
 	issuer, _ := d[IssuerKey].(map[string]any)
 	return imageURI(issuer[ImageKey])
 }
 
-// imageURI reads an image property: a URL or data URI string, or an Open
-// Badges `Image` object, whose `id` is that string, as helpers.IsImageURI
-// accepts it. Anything else is no image.
+// imageURI reads an image property: an image URI, or an Open Badges `Image`
+// object whose `id` is one.
 func imageURI(raw any) (string, bool) {
 	uri, ok := raw.(string)
 	if object, isObject := raw.(map[string]any); isObject {

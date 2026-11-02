@@ -12,19 +12,14 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 )
 
-// MaxImageSize is the most a downloaded image may be. A logo or a claim image
-// is shown on a card, and every image of a credential travels to the app with
-// it, so anything larger is not worth the memory or the bandwidth.
+// MaxImageSize is the most a downloaded image may be: images are shown on a
+// card and travel to the app with the credential.
 const MaxImageSize = 2 << 20
 
-// DownloadRemoteImage returns the image at uri: a data URI, an https URL or,
-// with allowInsecureHTTP (developer mode), an http URL. Its MIME type is
-// recognised from the image itself (clientmodels.ImageMimeType), not taken from
-// the Content-Type header or the data URI's media type, which are the sender's
-// word, so the app picks the renderer the bytes need. An image that is no PNG,
-// JPEG, GIF, WebP or SVG, or larger than MaxImageSize, is refused, and no more
-// than MaxImageSize bytes of it are read. Cancelling ctx aborts the transfer, so
-// a caller shutting down does not have to wait out the HTTP client's timeout.
+// DownloadRemoteImage returns the image at uri, a data URI, an https URL or,
+// with allowInsecureHTTP, an http URL, and its MIME type as
+// clientmodels.ImageMimeType recognises it. It refuses anything that is no
+// recognised image or larger than MaxImageSize.
 func DownloadRemoteImage(ctx context.Context, httpClient *http.Client, uri string, allowInsecureHTTP bool) ([]byte, string, error) {
 	var data []byte
 	if strings.HasPrefix(strings.ToLower(uri), "data:") {
@@ -95,9 +90,8 @@ func IsImageDataURI(s string) bool {
 	return len(s) > len("data:image/") && strings.EqualFold(s[:len("data:image/")], "data:image/")
 }
 
-// IsImageURI reports whether s can point to an image the wallet shows: an
-// image data URI, or an http(s) URL with a host. Whether an http URL may be
-// downloaded is for the download to decide.
+// IsImageURI reports whether s is an image data URI or an http(s) URL with a
+// host.
 func IsImageURI(s string) bool {
 	if IsImageDataURI(s) {
 		return true

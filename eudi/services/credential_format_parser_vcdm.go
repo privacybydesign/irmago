@@ -69,10 +69,8 @@ func (p *sdJwtVcdmCredentialFormatParser) CheckBatch(batch []*ParsedCredential) 
 		return err
 	}
 
-	// A credential whose types cannot be expanded is refused, rather than
-	// stored where no DCQL type_values query would find it. The instances are
-	// copies of one credential with one @context, so the contexts are fetched
-	// once for the batch.
+	// A credential whose types cannot be expanded is refused: no type_values
+	// query would find it. The instances share one @context, so expand once.
 	if len(batch) == 0 {
 		return nil
 	}

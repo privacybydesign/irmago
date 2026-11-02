@@ -58,9 +58,8 @@ type Profile struct {
 	// MatchesTypeValues reports whether a batch satisfies DCQL type_values
 	// (OpenID4VP §B.1.1, W3C VCDM only). Nil means no batch ever does.
 	MatchesTypeValues func(batch *Batch, typeValues [][]string) bool
-	// Document is what the credential says about itself
-	// (services.CredentialDocument): its own display, which comes before its
-	// metadata's, per field, and its claim images. Nil means it says nothing.
+	// Document is what the credential says about itself: its own display and
+	// its claim images. Nil means it says nothing.
 	Document func(batch *Batch) services.CredentialDocument
 }
 
@@ -1202,9 +1201,6 @@ func pathLess(a, b []any, metadataOrder map[string]int) bool {
 }
 
 // document is the batch's document by the profile, or one that says nothing.
-// Its claim images are read off the batch's whole processed payload: a
-// disclosure's view of it may hold an Open Badges Image's id without the type
-// that makes it one.
 func (h *Engine) document(batch *Batch) services.CredentialDocument {
 	if h.profile.Document == nil {
 		return services.CredentialDocument{}
@@ -1212,11 +1208,8 @@ func (h *Engine) document(batch *Batch) services.CredentialDocument {
 	return h.profile.Document(batch)
 }
 
-// credentialImage loads the credential's own image from the logo cache or,
-// when it has none or it is not cached, the credential logo that resolves for
-// the locale from the batch's display metadata (falling back to any cached
-// display logo while the backfill fetches the preferred one). Returns nil when
-// no logo is configured or none is cached.
+// credentialImage loads the credential's own image or, when that is not
+// cached, its metadata's logo. Nil when neither is cached.
 func (h *Engine) credentialImage(batch *Batch, document services.DocumentDisplay, locale string) *clientmodels.Image {
 	var metadataURIs clientmodels.TranslatedString
 	if batch.CredentialMetadata != nil {
@@ -1226,9 +1219,8 @@ func (h *Engine) credentialImage(batch *Batch, document services.DocumentDisplay
 	return services.LoadDocumentLogo(logoManager, document.CredentialImage, metadataURIs, locale)
 }
 
-// issuerTrustedParty builds a TrustedParty from the credential's own issuer
-// name, or else the stored issuer display metadata, including the issuer logo
-// if available on disk.
+// issuerTrustedParty builds the issuer from the credential's own issuer name,
+// or else the issuer metadata's, with its logo.
 func (h *Engine) issuerTrustedParty(batch *Batch, document services.DocumentDisplay, locale string) clientmodels.TrustedParty {
 	name := clientmodels.Resolve(document.IssuerNames, locale)
 	if name == "" {
@@ -1242,10 +1234,8 @@ func (h *Engine) issuerTrustedParty(batch *Batch, document services.DocumentDisp
 	}
 }
 
-// issuerImage loads the credential's own issuer image from the logo cache or,
-// when it has none or it is not cached, the issuer logo that resolves for the
-// locale from the batch's issuer display metadata (falling back to any cached
-// display logo while the backfill fetches the preferred one).
+// issuerImage loads the credential's own issuer image or, when that is not
+// cached, the issuer metadata's logo.
 func (h *Engine) issuerImage(batch *Batch, document services.DocumentDisplay, locale string) *clientmodels.Image {
 	logoManager := h.storage.FileSystem().Issuers().LogoManager()
 	return services.LoadDocumentLogo(logoManager, document.IssuerImage, services.IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale)

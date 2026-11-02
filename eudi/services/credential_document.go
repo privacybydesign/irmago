@@ -12,32 +12,20 @@ import (
 )
 
 // CredentialDocument is what a credential says about itself beyond its claim
-// values: how it looks (DocumentDisplay), and which of its claims are images.
-// Each format makes its own, from the credential as issued
-// (ParsedCredential.Document) or as stored, so a caller shows and downloads a
-// credential's images without knowing its format.
-//
-// The zero value says nothing, which is what an mdoc says: it names neither
-// itself nor its issuer, and its images are bytes in its elements, which its
-// attribute builders show as pictures (PromoteMdocDataURIs).
+// values: how it looks, and which claims are images. Each format builds its
+// own, so callers need not know the format. The zero value says nothing, which
+// is right for an mdoc: its images are bytes its attribute builders already
+// show as pictures.
 type CredentialDocument struct {
-	// payload is the credential's full processed payload, in which its claim
-	// images are found (findClaimImages).
 	payload    map[string]any
 	openBadges bool
 	display    DocumentDisplay
 }
 
 // DocumentDisplay is how a credential says it looks: its name and image, and
-// its issuer's name and logo. Each comes before what the OpenID4VCI metadata
-// says, per field, as an SD-JWT VC's type metadata does: OpenID4VCI 1.0
-// §12.2.4 says "Format-specific mechanisms ... are always preferred by the
-// Wallet over the information in this object, which serves as the default
-// fallback". The document is also the more specific of the two: the metadata
-// describes a credential configuration, the document one credential.
-//
-// Names are keyed by base language; an image is a URI to download or a data
-// URI, "" when there is none.
+// its issuer's name and logo. Each field wins over the OpenID4VCI metadata's
+// (OpenID4VCI 1.0 §12.2.4). Names are keyed by base language; an image is a
+// URL or data URI, "" for none.
 type DocumentDisplay struct {
 	CredentialNames clientmodels.TranslatedString
 	CredentialImage string
@@ -45,15 +33,14 @@ type DocumentDisplay struct {
 	IssuerImage     string
 }
 
-// newSdJwtVcDocument is the document of an SD-JWT VC with this processed
-// payload. It says nothing of how it looks, since an SD-JWT VC's type metadata
-// is merged into its metadata at issuance; its images are its data URI claims.
+// newSdJwtVcDocument is the document of an SD-JWT VC. Its images are its data
+// URI claims; its type metadata is already merged into its metadata.
 func newSdJwtVcDocument(payload map[string]any) CredentialDocument {
 	return CredentialDocument{payload: payload}
 }
 
-// NewSdJwtVcDocumentFromJSON is newSdJwtVcDocument over a stored processed
-// payload. An unreadable payload says nothing.
+// NewSdJwtVcDocumentFromJSON is newSdJwtVcDocument over a stored payload. An
+// unreadable payload says nothing.
 func NewSdJwtVcDocumentFromJSON(payload []byte) CredentialDocument {
 	var decoded map[string]any
 	if err := json.Unmarshal(payload, &decoded); err != nil {
@@ -63,9 +50,7 @@ func NewSdJwtVcDocumentFromJSON(payload []byte) CredentialDocument {
 }
 
 // newVcdmDocument is the document of a VCDM credential with these expanded
-// types (vcdm.ExpandTypes). Its display is read off it (vcdmDocumentDisplay);
-// its images are its data URI claims and, in an Open Badges credential, the
-// Image objects in its credentialSubject.
+// types. The types tell whether it is an Open Badge.
 func newVcdmDocument(document vcdm.Document, expandedTypes []string) CredentialDocument {
 	openBadges := vcdm.IsOpenBadgesCredential(expandedTypes)
 	return CredentialDocument{
@@ -85,7 +70,7 @@ func NewVcdmDocumentFromJSON(document []byte, expandedTypes []string) Credential
 	return newVcdmDocument(decoded, expandedTypes)
 }
 
-// Document is the document of a freshly issued credential, by its format.
+// Document is the document of a freshly issued credential.
 func (p *ParsedCredential) Document() CredentialDocument {
 	switch {
 	case p.SdJwtVc != nil:
@@ -97,10 +82,9 @@ func (p *ParsedCredential) Document() CredentialDocument {
 	}
 }
 
-// Attributes are the attributes a freshly issued credential shows on the
-// permission screen: its claim values, named and ordered by its metadata's
-// claims, with its claim images as pictures (CredentialDocument.ShowImages,
-// with the images behind a URL from credentialLogos).
+// Attributes are the attributes the permission screen shows for a freshly
+// issued credential, named and ordered by the metadata's claims, with its
+// claim images as pictures.
 func (p *ParsedCredential) Attributes(claims []metadata.ClaimsDescription, locale string, credentialLogos filesystem.LogoManager) []clientmodels.Attribute {
 	claimNames, claimOrder := claimDisplayLookups(claims, locale)
 	var attrs []clientmodels.Attribute
@@ -122,19 +106,16 @@ func (d CredentialDocument) Display() DocumentDisplay {
 	return d.display
 }
 
-// ShowImages turns the attributes among attrs that are the credential's claim
-// images into pictures (showClaimImages), with the images behind a URL from
-// credentialLogos, the credential logo cache they share with the credential
-// logos. attrs may be any of the credential's attributes, such as those a
-// disclosure shows.
+// ShowImages turns the claim images among attrs into pictures, taking the
+// images behind a URL from credentialLogos. attrs may be any subset of the
+// credential's attributes.
 func (d CredentialDocument) ShowImages(attrs []clientmodels.Attribute, credentialLogos filesystem.LogoManager) []clientmodels.Attribute {
 	return showClaimImages(attrs, d.payload, d.openBadges, d.cachedClaimImages(credentialLogos))
 }
 
-// FetchImages downloads the images the credential points to that are missing
-// from the logo caches: its own image into credentialLogos and its issuer's
-// into issuerLogos, and its claim images into credentialLogos. Returns how
-// many it cached.
+// FetchImages downloads the credential's images that are not cached yet: its
+// own and its claim images into credentialLogos, its issuer's into
+// issuerLogos. Returns how many it cached.
 func (d CredentialDocument) FetchImages(ctx context.Context, credentialLogos, issuerLogos filesystem.LogoManager, fetcher LogoFetcher) int {
 	cached := fetcher.FetchIfMissing(ctx, credentialLogos, d.display.CredentialImage)
 	cached += fetcher.FetchIfMissing(ctx, issuerLogos, d.display.IssuerImage)
@@ -147,7 +128,6 @@ func (d CredentialDocument) FetchImages(ctx context.Context, credentialLogos, is
 // LogoFetcher downloads logos and images into a logo cache.
 type LogoFetcher struct {
 	HTTPClient *http.Client
-	// AllowInsecureHTTP lets it download over plain http, as developer mode
-	// lets issuance do.
+	// AllowInsecureHTTP allows plain http, for developer mode.
 	AllowInsecureHTTP bool
 }

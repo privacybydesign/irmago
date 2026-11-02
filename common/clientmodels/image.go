@@ -15,10 +15,9 @@ const (
 	MimeTypeSVG  = "image/svg+xml"
 )
 
-// ImageMimeType recognises a PNG, JPEG, GIF, WebP or SVG image from its
-// content and returns its MIME type, or "" for anything else. The content
-// decides, not a declared type: a Content-Type header or a data URI's media
-// type is the sender's word, and the app picks its renderer by this type.
+// ImageMimeType returns the MIME type of a PNG, JPEG, GIF, WebP or SVG image,
+// recognised from its content, or "" for anything else. A declared type is
+// not trusted, since the app picks its renderer by this one.
 func ImageMimeType(data []byte) string {
 	switch {
 	case bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")):
@@ -67,13 +66,11 @@ func isSVG(data []byte) bool {
 }
 
 // base64SniffLength is how much of a base64 image is decoded to recognise its
-// type: a multiple of 4, so the prefix decodes on its own, of about 6 KB,
-// enough for an SVG's declaration and leading comments.
+// type: about 6 KB, a multiple of 4 so the prefix decodes on its own.
 const base64SniffLength = 8192
 
-// base64ImageMimeType is ImageMimeType for an image held as standard base64,
-// as a base64_image value holds it. It decodes only a prefix. Returns "" when
-// the text is not base64 or not a recognised image.
+// base64ImageMimeType is ImageMimeType for a base64 image, decoding only a
+// prefix.
 func base64ImageMimeType(encoded string) string {
 	encoded = strings.TrimSpace(encoded)
 	if len(encoded) > base64SniffLength {
@@ -86,8 +83,7 @@ func base64ImageMimeType(encoded string) string {
 	return ImageMimeType(data)
 }
 
-// NewBase64ImageValue returns a base64_image value, with its MIME type
-// recognised from the image, or no MIME type when it is not recognised.
+// NewBase64ImageValue returns a base64_image value with its MIME type.
 func NewBase64ImageValue(encoded string) *AttributeValue {
 	value := &AttributeValue{Type: AttributeType_Base64Image, Base64Image: &encoded}
 	value.SetImageMimeType()
@@ -95,8 +91,7 @@ func NewBase64ImageValue(encoded string) *AttributeValue {
 }
 
 // SetImageMimeType sets MimeType from the value's base64 image, or clears it
-// when the image is not recognised. It leaves a value that holds no base64
-// image alone.
+// when the image is not recognised.
 func (v *AttributeValue) SetImageMimeType() {
 	if v == nil || v.Base64Image == nil {
 		return

@@ -88,9 +88,8 @@ type AttributeValue struct {
 	ImagePath   *string `json:"image_path,omitempty"`
 	Base64Image *string `json:"base64_image,omitempty"`
 
-	// MimeType is the type of a base64_image, recognised from the image
-	// itself (ImageMimeType), so the app can pick a renderer: an SVG needs a
-	// different one than a bitmap. Omitted when the image is not recognised.
+	// MimeType is the type of a base64_image, so the app can pick a renderer
+	// (an SVG needs another one than a bitmap). Omitted when not recognised.
 	MimeType *string `json:"mime_type,omitempty"`
 
 	// DisplayHint is the attribute type's display hint from the scheme, e.g.
@@ -299,10 +298,8 @@ type CredentialDescriptor struct {
 	Image        *Image       `json:"image,omitempty"`
 	Attributes   []Attribute  `json:"attributes"`
 	IssueURL     *string      `json:"issue_url,omitempty"`
-	// Format is the format the described credential is offered or requested
-	// in, which tells the app how to read the attributes' claim paths: those
-	// of an mso_mdoc start with a namespace. Empty when the descriptor is not
-	// tied to one format, as for an IRMA credential type.
+	// Format tells the app how to read the claim paths: an mso_mdoc's start
+	// with a namespace. Empty when not tied to one format, as for IRMA.
 	Format CredentialFormat `json:"format,omitempty"`
 }
 

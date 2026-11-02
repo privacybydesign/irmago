@@ -59,11 +59,9 @@ type ParsedCredential struct {
 	// SdJwtVcdm is set only when Format == models.CredentialFormatSdJwtVcdm.
 	SdJwtVcdm *vcdmsdjwt.VerifiedSdJwtVcdm
 
-	// ExpandedTypes are a VCDM credential's types with its @context applied
-	// (vcdm.ExpandTypes). The VCDM parser's CheckBatch sets them, once for the
-	// batch, on every instance: its instances share their @context, and the
-	// wallet needs them before the permission screen, to tell whether it is an
-	// Open Badges credential.
+	// ExpandedTypes are a VCDM credential's types with its @context applied,
+	// set by the parser's CheckBatch, so the permission screen can tell an
+	// Open Badge.
 	ExpandedTypes []string
 
 	// Mdoc is set only when Format == models.CredentialFormatMsoMdoc.
