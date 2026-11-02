@@ -179,7 +179,7 @@ func (d CredentialDocument) downloadableClaimImageURLs() []string {
 
 // cachedClaimImages returns the downloadable claim images that are in manager,
 // the credential logo cache, keyed by URL.
-func (d CredentialDocument) cachedClaimImages(manager filesystem.LogoManager) map[string][]byte {
+func (d CredentialDocument) cachedClaimImages(manager filesystem.ImageManager) map[string][]byte {
 	images := map[string][]byte{}
 	for _, url := range d.downloadableClaimImageURLs() {
 		if data, _, err := manager.Get(url); err == nil {

@@ -430,7 +430,7 @@ func (e *vcdmTestEnv) listOne(t *testing.T) *clientmodels.Credential {
 }
 
 // cacheLogo puts content in a logo cache under uri.
-func cacheLogo(t *testing.T, manager filesystem.LogoManager, uri, content string) {
+func cacheLogo(t *testing.T, manager filesystem.ImageManager, uri, content string) {
 	t.Helper()
 	require.NoError(t, manager.Save(uri, []byte(content), clientmodels.MimeTypePNG))
 }
@@ -451,8 +451,8 @@ func TestSdJwtVcdmList_DocumentDisplayFirst(t *testing.T) {
 		"image": "https://document.example/card.png",
 		"issuer": {"id": "https://issuer.example", "name": "Example University", "image": {"id": "https://document.example/issuer.png", "type": "Image"}}
 	}`, false)
-	credentialLogos := env.service.fileStorage.Credentials().LogoManager()
-	issuerLogos := env.service.fileStorage.Issuers().LogoManager()
+	credentialLogos := env.service.fileStorage.Credentials().ImageManager()
+	issuerLogos := env.service.fileStorage.Issuers().ImageManager()
 	cacheLogo(t, credentialLogos, "https://metadata.example/card.png", "metadata card")
 	cacheLogo(t, issuerLogos, "https://metadata.example/issuer.png", "metadata issuer")
 
@@ -473,8 +473,8 @@ func TestSdJwtVcdmList_DocumentDisplayFirst(t *testing.T) {
 func TestSdJwtVcdmList_MetadataDisplayWhereTheDocumentHasNone(t *testing.T) {
 	env := newVcdmTestEnv(t)
 	env.storeDisplayBatch(t, `{"issuer": "https://issuer.example"}`, false)
-	cacheLogo(t, env.service.fileStorage.Credentials().LogoManager(), "https://metadata.example/card.png", "metadata card")
-	cacheLogo(t, env.service.fileStorage.Issuers().LogoManager(), "https://metadata.example/issuer.png", "metadata issuer")
+	cacheLogo(t, env.service.fileStorage.Credentials().ImageManager(), "https://metadata.example/card.png", "metadata card")
+	cacheLogo(t, env.service.fileStorage.Issuers().ImageManager(), "https://metadata.example/issuer.png", "metadata issuer")
 
 	cred := env.listOne(t)
 	require.Equal(t, "Metadata Card", cred.Name)
@@ -491,8 +491,8 @@ func TestSdJwtVcdmList_AchievementImageIsTheCardOfABadge(t *testing.T) {
 	for _, openBadges := range []bool{true, false} {
 		env := newVcdmTestEnv(t)
 		env.storeDisplayBatch(t, payload, openBadges)
-		cacheLogo(t, env.service.fileStorage.Credentials().LogoManager(), "https://metadata.example/card.png", "metadata card")
-		cacheLogo(t, env.service.fileStorage.Credentials().LogoManager(), "https://document.example/badge.png", "badge")
+		cacheLogo(t, env.service.fileStorage.Credentials().ImageManager(), "https://metadata.example/card.png", "metadata card")
+		cacheLogo(t, env.service.fileStorage.Credentials().ImageManager(), "https://document.example/badge.png", "badge")
 
 		if openBadges {
 			requireLogo(t, env.listOne(t).Image, "badge")
@@ -635,6 +635,6 @@ func TestSdJwtVcdmList_CachedOpenBadgesImageIsAnImage(t *testing.T) {
 
 	png, err := base64.StdEncoding.DecodeString(testPNGBase64)
 	require.NoError(t, err)
-	require.NoError(t, env.service.fileStorage.Credentials().LogoManager().Save(imageURL, png, clientmodels.MimeTypePNG))
+	require.NoError(t, env.service.fileStorage.Credentials().ImageManager().Save(imageURL, png, clientmodels.MimeTypePNG))
 	requireImage(t, imageAttr(), testPNGBase64, clientmodels.MimeTypePNG)
 }

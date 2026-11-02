@@ -10,7 +10,7 @@ import (
 
 // fakeLogoBytes — a short opaque byte sequence used as the cached "logo image".
 // The bytes don't need to form a valid PNG; convertToTrustedParty only round-trips
-// them through the LogoManager and base64-encodes them for the wallet.
+// them through the ImageManager and base64-encodes them for the wallet.
 var fakeLogoBytes = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01, 0x02, 0x03}
 
 func TestConvertToTrustedParty_PopulatesImageFromCache_HttpUri(t *testing.T) {
@@ -18,7 +18,7 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_HttpUri(t *testing.T) {
 	defer s.Close()
 
 	const logoUri = "https://issuer.example.com/logo.png"
-	logoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
+	logoManager := client.Configuration.Storage.FileSystem().Issuers().ImageManager()
 	require.NoError(t, logoManager.Save(logoUri, fakeLogoBytes, "image/png"))
 
 	m := &metadata.CredentialIssuerMetadata{
@@ -36,7 +36,7 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_HttpUri(t *testing.T) {
 	require.NotNil(t, tp)
 	require.Equal(t, "Test Issuer", tp.Name, "name carried through from display")
 	require.Equal(t, "https://issuer.example.com/tenant", tp.Id,
-		"Id must mirror CredentialIssuer — the log service uses it as the LogoManager key when persisting the issuer logo")
+		"Id must mirror CredentialIssuer — the log service uses it as the ImageManager key when persisting the issuer logo")
 	require.NotNil(t, tp.Image, "issuer logo should be populated when cached for display.logo.uri")
 	decoded, err := base64.StdEncoding.DecodeString(tp.Image.Base64)
 	require.NoError(t, err)
@@ -54,7 +54,7 @@ func TestConvertToTrustedParty_PreservesSvgMimeType(t *testing.T) {
 
 	const logoUri = "https://issuer.example.com/logo.svg"
 	svgBytes := []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)
-	logoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
+	logoManager := client.Configuration.Storage.FileSystem().Issuers().ImageManager()
 	require.NoError(t, logoManager.Save(logoUri, svgBytes, "image/svg+xml"))
 
 	m := &metadata.CredentialIssuerMetadata{
@@ -82,7 +82,7 @@ func TestConvertToTrustedParty_NoMimeType_LeavesMimeTypeNil(t *testing.T) {
 	defer s.Close()
 
 	const logoUri = "https://issuer.example.com/logo.png"
-	logoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
+	logoManager := client.Configuration.Storage.FileSystem().Issuers().ImageManager()
 	require.NoError(t, logoManager.Save(logoUri, fakeLogoBytes, ""))
 
 	m := &metadata.CredentialIssuerMetadata{
@@ -108,9 +108,9 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_DataUri(t *testing.T) {
 
 	// The credenco issuer (and the spec) allows display.logo.uri to be a data
 	// URI containing the inline image. The cache key is the URI itself, which
-	// the LogoManager HMAC-hashes before persisting — long keys are safe.
+	// the ImageManager HMAC-hashes before persisting — long keys are safe.
 	logoUri := "data:image/png;base64," + base64.StdEncoding.EncodeToString(fakeLogoBytes)
-	logoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
+	logoManager := client.Configuration.Storage.FileSystem().Issuers().ImageManager()
 	require.NoError(t, logoManager.Save(logoUri, fakeLogoBytes, "image/png"))
 
 	m := &metadata.CredentialIssuerMetadata{

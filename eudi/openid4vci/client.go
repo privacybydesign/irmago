@@ -405,7 +405,7 @@ func (client *Client) convertToCredentialInfoList(
 			displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
 			name := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale)
 
-			credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
+			credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().ImageManager()
 			image := services.LoadResolvedLogo(credentialLogoManager,
 				metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale)
 
@@ -457,7 +457,7 @@ func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.C
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
 	displays := metadata.ToTranslateableList(credentialIssuerMetadata.Display)
 
-	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
+	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().ImageManager()
 	issuerImage := services.LoadResolvedLogo(issuerLogoManager,
 		metadata.LogoURIsByLanguage(credentialIssuerMetadata.Display), locale)
 
@@ -575,8 +575,8 @@ func (client *Client) downloadLogos(
 	locale string,
 ) {
 	fs := client.Configuration.Storage.FileSystem()
-	fetcher := services.LogoFetcher{HTTPClient: client.httpClient, AllowInsecureHTTP: client.allowInsecureHttp}
-	fetcher.FetchIfMissing(ctx, fs.Issuers().LogoManager(),
+	fetcher := services.ImageFetcher{HTTPClient: client.httpClient, AllowInsecureHTTP: client.allowInsecureHttp}
+	fetcher.FetchIfMissing(ctx, fs.Issuers().ImageManager(),
 		clientmodels.Resolve(metadata.LogoURIsByLanguage(issuerMetadata.Display), locale))
 
 	for _, configID := range offer.CredentialConfigurationIds {
@@ -584,7 +584,7 @@ func (client *Client) downloadLogos(
 		if !ok || config.CredentialMetadata == nil {
 			continue
 		}
-		fetcher.FetchIfMissing(ctx, fs.Credentials().LogoManager(),
+		fetcher.FetchIfMissing(ctx, fs.Credentials().ImageManager(),
 			clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale))
 	}
 }

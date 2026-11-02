@@ -29,9 +29,9 @@ func newTestLogServiceWithLocale(t *testing.T, locale string) *eudiLogService {
 		locale:              locale,
 		store:               db.NewEudiLogStore(database),
 		displaySources:      NewCredentialDisplaySources(database),
-		credLogoManager:     fs.Credentials().LogoManager(),
-		issuerLogoManager:   fs.Issuers().LogoManager(),
-		verifierLogoManager: fs.Verifiers().LogoManager(),
+		credLogoManager:     fs.Credentials().ImageManager(),
+		issuerLogoManager:   fs.Issuers().ImageManager(),
+		verifierLogoManager: fs.Verifiers().ImageManager(),
 	}
 }
 

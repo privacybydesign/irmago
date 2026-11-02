@@ -801,7 +801,7 @@ func TestParsedCredentialAttributes_PayloadDrives(t *testing.T) {
 	}
 
 	parsed := &services.ParsedCredential{SdJwtVc: &sdjwtvc.VerifiedSdJwtVc{ProcessedSdJwtPayload: payload}}
-	attrs := parsed.Attributes(claims, "en", filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()).Credentials().LogoManager())
+	attrs := parsed.Attributes(claims, "en", filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()).Credentials().ImageManager())
 
 	byPath := map[string]int{}
 	for i, a := range attrs {
@@ -1234,8 +1234,8 @@ func Test_buildOfferedCredentials_VcdmDocumentDisplayFirst(t *testing.T) {
 		}
 		// The metadata's logos, as the client downloads them before the session.
 		fs := eudiStorage.FileSystem()
-		require.NoError(t, fs.Credentials().LogoManager().Save("https://metadata.example/card.png", []byte("metadata card"), clientmodels.MimeTypePNG))
-		require.NoError(t, fs.Issuers().LogoManager().Save("https://metadata.example/issuer.png", []byte("metadata issuer"), clientmodels.MimeTypePNG))
+		require.NoError(t, fs.Credentials().ImageManager().Save("https://metadata.example/card.png", []byte("metadata card"), clientmodels.MimeTypePNG))
+		require.NoError(t, fs.Issuers().ImageManager().Save("https://metadata.example/issuer.png", []byte("metadata issuer"), clientmodels.MimeTypePNG))
 		return s
 	}
 	fetchedDocument := func(document vcdm.Document) []*fetchedCredential {

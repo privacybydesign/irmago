@@ -153,7 +153,7 @@ func (h *Engine) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQue
 			continue
 		}
 		credentialDocument := h.document(batch)
-		attributes = credentialDocument.ShowImages(attributes, h.storage.FileSystem().Credentials().LogoManager())
+		attributes = credentialDocument.ShowImages(attributes, h.storage.FileSystem().Credentials().ImageManager())
 
 		document := credentialDocument.Display()
 		image := h.credentialImage(batch, document, locale)
@@ -946,7 +946,7 @@ func (h *Engine) buildLogCredential(
 	requestedKeys := make(map[string]struct{})
 	attrs = flattenPathsForDisplay(attrs, requestedKeys, batch, &resolved, pairs, metadataOrder, locale)
 	credentialDocument := h.document(batch)
-	attrs = credentialDocument.ShowImages(attrs, h.storage.FileSystem().Credentials().LogoManager())
+	attrs = credentialDocument.ShowImages(attrs, h.storage.FileSystem().Credentials().ImageManager())
 
 	document := credentialDocument.Display()
 	log := clientmodels.LogCredential{
@@ -1215,7 +1215,7 @@ func (h *Engine) credentialImage(batch *Batch, document services.DocumentDisplay
 	if batch.CredentialMetadata != nil {
 		metadataURIs = services.CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display)
 	}
-	logoManager := h.storage.FileSystem().Credentials().LogoManager()
+	logoManager := h.storage.FileSystem().Credentials().ImageManager()
 	return services.LoadDocumentLogo(logoManager, document.CredentialImage, metadataURIs, locale)
 }
 
@@ -1237,7 +1237,7 @@ func (h *Engine) issuerTrustedParty(batch *Batch, document services.DocumentDisp
 // issuerImage loads the credential's own issuer image or, when that is not
 // cached, the issuer metadata's logo.
 func (h *Engine) issuerImage(batch *Batch, document services.DocumentDisplay, locale string) *clientmodels.Image {
-	logoManager := h.storage.FileSystem().Issuers().LogoManager()
+	logoManager := h.storage.FileSystem().Issuers().ImageManager()
 	return services.LoadDocumentLogo(logoManager, document.IssuerImage, services.IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale)
 }
 

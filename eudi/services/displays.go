@@ -84,7 +84,7 @@ func ClaimNamesByLanguage(displays []models.ClaimDisplay) clientmodels.Translate
 // right after a locale switch, before the backfill sweep has fetched it), any
 // other cached display logo is returned instead, in deterministic key order,
 // so a logo still shows while the preferred one is on its way.
-func LoadResolvedLogo(manager filesystem.LogoManager, uris clientmodels.TranslatedString, locale string) *clientmodels.Image {
+func LoadResolvedLogo(manager filesystem.ImageManager, uris clientmodels.TranslatedString, locale string) *clientmodels.Image {
 	if img := eudi.LoadLogoImage(manager, clientmodels.Resolve(uris, locale)); img != nil {
 		return img
 	}

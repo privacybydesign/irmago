@@ -97,7 +97,7 @@ func backfillBatch(baseURL string) *models.SdJwtVcBatch {
 	}
 }
 
-func TestBackfillLogos_FetchesOnlyMissingResolvingLogos(t *testing.T) {
+func TestBackfillImages_FetchesOnlyMissingResolvingLogos(t *testing.T) {
 	requests := map[string]int{}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests[r.URL.Path]++
@@ -110,20 +110,20 @@ func TestBackfillLogos_FetchesOnlyMissingResolvingLogos(t *testing.T) {
 	storeBackfillBatch(t, s, server.URL)
 
 	// Pre-cache the nl issuer logo: the sweep must not re-download it.
-	require.NoError(t, s.FileSystem().Issuers().LogoManager().Save(server.URL+"/issuer-nl.png", []byte("cached"), ""))
+	require.NoError(t, s.FileSystem().Issuers().ImageManager().Save(server.URL+"/issuer-nl.png", []byte("cached"), ""))
 
-	added := backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl")
+	added := backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl")
 
 	require.Equal(t, 1, added, "only the missing nl credential logo should be fetched")
 	require.Equal(t, map[string]int{"/cred-nl.png": 1}, requests,
 		"the en logos do not resolve for locale nl and the nl issuer logo is already cached")
 
-	exists, err := s.FileSystem().Credentials().LogoManager().Exists(server.URL + "/cred-nl.png")
+	exists, err := s.FileSystem().Credentials().ImageManager().Exists(server.URL + "/cred-nl.png")
 	require.NoError(t, err)
 	require.True(t, exists, "fetched logo must land in the cache")
 
 	// A second sweep with a warm cache downloads nothing.
-	added = backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl")
+	added = backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl")
 	require.Equal(t, 0, added)
 	require.Equal(t, 1, requests["/cred-nl.png"])
 }
@@ -131,7 +131,7 @@ func TestBackfillLogos_FetchesOnlyMissingResolvingLogos(t *testing.T) {
 // An issuer may serve one brand image as both its issuer and its credential
 // logo. The two managers are separate directories, so the sweep must cache it in
 // both — deduplicating downloads per manager rather than across the whole sweep.
-func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
+func TestBackfillImages_SharedUriIsCachedInBothManagers(t *testing.T) {
 	requests := 0
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
@@ -157,14 +157,14 @@ func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
 	}
 	require.NoError(t, db.NewSdJwtVcStore(s.Db()).StoreBatch(batch))
 
-	added := backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl")
+	added := backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl")
 
 	require.Equal(t, 2, added, "the shared logo must be cached once per manager")
 	require.Equal(t, 2, requests, "one download per manager that needs it")
 
-	for _, m := range []filesystem.LogoManager{
-		s.FileSystem().Issuers().LogoManager(),
-		s.FileSystem().Credentials().LogoManager(),
+	for _, m := range []filesystem.ImageManager{
+		s.FileSystem().Issuers().ImageManager(),
+		s.FileSystem().Credentials().ImageManager(),
 	} {
 		exists, err := m.Exists(shared)
 		require.NoError(t, err)
@@ -172,14 +172,14 @@ func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
 	}
 
 	// Warm cache: nothing further downloaded.
-	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 0, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Equal(t, 2, requests)
 }
 
 // Tapping through several languages must not queue up a sweep per tap. Only the
 // language the user landed on is worth fetching logos for; the ones passed
 // through on the way are already stale by the time a sweep could serve them.
-func TestLogoBackfiller_SupersededRequestsCoalesceIntoOneSweep(t *testing.T) {
+func TestImageBackfiller_SupersededRequestsCoalesceIntoOneSweep(t *testing.T) {
 	var firstDownload sync.Once
 	entered, release := make(chan struct{}), make(chan struct{})
 
@@ -211,7 +211,7 @@ func TestLogoBackfiller_SupersededRequestsCoalesceIntoOneSweep(t *testing.T) {
 	storeBackfillBatch(t, s, server.URL)
 
 	sweeps := make(chan int, 16) // a sweep must never block reporting its result
-	b := NewLogoBackfiller(s, server.Client(), func(cached int) { sweeps <- cached })
+	b := NewImageBackfiller(s, server.Client(), func(cached int) { sweeps <- cached })
 	defer b.Close()
 
 	b.Request("nl")
@@ -238,7 +238,7 @@ func TestLogoBackfiller_SupersededRequestsCoalesceIntoOneSweep(t *testing.T) {
 
 // Close is what the wallet calls on the way down, moments before it closes the
 // database the sweep reads. It must not sit waiting out an HTTP timeout.
-func TestLogoBackfiller_CloseAbortsAnInFlightDownload(t *testing.T) {
+func TestImageBackfiller_CloseAbortsAnInFlightDownload(t *testing.T) {
 	entered := make(chan struct{}, 1)
 	release := make(chan struct{})
 
@@ -258,7 +258,7 @@ func TestLogoBackfiller_CloseAbortsAnInFlightDownload(t *testing.T) {
 	storeBackfillBatch(t, s, server.URL)
 
 	sweeps := make(chan int, 16) // a sweep must never block reporting its result
-	b := NewLogoBackfiller(s, server.Client(), func(cached int) { sweeps <- cached })
+	b := NewImageBackfiller(s, server.Client(), func(cached int) { sweeps <- cached })
 
 	b.Request("nl")
 	<-entered // the sweep is now blocked inside a download
@@ -279,14 +279,14 @@ func TestLogoBackfiller_CloseAbortsAnInFlightDownload(t *testing.T) {
 	// away is the last thing a shutting-down wallet needs.
 	requireNoFurtherSweep(t, sweeps)
 
-	exists, err := s.FileSystem().Issuers().LogoManager().Exists(server.URL + "/issuer-nl.png")
+	exists, err := s.FileSystem().Issuers().ImageManager().Exists(server.URL + "/issuer-nl.png")
 	require.NoError(t, err)
 	require.False(t, exists, "an aborted download must not leave a partial logo cached")
 }
 
 // A logo over plain http is fetched only in developer mode, as issuance only
 // talks plain http then.
-func TestBackfillLogos_PlainHTTPOnlyInDeveloperMode(t *testing.T) {
+func TestBackfillImages_PlainHTTPOnlyInDeveloperMode(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(testLogoPNG)
 	}))
@@ -295,13 +295,13 @@ func TestBackfillLogos_PlainHTTPOnlyInDeveloperMode(t *testing.T) {
 	s := newBackfillTestStorage(t)
 	storeBackfillBatch(t, s, server.URL)
 
-	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
-	require.Equal(t, 2, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client(), AllowInsecureHTTP: true}, "nl"),
+	require.Equal(t, 0, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 2, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client(), AllowInsecureHTTP: true}, "nl"),
 		"the nl issuer and credential logos, over plain http")
 }
 
 // The backfiller sweeps with the developer mode setting it was last given.
-func TestLogoBackfiller_SetAllowInsecureHttp(t *testing.T) {
+func TestImageBackfiller_SetAllowInsecureHttp(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(testLogoPNG)
 	}))
@@ -310,7 +310,7 @@ func TestLogoBackfiller_SetAllowInsecureHttp(t *testing.T) {
 	s := newBackfillTestStorage(t)
 	storeBackfillBatch(t, s, server.URL)
 	sweeps := make(chan int, 4)
-	b := NewLogoBackfiller(s, server.Client(), func(cached int) { sweeps <- cached })
+	b := NewImageBackfiller(s, server.Client(), func(cached int) { sweeps <- cached })
 	defer b.Close()
 
 	b.Request("nl")
@@ -349,57 +349,57 @@ func storeBackfillBadge(t *testing.T, s *backfillTestStorage, hash string, openB
 	}))
 }
 
-func TestBackfillLogos_FillsInMissingClaimImages(t *testing.T) {
+func TestBackfillImages_FillsInMissingClaimImages(t *testing.T) {
 	server, requests := imageHost(t)
 	s := newBackfillTestStorage(t)
 	storeBackfillBadge(t, s, "badge", true, server.URL+"/a.png")
 
-	require.Equal(t, 1, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
-	exists, err := s.FileSystem().Credentials().LogoManager().Exists(server.URL + "/a.png")
+	require.Equal(t, 1, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl"))
+	exists, err := s.FileSystem().Credentials().ImageManager().Exists(server.URL + "/a.png")
 	require.NoError(t, err)
 	require.True(t, exists, "a claim image lands in the credential logo cache")
 
-	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 0, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Equal(t, 1, requests["/a.png"], "a cached image is not downloaded again")
 }
 
-func TestBackfillLogos_DoesNotReplaceACachedClaimImage(t *testing.T) {
+func TestBackfillImages_DoesNotReplaceACachedClaimImage(t *testing.T) {
 	server, requests := imageHost(t)
 	s := newBackfillTestStorage(t)
 	storeBackfillBadge(t, s, "badge", true, server.URL+"/a.png")
 	cached := append(slices.Clone(testLogoPNG), 0xFF)
-	require.NoError(t, s.FileSystem().Credentials().LogoManager().Save(server.URL+"/a.png", cached, clientmodels.MimeTypePNG))
+	require.NoError(t, s.FileSystem().Credentials().ImageManager().Save(server.URL+"/a.png", cached, clientmodels.MimeTypePNG))
 
-	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 0, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Zero(t, requests["/a.png"])
-	data, _, err := s.FileSystem().Credentials().LogoManager().Get(server.URL + "/a.png")
+	data, _, err := s.FileSystem().Credentials().ImageManager().Get(server.URL + "/a.png")
 	require.NoError(t, err)
 	require.Equal(t, cached, data)
 }
 
-func TestBackfillLogos_NoClaimImagesOutsideAnOpenBadge(t *testing.T) {
+func TestBackfillImages_NoClaimImagesOutsideAnOpenBadge(t *testing.T) {
 	server, requests := imageHost(t)
 	s := newBackfillTestStorage(t)
 	storeBackfillBadge(t, s, "not-a-badge", false, server.URL+"/a.png")
 
-	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 0, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Empty(t, requests)
 }
 
 // A failed download is tried again at the next sweep, also after a 404.
-func TestBackfillLogos_RetriesAFailedClaimImage(t *testing.T) {
+func TestBackfillImages_RetriesAFailedClaimImage(t *testing.T) {
 	server, requests := imageHost(t)
 	s := newBackfillTestStorage(t)
 	storeBackfillBadge(t, s, "badge", true, server.URL+"/missing.png")
 
-	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
-	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 0, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 0, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Equal(t, 2, requests["/missing.png"])
 }
 
 // The limits per credential hold in a sweep too: an image past the tenth
 // stays out.
-func TestBackfillLogos_ClaimImageLimitsPerCredential(t *testing.T) {
+func TestBackfillImages_ClaimImageLimitsPerCredential(t *testing.T) {
 	server, requests := imageHost(t)
 	s := newBackfillTestStorage(t)
 	var urls []string
@@ -408,27 +408,27 @@ func TestBackfillLogos_ClaimImageLimitsPerCredential(t *testing.T) {
 	}
 	storeBackfillBadge(t, s, "badge", true, urls...)
 
-	require.Equal(t, 10, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 10, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Zero(t, requests["/10.png"])
-	require.Equal(t, 0, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 0, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Zero(t, requests["/10.png"], "an image a limit left out is not fetched later either")
 }
 
-func TestBackfillLogos_ClaimImagesStopWhenCancelled(t *testing.T) {
+func TestBackfillImages_ClaimImagesStopWhenCancelled(t *testing.T) {
 	server, requests := imageHost(t)
 	s := newBackfillTestStorage(t)
 	storeBackfillBadge(t, s, "badge", true, server.URL+"/a.png")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	require.Equal(t, 0, backfillLogos(ctx, s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 0, backfillImages(ctx, s, ImageFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Empty(t, requests)
 }
 
 // The backfill too downloads only the claim images of a badge's
 // credentialSubject. The credential's own image and its issuer's are its
 // logos, and fetched as those; the evidence's image is never downloaded.
-func TestBackfillLogos_OnlyTheCredentialSubjectsClaimImages(t *testing.T) {
+func TestBackfillImages_OnlyTheCredentialSubjectsClaimImages(t *testing.T) {
 	server, requests := imageHost(t)
 	s := newBackfillTestStorage(t)
 	expandedTypes, err := json.Marshal([]string{"https://www.w3.org/2018/credentials#VerifiableCredential", vcdm.OpenBadgeCredentialType})
@@ -449,13 +449,13 @@ func TestBackfillLogos_OnlyTheCredentialSubjectsClaimImages(t *testing.T) {
 		Instances:        []models.VcdmBatchInstance{{RawCredential: []byte("raw")}},
 	}))
 
-	require.Equal(t, 3, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
+	require.Equal(t, 3, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "nl"))
 	require.Equal(t, map[string]int{"/subject.png": 1, "/credential.png": 1, "/issuer.png": 1}, requests)
 }
 
 // The backfill fetches a VCDM credential's own image and its issuer's logo,
 // each into its logo cache, and the metadata's logos shown when those cannot be.
-func TestBackfillLogos_TheVcdmDocumentsImages(t *testing.T) {
+func TestBackfillImages_TheVcdmDocumentsImages(t *testing.T) {
 	server, requests := imageHost(t)
 	s := newBackfillTestStorage(t)
 	payload, err := json.Marshal(map[string]any{
@@ -478,11 +478,11 @@ func TestBackfillLogos_TheVcdmDocumentsImages(t *testing.T) {
 		Instances:          []models.VcdmBatchInstance{{RawCredential: []byte("raw")}},
 	}))
 
-	require.Equal(t, 4, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "en"))
+	require.Equal(t, 4, backfillImages(context.Background(), s, ImageFetcher{HTTPClient: server.Client()}, "en"))
 	require.Equal(t, map[string]int{"/card.png": 1, "/issuer.png": 1, "/metadata-card.png": 1, "/metadata-issuer.png": 1}, requests)
-	for manager, uri := range map[filesystem.LogoManager]string{
-		s.FileSystem().Credentials().LogoManager(): server.URL + "/card.png",
-		s.FileSystem().Issuers().LogoManager():     server.URL + "/issuer.png",
+	for manager, uri := range map[filesystem.ImageManager]string{
+		s.FileSystem().Credentials().ImageManager(): server.URL + "/card.png",
+		s.FileSystem().Issuers().ImageManager():     server.URL + "/issuer.png",
 	} {
 		exists, err := manager.Exists(uri)
 		require.NoError(t, err)

@@ -355,7 +355,7 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 	if s.vctResolver == nil {
 		return nil
 	}
-	logoManager := s.storage.FileSystem().Credentials().LogoManager()
+	logoManager := s.storage.FileSystem().Credentials().ImageManager()
 	for _, fc := range fetched {
 		sdJwtVcs := sdJwtVcsOf(fc.parsedCredentials)
 		if len(sdJwtVcs) == 0 {
@@ -406,8 +406,8 @@ const documentImagesBudget = 10 * time.Second
 func (s *session) fetchDocumentImages(fetched []*fetchedCredential) {
 	ctx, cancel := context.WithTimeout(context.Background(), documentImagesBudget)
 	defer cancel()
-	credentialLogos := s.storage.FileSystem().Credentials().LogoManager()
-	issuerLogos := s.storage.FileSystem().Issuers().LogoManager()
+	credentialLogos := s.storage.FileSystem().Credentials().ImageManager()
+	issuerLogos := s.storage.FileSystem().Issuers().ImageManager()
 	for _, fc := range fetched {
 		if len(fc.parsedCredentials) == 0 {
 			continue
@@ -417,8 +417,8 @@ func (s *session) fetchDocumentImages(fetched []*fetchedCredential) {
 }
 
 // logoFetcher downloads logos as this session may.
-func (s *session) logoFetcher() services.LogoFetcher {
-	return services.LogoFetcher{HTTPClient: s.httpClient, AllowInsecureHTTP: s.allowInsecureHttp}
+func (s *session) logoFetcher() services.ImageFetcher {
+	return services.ImageFetcher{HTTPClient: s.httpClient, AllowInsecureHTTP: s.allowInsecureHttp}
 }
 
 // verifyVctIntegrity checks each fetched credential's vct#integrity claim
@@ -505,7 +505,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 
 		// Use the first credential in the batch as source of attribute values.
 		first := fc.parsedCredentials[0]
-		attrs := first.Attributes(claims, s.locale, s.storage.FileSystem().Credentials().LogoManager())
+		attrs := first.Attributes(claims, s.locale, s.storage.FileSystem().Credentials().ImageManager())
 		// The credential's own display wins over the metadata's.
 		documentDisplay := first.Document().Display()
 
@@ -522,11 +522,11 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			issuerName = documentIssuerName
 		}
 
-		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
+		credentialLogoManager := s.storage.FileSystem().Credentials().ImageManager()
 		image := services.LoadDocumentLogo(credentialLogoManager, documentDisplay.CredentialImage,
 			metadata.LogoURIsByLanguage(credentialDisplay), s.locale)
 
-		issuerLogoManager := s.storage.FileSystem().Issuers().LogoManager()
+		issuerLogoManager := s.storage.FileSystem().Issuers().ImageManager()
 		issuerImage := services.LoadDocumentLogo(issuerLogoManager, documentDisplay.IssuerImage,
 			metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale)
 

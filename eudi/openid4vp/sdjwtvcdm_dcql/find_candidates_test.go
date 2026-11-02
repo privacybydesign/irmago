@@ -733,7 +733,7 @@ func TestVcdmClaimImage_CachedOpenBadgesImageOnlyItsIdRequested(t *testing.T) {
 
 	png, err := base64.StdEncoding.DecodeString(testPhotoBase64)
 	require.NoError(t, err)
-	require.NoError(t, ts.FileSystem().Credentials().LogoManager().Save(imageURL, png, clientmodels.MimeTypePNG))
+	require.NoError(t, ts.FileSystem().Credentials().ImageManager().Save(imageURL, png, clientmodels.MimeTypePNG))
 
 	idPath := []any{"credentialSubject", "achievement", "image", "id"}
 	requireBadgeImage := func(attrs []clientmodels.Attribute) {
@@ -802,9 +802,9 @@ func TestVcdmDocumentDisplay_DisclosureScreenAndLog(t *testing.T) {
 	batch.Instances[0].RawCredential = []byte(raw)
 	require.NoError(t, store.StoreBatch(batch))
 
-	credentialLogos := ts.FileSystem().Credentials().LogoManager()
-	issuerLogos := ts.FileSystem().Issuers().LogoManager()
-	cache := func(manager filesystem.LogoManager, uri, content string) {
+	credentialLogos := ts.FileSystem().Credentials().ImageManager()
+	issuerLogos := ts.FileSystem().Issuers().ImageManager()
+	cache := func(manager filesystem.ImageManager, uri, content string) {
 		require.NoError(t, manager.Save(uri, []byte(content), clientmodels.MimeTypePNG))
 	}
 	requireLogo := func(image *clientmodels.Image, content string) {

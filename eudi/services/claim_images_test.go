@@ -321,13 +321,13 @@ func claimImagesDocument(payload map[string]any, openBadges bool) CredentialDocu
 
 // fetchBadgeImages fetches the claim images of a credential with this payload
 // and returns how many it cached.
-func fetchBadgeImages(ctx context.Context, cache filesystem.LogoManager, client *http.Client, payload map[string]any, openBadges bool) int {
-	return claimImagesDocument(payload, openBadges).FetchImages(ctx, cache, cache, LogoFetcher{HTTPClient: client})
+func fetchBadgeImages(ctx context.Context, cache filesystem.ImageManager, client *http.Client, payload map[string]any, openBadges bool) int {
+	return claimImagesDocument(payload, openBadges).FetchImages(ctx, cache, cache, ImageFetcher{HTTPClient: client})
 }
 
-func newClaimImageCache(t *testing.T) filesystem.LogoManager {
+func newClaimImageCache(t *testing.T) filesystem.ImageManager {
 	t.Helper()
-	return filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()).Credentials().LogoManager()
+	return filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()).Credentials().ImageManager()
 }
 
 func TestFetchClaimImages_CachesTheImagesOfAnOpenBadge(t *testing.T) {

@@ -85,7 +85,7 @@ func (p *ParsedCredential) Document() CredentialDocument {
 // Attributes are the attributes the permission screen shows for a freshly
 // issued credential, named and ordered by the metadata's claims, with its
 // claim images as pictures.
-func (p *ParsedCredential) Attributes(claims []metadata.ClaimsDescription, locale string, credentialLogos filesystem.LogoManager) []clientmodels.Attribute {
+func (p *ParsedCredential) Attributes(claims []metadata.ClaimsDescription, locale string, credentialLogos filesystem.ImageManager) []clientmodels.Attribute {
 	claimNames, claimOrder := claimDisplayLookups(claims, locale)
 	var attrs []clientmodels.Attribute
 	switch {
@@ -109,14 +109,14 @@ func (d CredentialDocument) Display() DocumentDisplay {
 // ShowImages turns the claim images among attrs into pictures, taking the
 // images behind a URL from credentialLogos. attrs may be any subset of the
 // credential's attributes.
-func (d CredentialDocument) ShowImages(attrs []clientmodels.Attribute, credentialLogos filesystem.LogoManager) []clientmodels.Attribute {
+func (d CredentialDocument) ShowImages(attrs []clientmodels.Attribute, credentialLogos filesystem.ImageManager) []clientmodels.Attribute {
 	return showClaimImages(attrs, d.payload, d.openBadges, d.cachedClaimImages(credentialLogos))
 }
 
 // FetchImages downloads the credential's images that are not cached yet: its
 // own and its claim images into credentialLogos, its issuer's into
 // issuerLogos. Returns how many it cached.
-func (d CredentialDocument) FetchImages(ctx context.Context, credentialLogos, issuerLogos filesystem.LogoManager, fetcher LogoFetcher) int {
+func (d CredentialDocument) FetchImages(ctx context.Context, credentialLogos, issuerLogos filesystem.ImageManager, fetcher ImageFetcher) int {
 	cached := fetcher.FetchIfMissing(ctx, credentialLogos, d.display.CredentialImage)
 	cached += fetcher.FetchIfMissing(ctx, issuerLogos, d.display.IssuerImage)
 	for _, url := range d.downloadableClaimImageURLs() {
@@ -125,8 +125,8 @@ func (d CredentialDocument) FetchImages(ctx context.Context, credentialLogos, is
 	return cached
 }
 
-// LogoFetcher downloads logos and images into a logo cache.
-type LogoFetcher struct {
+// ImageFetcher downloads images into an image cache.
+type ImageFetcher struct {
 	HTTPClient *http.Client
 	// AllowInsecureHTTP allows plain http, for developer mode.
 	AllowInsecureHTTP bool

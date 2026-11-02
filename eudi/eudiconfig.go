@@ -174,7 +174,7 @@ func (c *Configuration) addStagingTrustAnchors() error {
 // (typically the verifier's certificate serial number) as a base64-encoded
 // clientmodels.Image, or nil if no logo is cached.
 func (c *Configuration) ResolveVerifierLogo(key string) *clientmodels.Image {
-	return LoadLogoImage(c.Verifiers.storageContainer.LogoManager(), key)
+	return LoadLogoImage(c.Verifiers.storageContainer.ImageManager(), key)
 }
 
 func (c *Configuration) UpdateCertificateRevocationLists() error {

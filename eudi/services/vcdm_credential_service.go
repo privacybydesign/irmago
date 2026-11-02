@@ -79,8 +79,8 @@ func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) 
 	}
 
 	locale := s.currentLocale.Get()
-	credentialLogoManager := s.fileStorage.Credentials().LogoManager()
-	issuerLogoManager := s.fileStorage.Issuers().LogoManager()
+	credentialLogoManager := s.fileStorage.Credentials().ImageManager()
+	issuerLogoManager := s.fileStorage.Issuers().ImageManager()
 
 	result := make([]*clientmodels.Credential, 0, len(batches))
 	for _, batch := range batches {
@@ -515,7 +515,7 @@ func vcdmCredentialLogoURIs(batch *models.VcdmBatch) clientmodels.TranslatedStri
 
 // LoadDocumentLogo loads the document's image from the logo cache or, when it
 // is not cached, the metadata's logo.
-func LoadDocumentLogo(manager filesystem.LogoManager, documentURI string, metadataURIs clientmodels.TranslatedString, locale string) *clientmodels.Image {
+func LoadDocumentLogo(manager filesystem.ImageManager, documentURI string, metadataURIs clientmodels.TranslatedString, locale string) *clientmodels.Image {
 	if img := eudi.LoadLogoImage(manager, documentURI); img != nil {
 		return img
 	}
