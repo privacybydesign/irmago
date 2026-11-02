@@ -42,3 +42,33 @@ func TestIsOpenBadgesCredential_ExpandedWithTheOpenBadgesContext(t *testing.T) {
 		})
 	}
 }
+
+func TestAchievementImage(t *testing.T) {
+	cases := map[string]struct {
+		subject string
+		want    string
+		wantOK  bool
+	}{
+		"Image object": {
+			`{"achievement": {"image": {"id": "https://example.com/badge.png", "type": "Image"}}}`,
+			"https://example.com/badge.png", true,
+		},
+		"string": {`{"achievement": {"image": "data:image/png;base64,iVBORw0KGgo="}}`, "data:image/png;base64,iVBORw0KGgo=", true},
+		"first subject with an achievement image": {
+			`[{"id": "did:example:1"}, {"achievement": {"image": "https://example.com/badge.png"}}]`,
+			"https://example.com/badge.png", true,
+		},
+		"achievement without image": {`{"achievement": {"name": "Badge"}}`, "", false},
+		"achievement not an object": {`{"achievement": "https://example.com/achievements/1"}`, "", false},
+		"wrong image shape":         {`{"achievement": {"image": 42}}`, "", false},
+		"no achievement":            {`{"id": "did:example:1"}`, "", false},
+		"subject not an object":     {`"did:example:1"`, "", false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, ok := docFromJSON(t, `{"credentialSubject": `+tc.subject+`}`).AchievementImage()
+			require.Equal(t, tc.wantOK, ok)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}

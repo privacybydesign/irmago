@@ -3,7 +3,9 @@ package vcdm
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -153,6 +155,53 @@ func (d Document) IssuerID() (string, error) {
 // Names returns the credential's `name` (VCDM 2.0 §4.6) per language tag.
 func (d Document) Names() map[string]string {
 	return languageValues(d[NameKey])
+}
+
+// Image returns the credential's `image`: Open Badges 3.0 defines it as "the
+// image representing the credential for display purposes in wallets" (B.1.2).
+// See imageURI for the shapes it reads.
+func (d Document) Image() (string, bool) {
+	return imageURI(d[ImageKey])
+}
+
+// IssuerNames returns the issuer's `name` per language tag (VCDM 2.0 §4.7),
+// read as Names reads the credential's. Only an `issuer` object has one; nil
+// when `issuer` is a string or has no usable name.
+func (d Document) IssuerNames() map[string]string {
+	issuer, _ := d[IssuerKey].(map[string]any)
+	return languageValues(issuer[NameKey])
+}
+
+// IssuerImage returns the issuer's `image`, as the Open Badges 3.0 Profile
+// that an issuer is gives it. Only an `issuer` object has one. See
+// imageURI for the shapes it reads.
+func (d Document) IssuerImage() (string, bool) {
+	issuer, _ := d[IssuerKey].(map[string]any)
+	return imageURI(issuer[ImageKey])
+}
+
+// imageURI reads an image property: a URL or data URI string, or an Open
+// Badges `Image` object, whose `id` is that string. The URL must be
+// http(s) and the data URI an image; whether an http URL may be downloaded is
+// for the download to decide. Anything else is no image.
+func imageURI(raw any) (string, bool) {
+	uri, ok := raw.(string)
+	if object, isObject := raw.(map[string]any); isObject {
+		uri, ok = object[IDKey].(string)
+	}
+	if !ok {
+		return "", false
+	}
+	lower := strings.ToLower(uri)
+	switch {
+	case strings.HasPrefix(lower, "data:image/"):
+		return uri, true
+	case strings.HasPrefix(lower, "https://"), strings.HasPrefix(lower, "http://"):
+		if parsed, err := url.Parse(uri); err == nil && parsed.Host != "" {
+			return uri, true
+		}
+	}
+	return "", false
 }
 
 // languageValues reads a property that VCDM 2.0 §11.1 lets be a plain string,
