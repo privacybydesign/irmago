@@ -136,7 +136,7 @@ func (s *sdJwtVcCredentialService) List() ([]*clientmodels.Credential, error) {
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,
 			},
 			BatchInstanceCountsRemaining: batchInstanceCounts(batch.Format, batch.BatchSize, &batch.RemainingCount),
-			Attributes:                   NewSdJwtVcDocument(payloadMap(payload)).ShowImages(BuildAttributesFromPayload(payload, display.ClaimNames, display.ClaimOrder), credentialLogoManager),
+			Attributes:                   newSdJwtVcDocument(payloadMap(payload)).ShowImages(BuildAttributesFromPayload(payload, display.ClaimNames, display.ClaimOrder), credentialLogoManager),
 			ExpiryDate:                   exp,
 			IssuanceDate:                 iat,
 			Revoked:                      revoked[batch.Hash],

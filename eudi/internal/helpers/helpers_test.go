@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -78,7 +79,7 @@ func imageServer(t *testing.T, plain bool, contentType string, body []byte) (*ht
 	written := 0
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", contentType)
-		for chunk := range slicesChunk(body, 32*1024) {
+		for chunk := range slices.Chunk(body, 32*1024) {
 			n, err := w.Write(chunk)
 			written += n
 			if err != nil {
@@ -94,18 +95,6 @@ func imageServer(t *testing.T, plain bool, contentType string, body []byte) (*ht
 	}
 	t.Cleanup(server.Close)
 	return server, &written
-}
-
-func slicesChunk(b []byte, n int) func(func([]byte) bool) {
-	return func(yield func([]byte) bool) {
-		for len(b) > 0 {
-			end := min(n, len(b))
-			if !yield(b[:end]) {
-				return
-			}
-			b = b[end:]
-		}
-	}
 }
 
 func TestDownloadRemoteImage_HTTPS(t *testing.T) {

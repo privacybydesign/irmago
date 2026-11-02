@@ -71,10 +71,10 @@ func isSVG(data []byte) bool {
 // enough for an SVG's declaration and leading comments.
 const base64SniffLength = 8192
 
-// Base64ImageMimeType is ImageMimeType for an image held as standard base64,
+// base64ImageMimeType is ImageMimeType for an image held as standard base64,
 // as a base64_image value holds it. It decodes only a prefix. Returns "" when
 // the text is not base64 or not a recognised image.
-func Base64ImageMimeType(encoded string) string {
+func base64ImageMimeType(encoded string) string {
 	encoded = strings.TrimSpace(encoded)
 	if len(encoded) > base64SniffLength {
 		encoded = encoded[:base64SniffLength]
@@ -101,7 +101,7 @@ func (v *AttributeValue) SetImageMimeType() {
 	if v == nil || v.Base64Image == nil {
 		return
 	}
-	if mimeType := Base64ImageMimeType(*v.Base64Image); mimeType != "" {
+	if mimeType := base64ImageMimeType(*v.Base64Image); mimeType != "" {
 		v.MimeType = &mimeType
 	} else {
 		v.MimeType = nil

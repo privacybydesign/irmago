@@ -88,7 +88,7 @@ func (s *sdJwtVcdmCredentialService) List() ([]*clientmodels.Credential, error) 
 		if err := json.Unmarshal(batch.ProcessedPayload, &document); err != nil {
 			document = nil
 		}
-		credentialDocument := NewVcdmDocument(document, vcdmExpandedTypes(batch))
+		credentialDocument := newVcdmDocument(document, vcdmExpandedTypes(batch))
 		documentDisplay := credentialDocument.Display()
 
 		display := resolveVcdmDisplay(batch, documentDisplay, locale)

@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/stretchr/testify/require"
 )
@@ -49,7 +50,7 @@ func TestFindClaimImages_DataURI(t *testing.T) {
 			{Path: []any{"loud"}, Source: "DATA:IMAGE/PNG;base64,AAAA"},
 		}, images, "an image data URI is an image in any credential, whatever its case; a PDF is not")
 		for _, image := range images {
-			require.True(t, image.IsDataURI())
+			require.True(t, helpers.IsImageDataURI(image.Source))
 		}
 	}
 }
@@ -75,7 +76,7 @@ func TestFindClaimImages_OpenBadgesImage(t *testing.T) {
 		Source: "https://pba.dev.eduwallet.nl/images/mbob/microcredentials/11br.001.01.png",
 		Object: []any{"credentialSubject", "achievement", "image"},
 	}}, images, "the id leaf is the image; the caption and other URLs are not")
-	require.False(t, images[0].IsDataURI())
+	require.False(t, helpers.IsImageDataURI(images[0].Source))
 }
 
 func TestFindClaimImages_ImageObjectOutsideOpenBadges(t *testing.T) {

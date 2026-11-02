@@ -31,12 +31,6 @@ type claimImage struct {
 	Object []any
 }
 
-// IsDataURI reports whether the image is in the claim itself, so it needs no
-// download.
-func (c claimImage) IsDataURI() bool {
-	return helpers.IsImageDataURI(c.Source)
-}
-
 // openBadgesImageType is the type an Open Badges 3.0 Image object has
 // (Open Badges 3.0 B.1.13).
 const openBadgesImageType = "Image"
@@ -265,7 +259,7 @@ const (
 func remoteClaimImageURLs(images []claimImage) []string {
 	var urls []string
 	for _, image := range images {
-		if image.IsDataURI() || slices.Contains(urls, image.Source) {
+		if helpers.IsImageDataURI(image.Source) || slices.Contains(urls, image.Source) {
 			continue
 		}
 		if len(urls) == maxClaimImagesPerCredential {

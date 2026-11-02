@@ -44,15 +44,15 @@ func TestImageMimeType(t *testing.T) {
 }
 
 func TestBase64ImageMimeType(t *testing.T) {
-	assert.Equal(t, MimeTypePNG, Base64ImageMimeType(testPNGBase64))
-	assert.Equal(t, MimeTypePNG, Base64ImageMimeType(" "+testPNGBase64+"\n"), "surrounding whitespace is ignored")
-	assert.Equal(t, "", Base64ImageMimeType("not base64!"))
-	assert.Equal(t, "", Base64ImageMimeType(" "))
+	assert.Equal(t, MimeTypePNG, base64ImageMimeType(testPNGBase64))
+	assert.Equal(t, MimeTypePNG, base64ImageMimeType(" "+testPNGBase64+"\n"), "surrounding whitespace is ignored")
+	assert.Equal(t, "", base64ImageMimeType("not base64!"))
+	assert.Equal(t, "", base64ImageMimeType(" "))
 
 	// Only a prefix is decoded: a large image whose tail is not even base64
 	// is still recognised by its start.
 	large := base64.StdEncoding.EncodeToString([]byte("GIF89a"+strings.Repeat("x", 3*base64SniffLength))) + "!!"
-	assert.Equal(t, MimeTypeGIF, Base64ImageMimeType(large))
+	assert.Equal(t, MimeTypeGIF, base64ImageMimeType(large))
 }
 
 func TestNewBase64ImageValue(t *testing.T) {

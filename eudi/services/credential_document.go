@@ -45,28 +45,28 @@ type DocumentDisplay struct {
 	IssuerImage     string
 }
 
-// NewSdJwtVcDocument is the document of an SD-JWT VC with this processed
+// newSdJwtVcDocument is the document of an SD-JWT VC with this processed
 // payload. It says nothing of how it looks, since an SD-JWT VC's type metadata
 // is merged into its metadata at issuance; its images are its data URI claims.
-func NewSdJwtVcDocument(payload map[string]any) CredentialDocument {
+func newSdJwtVcDocument(payload map[string]any) CredentialDocument {
 	return CredentialDocument{payload: payload}
 }
 
-// NewSdJwtVcDocumentFromJSON is NewSdJwtVcDocument over a stored processed
+// NewSdJwtVcDocumentFromJSON is newSdJwtVcDocument over a stored processed
 // payload. An unreadable payload says nothing.
 func NewSdJwtVcDocumentFromJSON(payload []byte) CredentialDocument {
 	var decoded map[string]any
 	if err := json.Unmarshal(payload, &decoded); err != nil {
 		return CredentialDocument{}
 	}
-	return NewSdJwtVcDocument(decoded)
+	return newSdJwtVcDocument(decoded)
 }
 
-// NewVcdmDocument is the document of a VCDM credential with these expanded
+// newVcdmDocument is the document of a VCDM credential with these expanded
 // types (vcdm.ExpandTypes). Its display is read off it (vcdmDocumentDisplay);
 // its images are its data URI claims and, in an Open Badges credential, the
 // Image objects in its credentialSubject.
-func NewVcdmDocument(document vcdm.Document, expandedTypes []string) CredentialDocument {
+func newVcdmDocument(document vcdm.Document, expandedTypes []string) CredentialDocument {
 	openBadges := vcdm.IsOpenBadgesCredential(expandedTypes)
 	return CredentialDocument{
 		payload:    document,
@@ -75,23 +75,23 @@ func NewVcdmDocument(document vcdm.Document, expandedTypes []string) CredentialD
 	}
 }
 
-// NewVcdmDocumentFromJSON is NewVcdmDocument over a stored document. An
+// NewVcdmDocumentFromJSON is newVcdmDocument over a stored document. An
 // unreadable document says nothing.
 func NewVcdmDocumentFromJSON(document []byte, expandedTypes []string) CredentialDocument {
 	var decoded vcdm.Document
 	if err := json.Unmarshal(document, &decoded); err != nil {
 		return CredentialDocument{}
 	}
-	return NewVcdmDocument(decoded, expandedTypes)
+	return newVcdmDocument(decoded, expandedTypes)
 }
 
 // Document is the document of a freshly issued credential, by its format.
 func (p *ParsedCredential) Document() CredentialDocument {
 	switch {
 	case p.SdJwtVc != nil:
-		return NewSdJwtVcDocument(p.SdJwtVc.ProcessedSdJwtPayload)
+		return newSdJwtVcDocument(p.SdJwtVc.ProcessedSdJwtPayload)
 	case p.SdJwtVcdm != nil:
-		return NewVcdmDocument(p.SdJwtVcdm.Document, p.ExpandedTypes)
+		return newVcdmDocument(p.SdJwtVcdm.Document, p.ExpandedTypes)
 	default:
 		return CredentialDocument{}
 	}
