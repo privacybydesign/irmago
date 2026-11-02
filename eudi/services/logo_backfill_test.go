@@ -397,26 +397,6 @@ func TestBackfillLogos_RetriesAFailedClaimImage(t *testing.T) {
 	require.Equal(t, 2, requests["/missing.png"])
 }
 
-// One sweep handles at most maxClaimImageCredentialsPerSweep credentials that
-// miss an image; the next sweep takes the rest. A credential whose images are
-// all cached does not count.
-func TestBackfillLogos_ClaimImageCredentialsPerSweep(t *testing.T) {
-	server, _ := imageHost(t)
-	s := newBackfillTestStorage(t)
-	complete := server.URL + "/complete.png"
-	require.NoError(t, s.FileSystem().Credentials().LogoManager().Save(complete, testLogoPNG, clientmodels.MimeTypePNG))
-	for i := range 5 {
-		storeBackfillBadge(t, s, "complete-"+strconv.Itoa(i), true, complete)
-	}
-	missing := maxClaimImageCredentialsPerSweep + 3
-	for i := range missing {
-		storeBackfillBadge(t, s, "badge-"+strconv.Itoa(i), true, server.URL+"/"+strconv.Itoa(i)+".png")
-	}
-
-	require.Equal(t, maxClaimImageCredentialsPerSweep, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
-	require.Equal(t, 3, backfillLogos(context.Background(), s, LogoFetcher{HTTPClient: server.Client()}, "nl"))
-}
-
 // The limits per credential hold in a sweep too: an image past the tenth
 // stays out.
 func TestBackfillLogos_ClaimImageLimitsPerCredential(t *testing.T) {

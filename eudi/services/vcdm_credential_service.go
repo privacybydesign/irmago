@@ -562,8 +562,9 @@ func (s sdJwtVcdmDisplaySource) LiveDisplaysByType(locale string) map[string]Res
 }
 
 // LogoURIs returns the issuer and credential logo URIs that resolve for the
-// locale, per stored batch: the document's images, and the metadata's logos
-// shown when those cannot be.
+// locale, per stored batch: the document's images, the metadata's logos shown
+// when those cannot be, and the claim images, which share the credential logo
+// cache.
 func (s sdJwtVcdmDisplaySource) LogoURIs(locale string) (issuer []string, credential []string) {
 	batches, err := s.store.ListBatches()
 	if err != nil {
@@ -571,23 +572,11 @@ func (s sdJwtVcdmDisplaySource) LogoURIs(locale string) (issuer []string, creden
 		return nil, nil
 	}
 	for _, batch := range batches {
-		document := vcdmBatchDocument(batch).Display()
-		issuer = append(issuer, document.IssuerImage, clientmodels.Resolve(IssuerLogoURIsByLanguage(VcdmIssuerDisplays(batch)), locale))
-		credential = append(credential, document.CredentialImage, clientmodels.Resolve(vcdmCredentialLogoURIs(batch), locale))
+		document := vcdmBatchDocument(batch)
+		display := document.Display()
+		issuer = append(issuer, display.IssuerImage, clientmodels.Resolve(IssuerLogoURIsByLanguage(VcdmIssuerDisplays(batch)), locale))
+		credential = append(credential, display.CredentialImage, clientmodels.Resolve(vcdmCredentialLogoURIs(batch), locale))
+		credential = append(credential, document.downloadableClaimImageURLs()...)
 	}
 	return issuer, credential
-}
-
-// Documents returns the document of every stored batch.
-func (s sdJwtVcdmDisplaySource) Documents() []CredentialDocument {
-	batches, err := s.store.ListBatches()
-	if err != nil {
-		eudi.Logger.Warnf("failed to load VCDM batches for the claim image backfill: %v", err)
-		return nil
-	}
-	documents := make([]CredentialDocument, 0, len(batches))
-	for _, batch := range batches {
-		documents = append(documents, vcdmBatchDocument(batch))
-	}
-	return documents
 }

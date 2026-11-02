@@ -569,9 +569,3 @@ func (s sdJwtVcDisplaySource) LogoURIs(locale string) (issuer []string, credenti
 	}
 	return issuer, credential
 }
-
-// Documents returns no documents: an SD-JWT VC's claim images are data URIs in
-// the credential itself, so it has none to download (CredentialDocument).
-func (s sdJwtVcDisplaySource) Documents() []CredentialDocument {
-	return nil
-}

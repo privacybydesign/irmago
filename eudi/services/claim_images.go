@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"encoding/base64"
 	"slices"
 
@@ -218,23 +217,4 @@ func (d CredentialDocument) cachedClaimImages(manager filesystem.LogoManager) ma
 		}
 	}
 	return images
-}
-
-// fetchClaimImages downloads into manager, the credential logo cache, the
-// claim images in the credentialSubject that are behind a URL and missing
-// from it (downloadableClaimImageURLs). It returns how many it cached, and how
-// many downloads it tried: none when every image was cached already. ctx
-// bounds the time all downloads together may take.
-func (d CredentialDocument) fetchClaimImages(ctx context.Context, manager filesystem.LogoManager, fetcher LogoFetcher) (cached, tried int) {
-	for _, url := range d.downloadableClaimImageURLs() {
-		if ctx.Err() != nil {
-			return cached, tried
-		}
-		if exists, err := manager.Exists(url); err == nil && exists {
-			continue
-		}
-		tried++
-		cached += fetcher.FetchIfMissing(ctx, manager, url)
-	}
-	return cached, tried
 }

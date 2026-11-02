@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
@@ -116,9 +115,8 @@ func (b *LogoBackfiller) Close() {
 }
 
 // backfillLogos downloads the logos that resolve for the given locale but are
-// missing from the on-disk cache, for every stored credential batch, and the
-// claim images missing from it (backfillClaimImages).
-// Returns the number of logos and images newly cached.
+// missing from the on-disk cache, for every stored credential batch, claim
+// images included. Returns the number of logos and images newly cached.
 //
 // Cancelling ctx aborts the sweep: the download in flight returns immediately
 // and the loop stops at the next batch.
@@ -156,40 +154,6 @@ func backfillLogos(ctx context.Context, s storage.Storage, fetcher LogoFetcher, 
 				return added
 			}
 			added += fetchOnce(seenCredential, credentialLogos, uri)
-		}
-	}
-	return added + backfillClaimImages(ctx, s, fetcher, credentialLogos)
-}
-
-// The claim images one sweep fills in at most: for how many credentials, and
-// in how much time. A sweep runs at every start, so a wallet with many badges
-// whose image hosts are down must not spend minutes on the network each time.
-const (
-	maxClaimImageCredentialsPerSweep = 20
-	claimImagesSweepBudget           = 30 * time.Second
-)
-
-// backfillClaimImages downloads the claim images of the stored credentials
-// that are missing from the credential logo cache, under the same limits per
-// credential as at issuance (CredentialDocument.FetchImages): an image a limit
-// left out stays out. Every failure is tried again at the next sweep. Only a
-// credential still missing an image counts towards the credentials a sweep
-// handles. Returns the number of images newly cached.
-func backfillClaimImages(ctx context.Context, s storage.Storage, fetcher LogoFetcher, credentialLogos filesystem.LogoManager) int {
-	ctx, cancel := context.WithTimeout(ctx, claimImagesSweepBudget)
-	defer cancel()
-
-	added, handled := 0, 0
-	for _, source := range NewCredentialDisplaySources(s.Db()) {
-		for _, document := range source.Documents() {
-			if ctx.Err() != nil || handled == maxClaimImageCredentialsPerSweep {
-				return added
-			}
-			cached, tried := document.fetchClaimImages(ctx, credentialLogos, fetcher)
-			added += cached
-			if tried > 0 {
-				handled++
-			}
 		}
 	}
 	return added

@@ -386,9 +386,3 @@ func (s mdocDisplaySource) LogoURIs(locale string) (issuer []string, credential 
 	}
 	return issuer, credential
 }
-
-// Documents returns no documents: an mdoc's images are bytes in its elements,
-// so it has none to download (CredentialDocument).
-func (s mdocDisplaySource) Documents() []CredentialDocument {
-	return nil
-}

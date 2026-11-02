@@ -133,14 +133,15 @@ func (d CredentialDocument) ShowImages(attrs []clientmodels.Attribute, credentia
 
 // FetchImages downloads the images the credential points to that are missing
 // from the logo caches: its own image into credentialLogos and its issuer's
-// into issuerLogos, and its claim images into credentialLogos, under the
-// limits ShowImages shows them by. Returns how many it cached. ctx bounds the
-// time the claim images may take together.
+// into issuerLogos, and its claim images into credentialLogos. Returns how
+// many it cached.
 func (d CredentialDocument) FetchImages(ctx context.Context, credentialLogos, issuerLogos filesystem.LogoManager, fetcher LogoFetcher) int {
 	cached := fetcher.FetchIfMissing(ctx, credentialLogos, d.display.CredentialImage)
 	cached += fetcher.FetchIfMissing(ctx, issuerLogos, d.display.IssuerImage)
-	claimImages, _ := d.fetchClaimImages(ctx, credentialLogos, fetcher)
-	return cached + claimImages
+	for _, url := range d.downloadableClaimImageURLs() {
+		cached += fetcher.FetchIfMissing(ctx, credentialLogos, url)
+	}
+	return cached
 }
 
 // LogoFetcher downloads logos and images into a logo cache.
