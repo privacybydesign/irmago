@@ -8,10 +8,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var serverUsageKeyCmd = &cobra.Command{
-	Use:   "usage-key",
+var serverUsageCmd = &cobra.Command{
+	Use:   "usage",
+	Short: "Manage usage reporting to the Yivi Portal",
+}
+
+var serverUsageKeygenCmd = &cobra.Command{
+	Use:   "keygen",
 	Short: "Print the usage reporting public key to register in the Yivi Portal",
-	Long: `usage-key loads the account key the server signs its usage reports with, creating it in the
+	Long: `keygen loads the account key the server signs its usage reports with, creating it in the
 state dir if it does not exist yet, and prints its public key and JWK thumbprint. Register the
 public key with your organisation in the Yivi Portal before starting the server in production mode.`,
 	Args: cobra.NoArgs,
@@ -34,9 +39,10 @@ public key with your organisation in the Yivi Portal before starting the server 
 }
 
 func init() {
-	serverCmd.AddCommand(serverUsageKeyCmd)
+	serverCmd.AddCommand(serverUsageCmd)
+	serverUsageCmd.AddCommand(serverUsageKeygenCmd)
 
-	flags := serverUsageKeyCmd.Flags()
+	flags := serverUsageKeygenCmd.Flags()
 	flags.String("usage-reporting-state-dir", "", "directory holding the account key (it is created there if absent)")
 	flags.String("usage-reporting-account-key-file", "", "PEM file with the account key")
 }

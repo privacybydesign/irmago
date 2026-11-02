@@ -127,13 +127,13 @@ func (p *Portal) verify(w http.ResponseWriter, r *http.Request) (string, []byte,
 	p.addNonce(w)
 	body := jwsBody{}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		problem(w, http.StatusBadRequest, "urn:ietf:params:acme:error:malformed")
+		problem(w, http.StatusBadRequest, "urn:yivi:usage:error:malformed")
 		return "", nil, false
 	}
 	hdrBytes, _ := base64.RawURLEncoding.DecodeString(body.Protected)
 	hdr := header{}
 	if err := json.Unmarshal(hdrBytes, &hdr); err != nil || hdr.Alg != "ES256" || hdr.URL != p.URL+r.URL.Path {
-		problem(w, http.StatusUnauthorized, "urn:ietf:params:acme:error:unauthorized")
+		problem(w, http.StatusUnauthorized, "urn:yivi:usage:error:unauthorized")
 		return "", nil, false
 	}
 
@@ -142,7 +142,7 @@ func (p *Portal) verify(w http.ResponseWriter, r *http.Request) (string, []byte,
 	delete(p.nonces, hdr.Nonce)
 	p.mu.Unlock()
 	if !validNonce {
-		problem(w, http.StatusBadRequest, "urn:ietf:params:acme:error:badNonce")
+		problem(w, http.StatusBadRequest, "urn:yivi:usage:error:badNonce")
 		return "", nil, false
 	}
 
@@ -152,12 +152,12 @@ func (p *Portal) verify(w http.ResponseWriter, r *http.Request) (string, []byte,
 		k, ok := p.keys[strings.TrimPrefix(hdr.Kid, p.URL+"/usage/v1/accounts/")]
 		p.mu.Unlock()
 		if !ok {
-			problem(w, http.StatusForbidden, "urn:ietf:params:acme:error:accountDoesNotExist")
+			problem(w, http.StatusForbidden, "urn:yivi:usage:error:keyNotRegistered")
 			return "", nil, false
 		}
 		key = k
 	} else if err := json.Unmarshal(hdr.JWK, &key); err != nil {
-		problem(w, http.StatusBadRequest, "urn:ietf:params:acme:error:malformed")
+		problem(w, http.StatusBadRequest, "urn:yivi:usage:error:malformed")
 		return "", nil, false
 	}
 
@@ -167,7 +167,7 @@ func (p *Portal) verify(w http.ResponseWriter, r *http.Request) (string, []byte,
 	sig, _ := base64.RawURLEncoding.DecodeString(body.Signature)
 	digest := sha256.Sum256([]byte(body.Protected + "." + body.Payload))
 	if err != nil || len(sig) != 64 || !ecdsa.Verify(pub, digest[:], new(big.Int).SetBytes(sig[:32]), new(big.Int).SetBytes(sig[32:])) {
-		problem(w, http.StatusUnauthorized, "urn:ietf:params:acme:error:unauthorized")
+		problem(w, http.StatusUnauthorized, "urn:yivi:usage:error:unauthorized")
 		return "", nil, false
 	}
 
@@ -179,7 +179,7 @@ func (p *Portal) verify(w http.ResponseWriter, r *http.Request) (string, []byte,
 	p.keys[thumbprint] = key
 	p.mu.Unlock()
 	if !registered {
-		problem(w, http.StatusForbidden, "urn:ietf:params:acme:error:accountDoesNotExist")
+		problem(w, http.StatusForbidden, "urn:yivi:usage:error:keyNotRegistered")
 		return "", nil, false
 	}
 
@@ -213,7 +213,7 @@ func (p *Portal) handleReports(w http.ResponseWriter, r *http.Request) {
 	}
 	report := &usage.Report{}
 	if err := json.Unmarshal(payload, report); err != nil {
-		problem(w, http.StatusBadRequest, "urn:ietf:params:acme:error:malformed")
+		problem(w, http.StatusBadRequest, "urn:yivi:usage:error:malformed")
 		return
 	}
 	if p.seen[report.ReportID] {

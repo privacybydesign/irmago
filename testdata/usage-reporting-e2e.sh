@@ -2,7 +2,7 @@
 # End-to-end test of usage reporting against a real Yivi Portal.
 #
 # Starts the Portal from a yivi-portal checkout and the irmago test image on one Docker network,
-# then: creates the account key with `yivi irma server usage-key`, registers it in the Portal, runs IRMA
+# then: creates the account key with `yivi irma server usage keygen`, registers it in the Portal, runs IRMA
 # sessions with the irmago wallet against a production-mode server (TestUsageReportingE2E), starts
 # and stops the `irma server` binary itself, and checks what the Portal stored.
 #
@@ -51,7 +51,7 @@ done
 
 echo "== Creating the account key with the irma CLI and registering it in the Portal"
 docker exec "$IRMAGO" go build -o /tmp/yivi ./yivi
-PUBLIC_KEY=$(docker exec "$IRMAGO" /tmp/yivi irma server usage-key --usage-reporting-state-dir /state)
+PUBLIC_KEY=$(docker exec "$IRMAGO" /tmp/yivi irma server usage keygen --usage-reporting-state-dir /state)
 echo "$PUBLIC_KEY"
 echo "$PUBLIC_KEY" | docker exec -i "$PORTAL" sh -c 'cat > /tmp/key.pem && python manage.py register_usage_key e2e /tmp/key.pem --label e2e'
 

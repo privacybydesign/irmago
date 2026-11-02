@@ -174,7 +174,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	headers["usage-reporting-disabled"] = "Usage reporting to the Yivi Portal"
 	flags.Bool("usage-reporting-disabled", false, "disable usage reporting, also in production mode (only for internal Yivi services)")
 	flags.String("usage-reporting-portal-url", "", "Yivi Portal usage directory URL (default "+usage.DefaultPortalURL+" in production mode; outside production mode, setting it enables usage reporting)")
-	flags.Duration("usage-reporting-interval", usage.DefaultInterval, "how often session counts are sealed into a report")
+	flags.Duration("usage-reporting-interval", usage.DefaultInterval, "how often session counts are sealed into a report (between 1m and 6h)")
 	flags.String("usage-reporting-state-dir", "", "directory for the account key and unsent reports, so they survive restarts")
 	flags.String("usage-reporting-account-key-file", "", "PEM file with the ES256 account key registered in the Yivi Portal (default: account.key in the state dir)")
 	flags.String("usage-reporting-server-instance", "", "name of this server instance in usage reports (default: hostname)")

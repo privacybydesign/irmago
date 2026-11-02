@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 )
 
 const accountKeyFileName = "account.key"
@@ -52,24 +53,9 @@ func LoadOrCreateKey(keyFile, stateDir string) (*ecdsa.PrivateKey, error) {
 }
 
 func readKey(path string) (*ecdsa.PrivateKey, error) {
-	bts, err := os.ReadFile(path)
+	key, err := encryption.ReadEcdsaPrivateKey(path)
 	if err != nil {
-		return nil, errors.WrapPrefix(err, "failed to read usage reporting account key", 0)
-	}
-	block, _ := pem.Decode(bts)
-	if block == nil {
-		return nil, errors.Errorf("usage reporting account key %s is not PEM encoded", path)
-	}
-	if key, err := x509.ParseECPrivateKey(block.Bytes); err == nil {
-		return checkCurve(key)
-	}
-	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-	if err != nil {
-		return nil, errors.Errorf("usage reporting account key %s is not an EC private key", path)
-	}
-	key, ok := parsed.(*ecdsa.PrivateKey)
-	if !ok {
-		return nil, errors.Errorf("usage reporting account key %s is not an EC private key", path)
+		return nil, errors.WrapPrefix(err, "failed to read usage reporting account key "+path, 0)
 	}
 	return checkCurve(key)
 }

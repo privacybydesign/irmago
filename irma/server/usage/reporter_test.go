@@ -20,6 +20,7 @@ var (
 )
 
 func newSettings(t *testing.T, portal *usagetest.Portal) usage.Settings {
+	usage.SetMinInterval(t, time.Second)
 	return usage.Settings{
 		PortalURL:      portal.DirectoryURL(),
 		Interval:       time.Second,
@@ -179,4 +180,19 @@ func TestAccountKeyIsStable(t *testing.T) {
 	require.Error(t, err)
 	_, err = usage.LoadOrCreateKey(filepath.Join(dir, "missing.key"), "")
 	require.Error(t, err)
+}
+
+func TestReporterRejectsIntervalOutOfRange(t *testing.T) {
+	portal := usagetest.NewPortal(t)
+	for _, interval := range []time.Duration{300, 30 * time.Second, 7 * time.Hour} {
+		settings := usage.Settings{PortalURL: portal.DirectoryURL(), Interval: interval, StateDir: t.TempDir()}
+		_, err := usage.New(settings, logrus.New())
+		require.Error(t, err, interval.String())
+	}
+	for _, interval := range []time.Duration{0, usage.MinInterval, usage.MaxInterval} {
+		settings := usage.Settings{PortalURL: portal.DirectoryURL(), Interval: interval, StateDir: t.TempDir()}
+		reporter, err := usage.New(settings, logrus.New())
+		require.NoError(t, err, interval.String())
+		reporter.Stop()
+	}
 }

@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	problemBadNonce            = "urn:ietf:params:acme:error:badNonce"
-	problemAccountDoesNotExist = "urn:ietf:params:acme:error:accountDoesNotExist"
+	// Problem types (RFC 9457) the Yivi Portal answers with.
+	problemBadNonce         = "urn:yivi:usage:error:badNonce"
+	problemKeyNotRegistered = "urn:yivi:usage:error:keyNotRegistered"
 )
 
 var (
@@ -51,7 +52,8 @@ type directory struct {
 	NewAccount string `json:"newAccount"`
 }
 
-// portalClient talks to the ACME-shaped usage API of the Yivi Portal.
+// portalClient talks to the usage API of the Yivi Portal, whose JWS requests and nonces are
+// modelled on ACME (RFC 8555).
 type portalClient struct {
 	directoryURL string
 	key          *ecdsa.PrivateKey
@@ -211,7 +213,7 @@ func (c *portalClient) lookupAccount(ctx context.Context) (string, error) {
 		}
 		return kid, nil
 	case res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden ||
-		problemType(body) == problemAccountDoesNotExist:
+		problemType(body) == problemKeyNotRegistered:
 		return "", ErrNotRegistered
 	default:
 		return "", errors.Errorf("Yivi Portal account lookup answered %d: %s", res.StatusCode, body)

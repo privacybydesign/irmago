@@ -25,6 +25,9 @@ const (
 	DefaultPortalURL = "https://portal.yivi.app/usage/v1/directory"
 	// DefaultInterval is how often the open counts are sealed into a report.
 	DefaultInterval = 5 * time.Minute
+	// MinInterval and MaxInterval bound the configurable interval.
+	MinInterval = time.Minute
+	MaxInterval = 6 * time.Hour
 
 	// maxOutbox caps the reports waiting to be sent: one week at the default interval.
 	// When it is full, counts keep accumulating in the open interval instead.
@@ -38,6 +41,9 @@ const (
 	startupTimeout     = 10 * time.Second
 	outboxDirName      = "outbox"
 )
+
+// minInterval is MinInterval, lowered by tests so they need not wait a minute per report.
+var minInterval = MinInterval
 
 // Settings configures usage reporting.
 type Settings struct {
@@ -95,6 +101,8 @@ func New(settings Settings, logger *logrus.Logger) (*Reporter, error) {
 		settings.Interval = DefaultInterval
 	} else if settings.Interval < time.Second {
 		return nil, errors.Errorf("usage reporting interval %s is too short, give it a unit such as 5m", settings.Interval)
+	} else if settings.Interval < minInterval || settings.Interval > MaxInterval {
+		return nil, errors.Errorf("usage reporting interval %s must be between %s and %s", settings.Interval, MinInterval, MaxInterval)
 	}
 	if settings.ServerInstance == "" {
 		settings.ServerInstance, _ = os.Hostname()

@@ -25,7 +25,7 @@ func TestUsageReportingE2E(t *testing.T) {
 	conf.UsageReporting = &usage.Settings{
 		PortalURL:      portalURL,
 		StateDir:       stateDir,
-		Interval:       2 * time.Second,
+		Interval:       usage.MinInterval,
 		ServerInstance: "e2e-sessiontest",
 	}
 	requestorServer := StartRequestorServer(t, conf)
@@ -34,7 +34,7 @@ func TestUsageReportingE2E(t *testing.T) {
 	doSession(t, getDisclosureRequest(studentID), nil, nil, requestorServer, nil, nil, nil)
 
 	// Let at least one interval pass, so a delta report is sent before the final one.
-	time.Sleep(5 * time.Second)
+	time.Sleep(usage.MinInterval + 5*time.Second)
 
 	doSession(t, getDisclosureRequest(studentID), nil, nil, requestorServer, nil, nil, nil)
 	doSession(t, getSigningRequest(studentID), nil, nil, requestorServer, nil, nil, nil)
