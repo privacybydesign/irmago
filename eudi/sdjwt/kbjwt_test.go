@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"testing"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/eudi/didkey"
@@ -62,4 +63,39 @@ func TestResolveKeyFromDid_DidKeyWithMismatchedFragment(t *testing.T) {
 func TestResolveKeyFromDid_UnsupportedMethod(t *testing.T) {
 	_, err := resolveKeyFromDid("did:web:example.com")
 	require.ErrorContains(t, err, "unsupported DID method in cnf.kid")
+}
+
+func TestDuplicateConfirmation(t *testing.T) {
+	kid1, kid2 := "did:jwk:one#0", "did:jwk:two#0"
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	key, err := jwk.Import[jwk.Key](priv.PublicKey)
+	require.NoError(t, err)
+
+	require.Equal(t, -1, DuplicateConfirmation([]*CnfField{{Kid: &kid1}, {Kid: &kid2}}), "distinct kids")
+	require.Equal(t, 0, DuplicateConfirmation([]*CnfField{{Kid: &kid1}, {Kid: &kid1}}), "duplicate kid")
+	require.Equal(t, 0, DuplicateConfirmation([]*CnfField{{Jwk: &key}, {Jwk: &key}}), "duplicate jwk")
+	require.Equal(t, -1, DuplicateConfirmation([]*CnfField{nil, nil}), "missing cnf")
+}
+
+type fixedClock time.Time
+
+func (c fixedClock) Now() time.Time { return time.Time(c) }
+
+// The binder stamps iat with its own clock, replacing one the caller sent, so a
+// binder on a server records the server's time of signing.
+func TestDefaultKeyBinder_SetsIssuedAt(t *testing.T) {
+	signedAt := time.Unix(1_700_000_000, 0)
+	binder := &DefaultKeyBinder{clock: fixedClock(signedAt), storage: NewInMemoryKeyBindingStorage()}
+	keys, err := binder.CreateKeyPairs(1)
+	require.NoError(t, err)
+
+	claims := map[string]any{"nonce": "n", "iat": int64(1)}
+	signed, err := binder.CreateHolderSignedJwt(keys[0], map[string]any{"typ": KbJwtTyp}, claims)
+	require.NoError(t, err)
+
+	_, payload, err := DecodeJwtWithoutCheckingSignature(signed)
+	require.NoError(t, err)
+	require.EqualValues(t, signedAt.Unix(), payload["iat"])
+	require.Equal(t, int64(1), claims["iat"], "the caller's claims are not changed")
 }

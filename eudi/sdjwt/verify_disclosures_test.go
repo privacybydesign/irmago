@@ -10,7 +10,6 @@ import (
 
 // ========================== Base Processor Tests ================================
 // fails for:
-// - [x] flat SD-JWT: _sd field is present but empty
 // - [x] flat SD-JWT: _sd field is not an array
 // - [x] flat SD-JWT: _sd field contains non-string values
 // - [x] flat SD-JWT: disclosure contains an _sd field
@@ -22,6 +21,7 @@ import (
 // - [x] flat SD-JWT: digest is processed multiple times (in single array)
 // - [x] flat SD-JWT: digest is processed multiple times (in multiple array)
 // - [x] structured SD-JWT: disclosure structures, digest is processed multiple times
+// - [x] a digest without a Disclosure (a decoy) is encountered more than once
 
 // success for:
 // - [x] flat SD-JWT: disclosures for non-array claims
@@ -32,8 +32,11 @@ import (
 // - [x] structured SD-JWT: without array
 // - [x] structured SD-JWT: with array, containing decoy digests
 // - [x] structured SD-JWT: with recursive disclosure structures
+// - [x] array element Disclosure whose value holds digests, and digests in nested arrays
+// - [x] flat SD-JWT: _sd field is present but empty
 
-func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_EmptySdField_Fails(t *testing.T) {
+// RFC 9901 §4.2.4.1: the _sd array MAY be empty.
+func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_EmptySdField_Succeeds(t *testing.T) {
 	// Arrange
 	encodedDisclosures := []EncodedDisclosure{}
 	issuerSignedJwtPayload := map[string]any{
@@ -41,10 +44,11 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_EmptySdFie
 	}
 
 	// Act
-	_, _, err := VerifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
+	processed, _, err := VerifyAndProcessDisclosures("sha-256", &issuerSignedJwtPayload, encodedDisclosures)
 
 	// Assert
-	require.ErrorContains(t, err, "when the _sd field is present it may not be empty")
+	require.NoError(t, err)
+	require.NotContains(t, processed, SdKey)
 }
 
 func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_SdFieldIsNotAnArray_Fails(t *testing.T) {
@@ -709,4 +713,89 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_RecursiveDisclosures
 	require.Len(t, housenumberMap, 2)
 	require.Contains(t, housenumberMap["number"], "12")
 	require.Contains(t, housenumberMap["extension"], "bis")
+}
+
+// encodeAndHash encodes a Disclosure and returns it with its sha-256 digest.
+func encodeAndHash(t *testing.T, content DisclosureContent) (EncodedDisclosure, string) {
+	t.Helper()
+	encoded, err := EncodeDisclosure(content)
+	require.NoError(t, err)
+	digest, err := HashEncodedDisclosure(iana.SHA256, encoded)
+	require.NoError(t, err)
+	return encoded, string(digest)
+}
+
+// RFC 9901 §7.1 step 3.c.iii: the value an array element Disclosure brings in,
+// and an array nested in an array, are processed recursively like any other
+// value, so digests in them are replaced too.
+func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_DigestsInsideArrayElements_Succeeds(t *testing.T) {
+	name, err := NewDisclosureContent("name", "Alice")
+	require.NoError(t, err)
+	encodedName, nameDigest := encodeAndHash(t, name)
+
+	// An array element whose value is an object with a selectively disclosable claim.
+	person, err := NewArrayItemDisclosureContent(map[string]any{"_sd": []any{nameDigest}, "age": float64(30)})
+	require.NoError(t, err)
+	encodedPerson, personDigest := encodeAndHash(t, person)
+
+	nested, err := NewArrayItemDisclosureContent("nested")
+	require.NoError(t, err)
+	encodedNested, nestedDigest := encodeAndHash(t, nested)
+
+	inner, err := NewArrayItemDisclosureContent("inner")
+	require.NoError(t, err)
+	encodedInner, innerDigest := encodeAndHash(t, inner)
+
+	// An array element whose value is an array with a selectively disclosable element.
+	list, err := NewArrayItemDisclosureContent([]any{map[string]any{"...": innerDigest}, "plain"})
+	require.NoError(t, err)
+	encodedList, listDigest := encodeAndHash(t, list)
+
+	payload := map[string]any{
+		"people": []any{map[string]any{"...": personDigest}},
+		"matrix": []any{[]any{map[string]any{"...": nestedDigest}, map[string]any{"...": "decoy"}}},
+		"lists":  []any{map[string]any{"...": listDigest}},
+	}
+
+	processed, disclosures, err := VerifyAndProcessDisclosures(iana.SHA256, &payload,
+		[]EncodedDisclosure{encodedName, encodedPerson, encodedNested, encodedInner, encodedList})
+	require.NoError(t, err)
+	require.Len(t, disclosures, 5)
+	require.Equal(t, []any{map[string]any{"name": "Alice", "age": float64(30)}}, processed["people"])
+	require.Equal(t, []any{[]any{"nested"}}, processed["matrix"])
+	require.Equal(t, []any{[]any{"inner", "plain"}}, processed["lists"])
+}
+
+// RFC 9901 §7.1 step 4: any digest encountered more than once is rejected,
+// whether or not a Disclosure matches it, so a repeated decoy is refused too.
+func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_RepeatedDecoyDigest_Fails(t *testing.T) {
+	const decoy = "c29tZSBkZWNveSBkaWdlc3QgdGhhdCBtYXRjaGVzIG5vdGhpbmc"
+
+	nested, err := NewDisclosureContent("nested", map[string]any{"_sd": []any{decoy}})
+	require.NoError(t, err)
+	encodedNested, nestedDigest := encodeAndHash(t, nested)
+
+	for name, tc := range map[string]struct {
+		payload     map[string]any
+		disclosures []EncodedDisclosure
+	}{
+		"twice in one _sd": {
+			payload: map[string]any{"_sd": []any{decoy, decoy}},
+		},
+		"twice in one array": {
+			payload: map[string]any{"arr": []any{map[string]any{"...": decoy}, map[string]any{"...": decoy}}},
+		},
+		"in an _sd and in an array": {
+			payload: map[string]any{"_sd": []any{decoy}, "arr": []any{map[string]any{"...": decoy}}},
+		},
+		"again inside a Disclosure's value": {
+			payload:     map[string]any{"_sd": []any{decoy, nestedDigest}},
+			disclosures: []EncodedDisclosure{encodedNested},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := VerifyAndProcessDisclosures(iana.SHA256, &tc.payload, tc.disclosures)
+			require.ErrorContains(t, err, "digest "+decoy+" has been referenced multiple time")
+		})
+	}
 }

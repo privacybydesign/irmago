@@ -26,7 +26,7 @@ type mdocDeviceKeyBinder struct {
 }
 
 // NewMdocDeviceKeyBinder creates the storage-backed device key binder to hand to
-// mdoc_dcql.NewMdocDcqlHandler.
+// mdoc_dcql.New.
 func NewMdocDeviceKeyBinder(store db.MdocDeviceKeyStore) *mdocDeviceKeyBinder {
 	return &mdocDeviceKeyBinder{store: store}
 }

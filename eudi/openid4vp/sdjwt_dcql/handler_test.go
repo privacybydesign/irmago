@@ -1,93 +1,58 @@
-package eudi_sdjwt_dcql
+package sdjwt_dcql
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
-	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcqltest"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
-	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
-	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
-	"gorm.io/gorm"
 )
 
-// testStorage implements storage.Storage with an in-memory SQLCipher database.
-type testStorage struct {
-	db *gorm.DB
-	fs filesystem.FileSystemStorage
+func newTestHandler(t *testing.T) (*Engine, db.SdJwtVcStore) {
+	t.Helper()
+	ts := sdjwt_dcqltest.NewTestStorage(t)
+	credStore := db.NewSdJwtVcStore(ts.Db())
+	return &Engine{
+		storage:       ts,
+		batches:       NewSdJwtVcBatchStore(credStore, nil),
+		currentLocale: clientmodels.NewCurrentLocale("en"),
+		profile:       testSdJwtVcProfile(),
+	}, credStore
 }
 
-func (s *testStorage) Db() *gorm.DB                             { return s.db }
-func (s *testStorage) FileSystem() filesystem.FileSystemStorage { return s.fs }
-func (s *testStorage) Close() error                             { return nil }
-func (s *testStorage) RemoveAll() error                         { return nil }
-
-var _ storage.Storage = (*testStorage)(nil)
-
-func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.SdJwtVcStore) {
-	t.Helper()
-	d, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("test-key-123"))}, &gorm.Config{})
-	require.NoError(t, err)
-
-	require.NoError(t, d.AutoMigrate(
-		&models.HolderBindingKey{},
-		&models.ECDSAKeyMetadata{},
-		&models.RSAKeyMetadata{},
-		&models.IssuerMetadataDisplay{},
-		&models.CredentialMetadata{},
-		&models.CredentialDisplay{},
-		&models.CredentialClaim{},
-		&models.ClaimDisplay{},
-		&models.SdJwtVcBatch{},
-		&models.SdJwtVcBatchInstance{},
-	))
-
-	fs := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	ts := &testStorage{db: d, fs: fs}
-	credStore := db.NewSdJwtVcStore(ts.Db())
-	handler := &SdJwtVcDcqlHandler{
-		storage:         ts,
-		credentialStore: credStore,
-		currentLocale:   clientmodels.NewCurrentLocale("en"),
+// testSdJwtVcProfile mirrors the real SD-JWT VC profile (which now lives in the
+// sdjwtvc_dcql package) so the engine tests can build an Engine directly.
+func testSdJwtVcProfile() Profile {
+	return Profile{
+		StorageFormat: models.CredentialFormatSdJwtVc,
+		ClientFormat:  clientmodels.Format_SdJwtVc,
+		IsUserDataKey: func(key string) bool {
+			_, std := sdjwtvc.StandardClaims[key]
+			return !std
+		},
+		Present: PresentWithKbJwt,
 	}
-	return handler, credStore
 }
 
 func newTestBatch(hash, vct string, payload map[string]any) *models.SdJwtVcBatch {
-	payloadJSON, _ := json.Marshal(payload)
-	iss := "https://issuer.example.com"
-	return &models.SdJwtVcBatch{
-		IssuerIdentifier:           iss,
-		VerifiableCredentialType:   vct,
-		Format:                     models.CredentialFormatSdJwtVc,
-		Hash:                       hash,
-		ProcessedSdJwtPayload:      datatypes.JSON(payloadJSON),
-		IssuedAt:                   datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                  1,
-		RemainingCount:             1,
-		CredentialIssuerIdentifier: iss,
-		Instances: []models.SdJwtVcBatchInstance{
-			{RawCredential: []byte("fake-raw-credential")},
-		},
-	}
+	return sdjwt_dcqltest.NewTestBatch(hash, vct, payload)
 }
 
 func parseDcqlQuery(t *testing.T, raw string) dcql.CredentialQuery {
-	t.Helper()
-	var q dcql.CredentialQuery
-	require.NoError(t, json.Unmarshal([]byte(raw), &q))
-	return q
+	return sdjwt_dcqltest.ParseDcqlQuery(t, raw)
 }
 
 // ========================================================================
@@ -163,7 +128,7 @@ func TestFindCandidates_ValidCredentialIncluded(t *testing.T) {
 // Status List machinery (that lives with services.RevocationService).
 type stubRevocation struct{ revoked bool }
 
-func (s stubRevocation) IsRevoked(*statuslist.Reference) bool { return s.revoked }
+func (s stubRevocation) IsStoredStatusRevoked(uint8) bool { return s.revoked }
 
 // TestFindCandidates_RevokedSurfaced pins the IRMA-parity contract: a revoked
 // SD-JWT VC is NOT dropped or refused during planning. It still appears as an
@@ -171,7 +136,7 @@ func (s stubRevocation) IsRevoked(*statuslist.Reference) bool { return s.revoked
 // so the frontend can decide — the verifier's own status check is the backstop.
 func TestFindCandidates_RevokedSurfaced(t *testing.T) {
 	h, store := newTestHandler(t)
-	h.revocation = stubRevocation{revoked: true}
+	h.batches = NewSdJwtVcBatchStore(store, stubRevocation{revoked: true})
 
 	batch := newTestBatch("hash-revoked", "https://example.com/EmailCredential", map[string]any{
 		"email": "test@example.com",
@@ -201,7 +166,7 @@ func TestFindCandidates_RevokedSurfaced(t *testing.T) {
 // status_list reference).
 func TestFindCandidates_NotRevoked(t *testing.T) {
 	h, store := newTestHandler(t)
-	h.revocation = stubRevocation{revoked: false}
+	h.batches = NewSdJwtVcBatchStore(store, stubRevocation{revoked: false})
 
 	batch := newTestBatch("hash-valid-stored", "https://example.com/EmailCredential", map[string]any{
 		"email": "test@example.com",
@@ -390,11 +355,17 @@ func TestFindCandidates_MultipleVctValues_NoneMatch(t *testing.T) {
 	assert.Empty(t, result.OwnedCandidates, "no credentials should match")
 }
 
-func TestFindCandidates_NoVctValues_MatchesNone(t *testing.T) {
+// TestFindCandidates_NoVctValues_MatchesByClaims pins OpenID4VP §6.1: an empty
+// `meta` (no vct_values) means match any credential of this format by claims
+// alone — every stored batch carrying the requested claim qualifies, and only
+// those. (This replaced the earlier "matches none" behavior.)
+func TestFindCandidates_NoVctValues_MatchesByClaims(t *testing.T) {
 	h, store := newTestHandler(t)
 
 	require.NoError(t, store.StoreBatch(newTestBatch("hash-a", "https://example.com/A", map[string]any{"email": "a@example.com"})))
 	require.NoError(t, store.StoreBatch(newTestBatch("hash-b", "https://example.com/B", map[string]any{"email": "b@example.com"})))
+	// A batch lacking the requested claim must still be excluded.
+	require.NoError(t, store.StoreBatch(newTestBatch("hash-c", "https://example.com/C", map[string]any{"phone": "+3112345678"})))
 
 	query := parseDcqlQuery(t, `{
 		"id": "q1",
@@ -405,7 +376,7 @@ func TestFindCandidates_NoVctValues_MatchesNone(t *testing.T) {
 
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
-	assert.Empty(t, result.OwnedCandidates, "no batches should match when no vct_values specified")
+	require.Len(t, result.OwnedCandidates, 2, "empty meta matches every batch carrying the requested claim, and only those")
 }
 
 // ========================================================================
@@ -569,6 +540,58 @@ func TestFindCandidates_ClaimValueMixedTypes(t *testing.T) {
 	require.Len(t, result.OwnedCandidates, 1, "string value should match when listed among mixed-type constraints")
 }
 
+// An issuer may put decoy digests in an array (RFC 9901 §4.2.5). The processed
+// payload, which the wallet matches the query against, has none, so the index
+// it expands a null to must reach the same element in the stored SD-JWT: the
+// plan shows "real", and the disclosure sends it.
+func TestPrepareDisclosure_DecoyInArray_SendsTheElementShown(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	real, err := sdjwt.NewArrayItemDisclosureContent("real")
+	require.NoError(t, err)
+	encoded, err := sdjwt.EncodeDisclosure(real)
+	require.NoError(t, err)
+	digest, err := sdjwt.HashEncodedDisclosure("sha-256", encoded)
+	require.NoError(t, err)
+
+	vct := "https://example.com/TagCredential"
+	batch := newTestBatch("hash-decoy", vct, map[string]any{"tags": []any{"real"}})
+	batch.Instances = []models.SdJwtVcBatchInstance{{
+		RawCredential: []byte(unsignedSdJwt(t, map[string]any{
+			"vct": vct,
+			"tags": []any{
+				map[string]any{"...": "c29tZSBkZWNveSBkaWdlc3QgdGhhdCBtYXRjaGVzIG5vdGhpbmc"},
+				map[string]any{"...": string(digest)},
+			},
+		}) + string(encoded) + "~"),
+	}}
+	require.NoError(t, store.StoreBatch(batch))
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/TagCredential"]},
+		"claims": [{"path": ["tags", null]}]
+	}`)
+	candidates, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	require.Len(t, candidates.OwnedCandidates, 1)
+	shown := candidates.OwnedCandidates[0].Attributes
+	require.Len(t, shown, 1, "the plan shows the tag")
+	require.NotNil(t, shown[0].Value)
+	require.Equal(t, "real", *shown[0].Value.String)
+
+	prepared, err := h.PrepareDisclosure([]dcql.DisclosureSelection{{
+		QueryId:        "q1",
+		CredentialHash: "hash-decoy",
+		ClaimPaths:     [][]any{shown[0].ClaimPath},
+	}}, "nonce", "client")
+	require.NoError(t, err)
+	_, disclosures, err := sdjwt.Split(sdjwt.SdJwt(prepared.QueryResponses[0].Credentials[0]))
+	require.NoError(t, err)
+	require.Equal(t, []sdjwt.EncodedDisclosure{encoded}, disclosures, "the tag shown is the tag sent")
+}
+
 // ========================================================================
 // ExpiryDate correctness (expiryUnix bug fix verification)
 // ========================================================================
@@ -662,6 +685,73 @@ func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	require.Error(t, err, "batch-of-2 with all instances used should fail")
 }
 
+// unsignedSdJwt builds an SD-JWT without disclosures whose payload is all
+// plain claims. The signature is junk: nothing on the disclosure path checks it.
+func unsignedSdJwt(t *testing.T, payload map[string]any) string {
+	t.Helper()
+	header, err := json.Marshal(map[string]any{"alg": "ES256", "typ": "dc+sd-jwt"})
+	require.NoError(t, err)
+	body, err := json.Marshal(payload)
+	require.NoError(t, err)
+	enc := base64.RawURLEncoding.EncodeToString
+	return enc(header) + "." + enc(body) + "." + enc([]byte("sig")) + "~"
+}
+
+// Copies of a batch can differ in plain claims: veramo, for one, writes each
+// copy's own holder key into the VCDM credentialSubject.id. The batch payload
+// holds only one copy's values, so the plan and the log must read values off
+// the copy that is sent, or one of the two disclosures below shows and logs a
+// value the verifier never got.
+func TestPrepareDisclosure_BatchOfTwo_ShowsValuesOfInstanceSent(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	vct := "https://example.com/EmailCredential"
+	batch := newTestBatch("hash-batch2-differing", vct, map[string]any{"holder": "did:example:a"})
+	batch.BatchSize = 2
+	batch.RemainingCount = 2
+	batch.Instances = []models.SdJwtVcBatchInstance{
+		{RawCredential: []byte(unsignedSdJwt(t, map[string]any{"vct": vct, "holder": "did:example:a"}))},
+		{RawCredential: []byte(unsignedSdJwt(t, map[string]any{"vct": vct, "holder": "did:example:b"}))},
+	}
+	require.NoError(t, store.StoreBatch(batch))
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/EmailCredential"]},
+		"claims": [{"path": ["holder"]}]
+	}`)
+	selections := []dcql.DisclosureSelection{{
+		QueryId:        "q1",
+		CredentialHash: "hash-batch2-differing",
+		ClaimPaths:     [][]any{{"holder"}},
+	}}
+
+	var sent []string
+	for i := range 2 {
+		candidates, err := h.FindCandidates(query)
+		require.NoError(t, err)
+		require.Len(t, candidates.OwnedCandidates, 1)
+		shown := candidates.OwnedCandidates[0].Attributes
+		require.Len(t, shown, 1)
+
+		prepared, err := h.PrepareDisclosure(selections, "nonce", "client")
+		require.NoError(t, err)
+		payload, err := sdjwt.DecodeJwtPayload(sdjwt.SdJwt(prepared.QueryResponses[0].Credentials[0]))
+		require.NoError(t, err)
+		sentHolder := payload["holder"].(string)
+		sent = append(sent, sentHolder)
+
+		require.NotNil(t, shown[0].Value)
+		assert.Equal(t, sentHolder, *shown[0].Value.String, "disclosure %d: plan shows another copy's value", i+1)
+		logged := prepared.CredentialLogs[0].Attributes
+		require.Len(t, logged, 1)
+		require.NotNil(t, logged[0].Value)
+		assert.Equal(t, sentHolder, *logged[0].Value.String, "disclosure %d: log records another copy's value", i+1)
+	}
+	assert.ElementsMatch(t, []string{"did:example:a", "did:example:b"}, sent)
+}
+
 // ========================================================================
 // ExpiryDate correctness (expiryUnix bug fix verification)
 // ========================================================================
@@ -726,8 +816,8 @@ func (s *stubIssuerFetcher) Fetch(_ context.Context, issuerURL string) (*typemet
 	return nil, errors.New("not found")
 }
 
-func newHandlerWithFetchers(vct typemetadata.VctFetcher, issuer typemetadata.IssuerFetcher) *SdJwtVcDcqlHandler {
-	return &SdJwtVcDcqlHandler{vctFetcher: vct, issuerFetcher: issuer, currentLocale: clientmodels.NewCurrentLocale("en")}
+func newHandlerWithFetchers(vct typemetadata.VctFetcher, issuer typemetadata.IssuerFetcher) *Engine {
+	return &Engine{vctFetcher: vct, issuerFetcher: issuer, currentLocale: clientmodels.NewCurrentLocale("en")}
 }
 
 func TestComposeUnobtainableDescriptor_VctFetchFails_UrlOnlyFallback(t *testing.T) {
@@ -937,58 +1027,6 @@ func TestFindCandidates_NoBatches_NilFetcher_NoDescriptor(t *testing.T) {
 	assert.Empty(t, result.ObtainableDescriptors, "no fetcher means no descriptor (preserves old behaviour)")
 }
 
-func TestIsIrmaStyleVct(t *testing.T) {
-	cases := []struct {
-		vct  string
-		want bool
-	}{
-		{"test.test.email", true},                 // 3 non-empty dot segments — IRMA shape
-		{"pbdf.sidn-pbdf.irma", true},             // hyphens are fine inside segments
-		{"test.test", false},                      // only 2 segments
-		{"test.test.email.extra", false},          // 4 segments
-		{"test..email", false},                    // empty middle segment
-		{".test.email", false},                    // empty leading segment
-		{"test.test.", false},                     // empty trailing segment
-		{"urn:eudi:pid:1", false},                 // URN — colons rule out IRMA shape
-		{"https://issuer.example.com/foo", false}, // URL with slashes and colons
-		{"a.b:c.d", false},                        // a colon anywhere disqualifies
-		{"", false},                               // empty string
-	}
-	for _, c := range cases {
-		assert.Equal(t, c.want, isIrmaStyleVct(c.vct), "vct=%q", c.vct)
-	}
-}
-
-func TestCanHandleCredentialQuery(t *testing.T) {
-	h := &SdJwtVcDcqlHandler{currentLocale: clientmodels.NewCurrentLocale("en")}
-
-	mkQuery := func(format string, vcts ...string) dcql.CredentialQuery {
-		q := dcql.CredentialQuery{Format: format}
-		if vcts != nil {
-			q.Meta = &dcql.Meta{VctValues: vcts}
-		}
-		return q
-	}
-
-	cases := []struct {
-		name  string
-		query dcql.CredentialQuery
-		want  bool
-	}{
-		{"urn vct routes to EUDI", mkQuery("dc+sd-jwt", "urn:eudi:pid:1"), true},
-		{"https url vct routes to EUDI", mkQuery("dc+sd-jwt", "https://example.com/foo"), true},
-		{"IRMA-style vct does NOT route to EUDI", mkQuery("dc+sd-jwt", "test.test.email"), false},
-		{"no vct_values still routes to EUDI", mkQuery("dc+sd-jwt"), true},
-		{"vc+sd-jwt also handled", mkQuery("vc+sd-jwt", "urn:eudi:pid:1"), true},
-		{"non-sd-jwt format rejected", mkQuery("mso_mdoc", "urn:eudi:pid:1"), false},
-		{"mixed list with one non-IRMA value routes to EUDI", mkQuery("dc+sd-jwt", "test.test.email", "urn:eudi:pid:1"), true},
-		{"all IRMA-style values rejected", mkQuery("dc+sd-jwt", "test.test.email", "test.test.mobilephone"), false},
-	}
-	for _, c := range cases {
-		assert.Equal(t, c.want, h.CanHandleCredentialQuery(c.query), c.name)
-	}
-}
-
 func TestIsHttpVct(t *testing.T) {
 	cases := []struct {
 		vct  string
@@ -1004,4 +1042,28 @@ func TestIsHttpVct(t *testing.T) {
 	for _, c := range cases {
 		assert.Equal(t, c.want, isHttpVct(c.vct), "vct=%q", c.vct)
 	}
+}
+
+// A stored SD-JWT-secured VCDM batch (vc+sd-jwt, #682) must never be offered
+// for a dc+sd-jwt DCQL query — not even when the verifier echoes the batch's
+// composite type identity as a vct value.
+func TestFindCandidates_VcdmBatchExcluded(t *testing.T) {
+	h, _ := newTestHandler(t)
+
+	typeIdentity := "https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential"
+	batch := sdjwt_dcqltest.NewTestVcdmBatch("hash-vcdm", typeIdentity, map[string]any{
+		"credentialSubject": map[string]any{"email": "test@example.com"},
+	})
+	require.NoError(t, db.NewVcdmStore(h.storage.Db()).StoreBatch(batch))
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential"]},
+		"claims": [{"path": ["credentialSubject", "email"]}]
+	}`)
+
+	result, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	assert.Empty(t, result.OwnedCandidates, "an SD-JWT-secured VCDM batch is not a dc+sd-jwt candidate")
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/lestrrat-go/jwx/v4/jwt"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
 
@@ -20,11 +21,15 @@ type SdJwtVcKb sdjwt.SdJwtKb
 const (
 	VerifiableCredentialTypeKey          string = "vct"
 	VerifiableCredentialTypeIntegrityKey string = "vct#integrity"
-	StatusKey                            string = "status"
 	FederationKey                        string = "fed"
 
-	SdJwtVcTyp        string = "dc+sd-jwt"
-	SdJwtVcTyp_Legacy string = "vc+sd-jwt"
+	// SdJwtVcTyp is the only JWS `typ` accepted for an IETF SD-JWT VC. The
+	// `vc+sd-jwt` it replaced in November 2024 now denotes an SD-JWT-secured
+	// W3C VCDM credential, as VC-JOSE-COSE registers it, and is handled by
+	// eudi/credentials/vcdmsdjwt. An SD-JWT VC signed with it is refused,
+	// although draft-ietf-oauth-sd-jwt-vc-13 §3.2.1 recommends accepting it for
+	// a transitional period: the two meanings cannot share the name.
+	SdJwtVcTyp string = "dc+sd-jwt"
 )
 
 // LookupVctIntegrityClaim returns the vct#integrity claim string from the
@@ -64,5 +69,5 @@ var StandardClaims = map[string]struct{}{
 	FederationKey:                        {},
 	VerifiableCredentialTypeKey:          {},
 	VerifiableCredentialTypeIntegrityKey: {},
-	StatusKey:                            {},
+	statuslist.StatusClaimKey:            {},
 }
