@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -142,8 +143,29 @@ func (p *PrivateKeyRingFolder) readFile(filename string, id IssuerIdentifier) (*
 // parseFile returns the parsed private key in the specified file, from the cache if the file
 // did not change since it was last parsed.
 func (p *PrivateKeyRingFolder) parseFile(filename string, demo bool) (*gabikeys.PrivateKey, error) {
-	path := filepath.Join(p.path, filename)
-	info, err := os.Stat(path)
+	cleanFilename := filepath.Clean(filename)
+	if filepath.IsAbs(cleanFilename) || cleanFilename != filepath.Base(cleanFilename) || cleanFilename == "." || cleanFilename == ".." {
+		p.forget(filename)
+		return nil, errors.Errorf("invalid private key filename: %s", filename)
+	}
+
+	basePath, err := filepath.Abs(p.path)
+	if err != nil {
+		p.forget(filename)
+		return nil, err
+	}
+	path := filepath.Join(basePath, cleanFilename)
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		p.forget(filename)
+		return nil, err
+	}
+	if absPath != basePath && !strings.HasPrefix(absPath, basePath+string(os.PathSeparator)) {
+		p.forget(filename)
+		return nil, errors.Errorf("invalid private key path: %s", filename)
+	}
+
+	info, err := os.Stat(absPath)
 	if err != nil {
 		p.forget(filename)
 		return nil, err
@@ -159,7 +181,7 @@ func (p *PrivateKeyRingFolder) parseFile(filename string, demo bool) (*gabikeys.
 	// Parse outside of the lock, so that parsing one key does not block reading other keys.
 	// If the file changes between the stat above and the parsing, the next read sees a different
 	// modification time and parses the file again.
-	sk, err := gabikeys.NewPrivateKeyFromFile(path, demo)
+	sk, err := gabikeys.NewPrivateKeyFromFile(absPath, demo)
 	if err != nil {
 		p.forget(filename)
 		return nil, err
