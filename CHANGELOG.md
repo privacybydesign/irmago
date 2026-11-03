@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.5.0] - 2026-11-03
 ### Added
 - SD-JWT-secured W3C VCDM 2.0 credentials (VC-JOSE-COSE §3.2), under the `vc+sd-jwt` format id and JWS `typ`. `dc+sd-jwt` stays IETF SD-JWT VC only: a VCDM credential or configuration under it is refused.
   - **Issuance (OpenID4VCI)**
@@ -967,7 +969,8 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
-[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.4.3...HEAD
+[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/privacybydesign/irmago/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/privacybydesign/irmago/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/privacybydesign/irmago/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/privacybydesign/irmago/compare/v1.4.0...v1.4.1
