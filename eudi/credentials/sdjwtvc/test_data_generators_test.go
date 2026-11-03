@@ -96,27 +96,6 @@ func Test_GenerateSdjwt_WrongIssuerSignedJwtTypHeader(t *testing.T) {
 	require.Error(t, err)
 }
 
-func Test_GenerateSdjwt_ValidSdJwtVc_VcTypHeader_WithKbJwt(t *testing.T) {
-	now := time.Now().Unix()
-
-	config := newWorkingSdJwtVcKbTestConfig()
-	config.withTypHeader("vc+sd-jwt")
-
-	context := SdJwtVcVerificationContext{
-		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
-			VerifyOpts: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
-		},
-		Clock:       &testClock{time: now - 60},
-		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
-	}
-
-	sdjwtvc := createTestSdJwtVcKb(t, config)
-	holderVerifier := NewHolderVerificationProcessor(context)
-
-	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
-	require.Error(t, err)
-}
-
 // The pre-2024 `vc+sd-jwt` typ now denotes an SD-JWT-secured W3C VCDM
 // credential (#678/#683) and must no longer verify as an IETF SD-JWT VC.
 func Test_GenerateSdjwt_VcTypHeader_NoLongerAcceptedAsSdJwtVc(t *testing.T) {

@@ -29,9 +29,9 @@ func newTestLogServiceWithLocale(t *testing.T, locale string) *eudiLogService {
 		locale:              locale,
 		store:               db.NewEudiLogStore(database),
 		displaySources:      NewCredentialDisplaySources(database),
-		credLogoManager:     fs.Credentials().LogoManager(),
-		issuerLogoManager:   fs.Issuers().LogoManager(),
-		verifierLogoManager: fs.Verifiers().LogoManager(),
+		credLogoManager:     fs.Credentials().ImageManager(),
+		issuerLogoManager:   fs.Issuers().ImageManager(),
+		verifierLogoManager: fs.Verifiers().ImageManager(),
 	}
 }
 
@@ -579,4 +579,30 @@ func TestIssuanceLogRoundTrip_PreservesIssuerVerifiedFlag(t *testing.T) {
 	require.Len(t, logs, 1)
 	require.NotNil(t, logs[0].IssuanceLog)
 	require.True(t, logs[0].IssuanceLog.Issuer.Verified)
+}
+
+// A claim image goes into the log as the picture it was shown as, so the log
+// still shows it after the credential, and the cached image, are gone: the
+// read finds no stored credential to consult.
+func TestDisclosureLogRoundTrip_KeepsAClaimImageAfterTheCredentialIsDeleted(t *testing.T) {
+	svc := newTestLogServiceWithLocale(t, "en")
+	image := clientmodels.NewBase64ImageValue(testPNGBase64)
+	require.NotNil(t, image.MimeType)
+
+	require.NoError(t, svc.AddDisclosureLog(clientmodels.TrustedParty{Id: "verifier", Name: "Verifier"}, []clientmodels.LogCredential{{
+		CredentialId: "https://www.w3.org/ns/credentials/v2 VerifiableCredential OpenBadgeCredential",
+		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVcdm},
+		Name:         "Badge",
+		Issuer:       clientmodels.TrustedParty{Id: "https://issuer.example", Name: "Issuer"},
+		Attributes: []clientmodels.Attribute{
+			{ClaimPath: []any{"credentialSubject", "achievement", "image", "id"}, Value: image},
+		},
+	}}))
+
+	logs, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	attrs := logs[0].DisclosureLog.Credentials[0].Attributes
+	require.Len(t, attrs, 1)
+	require.Equal(t, image, attrs[0].Value, "the picture and its MIME type")
 }
