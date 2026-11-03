@@ -2,10 +2,13 @@ package services
 
 import (
 	"crypto/ecdsa"
+	"fmt"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
@@ -17,14 +20,17 @@ import (
 // The generic fields are what the OpenID4VCI session needs regardless of
 // format: to name the credential, to bind it to its configuration, and to show
 // it on the offer screen. Everything a format's own store needs to persist it
-// lives behind one typed escape hatch per format — SdJwtVc or Mdoc, exactly
-// one of which is set — so no format's data has to be flattened into bytes to
+// lives behind one typed escape hatch per format — SdJwtVc, SdJwtVcdm or Mdoc,
+// exactly one of which is set — so no format's data has to be flattened into bytes to
 // cross this seam and re-parsed on the other side.
 type ParsedCredential struct {
+	// Format is the format of the credential as parsed: the format of the
+	// credential configuration it was issued under, since each format has its
+	// own parser.
 	Format models.CredentialFormat
 
-	// VerifiableCredentialType is the vct claim (dc+sd-jwt) or the ISO
-	// 18013-5 docType (mso_mdoc).
+	// VerifiableCredentialType is the vct claim (dc+sd-jwt), the @context+type
+	// identity (vc+sd-jwt), or the ISO 18013-5 docType (mso_mdoc).
 	VerifiableCredentialType string
 
 	// IssuerIdentifier is the issuer identity the credential itself asserts and
@@ -50,8 +56,37 @@ type ParsedCredential struct {
 	// SdJwtVc is set only when Format == models.CredentialFormatSdJwtVc.
 	SdJwtVc *sdjwtvc.VerifiedSdJwtVc
 
+	// SdJwtVcdm is set only when Format == models.CredentialFormatSdJwtVcdm.
+	SdJwtVcdm *vcdmsdjwt.VerifiedSdJwtVcdm
+
 	// Mdoc is set only when Format == models.CredentialFormatMsoMdoc.
 	Mdoc *ParsedMdoc
+}
+
+// holderConfirmation returns the `cnf` claim an SD-JWT-secured credential is
+// bound to its holder by, or nil when it carries none or is not SD-JWT-secured.
+func (p *ParsedCredential) holderConfirmation() *sdjwt.CnfField {
+	switch {
+	case p.SdJwtVc != nil:
+		return p.SdJwtVc.IssuerSignedJwtPayload.Confirm
+	case p.SdJwtVcdm != nil:
+		return p.SdJwtVcdm.RegisteredClaims.Confirm
+	default:
+		return nil
+	}
+}
+
+// requireUniqueHolderConfirmations refuses a batch in which two credentials
+// are bound to the same holder key.
+func requireUniqueHolderConfirmations(batch []*ParsedCredential) error {
+	cnfs := make([]*sdjwt.CnfField, len(batch))
+	for i, pc := range batch {
+		cnfs[i] = pc.holderConfirmation()
+	}
+	if i := sdjwt.DuplicateConfirmation(cnfs); i >= 0 {
+		return fmt.Errorf("duplicate cryptographic key binding confirmation found for credential of type %q", batch[i].VerifiableCredentialType)
+	}
+	return nil
 }
 
 // ParsedMdoc is what verifying an mso_mdoc yields beyond the generic fields:
@@ -95,10 +130,12 @@ type CredentialFormatParser interface {
 	// key binding.
 	ParseAndVerify(raw, credentialIssuer string, holderBindingKeyRequired bool) (*ParsedCredential, error)
 
-	// CheckBatchUniqueness validates cross-instance invariants across one
-	// full batch of credentials issued from a single credential request
-	// (e.g. rejecting a repeated holder-binding key within the batch).
-	CheckBatchUniqueness(batch []*ParsedCredential) error
+	// CheckBatch validates cross-instance invariants across one full batch
+	// of credentials issued from a single credential request: no
+	// holder-binding key is repeated, and the instances are identical apart from
+	// their cryptographic material, status entry, identifier and issuance
+	// time (requireIdenticalBatchInstances).
+	CheckBatch(batch []*ParsedCredential) error
 }
 
 // CredentialFormatParsers is a format -> parser registry.

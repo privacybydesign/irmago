@@ -91,7 +91,7 @@ func (d *numericDate) UnmarshalCBOR(data []byte) error {
 
 // verifiedStatusListCWT holds a CWT Status List Token whose signature, type
 // header, sub, and time bounds have been validated. StatusList.Lst is still
-// zlib-compressed; statusAt consumes it.
+// zlib-compressed; decode consumes it.
 type verifiedStatusListCWT struct {
 	payload cwtStatusListPayload
 }
@@ -100,12 +100,12 @@ func (v *verifiedStatusListCWT) ttlSignal() (time.Duration, bool) {
 	return ttlFromClaims(v.payload.TTLSeconds, int64(v.payload.Expiry))
 }
 
-func (v *verifiedStatusListCWT) statusAt(ref Reference, maxBytes int64) (Status, error) {
+func (v *verifiedStatusListCWT) decode(maxBytes int64) (*List, error) {
 	bits, err := decodeBitsRaw(v.payload.StatusList.Lst, maxBytes)
 	if err != nil {
-		return StatusUnknown, err
+		return nil, err
 	}
-	return statusAtIndex(bits, v.payload.StatusList.Bits, ref.Index)
+	return &List{bits: bits, bitSize: v.payload.StatusList.Bits}, nil
 }
 
 // verifyStatusList parses, signature-verifies, and time-checks a Status List

@@ -203,13 +203,13 @@ func TestStoreBatch_EmptyInstances(t *testing.T) {
 	require.Error(t, err)
 }
 
+// StoreBatch replaces a batch with the same hash, so the constraint is checked
+// with plain inserts.
 func TestStoreBatch_UniqueHashConstraint(t *testing.T) {
-	store := newTestCredentialStore(t)
+	d := newTestCredentialStore(t).(*sdJwtVcStore).db
 
-	require.NoError(t, store.StoreBatch(newBatch("hash-duplicate")))
-
-	err := store.StoreBatch(newBatch("hash-duplicate"))
-	require.Error(t, err)
+	require.NoError(t, d.Create(newBatch("hash-duplicate")).Error)
+	require.Error(t, d.Create(newBatch("hash-duplicate")).Error)
 }
 
 func TestStoreBatch_PersistsStatusListColumns(t *testing.T) {
@@ -609,4 +609,36 @@ func TestBatchLookupsPreloadDisplayMetadata(t *testing.T) {
 		require.NoError(t, err)
 		assertPreloaded(t, batch)
 	})
+}
+
+func TestStoreBatch_ReplacesTheSameCredential(t *testing.T) {
+	store := newTestCredentialStore(t)
+	require.NoError(t, store.StoreBatch(newBatch("hash-a")))
+	require.NoError(t, store.StoreBatch(newBatch("hash-b")))
+
+	reissued := newBatch("hash-a")
+	require.NoError(t, store.StoreBatch(reissued))
+
+	batches, err := store.GetCredentialBatchList()
+	require.NoError(t, err)
+	require.Len(t, batches, 2, "the re-issuance replaces the batch with its hash, and only that one")
+	stored, err := store.GetBatchByHash("hash-a")
+	require.NoError(t, err)
+	require.Equal(t, reissued.ID, stored.ID)
+}
+
+// The batch a re-issuance replaces is deleted in the transaction that stores
+// the new one, so a failed store rolls the delete back.
+func TestStoreBatch_FailedReplacementKeepsTheStoredCredential(t *testing.T) {
+	store := newTestCredentialStore(t)
+	original := newBatch("hash-a")
+	require.NoError(t, store.StoreBatch(original))
+
+	broken := newBatch("hash-a")
+	broken.Instances[0].RawCredential = nil // refused by the instance's own validation
+	require.Error(t, store.StoreBatch(broken))
+
+	stored, err := store.GetBatchByHash("hash-a")
+	require.NoError(t, err, "the stored credential must survive a replacement that failed")
+	require.Equal(t, original.ID, stored.ID)
 }

@@ -87,7 +87,7 @@ func (s *sdJwtVcCredentialService) List() ([]*clientmodels.Credential, error) {
 		display := ResolveBatchDisplay(batch, locale)
 		// Fall back to the vct when the issuer published no display text this
 		// locale can resolve. The DCQL handler does exactly this
-		// (eudi_sdjwt_dcql.credentialDisplayName), so without it the same
+		// (sdjwt_dcql.Engine.credentialDisplayName), so without it the same
 		// credential shows as a blank row in this list while the consent screen
 		// names it.
 		//
@@ -176,11 +176,11 @@ func (s *sdJwtVcCredentialService) Store(
 	// together. Per draft-ietf-oauth-status-list §13.2 each one-time-use copy
 	// MUST carry its OWN dedicated, distinct status entry (for unlinkability):
 	// require all-or-none presence and reject duplicate references. Reject here,
-	// before any side effects, so a malformed issuance can't delete the user's
-	// existing credential (computeHashAndDeleteExisting below is destructive).
+	// before anything is stored, so a malformed issuance fails before it
+	// touches the user's existing credential.
 	if err := validateStatusReferences(parsedCredentials); err != nil {
 		if requireCryptographicKeyBinding {
-			s.deleteOrphanedKeys(publicKeyIdentifiers)
+			deleteOrphanedKeys(s.holderBindingKeyStore, publicKeyIdentifiers)
 		}
 		return err
 	}
@@ -199,7 +199,7 @@ func (s *sdJwtVcCredentialService) Store(
 		var err error
 		matchedKeyIDs, err = matchAllHolderBindingKeys(parsedCredentials, publicKeyIdentifiers)
 		if err != nil {
-			s.deleteOrphanedKeys(publicKeyIdentifiers)
+			deleteOrphanedKeys(s.holderBindingKeyStore, publicKeyIdentifiers)
 			return err
 		}
 	}
@@ -213,9 +213,13 @@ func (s *sdJwtVcCredentialService) Store(
 		return fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
 	}
 
-	hash, err := s.computeHashAndDeleteExisting(first, processedPayload)
+	// A batch with this hash is the same credential issued before. The store
+	// replaces it in the transaction that stores this one: renewing is how a
+	// spent batch is topped up or a near-expiry one refreshed, since its claims
+	// do not change.
+	hash, err := hashForSdJwtVc(first.VerifiableCredentialType, first.IssuerIdentifier, processedPayload)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to compute credential hash: %w", err)
 	}
 
 	// Absent configuration is tolerated: everything read from it below is display
@@ -283,46 +287,6 @@ func (s *sdJwtVcCredentialService) Store(
 	return nil
 }
 
-// computeHashAndDeleteExisting computes the credential's content hash and makes
-// room for it: a stored batch with the same hash is deleted when it may be
-// replaced, and refused when it may not.
-//
-// A matching hash means the wallet already holds this credential: the hash
-// covers the credential type, the issuer identity and the resolved claims, so
-// re-issuing identical attributes from the same issuer lands here. What it
-// deliberately does not cover is anything that changes on every issuance of the
-// same content: salts, digest ids, holder keys, and the validity timestamps.
-//
-// Whether that is a duplicate worth refusing or a renewal worth accepting
-// depends on the batch already stored, which is why this is not a flat
-// rejection. Replacing a batch is destructive -- DeleteBatch cascades to the
-// instances and through them to the holder binding keys -- so replacing one
-// the wallet can still present throws away usable single-use attestations to
-// gain nothing but fresher timestamps.
-//
-// Refusing unconditionally would be worse, because attributes are exactly
-// what does not change on renewal. An age-verification credential asserts
-// age_over_18=true for as long as it exists, so every legitimate renewal --
-// batch spent, expiry approaching, new holder keys wanted -- carries the same
-// claims and arrives with this same hash. A wallet that refused them all
-// could never top up a spent batch and would go permanently unpresentable.
-//
-// So: refuse while the stored batch is still usable, replace once it is not.
-func (s *sdJwtVcCredentialService) computeHashAndDeleteExisting(p *ParsedCredential, processedPayload []byte) (string, error) {
-	hash, err := hashForSdJwtVc(p.VerifiableCredentialType, p.IssuerIdentifier, processedPayload)
-	if err != nil {
-		return "", fmt.Errorf("failed to compute credential hash: %w", err)
-	}
-
-	if existing, err := s.store.GetBatchByHash(hash); err == nil {
-		if err := s.store.DeleteBatch(existing.ID); err != nil {
-			return "", fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
-		}
-	}
-
-	return hash, nil
-}
-
 // statusReferenceOf returns the credential's Token Status List reference, for
 // either format, or the zero Reference when it carries none. The zero value
 // (empty URI) is a safe "absent" sentinel because a real reference always has a
@@ -338,37 +302,52 @@ func statusReferenceOf(p *ParsedCredential) statuslist.Reference {
 	}
 }
 
-// validateStatusReferences enforces the batch's Token Status List invariants from
-// draft-ietf-oauth-status-list §13.2/§13.3:
-//   - all-or-none: either every instance carries a status_list reference or none
-//     does (a partially-referenced batch would leave some instances
-//     status-checkable and others not);
-//   - uniqueness: each reference MUST be distinct across the batch. Every
-//     one-time-use copy needs its own dedicated (uri, idx) entry so presentations
-//     can't be correlated and to avoid double allocation (§13.3). Copies may
-//     differ by idx on one list or be spread across multiple Status List Tokens.
+// validateStatusReferences enforces the batch status invariants (see
+// requireDedicatedStatusEntries) for the Token Status List reference that
+// SD-JWT VC and mdoc credentials carry.
 func validateStatusReferences(parsedCredentials []*ParsedCredential) error {
-	firstHasRef := statusReferenceOf(parsedCredentials[0]) != (statuslist.Reference{})
-	seen := make(map[statuslist.Reference]int, len(parsedCredentials))
+	refs := make([][]statuslist.Reference, len(parsedCredentials))
 	for i, p := range parsedCredentials {
-		ref := statusReferenceOf(p)
-		hasRef := ref != (statuslist.Reference{})
-		if hasRef != firstHasRef {
+		if ref := statusReferenceOf(p); ref != (statuslist.Reference{}) {
+			refs[i] = []statuslist.Reference{ref}
+		}
+	}
+	return requireDedicatedStatusEntries("status_list", refs)
+}
+
+// requireDedicatedStatusEntries enforces a batch's status invariants for one
+// kind of status reference, given each instance's references of that kind:
+//   - all-or-none: either every instance carries a reference or none does (a
+//     partially-referenced batch would leave some instances status-checkable
+//     and others not);
+//   - uniqueness: no entry is shared between instances. Every one-time-use copy
+//     needs its own dedicated entry so presentations can't be correlated and to
+//     avoid double allocation (draft-ietf-oauth-status-list §13.2/§13.3; the
+//     same holds for a W3C Bitstring Status List position). Copies may differ
+//     by index on one list or be spread across several lists. One instance may
+//     use one entry for several purposes.
+//
+// The services run it before any side effects, so a malformed issuance can't
+// delete the user's existing credential.
+func requireDedicatedStatusEntries[K comparable](kind string, refs [][]K) error {
+	firstHasRef := len(refs[0]) > 0
+	seen := map[K]int{}
+	for i, instanceRefs := range refs {
+		if hasRef := len(instanceRefs) > 0; hasRef != firstHasRef {
 			return fmt.Errorf(
-				"partial status_list reference in batch: instance 0 hasRef=%t but instance %d hasRef=%t; either all instances carry a status_list reference or none do",
-				firstHasRef, i, hasRef,
+				"partial %s reference in batch: instance 0 hasRef=%t but instance %d hasRef=%t; either all instances carry a %s reference or none do",
+				kind, firstHasRef, i, hasRef, kind,
 			)
 		}
-		if !hasRef {
-			continue
+		for _, ref := range instanceRefs {
+			if prev, dup := seen[ref]; dup && prev != i {
+				return fmt.Errorf(
+					"duplicate %s reference in batch: instances %d and %d both use %+v; each one-time-use copy MUST have a dedicated entry",
+					kind, prev, i, ref,
+				)
+			}
+			seen[ref] = i
 		}
-		if prev, dup := seen[ref]; dup {
-			return fmt.Errorf(
-				"duplicate status_list reference in batch: instances %d and %d both use %+v; each one-time-use copy MUST have a dedicated entry (draft-ietf-oauth-status-list §13.2)",
-				prev, i, ref,
-			)
-		}
-		seen[ref] = i
 	}
 	return nil
 }
@@ -472,7 +451,7 @@ func matchAllHolderBindingKeys(
 
 	result := make([]datatypes.UUID, len(parsedCredentials))
 	for i, p := range parsedCredentials {
-		cnf := p.SdJwtVc.IssuerSignedJwtPayload.Confirm
+		cnf := p.holderConfirmation()
 		if cnf == nil {
 			return nil, fmt.Errorf("credential %d requires holder binding but has no cnf claim", i)
 		}
@@ -517,19 +496,21 @@ func matchHolderBindingKey(cnf *sdjwt.CnfField, keyByThumbprint map[string]datat
 	return datatypes.UUID{}, fmt.Errorf("no matching holder binding key found for cnf claim")
 }
 
-func (s *sdJwtVcCredentialService) deleteOrphanedKeys(publicKeyIdentifiers []models.PublicHolderBindingKey) {
+// deleteOrphanedKeys deletes the holder binding keys made for a credential
+// that was not stored after all.
+func deleteOrphanedKeys(store db.HolderBindingKeyStore, publicKeyIdentifiers []models.PublicHolderBindingKey) {
 	ids := make([]datatypes.UUID, len(publicKeyIdentifiers))
 	for i, pk := range publicKeyIdentifiers {
 		ids[i] = pk.ID
 	}
-	if err := s.holderBindingKeyStore.DeleteKeys(ids); err != nil {
+	if err := store.DeleteKeys(ids); err != nil {
 		eudi.Logger.Warnf("failed to clean up orphaned holder binding keys: %v", err)
 	}
 }
 
 func (s *sdJwtVcCredentialService) linkHolderBindingKeys(keyIDs []datatypes.UUID, instances []models.SdJwtVcBatchInstance) {
 	for i, keyID := range keyIDs {
-		if err := s.holderBindingKeyStore.LinkToInstance(keyID, instances[i].ID); err != nil {
+		if err := s.holderBindingKeyStore.LinkToSdJwtVcInstance(keyID, instances[i].ID); err != nil {
 			eudi.Logger.Warnf("failed to link holder binding key %s to instance %s: %v", keyID, instances[i].ID, err)
 		}
 	}
