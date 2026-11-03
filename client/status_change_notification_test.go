@@ -49,6 +49,7 @@ func newClientForStatusRefresh(t *testing.T, signer *statuslist.TestStatusListSi
 
 	c.revocationService = services.NewRevocationService(
 		newStatusChecker(signer),
+		nil,
 		db.NewSdJwtVcStore(c.eudiStorage.Db()),
 	)
 
@@ -213,7 +214,7 @@ func TestRefreshStatusesNotifiesOnChangeCommittedBeforeCancellation(t *testing.T
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	c.revocationService = services.NewRevocationService(newStatusChecker(signer), &cancellingStore{
+	c.revocationService = services.NewRevocationService(newStatusChecker(signer), nil, &cancellingStore{
 		SdJwtVcStore: db.NewSdJwtVcStore(c.eudiStorage.Db()),
 		cancel:       cancel,
 	})

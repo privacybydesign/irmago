@@ -13,17 +13,17 @@ import (
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
-// SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC credentials.
-type SdJwtVcDcqlHandler struct {
+// Handler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC credentials.
+type Handler struct {
 	storage       irmaclient.SdJwtVcStorage
 	config        *irma.Configuration
 	keyBinder     sdjwt.KeyBinder
 	currentLocale *clientmodels.CurrentLocale
 }
 
-// NewIrmaSdJwtVcDcqlHandler creates a new handler for DCQL credential queries for SD-JWT-VC credentials issued over IRMA.
-func NewIrmaSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.Configuration, keyBinder sdjwt.KeyBinder, currentLocale *clientmodels.CurrentLocale) *SdJwtVcDcqlHandler {
-	return &SdJwtVcDcqlHandler{
+// New creates a new handler for DCQL credential queries for SD-JWT-VC credentials issued over IRMA.
+func New(storage irmaclient.SdJwtVcStorage, config *irma.Configuration, keyBinder sdjwt.KeyBinder, currentLocale *clientmodels.CurrentLocale) *Handler {
+	return &Handler{
 		storage:       storage,
 		config:        config,
 		keyBinder:     keyBinder,
@@ -31,13 +31,13 @@ func NewIrmaSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.C
 	}
 }
 
-// Compile-time check that SdJwtVcDcqlHandler implements the interface.
-var _ dcql.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
+// Compile-time check that Handler implements the interface.
+var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 
 // CanHandleCredentialQuery returns true when the format is dc+sd-jwt and at least
 // one vct_value is a dot-separated IRMA credential type identifier found in the
 // IRMA configuration (e.g., "test.test.email").
-func (h *SdJwtVcDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
+func (h *Handler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
 	if query.Format != "dc+sd-jwt" {
 		return false
 	}
@@ -55,7 +55,7 @@ func (h *SdJwtVcDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery
 }
 
 // FindCandidates finds all credential instances that match the given DCQL credential query.
-func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQueryResult, error) {
+func (h *Handler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQueryResult, error) {
 	result := &dcql.CredentialQueryResult{}
 
 	// For each VCT value, find matching credentials from storage
@@ -90,7 +90,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 }
 
 // PrepareDisclosure prepares the selected credentials for inclusion in the VP token.
-func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
+func (h *Handler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
 	for _, sel := range selections {
@@ -230,7 +230,7 @@ type sdJwtVcCredCandidate struct {
 }
 
 // filterCredentialsWithClaims returns only credentials that have ALL required claims.
-func (h *SdJwtVcDcqlHandler) filterCredentialsWithClaims(entries []irmaclient.SdJwtVcAndInfo, query dcql.CredentialQuery) ([]sdJwtVcCredCandidate, error) {
+func (h *Handler) filterCredentialsWithClaims(entries []irmaclient.SdJwtVcAndInfo, query dcql.CredentialQuery) ([]sdJwtVcCredCandidate, error) {
 	var result []sdJwtVcCredCandidate
 	for _, e := range entries {
 		claimMatches := getClaimMatchesForQuery(e.Metadata, query.Claims)
@@ -250,7 +250,7 @@ func (h *SdJwtVcDcqlHandler) filterCredentialsWithClaims(entries []irmaclient.Sd
 
 // buildSelectableInstance creates a SelectableCredentialInstance with full display metadata
 // for a matched credential candidate.
-func (h *SdJwtVcDcqlHandler) buildSelectableInstance(candidate sdJwtVcCredCandidate, query dcql.CredentialQuery) (*clientmodels.SelectableCredentialInstance, error) {
+func (h *Handler) buildSelectableInstance(candidate sdJwtVcCredCandidate, query dcql.CredentialQuery) (*clientmodels.SelectableCredentialInstance, error) {
 	metadata := candidate.entry.Metadata
 	credTypeId := irma.NewCredentialTypeIdentifier(metadata.CredentialType)
 
@@ -296,7 +296,7 @@ func (h *SdJwtVcDcqlHandler) buildSelectableInstance(candidate sdJwtVcCredCandid
 }
 
 // buildMatchedAttributes builds Attribute objects for the matched claims with display names and values.
-func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
+func (h *Handler) buildMatchedAttributes(
 	credType *irma.CredentialType,
 	matches []dcqlClaimMatch,
 	metadata irmaclient.SdJwtVcBatchMetadata,
@@ -397,7 +397,7 @@ func sortAttributesBySchema(attrs []clientmodels.Attribute, credType *irma.Crede
 
 // buildCredentialDescriptor creates a CredentialDescriptor for an obtainable credential type,
 // with only the requested attributes from the query.
-func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.CredentialTypeIdentifier, query dcql.CredentialQuery) (*clientmodels.CredentialDescriptor, error) {
+func (h *Handler) buildCredentialDescriptor(credTypeId irma.CredentialTypeIdentifier, query dcql.CredentialQuery) (*clientmodels.CredentialDescriptor, error) {
 	credType, ok := h.config.CredentialTypes[credTypeId]
 	if !ok {
 		return nil, fmt.Errorf("credential type %s not found in configuration", credTypeId.String())
@@ -483,7 +483,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 }
 
 // buildLogCredential creates a LogCredential for a disclosed credential.
-func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatchMetadata, disclosedClaimPaths [][]any) clientmodels.LogCredential {
+func (h *Handler) buildLogCredential(metadata irmaclient.SdJwtVcBatchMetadata, disclosedClaimPaths [][]any) clientmodels.LogCredential {
 	credTypeId := irma.NewCredentialTypeIdentifier(metadata.CredentialType)
 	locale := h.currentLocale.Get()
 

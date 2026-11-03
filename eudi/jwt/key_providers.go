@@ -54,7 +54,8 @@ func NewJwtKeyProvider(allowedTyps []string, allowInsecure bool) *JwtKeyProvider
 
 // FetchKeys validates the 'typ' header against allowedTyps and dispatches to
 // X509KeyProvider or KidKeyProvider depending on which header is present.
-// 'typ' MUST be present in the protected header and MUST be one of allowedTyps.
+// 'typ' MUST be present in the protected header and MUST name one of
+// allowedTyps, compared as media types (TypMatches).
 func (p *JwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
 	// If no signature is present, we cannot/do not need resolve the key to verify the signature.
 	if sig == nil {
@@ -62,7 +63,7 @@ func (p *JwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 	}
 
 	typ, ok := sig.ProtectedHeaders().Type()
-	if !ok || !slices.Contains(p.allowedTyps, typ) {
+	if !ok || !slices.ContainsFunc(p.allowedTyps, func(allowed string) bool { return TypMatches(typ, allowed) }) {
 		return fmt.Errorf("invalid 'typ' header: %v", typ)
 	}
 
@@ -182,6 +183,12 @@ type DidKeyProvider struct {
 	// timeout-bounded client (didweb.NewHTTPClient); tests inject their own.
 	httpClient    *http.Client
 	allowInsecure bool
+
+	// SignerDid is the DID whose document the verification key came from, set
+	// once FetchKeys found one: the iss claim, or, without one, the DID of an
+	// absolute kid. The caller binds it to the issuer it expects, since the
+	// key is that DID's own and nothing else.
+	SignerDid string
 }
 
 func NewDidKeyProvider(kidHeader string, allowInsecure bool) *DidKeyProvider {
@@ -217,14 +224,21 @@ func (p *DidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 		return fmt.Errorf("cannot resolve key identifier: failed to parse JWT payload: %v", err)
 	}
 
-	issClaim, ok := jwtPayload.Issuer()
+	// The DID to resolve is the iss claim. Without one, VC-JOSE-COSE §4.2 has
+	// the kid be an absolute URL to the verification method, so its DID is
+	// used instead. Otherwise we return without setting a key on the sink, so
+	// that the signature verification fails later.
+	signerDid, ok := jwtPayload.Issuer()
 	if !ok {
-		// If the iss claim is not present, we cannot resolve the key identifier using the kid header. We return without setting a key on the sink, so that the signature verification will fail later.
-		return nil
+		var found bool
+		signerDid, _, found = strings.Cut(p.kidHeader, "#")
+		if !found || signerDid == "" {
+			return nil
+		}
 	}
 
-	if !strings.HasPrefix(issClaim, didweb.Prefix) && !strings.HasPrefix(issClaim, didjwk.Prefix) {
-		// If the iss claim is not a did:web or did:jwk DID, we cannot resolve the key identifier.
+	if !strings.HasPrefix(signerDid, didweb.Prefix) && !strings.HasPrefix(signerDid, didjwk.Prefix) {
+		// If the DID is not a did:web or did:jwk DID, we cannot resolve the key identifier.
 		// We return without setting a key on the sink, so that the signature verification will fail later.
 		return nil
 	}
@@ -232,10 +246,10 @@ func (p *DidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 	// TODO: move parts to DID resolution package, so that the same code can be reused for SD-JWT VC verification and Status List Token verification.
 	fullKid := p.kidHeader
 	if strings.HasPrefix(p.kidHeader, "#") {
-		fullKid = issClaim + p.kidHeader
+		fullKid = signerDid + p.kidHeader
 	}
 
-	doc, err := p.resolveDidDocument(issClaim)
+	doc, err := p.resolveDidDocument(signerDid)
 	if err != nil {
 		return fmt.Errorf("failed to resolve did document for kid: %v", err)
 	}
@@ -262,6 +276,7 @@ func (p *DidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 			}
 
 			sink.Key(alg, pk)
+			p.SignerDid = signerDid
 			return nil
 		}
 	}
@@ -271,20 +286,20 @@ func (p *DidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 
 // resolveDidDocument resolves the DID document for the issuer DID, dispatching on the DID method.
 // Supports did:web (fetched over HTTPS) and did:jwk (synthesized from the embedded JWK).
-func (p *DidKeyProvider) resolveDidDocument(issClaim string) (*did.Document, error) {
+func (p *DidKeyProvider) resolveDidDocument(signerDid string) (*did.Document, error) {
 	switch {
-	case strings.HasPrefix(issClaim, didjwk.Prefix):
-		return didjwk.ResolveDocument(issClaim)
+	case strings.HasPrefix(signerDid, didjwk.Prefix):
+		return didjwk.ResolveDocument(signerDid)
 
-	case strings.HasPrefix(issClaim, didweb.Prefix):
+	case strings.HasPrefix(signerDid, didweb.Prefix):
 		resolver := didweb.DocumentResolver{
 			HTTPClient:    p.httpClient,
 			AllowInsecure: p.allowInsecure,
 		}
-		return resolver.Resolve(issClaim)
+		return resolver.Resolve(signerDid)
 
 	default:
-		return nil, fmt.Errorf("unsupported DID method for kid resolution: %s", issClaim)
+		return nil, fmt.Errorf("unsupported DID method for kid resolution: %s", signerDid)
 	}
 }
 
