@@ -1,0 +1,364 @@
+package vcdmsdjwt
+
+import (
+	"context"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"slices"
+	"time"
+
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
+	"github.com/privacybydesign/irmago/eudi/credentials/bitstringstatus"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmstatus"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/utils"
+)
+
+// ClockSkewInSeconds is the tolerance applied when checking time-based claims
+// (JWT iat/exp/nbf and the VCDM validity period). It matches
+// sdjwtvc.ClockSkewInSeconds (180s); kept as an independent local constant
+// rather than shared, so this package does not depend on sdjwtvc.
+const ClockSkewInSeconds = 180
+
+// VerificationContext carries the options for verifying an SD-JWT-secured VCDM
+// credential, on receipt by the holder.
+type VerificationContext struct {
+	eudi_jwt.X509VerificationContext
+
+	// Clock supplies "now" for verifying iat/nbf/exp and the VCDM validity
+	// period.
+	Clock jwt.Clock
+
+	// StatusChecker and BitstringStatusChecker, when set, check the
+	// credential's IETF Token Status List and W3C Bitstring Status List
+	// references, and reject it unless every one reads valid. A credential
+	// without status references is not checked.
+	StatusChecker          *statuslist.Checker
+	BitstringStatusChecker *bitstringstatus.Checker
+}
+
+// CreateDefaultVerificationContext builds a VerificationContext that trusts the
+// given PEM issuer certificate chain (X.509 root/intermediates) and uses the
+// system clock, mirroring sdjwtvc.CreateDefaultVerificationContext.
+func CreateDefaultVerificationContext(trustedChain []byte) VerificationContext {
+	opts, err := utils.CreateX509VerifyOptionsFromCertChain(trustedChain)
+	if err != nil {
+		panic(fmt.Errorf("failed to create X509 verification options: %v", err))
+	}
+	return VerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: *opts,
+		},
+		Clock: eudi_jwt.NewSystemClock(),
+	}
+}
+
+// VerifiedSdJwtVcdm is the result of verifying an SD-JWT-secured VCDM
+// credential: the validated VCDM document (the disclosed logical document), the
+// SD-JWT registered claims that secured it, and the disclosures.
+type VerifiedSdJwtVcdm struct {
+	// Document is the disclosed, structurally-validated VCDM 2.0 document.
+	Document vcdm.Document
+
+	// RegisteredClaims are the SD-JWT / JWT registered claims from the
+	// issuer-signed JWT (iss, sub, iat, exp, nbf, cnf, _sd, _sd_alg).
+	RegisteredClaims sdjwt.RegisteredClaims
+
+	// Disclosures are the decoded selective-disclosure values that were
+	// merged into Document.
+	Disclosures []sdjwt.DisclosureContent
+
+	rawSdJwtVcdm SdJwtVcdm
+}
+
+// GetRawSdJwtVcdm returns the raw SD-JWT-secured VCDM credential (issuer-signed
+// JWT + disclosures, without any KB-JWT) for storage.
+func (v *VerifiedSdJwtVcdm) GetRawSdJwtVcdm() SdJwtVcdm {
+	return v.rawSdJwtVcdm
+}
+
+// HolderPublicKey resolves the holder confirmation key from the credential's
+// `cnf` claim, supporting both the `cnf.jwk` and `cnf.kid` (did:jwk / did:key)
+// forms via the shared eudi/sdjwt resolver. Returns an error when no `cnf` is
+// present. This is the seam that lets a later disclosure step bind a KB-JWT
+// without this layer having to know how the holder key was expressed.
+func (v *VerifiedSdJwtVcdm) HolderPublicKey() (jwk.Key, error) {
+	_, key, err := sdjwt.ExtractHashingAlgorithmAndHolderPubKey(sdjwt.SdJwt(v.rawSdJwtVcdm))
+	return key, err
+}
+
+// processor verifies an SD-JWT-secured VCDM credential.
+type processor struct {
+	verificationContext VerificationContext
+	allowInsecureDidWeb bool
+}
+
+func (p *processor) processAndVerify(credential SdJwtVcdmKb) (*VerifiedSdJwtVcdm, error) {
+	issuerSignedJwt, disclosures, rawSdJwt, rawKbJwt, err := sdjwt.SplitKb(sdjwt.SdJwtKb(credential))
+	if err != nil {
+		return nil, err
+	}
+	if rawKbJwt != nil {
+		return nil, errors.New("key binding jwt found in SD-JWT-secured VCDM, but holder should not receive one from the issuer")
+	}
+
+	registered, document, decodedDisclosures, err := p.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := p.runStatusCheck(document); err != nil {
+		return nil, err
+	}
+
+	return &VerifiedSdJwtVcdm{
+		Document:         document,
+		RegisteredClaims: *registered,
+		Disclosures:      decodedDisclosures,
+		rawSdJwtVcdm:     SdJwtVcdm(rawSdJwt),
+	}, nil
+}
+
+// runStatusCheck rejects a credential whose status does not read valid, or
+// cannot be read. Fail-closed, like sdjwtvc's runStatusListCheck, and for the
+// same reason without a caller context: the checkers bound their own requests.
+func (p *processor) runStatusCheck(document vcdm.Document) error {
+	refs, err := vcdmstatus.ParseStatusReferences(document)
+	if err != nil {
+		return fmt.Errorf("failed to parse status references: %w", err)
+	}
+	issuer, err := document.IssuerID()
+	if err != nil {
+		return err
+	}
+	status, err := vcdmstatus.CheckStatus(context.Background(), refs, issuer, vcdmstatus.Checkers{
+		TokenStatusList: p.verificationContext.StatusChecker,
+		Bitstring:       p.verificationContext.BitstringStatusChecker,
+	})
+	if err != nil {
+		return err
+	}
+	if status != statuslist.StatusValid {
+		return fmt.Errorf("credential status is %s, not valid", status)
+	}
+	return nil
+}
+
+func (p *processor) parseAndVerifyIssuerSignedJwt(
+	signedJwt sdjwt.IssuerSignedJwt,
+	disclosures []sdjwt.EncodedDisclosure,
+) (*sdjwt.RegisteredClaims, vcdm.Document, []sdjwt.DisclosureContent, error) {
+	// Step 1: verify the issuer signature (X.509 x5c or DID kid) and the `typ`.
+	token, leafCert, signerDid, err := p.decodeJwtAndVerifyFromHeader([]byte(signedJwt))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Step 2: extract SD-JWT / JWT registered claims.
+	registered, err := sdjwt.ExtractRegisteredClaims(token)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Step 3: verify and merge disclosures into the full logical payload.
+	claims, err := sdjwt.ExtractClaimsAndDisclosureDigestsFromToken(token)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
+	}
+	signedInPlain, err := validationPropertiesInPlain(claims)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	processed, decodedDisclosures, err := sdjwt.VerifyAndProcessDisclosures(registered.SdAlg, &claims, disclosures)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	for _, key := range vcdm.ValidationProperties {
+		if _, ok := processed[key]; ok && !signedInPlain[key] {
+			return nil, nil, nil, errSelectivelyDisclosable(key)
+		}
+	}
+
+	// The JWT time fields and iss are checked in the processed payload (RFC 9901
+	// §7.1 step 6), so making them selectively disclosable does not escape the
+	// checks.
+	if err := registered.AddDisclosedClaims(processed); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := registered.VerifyTimes(p.verificationContext.Clock.Now(), ClockSkewInSeconds*time.Second); err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Step 4: the decoded payload must actually be a VCDM document. A
+	// `vct`-typed SD-JWT VC payload signed as `vc+sd-jwt` verifies its signature
+	// fine but is not ours — reject it here rather than mis-validate.
+	payload := map[string]any(processed)
+	if !vcdm.IsVCDM(payload) {
+		return nil, nil, nil, fmt.Errorf(
+			"payload is not an SD-JWT-secured VCDM credential (detected data model: %s)", vcdm.Detect(payload))
+	}
+	document := vcdm.Document(payload)
+
+	// Step 5 (VCDM 2.0 §7.1): structural validation AFTER proof verification.
+	if err := document.Validate(); err != nil {
+		return nil, nil, nil, err
+	}
+	// Validate has checked the issuer.
+	issuerID, _ := document.IssuerID()
+
+	// The document's validFrom/validUntil are not checked against the clock:
+	// they are the validity of the data, which is for a verifier to judge
+	// (VCDM 2.0 Appendix A.7). The wallet checks the credential itself, whose
+	// signature validity the JWT exp/nbf carry (step 2).
+
+	// Step 6 (VC-JOSE-COSE §3.2.1): when the JWT `iss` claim is present it MUST
+	// equal the VCDM `issuer`.
+	if registered.Issuer != nil && *registered.Issuer != issuerID {
+		return nil, nil, nil, fmt.Errorf(
+			"JWT iss %q does not match VCDM issuer %q", *registered.Issuer, issuerID)
+	}
+
+	// Step 7: the signer must be the issuer. An x5c-authenticated issuer must
+	// not be able to claim another issuer's identity, so the VCDM `issuer` (and
+	// with it `iss`, equal per step 6) must name the leaf certificate. A DID key
+	// is the key of the DID it was resolved from: `iss`, or, without `iss`, the
+	// DID of an absolute `kid` (VC-JOSE-COSE §4.2), which must then be the
+	// `issuer` itself.
+	if signerDid != "" && signerDid != issuerID {
+		return nil, nil, nil, fmt.Errorf("signed with a key of %q, not of the VCDM issuer %q", signerDid, issuerID)
+	}
+	if leafCert != nil {
+		if err := utils.VerifyCertificateUri(leafCert, issuerID); err != nil {
+			return nil, nil, nil, fmt.Errorf("VCDM issuer %q is not a SAN of the issuer certificate: %w", issuerID, err)
+		}
+	}
+
+	decodedValues := make([]sdjwt.DisclosureContent, len(decodedDisclosures))
+	for i, d := range decodedDisclosures {
+		decodedValues[i] = *d
+	}
+
+	return registered, document, decodedValues, nil
+}
+
+// decodeJwtAndVerifyFromHeader parses the issuer-signed JWT, verifying its
+// signature via the shared eudi/jwt key provider (X.509 `x5c` or DID `kid`) and
+// its `typ` against the SD-JWT-secured VCDM media type. When an X.509 chain is
+// used, the whole chain is additionally verified against the trusted
+// roots/intermediates and revocation lists, and its leaf certificate is
+// returned; it is nil when the key came from a DID. When it did, the DID it
+// came from is returned instead, for the caller to bind to the issuer.
+func (p *processor) decodeJwtAndVerifyFromHeader(signedJwt []byte) (jwt.Token, *x509.Certificate, string, error) {
+	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{MediaTypeVcSdJwt}, p.allowInsecureDidWeb)
+
+	token, err := jwt.Parse(signedJwt,
+		jwt.WithKeyProvider(keyProvider),
+		jwt.WithClock(p.verificationContext.Clock),
+		jwt.WithAcceptableSkew(ClockSkewInSeconds*time.Second),
+		jwt.WithVerify(true),
+	)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("failed to parse JWT: %v", err)
+	}
+
+	// A DID `kid` resolves its key from the DID document: no chain to check,
+	// but the DID to bind. If an X.509 chain was used, validate it against the
+	// trust anchors + CRLs.
+	if didKeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.DidKeyProvider); ok {
+		return token, nil, didKeyProvider.SignerDid, nil
+	}
+	x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider)
+	if !ok {
+		return token, nil, "", nil
+	}
+	chain, err := x509KeyProvider.GetChain()
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("failed to get certificate chain from provider: %v", err)
+	}
+	if err := eudi_jwt.VerifyCertificateChain(p.verificationContext.X509VerificationContext, chain, nil); err != nil {
+		return nil, nil, "", fmt.Errorf("failed to verify certificate: %v", err)
+	}
+	return token, chain[0], "", nil
+}
+
+// ============================= Holder processing =====================================
+
+// HolderVerificationProcessor verifies an SD-JWT-secured VCDM credential as
+// received by the holder over OpenID4VCI: the issuer signature, disclosures,
+// VCDM structure and validity, and that no KB-JWT is present (the issuer must
+// not send one).
+type HolderVerificationProcessor struct {
+	processor
+}
+
+func NewHolderVerificationProcessor(verificationContext VerificationContext) *HolderVerificationProcessor {
+	return &HolderVerificationProcessor{processor{verificationContext: verificationContext}}
+}
+
+// SetAllowInsecureDidWeb enables resolving did:web issuer DIDs over HTTP instead
+// of HTTPS. Only for developer mode.
+func (v *HolderVerificationProcessor) SetAllowInsecureDidWeb(allow bool) {
+	v.allowInsecureDidWeb = allow
+}
+
+// ParseAndVerifySdJwtVcdm verifies an SD-JWT-secured VCDM credential received by
+// the holder, using the options in the verification context.
+func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVcdm(credential SdJwtVcdmKb) (*VerifiedSdJwtVcdm, error) {
+	return v.processor.processAndVerify(credential)
+}
+
+// validationPropertiesInPlain returns which of vcdm.ValidationProperties the
+// issuer-signed claims carry, before any disclosure is applied, and refuses one
+// that has a selectively-disclosable value nested in it. Together with the
+// check that no such property appears only after the disclosures are applied,
+// this keeps them all out of the disclosures: VC-JOSE-COSE §3.2.1 says they
+// SHOULD NOT be selectively disclosable, and OpenID4VP §6.4 does not let the
+// wallet disclose them when the verifier did not ask, so a presentation would
+// lack what the verifier needs to validate the credential.
+func validationPropertiesInPlain(claims map[string]any) (map[string]bool, error) {
+	inPlain := map[string]bool{}
+	for _, key := range vcdm.ValidationProperties {
+		value, ok := claims[key]
+		if !ok {
+			continue
+		}
+		if hasDisclosureDigest(value) {
+			return nil, errSelectivelyDisclosable(key)
+		}
+		inPlain[key] = true
+	}
+	return inPlain, nil
+}
+
+// hasDisclosureDigest reports whether value holds a digest of a disclosure:
+// an `_sd` array in an object, or a `{"...": digest}` array element.
+func hasDisclosureDigest(value any) bool {
+	switch v := value.(type) {
+	case map[string]any:
+		if _, ok := v[sdjwt.SdKey]; ok {
+			return true
+		}
+		if _, ok := v[sdjwt.EllipsisKey]; ok {
+			return true
+		}
+		for _, child := range v {
+			if hasDisclosureDigest(child) {
+				return true
+			}
+		}
+	case []any:
+		if slices.ContainsFunc(v, hasDisclosureDigest) {
+			return true
+		}
+	}
+	return false
+}
+
+func errSelectivelyDisclosable(key string) error {
+	return fmt.Errorf("%w: %q is selectively disclosable, but a verifier needs it to validate the credential (VC-JOSE-COSE §3.2.1)", vcdm.ErrMalformed, key)
+}

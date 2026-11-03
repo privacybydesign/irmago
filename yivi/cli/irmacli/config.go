@@ -13,6 +13,7 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/privacybydesign/irmago/irma/server/keyshare"
+	"github.com/privacybydesign/irmago/irma/server/usage"
 	"github.com/privacybydesign/irmago/yivi/cli/internal/clihelpers"
 
 	"github.com/go-errors/errors"
@@ -86,6 +87,15 @@ func configureIRMAServer() (*server.Configuration, error) {
 		AllowUnsignedCallbacks: viper.GetBool("allow_unsigned_callbacks"),
 		AugmentClientReturnURL: viper.GetBool("augment_client_return_url"),
 		SdJwtIssuanceSettings:  getSdJwtIssuanceConfigFromCli(),
+		UsageReporting: &usage.Settings{
+			Disabled:       viper.GetBool("usage_reporting_disabled"),
+			PortalURL:      viper.GetString("usage_reporting_portal_url"),
+			Interval:       viper.GetDuration("usage_reporting_interval"),
+			StateDir:       viper.GetString("usage_reporting_state_dir"),
+			AccountKeyFile: viper.GetString("usage_reporting_account_key_file"),
+			ServerInstance: viper.GetString("usage_reporting_server_instance"),
+			CountIssuance:  viper.GetBool("usage_reporting_count_issuance"),
+		},
 	}
 
 	// Parse session store configuration

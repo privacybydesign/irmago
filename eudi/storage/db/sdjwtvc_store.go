@@ -14,9 +14,11 @@ import (
 // SdJwtVcBatchInstance copies and the display metadata tree hanging off them.
 // SD-JWT VC only; mso_mdoc has its own store (MdocStore).
 type SdJwtVcStore interface {
-	// StoreBatch inserts a SdJwtVcBatch and all its IssuedCredentialInstances atomically.
-	// batch.Instances must be non-empty. GORM sets each instance's BatchID automatically
-	// before running the instance's BeforeCreate hook.
+	// StoreBatch inserts a SdJwtVcBatch and all its IssuedCredentialInstances,
+	// replacing any batch with the same hash, in one transaction: a re-issuance
+	// that fails to store leaves the batch it would have replaced in place.
+	// batch.Instances must be non-empty. GORM sets each instance's BatchID
+	// automatically before running the instance's BeforeCreate hook.
 	StoreBatch(batch *models.SdJwtVcBatch) error
 
 	// GetCredentialBatchList returns a list of all stored credential batches with preloaded batch metadata, but without preloading instances.
@@ -108,7 +110,18 @@ func (s *sdJwtVcStore) StoreBatch(batch *models.SdJwtVcBatch) error {
 		return fmt.Errorf("batch must contain at least one credential instance")
 	}
 
-	return s.db.Create(batch).Error
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var existing []datatypes.UUID
+		if err := tx.Model(&models.SdJwtVcBatch{}).Where("hash = ?", batch.Hash).Pluck("id", &existing).Error; err != nil {
+			return err
+		}
+		for _, id := range existing {
+			if err := deleteSdJwtVcBatch(tx, id); err != nil {
+				return fmt.Errorf("failed to delete the batch this one replaces: %w", err)
+			}
+		}
+		return tx.Create(batch).Error
+	})
 }
 
 func (s *sdJwtVcStore) GetBatchByHash(hash string) (*models.SdJwtVcBatch, error) {
@@ -188,14 +201,19 @@ func (s *sdJwtVcStore) DeleteBatch(batchID datatypes.UUID) error {
 		return fmt.Errorf("batchID is required")
 	}
 
-	res := s.db.Delete(&models.SdJwtVcBatch{}, "id = ?", batchID)
+	return deleteSdJwtVcBatch(s.db, batchID)
+}
+
+// deleteSdJwtVcBatch deletes a batch within tx; the cascade removes its
+// instances. Returns ErrNotFound if no batch has that id.
+func deleteSdJwtVcBatch(tx *gorm.DB, batchID datatypes.UUID) error {
+	res := tx.Delete(&models.SdJwtVcBatch{}, "id = ?", batchID)
 	if res.Error != nil {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
 		return ErrNotFound
 	}
-
 	return nil
 }
 

@@ -647,7 +647,7 @@ func withAvDisplayMetadata(batch *models.MdocBatch) {
 // newAvMdocHandler builds the handler the way client.New does, device key binder
 // included: these tests are the closest thing the package has to the real wiring,
 // so a handler assembled differently here would stop being evidence about it.
-func newAvMdocHandler(t *testing.T, eudiStorage storage.Storage) *mdoc_dcql.MdocDcqlHandler {
+func newAvMdocHandler(t *testing.T, eudiStorage storage.Storage) *mdoc_dcql.Handler {
 	t.Helper()
 
 	return newAvMdocHandlerForLocale(t, eudiStorage, "en")
@@ -655,10 +655,10 @@ func newAvMdocHandler(t *testing.T, eudiStorage storage.Storage) *mdoc_dcql.Mdoc
 
 // newAvMdocHandlerForLocale is newAvMdocHandler with the wallet's UI locale
 // under the test's control, which is what the per-locale display assertions need.
-func newAvMdocHandlerForLocale(t *testing.T, eudiStorage storage.Storage, locale string) *mdoc_dcql.MdocDcqlHandler {
+func newAvMdocHandlerForLocale(t *testing.T, eudiStorage storage.Storage, locale string) *mdoc_dcql.Handler {
 	t.Helper()
 
-	return mdoc_dcql.NewMdocDcqlHandler(
+	return mdoc_dcql.New(
 		eudiStorage,
 		db.NewMdocStore(eudiStorage.Db()),
 		clientmodels.NewCurrentLocale(locale),

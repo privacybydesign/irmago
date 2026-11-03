@@ -329,18 +329,18 @@ func mustCborMarshal(t *testing.T, value any) []byte {
 	return encoded
 }
 
-func TestMdocCredentialFormatParser_CheckBatchUniqueness(t *testing.T) {
+func TestMdocCredentialFormatParser_CheckBatch(t *testing.T) {
 	parser := NewMdocCredentialFormatParser(nil)
 
 	thumbprint := "same-thumbprint"
-	err := parser.CheckBatchUniqueness([]*ParsedCredential{
+	err := parser.CheckBatch([]*ParsedCredential{
 		{Mdoc: &ParsedMdoc{DeviceKeyThumbprint: thumbprint}},
 		{Mdoc: &ParsedMdoc{DeviceKeyThumbprint: thumbprint}},
 	})
 	require.Error(t, err)
 
 	other := "different-thumbprint"
-	err = parser.CheckBatchUniqueness([]*ParsedCredential{
+	err = parser.CheckBatch([]*ParsedCredential{
 		{Mdoc: &ParsedMdoc{DeviceKeyThumbprint: thumbprint}},
 		{Mdoc: &ParsedMdoc{DeviceKeyThumbprint: other}},
 	})

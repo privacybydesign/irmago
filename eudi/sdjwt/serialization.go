@@ -18,30 +18,42 @@ type SdJwt string
 // SdJwtKb represents an encoded SD-JWT as a string, be it with or without disclosures, potentially with a key binding jwt (which needs to be determined by processing)
 type SdJwtKb string
 
+// disclosureSeparator is the ~ that terminates every SD-JWT component
+const disclosureSeparator = '~'
+
+// Create joins the issuer-signed JWT and every disclosure, each terminated by
+// a ~, in one allocation.
 func Create(issJwt IssuerSignedJwt, disclosures []EncodedDisclosure) SdJwt {
-	discs := ""
+	size := len(issJwt) + 1
 	for _, d := range disclosures {
-		discs = fmt.Sprintf("%s%s~", discs, d)
+		size += len(d) + 1
 	}
 
-	return SdJwt(fmt.Sprintf("%s~%s", issJwt, discs))
+	var sb strings.Builder
+	sb.Grow(size)
+	sb.WriteString(string(issJwt))
+	sb.WriteByte(disclosureSeparator)
+	for _, d := range disclosures {
+		sb.WriteString(string(d))
+		sb.WriteByte(disclosureSeparator)
+	}
+	return SdJwt(sb.String())
 }
 
 func CreateWithDisclosureContents(issJwt IssuerSignedJwt, disclosures []DisclosureContent) (SdJwt, error) {
-	discs := ""
-	for _, d := range disclosures {
+	encoded := make([]EncodedDisclosure, len(disclosures))
+	for i, d := range disclosures {
 		encD, err := EncodeDisclosure(d)
 		if err != nil {
 			return "", err
 		}
-		discs = fmt.Sprintf("%s%s~", discs, encD)
+		encoded[i] = encD
 	}
-
-	return SdJwt(fmt.Sprintf("%s~%s", issJwt, discs)), nil
+	return Create(issJwt, encoded), nil
 }
 
 func AddKeyBindingJwt(sdJwt SdJwt, kbjwt KeyBindingJwt) SdJwtKb {
-	return SdJwtKb(fmt.Sprintf("%s%s", sdJwt, kbjwt))
+	return SdJwtKb(string(sdJwt) + string(kbjwt))
 }
 
 // Split splits the sdjwt at the ~ characters and returns the individual components.
