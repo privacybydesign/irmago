@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The status refresh sweep checks every instance of a batch, still fetching each status list once, and stores the batch's worst status on all of its instances, so one revoked instance revokes the batch.
   - An instance whose list cannot be read counts with its stored status, so a failure never clears a revocation.
   - The credential list, the disclosure screen and the log all read that stored status. SD-JWT VC and mso_mdoc disclosure no longer read the status list cache, so they show the status as of the last sweep, like the credential list.
+- The container image of a release is now tagged without the `v` prefix (`ghcr.io/privacybydesign/yivi:X.Y.Z` instead of `:vX.Y.Z`), and images are no longer tagged with the commit SHA. `:edge`, `:latest` and the tags of earlier releases stay as they are. Images are only pushed after passing a vulnerability scan.
 
 ### Fixed
 - **Verifying credentials**
