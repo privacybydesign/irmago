@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 	"time"
+
+	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 )
 
 const (
@@ -153,6 +155,37 @@ func (d Document) IssuerID() (string, error) {
 // Names returns the credential's `name` (VCDM 2.0 §4.6) per language tag.
 func (d Document) Names() map[string]string {
 	return languageValues(d[NameKey])
+}
+
+// Image returns the credential's `image` (Open Badges 3.0 B.1.2).
+func (d Document) Image() (string, bool) {
+	return imageURI(d[ImageKey])
+}
+
+// IssuerNames returns the issuer's `name` per language tag (VCDM 2.0 §4.7);
+// nil when `issuer` is a string or has none.
+func (d Document) IssuerNames() map[string]string {
+	issuer, _ := d[IssuerKey].(map[string]any)
+	return languageValues(issuer[NameKey])
+}
+
+// IssuerImage returns the issuer's `image` (an Open Badges 3.0 Profile's).
+func (d Document) IssuerImage() (string, bool) {
+	issuer, _ := d[IssuerKey].(map[string]any)
+	return imageURI(issuer[ImageKey])
+}
+
+// imageURI reads an image property: an image URI, or an Open Badges `Image`
+// object whose `id` is one.
+func imageURI(raw any) (string, bool) {
+	uri, ok := raw.(string)
+	if object, isObject := raw.(map[string]any); isObject {
+		uri, ok = object[IDKey].(string)
+	}
+	if !ok || !helpers.IsImageURI(uri) {
+		return "", false
+	}
+	return uri, true
 }
 
 // languageValues reads a property that VCDM 2.0 §11.1 lets be a plain string,

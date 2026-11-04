@@ -37,7 +37,7 @@ func frozenFSStorage(t *testing.T) FileSystemStorage {
 func frozenLogoScope(t *testing.T) *scopedFS {
 	t.Helper()
 	fs := frozenFSStorage(t).(*fileSystemStorage)
-	return fs.credentialsContainer.logoManager.(*logoManager).scope
+	return fs.credentialsContainer.imageManager.(*imageManager).scope
 }
 
 // frozenVectorInputs is the canonical input set for the frozen-vector
@@ -133,8 +133,8 @@ func TestScopedFS_SaltIsApplied(t *testing.T) {
 // between scopes lives in the directory structure on disk, not in the hash.
 func TestScopedFS_CrossScopeIdentity(t *testing.T) {
 	fs := frozenFSStorage(t).(*fileSystemStorage)
-	credLogos := fs.credentialsContainer.logoManager.(*logoManager).scope
-	issuerLogos := fs.issuersContainer.logoManager.(*logoManager).scope
+	credLogos := fs.credentialsContainer.imageManager.(*imageManager).scope
+	issuerLogos := fs.issuersContainer.imageManager.(*imageManager).scope
 
 	const input = "x"
 	require.Equal(t, credLogos.hashName(input), issuerLogos.hashName(input),

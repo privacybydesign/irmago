@@ -600,6 +600,7 @@ func unobtainableDescriptor(docType string, query dcql.CredentialQuery) *clientm
 	return &clientmodels.CredentialDescriptor{
 		CredentialId: docType,
 		Attributes:   attrs,
+		Format:       clientmodels.Format_MsoMdoc,
 	}
 }
 
@@ -621,7 +622,7 @@ func (h *Handler) credentialImage(batch *models.MdocBatch, locale string) *clien
 	if cm == nil {
 		return nil
 	}
-	logoManager := h.storage.FileSystem().Credentials().LogoManager()
+	logoManager := h.storage.FileSystem().Credentials().ImageManager()
 	return services.LoadResolvedLogo(logoManager, services.MdocCredentialLogoURIsByLanguage(cm.Display), locale)
 }
 
@@ -640,7 +641,7 @@ func (h *Handler) issuerTrustedParty(batch *models.MdocBatch, locale string) cli
 // batch's issuer display metadata, mirroring sdjwt_dcql's identical
 // helper.
 func (h *Handler) issuerImage(batch *models.MdocBatch, locale string) *clientmodels.Image {
-	logoManager := h.storage.FileSystem().Issuers().LogoManager()
+	logoManager := h.storage.FileSystem().Issuers().ImageManager()
 	return services.LoadResolvedLogo(logoManager, services.MdocIssuerLogoURIsByLanguage(services.MdocIssuerDisplays(batch)), locale)
 }
 

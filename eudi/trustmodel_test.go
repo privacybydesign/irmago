@@ -621,7 +621,7 @@ func testCacheLogoCachesLogoSuccessfully(t *testing.T) {
 		MimeType: "image/png",
 	}
 
-	mgr := conf.Storage.FileSystem().Verifiers().LogoManager()
+	mgr := conf.Storage.FileSystem().Verifiers().ImageManager()
 	require.NoError(t, mgr.Save("test_logo", logo.Data, logo.MimeType))
 
 	got, gotMimeType, err := mgr.Get("test_logo")
@@ -647,7 +647,7 @@ func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 
-	mgr := conf.Storage.FileSystem().Verifiers().LogoManager()
+	mgr := conf.Storage.FileSystem().Verifiers().ImageManager()
 
 	logo := &scheme.Logo{
 		Data:     []byte("test logo data"),
@@ -682,7 +682,7 @@ func testCacheVerifierLogoReturnsErrorOnNilLogo(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 
-	err = conf.Storage.FileSystem().Verifiers().LogoManager().Save("test_logo", nil, "")
+	err = conf.Storage.FileSystem().Verifiers().ImageManager().Save("test_logo", nil, "")
 	require.Error(t, err)
 	require.EqualError(t, err, "invalid logo: data cannot be nil or empty")
 }
@@ -704,7 +704,7 @@ func testCacheVerifierLogoReturnsErrorOnEmptyLogoData(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 
-	mgr := conf.Storage.FileSystem().Verifiers().LogoManager()
+	mgr := conf.Storage.FileSystem().Verifiers().ImageManager()
 
 	err = mgr.Save("test_logo", []byte(""), "")
 	require.Error(t, err)

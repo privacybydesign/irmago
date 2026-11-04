@@ -67,9 +67,9 @@ type Client struct {
 	// updates it through SetLocale; irmago does not persist it.
 	currentLocale *clientmodels.CurrentLocale
 
-	// logoBackfill fetches the logos the current locale resolves to but that
+	// imageBackfill fetches the logos the current locale resolves to but that
 	// were never downloaded, in the background. Closed before eudiStorage.
-	logoBackfill *services.LogoBackfiller
+	imageBackfill *services.ImageBackfiller
 	// TODO: move preferences from IrmaClient to here
 	//Preferences      clientsettings.Preferences
 }
@@ -323,18 +323,19 @@ func New(
 	}
 
 	client.sessionManager.Client = client
-	client.logoBackfill = services.NewLogoBackfiller(eudiStorage, common.HTTPClient, func(cached int) {
+	client.imageBackfill = services.NewImageBackfiller(eudiStorage, common.HTTPClient, func(cached int) {
 		// Re-read the credentials the app has already rendered, but only when
 		// the sweep put new logos on disk — nothing new, nothing to redraw.
 		if cached > 0 {
 			client.handler.CredentialsChanged()
 		}
 	})
+	client.imageBackfill.SetAllowInsecureHttp(developerMode)
 
 	// Startup backfill: fetch logos that resolve for the current locale but
 	// are missing from the cache (credentials issued before the wallet became
 	// locale-aware, or whose issuance-time download failed).
-	client.logoBackfill.Request(currentLocale.Get())
+	client.imageBackfill.Request(currentLocale.Get())
 
 	return client, nil
 }
@@ -346,7 +347,7 @@ func New(
 // the wallet already uses does nothing.
 func (client *Client) SetLocale(locale string) {
 	if client.currentLocale.Set(locale) {
-		client.logoBackfill.Request(client.currentLocale.Get())
+		client.imageBackfill.Request(client.currentLocale.Get())
 	}
 }
 
@@ -358,7 +359,7 @@ func (client *Client) locale() string {
 func (client *Client) Close() error {
 	// Before the stores close under it, so Close is deterministic and a sweep
 	// cannot outlive the database it reads.
-	client.logoBackfill.Close()
+	client.imageBackfill.Close()
 	client.scheduler.Shutdown()
 	client.irmaClient.Close()
 	client.eudiStorage.Close()
@@ -807,6 +808,7 @@ func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
 	// already set at startup.
 	setDeveloperModeOnConfiguration(client.openid4vpClient.Configuration, prefs.DeveloperMode)
 	setDeveloperModeOnClients(client.openid4vciClient, client.didValidator, prefs.DeveloperMode)
+	client.imageBackfill.SetAllowInsecureHttp(prefs.DeveloperMode)
 
 	if !developerModeChanged {
 		return
