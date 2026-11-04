@@ -72,8 +72,8 @@ func (s *mdocCredentialService) List() ([]*clientmodels.Credential, error) {
 	}
 
 	locale := s.currentLocale.Get()
-	credentialLogoManager := s.fileStorage.Credentials().LogoManager()
-	issuerLogoManager := s.fileStorage.Issuers().LogoManager()
+	credentialLogoManager := s.fileStorage.Credentials().ImageManager()
+	issuerLogoManager := s.fileStorage.Issuers().ImageManager()
 
 	result := make([]*clientmodels.Credential, 0, len(batches))
 	for _, batch := range batches {

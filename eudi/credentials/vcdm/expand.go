@@ -2,7 +2,7 @@ package vcdm
 
 import (
 	"bytes"
-	_ "embed"
+	"embed"
 	"errors"
 	"fmt"
 	"io"
@@ -13,11 +13,19 @@ import (
 	"github.com/piprate/json-gold/ld"
 )
 
-// baseContext is the VCDM 2.0 base context, served from memory. Its SHA-256 is
-// the digest VCDM 2.0 §B.1 publishes for it.
-//
-//go:embed contexts/credentials-v2.jsonld
-var baseContext []byte
+//go:embed contexts
+var contextFiles embed.FS
+
+// bundledContexts are the contexts served from memory, by URL, so expanding
+// their types needs no network: the VCDM 2.0 base context, whose SHA-256 is the
+// digest VCDM 2.0 §B.1 publishes for it, and the Open Badges 3.0 contexts made
+// for VCDM 2.0. The older 3.0.0 and 3.0.1 contexts redefine terms the VCDM 2.0
+// context protects, so no VCDM 2.0 credential can use them.
+var bundledContexts = map[string]string{
+	ContextV2: "contexts/credentials-v2.jsonld",
+	"https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.2.json": "contexts/openbadges-3.0.2.jsonld",
+	"https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json": "contexts/openbadges-3.0.3.jsonld",
+}
 
 const (
 	// maxContextBytes caps a fetched context, against a host that sends an
@@ -62,9 +70,9 @@ func ExpandTypes(document Document, loader ld.DocumentLoader) ([]string, error) 
 	return types, nil
 }
 
-// NewContextLoader returns a loader for ExpandTypes that serves the VCDM 2.0
-// base context from memory and fetches any other context over HTTPS with
-// client, at most maxContextFetches of them.
+// NewContextLoader returns a loader for ExpandTypes that serves the bundled
+// contexts from memory and fetches any other context over HTTPS with client,
+// at most maxContextFetches of them.
 func NewContextLoader(client *http.Client) ld.DocumentLoader {
 	return &contextLoader{client: client}
 }
@@ -77,8 +85,12 @@ type contextLoader struct {
 }
 
 func (l *contextLoader) LoadDocument(u string) (*ld.RemoteDocument, error) {
-	if u == ContextV2 {
-		document, err := ld.DocumentFromReader(bytes.NewReader(baseContext))
+	if file, ok := bundledContexts[u]; ok {
+		data, err := contextFiles.ReadFile(file)
+		if err != nil {
+			return nil, err
+		}
+		document, err := ld.DocumentFromReader(bytes.NewReader(data))
 		if err != nil {
 			return nil, err
 		}

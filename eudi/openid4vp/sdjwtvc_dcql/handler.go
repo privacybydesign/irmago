@@ -49,7 +49,8 @@ func New(
 			_, std := sdjwtvc.StandardClaims[key]
 			return !std
 		},
-		Prove: sdjwt_dcql.ProveWithKbJwt,
+		Prove:    sdjwt_dcql.ProveWithKbJwt,
+		Document: document,
 	}
 	batches := sdjwt_dcql.NewSdJwtVcBatchStore(credentialStore, revocation)
 	return &Handler{sdjwt_dcql.NewEngine(profile, eudiStorage, batches, vctFetcher, issuerFetcher, holderKeys, usedKeys, currentLocale)}
@@ -94,4 +95,10 @@ func isIrmaStyleVct(vct string) bool {
 		}
 	}
 	return true
+}
+
+// document is the stored SD-JWT VC's document. An unreadable payload says
+// nothing.
+func document(batch *sdjwt_dcql.Batch) services.CredentialDocument {
+	return services.NewSdJwtVcDocumentFromJSON(batch.ProcessedPayload)
 }

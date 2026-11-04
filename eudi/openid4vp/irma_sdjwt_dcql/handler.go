@@ -491,6 +491,7 @@ func (h *Handler) buildCredentialDescriptor(credTypeId irma.CredentialTypeIdenti
 		Image:        clientmodels.ImageFromFile(credType.Logo(h.config)),
 		Attributes:   attributes,
 		IssueURL:     issueURL,
+		Format:       clientmodels.Format_SdJwtVc,
 	}, nil
 }
 
@@ -598,6 +599,7 @@ func buildAttributeValue(displayHint string, rawValue *string) *clientmodels.Att
 	switch attrType {
 	case clientmodels.AttributeType_Base64Image:
 		val.Base64Image = rawValue
+		val.SetImageMimeType()
 	case clientmodels.AttributeType_Bool:
 		switch strings.ToLower(*rawValue) {
 		case "yes":

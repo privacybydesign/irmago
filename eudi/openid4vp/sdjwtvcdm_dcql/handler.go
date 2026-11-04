@@ -60,7 +60,7 @@ func New(
 		},
 		Prove:             proveEnvelopedPresentation,
 		MatchesTypeValues: matchesTypeValues,
-		FallbackName:      fallbackName,
+		Document:          document,
 	}
 	return &Handler{sdjwt_dcql.NewEngine(profile, eudiStorage, sdjwt_dcql.NewVcdmBatchStore(credentialStore, revocation), nil, nil, holderKeys, usedKeys, currentLocale)}
 }
@@ -116,8 +116,7 @@ func matchesTypeValues(batch *sdjwt_dcql.Batch, typeValues [][]string) bool {
 	return false
 }
 
-// fallbackName is the credential's own `name`, for a credential whose
-// metadata gives it none.
-func fallbackName(batch *sdjwt_dcql.Batch, locale string) string {
-	return services.VcdmPayloadName(batch.ProcessedPayload, locale)
+// document is the stored VCDM document. An unreadable payload says nothing.
+func document(batch *sdjwt_dcql.Batch) services.CredentialDocument {
+	return services.NewVcdmDocumentFromJSON(batch.ProcessedPayload, batch.ExpandedTypes)
 }

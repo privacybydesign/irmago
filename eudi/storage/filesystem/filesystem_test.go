@@ -54,7 +54,7 @@ func TestNewFileSystemStorage_ExposesAllManagers(t *testing.T) {
 	storage, _ := newTestStorage(t)
 	require.NotNil(t, storage.CertificateManager())
 	require.NotNil(t, storage.CertificateRevocationListManager())
-	require.NotNil(t, storage.LogoManager())
+	require.NotNil(t, storage.ImageManager())
 }
 
 // --- CertificateManager tests ---
@@ -192,103 +192,103 @@ func TestCertificateManager_RemoveCertificate_RejectsNonHexThumbprint(t *testing
 	require.FileExists(t, outside)
 }
 
-// --- LogoManager tests ---
+// --- ImageManager tests ---
 
-func TestLogoManager_Save_ValidData(t *testing.T) {
+func TestImageManager_Save_ValidData(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	require.NoError(t, storage.LogoManager().Save("https://example.org/a.png", []byte("logo data"), "image/png"))
+	require.NoError(t, storage.ImageManager().Save("https://example.org/a.png", []byte("logo data"), "image/png"))
 }
 
-func TestLogoManager_Save_EmptyData(t *testing.T) {
+func TestImageManager_Save_EmptyData(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	err := storage.LogoManager().Save("https://example.org/a.png", []byte{}, "")
+	err := storage.ImageManager().Save("https://example.org/a.png", []byte{}, "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "data cannot be nil or empty")
 }
 
-func TestLogoManager_Save_NilData(t *testing.T) {
+func TestImageManager_Save_NilData(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	err := storage.LogoManager().Save("https://example.org/a.png", nil, "")
+	err := storage.ImageManager().Save("https://example.org/a.png", nil, "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "data cannot be nil or empty")
 }
 
-func TestLogoManager_Save_EmptyKey(t *testing.T) {
+func TestImageManager_Save_EmptyKey(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	err := storage.LogoManager().Save("", []byte("logo data"), "image/png")
+	err := storage.ImageManager().Save("", []byte("logo data"), "image/png")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "key cannot be empty")
 }
 
-func TestLogoManager_Get_RoundTrip(t *testing.T) {
+func TestImageManager_Get_RoundTrip(t *testing.T) {
 	storage, _ := newTestStorage(t)
 	originalData := []byte("logo content")
 
-	require.NoError(t, storage.LogoManager().Save("mylogo", originalData, "image/png"))
+	require.NoError(t, storage.ImageManager().Save("mylogo", originalData, "image/png"))
 
-	readData, mimeType, err := storage.LogoManager().Get("mylogo")
+	readData, mimeType, err := storage.ImageManager().Get("mylogo")
 	require.NoError(t, err)
 	require.Equal(t, originalData, readData)
 	require.Equal(t, "image/png", mimeType)
 }
 
-func TestLogoManager_Get_MissingKey(t *testing.T) {
+func TestImageManager_Get_MissingKey(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	_, _, err := storage.LogoManager().Get("nonexistent")
+	_, _, err := storage.ImageManager().Get("nonexistent")
 	require.Error(t, err)
 }
 
-func TestLogoManager_Get_WithoutMimeType(t *testing.T) {
+func TestImageManager_Get_WithoutMimeType(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
 	// Logos saved before MIME types were recorded (or whose download had no
 	// Content-Type) have no sidecar; Get must return them with an empty MIME type.
-	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("logo content"), ""))
+	require.NoError(t, storage.ImageManager().Save("mylogo", []byte("logo content"), ""))
 
-	readData, mimeType, err := storage.LogoManager().Get("mylogo")
+	readData, mimeType, err := storage.ImageManager().Get("mylogo")
 	require.NoError(t, err)
 	require.Equal(t, []byte("logo content"), readData)
 	require.Empty(t, mimeType)
 }
 
-func TestLogoManager_Save_Overwrites(t *testing.T) {
+func TestImageManager_Save_Overwrites(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("original"), "image/png"))
-	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("updated"), "image/svg+xml"))
+	require.NoError(t, storage.ImageManager().Save("mylogo", []byte("original"), "image/png"))
+	require.NoError(t, storage.ImageManager().Save("mylogo", []byte("updated"), "image/svg+xml"))
 
-	readData, mimeType, err := storage.LogoManager().Get("mylogo")
+	readData, mimeType, err := storage.ImageManager().Get("mylogo")
 	require.NoError(t, err)
 	require.Equal(t, []byte("updated"), readData)
 	require.Equal(t, "image/svg+xml", mimeType)
 }
 
-func TestLogoManager_Save_OverwriteClearsMimeType(t *testing.T) {
+func TestImageManager_Save_OverwriteClearsMimeType(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("original"), "image/png"))
-	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("updated"), ""))
+	require.NoError(t, storage.ImageManager().Save("mylogo", []byte("original"), "image/png"))
+	require.NoError(t, storage.ImageManager().Save("mylogo", []byte("updated"), ""))
 
-	readData, mimeType, err := storage.LogoManager().Get("mylogo")
+	readData, mimeType, err := storage.ImageManager().Get("mylogo")
 	require.NoError(t, err)
 	require.Equal(t, []byte("updated"), readData)
 	require.Empty(t, mimeType, "a Save without MIME type must not leave a stale sidecar behind")
 }
 
-func TestLogoManager_Exists(t *testing.T) {
+func TestImageManager_Exists(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	exists, err := storage.LogoManager().Exists("k")
+	exists, err := storage.ImageManager().Exists("k")
 	require.NoError(t, err)
 	require.False(t, exists)
 
-	require.NoError(t, storage.LogoManager().Save("k", []byte("v"), ""))
-	exists, err = storage.LogoManager().Exists("k")
+	require.NoError(t, storage.ImageManager().Save("k", []byte("v"), ""))
+	exists, err = storage.ImageManager().Exists("k")
 	require.NoError(t, err)
 	require.True(t, exists)
 }

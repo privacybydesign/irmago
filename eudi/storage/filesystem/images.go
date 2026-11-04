@@ -8,16 +8,16 @@ import (
 
 const logosDirName = "logos"
 
-// LogoManager stores per-container (credentials/issuers/verifiers) logo images
-// keyed by an opaque logical key — the logo URL when retrieved from credential
-// metadata, or the issuer/credential/requestor ID when persisted from log
-// entries. On-disk filenames are HMAC-SHA256 hex of the key under an
+// ImageManager stores per-container (credentials/issuers/verifiers) images —
+// logos, and a credential's own and claim images — keyed by an opaque logical
+// key: the image URL when downloaded, or the issuer/credential/requestor ID
+// when persisted from log entries. On-disk filenames are HMAC-SHA256 hex of the key under an
 // AES-derived sub-key, so plaintext keys are never written to disk.
 //
-// The MIME type (needed by the wallet to distinguish SVG from bitmap logos)
+// The MIME type (needed by the wallet to distinguish SVG from bitmap images)
 // is stored in a sidecar file next to the image data. An empty mimeType is
 // valid: Save then removes any stale sidecar and Get returns "".
-type LogoManager interface {
+type ImageManager interface {
 	Save(key string, data []byte, mimeType string) error
 	Get(key string) (data []byte, mimeType string, err error)
 	Exists(key string) (bool, error)
@@ -27,17 +27,17 @@ type LogoManager interface {
 // mimeTypeExt is the filename suffix of the MIME type sidecar file.
 const mimeTypeExt = ".mime"
 
-type logoManager struct {
+type imageManager struct {
 	scope *scopedFS
 }
 
-func newLogoManager(basePath string, internalStorage *fsStorage) LogoManager {
-	return &logoManager{
+func newImageManager(basePath string, internalStorage *fsStorage) ImageManager {
+	return &imageManager{
 		scope: internalStorage.Scope(filepath.Join(basePath, logosDirName)),
 	}
 }
 
-func (s *logoManager) Save(key string, data []byte, mimeType string) error {
+func (s *imageManager) Save(key string, data []byte, mimeType string) error {
 	if key == "" {
 		return fmt.Errorf("invalid logo: key cannot be empty")
 	}
@@ -58,7 +58,7 @@ func (s *logoManager) Save(key string, data []byte, mimeType string) error {
 	return s.scope.Write(key, mimeTypeExt, []byte(mimeType))
 }
 
-func (s *logoManager) Get(key string) ([]byte, string, error) {
+func (s *imageManager) Get(key string) ([]byte, string, error) {
 	data, err := s.scope.Read(key, "")
 	if err != nil {
 		return nil, "", err
@@ -76,10 +76,10 @@ func (s *logoManager) Get(key string) ([]byte, string, error) {
 	return data, string(mimeType), nil
 }
 
-func (s *logoManager) Exists(key string) (bool, error) {
+func (s *imageManager) Exists(key string) (bool, error) {
 	return s.scope.Exists(key, "")
 }
 
-func (s *logoManager) RemoveAll() error {
+func (s *imageManager) RemoveAll() error {
 	return s.scope.RemoveAll()
 }

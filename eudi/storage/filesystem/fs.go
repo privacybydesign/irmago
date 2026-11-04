@@ -58,7 +58,7 @@ type fileSystemStorage struct {
 }
 
 type FileSystemContainer struct {
-	logoManager                      LogoManager
+	imageManager                     ImageManager
 	certificateManager               CertificateManager
 	certificateRevocationListManager CertificateRevocationListManager
 }
@@ -100,7 +100,7 @@ func newFileSystemContainer(storage *fsStorage, basePath string) *FileSystemCont
 	}
 
 	return &FileSystemContainer{
-		logoManager:                      newLogoManager(basePath, storage),
+		imageManager:                     newImageManager(basePath, storage),
 		certificateManager:               newCertificateManager(basePath, storage),
 		certificateRevocationListManager: newCertificateRevocationListManager(basePath, storage),
 	}
@@ -108,7 +108,7 @@ func newFileSystemContainer(storage *fsStorage, basePath string) *FileSystemCont
 
 func (s *fileSystemStorage) RemoveAllFiles() error {
 	for _, c := range []FileSystemContainer{s.credentialsContainer, s.issuersContainer, s.verifiersContainer} {
-		if err := c.logoManager.RemoveAll(); err != nil {
+		if err := c.imageManager.RemoveAll(); err != nil {
 			return err
 		}
 		if err := c.certificateManager.RemoveAll(); err != nil {
@@ -159,8 +159,8 @@ func (s FileSystemContainer) CertificateRevocationListManager() CertificateRevoc
 	return s.certificateRevocationListManager
 }
 
-func (s FileSystemContainer) LogoManager() LogoManager {
-	return s.logoManager
+func (s FileSystemContainer) ImageManager() ImageManager {
+	return s.imageManager
 }
 
 type fsStorage struct {
