@@ -5,8 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- The container image of a release is now tagged without the `v` prefix (`ghcr.io/privacybydesign/yivi:X.Y.Z` instead of `:vX.Y.Z`), and images are no longer tagged with the commit SHA. `:edge`, `:latest` and the tags of earlier releases stay as they are. Images are only pushed after passing a vulnerability scan.
 ### Fixed
 - The IRMA server no longer parses and validates an issuer private key from disk for every credential in an issuance session. For non-demo schemes this validation includes safe prime checks, which made starting and completing issuance sessions with many credentials exceed the server's 4 second request timeout on CPU-limited deployments, resulting in a `503 Service Unavailable`. Parsed keys are now cached per file and reused as long as the file's modification time and size are unchanged, so keys added, replaced or removed on disk are still picked up without a restart.
+- The error for a private key whose filename has a different counter than the key itself now shows that counter instead of a memory address
 
 ## [1.5.0] - 2026-11-03
 ### Added
@@ -60,7 +63,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Credential, issuer and verifier logos are downloaded with the limits claim images have ([#779](https://github.com/privacybydesign/irmago/issues/779)).
   - Only over HTTPS. Plain HTTP is accepted only in developer mode, for issuer and credential logos, and now by the logo backfill too, which did not follow developer mode; a verifier logo over plain HTTP is not downloaded.
   - A logo larger than 2 MB, or that is no PNG, JPEG, GIF, WebP or SVG image, is left out, as a logo that fails to download already was. The type is recognised from the image, not taken from the `Content-Type` header.
-- The container image of a release is now tagged without the `v` prefix (`ghcr.io/privacybydesign/yivi:X.Y.Z` instead of `:vX.Y.Z`), and images are no longer tagged with the commit SHA. `:edge`, `:latest` and the tags of earlier releases stay as they are. Images are only pushed after passing a vulnerability scan.
 
 ### Fixed
 - **Verifying credentials**
@@ -80,7 +82,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removing all storage now also deletes holder binding keys minted for an issuance that never completed. They are bound to no credential, so deleting the credentials did not reach them.
   - The holder binding keys minted for a credential that is then refused, by the issuer or by its verification, are now deleted right away. They used to stay until all storage was removed.
   - The SD-JWT VC claims `vct#integrity`, `jti` and `aud` are no longer shown as attributes in the credential list, on the issuance screen, or on the disclosure screen and log. They are protocol claims, not user data. They also no longer count towards a credential's duplicate check: `jti` changes on every issuance and `vct#integrity` whenever the issuer republishes its type metadata, so a renewal could be stored as a second copy instead of replacing the first. On startup, the wallet recomputes stored hashes. Copies that now turn out to be the same credential are merged: the one with the latest `iat` is kept and the others are deleted, as a renewal would do ([#772](https://github.com/privacybydesign/irmago/issues/772))
-- The error for a private key whose filename has a different counter than the key itself now shows that counter instead of a memory address
 
 ## [1.4.3] - 2026-10-21
 ### Fixed
