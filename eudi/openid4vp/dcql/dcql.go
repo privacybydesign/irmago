@@ -1,6 +1,13 @@
 package dcql
 
-import "iter"
+import (
+	"fmt"
+	"iter"
+	"slices"
+
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+)
 
 type DcqlQuery struct {
 	// REQUIRED: A non-empty array of credential queries that specify the requested verifiable credentials.
@@ -9,6 +16,55 @@ type DcqlQuery struct {
 	// OPTIONAL: A non-empty array of credential set queries that specify specific additional constraints
 	// on which of the requested verifiable credentials to return.
 	CredentialSets []CredentialSetQuery `json:"credential_sets,omitempty"`
+}
+
+// Validate checks the structural rules a DCQL query must satisfy before any of
+// it is matched against what the wallet holds, and is transport-independent: the
+// same query is illegal over the redirect flow and over the Digital Credentials
+// API.
+//
+// Uniqueness of the ids is the load-bearing one. The vp_token a wallet returns
+// is an object keyed by credential query id, so two queries sharing an id have
+// no distinct place to put their answers, and which of the two a verifier
+// believes it received is left to chance.
+func (q DcqlQuery) Validate() error {
+	if len(q.Credentials) == 0 {
+		return fmt.Errorf("dcql_query must contain at least one credential query")
+	}
+
+	seen := make(map[string]struct{}, len(q.Credentials))
+	for _, credential := range q.Credentials {
+		if credential.Id == "" {
+			return fmt.Errorf("credential query id must not be empty")
+		}
+		if _, duplicate := seen[credential.Id]; duplicate {
+			return fmt.Errorf("credential query id %q is present more than once", credential.Id)
+		}
+		seen[credential.Id] = struct{}{}
+	}
+
+	// A credential set may only reference ids the query actually defines;
+	// otherwise a required set can never be satisfied and the wallet would go
+	// looking for a credential the verifier never described.
+	for _, set := range q.CredentialSets {
+		// Options is REQUIRED and non-empty per OID4VP § 6.2. An empty array is the
+		// same unsatisfiable-set problem as the check below, reached by a different
+		// route: there are no options rather than options naming nothing. It needs
+		// its own condition because the loop over Options never runs for an empty
+		// one, so every check inside it silently passes — which is how an
+		// unsatisfiable required set reached the permission screen.
+		if len(set.Options) == 0 {
+			return fmt.Errorf("credential set has an empty options array, so it can never be satisfied")
+		}
+		for _, option := range set.Options {
+			for _, id := range option {
+				if _, known := seen[id]; !known {
+					return fmt.Errorf("credential set references unknown credential query id %q", id)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // CredentialSetQuery is an object representing a request for one or more Credentials
@@ -30,6 +86,11 @@ type Meta struct {
 	// REQUIRED for SD-JWT-VC: An array of strings that specifies allowed values for the type of the requested Verifiable Credential.
 	// All elements in the array MUST be valid type identifiers as defined in [I-D.ietf-oauth-sd-jwt-vc]
 	VctValues []string `json:"vct_values,omitempty"`
+	// REQUIRED for W3C VCDM (OpenID4VP Appendix B.1.1): sets of fully expanded
+	// types (IRIs). A credential matches when its `type`, with its `@context`
+	// applied, includes every type of at least one of these sets — each inner
+	// array is a conjunction, the outer array a disjunction.
+	TypeValues [][]string `json:"type_values,omitempty"`
 }
 
 type CredentialQuery struct {
@@ -87,7 +148,7 @@ func (c CredentialQuery) NeedsHolderBinding() bool {
 type QueryResponse struct {
 	// corresponds to a Credential.Id field
 	QueryId string
-	// the resulting serialized credential
+	// the resulting serialized credentials
 	Credentials []string
 }
 
@@ -103,6 +164,17 @@ type Claim struct {
 
 	// OPTIONAL: A list of strings, integers or boolean values that specifies the expected values of the claim
 	Values []any `json:"values,omitempty"`
+
+	// OPTIONAL, mso_mdoc only: whether the verifier intends to retain the
+	// disclosed value beyond the transaction. ISO 18013-5 carries this per data
+	// element in the reader's DeviceRequest, and OpenID4VP's mso_mdoc profile
+	// carries it here. SD-JWT VC has no equivalent, so it stays absent for every
+	// other format; an absent value means false, per the spec's default.
+	//
+	// The wallet does not act on it: it changes what the user is consenting to,
+	// not what is disclosed, so the only correct handling is to carry it to the
+	// consent screen.
+	IntentToRetain bool `json:"intent_to_retain,omitempty"`
 }
 
 type TrustedAuthorityType string
@@ -135,7 +207,8 @@ func (c CredentialQuery) AllClaimPaths() iter.Seq[string] {
 	}
 }
 
-// VctValues implements scheme.ValidatableCredentialQuery.
+// VctValues returns the SD-JWT VC type identifiers this query accepts, or nil
+// when it names none (every non-SD-JWT format, and a query without meta).
 func (c CredentialQuery) VctValues() []string {
 	if c.Meta == nil {
 		return nil
@@ -143,7 +216,101 @@ func (c CredentialQuery) VctValues() []string {
 	return c.Meta.VctValues
 }
 
-// ClaimPaths implements scheme.ValidatableCredentialQuery.
-func (c CredentialQuery) ClaimPaths() iter.Seq[string] {
-	return c.AllClaimPaths()
+// TypeValues returns the W3C VCDM `type_values` (OpenID4VP Appendix B.1.1), or
+// nil when `meta` is absent.
+func (c CredentialQuery) TypeValues() [][]string {
+	if c.Meta == nil {
+		return nil
+	}
+	return c.Meta.TypeValues
+}
+
+// DocTypeValue returns the ISO 18013-5 docType this query accepts, or "" when
+// it names none (every non-mdoc format, and a query without meta). It mirrors
+// VctValues: the two are how the respective formats name a credential type,
+// and a query names exactly one format, so at most one of them is ever set.
+func (c CredentialQuery) DocTypeValue() string {
+	if c.Meta == nil {
+		return ""
+	}
+	return c.Meta.DocTypeValue
+}
+
+// mdocClaimPathLength is the fixed depth of an mso_mdoc claim path,
+// [namespace, elementIdentifier]. ISO 18013-5 has no nested claims.
+const mdocClaimPathLength = 2
+
+// AuthorizationAttributeNames returns the attribute identifiers this query
+// requests, for authorizing it against a relying party's registered attribute
+// set (scheme.CredentialQueryInfo.AttributeNames).
+//
+// Unlike AllClaimPaths it is format-aware, and it has to be. An mso_mdoc claim
+// path is always [namespace, elementIdentifier], where the namespace is a
+// container — the doctype's own scope — and not an attribute anyone registers.
+// Contributing both components, as AllClaimPaths does, would demand every
+// relying party register its namespaces as though they were attributes, which
+// no scheme does, so every mdoc query would be refused.
+//
+// A malformed mdoc path (not exactly two string components) contributes no
+// name. That cannot be used to smuggle a claim past authorization: the same
+// shape check in mdoc_dcql's claim matching rejects the path, so no candidate
+// is offered and there is nothing to disclose.
+//
+// An SD-JWT-secured VCDM claim path is rooted at the credential, and its user
+// data sits under credentialSubject, so that root is a container in the same
+// way, and every relying party authorized for any VCDM attribute would have to
+// register it. It is dropped, and the rest of the path contributes as for other
+// formats. A path with nothing after the root asks for the whole subject, which
+// the wallet expands to every subject claim; it contributes credentialSubject
+// itself, so only a relying party that registered it (or "*") may ask for that.
+// A path outside credentialSubject, such as the credential's own name or id,
+// contributes its components unchanged, so a relying party authorized for a
+// credentialSubject attribute of the same name may ask for it too.
+//
+// Every other format keeps AllClaimPaths' behaviour of contributing every
+// string component of every path.
+func (c CredentialQuery) AuthorizationAttributeNames() []string {
+	switch c.Format {
+	case string(clientmodels.Format_MsoMdoc):
+		return c.mdocAuthorizationAttributeNames()
+	case string(clientmodels.Format_SdJwtVcdm):
+		return c.vcdmAuthorizationAttributeNames()
+	default:
+		return slices.Collect(c.AllClaimPaths())
+	}
+}
+
+func (c CredentialQuery) vcdmAuthorizationAttributeNames() []string {
+	var names []string
+	for _, claim := range c.Claims {
+		path := claim.Path
+		if len(path) > 0 && path[0] == vcdm.CredentialSubjectKey {
+			path = path[1:]
+		}
+		var pathNames []string
+		for _, component := range path {
+			if name, ok := component.(string); ok {
+				pathNames = append(pathNames, name)
+			}
+		}
+		if len(pathNames) == 0 {
+			pathNames = []string{vcdm.CredentialSubjectKey}
+		}
+		names = append(names, pathNames...)
+	}
+	return names
+}
+
+func (c CredentialQuery) mdocAuthorizationAttributeNames() []string {
+
+	names := make([]string, 0, len(c.Claims))
+	for _, claim := range c.Claims {
+		if len(claim.Path) != mdocClaimPathLength {
+			continue
+		}
+		if element, ok := claim.Path[mdocClaimPathLength-1].(string); ok {
+			names = append(names, element)
+		}
+	}
+	return names
 }

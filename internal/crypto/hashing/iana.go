@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha3"
 	"crypto/sha512"
+	"encoding/base64"
 	"fmt"
 	"hash"
 	"io"
@@ -25,17 +26,6 @@ const (
 	SHA3_384   HashingAlgorithm = "sha3-384"
 	SHA3_512   HashingAlgorithm = "sha3-512"
 )
-
-func IsSupportedHashingAlgorithm(name HashingAlgorithm) bool {
-	switch name {
-	case SHA256, SHA256_128, SHA256_120, SHA256_96, SHA256_64, SHA256_32,
-		SHA384, SHA512,
-		SHA3_224, SHA3_256, SHA3_384, SHA3_512:
-		return true
-	default:
-		return false
-	}
-}
 
 func getHashByIANA(name HashingAlgorithm) (hash.Hash, error) {
 	switch name {
@@ -92,4 +82,12 @@ func Sum(algorithm HashingAlgorithm, content string) ([]byte, error) {
 	}
 
 	return hash, nil
+}
+
+func CreateUrlEncodedHash(algorithm HashingAlgorithm, content string) (string, error) {
+	hash, err := Sum(algorithm, content)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(hash), nil
 }

@@ -10,7 +10,7 @@ import (
 // LoadLogoImage looks up a previously-saved logo by its logical key and wraps
 // it as a base64-encoded clientmodels.Image. Returns nil when the key is empty,
 // the manager is unavailable, or no logo is cached.
-func LoadLogoImage(manager filesystem.LogoManager, key string) *clientmodels.Image {
+func LoadLogoImage(manager filesystem.ImageManager, key string) *clientmodels.Image {
 	if key == "" || manager == nil {
 		return nil
 	}
@@ -18,9 +18,13 @@ func LoadLogoImage(manager filesystem.LogoManager, key string) *clientmodels.Ima
 	if err != nil || !exists {
 		return nil
 	}
-	data, err := manager.Get(key)
+	data, mimeType, err := manager.Get(key)
 	if err != nil {
 		return nil
 	}
-	return &clientmodels.Image{Base64: base64.StdEncoding.EncodeToString(data)}
+	image := &clientmodels.Image{Base64: base64.StdEncoding.EncodeToString(data)}
+	if mimeType != "" {
+		image.MimeType = &mimeType
+	}
+	return image
 }

@@ -15,11 +15,9 @@ func (kss *keyshareServer) registerPublicKey(client *IrmaClient, transport *irma
 		return nil, err
 	}
 	jwtt, err := SignerCreateJWT(client.signer, keyname, irma.KeyshareKeyRegistrationClaims{
-		KeyshareKeyRegistrationData: irma.KeyshareKeyRegistrationData{
-			Username:  kss.Username,
-			Pin:       kss.HashedPin(pin),
-			PublicKey: pk,
-		},
+		Username:  kss.Username,
+		Pin:       kss.HashedPin(pin),
+		PublicKey: pk,
 	})
 	if err != nil {
 		err = irma.WrapErrorPrefix(err, "failed to sign public key registration JWT")

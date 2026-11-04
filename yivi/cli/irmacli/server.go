@@ -9,6 +9,7 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/privacybydesign/irmago/irma/server/requestorserver"
+	"github.com/privacybydesign/irmago/irma/server/usage"
 	"github.com/privacybydesign/irmago/yivi/cli/internal/clihelpers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -132,6 +133,7 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.StringSlice("redis-sentinel-addrs", nil, "Redis Sentinel addresses, to be specified as host:port")
 	flags.String("redis-sentinel-master-name", "", "Redis Sentinel master name")
 	flags.Bool("redis-accept-inconsistency-risk", false, "accept the risk of inconsistent session state when using Redis Sentinel")
+	flags.Duration("redis-retry-budget", server.DefaultRedisRetryBudget, "how long to keep retrying a Redis operation that fails on a broken connection, e.g. during a Redis Sentinel failover")
 	flags.String("redis-username", "", "Redis server username (when using ACLs)")
 	flags.String("redis-pw", "", "Redis server password")
 	flags.String("redis-sentinel-username", "", "Redis Sentinel username (when using ACLs)")
@@ -169,6 +171,15 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	_ = flags.MarkDeprecated("email", "the irma-server no longer uses this value; you may remove --email from your invocation")
 	_ = flags.MarkDeprecated("no-email", "the irma-server no longer requires --email, so --no-email is no longer needed")
 
+	headers["usage-reporting-disabled"] = "Usage reporting to the Yivi Portal"
+	flags.Bool("usage-reporting-disabled", false, "disable usage reporting, also in production mode (only for internal Yivi services)")
+	flags.String("usage-reporting-portal-url", "", "Yivi Portal usage directory URL (default "+usage.DefaultPortalURL+" in production mode; outside production mode, setting it enables usage reporting)")
+	flags.Duration("usage-reporting-interval", usage.DefaultInterval, "how often session counts are sealed into a report (between 1m and 6h)")
+	flags.String("usage-reporting-state-dir", "", "directory for the account key and unsent reports, so they survive restarts")
+	flags.String("usage-reporting-account-key-file", "", "PEM file with the ES256 account key registered in the Yivi Portal (default: account.key in the state dir)")
+	flags.String("usage-reporting-server-instance", "", "name of this server instance in usage reports (default: hostname)")
+	flags.Bool("usage-reporting-count-issuance", false, "also count issuance sessions")
+
 	headers["verbose"] = "Other options"
 	flags.CountP("verbose", "v", "verbose (repeatable)")
 	flags.BoolP("quiet", "q", false, "quiet")
@@ -197,13 +208,11 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 
 	// Read configuration from flags and/or environmental variables
 	conf := &requestorserver.Configuration{
-		Configuration: irmaServerConf,
-		Permissions: requestorserver.Permissions{
-			Disclosing: handlePermission("disclose_perms"),
-			Signing:    handlePermission("sign_perms"),
-			Issuing:    handlePermission("issue_perms"),
-			Revoking:   handlePermission("revoke_perms"),
-		},
+		Configuration:                  irmaServerConf,
+		Disclosing:                     handlePermission("disclose_perms"),
+		Signing:                        handlePermission("sign_perms"),
+		Issuing:                        handlePermission("issue_perms"),
+		Revoking:                       handlePermission("revoke_perms"),
 		SkipPrivateKeysCheck:           viper.GetBool("skip_private_keys_check"),
 		ListenAddress:                  viper.GetString("listen_addr"),
 		Port:                           viper.GetInt("port"),

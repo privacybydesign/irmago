@@ -177,7 +177,6 @@ func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
 	_, err := parser.ParseWithClaims(kss.token, &claims, conf.KeyshareServerKeyFunc(kss.SchemeManagerIdentifier))
 	if err != nil {
 		irma.Logger.Info("Keyshare server token invalid")
-		irma.Logger.Debug("Token: ", kss.token)
 		return false
 	}
 
@@ -185,7 +184,6 @@ func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
 	// and for the rest of the protocol to take place with this token
 	if !claims.VerifyExpiresAt(time.Now().Add(1*time.Minute), true) {
 		irma.Logger.Info("Keyshare server token expires too soon")
-		irma.Logger.Debug("Token: ", kss.token)
 		return false
 	}
 
@@ -235,8 +233,8 @@ const challengeRequestJWTExpiry = 3 * time.Minute
 func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HTTPTransport, pin string) (*irma.KeysharePinStatus, error) {
 	keyname := challengeResponseKeyName(kss.SchemeManagerIdentifier)
 	authRequestJWT, err := SignerCreateJWT(signer, keyname, irma.KeyshareAuthRequestClaims{
-		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(challengeRequestJWTExpiry))},
-		Username:         kss.Username,
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(challengeRequestJWTExpiry)),
+		Username:  kss.Username,
 	})
 	if err != nil {
 		return nil, err
@@ -258,11 +256,9 @@ func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HT
 		}
 
 		authResponseJWT, err := SignerCreateJWT(signer, keyname, irma.KeyshareAuthResponseClaims{
-			KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
-				Username:  kss.Username,
-				Pin:       kss.HashedPin(pin),
-				Challenge: auth.Challenge,
-			},
+			Username:  kss.Username,
+			Pin:       kss.HashedPin(pin),
+			Challenge: auth.Challenge,
 		})
 		if err != nil {
 			return nil, err

@@ -2,7 +2,6 @@ package eudi
 
 import (
 	"fmt"
-	"net/http"
 	"sync"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -39,7 +38,7 @@ type Configuration struct {
 
 // NewConfiguration returns a new configuration. After this ParseFolder() should be called to parse the specified path.
 func NewConfiguration(s storage.Storage) (conf *Configuration, err error) {
-	httpClient := &http.Client{}
+	httpClient := common.HTTPClient
 
 	conf = &Configuration{
 		Storage: s,
@@ -60,8 +59,17 @@ func NewConfiguration(s storage.Storage) (conf *Configuration, err error) {
 	return
 }
 
-func (c *Configuration) EnableStagingTrustAnchors() {
-	c.useStagingTrustAnchors = true
+// SetUseStagingTrustAnchors selects whether the staging trust anchors are
+// loaded on top of the production ones. The next Reload acts on it: switching
+// this off does not by itself drop staging anchors already in the trust models.
+func (c *Configuration) SetUseStagingTrustAnchors(use bool) {
+	c.useStagingTrustAnchors = use
+}
+
+// UsesStagingTrustAnchors reports whether Reload also loads the staging trust
+// anchors on top of the production ones.
+func (c *Configuration) UsesStagingTrustAnchors() bool {
+	return c.useStagingTrustAnchors
 }
 
 func (c *Configuration) SetCertificateVerificationMode(mode CertificateVerificationMode) {
@@ -116,6 +124,14 @@ func (c *Configuration) addProductionTrustAnchors() error {
 	if err := c.Verifiers.addTrustAnchors([]byte(Production_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add yivi production verifier trust anchors: %v", err)
 	}
+
+	// The Ver.iD root signs both issuer and verifier certificates
+	if err := c.Issuers.addTrustAnchors([]byte(Production_VerID_TrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Ver.iD production issuer trust anchors: %v", err)
+	}
+	if err := c.Verifiers.addTrustAnchors([]byte(Production_VerID_TrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Ver.iD production verifier trust anchors: %v", err)
+	}
 	return nil
 }
 
@@ -138,6 +154,19 @@ func (c *Configuration) addStagingTrustAnchors() error {
 		return fmt.Errorf("failed to add Yivi staging verifier trust anchors: %v", err)
 	}
 
+	// The Ver.iD development root signs both issuer and verifier certificates
+	if err := c.Issuers.addTrustAnchors([]byte(Development_VerID_TrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Ver.iD development issuer trust anchors: %v", err)
+	}
+	if err := c.Verifiers.addTrustAnchors([]byte(Development_VerID_TrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Ver.iD development verifier trust anchors: %v", err)
+	}
+
+	// Kiwa's acceptance root only signs issuer certificates
+	if err := c.Issuers.addTrustAnchors([]byte(Development_Kiwa_IssuerTrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add Kiwa development issuer trust anchors: %v", err)
+	}
+
 	return nil
 }
 
@@ -145,7 +174,7 @@ func (c *Configuration) addStagingTrustAnchors() error {
 // (typically the verifier's certificate serial number) as a base64-encoded
 // clientmodels.Image, or nil if no logo is cached.
 func (c *Configuration) ResolveVerifierLogo(key string) *clientmodels.Image {
-	return LoadLogoImage(c.Verifiers.storageContainer.LogoManager(), key)
+	return LoadLogoImage(c.Verifiers.storageContainer.ImageManager(), key)
 }
 
 func (c *Configuration) UpdateCertificateRevocationLists() error {

@@ -20,10 +20,11 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/gabikeys"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/server/usage"
 	"github.com/sirupsen/logrus"
 )
 
@@ -102,13 +103,25 @@ type Configuration struct {
 	// Production mode: enables safer and stricter defaults and config checking
 	Production bool `json:"production" mapstructure:"production"`
 
+	// UsageReporting configures reporting session counts to the Yivi Portal. In production mode it
+	// is enabled once an account key is configured (a state dir or key file), unless explicitly
+	// disabled; outside production mode only when a portal URL is set.
+	UsageReporting *usage.Settings `json:"usage_reporting,omitempty" mapstructure:"usage_reporting"`
+	// UsageCounter receives every session that reaches a final status. It is set up by Check()
+	// from UsageReporting.
+	UsageCounter usage.Counter `json:"-"`
+
 	SdJwtIssuanceSettings *SdJwtIssuanceSettings `json:"sdjwtvc,omitempty" mapstructure:"sdjwtvc,omitempty"`
 }
 
 type RedisClient struct {
 	*redis.Client
-	FailoverMode bool
-	KeyPrefix    string
+	KeyPrefix string
+
+	// RetryBudget is how long an operation keeps being retried while it fails on a
+	// connection that went away. Zero means DefaultRedisRetryBudget, negative means no
+	// retrying at all.
+	RetryBudget time.Duration
 }
 
 type RedisSettings struct {
@@ -116,6 +129,13 @@ type RedisSettings struct {
 	SentinelAddrs           []string `json:"sentinel_addresses,omitempty" mapstructure:"sentinel_addresses"`
 	SentinelMasterName      string   `json:"sentinel_master_name,omitempty" mapstructure:"sentinel_master_name"`
 	AcceptInconsistencyRisk bool     `json:"accept_inconsistency_risk,omitempty" mapstructure:"accept_inconsistency_risk"`
+
+	// RetryBudget is how long a Redis operation keeps being retried while it fails on a
+	// connection that went away, as happens while Redis Sentinel is promoting a new master.
+	// It does not apply to errors Redis itself returned. Defaults to DefaultRedisRetryBudget;
+	// set a negative value to not retry at all. It cannot bridge a failover that takes longer
+	// than this, which is bounded from below by the sentinels' own down-after-milliseconds.
+	RetryBudget time.Duration `json:"retry_budget,omitempty" mapstructure:"retry_budget"`
 
 	// Username for Redis authentication. If username is empty, the default user is used.
 	Username string `json:"username,omitempty" mapstructure:"username"`
@@ -202,7 +222,57 @@ func (conf *Configuration) Check() error {
 		return errors.New("Currently server-sent events (SSE) cannot be used simultaneously with the Redis session store.")
 	}
 
+	// Last, so that an invalid configuration never contacts the Portal.
+	if err := conf.verifyUsageReporting(); err != nil {
+		_ = LogError(err)
+		return err
+	}
+
 	return nil
+}
+
+func (conf *Configuration) verifyUsageReporting() error {
+	if conf.UsageCounter != nil {
+		// Already set up by an earlier Check(), or provided by the caller.
+		return nil
+	}
+	settings := conf.UsageReporting
+	if settings == nil {
+		settings = &usage.Settings{}
+	}
+	if settings.Disabled {
+		if conf.Production {
+			conf.Logger.Warn("Usage reporting to the Yivi Portal is disabled. This is only meant for internal Yivi services.")
+		}
+		conf.UsageCounter = usage.NoopCounter{}
+		return nil
+	}
+	if !conf.Production && settings.PortalURL == "" {
+		conf.UsageCounter = usage.NoopCounter{}
+		return nil
+	}
+	if settings.StateDir == "" && settings.AccountKeyFile == "" && settings.PortalURL == "" {
+		// Not configured at all: keep the behaviour of earlier versions, so an upgrade never
+		// stops a production server from starting.
+		conf.Logger.Warn("Usage reporting to the Yivi Portal is not configured. Set a usage reporting state dir " +
+			"or account key file and register the key in the Yivi Portal; this will become required in a future version.")
+		conf.UsageCounter = usage.NoopCounter{}
+		return nil
+	}
+
+	reporter, err := usage.New(*settings, conf.Logger)
+	if err != nil {
+		return errors.WrapPrefix(err, "usage reporting", 0)
+	}
+	conf.UsageCounter = reporter
+	return nil
+}
+
+// StopUsageReporting sends the final usage report of this run, if usage reporting is enabled.
+func (conf *Configuration) StopUsageReporting() {
+	if reporter, ok := conf.UsageCounter.(*usage.Reporter); ok {
+		reporter.Stop()
+	}
 }
 
 func (conf *Configuration) HavePrivateKeys() bool {
@@ -456,6 +526,10 @@ func (conf *Configuration) RedisClient() (*RedisClient, error) {
 		return nil, err
 	}
 
+	// go-redis prints its own diagnostics, such as a lost Sentinel subscription or a master
+	// switch, straight to stderr; route them through our logger instead.
+	redis.SetLogger(redisLogger{conf.Logger})
+
 	// setup client
 	var cl *redis.Client
 	if len(conf.RedisSettings.SentinelAddrs) > 0 {
@@ -497,11 +571,22 @@ func (conf *Configuration) RedisClient() (*RedisClient, error) {
 		keyPrefix = conf.RedisSettings.Username + ":"
 	}
 	conf.redisClient = &RedisClient{
-		Client:       cl,
-		FailoverMode: failoverMode,
-		KeyPrefix:    keyPrefix,
+		Client:      cl,
+		KeyPrefix:   keyPrefix,
+		RetryBudget: conf.RedisSettings.RetryBudget,
 	}
 	return conf.redisClient, nil
+}
+
+// redisLogger adapts a logrus logger to the logger interface go-redis takes. Everything
+// go-redis logs is a connectivity event worth an operator's attention, from a connection it
+// discarded to a Sentinel it could not reach or a new master it switched to.
+type redisLogger struct {
+	logger *logrus.Logger
+}
+
+func (l redisLogger) Printf(_ context.Context, format string, v ...any) {
+	l.logger.WithField("component", "go-redis").Warnf(format, v...)
 }
 
 func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
@@ -565,7 +650,7 @@ func readSdJwtIssuerPrivKeys(dir string) (map[irma.IssuerIdentifier]*ecdsa.Priva
 		if err != nil {
 			return nil, fmt.Errorf("failed to read ecdsa private key from '%v': %v", match, err)
 		}
-		privKey, err := sdjwtvc.DecodeEcdsaPrivateKey(bytes)
+		privKey, err := encryption.DecodeEcdsaPrivateKey(bytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode ecdsa private key from '%v': %v", match, err)
 		}

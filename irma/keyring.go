@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/big"
@@ -33,9 +36,26 @@ type (
 
 	// PrivateKeyRingFolder represents a folder on disk containing private keys with filenames
 	// of the form scheme.issuer.xml and scheme.issuer.counter.xml.
+	//
+	// Parsed keys are cached per file, because parsing a key is expensive: for non-demo schemes
+	// it includes safe prime checks of the key's primes, and the IRMA server looks up a private
+	// key for every credential in every issuance session. A cached key is reused only as long as
+	// the file's modification time and size are unchanged, so keys that are added, replaced or
+	// removed on disk are still picked up without a restart.
 	PrivateKeyRingFolder struct {
 		path string
 		conf *Configuration
+
+		mu    sync.Mutex
+		cache map[string]cachedPrivateKey
+	}
+
+	// cachedPrivateKey is a parsed private key along with the file metadata it was parsed from.
+	cachedPrivateKey struct {
+		modTime time.Time
+		size    int64
+		demo    bool
+		sk      *gabikeys.PrivateKey
 	}
 
 	// privateKeyRingScheme provides access to private keys present in a scheme.
@@ -59,7 +79,7 @@ func NewPrivateKeyRingFolder(path string, conf *Configuration) (*PrivateKeyRingF
 	if err != nil {
 		return nil, err
 	}
-	ring := &PrivateKeyRingFolder{path, conf}
+	ring := &PrivateKeyRingFolder{path: path, conf: conf, cache: map[string]cachedPrivateKey{}}
 	for _, file := range files {
 		filename := file.Name()
 		issuerid, counter, err := ring.parseFilename(filename)
@@ -120,18 +140,75 @@ func (p *PrivateKeyRingFolder) readFile(filename string, id IssuerIdentifier) (*
 	if scheme == nil {
 		return nil, errors.Errorf("Private key of issuer %s belongs to unknown scheme", id.String())
 	}
-	path, err := p.resolvePath(filename)
+	sk, err := p.parseFile(filename, scheme.Demo)
 	if err != nil {
 		return nil, err
 	}
-	sk, err := gabikeys.NewPrivateKeyFromFile(path, scheme.Demo)
-	if err != nil {
-		return nil, err
-	}
+	// This check is cheap and depends on the configuration, which may change after the key was
+	// parsed (e.g. by a scheme update), so it is done on every read instead of being cached.
 	if err = validatePrivateKey(id, sk, p.conf); err != nil {
 		return nil, err
 	}
 	return sk, nil
+}
+
+// parseFile returns the parsed private key in the specified file, from the cache if the file
+// did not change since it was last parsed.
+func (p *PrivateKeyRingFolder) parseFile(filename string, demo bool) (*gabikeys.PrivateKey, error) {
+	cleanFilename := filepath.Clean(filename)
+	if filepath.IsAbs(cleanFilename) || cleanFilename != filepath.Base(cleanFilename) || cleanFilename == "." || cleanFilename == ".." {
+		p.forget(filename)
+		return nil, errors.Errorf("invalid private key filename: %s", filename)
+	}
+
+	basePath, err := filepath.Abs(p.path)
+	if err != nil {
+		p.forget(filename)
+		return nil, err
+	}
+	path := filepath.Join(basePath, cleanFilename)
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		p.forget(filename)
+		return nil, err
+	}
+	if absPath != basePath && !strings.HasPrefix(absPath, basePath+string(os.PathSeparator)) {
+		p.forget(filename)
+		return nil, errors.Errorf("invalid private key path: %s", filename)
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		p.forget(filename)
+		return nil, err
+	}
+
+	p.mu.Lock()
+	cached, ok := p.cache[filename]
+	p.mu.Unlock()
+	if ok && cached.demo == demo && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
+		return cached.sk, nil
+	}
+
+	// Parse outside of the lock, so that parsing one key does not block reading other keys.
+	// If the file changes between the stat above and the parsing, the next read sees a different
+	// modification time and parses the file again.
+	sk, err := gabikeys.NewPrivateKeyFromFile(absPath, demo)
+	if err != nil {
+		p.forget(filename)
+		return nil, err
+	}
+
+	p.mu.Lock()
+	p.cache[filename] = cachedPrivateKey{modTime: info.ModTime(), size: info.Size(), demo: demo, sk: sk}
+	p.mu.Unlock()
+	return sk, nil
+}
+
+func (p *PrivateKeyRingFolder) forget(filename string) {
+	p.mu.Lock()
+	delete(p.cache, filename)
+	p.mu.Unlock()
 }
 
 func (p *PrivateKeyRingFolder) Get(id IssuerIdentifier, counter uint) (*gabikeys.PrivateKey, error) {

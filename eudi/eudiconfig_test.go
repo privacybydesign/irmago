@@ -1,11 +1,13 @@
 package eudi
 
 import (
+	"crypto/x509"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
-	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/sirupsen/logrus"
@@ -26,7 +28,7 @@ func TestIntegrationConfig(t *testing.T) {
 
 	aesKey := [32]byte{}
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-	s, err := storage.NewStorage(aesKey, ":memory:", eudiAppDataPath)
+	s, err := sqlcipherstorage.New(aesKey, ":memory:", eudiAppDataPath)
 	require.NoError(t, err)
 
 	// Act
@@ -41,6 +43,8 @@ func TestIntegrationConfig(t *testing.T) {
 func TestConfig(t *testing.T) {
 	t.Run("NewConfiguration creates required directories and initializes successfully", testNewConfigurationSuccessfulInitialization)
 	t.Run("NewConfiguration reads the pinned issuer and verifier trust anchor(s)", testNewConfigurationReadsPinnedTrustAnchors)
+	t.Run("Ver.iD development trust anchor is only trusted when staging trust anchors are enabled", testVerIDDevelopmentTrustAnchorRequiresStaging)
+	t.Run("Kiwa acceptance trust anchor is only trusted by issuers when staging trust anchors are enabled", testKiwaDevelopmentTrustAnchorRequiresStaging)
 }
 
 func testNewConfigurationSuccessfulInitialization(t *testing.T) {
@@ -58,7 +62,7 @@ func testNewConfigurationSuccessfulInitialization(t *testing.T) {
 
 	aesKey := [32]byte{}
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-	s, err := storage.NewStorage(aesKey, ":memory:", eudiAppDataPath)
+	s, err := sqlcipherstorage.New(aesKey, ":memory:", eudiAppDataPath)
 	require.NoError(t, err)
 
 	// Act
@@ -93,7 +97,7 @@ func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 
 	aesKey := [32]byte{}
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-	s, err := storage.NewStorage(aesKey, ":memory:", eudiAppDataPath)
+	s, err := sqlcipherstorage.New(aesKey, ":memory:", eudiAppDataPath)
 	require.NoError(t, err)
 
 	// Act
@@ -107,4 +111,79 @@ func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 	require.NotEmpty(t, conf.Issuers.trustedRootCertificates)
 	require.NotNil(t, conf.Issuers.trustedIntermediateCertificates)
 	require.NotEmpty(t, conf.Issuers.trustedIntermediateCertificates)
+}
+
+func testVerIDDevelopmentTrustAnchorRequiresStaging(t *testing.T) {
+	storageFolder := test.CreateTestStorage(t)
+	eudiAppDataPath := filepath.Join(storageFolder, "eudi")
+
+	err := common.EnsureDirectoryExists(eudiAppDataPath)
+	require.NoError(t, err)
+
+	aesKey := [32]byte{}
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	s, err := sqlcipherstorage.New(aesKey, ":memory:", eudiAppDataPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(s)
+	require.NoError(t, err)
+
+	trustsRoot := func(tm *TrustModel, commonName string) bool {
+		return slices.ContainsFunc(tm.allCerts, func(cert *x509.Certificate) bool {
+			return cert.Subject.CommonName == commonName
+		})
+	}
+
+	require.NoError(t, conf.Reload())
+	for _, tm := range []*TrustModel{&conf.Issuers, &conf.Verifiers} {
+		require.True(t, trustsRoot(tm, "Ver.iD Root CA"))
+		require.False(t, trustsRoot(tm, "Ver.iD Dev Root CA"))
+	}
+
+	conf.SetUseStagingTrustAnchors(true)
+	require.NoError(t, conf.Reload())
+	for _, tm := range []*TrustModel{&conf.Issuers, &conf.Verifiers} {
+		require.True(t, trustsRoot(tm, "Ver.iD Root CA"))
+		require.True(t, trustsRoot(tm, "Ver.iD Dev Root CA"))
+	}
+}
+
+func testKiwaDevelopmentTrustAnchorRequiresStaging(t *testing.T) {
+	storageFolder := test.CreateTestStorage(t)
+	eudiAppDataPath := filepath.Join(storageFolder, "eudi")
+
+	err := common.EnsureDirectoryExists(eudiAppDataPath)
+	require.NoError(t, err)
+
+	aesKey := [32]byte{}
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	s, err := sqlcipherstorage.New(aesKey, ":memory:", eudiAppDataPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(s)
+	require.NoError(t, err)
+
+	trusts := func(tm *TrustModel, commonName string) bool {
+		return slices.ContainsFunc(tm.allCerts, func(cert *x509.Certificate) bool {
+			return cert.Subject.CommonName == commonName
+		})
+	}
+
+	const (
+		kiwaRoot         = "Acc Kiwa Digital Certification Root CA"
+		kiwaIntermediate = "Acc Kiwa Digital Certification Signer Intermediate CA"
+	)
+
+	require.NoError(t, conf.Reload())
+	require.False(t, trusts(&conf.Issuers, kiwaRoot))
+	require.False(t, trusts(&conf.Issuers, kiwaIntermediate))
+
+	conf.SetUseStagingTrustAnchors(true)
+	require.NoError(t, conf.Reload())
+
+	// Kiwa only issues attestations, so the chain must not reach the verifier trust model.
+	require.True(t, trusts(&conf.Issuers, kiwaRoot))
+	require.True(t, trusts(&conf.Issuers, kiwaIntermediate))
+	require.False(t, trusts(&conf.Verifiers, kiwaRoot))
+	require.False(t, trusts(&conf.Verifiers, kiwaIntermediate))
 }

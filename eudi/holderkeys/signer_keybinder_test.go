@@ -1,0 +1,147 @@
+package holderkeys
+
+import (
+	"crypto/ecdsa"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"math/big"
+	"strings"
+	"testing"
+
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/stretchr/testify/require"
+)
+
+// TestSignerKeyBinder_ProducesVerifiableKbJwt proves the HolderSigner seam: a
+// KB-JWT created through signerKeyBinder is a valid ES256 JWS that verifies
+// against the public key CreateKeyPairs handed back. A WSCA-backed HolderSigner
+// plugs into exactly this path.
+func TestSignerKeyBinder_ProducesVerifiableKbJwt(t *testing.T) {
+	signer := NewSoftwareHolderSigner()
+	binder := NewSignerKeyBinder(signer)
+
+	keys, err := binder.CreateKeyPairs(1)
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	holderKey := keys[0]
+
+	const (
+		hash  = "abc123sdhash"
+		nonce = "nonce-xyz"
+		aud   = "https://verifier.example"
+	)
+	kb, err := binder.CreateHolderSignedJwt(holderKey, map[string]any{"typ": sdjwt.KbJwtTyp}, map[string]any{
+		"sd_hash": hash,
+		"nonce":   nonce,
+		"aud":     aud,
+	})
+	require.NoError(t, err)
+
+	parts := strings.Split(string(kb), ".")
+	require.Len(t, parts, 3, "kb-jwt must be a compact JWS with 3 parts")
+
+	// Header: typ=kb+jwt, alg=ES256.
+	hdrBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	require.NoError(t, err)
+	var hdr map[string]any
+	require.NoError(t, json.Unmarshal(hdrBytes, &hdr))
+	require.Equal(t, sdjwt.KbJwtTyp, hdr["typ"])
+	require.Equal(t, "ES256", hdr["alg"])
+
+	// Payload: sd_hash / nonce / aud round-trip.
+	plBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	var pl sdjwt.KeyBindingJwtPayload
+	require.NoError(t, json.Unmarshal(plBytes, &pl))
+	require.Equal(t, hash, pl.IssuerSignedJwtHash)
+	require.Equal(t, nonce, pl.Nonce)
+	require.Equal(t, aud, pl.Audience)
+	require.NotZero(t, pl.IssuedAt)
+
+	// Signature verifies against the holder public key over sha256(signingInput).
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	require.NoError(t, err)
+	require.Len(t, sig, 64, "ES256 raw signature must be 64 bytes (r||s)")
+
+	pub, err := jwk.Export[*ecdsa.PublicKey](holderKey)
+	require.NoError(t, err)
+
+	signingInput := []byte(parts[0] + "." + parts[1])
+	digest := sha256.Sum256(signingInput)
+	r := new(big.Int).SetBytes(sig[:32])
+	s := new(big.Int).SetBytes(sig[32:])
+	require.True(t, ecdsa.Verify(pub, digest[:], r, s), "KB-JWT signature must verify against the holder key")
+}
+
+// TestSignerKeyBinder_ProducesVerifiableHolderSignedJwt checks the generic
+// holder-signed JWT (used for the VCDM Verifiable Presentation): alg ES256 is
+// set on top of the caller's headers, the claims round-trip, and the signature
+// verifies against the holder key.
+func TestSignerKeyBinder_ProducesVerifiableHolderSignedJwt(t *testing.T) {
+	signer := NewSoftwareHolderSigner()
+	binder := NewSignerKeyBinder(signer)
+
+	keys, err := binder.CreateKeyPairs(1)
+	require.NoError(t, err)
+	holderKey := keys[0]
+
+	headers := map[string]any{"typ": "vp+jwt", "alg": "none"}
+	signed, err := binder.CreateHolderSignedJwt(holderKey, headers, map[string]any{"aud": "https://verifier.example", "nonce": "nonce-xyz"})
+	require.NoError(t, err)
+	require.Equal(t, "none", headers["alg"], "the caller's header map must not be modified")
+
+	parts := strings.Split(signed, ".")
+	require.Len(t, parts, 3, "holder-signed jwt must be a compact JWS with 3 parts")
+
+	hdrBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	require.NoError(t, err)
+	var hdr map[string]any
+	require.NoError(t, json.Unmarshal(hdrBytes, &hdr))
+	require.Equal(t, "vp+jwt", hdr["typ"])
+	require.Equal(t, "ES256", hdr["alg"], "alg must be ES256 whatever the caller passed")
+
+	plBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	var pl map[string]any
+	require.NoError(t, json.Unmarshal(plBytes, &pl))
+	require.Equal(t, "https://verifier.example", pl["aud"])
+	require.Equal(t, "nonce-xyz", pl["nonce"])
+
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	require.NoError(t, err)
+	require.Len(t, sig, 64, "ES256 raw signature must be 64 bytes (r||s)")
+
+	pub, err := jwk.Export[*ecdsa.PublicKey](holderKey)
+	require.NoError(t, err)
+
+	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+	r := new(big.Int).SetBytes(sig[:32])
+	s := new(big.Int).SetBytes(sig[32:])
+	require.True(t, ecdsa.Verify(pub, digest[:], r, s), "holder-signed jwt must verify against the holder key")
+}
+
+// TestSoftwareHolderSigner_ReferenceRoundTrip checks that a generated key's
+// public JWK resolves back to the same reference used to sign — the mapping the
+// presentation path relies on to find the right key from a credential's cnf.
+func TestSoftwareHolderSigner_ReferenceRoundTrip(t *testing.T) {
+	signer := NewSoftwareHolderSigner()
+	refs, pubs, err := signer.GenerateKeys(2)
+	require.NoError(t, err)
+	require.Len(t, refs, 2)
+
+	for i, pub := range pubs {
+		k, err := jwk.Import[jwk.Key](pub)
+		require.NoError(t, err)
+		pubJwk, err := k.PublicKey()
+		require.NoError(t, err)
+		ref, err := signer.Reference(pubJwk)
+		require.NoError(t, err)
+		require.Equal(t, refs[i], ref)
+
+		// And it can sign under that reference.
+		_, err = signer.SignES256(ref, []byte("header.payload"))
+		require.NoError(t, err)
+	}
+}

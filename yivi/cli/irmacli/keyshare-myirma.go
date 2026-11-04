@@ -67,6 +67,7 @@ func init() {
 	flags.StringSlice("redis-sentinel-addrs", nil, "Redis Sentinel addresses, to be specified as host:port")
 	flags.String("redis-sentinel-master-name", "", "Redis Sentinel master name")
 	flags.Bool("redis-accept-inconsistency-risk", false, "accept the risk of inconsistent session state when using Redis Sentinel")
+	flags.Duration("redis-retry-budget", server.DefaultRedisRetryBudget, "how long to keep retrying a Redis operation that fails on a broken connection, e.g. during a Redis Sentinel failover")
 	flags.String("redis-username", "", "Redis server username (when using ACLs)")
 	flags.String("redis-pw", "", "Redis server password")
 	flags.String("redis-sentinel-username", "", "Redis Sentinel username (when using ACLs)")
@@ -122,6 +123,8 @@ func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, err
 	if err != nil {
 		return nil, err
 	}
+	// Keyshare and MyYivi servers are Yivi's own services, so they do not report usage.
+	irmaServerConf.UsageReporting.Disabled = true
 
 	// And build the configuration
 	conf := &myirmaserver.Configuration{

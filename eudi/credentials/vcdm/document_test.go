@@ -1,0 +1,294 @@
+package vcdm
+
+import (
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+// docFromJSON decodes a JSON credential the way a securing layer hands it to
+// this package: strings, []any and map[string]any, never Go-native []string.
+func docFromJSON(t *testing.T, js string) Document {
+	t.Helper()
+	var m map[string]any
+	require.NoError(t, json.Unmarshal([]byte(js), &m))
+	return Document(m)
+}
+
+// A canonical VCDM 2.0 example credential (adapted from the W3C REC examples):
+// multi-entry `@context`, array `type`, string `issuer`, nested
+// `credentialSubject`, `validFrom`.
+const exampleAlumniCredential = `{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://www.w3.org/ns/credentials/examples/v2"
+  ],
+  "id": "http://university.example/credentials/1872",
+  "type": ["VerifiableCredential", "ExampleAlumniCredential"],
+  "issuer": "https://university.example/issuers/565049",
+  "validFrom": "2010-01-01T19:23:24Z",
+  "credentialSubject": {
+    "id": "did:example:ebfeb1f712ebc6f1c276e12ec21",
+    "alumniOf": {
+      "id": "did:example:c276e12ec21ebfeb1f712ebc6f1",
+      "name": "Example University"
+    }
+  }
+}`
+
+// A VCDM 2.0 credential with an object `issuer`, a validity window, and a
+// typed `credentialStatus` extension point (BitstringStatusList).
+const exampleStatusCredential = `{
+  "@context": ["https://www.w3.org/ns/credentials/v2"],
+  "type": ["VerifiableCredential"],
+  "issuer": {"id": "https://issuer.example", "name": "Example Issuer"},
+  "validFrom": "2020-01-01T00:00:00Z",
+  "validUntil": "2030-01-01T00:00:00Z",
+  "credentialSubject": {"id": "did:example:1"},
+  "credentialStatus": {
+    "id": "https://issuer.example/status/1#7",
+    "type": "BitstringStatusListEntry",
+    "statusPurpose": "revocation",
+    "statusListIndex": "7",
+    "statusListCredential": "https://issuer.example/status/1"
+  }
+}`
+
+func TestValidate_ConformingDocuments(t *testing.T) {
+	require.NoError(t, docFromJSON(t, exampleAlumniCredential).Validate())
+	require.NoError(t, docFromJSON(t, exampleStatusCredential).Validate())
+}
+
+func TestValidate_Rejections(t *testing.T) {
+	cases := map[string]string{
+		"missing @context": `{
+			"type": ["VerifiableCredential"], "issuer": "https://i.example",
+			"credentialSubject": {"id": "did:example:1"}}`,
+		"@context not an array": `{
+			"@context": "https://www.w3.org/ns/credentials/v2",
+			"type": ["VerifiableCredential"], "issuer": "https://i.example",
+			"credentialSubject": {"id": "did:example:1"}}`,
+		"wrong base @context": `{
+			"@context": ["https://www.w3.org/2018/credentials/v1"],
+			"type": ["VerifiableCredential"], "issuer": "https://i.example",
+			"credentialSubject": {"id": "did:example:1"}}`,
+		"base @context not first": `{
+			"@context": ["https://example.com/ctx", "https://www.w3.org/ns/credentials/v2"],
+			"type": ["VerifiableCredential"], "issuer": "https://i.example",
+			"credentialSubject": {"id": "did:example:1"}}`,
+		"missing type": `{
+			"@context": ["https://www.w3.org/ns/credentials/v2"],
+			"issuer": "https://i.example", "credentialSubject": {"id": "did:example:1"}}`,
+		"type omits VerifiableCredential": `{
+			"@context": ["https://www.w3.org/ns/credentials/v2"],
+			"type": ["ExampleCredential"], "issuer": "https://i.example",
+			"credentialSubject": {"id": "did:example:1"}}`,
+		"missing issuer": `{
+			"@context": ["https://www.w3.org/ns/credentials/v2"],
+			"type": ["VerifiableCredential"], "credentialSubject": {"id": "did:example:1"}}`,
+		"empty issuer string": `{
+			"@context": ["https://www.w3.org/ns/credentials/v2"],
+			"type": ["VerifiableCredential"], "issuer": "",
+			"credentialSubject": {"id": "did:example:1"}}`,
+		"issuer object without id": `{
+			"@context": ["https://www.w3.org/ns/credentials/v2"],
+			"type": ["VerifiableCredential"], "issuer": {"name": "no id"},
+			"credentialSubject": {"id": "did:example:1"}}`,
+		"missing credentialSubject": `{
+			"@context": ["https://www.w3.org/ns/credentials/v2"],
+			"type": ["VerifiableCredential"], "issuer": "https://i.example"}`,
+		"credentialSubject is a bare string": `{
+			"@context": ["https://www.w3.org/ns/credentials/v2"],
+			"type": ["VerifiableCredential"], "issuer": "https://i.example",
+			"credentialSubject": "did:example:1"}`,
+		"credentialSubject empty array": `{
+			"@context": ["https://www.w3.org/ns/credentials/v2"],
+			"type": ["VerifiableCredential"], "issuer": "https://i.example",
+			"credentialSubject": []}`,
+		"malformed validFrom": `{
+			"@context": ["https://www.w3.org/ns/credentials/v2"],
+			"type": ["VerifiableCredential"], "issuer": "https://i.example",
+			"credentialSubject": {"id": "did:example:1"}, "validFrom": "yesterday"}`,
+		"validFrom without timezone": `{
+			"@context": ["https://www.w3.org/ns/credentials/v2"],
+			"type": ["VerifiableCredential"], "issuer": "https://i.example",
+			"credentialSubject": {"id": "did:example:1"}, "validFrom": "2020-01-01T00:00:00"}`,
+		"validUntil before validFrom": `{
+			"@context": ["https://www.w3.org/ns/credentials/v2"],
+			"type": ["VerifiableCredential"], "issuer": "https://i.example",
+			"credentialSubject": {"id": "did:example:1"},
+			"validFrom": "2030-01-01T00:00:00Z", "validUntil": "2020-01-01T00:00:00Z"}`,
+		"credentialStatus without type": `{
+			"@context": ["https://www.w3.org/ns/credentials/v2"],
+			"type": ["VerifiableCredential"], "issuer": "https://i.example",
+			"credentialSubject": {"id": "did:example:1"},
+			"credentialStatus": {"id": "https://issuer.example/status/1#7"}}`,
+	}
+	for name, js := range cases {
+		t.Run(name, func(t *testing.T) {
+			err := docFromJSON(t, js).Validate()
+			require.Error(t, err)
+			require.ErrorIs(t, err, ErrMalformed)
+		})
+	}
+}
+
+func TestAccessors(t *testing.T) {
+	doc := docFromJSON(t, exampleAlumniCredential)
+
+	ctx, ok := doc.PrimaryContext()
+	require.True(t, ok)
+	require.Equal(t, ContextV2, ctx)
+
+	require.ElementsMatch(t, []string{"VerifiableCredential", "ExampleAlumniCredential"}, doc.Types())
+	require.True(t, doc.HasType(TypeVerifiableCredential))
+	require.False(t, doc.HasType("NopeCredential"))
+
+	iss, err := doc.IssuerID()
+	require.NoError(t, err)
+	require.Equal(t, "https://university.example/issuers/565049", iss)
+
+	id, ok := doc.ID()
+	require.True(t, ok)
+	require.Equal(t, "http://university.example/credentials/1872", id)
+
+	subs, err := doc.CredentialSubjects()
+	require.NoError(t, err)
+	require.Len(t, subs, 1)
+	require.Equal(t, "did:example:ebfeb1f712ebc6f1c276e12ec21", subs[0]["id"])
+
+	vf, ok, err := doc.ValidFrom()
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, 2010, vf.Year())
+}
+
+func TestIssuerObjectForm(t *testing.T) {
+	iss, err := docFromJSON(t, exampleStatusCredential).IssuerID()
+	require.NoError(t, err)
+	require.Equal(t, "https://issuer.example", iss)
+}
+
+func TestCredentialSubjectArrayForm(t *testing.T) {
+	doc := docFromJSON(t, `{
+		"@context": ["https://www.w3.org/ns/credentials/v2"],
+		"type": ["VerifiableCredential"], "issuer": "https://i.example",
+		"credentialSubject": [{"id": "did:example:1"}, {"id": "did:example:2"}]}`)
+	require.NoError(t, doc.Validate())
+	subs, err := doc.CredentialSubjects()
+	require.NoError(t, err)
+	require.Len(t, subs, 2)
+}
+
+func TestVerifyValidityPeriod(t *testing.T) {
+	doc := docFromJSON(t, exampleStatusCredential) // validFrom 2020, validUntil 2030
+	skew := 180 * time.Second
+
+	within := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, doc.VerifyValidityPeriod(within, skew))
+
+	tooEarly := time.Date(2019, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.Error(t, doc.VerifyValidityPeriod(tooEarly, skew))
+
+	tooLate := time.Date(2031, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.Error(t, doc.VerifyValidityPeriod(tooLate, skew))
+}
+
+func TestNames(t *testing.T) {
+	cases := map[string]struct {
+		name string
+		want map[string]string
+	}{
+		"plain string": {`"Alumni card"`, map[string]string{"": "Alumni card"}},
+		"language value object": {
+			`{"@value": "Alumnikaart", "@language": "nl"}`,
+			map[string]string{"nl": "Alumnikaart"},
+		},
+		"array of language values": {
+			`[{"@value": "Alumni card", "@language": "en", "@direction": "ltr"}, {"@value": "Alumnikaart", "@language": "nl-NL"}]`,
+			map[string]string{"en": "Alumni card", "nl-NL": "Alumnikaart"},
+		},
+		"object without language": {`{"@value": "Alumni card"}`, map[string]string{"": "Alumni card"}},
+		"wrong shapes and empty values are skipped": {
+			`[42, "", {"@language": "en"}, {"@value": "Alumnikaart", "@language": "nl"}]`,
+			map[string]string{"nl": "Alumnikaart"},
+		},
+		"nothing usable": {`[42, ""]`, nil},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			doc := docFromJSON(t, `{"name": `+tc.name+`}`)
+			require.Equal(t, tc.want, doc.Names())
+		})
+	}
+
+	require.Nil(t, docFromJSON(t, exampleAlumniCredential).Names())
+}
+
+func TestImage(t *testing.T) {
+	cases := map[string]struct {
+		image  string
+		want   string
+		wantOK bool
+	}{
+		"https URL":             {`"https://example.com/badge.png"`, "https://example.com/badge.png", true},
+		"http URL":              {`"http://localhost/badge.png"`, "http://localhost/badge.png", true},
+		"data URI":              {`"data:image/png;base64,iVBORw0KGgo="`, "data:image/png;base64,iVBORw0KGgo=", true},
+		"upper case scheme":     {`"DATA:image/png;base64,iVBORw0KGgo="`, "DATA:image/png;base64,iVBORw0KGgo=", true},
+		"Image object":          {`{"id": "https://example.com/badge.png", "type": "Image", "caption": "Badge"}`, "https://example.com/badge.png", true},
+		"Image object data id":  {`{"id": "data:image/svg+xml,%3Csvg/%3E", "type": "Image"}`, "data:image/svg+xml,%3Csvg/%3E", true},
+		"data URI not an image": {`"data:text/plain,hello"`, "", false},
+		"other scheme":          {`"ftp://example.com/badge.png"`, "", false},
+		"URL without host":      {`"https:///badge.png"`, "", false},
+		"relative reference":    {`"badge.png"`, "", false},
+		"empty string":          {`""`, "", false},
+		"object without id":     {`{"type": "Image"}`, "", false},
+		"object with number id": {`{"id": 42}`, "", false},
+		"array":                 {`["https://example.com/badge.png"]`, "", false},
+		"number":                {`42`, "", false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, ok := docFromJSON(t, `{"image": `+tc.image+`}`).Image()
+			require.Equal(t, tc.wantOK, ok)
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	_, ok := docFromJSON(t, exampleAlumniCredential).Image()
+	require.False(t, ok, "no image")
+}
+
+func TestIssuerNamesAndImage(t *testing.T) {
+	doc := docFromJSON(t, `{"issuer": {
+		"id": "https://example.com/issuers/1",
+		"name": [{"@value": "Example University", "@language": "en"}, {"@value": "Voorbeelduniversiteit", "@language": "nl"}],
+		"image": {"id": "https://example.com/logo.svg", "type": "Image"}
+	}}`)
+	require.Equal(t, map[string]string{"en": "Example University", "nl": "Voorbeelduniversiteit"}, doc.IssuerNames())
+	image, ok := doc.IssuerImage()
+	require.True(t, ok)
+	require.Equal(t, "https://example.com/logo.svg", image)
+
+	plain := docFromJSON(t, `{"issuer": {"id": "https://example.com/issuers/1", "name": "Example University", "image": "data:image/png;base64,iVBORw0KGgo="}}`)
+	require.Equal(t, map[string]string{"": "Example University"}, plain.IssuerNames())
+	image, ok = plain.IssuerImage()
+	require.True(t, ok)
+	require.Equal(t, "data:image/png;base64,iVBORw0KGgo=", image)
+
+	for name, js := range map[string]string{
+		"issuer as a string":    `{"issuer": "https://example.com/issuers/1", "name": "Card", "image": "https://example.com/card.png"}`,
+		"issuer without either": `{"issuer": {"id": "https://example.com/issuers/1"}}`,
+		"wrong shapes":          `{"issuer": {"id": "https://example.com/issuers/1", "name": 42, "image": ["https://example.com/logo.svg"]}}`,
+		"no issuer":             `{}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := docFromJSON(t, js)
+			require.Nil(t, doc.IssuerNames())
+			_, ok := doc.IssuerImage()
+			require.False(t, ok)
+		})
+	}
+}

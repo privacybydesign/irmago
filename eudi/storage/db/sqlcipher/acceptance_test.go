@@ -26,8 +26,8 @@ func openAndMigrateTestDB(t *testing.T, c *Connector) *gorm.DB {
 		&models.CredentialDisplay{},
 		&models.CredentialClaim{},
 		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
+		&models.SdJwtVcBatch{},
+		&models.SdJwtVcBatchInstance{},
 	))
 	return db
 }

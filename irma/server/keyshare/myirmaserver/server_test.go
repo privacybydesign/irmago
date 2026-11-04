@@ -11,7 +11,6 @@ import (
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
-	"github.com/privacybydesign/irmago/irma/server/keyshare"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -216,11 +215,9 @@ func StartMyIrmaServer(t *testing.T, db db, emailserver string) (*Server, *http.
 			SchemesPath: filepath.Join(testdataPath, "irma_configuration"),
 			Logger:      irma.Logger,
 		},
-		EmailConfiguration: keyshare.EmailConfiguration{
-			EmailServer:     emailserver,
-			EmailFrom:       "test@example.com",
-			DefaultLanguage: "en",
-		},
+		EmailServer:        emailserver,
+		EmailFrom:          "test@example.com",
+		DefaultLanguage:    "en",
 		DB:                 db,
 		SessionLifetime:    15 * 60,
 		KeyshareAttributes: []irma.AttributeTypeIdentifier{irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")},

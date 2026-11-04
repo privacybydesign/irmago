@@ -57,6 +57,8 @@ type Configuration struct {
 
 	// Keyshare attribute to issue during registration
 	KeyshareAttribute irma.AttributeTypeIdentifier `json:"keyshare_attribute" mapstructure:"keyshare_attribute"`
+	// Amount of time the issued keyshare attribute is valid (in days)
+	KeyshareAttributeValidity int `json:"keyshare_attribute_validity" mapstructure:"keyshare_attribute_validity"`
 
 	// Configuration for email sending during registration (email address use will be disabled if not present)
 	keyshare.EmailConfiguration `mapstructure:",squash"`
@@ -119,6 +121,13 @@ func validateConf(conf *Configuration) error {
 		conf.URL += "/"
 	}
 	conf.URL += "irma/"
+
+	if conf.KeyshareAttributeValidity == 0 {
+		conf.KeyshareAttributeValidity = 365 // set default of 1 year
+	}
+	if conf.KeyshareAttributeValidity < 1 {
+		return server.LogError(errors.Errorf("KeyshareAttributeValidity (%d) is less than one day", conf.KeyshareAttributeValidity))
+	}
 
 	if conf.EmailTokenValidity == 0 {
 		conf.EmailTokenValidity = 168 // set default of 7 days

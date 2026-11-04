@@ -42,28 +42,28 @@ func TestYesnoAttributeBecomesBoolean(t *testing.T) {
 	expectedAttrs := []expectedAttr{
 		{
 			Path:        []any{"firstName"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			DisplayName: new("First name"),
 			Value:       strVal("Alice"),
 		},
 		{
 			Path:        []any{"familyName"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			DisplayName: new("Family name"),
 			Value:       strVal("Smith"),
 		},
 		{
 			Path:        []any{"over_18"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Over 18", "nl": "Ouder dan 18"},
-			Value:       boolVal(true),
+			DisplayName: new("Over 18"),
+			Value:       yesnoVal(true),
 		},
 		{
 			Path:        []any{"over_21"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Over 21", "nl": "Ouder dan 21"},
-			Value:       boolVal(false),
+			DisplayName: new("Over 21"),
+			Value:       yesnoVal(false),
 		},
 		{
 			Path:        []any{"nationalityNL"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Dutch nationality", "nl": "Nederlandse nationaliteit"},
-			Value:       boolVal(true),
+			DisplayName: new("Dutch nationality"),
+			Value:       yesnoVal(true),
 		},
 	}
 
@@ -81,7 +81,7 @@ func TestYesnoAttributeBecomesBoolean(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// 2. GetCredentials() must expose yesno attrs as Bool.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	var stored *clientmodels.Credential
 	for _, cred := range creds {
@@ -127,4 +127,13 @@ func TestYesnoAttributeBecomesBoolean(t *testing.T) {
 
 	// 4. Persisted disclosure log must mirror the Bool typing.
 	requireNewestDisclosureLogAttrs(t, c, "test.test.personalData", expectedAttrs)
+}
+
+// yesnoVal is the boolean AttributeValue of an attribute with displayHint="yesno";
+// the hint itself is passed to the client too.
+func yesnoVal(b bool) *clientmodels.AttributeValue {
+	v := boolVal(b)
+	hint := "yesno"
+	v.DisplayHint = &hint
+	return v
 }

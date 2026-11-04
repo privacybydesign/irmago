@@ -16,6 +16,68 @@
     }
   ],
   "credential_configurations_supported": {
+    "TestCredentialVcdm": {
+      "format": "vc+sd-jwt",
+      "scope": "TestVcdmCredential",
+      "extends": "TestVcdmCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      }
+    },
+    "TestOpenBadgeCredential": {
+      "format": "vc+sd-jwt",
+      "scope": "OpenBadgeCredential",
+      "extends": "TestOpenBadgeCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      }
+    },
+    "StatusListCredentialVcdm": {
+      "format": "vc+sd-jwt",
+      "scope": "TestVcdmCredential",
+      "extends": "TestVcdmCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "statuslist": [
+        {
+          "name": "vcdm-revocation",
+          "bitSize": 1,
+          "purpose": "revocation",
+          "type": "BitstringStatusList"
+        }
+      ]
+    },
     "TestCredentialSdJwt": {
       "format": "dc+sd-jwt",
       "scope": "TestCredentialSdJwt",
@@ -92,6 +154,70 @@
         {
           "name": "Test Credential (SD-JWT)",
           "locale": "en"
+        }
+      ]
+    },
+    "StatusListCredentialSdJwt": {
+      "format": "dc+sd-jwt",
+      "scope": "StatusListCredentialSdJwt",
+      "extends": "TestCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "credential_metadata": {
+        "display": [
+          {
+            "name": "Status List Credential (SD-JWT)",
+            "locale": "en"
+          }
+        ],
+        "claims": [
+          {
+            "path": [
+              "given_name"
+            ],
+            "display": [
+              {
+                "name": "Given Name",
+                "locale": "en"
+              }
+            ]
+          },
+          {
+            "path": [
+              "email"
+            ],
+            "display": [
+              {
+                "name": "Email",
+                "locale": "en"
+              }
+            ]
+          }
+        ]
+      },
+      "display": [
+        {
+          "name": "Status List Credential (SD-JWT)",
+          "locale": "en"
+        }
+      ],
+      "statuslist": [
+        {
+          "name": "sdjwt-revocation",
+          "bitSize": 1,
+          "purpose": "revocation",
+          "type": "statuslist+jwt"
         }
       ]
     },

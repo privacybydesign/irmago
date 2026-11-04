@@ -54,6 +54,8 @@ func TestEudiClient(t *testing.T) {
 	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSeparateCredentialInfos)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
 	t.Run("optional empty attributes excluded from GetCredentials", testOptionalEmptyAttributesExcludedFromGetCredentials)
+	t.Run("idemix and sdjwtvc with absent optional attribute merge into one credential", testIdemixAndSdJwtWithAbsentOptionalAttributeMerge)
+	t.Run("deleting combined credential with absent optional attribute deletes both formats", testDeletingCombinedCredentialWithAbsentOptionalAttribute)
 	t.Run("irma disclose keyshare attribute", testIrmaDiscloseKeyshareAttribute)
 }
 
@@ -122,7 +124,7 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -134,7 +136,7 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -152,7 +154,7 @@ func testCredentialInstanceCount(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -166,7 +168,7 @@ func testCredentialInstanceCount(t *testing.T) {
 	for i := range numInstances {
 		discloseOverOpenID4VP(t, c, int(i)+2, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
 
-		creds, err = c.GetCredentials()
+		creds, _, err = c.GetCredentials()
 		require.NoError(t, err)
 		require.Len(t, creds, 1)
 
@@ -479,7 +481,7 @@ func testRemoveStorageClearsEudiDatabaseAndFilesystem(t *testing.T) {
 	}`)
 
 	// Verify credentials exist before removal.
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.NotEmpty(t, creds, "should have at least one credential after issuance")
 
@@ -504,7 +506,7 @@ func testRemoveStorageClearsEudiDatabaseAndFilesystem(t *testing.T) {
 	require.NoError(t, c.RemoveStorage())
 
 	// Assert: EUDI credentials are gone.
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	require.Empty(t, creds, "credentials should be empty after RemoveStorage")
 
@@ -561,7 +563,7 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 
 		awaitSessionState(t, sessionHandler)
 
-		credentials, err := c.GetCredentials()
+		credentials, _, err := c.GetCredentials()
 		require.NoError(t, err)
 		fullNameCred := findCredentialById(credentials, "irma-demo.MijnOverheid.fullName")
 		require.NotNil(t, fullNameCred)
@@ -581,33 +583,33 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 
 		require.Contains(t, credential.Formats, clientmodels.Format_Idemix)
 		require.Equal(t, "irma-demo.MijnOverheid.fullName", credential.CredentialId)
-		require.Equal(t, "Demo Name", credential.Name["en"])
-		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name["en"])
+		require.Equal(t, "Demo Name", credential.Name)
+		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name)
 		require.True(t, credential.Issuer.Verified, "issuer should be verified")
 
 		requireAttrsInOrder(t, credential.Attributes,
 			expectedAttr{
 				Path:        []any{"firstnames"},
-				DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
-				Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"},
+				DisplayName: new("First names"),
+				Description: new("All of your first names"),
 				Value:       strVal("Barry"),
 			},
 			expectedAttr{
 				Path:        []any{"firstname"},
-				DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-				Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
+				DisplayName: new("First name"),
+				Description: new("Your first name"),
 				Value:       strVal("Bar"),
 			},
 			expectedAttr{
 				Path:        []any{"familyname"},
-				DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-				Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+				DisplayName: new("Family name"),
+				Description: new("Your family name"),
 				Value:       strVal("Batsbak"),
 			},
 			expectedAttr{
 				Path:        []any{"prefix"},
-				DisplayName: &clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
-				Description: &clientmodels.TranslatedString{"en": "Family name prefix", "nl": "Tussenvoegsel van uw achternaam"},
+				DisplayName: new("Prefix"),
+				Description: new("Family name prefix"),
 				Value:       strVal("Sir"),
 			},
 		)
@@ -637,7 +639,7 @@ func testIdemixAndSdJwtCombinedRemovalLog(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	credentials, err := c.GetCredentials()
+	credentials, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	emailCred := findCredentialById(credentials, "test.test.email")
 	require.NotNil(t, emailCred)
@@ -714,7 +716,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	defer c.Close()
 
 	revocationListUpdateInterval := 3 * time.Second
-	c.InitJobs(revocationListUpdateInterval)
+	c.InitJobs(revocationListUpdateInterval, 0) // status refresh disabled: not under test here
 
 	// Give the client some time to init and download the current CRL
 	time.Sleep(4 * time.Second)
@@ -723,7 +725,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 	awaitSessionState(t, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -754,7 +756,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	// TODO: how to check that it failed?
 	failIssueSdJwtAndIdemixToClient(t, c, 2, sessionHandler, irmaServer)
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -770,15 +772,15 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInf
 	cred := log.RemovalLog.Credentials[0]
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_Idemix}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
-	require.Equal(t, "Demo Email address", cred.Name["en"])
-	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.Equal(t, "Demo Email address", cred.Name)
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
 	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			DisplayName: new("Email address"),
+			Description: new("Your verified email address"),
 			Value:       strVal("test@gmail.com"),
 		},
 	)
@@ -837,15 +839,15 @@ func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
 	cred := log.DisclosureLog.Credentials[0]
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_Idemix}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
-	require.Equal(t, "Demo Email address", cred.Name["en"])
-	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.Equal(t, "Demo Email address", cred.Name)
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
 	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			DisplayName: new("Email address"),
+			Description: new("Your verified email address"),
 			Value:       strVal("test@gmail.com"),
 		},
 	)
@@ -859,15 +861,15 @@ func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
 	cred := log.SignedMessageLog.Credentials[0]
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_Idemix}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
-	require.Equal(t, "Demo Email address", cred.Name["en"])
-	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.Equal(t, "Demo Email address", cred.Name)
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
 	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			DisplayName: new("Email address"),
+			Description: new("Your verified email address"),
 			Value:       strVal("test@gmail.com"),
 		},
 	)
@@ -922,15 +924,15 @@ func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 	cred := log.DisclosureLog.Credentials[0]
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
-	require.Equal(t, "Demo Email address", cred.Name["en"])
-	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.Equal(t, "Demo Email address", cred.Name)
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
 	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			DisplayName: new("Email address"),
+			Description: new("Your verified email address"),
 			Value:       strVal("test@gmail.com"),
 		},
 	)
@@ -956,15 +958,15 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Contains(t, cred.Formats, clientmodels.Format_Idemix)
 
 	require.Equal(t, "test.test.email", cred.CredentialId)
-	require.Equal(t, "Demo Email address", cred.Name["en"])
-	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.Equal(t, "Demo Email address", cred.Name)
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
 	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			DisplayName: new("Email address"),
+			Description: new("Your verified email address"),
 			Value:       strVal("test@gmail.com"),
 		},
 	)
@@ -985,7 +987,7 @@ func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
@@ -994,9 +996,50 @@ func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
 
 	require.NoError(t, c.RemoveCredentialsByHash(credentialHashByFormat(emailCred)))
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 0)
+}
+
+// Deleting goes through RemoveCredentialsByHash, which checks that all given
+// hashes belong to the same credential. With an absent optional attribute both
+// formats must still pass that check and both must be removed.
+func testDeletingCombinedCredentialWithAbsentOptionalAttribute(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClient(t)
+	defer c.Close()
+
+	req := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
+			Attributes: map[string]string{
+				"firstnames": "Barry",
+				"firstname":  "Bar",
+				"familyname": "Batsbak",
+				// "prefix" is optional and left out on purpose
+			},
+			SdJwtBatchSize: 10,
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, 1, req)
+	awaitSessionState(t, sessionHandler)
+
+	creds, _, err := c.GetCredentials()
+	require.NoError(t, err)
+	fullName := findCredentialById(creds, "irma-demo.MijnOverheid.fullName")
+	require.NotNil(t, fullName)
+	require.Len(t, fullName.CredentialInstanceIds, 2)
+
+	require.NoError(t, c.RemoveCredentialsByHash(credentialHashByFormat(fullName)))
+
+	creds, _, err = c.GetCredentials()
+	require.NoError(t, err)
+	require.Nil(t, findCredentialById(creds, "irma-demo.MijnOverheid.fullName"))
 }
 
 func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
@@ -1014,13 +1057,53 @@ func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 	require.Len(t, creds, 1)
 
 	emailCred := findCredentialById(creds, "test.test.email")
 	require.NotNil(t, emailCred)
 	require.Len(t, emailCred.CredentialInstanceIds, 2)
+}
+
+func testIdemixAndSdJwtWithAbsentOptionalAttributeMerge(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClient(t)
+	defer c.Close()
+
+	req := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
+			Attributes: map[string]string{
+				"firstnames": "Barry",
+				"firstname":  "Bar",
+				"familyname": "Batsbak",
+				// "prefix" is optional and left out on purpose
+			},
+			SdJwtBatchSize: 10,
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, 1, req)
+	awaitSessionState(t, sessionHandler)
+
+	creds, problematic, err := c.GetCredentials()
+	require.NoError(t, err)
+	require.Empty(t, problematic)
+
+	var fullNames []*clientmodels.Credential
+	for _, cred := range creds {
+		if cred.CredentialId == "irma-demo.MijnOverheid.fullName" {
+			fullNames = append(fullNames, cred)
+		}
+	}
+
+	require.Len(t, fullNames, 1, "idemix and SD-JWT copies should merge into one credential")
+	require.Len(t, fullNames[0].CredentialInstanceIds, 2)
 }
 
 func testIdemixAndSdJwtCombinedIssuance(t *testing.T) {
@@ -1058,13 +1141,11 @@ func testDiscloseOverOpenID4VP(t *testing.T) {
 }
 
 func discloseOverOpenID4VP(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, openid4vpHost string) {
-	verifierSession, err := irmaclient.StartTestSessionAtEudiVerifier(openid4vpHost, createEmailAuthRequestRequest())
+	verifierSession, err := StartTestSessionAtEudiVerifier(openid4vpHost, createEmailAuthRequestRequest())
 	require.NoError(t, err)
 	sessionReq := client.SessionRequestData{
-		Qr: irma.Qr{
-			Type: irma.ActionDisclosing,
-			URL:  verifierSession.SessionLink,
-		},
+		Type:     irma.ActionDisclosing,
+		URL:      verifierSession.SessionLink,
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	}
 	sessionJson, err := json.Marshal(sessionReq)
@@ -1202,17 +1283,35 @@ func (mh *MockSessionHandler) UpdateSession(s clientmodels.SessionState) {
 }
 
 func createClientWithoutKeyshareEnrollment(t *testing.T, issuerChain []byte) (*client.Client, *MockSessionHandler) {
-	client, _, sessionHandler := instantiateClient(t, issuerChain)
+	client, _, sessionHandler := instantiateClient(t, issuerChain, "en")
 	return client, sessionHandler
 }
 
 func createClientWithIssuerChain(t *testing.T, issuerChain []byte) (*client.Client, *MockSessionHandler) {
-	client, clientHandler, sessionHandler := instantiateClient(t, issuerChain)
+	client, clientHandler, sessionHandler := instantiateClient(t, issuerChain, "en")
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
 
 	return client, sessionHandler
+}
+
+// createDutchClient creates a keyshare-enrolled client whose UI locale is
+// Dutch, so all app-facing text resolves through the "nl" translations.
+func createDutchClient(t *testing.T) (*client.Client, *MockSessionHandler) {
+	c, clientHandler, sessionHandler := instantiateClient(t, nil, "nl")
+	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "nl")
+
+	require.NoError(t, clientHandler.AwaitEnrollmentResult())
+
+	return c, sessionHandler
+}
+
+// createDutchClientWithoutKeyshareEnrollment creates a Dutch-locale client for
+// EUDI-only flows that don't need the keyshare server.
+func createDutchClientWithoutKeyshareEnrollment(t *testing.T) (*client.Client, *MockSessionHandler) {
+	c, _, sessionHandler := instantiateClient(t, nil, "nl")
+	return c, sessionHandler
 }
 
 func createClientWithCustomIssuerTrustChain(
@@ -1229,55 +1328,97 @@ func createClientWithCustomIssuerTrustChain(
 	return createClientWithIssuerChain(t, issuerChainBytes)
 }
 
-func instantiateClient(t *testing.T, issuerChain []byte) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
-	var aesKey [32]byte
-	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-
-	path := test.FindTestdataFolder(t)
-	storageFolder := test.CreateTestStorage(t)
-	storagePath := filepath.Join(storageFolder, "client")
+func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	anchor := stagingIssuerAnchor
+	if issuerChain != nil {
+		anchor = trustAnchor{name: "integrationtest-chain.pem", pem: issuerChain}
+	}
+	storagePath := newTestStorageFolder(t, anchor)
 	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
 	eudiAppDataPath := filepath.Join(storagePath, "eudi")
-
-	// Copy files to storage folder
-	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
-	require.NoError(t, common.EnsureDirectoryExists(eudiAppDataPath))
-
-	// Add test issuer certificates as trusted chain (encrypted, since the
-	// EUDI filesystem storage decrypts files on read).
-	encMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
-
-	issuerCertsPath := filepath.Join(storagePath, "eudi", "issuers", "certificates")
-	require.NoError(t, common.EnsureDirectoryExists(issuerCertsPath))
-
-	if issuerChain != nil {
-		encIssuer, err := encMiddleware.Encrypt(issuerChain)
-		require.NoError(t, err)
-		require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "integrationtest-chain.pem"), encIssuer))
-	} else {
-		encIssuer, err := encMiddleware.Encrypt(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
-		require.NoError(t, err)
-		require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), encIssuer))
-	}
-
-	// Add test verifier CA certificate as trusted chain.
-	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
-	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))
-	encVerifierCA, err := encMiddleware.Encrypt(testdata.VerifierCACertBytes)
-	require.NoError(t, err)
-	require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encVerifierCA))
 
 	clientHandler := irmaclient.NewMockClientHandler()
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	client, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey)
+	client, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, test.NewSigner(t), testAESKey(), locale)
 	require.NoError(t, err)
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 	return client, clientHandler, sessionHandler
 }
 
+// testAESKey is the storage encryption key every test wallet uses.
+func testAESKey() [32]byte {
+	var aesKey [32]byte
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	return aesKey
+}
+
+// trustAnchor is an issuer certificate chain a test wallet trusts, stored under
+// name in the wallet's issuer certificate folder.
+type trustAnchor struct {
+	name string
+	pem  []byte
+}
+
+// stagingIssuerAnchor is the issuer chain most test wallets trust.
+var stagingIssuerAnchor = trustAnchor{
+	name: "issuer_cert_openid4vc_staging_yivi_app.pem",
+	pem:  testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes,
+}
+
+// pidIssuerAnchor is the CA of the Python PID issuer, which issues the mdoc.
+func pidIssuerAnchor(t *testing.T) trustAnchor {
+	return trustAnchor{name: "eudi_pid_issuer_py_ca.pem", pem: readEudiPidIssuerPyCA(t)}
+}
+
+// newTestStorageFolder creates a wallet storage folder that holds the test
+// irma_configuration and trusts the given issuer chains, and returns its path.
+func newTestStorageFolder(t *testing.T, issuers ...trustAnchor) string {
+	t.Helper()
+	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
+	testdataPath := test.FindTestdataFolder(t)
+	require.NoError(t, common.CopyDirectory(filepath.Join(testdataPath, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
+	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(storagePath, "eudi")))
+	installTrustAnchors(t, storagePath, issuers...)
+	return storagePath
+}
+
+// installTrustAnchors makes a wallet storage folder trust the given issuer
+// chains and the test verifier CA. The files are encrypted, since the EUDI
+// filesystem storage decrypts files on read.
+func installTrustAnchors(t *testing.T, storagePath string, issuers ...trustAnchor) {
+	t.Helper()
+	encMiddleware := encryption.NewAESEncryptionMiddleware(testAESKey())
+	save := func(dir string, anchor trustAnchor) {
+		require.NoError(t, common.EnsureDirectoryExists(dir))
+		encrypted, err := encMiddleware.Encrypt(anchor.pem)
+		require.NoError(t, err)
+		require.NoError(t, common.SaveFile(filepath.Join(dir, anchor.name), encrypted))
+	}
+
+	for _, issuer := range issuers {
+		save(filepath.Join(storagePath, "eudi", "issuers", "certificates"), issuer)
+	}
+	save(filepath.Join(storagePath, "eudi", "verifiers", "certificates"),
+		trustAnchor{name: "ca.pem", pem: testdata.VerifierCACertBytes})
+}
+
+// eudiVerifierIntendedUseId is the intended use every session at the EUDI reference
+// verifier is started under. From v0.11.0 the verifier refuses a transaction that
+// names neither an intended use nor a registration certificate, and id "1" is the one
+// the verifier image configures out of the box, with the registration certificate it
+// carries. So nothing has to be configured for it in docker-compose.yml.
+const eudiVerifierIntendedUseId = "1"
+
+// createAuthRequestRequestWithDcql builds the request that starts a session at the
+// EUDI reference verifier.
+//
+// request_uri_method is "get" because that is what the client does: it fetches the
+// request object with a GET and sends neither wallet_metadata nor wallet_nonce. The
+// verifier enforces the method the transaction was started with from v0.11.0, so
+// asking it for "post" and then doing a GET now fails the session.
 func createAuthRequestRequestWithDcql(dcql string) string {
 	return fmt.Sprintf(`
 		{
@@ -1285,11 +1426,13 @@ func createAuthRequestRequestWithDcql(dcql string) string {
 		  "dcql_query": %s,
 		  "nonce": "nonce",
 		  "jar_mode": "by_reference",
-		  "request_uri_method": "post",
+		  "request_uri_method": "get",
+		  "intended_use_id": "%s",
 		  "issuer_chain": "%s"
 		}
 		`,
 		dcql,
+		eudiVerifierIntendedUseId,
 		string(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
 	)
 }
@@ -1418,7 +1561,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	issue(t, irmaServer, c, sessionHandler, 2, reqWithPrefix)
 	awaitSessionState(t, sessionHandler)
 
-	creds, err := c.GetCredentials()
+	creds, _, err := c.GetCredentials()
 	require.NoError(t, err)
 
 	// Find both credentials and distinguish them by attribute count
@@ -1437,45 +1580,47 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 
 	// Credential without prefix: optional empty attribute should be excluded
 	require.NotNil(t, credWithoutPrefix)
+	require.Len(t, credWithoutPrefix.CredentialInstanceIds, 2, "idemix and SD-JWT copies should merge")
 	requireAttrsInOrder(t, credWithoutPrefix.Attributes,
 		expectedAttr{
 			Path:        []any{"firstnames"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+			DisplayName: new("First names"),
 			Value:       strVal("Barry"),
 		},
 		expectedAttr{
 			Path:        []any{"firstname"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			DisplayName: new("First name"),
 			Value:       strVal("Bar"),
 		},
 		expectedAttr{
 			Path:        []any{"familyname"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			DisplayName: new("Family name"),
 			Value:       strVal("Batsbak"),
 		},
 	)
 
 	// Credential with prefix: optional non-empty attribute should be included
 	require.NotNil(t, credWithPrefix)
+	require.Len(t, credWithPrefix.CredentialInstanceIds, 2, "idemix and SD-JWT copies should merge")
 	requireAttrsInOrder(t, credWithPrefix.Attributes,
 		expectedAttr{
 			Path:        []any{"firstnames"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+			DisplayName: new("First names"),
 			Value:       strVal("Barry"),
 		},
 		expectedAttr{
 			Path:        []any{"firstname"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			DisplayName: new("First name"),
 			Value:       strVal("Bar"),
 		},
 		expectedAttr{
 			Path:        []any{"familyname"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			DisplayName: new("Family name"),
 			Value:       strVal("Batsbak"),
 		},
 		expectedAttr{
 			Path:        []any{"prefix"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
+			DisplayName: new("Prefix"),
 			Value:       strVal("Sir"),
 		},
 	)
@@ -1497,7 +1642,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	issue(t, irmaServer, c, sessionHandler, 3, reqEmptyNonOptional)
 	awaitSessionState(t, sessionHandler)
 
-	creds, err = c.GetCredentials()
+	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
 
 	// Find the credential with empty firstname (distinct from the others by its attribute values)
@@ -1517,17 +1662,17 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	requireAttrsInOrder(t, credEmptyFirstname.Attributes,
 		expectedAttr{
 			Path:        []any{"firstnames"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+			DisplayName: new("First names"),
 			Value:       strVal("Barry"),
 		},
 		expectedAttr{
 			Path:        []any{"firstname"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			DisplayName: new("First name"),
 			Value:       strVal(""),
 		},
 		expectedAttr{
 			Path:        []any{"familyname"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			DisplayName: new("Family name"),
 			Value:       strVal("Batsbak"),
 		},
 	)

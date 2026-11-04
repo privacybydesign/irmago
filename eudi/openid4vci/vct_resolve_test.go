@@ -11,6 +11,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,7 +39,7 @@ func TestResolveCredentialMetadataFromVct_VctEntryWinsOnLocaleCollision(t *testi
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: metadata.CredentialDisplays{
 				// Same locale (en) as VCT — collision; VCT wins.
-				{Display: metadata.Display{Name: "FROM_CREDMETA", Locale: &enLocale}},
+				{Name: "FROM_CREDMETA", Locale: &enLocale},
 			},
 		},
 	})
@@ -107,7 +109,7 @@ func TestResolveCredentialMetadataFromVct_VctWinsOverCredentialMetadata_Sphereon
 			// credential_metadata uses sentinel names so we can detect if the
 			// wallet wrongly preferred it over the VCT.
 			Display: metadata.CredentialDisplays{
-				{Display: metadata.Display{Name: "Test Credential (from credential_metadata)", Locale: &enLocale}},
+				{Name: "Test Credential (from credential_metadata)", Locale: &enLocale},
 			},
 			Claims: []metadata.ClaimsDescription{
 				{
@@ -170,7 +172,7 @@ func TestResolveCredentialMetadataFromVct_FetchFailureLeavesCredentialMetadata(t
 	resolver := typemetadata.NewResolver(srv.Client())
 	original := &metadata.CredentialMetadata{
 		Display: metadata.CredentialDisplays{
-			{Display: metadata.Display{Name: "FROM_CREDMETA"}},
+			{Name: "FROM_CREDMETA"},
 		},
 	}
 	issuerMeta := singleConfigMetadata("Email", metadata.CredentialConfiguration{
@@ -231,7 +233,7 @@ func TestResolveCredentialMetadataFromVct_NonSdJwtFormatSkipsResolution(t *testi
 func TestVerifyVctIntegrity_AbsentClaimSkips(t *testing.T) {
 	s := &session{vctResolver: typemetadata.NewResolver(nil)}
 	fc := makeFetchedCredential("Email", "https://issuer/vct/Email", map[string]any{
-		"vct": "https://issuer/vct/Email",
+		sdjwtvc.VerifiableCredentialTypeKey: "https://issuer/vct/Email",
 		// vct#integrity intentionally absent
 	})
 	require.NoError(t, s.verifyVctIntegrity([]*fetchedCredential{fc}))
@@ -246,8 +248,8 @@ func TestVerifyVctIntegrity_AcceptsOnMatch(t *testing.T) {
 	s := &session{vctResolver: resolver}
 
 	fc := makeFetchedCredential("Email", "https://issuer/vct/Email", map[string]any{
-		"vct":           "https://issuer/vct/Email",
-		"vct#integrity": intg,
+		sdjwtvc.VerifiableCredentialTypeKey:          "https://issuer/vct/Email",
+		sdjwtvc.VerifiableCredentialTypeIntegrityKey: intg,
 	})
 	require.NoError(t, s.verifyVctIntegrity([]*fetchedCredential{fc}))
 }
@@ -260,8 +262,8 @@ func TestVerifyVctIntegrity_RejectsOnMismatch(t *testing.T) {
 	intg := "sha256-" + base64.StdEncoding.EncodeToString(hash[:])
 
 	fc := makeFetchedCredential("Email", "https://issuer/vct/Email", map[string]any{
-		"vct":           "https://issuer/vct/Email",
-		"vct#integrity": intg,
+		sdjwtvc.VerifiableCredentialTypeKey:          "https://issuer/vct/Email",
+		sdjwtvc.VerifiableCredentialTypeIntegrityKey: intg,
 	})
 	err := s.verifyVctIntegrity([]*fetchedCredential{fc})
 	require.Error(t, err)
@@ -273,8 +275,8 @@ func TestVerifyVctIntegrity_RejectsOnUnsupportedAlgorithm(t *testing.T) {
 	s := &session{vctResolver: resolver}
 
 	fc := makeFetchedCredential("Email", "https://issuer/vct/Email", map[string]any{
-		"vct":           "https://issuer/vct/Email",
-		"vct#integrity": "sha1-aGVsbG8=",
+		sdjwtvc.VerifiableCredentialTypeKey:          "https://issuer/vct/Email",
+		sdjwtvc.VerifiableCredentialTypeIntegrityKey: "sha1-aGVsbG8=",
 	})
 	err := s.verifyVctIntegrity([]*fetchedCredential{fc})
 	require.Error(t, err)
@@ -285,8 +287,8 @@ func TestVerifyVctIntegrity_RejectsWhenClaimPresentButNoCachedDoc(t *testing.T) 
 	s := &session{vctResolver: typemetadata.NewResolver(nil)} // empty cache
 
 	fc := makeFetchedCredential("Email", "https://issuer/vct/Email", map[string]any{
-		"vct":           "https://issuer/vct/Email",
-		"vct#integrity": "sha256-aGVsbG8=",
+		sdjwtvc.VerifiableCredentialTypeKey:          "https://issuer/vct/Email",
+		sdjwtvc.VerifiableCredentialTypeIntegrityKey: "sha256-aGVsbG8=",
 	})
 	err := s.verifyVctIntegrity([]*fetchedCredential{fc})
 	require.Error(t, err)
@@ -296,7 +298,7 @@ func TestVerifyVctIntegrity_RejectsWhenClaimPresentButNoCachedDoc(t *testing.T) 
 func TestVerifyVctIntegrity_NilResolverNoOp(t *testing.T) {
 	s := &session{vctResolver: nil}
 	fc := makeFetchedCredential("Email", "https://issuer/vct/Email", map[string]any{
-		"vct#integrity": "sha256-anything",
+		sdjwtvc.VerifiableCredentialTypeIntegrityKey: "sha256-anything",
 	})
 	require.NoError(t, s.verifyVctIntegrity([]*fetchedCredential{fc}))
 }
@@ -344,12 +346,14 @@ func newResolverPrimedWith(t *testing.T, url, body string) *typemetadata.Resolve
 func makeFetchedCredential(configID, vct string, payload map[string]any) *fetchedCredential {
 	return &fetchedCredential{
 		credentialConfigurationId: configID,
-		verifiedSdJwtVcs: []*sdjwtvc.VerifiedSdJwtVc{
+		parsedCredentials: []*services.ParsedCredential{
 			{
-				IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
-					VerifiableCredentialType: vct,
+				SdJwtVc: &sdjwtvc.VerifiedSdJwtVc{
+					IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
+						VerifiableCredentialType: vct,
+					},
+					ProcessedSdJwtPayload: sdjwt.ProcessedPayload(payload),
 				},
-				ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload(payload),
 			},
 		},
 	}

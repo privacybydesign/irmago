@@ -47,13 +47,9 @@ func (d Dialector) Initialize(db *gorm.DB) error {
 
 func (d Dialector) Migrator(db *gorm.DB) gorm.Migrator {
 	return &sqlcipherMigrator{
-		Migrator: migrator.Migrator{
-			Config: migrator.Config{
-				DB:                          db,
-				Dialector:                   d,
-				CreateIndexAfterCreateTable: true,
-			},
-		},
+		DB:                          db,
+		Dialector:                   d,
+		CreateIndexAfterCreateTable: true,
 	}
 }
 

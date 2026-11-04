@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // VctTypeMetadata is the parsed shape of a SD-JWT VC Type Metadata document
@@ -114,7 +115,7 @@ const maxResponseBytes = 1 << 20 // 1 MiB
 // expected to log + degrade.
 func NewDefaultVctFetcher(client *http.Client) VctFetcher {
 	if client == nil {
-		client = &http.Client{Timeout: defaultRequestTimeout}
+		client = common.HTTPClient
 	}
 	return &httpVctFetcher{client: client}
 }
@@ -124,7 +125,7 @@ func NewDefaultVctFetcher(client *http.Client) VctFetcher {
 // and no caching.
 func NewDefaultIssuerFetcher(client *http.Client) IssuerFetcher {
 	if client == nil {
-		client = &http.Client{Timeout: defaultRequestTimeout}
+		client = common.HTTPClient
 	}
 	return &httpIssuerFetcher{client: client}
 }

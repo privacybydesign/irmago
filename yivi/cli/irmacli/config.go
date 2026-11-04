@@ -13,6 +13,7 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/privacybydesign/irmago/irma/server/keyshare"
+	"github.com/privacybydesign/irmago/irma/server/usage"
 	"github.com/privacybydesign/irmago/yivi/cli/internal/clihelpers"
 
 	"github.com/go-errors/errors"
@@ -86,6 +87,15 @@ func configureIRMAServer() (*server.Configuration, error) {
 		AllowUnsignedCallbacks: viper.GetBool("allow_unsigned_callbacks"),
 		AugmentClientReturnURL: viper.GetBool("augment_client_return_url"),
 		SdJwtIssuanceSettings:  getSdJwtIssuanceConfigFromCli(),
+		UsageReporting: &usage.Settings{
+			Disabled:       viper.GetBool("usage_reporting_disabled"),
+			PortalURL:      viper.GetString("usage_reporting_portal_url"),
+			Interval:       viper.GetDuration("usage_reporting_interval"),
+			StateDir:       viper.GetString("usage_reporting_state_dir"),
+			AccountKeyFile: viper.GetString("usage_reporting_account_key_file"),
+			ServerInstance: viper.GetString("usage_reporting_server_instance"),
+			CountIssuance:  viper.GetBool("usage_reporting_count_issuance"),
+		},
 	}
 
 	// Parse session store configuration
@@ -96,6 +106,7 @@ func configureIRMAServer() (*server.Configuration, error) {
 		conf.RedisSettings.SentinelAddrs = viper.GetStringSlice("redis_sentinel_addrs")
 		conf.RedisSettings.SentinelMasterName = viper.GetString("redis_sentinel_master_name")
 		conf.RedisSettings.AcceptInconsistencyRisk = viper.GetBool("redis_accept_inconsistency_risk")
+		conf.RedisSettings.RetryBudget = viper.GetDuration("redis_retry_budget")
 
 		if conf.RedisSettings.Addr == "" && len(conf.RedisSettings.SentinelAddrs) == 0 || conf.RedisSettings.Addr != "" && len(conf.RedisSettings.SentinelAddrs) > 0 {
 			return nil, errors.New("When Redis is used as session data store, either --redis-addr or --redis-sentinel-addrs must be specified.")
@@ -178,19 +189,26 @@ func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, 
 	// Create our logger instance
 	logger := server.NewLogger(viper.GetInt("verbose"), viper.GetBool("quiet"), viper.GetBool("log_json"))
 
-	// First log output: hello, development or production mode, log level
-	mode := "development"
-	if viper.GetBool("production") {
-		mode = "production"
-		for key, val := range productionDefaults {
-			viper.SetDefault(key, val)
-		}
-	}
-	logger.WithFields(logrus.Fields{
+	// First log output: hello, (development or production mode,) log level
+	fields := logrus.Fields{
 		"version":   irmago.Version,
-		"mode":      mode,
 		"verbosity": server.Verbosity(viper.GetInt("verbose")),
-	}).Info(logname + " running")
+	}
+	// Only commands that actually have a development/production distinction
+	// (i.e. that define a --production flag) log the mode. Commands without
+	// such a distinction, like the keyshare tasks command, would otherwise
+	// always log a confusing and meaningless "mode=development".
+	if commandHasProductionMode(cmd) {
+		mode := "development"
+		if viper.GetBool("production") {
+			mode = "production"
+			for key, val := range productionDefaults {
+				viper.SetDefault(key, val)
+			}
+		}
+		fields["mode"] = mode
+	}
+	logger.WithFields(fields).Info(logname + " running")
 
 	if logger.Level >= logrus.TraceLevel {
 		logger.Warn("Logger has been configured to show TRACE messages. These messages may contain untrusted user input and personal data of users. Use this option with care!")
@@ -206,6 +224,14 @@ func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, 
 	} else {
 		logger.Info("Config file: ", viper.ConfigFileUsed())
 	}
+}
+
+// commandHasProductionMode reports whether the given command distinguishes
+// between development and production mode, which is the case exactly when it
+// defines a --production flag. Commands without that flag (such as the
+// keyshare tasks command) have no such distinction.
+func commandHasProductionMode(cmd *cobra.Command) bool {
+	return cmd.Flags().Lookup("production") != nil
 }
 
 func wasProvidedInAnyWay(key string) bool {

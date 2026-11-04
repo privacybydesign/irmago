@@ -10,7 +10,7 @@ import (
 
 // fakeLogoBytes — a short opaque byte sequence used as the cached "logo image".
 // The bytes don't need to form a valid PNG; convertToTrustedParty only round-trips
-// them through the LogoManager and base64-encodes them for the wallet.
+// them through the ImageManager and base64-encodes them for the wallet.
 var fakeLogoBytes = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01, 0x02, 0x03}
 
 func TestConvertToTrustedParty_PopulatesImageFromCache_HttpUri(t *testing.T) {
@@ -18,29 +18,88 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_HttpUri(t *testing.T) {
 	defer s.Close()
 
 	const logoUri = "https://issuer.example.com/logo.png"
-	logoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
-	require.NoError(t, logoManager.Save(logoUri, fakeLogoBytes))
+	logoManager := client.Configuration.Storage.FileSystem().Issuers().ImageManager()
+	require.NoError(t, logoManager.Save(logoUri, fakeLogoBytes, "image/png"))
 
 	m := &metadata.CredentialIssuerMetadata{
 		CredentialIssuer: "https://issuer.example.com/tenant",
 		Display: metadata.CredentialIssuerDisplays{
 			{
-				Display: metadata.Display{Name: "Test Issuer"},
-				Logo:    &metadata.RemoteImage{Uri: logoUri},
+				Name: "Test Issuer",
+				Logo: &metadata.RemoteImage{Uri: logoUri},
 			},
 		},
 	}
 
-	tp := client.convertToTrustedParty(m)
+	tp := client.convertToTrustedParty(m, "en")
 
 	require.NotNil(t, tp)
-	require.Equal(t, "Test Issuer", tp.Name[""], "name carried through from display")
+	require.Equal(t, "Test Issuer", tp.Name, "name carried through from display")
 	require.Equal(t, "https://issuer.example.com/tenant", tp.Id,
-		"Id must mirror CredentialIssuer — the log service uses it as the LogoManager key when persisting the issuer logo")
+		"Id must mirror CredentialIssuer — the log service uses it as the ImageManager key when persisting the issuer logo")
 	require.NotNil(t, tp.Image, "issuer logo should be populated when cached for display.logo.uri")
 	decoded, err := base64.StdEncoding.DecodeString(tp.Image.Base64)
 	require.NoError(t, err)
 	require.Equal(t, fakeLogoBytes, decoded)
+	require.NotNil(t, tp.Image.MimeType, "MIME type stored alongside the logo must reach the wallet")
+	require.Equal(t, "image/png", *tp.Image.MimeType)
+}
+
+// Regression test for privacybydesign/irmamobile#674: SVG logos were cached
+// without their MIME type, so the wallet had no way to tell it should render
+// them with an SVG renderer and they came out blank.
+func TestConvertToTrustedParty_PreservesSvgMimeType(t *testing.T) {
+	s, client := createOpenID4VCiClientForTesting(t)
+	defer s.Close()
+
+	const logoUri = "https://issuer.example.com/logo.svg"
+	svgBytes := []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)
+	logoManager := client.Configuration.Storage.FileSystem().Issuers().ImageManager()
+	require.NoError(t, logoManager.Save(logoUri, svgBytes, "image/svg+xml"))
+
+	m := &metadata.CredentialIssuerMetadata{
+		CredentialIssuer: "https://issuer.example.com/tenant",
+		Display: metadata.CredentialIssuerDisplays{
+			{
+				Name: "Test Issuer",
+				Logo: &metadata.RemoteImage{Uri: logoUri},
+			},
+		},
+	}
+
+	tp := client.convertToTrustedParty(m, "en")
+
+	require.NotNil(t, tp)
+	require.NotNil(t, tp.Image)
+	require.NotNil(t, tp.Image.MimeType)
+	require.Equal(t, "image/svg+xml", *tp.Image.MimeType)
+}
+
+// Logos cached by an older version of the app have no stored MIME type;
+// they must still load, with MimeType left nil.
+func TestConvertToTrustedParty_NoMimeType_LeavesMimeTypeNil(t *testing.T) {
+	s, client := createOpenID4VCiClientForTesting(t)
+	defer s.Close()
+
+	const logoUri = "https://issuer.example.com/logo.png"
+	logoManager := client.Configuration.Storage.FileSystem().Issuers().ImageManager()
+	require.NoError(t, logoManager.Save(logoUri, fakeLogoBytes, ""))
+
+	m := &metadata.CredentialIssuerMetadata{
+		CredentialIssuer: "https://issuer.example.com/tenant",
+		Display: metadata.CredentialIssuerDisplays{
+			{
+				Name: "Test Issuer",
+				Logo: &metadata.RemoteImage{Uri: logoUri},
+			},
+		},
+	}
+
+	tp := client.convertToTrustedParty(m, "en")
+
+	require.NotNil(t, tp)
+	require.NotNil(t, tp.Image)
+	require.Nil(t, tp.Image.MimeType)
 }
 
 func TestConvertToTrustedParty_PopulatesImageFromCache_DataUri(t *testing.T) {
@@ -49,21 +108,21 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_DataUri(t *testing.T) {
 
 	// The credenco issuer (and the spec) allows display.logo.uri to be a data
 	// URI containing the inline image. The cache key is the URI itself, which
-	// the LogoManager HMAC-hashes before persisting — long keys are safe.
+	// the ImageManager HMAC-hashes before persisting — long keys are safe.
 	logoUri := "data:image/png;base64," + base64.StdEncoding.EncodeToString(fakeLogoBytes)
-	logoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
-	require.NoError(t, logoManager.Save(logoUri, fakeLogoBytes))
+	logoManager := client.Configuration.Storage.FileSystem().Issuers().ImageManager()
+	require.NoError(t, logoManager.Save(logoUri, fakeLogoBytes, "image/png"))
 
 	m := &metadata.CredentialIssuerMetadata{
 		Display: metadata.CredentialIssuerDisplays{
 			{
-				Display: metadata.Display{Name: "Test Issuer"},
-				Logo:    &metadata.RemoteImage{Uri: logoUri},
+				Name: "Test Issuer",
+				Logo: &metadata.RemoteImage{Uri: logoUri},
 			},
 		},
 	}
 
-	tp := client.convertToTrustedParty(m)
+	tp := client.convertToTrustedParty(m, "en")
 
 	require.NotNil(t, tp)
 	require.NotNil(t, tp.Image, "data URI logos must reach requestorInfo just like HTTP URIs do")
@@ -78,11 +137,11 @@ func TestConvertToTrustedParty_NoLogo_LeavesImageNil(t *testing.T) {
 
 	m := &metadata.CredentialIssuerMetadata{
 		Display: metadata.CredentialIssuerDisplays{
-			{Display: metadata.Display{Name: "Logoless Issuer"}},
+			{Name: "Logoless Issuer"},
 		},
 	}
 
-	tp := client.convertToTrustedParty(m)
+	tp := client.convertToTrustedParty(m, "en")
 
 	require.NotNil(t, tp)
 	require.Nil(t, tp.Image, "no logo advertised → Image must stay nil")

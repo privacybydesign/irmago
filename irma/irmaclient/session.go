@@ -10,7 +10,7 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -747,7 +747,10 @@ func panicToError(e any) *irma.SessionError {
 		info = x.String()
 	default: // nop
 	}
-	fmt.Printf("recovering from panic: %v\nstack trace:\n%v\n", info, string(debug.Stack()))
+	// Through the logger rather than stdout: on mobile stdout is the platform
+	// log, which this would write to whatever level the app set. The stack trace
+	// still reaches the app in the SessionError below.
+	irma.Logger.Errorf("recovering from panic: %v\nstack trace:\n%v\n", info, string(debug.Stack()))
 	return &irma.SessionError{ErrorType: irma.ErrorPanic, Info: info + "\n\n" + string(debug.Stack())}
 }
 

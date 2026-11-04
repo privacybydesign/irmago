@@ -10,7 +10,7 @@ import (
 	"github.com/bwesterb/go-atum"
 	"github.com/go-co-op/gocron"
 	"github.com/go-errors/errors"
-	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	clientstorage "github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/concmap"
 	"github.com/privacybydesign/irmago/irma"
@@ -63,7 +64,7 @@ type IrmaClient struct {
 
 	// Where we store/load SD-JWT-VC related data to/from
 	sdJwtVcStorage SdJwtVcStorage
-	keyBinder      sdjwtvc.KeyBinder
+	keyBinder      sdjwt.KeyBinder
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
 	// Versions the client supports
@@ -126,7 +127,7 @@ func NewIrmaClient(
 	storage *storage,
 	sdJwtVerificationContext sdjwtvc.SdJwtVcVerificationContext,
 	sdJwtVcStorage SdJwtVcStorage,
-	keyBinder sdjwtvc.KeyBinder,
+	keyBinder sdjwt.KeyBinder,
 ) (*IrmaClient, error) {
 	var err error
 
@@ -323,8 +324,8 @@ func (client *IrmaClient) addCredential(cred *credential) (err error) {
 			}
 		}
 
-		for i := len(client.attrs(id)) - 1; i >= 0; i-- { // Go backwards through array because remove manipulates it
-			if client.attrs(id)[i].EqualsExceptMetadata(cred.attrs) {
+		for i, v := range slices.Backward(client.attrs(id)) { // Go backwards through array because remove manipulates it
+			if v.EqualsExceptMetadata(cred.attrs) {
 				if err = client.remove(id, i); err != nil {
 					return
 				}
@@ -570,20 +571,10 @@ func (client *IrmaClient) credCandidates(request irma.SessionRequest, con irma.A
 			// then the entire conjunction is unsatisfiable
 			satisfiable = false
 		}
-		// Determine whether the session request forces an attribute value for any attribute requested from this credential.
-		fixedAttrValue := false
-		for _, attr := range con {
-			if attr.Type.CredentialTypeIdentifier() != credTypeID {
-				continue
-			}
-			if attr.Value != nil {
-				fixedAttrValue = true
-			}
-		}
 		if len(c) == 0 {
 			satisfiable = false
 		}
-		if client.addCredSuggestion(request, credTypeID, fixedAttrValue, len(c) != 0) {
+		if client.addCredSuggestion(request, credTypeID, len(c) != 0) {
 			// When there are no candidates or when the credential is non-singleton, excluding some nonsensical cases,
 			// add an "empty" credential (i.e. without hash) as a suggestion to the user
 			c = append(c, &credCandidate{Type: credTypeID})
@@ -597,7 +588,7 @@ func (client *IrmaClient) credCandidates(request irma.SessionRequest, con irma.A
 // (i.e. without hash) with the disclosure candidates to the user as a suggestion.
 func (client *IrmaClient) addCredSuggestion(
 	request irma.SessionRequest, credTypeID irma.CredentialTypeIdentifier,
-	fixedAttrValue, haveCandidates bool,
+	haveCandidates bool,
 ) bool {
 	credType := client.Configuration.CredentialTypes[credTypeID]
 	credDeprecatedSince := credType.DeprecatedSince
@@ -609,8 +600,10 @@ func (client *IrmaClient) addCredSuggestion(
 		return false
 	}
 
-	// Show option to add extra cards of non-singleton
-	if (credType.IssueURL != nil && len(*credType.IssueURL) != 0) && !credType.IsSingleton && !fixedAttrValue {
+	// Show option to add extra cards of non-singleton credential types with a known issuance URL,
+	// regardless of whether the request pins a fixed attribute value: even when the user already
+	// holds a matching credential, they may want to obtain a fresh/different one of that type.
+	if (credType.IssueURL != nil && len(*credType.IssueURL) != 0) && !credType.IsSingleton {
 		return true
 	}
 
@@ -1143,12 +1136,10 @@ func (client *IrmaClient) keyshareEnrollWorker(managerID irma.SchemeManagerIdent
 	}
 
 	jwtt, err := SignerCreateJWT(client.signer, keyname, irma.KeyshareEnrollmentClaims{
-		KeyshareEnrollmentData: irma.KeyshareEnrollmentData{
-			Email:     email,
-			Pin:       kss.HashedPin(pin),
-			Language:  lang,
-			PublicKey: pk,
-		},
+		Email:     email,
+		Pin:       kss.HashedPin(pin),
+		Language:  lang,
+		PublicKey: pk,
 	})
 	if err != nil {
 		return err
@@ -1299,11 +1290,9 @@ func (client *IrmaClient) keyshareChangePinWorker(managerID irma.SchemeManagerId
 	transport := irma.NewHTTPTransport(client.Configuration.SchemeManagers[managerID].KeyshareServer, !client.Preferences.DeveloperMode)
 
 	claims := irma.KeyshareChangePinClaims{
-		KeyshareChangePinData: irma.KeyshareChangePinData{
-			Username: kss.Username,
-			OldPin:   kss.HashedPin(oldPin),
-			NewPin:   kss.HashedPin(newPin),
-		},
+		Username: kss.Username,
+		OldPin:   kss.HashedPin(oldPin),
+		NewPin:   kss.HashedPin(newPin),
 	}
 	jwtt, err := SignerCreateJWT(client.signer, challengeResponseKeyName(managerID), claims)
 	if err != nil {

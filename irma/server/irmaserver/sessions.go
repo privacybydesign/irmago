@@ -1,6 +1,7 @@
 package irmaserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -70,6 +71,11 @@ type redisSessionStore struct {
 	client *server.RedisClient
 	conf   *server.Configuration
 }
+
+// errConcurrentSessionUpdate is returned when a session transaction had to be retried after
+// the handler already ran, but the session was changed by someone else in the meantime: the
+// handler cannot be re-run, so the write is abandoned and the client retries the request.
+var errConcurrentSessionUpdate = errors.New("session was updated concurrently")
 
 type RedisError struct {
 	err error
@@ -189,6 +195,8 @@ func (s *memorySessionStore) handleTransaction(memSes *memorySessionData, handle
 	memSes.sessionData = sesAfter
 	memSes.Unlock()
 
+	recordUsage(s.conf, sesBefore.Status, sesAfter)
+
 	// Notify any subscribers of the update. We take the read lock so that the set
 	// of update channels cannot be modified while we iterate it, and, crucially,
 	// so that none of these channels can be closed (which only happens under the
@@ -294,6 +302,11 @@ func (s *memorySessionStore) deleteExpired() {
 		// be swapped concurrently by handleTransaction, so read it under that lock.
 		session.Lock()
 		clientToken := session.ClientToken
+		// A session that expired without anyone reading it afterwards never had its timeout
+		// saved, so it is counted here, from the status that was last saved.
+		if s.conf.UsageCounter != nil && !session.Status.Finished() {
+			s.conf.UsageCounter.Record(session.usageEvent(irma.ServerStatusTimeout))
+		}
 		session.Unlock()
 		delete(s.client, clientToken)
 		delete(s.requestor, token)
@@ -314,30 +327,26 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 	if ttl <= 0 {
 		return &RedisError{errors.New("session ttl is in the past")}
 	}
-	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
-		if err := tx.Set(
-			ctx,
-			s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken),
-			string(session.ClientToken),
-			ttl,
-		).Err(); err != nil {
-			return err
-		}
-		if err := tx.Set(
-			ctx,
-			s.client.KeyPrefix+clientTokenLookupPrefix+string(session.ClientToken),
-			sessionJSON,
-			ttl,
-		).Err(); err != nil {
-			return err
-		}
-
-		if s.client.FailoverMode {
-			if err := s.client.Wait(ctx, 1, time.Second).Err(); err != nil {
+	// Both writes are unconditional, so the whole thing can simply be run again when the
+	// connection it ran on went away.
+	if err := s.client.RetryOnBrokenConn(ctx, func() error {
+		_, err := s.client.TxPipelined(ctx, func(p redis.Pipeliner) error {
+			if err := p.Set(
+				ctx,
+				s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken),
+				string(session.ClientToken),
+				ttl,
+			).Err(); err != nil {
 				return err
 			}
-		}
-		return nil
+			return p.Set(
+				ctx,
+				s.client.KeyPrefix+clientTokenLookupPrefix+string(session.ClientToken),
+				sessionJSON,
+				ttl,
+			).Err()
+		})
+		return err
 	}); err != nil {
 		return &RedisError{err}
 	}
@@ -347,7 +356,12 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 }
 
 func (s *redisSessionStore) transaction(ctx context.Context, t irma.RequestorToken, handler func(session *sessionData) (bool, error)) error {
-	val, err := s.client.Get(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(t)).Result()
+	var val string
+	err := s.client.RetryOnBrokenConn(ctx, func() error {
+		var err error
+		val, err = s.client.Get(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(t)).Result()
+		return err
+	})
 	if err == redis.Nil {
 		return &UnknownSessionError{t, ""}
 	} else if err != nil {
@@ -364,18 +378,37 @@ func (s *redisSessionStore) transaction(ctx context.Context, t irma.RequestorTok
 }
 
 func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.ClientToken, handler func(session *sessionData) (bool, error)) error {
-	err := s.client.Watch(ctx, func(tx *redis.Tx) error {
-		getResult := tx.Get(ctx, s.client.KeyPrefix+clientTokenLookupPrefix+string(t))
-		if getResult.Err() == redis.Nil {
+	key := s.client.KeyPrefix + clientTokenLookupPrefix + string(t)
+
+	write := func(tx *server.RedisTx, sessionJSON []byte, requestorToken irma.RequestorToken, ttl time.Duration) error {
+		_, err := tx.TxPipelined(ctx, func(p redis.Pipeliner) error {
+			if err := p.Set(ctx, key, sessionJSON, ttl).Err(); err != nil {
+				return err
+			}
+			return p.Expire(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(requestorToken), ttl).Err()
+		})
+		return err
+	}
+
+	// The status before the transaction and the session as saved, to count the session once its
+	// final status is saved. A retry overwrites both.
+	var statusBefore irma.ServerStatus
+	var saved *sessionData
+
+	err := s.client.WatchWithRetry(ctx, []string{key}, func(tx *server.RedisTx) error {
+		saved = nil
+		before, err := tx.Get(ctx, key).Bytes()
+		if err == redis.Nil {
 			return &UnknownSessionError{"", t}
-		} else if getResult.Err() != nil {
-			return getResult.Err()
+		} else if err != nil {
+			return err
 		}
 
 		session := &sessionData{}
-		if err := json.Unmarshal([]byte(getResult.Val()), &session); err != nil {
+		if err := json.Unmarshal(before, &session); err != nil {
 			return err
 		}
+		statusBefore = session.Status
 
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session received from Redis datastore")
 
@@ -384,6 +417,10 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 			session.setStatus(irma.ServerStatusTimeout, s.conf)
 		}
 
+		// Everything above is a plain read that a retry can safely redo. The handler is not:
+		// it writes to a shared HTTP response recorder and consumes the request body, so it
+		// cannot be invoked a second time.
+		tx.NoRetry()
 		if update, err := handler(session); !update || err != nil {
 			return err
 		}
@@ -393,7 +430,7 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 			Info("Session updated")
 
 		// If the session has changed, update it in Redis
-		sessionJSON, err := json.Marshal(session)
+		after, err := json.Marshal(session)
 		if err != nil {
 			return err
 		}
@@ -403,23 +440,37 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 			return errors.New("session ttl is in the past")
 		}
 
-		if err := tx.Set(ctx, s.client.KeyPrefix+clientTokenLookupPrefix+string(t), sessionJSON, ttl).Err(); err != nil {
-			return err
-		}
-		if err := tx.Expire(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken), ttl).Err(); err != nil {
-			return err
-		}
-		if s.client.FailoverMode {
-			if err := tx.Wait(ctx, 1, time.Second).Err(); err != nil {
+		// The handler is done and its outcome is fully captured in after, so a write that
+		// fails on a broken connection can be redone without running the handler again. Only
+		// the session the handler based itself on may be overwritten, which is the same
+		// condition the WATCH on this key enforces for the write below.
+		tx.RetryWith(func(tx *server.RedisTx) error {
+			current, err := tx.Get(ctx, key).Bytes()
+			if err == redis.Nil {
+				return &UnknownSessionError{"", t}
+			} else if err != nil {
 				return err
 			}
-		}
-		return nil
+			switch {
+			case bytes.Equal(current, before):
+				return write(tx, after, session.RequestorToken, ttl)
+			case bytes.Equal(current, after):
+				// The connection broke after Redis had already applied the write.
+				return nil
+			default:
+				return errConcurrentSessionUpdate
+			}
+		})
+		saved = session
+		return write(tx, after, session.RequestorToken, ttl)
 	})
 	if _, ok := err.(*UnknownSessionError); ok {
 		return err
 	} else if err != nil {
 		return &RedisError{err}
+	}
+	if saved != nil {
+		recordUsage(s.conf, statusBefore, saved)
 	}
 	return nil
 }

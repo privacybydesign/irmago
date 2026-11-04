@@ -1,0 +1,192 @@
+// Package statuslist implements client-side support for the IETF OAuth
+// Token Status List specification, draft-ietf-oauth-status-list-15
+// (https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/15/).
+//
+// The package fetches Status List Tokens advertised by a credential's
+// `status.status_list` claim (an SD-JWT VC's JSON claim, or an mdoc MSO's
+// CBOR field), verifies their signatures, decodes the zlib-compressed bit
+// array, and returns the status value at a given index. Callers use the
+// single Checker.Check verb to obtain a typed Status value for a given
+// Reference; partial fetch/decode/verify is intentionally not exposed.
+//
+// Both encodings the spec defines for the Status List Token itself are
+// supported, dispatched on the fetched bytes (see verifyStatusList in
+// cwt.go):
+//
+//   - JWT (`application/statuslist+jwt`, §5.1): signature verification reuses
+//     the same x5c-or-kid+DID dispatcher as SD-JWT VC verification via
+//     eudi_jwt.JwtKeyProvider, configured with the `statuslist+jwt` typ value
+//     the spec mandates.
+//   - CWT (`application/statuslist+cwt`, §5.2), the encoding COSE/CBOR-based
+//     Referenced Tokens use — including an ISO mdoc's MSO (§6.3.2). Signature
+//     verification is x5chain-only (see verifyStatusListTokenCWT in cwt.go);
+//     the JWT path's kid+did:web/did:jwk resolution has no established
+//     equivalent in ecosystems that use CWT/COSE.
+package statuslist
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/privacybydesign/irmago/internal/common"
+	"golang.org/x/sync/singleflight"
+)
+
+// Checker is the only public verb of this package. It orchestrates
+// cache lookup, HTTP fetch, JWT signature verification, and bit
+// extraction for a single status reference, with singleflight dedup
+// across concurrent callers requesting the same URI.
+//
+// A Checker is safe for concurrent use.
+type Checker struct {
+	ctx   VerificationContext
+	cache Cache
+	sf    singleflight.Group
+
+	// nowFn lets tests inject a deterministic clock without touching
+	// VerificationContext.Clock (which jwx consumes for skew checks).
+	nowFn func() time.Time
+}
+
+// NewChecker returns a Checker bound to a verification context and
+// a cache. If cache is nil an in-memory cache is used.
+func NewChecker(ctx VerificationContext, cache Cache) *Checker {
+	if cache == nil {
+		cache = NewInMemoryCache()
+	}
+	return &Checker{ctx: ctx, cache: cache, nowFn: time.Now}
+}
+
+// Check fetches/verifies the status list for ref (using the cache
+// when fresh) and returns the status at ref.Index.
+func (c *Checker) Check(ctx context.Context, ref Reference) (Status, error) {
+	if ref.URI == "" {
+		return StatusUnknown, fmt.Errorf("%w: empty URI", ErrUnauthorized)
+	}
+
+	now := c.nowFn()
+
+	// Cache and singleflight are keyed on ref.URI alone; the verified list
+	// content does not depend on the caller.
+
+	// Cache fast-path.
+	if raw, expires, ok := c.cache.Get(ref.URI); ok && now.Before(expires) {
+		return c.verifyAndDecode(raw, ref, now)
+	}
+
+	v, err := c.fetchOnce(ctx, ref.URI, now)
+	if err != nil {
+		return StatusUnknown, err
+	}
+	list, err := v.decode(c.ctx.MaxBodyBytes)
+	if err != nil {
+		return StatusUnknown, err
+	}
+	return list.StatusAt(ref.Index)
+}
+
+// RequireValid is the fail-closed check a holder applies to a credential it is
+// about to accept: nil only when the entry at ref reads StatusValid. A fetch,
+// verification or decode error refuses the credential too, as does any other
+// status, since the issuer flags suspension and application-specific states for
+// a reason.
+func (c *Checker) RequireValid(ctx context.Context, ref Reference) error {
+	status, err := c.Check(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("status list check failed: %w", err)
+	}
+	if status != StatusValid {
+		return fmt.Errorf("credential status is %s, not valid", status)
+	}
+	return nil
+}
+
+// Refresh ignores any cached entry and re-fetches the list. Used by
+// the background sweep to bring stored credential statuses up to
+// date independent of the Check-side TTL.
+func (c *Checker) Refresh(ctx context.Context, ref Reference) (Status, error) {
+	list, err := c.RefreshList(ctx, ref.URI)
+	if err != nil {
+		return StatusUnknown, err
+	}
+	return list.StatusAt(ref.Index)
+}
+
+// RefreshList ignores any cached entry, re-fetches the list at uri and returns
+// it decoded, for a caller that reads many indices of one list.
+func (c *Checker) RefreshList(ctx context.Context, uri string) (*List, error) {
+	if uri == "" {
+		return nil, fmt.Errorf("%w: empty URI", ErrUnauthorized)
+	}
+	v, err := c.fetchOnce(ctx, uri, c.nowFn())
+	if err != nil {
+		return nil, err
+	}
+	return v.decode(c.ctx.MaxBodyBytes)
+}
+
+// fetchOnce runs fetchVerifyStore, collapsing concurrent fetches for the same
+// URI into one.
+func (c *Checker) fetchOnce(ctx context.Context, uri string, now time.Time) (verifiedStatusListToken, error) {
+	resAny, err, _ := c.sf.Do(uri, func() (any, error) {
+		return c.fetchVerifyStore(ctx, uri, now)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resAny.(verifiedStatusListToken), nil
+}
+
+// fetchVerifyStore runs one fetch+verify cycle and writes the raw
+// token bytes into the cache with the computed expiry.
+func (c *Checker) fetchVerifyStore(ctx context.Context, uri string, now time.Time) (verifiedStatusListToken, error) {
+	res, err := fetchStatusListToken(ctx, c.ctx, uri)
+	if err != nil {
+		return nil, err
+	}
+
+	v, err := verifyStatusList(res.rawToken, c.ctx, uri, now)
+	if err != nil {
+		return nil, err
+	}
+
+	// Caching lifetime. draft-ietf-oauth-status-list-15 §8.2 requires
+	// the token's own ttl/exp claims to take priority over HTTP caching
+	// headers, so the HTTP max-age is only a fallback used when the
+	// token advertises no lifetime of its own. ClampTTL bounds the
+	// result and supplies the default when neither signal is present.
+	ttl, ok := v.ttlSignal()
+	if !ok {
+		ttl = res.httpMaxAge
+	}
+	expires := now.Add(ClampTTL(ttl))
+
+	if err := c.cache.Put(uri, res.rawToken, expires); err != nil {
+		// Cache failures aren't fatal — the token is already verified.
+		// Log and proceed rather than fail-closed on a transient cache
+		// error (e.g. a locked/full DB), which would otherwise reject an
+		// otherwise-valid credential at issuance and disclosure.
+		if common.Logger != nil { // nil when this package is used without irma (e.g. unit tests)
+			common.Logger.Warnf("statuslist: cache write for %q failed, proceeding: %v", common.SanitizeForLog(uri), err)
+		}
+	}
+	return v, nil
+}
+
+// verifyAndDecode runs the verify+decode path against an already
+// cached raw token.
+func (c *Checker) verifyAndDecode(raw []byte, ref Reference, now time.Time) (Status, error) {
+	v, err := verifyStatusList(raw, c.ctx, ref.URI, now)
+	if err != nil {
+		// Cached value failed re-verification — drop it so the
+		// next call re-fetches.
+		_ = c.cache.Delete(ref.URI)
+		return StatusUnknown, err
+	}
+	list, err := v.decode(c.ctx.MaxBodyBytes)
+	if err != nil {
+		return StatusUnknown, err
+	}
+	return list.StatusAt(ref.Index)
+}

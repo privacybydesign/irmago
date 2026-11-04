@@ -20,6 +20,7 @@ import (
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/privacybydesign/irmago/irma/server/irmaserver"
 	"github.com/privacybydesign/irmago/irma/server/requestorserver"
+	"github.com/privacybydesign/irmago/irma/server/usage"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
@@ -183,10 +184,8 @@ func chainedServerHandler(
 	// Request disclosure of attribute specified by the id parameter
 	mux.HandleFunc("/1", func(w http.ResponseWriter, r *http.Request) {
 		request := &irma.ServiceProviderRequest{
-			Request: getDisclosureRequest(id),
-			RequestorBaseRequest: irma.RequestorBaseRequest{
-				NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/2"},
-			},
+			Request:     getDisclosureRequest(id),
+			NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/2"},
 		}
 		bts, err := json.Marshal(request)
 		require.NoError(t, err)
@@ -228,10 +227,8 @@ func chainedServerHandler(
 		}
 
 		bts, err = json.Marshal(irma.IdentityProviderRequest{
-			Request: irma.NewIssuanceRequest([]*irma.CredentialRequest{credreq}),
-			RequestorBaseRequest: irma.RequestorBaseRequest{
-				NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/3"},
-			},
+			Request:     irma.NewIssuanceRequest([]*irma.CredentialRequest{credreq}),
+			NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/3"},
 		})
 		require.NoError(t, err)
 
@@ -261,10 +258,8 @@ func chainedServerHandler(
 	// Request disclosure of attribute specified by the id parameter
 	mux.HandleFunc("/unauthorized-next-session-1", func(w http.ResponseWriter, r *http.Request) {
 		request := &irma.ServiceProviderRequest{
-			Request: getDisclosureRequest(id),
-			RequestorBaseRequest: irma.RequestorBaseRequest{
-				NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/unauthorized-next-session-2"},
-			},
+			Request:     getDisclosureRequest(id),
+			NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/unauthorized-next-session-2"},
 		}
 		bts, err := json.Marshal(request)
 		require.NoError(t, err)
@@ -330,7 +325,7 @@ func IrmaServerConfiguration() *server.Configuration {
 					CallbackURL: staticSessionServerURL,
 				},
 				Request: &irma.DisclosureRequest{
-					BaseRequest: irma.BaseRequest{LDContext: irma.LDContextDisclosureRequest},
+					LDContext: irma.LDContextDisclosureRequest,
 					Disclose: irma.AttributeConDisCon{
 						{{irma.NewAttributeRequest("irma-demo.RU.studentCard.level")}},
 					},
@@ -354,11 +349,9 @@ func RequestorServerConfiguration() *requestorserver.Configuration {
 		ListenAddress:                  "localhost",
 		Port:                           requestorServerPort,
 		MaxRequestAge:                  3,
-		Permissions: requestorserver.Permissions{
-			Disclosing: []string{"*"},
-			Signing:    []string{"*"},
-			Issuing:    []string{"*"},
-		},
+		Disclosing:                     []string{"*"},
+		Signing:                        []string{"*"},
+		Issuing:                        []string{"*"},
 	}
 }
 
@@ -399,6 +392,7 @@ func RequestorServerPermissionsConfiguration() *requestorserver.Configuration {
 	irmaServerConf.URL = requestorServerURL + "/irma"
 	conf.DisableRequestorAuthentication = false
 	conf.Production = true
+	conf.UsageReporting = &usage.Settings{Disabled: true}
 	conf.DisableTLS = true
 	conf.AllowUnsignedCallbacks = true
 	conf.Permissions = requestorserver.Permissions{}
