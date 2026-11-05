@@ -14,7 +14,7 @@ runs:
   using: composite
   steps:
     - name: Set up Go
-      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version-file: go.mod
 
@@ -37,7 +37,7 @@ runs:
 
     - name: Download IRMA server artifact (artifact id)
       if: ${{ !startsWith(inputs.irma-server-artifact, 'https://') }}
-      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         name: ${{ inputs.irma-server-artifact }}
         path: ./bin-is
@@ -72,7 +72,7 @@ runs:
 
     - name: Download keyshare server artifact (artifact id)
       if: ${{ !startsWith(inputs.keyshare-server-artifact, 'https://') }}
-      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         name: ${{ inputs.keyshare-server-artifact }}
         path: ./bin-ks
@@ -113,7 +113,7 @@ runs:
       shell: bash
 
     - name: Checkout test code
-      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         ref: ${{ inputs.test-ref }}
         path: irmago_test_checkout
