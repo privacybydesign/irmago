@@ -1,30 +1,63 @@
-# Workflow to check whether changes to master fulfill all requirements.
+# Status checks, using the shared workflows from privacybydesign/github-workflows.
+# The gate job "Status checks passed" is the one check to require.
 name: Status checks
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
+  merge_group:
   schedule:
-    # Run every monday on 9:00 in the morning (UTC).
-    - cron: "0 9 * * 1"
-  # Make it possible to trigger the checks manually.
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
   workflow_dispatch:
 
+permissions: {}
+
+# A new push to a PR cancels the PR's previous run. Other events get a
+# group of their own (run_id), so they never wait for or cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
+  go:
+    uses: privacybydesign/github-workflows/.github/workflows/go-checks.yml@v1
+    permissions:
+      contents: read
+    with:
+      # go.mod says go 1.27; the default golangci-lint (v2.12.2) can't read it.
+      golangci-lint-version: v2.15.0
+      apt-packages: libsqlcipher-dev # eudi/storage/db/sqlcipher (cgo)
+      # The unit tests need the services in docker-compose.yml (Postgres, MySQL,
+      # SQL Server, MailHog, the Veramo/EUDI verifiers, ...), so they run in the
+      # compose "test" service, as before.
+      # The sessiontest package hard-codes listeners on 127.0.0.1:48680-48699.
+      # Those ports sit inside Linux's default ephemeral source-port range
+      # (32768-60999), so an earlier subtest's outgoing connection can land a
+      # TIME_WAIT socket on one of them and cause a later ListenAndServe to
+      # fail with EADDRINUSE. The test service uses network_mode: host, so
+      # setting this on the runner applies to the container.
+      test-command: |
+        sudo sysctl -w net.ipv4.ip_local_port_range="48700 60999"
+        docker compose run test -v ./...
 
   # Host build of the whole module (cgo/sqlcipher enabled) that both compile-checks
   # every package and produces the yivi-linux-amd64 binary the integration tests run.
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Install sqlcipher
         run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
 
@@ -34,7 +67,7 @@ jobs:
           go build -o build ./...
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: yivi-linux-amd64
           path: build/yivi
@@ -44,6 +77,9 @@ jobs:
   # port removed in Go 1.26) fails here instead of only after merge to master.
   build-release-artifact:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     strategy:
       matrix:
         os: [ linux, darwin, windows ]
@@ -57,7 +93,9 @@ jobs:
           - os: windows
             arch: arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Build artifact
         uses: ./.github/actions/build
@@ -65,95 +103,23 @@ jobs:
           os: ${{ matrix.os }}
           arch: ${{ matrix.arch }}
 
-  docker-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      # We only run the build stage to prevent that the IRMA schemes are downloaded.
-      - name: Run Dockerfile build stage
-        run: docker build -t privacybydesign/yivi:build --target build .
-
-      - name: Test Docker image
-        # Because we have only run the build stage, we have to explicitly set yivi as entrypoint.
-        run: docker run --entrypoint yivi privacybydesign/yivi:build version
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v6
-
-    - name: Install sqlcipher
-      run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
-
-    - name: Clean Go toolchain module cache
-      run: rm -rf  /opt/hostedtoolcache/go
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version-file: go.mod
-
-    - name: Run gofmt
-      # gofmt does not return non-zero exit codes on failure, so we have to check that there are no issues using grep.
-      run: gofmt -d -e . | (! grep ^)
-      
-    - name: Run go vet
-      run: go vet ./...
-
-    - name: Run go fix
-      # go fix -diff exits non-zero (and prints a diff) if any modernization fix is unapplied.
-      # The available modernizers are tied to the Go toolchain (pinned via the `toolchain`
-      # directive in go.mod), so when that toolchain is bumped, run `go fix ./...` and commit
-      # the result, otherwise this step can fail on files the PR did not touch.
-      run: go fix -diff ./...
-
-    - name: Install ineffassign
-      run: go install github.com/gordonklaus/ineffassign@latest
-      
-    - name: Run ineffassign
-      run: ineffassign ./...
-      
-    - name: Install misspell
-      run: go install github.com/client9/misspell/cmd/misspell@latest
-      
-    - name: Run misspell
-      run: find . -type f -not -path './testdata/*.json' | xargs misspell -error -i "adres,instelling,relatie"
-
-    - name: Install staticcheck
-      run: go install honnef.co/go/tools/cmd/staticcheck@2026.2.2
-
-    - name: Run staticcheck
-      run: staticcheck -checks "all,-ST1000,-ST1003,-SA1019,-SA1029" ./...
-
-  test:
-    runs-on: ubuntu-latest
-    # Above the 18m `go test -timeout` in docker-compose.yml, so go test kills an
-    # overrunning suite — and names the tests still running — before the job does.
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-      # The sessiontest package hard-codes listeners on 127.0.0.1:48680-48699.
-      # Those ports sit inside Linux's default ephemeral source-port range
-      # (32768-60999), so an earlier subtest's outgoing connection can land a
-      # TIME_WAIT socket on one of them and cause a later ListenAndServe to
-      # fail with EADDRINUSE. The test service uses network_mode: host, so
-      # setting this on the runner applies to the container.
-      - name: Reserve test port range from ephemeral allocation
-        run: sudo sysctl -w net.ipv4.ip_local_port_range="48700 60999"
-      - name: Run all unit tests
-        run: docker compose run test -v ./...
-
   # The integration tests are split into two jobs, one for the client side and one for the server side.
   # They test whether irmago versions with different versions of gabi can interact.
   # We assume that the keyshare server is always kept up to date, so we don't test using older versions of the keyshare server.
   integration-test-clientside: # Checks whether irmaclient interacts with older IRMA servers
     needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
     strategy:
       matrix:
         irma-server:
           - v0.13.2
-    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Install sqlcipher
         run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
@@ -167,13 +133,18 @@ jobs:
 
   integration-test-serverside: # Checks whether IRMA server interacts with older irmaclients
     needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
     strategy:
       matrix:
         irmaclient-ref:
           - f0023141ec429d912e329665f937d05b178a3fee # v0.13.2 (integration test did not exist when version tag was created)
-    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Run integration test
         uses: ./.github/actions/integration-test
@@ -182,32 +153,51 @@ jobs:
           irma-server-artifact: yivi-linux-amd64 # Current build
           keyshare-server-artifact: yivi-linux-amd64 # Current build
 
-  analyze:
-    # Add integration tests as dependencies to make sure that PRs are not merged if they fail.
+  # Builds and scans the image without pushing it; Delivery pushes from master.
+  docker:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    uses: privacybydesign/github-workflows/.github/workflows/docker-publish.yml@v1
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      id-token: write
+      attestations: write
+    with:
+      image-name: ghcr.io/privacybydesign/yivi
+      push-image: false
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    uses: privacybydesign/github-workflows/.github/workflows/dependency-review.yml@v1
+    permissions:
+      contents: read
+      pull-requests: write
+
+  workflow-lint:
+    uses: privacybydesign/github-workflows/.github/workflows/workflow-lint.yml@v1
+    permissions:
+      contents: read
+
+  passed:
+    name: Status checks passed
+    if: always()
     needs:
+      - go
       - build
+      - build-release-artifact
       - integration-test-clientside
       - integration-test-serverside
+      - docker
+      - dependency-review
+      - workflow-lint
     runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-
+    timeout-minutes: 5
+    permissions: {}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: go
-          queries: +security-and-quality
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+      - name: All required jobs succeeded
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          if grep -qE '"(failure|cancelled)"' <<< "$RESULTS"; then exit 1; fi

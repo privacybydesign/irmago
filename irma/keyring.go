@@ -95,7 +95,7 @@ func NewPrivateKeyRingFolder(path string, conf *Configuration) (*PrivateKeyRingF
 			return nil, err
 		}
 		if counter != nil && *counter != sk.Counter {
-			return nil, errors.Errorf("private key %s has wrong counter %d in filename, should be %d", filename, counter, sk.Counter)
+			return nil, errors.Errorf("private key %s has wrong counter %d in filename, should be %d", filename, *counter, sk.Counter)
 		}
 	}
 	return ring, nil
