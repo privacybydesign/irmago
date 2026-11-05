@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The IRMA server no longer parses and validates an issuer private key from disk for every credential in an issuance session. For non-demo schemes this validation includes safe prime checks, which made starting and completing issuance sessions with many credentials exceed the server's 4 second request timeout on CPU-limited deployments, resulting in a `503 Service Unavailable`. Parsed keys are now cached per file and reused as long as the file's modification time and size are unchanged, so keys added, replaced or removed on disk are still picked up without a restart.
 - The error for a private key whose filename has a different counter than the key itself now shows that counter instead of a memory address
 
+### Security
+- Sanitize user-controlled strings before writing them to log entries to prevent log injection, including serialized session and revocation requests, request bodies and HTTP header values
+- Record only which HTTP headers were present in request logs (allowlisted headers as `<present>`, all others as `[redacted]`) without ever logging a header value, preventing credentials and PII from leaking into logs
+- Fix email header injection by neutralizing CR/LF in recipient addresses written to the SMTP `To:` header and using the parsed addresses as the SMTP envelope recipients
+- Reject issuer identifiers that would escape the private key ring folder, preventing path traversal through the credential type in a session or revocation request
+
 ## [1.5.0] - 2026-11-03
 ### Added
 - SD-JWT-secured W3C VCDM 2.0 credentials (VC-JOSE-COSE §3.2), under the `vc+sd-jwt` format id and JWS `typ`. `dc+sd-jwt` stays IETF SD-JWT VC only: a VCDM credential or configuration under it is refused.

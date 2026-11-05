@@ -849,6 +849,10 @@ func (s *Server) register(ctx context.Context, msg irma.KeyshareEnrollment) (*ir
 }
 
 func (s *Server) sendRegistrationEmail(ctx context.Context, user *User, language, email string) error {
+	parsedEmail, err := keyshare.ParseEmailAddress(email)
+	if err != nil {
+		return keyshare.ErrInvalidEmail
+	}
 
 	if err := keyshare.VerifyMXRecord(email); err != nil {
 		return keyshare.ErrInvalidEmail
@@ -858,7 +862,7 @@ func (s *Server) sendRegistrationEmail(ctx context.Context, user *User, language
 	token := common.NewSessionToken()
 
 	// Add it to the database
-	err := s.db.addEmailVerification(ctx, user, email, token, s.conf.EmailTokenValidity)
+	err = s.db.addEmailVerification(ctx, user, email, token, s.conf.EmailTokenValidity)
 	if err != nil {
 		// Already logged
 		return err
@@ -869,7 +873,7 @@ func (s *Server) sendRegistrationEmail(ctx context.Context, user *User, language
 		s.conf.registrationEmailTemplates,
 		s.conf.RegistrationEmailSubjects,
 		map[string]string{"VerificationURL": verificationBaseURL + token},
-		[]string{email},
+		[]string{parsedEmail.Address},
 		language,
 	)
 }
