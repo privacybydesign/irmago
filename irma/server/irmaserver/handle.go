@@ -43,7 +43,7 @@ func (session *sessionData) handleGetClientRequest(min, max *irma.ProtocolVersio
 	}
 
 	session.markAlive(conf)
-	logger := conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken})
+	logger := conf.LoggerEntry.WithFields(logrus.Fields{"session": session.RequestorToken})
 
 	var err error
 	if session.Version, err = session.chooseProtocolVersion(min, max); err != nil {
