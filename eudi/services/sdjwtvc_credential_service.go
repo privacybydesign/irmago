@@ -74,8 +74,8 @@ func (s *sdJwtVcCredentialService) List() ([]*clientmodels.Credential, error) {
 	}
 
 	locale := s.currentLocale.Get()
-	credentialLogoManager := s.fileStorage.Credentials().LogoManager()
-	issuerLogoManager := s.fileStorage.Issuers().LogoManager()
+	credentialLogoManager := s.fileStorage.Credentials().ImageManager()
+	issuerLogoManager := s.fileStorage.Issuers().ImageManager()
 
 	result := make([]*clientmodels.Credential, 0, len(batches))
 	for _, batch := range batches {
@@ -136,7 +136,7 @@ func (s *sdJwtVcCredentialService) List() ([]*clientmodels.Credential, error) {
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,
 			},
 			BatchInstanceCountsRemaining: batchInstanceCounts(batch.Format, batch.BatchSize, &batch.RemainingCount),
-			Attributes:                   BuildAttributesFromPayload(payload, display.ClaimNames, display.ClaimOrder),
+			Attributes:                   newSdJwtVcDocument(payloadMap(payload)).ShowImages(BuildAttributesFromPayload(payload, display.ClaimNames, display.ClaimOrder), credentialLogoManager),
 			ExpiryDate:                   exp,
 			IssuanceDate:                 iat,
 			Revoked:                      revoked[batch.Hash],

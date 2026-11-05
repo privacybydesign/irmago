@@ -410,7 +410,7 @@ func TestGetCredentialMetadataList_CredentialLogoOnNonFirstDisplay(t *testing.T)
 		{Name: "Mijn Credential", Locale: datatypes.NullString{V: "nl", Valid: true}, LogoURI: logoURL},
 	}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	require.NoError(t, fileStorageMock.Credentials().LogoManager().Save(logoURL, []byte("PNGDATA"), "image/png"))
+	require.NoError(t, fileStorageMock.Credentials().ImageManager().Save(logoURL, []byte("PNGDATA"), "image/png"))
 
 	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	svc := newServiceWithMocks(mock, fileStorageMock)
@@ -433,7 +433,7 @@ func TestGetCredentialMetadataList_IssuerLogoOnNonFirstDisplay(t *testing.T) {
 		{Name: "Test Issuer NL", Locale: datatypes.NullString{V: "nl", Valid: true}, LogoURI: datatypes.NullString{V: logoURL, Valid: true}},
 	}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	require.NoError(t, fileStorageMock.Issuers().LogoManager().Save(logoURL, []byte("ISSUERPNG"), "image/png"))
+	require.NoError(t, fileStorageMock.Issuers().ImageManager().Save(logoURL, []byte("ISSUERPNG"), "image/png"))
 
 	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	svc := newServiceWithMocks(mock, fileStorageMock)
@@ -1631,4 +1631,23 @@ func TestHashForSdJwtVc_IgnoresProtocolClaims(t *testing.T) {
 			assert.Equal(t, h1, h2, "a new %s must not make it a different credential", claim)
 		})
 	}
+}
+
+// A data:image/ claim is listed as a picture, under its own path.
+func TestGetCredentialMetadataList_DataURIClaimIsAnImage(t *testing.T) {
+	batch := newStorageBatch()
+	batch.ProcessedSdJwtPayload = datatypes.JSON(`{"given_name": "Alice", "photo": "` + testImageDataURI + `"}`)
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
+	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+
+	result, err := svc.List()
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	byPath := map[string]clientmodels.Attribute{}
+	for _, a := range result[0].Attributes {
+		byPath[clientmodels.ClaimPathKey(a.ClaimPath)] = a
+	}
+	requireImage(t, byPath[clientmodels.ClaimPathKey([]any{"photo"})].Value, testPNGBase64, clientmodels.MimeTypePNG)
+	requireText(t, byPath[clientmodels.ClaimPathKey([]any{"given_name"})].Value, "Alice")
 }

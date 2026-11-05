@@ -58,9 +58,9 @@ type Profile struct {
 	// MatchesTypeValues reports whether a batch satisfies DCQL type_values
 	// (OpenID4VP §B.1.1, W3C VCDM only). Nil means no batch ever does.
 	MatchesTypeValues func(batch *Batch, typeValues [][]string) bool
-	// FallbackName is the credential's display name when its metadata gives
-	// none, or "" to fall back to its type. Nil means always "".
-	FallbackName func(batch *Batch, locale string) string
+	// Document is what the credential says about itself: its own display and
+	// its claim images. Nil means it says nothing.
+	Document func(batch *Batch) services.CredentialDocument
 }
 
 // PresentWithKbJwt is the SD-JWT VC Present: the selected SD-JWT with a KB-JWT
@@ -152,14 +152,17 @@ func (h *Engine) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQue
 		if attributes == nil {
 			continue
 		}
+		credentialDocument := h.document(batch)
+		attributes = credentialDocument.ShowImages(attributes, h.storage.FileSystem().Credentials().ImageManager())
 
-		image := h.credentialImage(batch, locale)
+		document := credentialDocument.Display()
+		image := h.credentialImage(batch, document, locale)
 
 		candidate := clientmodels.SelectableCredentialInstance{
 			CredentialId:                batch.CredentialType,
 			Hash:                        batch.Hash,
-			Name:                        h.credentialDisplayName(batch, locale),
-			Issuer:                      h.issuerTrustedParty(batch, locale),
+			Name:                        h.credentialDisplayName(batch, document, locale),
+			Issuer:                      h.issuerTrustedParty(batch, document, locale),
 			Format:                      h.profile.ClientFormat,
 			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
 			Attributes:                  attributes,
@@ -230,12 +233,12 @@ func (h *Engine) composeUnobtainableDescriptor(query dcql.CredentialQuery) *clie
 			eudi.Logger.Warnf("failed to fetch VCT type metadata from %q: %v", vct, err)
 			continue
 		}
-		return buildUnobtainableDescriptor(vct, vctMeta, h.fetchIssuerMetadata(ctx, vctMeta.IssuerURL), query, h.currentLocale.Get())
+		return buildUnobtainableDescriptor(vct, vctMeta, h.fetchIssuerMetadata(ctx, vctMeta.IssuerURL), query, h.profile.ClientFormat, h.currentLocale.Get())
 	}
 
 	// All VCT fetches failed: emit a URL-only descriptor for the first VCT so
 	// the user still sees what was asked for.
-	return buildUnobtainableDescriptor(vctValues[0], nil, nil, query, h.currentLocale.Get())
+	return buildUnobtainableDescriptor(vctValues[0], nil, nil, query, h.profile.ClientFormat, h.currentLocale.Get())
 }
 
 func (h *Engine) fetchIssuerMetadata(ctx context.Context, issuerURL string) *typemetadata.IssuerMetadata {
@@ -260,6 +263,7 @@ func buildUnobtainableDescriptor(
 	vctMeta *typemetadata.VctTypeMetadata,
 	issuerMeta *typemetadata.IssuerMetadata,
 	query dcql.CredentialQuery,
+	format clientmodels.CredentialFormat,
 	locale string,
 ) *clientmodels.CredentialDescriptor {
 	desc := &clientmodels.CredentialDescriptor{
@@ -267,6 +271,7 @@ func buildUnobtainableDescriptor(
 		Name:         vctName(vctMeta, locale),
 		Issuer:       issuerTrustedParty(issuerMeta, locale),
 		Attributes:   queryAttributes(query, vctMeta, locale),
+		Format:       format,
 	}
 	return desc
 }
@@ -434,8 +439,9 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 		}
 
 		rawSdJwt := sdjwt.SdJwt(instance.RawCredential)
+		claimPaths := sel.ClaimPaths
 
-		selected, err := sdjwt.CreatePresentation(rawSdJwt, sel.ClaimPaths)
+		selected, err := sdjwt.CreatePresentation(rawSdJwt, claimPaths)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
@@ -461,7 +467,7 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 			}
 		}
 
-		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, instance, sel.ClaimPaths))
+		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, instance, claimPaths))
 	}
 
 	return result, nil
@@ -939,13 +945,16 @@ func (h *Engine) buildLogCredential(
 	metadataOrder := buildMetadataOrder(batch)
 	requestedKeys := make(map[string]struct{})
 	attrs = flattenPathsForDisplay(attrs, requestedKeys, batch, &resolved, pairs, metadataOrder, locale)
+	credentialDocument := h.document(batch)
+	attrs = credentialDocument.ShowImages(attrs, h.storage.FileSystem().Credentials().ImageManager())
 
+	document := credentialDocument.Display()
 	log := clientmodels.LogCredential{
 		CredentialId: batch.CredentialType,
 		Formats:      []clientmodels.CredentialFormat{h.profile.ClientFormat},
-		Name:         h.credentialDisplayName(batch, locale),
-		Image:        h.credentialImage(batch, locale),
-		Issuer:       h.issuerTrustedParty(batch, locale),
+		Name:         h.credentialDisplayName(batch, document, locale),
+		Image:        h.credentialImage(batch, document, locale),
+		Issuer:       h.issuerTrustedParty(batch, document, locale),
 		Attributes:   attrs,
 		ExpiryDate:   expiryUnix(batch),
 		// Read off the disclosed instance, the same way FindCandidates reports
@@ -1191,49 +1200,57 @@ func pathLess(a, b []any, metadataOrder map[string]int) bool {
 	return len(a) < len(b)
 }
 
-// credentialImage loads the credential logo that resolves for the locale from
-// the batch's display metadata (falling back to any cached display logo while
-// the backfill fetches the preferred one). Returns nil when no logo is
-// configured or none is cached.
-func (h *Engine) credentialImage(batch *Batch, locale string) *clientmodels.Image {
-	if batch.CredentialMetadata == nil {
-		return nil
+// document is the batch's document by the profile, or one that says nothing.
+func (h *Engine) document(batch *Batch) services.CredentialDocument {
+	if h.profile.Document == nil {
+		return services.CredentialDocument{}
 	}
-	logoManager := h.storage.FileSystem().Credentials().LogoManager()
-	return services.LoadResolvedLogo(logoManager, services.CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale)
+	return h.profile.Document(batch)
 }
 
-// issuerTrustedParty builds a TrustedParty from the stored issuer display metadata,
-// including the issuer logo if available on disk.
-func (h *Engine) issuerTrustedParty(batch *Batch, locale string) clientmodels.TrustedParty {
+// credentialImage loads the credential's own image or, when that is not
+// cached, its metadata's logo. Nil when neither is cached.
+func (h *Engine) credentialImage(batch *Batch, document services.DocumentDisplay, locale string) *clientmodels.Image {
+	var metadataURIs clientmodels.TranslatedString
+	if batch.CredentialMetadata != nil {
+		metadataURIs = services.CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display)
+	}
+	logoManager := h.storage.FileSystem().Credentials().ImageManager()
+	return services.LoadDocumentLogo(logoManager, document.CredentialImage, metadataURIs, locale)
+}
+
+// issuerTrustedParty builds the issuer from the credential's own issuer name,
+// or else the issuer metadata's, with its logo.
+func (h *Engine) issuerTrustedParty(batch *Batch, document services.DocumentDisplay, locale string) clientmodels.TrustedParty {
+	name := clientmodels.Resolve(document.IssuerNames, locale)
+	if name == "" {
+		name = clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale)
+	}
 	return clientmodels.TrustedParty{
 		Id:       batch.CredentialIssuer,
-		Name:     clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
-		Image:    h.issuerImage(batch, locale),
+		Name:     name,
+		Image:    h.issuerImage(batch, document, locale),
 		Verified: batch.IssuerVerified,
 	}
 }
 
-// issuerImage loads the issuer logo that resolves for the locale from the
-// batch's issuer display metadata (falling back to any cached display logo
-// while the backfill fetches the preferred one).
-func (h *Engine) issuerImage(batch *Batch, locale string) *clientmodels.Image {
-	logoManager := h.storage.FileSystem().Issuers().LogoManager()
-	return services.LoadResolvedLogo(logoManager, services.IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale)
+// issuerImage loads the credential's own issuer image or, when that is not
+// cached, the issuer metadata's logo.
+func (h *Engine) issuerImage(batch *Batch, document services.DocumentDisplay, locale string) *clientmodels.Image {
+	logoManager := h.storage.FileSystem().Issuers().ImageManager()
+	return services.LoadDocumentLogo(logoManager, document.IssuerImage, services.IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale)
 }
 
-// credentialDisplayName resolves a credential's display name from its stored
-// metadata. Without display metadata it falls back to the profile's
-// FallbackName, and then to its type (the VCT or the VCDM type identity).
-func (h *Engine) credentialDisplayName(batch *Batch, locale string) string {
+// credentialDisplayName resolves a credential's display name: its own name,
+// else its stored metadata's, else its type (the VCT or the VCDM type
+// identity).
+func (h *Engine) credentialDisplayName(batch *Batch, document services.DocumentDisplay, locale string) string {
+	if name := clientmodels.Resolve(document.CredentialNames, locale); name != "" {
+		return name
+	}
 	if batch.CredentialMetadata != nil {
 		if ts := services.CredentialNamesByLanguage(batch.CredentialMetadata.Display); len(ts) > 0 {
 			return clientmodels.Resolve(ts, locale)
-		}
-	}
-	if h.profile.FallbackName != nil {
-		if name := h.profile.FallbackName(batch, locale); name != "" {
-			return name
 		}
 	}
 	return batch.CredentialType

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwe"
@@ -22,7 +23,6 @@ import (
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
-	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -223,6 +223,9 @@ func (s *session) perform() {
 		return
 	}
 
+	// Download the credentials' own images for the permission screen.
+	s.fetchDocumentImages(fetched)
+
 	// Build offered credentials with actual attribute values from the verified SD-JWTs.
 	offeredCredentials := s.buildOfferedCredentials(fetched)
 
@@ -285,14 +288,22 @@ func sdJwtVcsOf(parsed []*services.ParsedCredential) []*sdjwtvc.VerifiedSdJwtVc 
 }
 
 func (fc *fetchedCredential) cleanupKeys() {
-	if !fc.requireCryptographicKeyBinding || len(fc.publicKeyIdentifiers) == 0 || fc.support.Keys == nil {
+	if fc.requireCryptographicKeyBinding {
+		removeHolderKeys(fc.support, fc.publicKeyIdentifiers)
+	}
+}
+
+// removeHolderKeys deletes holder binding keys minted for a credential the
+// wallet does not keep.
+func removeHolderKeys(support services.CredentialFormatSupport, keys []models.PublicHolderBindingKey) {
+	if len(keys) == 0 || support.Keys == nil {
 		return
 	}
-	keyIds := make([]datatypes.UUID, len(fc.publicKeyIdentifiers))
-	for i, key := range fc.publicKeyIdentifiers {
+	keyIds := make([]datatypes.UUID, len(keys))
+	for i, key := range keys {
 		keyIds[i] = key.ID
 	}
-	if err := fc.support.Keys.RemoveKeys(keyIds); err != nil {
+	if err := support.Keys.RemoveKeys(keyIds); err != nil {
 		eudi.Logger.Warnf("failed to remove holder binding keys: %v", err)
 	}
 }
@@ -344,7 +355,7 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 	if s.vctResolver == nil {
 		return nil
 	}
-	logoManager := s.storage.FileSystem().Credentials().LogoManager()
+	logoManager := s.storage.FileSystem().Credentials().ImageManager()
 	for _, fc := range fetched {
 		sdJwtVcs := sdJwtVcsOf(fc.parsedCredentials)
 		if len(sdJwtVcs) == 0 {
@@ -381,9 +392,33 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 		s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId] = config
 
 		uri := clientmodels.Resolve(metadata.LogoURIsByLanguage(merged.Display), s.locale)
-		services.FetchLogoIfMissing(ctx, logoManager, s.httpClient, uri)
+		s.logoFetcher().FetchIfMissing(ctx, logoManager, uri)
 	}
 	return nil
+}
+
+// documentImagesBudget is how long the permission screen waits for images.
+const documentImagesBudget = 10 * time.Second
+
+// fetchDocumentImages downloads the images of each fetched credential's first
+// instance. A failed download shows the metadata's logo or the URL instead,
+// and the logo backfill tries it again.
+func (s *session) fetchDocumentImages(fetched []*fetchedCredential) {
+	ctx, cancel := context.WithTimeout(context.Background(), documentImagesBudget)
+	defer cancel()
+	credentialLogos := s.storage.FileSystem().Credentials().ImageManager()
+	issuerLogos := s.storage.FileSystem().Issuers().ImageManager()
+	for _, fc := range fetched {
+		if len(fc.parsedCredentials) == 0 {
+			continue
+		}
+		fc.parsedCredentials[0].Document().FetchImages(ctx, credentialLogos, issuerLogos, s.logoFetcher())
+	}
+}
+
+// logoFetcher downloads logos as this session may.
+func (s *session) logoFetcher() services.ImageFetcher {
+	return services.ImageFetcher{HTTPClient: s.httpClient, AllowInsecureHTTP: s.allowInsecureHttp}
 }
 
 // verifyVctIntegrity checks each fetched credential's vct#integrity claim
@@ -470,30 +505,29 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 
 		// Use the first credential in the batch as source of attribute values.
 		first := fc.parsedCredentials[0]
-		attrs := []clientmodels.Attribute{}
-		switch {
-		case first.SdJwtVc != nil:
-			attrs = buildAttributesWithValues(claims, first.SdJwtVc.ProcessedSdJwtPayload, s.locale)
-		case first.SdJwtVcdm != nil:
-			claimDisplays, claimOrder := claimDisplayLookups(claims, s.locale)
-			attrs = services.BuildAttributesFromVcdmDocument(first.SdJwtVcdm.Document, claimDisplays, claimOrder)
-		case first.Mdoc != nil:
-			attrs = services.BuildMdocAttributesFromResolvedClaims(claims, first.Mdoc.Namespaces, s.locale)
-		}
+		attrs := first.Attributes(claims, s.locale, s.storage.FileSystem().Credentials().ImageManager())
+		// The credential's own display wins over the metadata's.
+		documentDisplay := first.Document().Display()
 
 		displays := metadata.ToTranslateableList(credentialDisplay)
 		names := metadata.ConvertDisplayToTranslatedString(displays)
 		name := clientmodels.Resolve(names, s.locale)
+		if documentName := clientmodels.Resolve(documentDisplay.CredentialNames, s.locale); documentName != "" {
+			name = documentName
+		}
 
 		issuerDisplays := metadata.ToTranslateableList(s.credentialIssuerMetadata.Display)
 		issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
+		if documentIssuerName := clientmodels.Resolve(documentDisplay.IssuerNames, s.locale); documentIssuerName != "" {
+			issuerName = documentIssuerName
+		}
 
-		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
-		image := services.LoadResolvedLogo(credentialLogoManager,
+		credentialLogoManager := s.storage.FileSystem().Credentials().ImageManager()
+		image := services.LoadDocumentLogo(credentialLogoManager, documentDisplay.CredentialImage,
 			metadata.LogoURIsByLanguage(credentialDisplay), s.locale)
 
-		issuerLogoManager := s.storage.FileSystem().Issuers().LogoManager()
-		issuerImage := services.LoadResolvedLogo(issuerLogoManager,
+		issuerLogoManager := s.storage.FileSystem().Issuers().ImageManager()
+		issuerImage := services.LoadDocumentLogo(issuerLogoManager, documentDisplay.IssuerImage,
 			metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale)
 
 		// How many instances were actually obtained, not how many the issuer said it
@@ -542,11 +576,6 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			credentialId = first.VerifiableCredentialType
 		}
 
-		// Without display metadata, a VCDM credential can still name itself.
-		if name == "" && first.SdJwtVcdm != nil {
-			name = services.VcdmDocumentName(first.SdJwtVcdm.Document, s.locale)
-		}
-
 		// Never offer a nameless credential: fall back to the credential id (the
 		// vct) so the permission screen and the resulting card have a label.
 		if name == "" {
@@ -577,47 +606,6 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		}
 
 		result = append(result, &cred)
-	}
-	return result
-}
-
-// buildAttributesWithValues builds an attribute list directly from the credential
-// payload. The claim metadata is consulted only for display-name translations
-// (resolved to the given locale) and for ordering: claims declared in metadata
-// appear in declared order, payload-only claims are appended alphabetically.
-// Claims without a metadata display entry produce attributes with DisplayName: nil.
-func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwt.ProcessedPayload, locale string) []clientmodels.Attribute {
-	displayLookup, metadataOrder := claimDisplayLookups(claims, locale)
-	return services.BuildAttributesFromPayload(&payload, displayLookup, metadataOrder)
-}
-
-// claimDisplayLookups derives the display-name lookup (resolved to the given
-// locale) and declared-order index from the issuer metadata's claim
-// descriptions, keyed by claim path.
-func claimDisplayLookups(claims []metadata.ClaimsDescription, locale string) (map[string]string, map[string]int) {
-	displayLookup := map[string]string{}
-	metadataOrder := map[string]int{}
-	for i, c := range claims {
-		key := clientmodels.ClaimPathKey(c.Path)
-		metadataOrder[key] = i
-		if len(c.Display) == 0 {
-			continue
-		}
-		displayLookup[key] = clientmodels.Resolve(claimDisplayToTranslatedString(c.Display), locale)
-	}
-	return displayLookup, metadataOrder
-}
-
-func claimDisplayToTranslatedString(displays []metadata.Display) clientmodels.TranslatedString {
-	result := clientmodels.TranslatedString{}
-	for _, d := range displays {
-		locale := clientmodels.DefaultFallbackLanguage
-		if d.Locale != nil {
-			if base, ok := metadata.TryGetBaseLanguageFromLocale(*d.Locale); ok {
-				locale = base
-			}
-		}
-		result[locale] = d.Name
 	}
 	return result
 }
@@ -797,6 +785,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	}
 
 	var publicKeyIdentifiers []models.PublicHolderBindingKey
+	obtained := false
 	if requireCryptographicKeyBinding {
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
@@ -815,6 +804,13 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		if err != nil {
 			return nil, fmt.Errorf("could not create key pairs: %v", err)
 		}
+		// A credential that is refused from here on, by the issuer or by its
+		// verification, binds none of these keys: remove them.
+		defer func() {
+			if !obtained {
+				removeHolderKeys(support, publicKeyIdentifiers)
+			}
+		}()
 
 		x := make([]any, len(proofs))
 		for i, v := range proofs {
@@ -968,6 +964,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		return nil, fmt.Errorf("credential batch rejected: %v", err)
 	}
 
+	obtained = true
 	return &fetchedCredential{
 		credentialConfigurationId:      credentialConfigurationId,
 		parsedCredentials:              parsedCredentials,

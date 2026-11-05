@@ -226,3 +226,69 @@ func TestNames(t *testing.T) {
 
 	require.Nil(t, docFromJSON(t, exampleAlumniCredential).Names())
 }
+
+func TestImage(t *testing.T) {
+	cases := map[string]struct {
+		image  string
+		want   string
+		wantOK bool
+	}{
+		"https URL":             {`"https://example.com/badge.png"`, "https://example.com/badge.png", true},
+		"http URL":              {`"http://localhost/badge.png"`, "http://localhost/badge.png", true},
+		"data URI":              {`"data:image/png;base64,iVBORw0KGgo="`, "data:image/png;base64,iVBORw0KGgo=", true},
+		"upper case scheme":     {`"DATA:image/png;base64,iVBORw0KGgo="`, "DATA:image/png;base64,iVBORw0KGgo=", true},
+		"Image object":          {`{"id": "https://example.com/badge.png", "type": "Image", "caption": "Badge"}`, "https://example.com/badge.png", true},
+		"Image object data id":  {`{"id": "data:image/svg+xml,%3Csvg/%3E", "type": "Image"}`, "data:image/svg+xml,%3Csvg/%3E", true},
+		"data URI not an image": {`"data:text/plain,hello"`, "", false},
+		"other scheme":          {`"ftp://example.com/badge.png"`, "", false},
+		"URL without host":      {`"https:///badge.png"`, "", false},
+		"relative reference":    {`"badge.png"`, "", false},
+		"empty string":          {`""`, "", false},
+		"object without id":     {`{"type": "Image"}`, "", false},
+		"object with number id": {`{"id": 42}`, "", false},
+		"array":                 {`["https://example.com/badge.png"]`, "", false},
+		"number":                {`42`, "", false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, ok := docFromJSON(t, `{"image": `+tc.image+`}`).Image()
+			require.Equal(t, tc.wantOK, ok)
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	_, ok := docFromJSON(t, exampleAlumniCredential).Image()
+	require.False(t, ok, "no image")
+}
+
+func TestIssuerNamesAndImage(t *testing.T) {
+	doc := docFromJSON(t, `{"issuer": {
+		"id": "https://example.com/issuers/1",
+		"name": [{"@value": "Example University", "@language": "en"}, {"@value": "Voorbeelduniversiteit", "@language": "nl"}],
+		"image": {"id": "https://example.com/logo.svg", "type": "Image"}
+	}}`)
+	require.Equal(t, map[string]string{"en": "Example University", "nl": "Voorbeelduniversiteit"}, doc.IssuerNames())
+	image, ok := doc.IssuerImage()
+	require.True(t, ok)
+	require.Equal(t, "https://example.com/logo.svg", image)
+
+	plain := docFromJSON(t, `{"issuer": {"id": "https://example.com/issuers/1", "name": "Example University", "image": "data:image/png;base64,iVBORw0KGgo="}}`)
+	require.Equal(t, map[string]string{"": "Example University"}, plain.IssuerNames())
+	image, ok = plain.IssuerImage()
+	require.True(t, ok)
+	require.Equal(t, "data:image/png;base64,iVBORw0KGgo=", image)
+
+	for name, js := range map[string]string{
+		"issuer as a string":    `{"issuer": "https://example.com/issuers/1", "name": "Card", "image": "https://example.com/card.png"}`,
+		"issuer without either": `{"issuer": {"id": "https://example.com/issuers/1"}}`,
+		"wrong shapes":          `{"issuer": {"id": "https://example.com/issuers/1", "name": 42, "image": ["https://example.com/logo.svg"]}}`,
+		"no issuer":             `{}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := docFromJSON(t, js)
+			require.Nil(t, doc.IssuerNames())
+			_, ok := doc.IssuerImage()
+			require.False(t, ok)
+		})
+	}
+}
