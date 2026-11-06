@@ -1,0 +1,18 @@
+# golangci-lint v2 config, used by the shared go-checks workflow.
+# Carries over the checks of the old lint job: go vet, ineffassign, misspell and
+# staticcheck with checks "all,-ST1000,-ST1003,-SA1019,-SA1029".
+version: "2"
+
+linters:
+  enable:
+    - misspell
+  disable:
+    # On by default in golangci-lint, but the old lint job did not run it
+    # (it reports 422 unchecked errors today).
+    - errcheck
+  settings:
+    misspell:
+      ignore-rules: [adres, instelling, relatie]
+    staticcheck:
+      # QF* (quick fixes) are off as well: the staticcheck CLI never ran them.
+      checks: ["all", "-ST1000", "-ST1003", "-SA1019", "-SA1029", "-QF*"]
