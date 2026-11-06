@@ -11,7 +11,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcql"
-	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -29,15 +28,17 @@ var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 
 // New creates the SD-JWT VC handler. vctFetcher and
 // issuerFetcher describe credentials the wallet has never seen (the "obtainable
-// descriptor" path); pass nil to disable it. keyBinder is the KB-JWT signer used
-// when a presentation requires holder binding — e.g.
-// sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())).
+// descriptor" path); pass nil to disable it. holderKeys resolves the key a
+// presentation's KB-JWT is signed with, and usedKeys removes the key of an
+// instance a disclosure used up; pass services.NewHolderBindingKeyService for
+// both.
 func New(
 	eudiStorage storage.Storage,
 	credentialStore db.SdJwtVcStore,
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
-	keyBinder sdjwt.KeyBinder,
+	holderKeys sdjwt_dcql.HolderKeys,
+	usedKeys services.KeyRemover,
 	currentLocale *clientmodels.CurrentLocale,
 	revocation sdjwt_dcql.RevocationChecker,
 ) *Handler {
@@ -48,11 +49,11 @@ func New(
 			_, std := sdjwtvc.StandardClaims[key]
 			return !std
 		},
-		Present:  sdjwt_dcql.PresentWithKbJwt,
+		Prove:    sdjwt_dcql.ProveWithKbJwt,
 		Document: document,
 	}
 	batches := sdjwt_dcql.NewSdJwtVcBatchStore(credentialStore, revocation)
-	return &Handler{sdjwt_dcql.NewEngine(profile, eudiStorage, batches, vctFetcher, issuerFetcher, keyBinder, currentLocale)}
+	return &Handler{sdjwt_dcql.NewEngine(profile, eudiStorage, batches, vctFetcher, issuerFetcher, holderKeys, usedKeys, currentLocale)}
 }
 
 // CanHandleCredentialQuery claims dc+sd-jwt queries whose vct_values are not

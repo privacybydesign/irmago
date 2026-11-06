@@ -20,6 +20,10 @@ type MdocDeviceKeyStore interface {
 	// SHA-256 JWK thumbprint. Returns ErrNotFound if none matches.
 	GetByThumbprint(thumbprint string) (*models.MdocDeviceKey, error)
 
+	// GetByIDs returns the keys with the given ids; ids that match nothing are
+	// skipped.
+	GetByIDs(ids []datatypes.UUID) ([]models.MdocDeviceKey, error)
+
 	// LinkToInstance binds a key to the instance whose MSO carries its public
 	// half. Returns ErrNotFound if no key has that id.
 	LinkToInstance(keyID, instanceID datatypes.UUID) error
@@ -61,6 +65,17 @@ func (s *mdocDeviceKeyStore) GetByThumbprint(thumbprint string) (*models.MdocDev
 		return nil, err
 	}
 	return &key, nil
+}
+
+func (s *mdocDeviceKeyStore) GetByIDs(ids []datatypes.UUID) ([]models.MdocDeviceKey, error) {
+	var keys []models.MdocDeviceKey
+	if len(ids) == 0 {
+		return keys, nil
+	}
+	if err := s.db.Where("id IN ?", ids).Find(&keys).Error; err != nil {
+		return nil, err
+	}
+	return keys, nil
 }
 
 func (s *mdocDeviceKeyStore) LinkToInstance(keyID, instanceID datatypes.UUID) error {

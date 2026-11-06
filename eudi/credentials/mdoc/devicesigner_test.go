@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"io"
 	"testing"
@@ -165,4 +166,40 @@ func TestSoftwareDeviceSignerSatisfiesDeviceSigner(t *testing.T) {
 		require.NotNil(t, h.PublicKey(), "signer %d returned a nil public key", i)
 		require.Equal(t, elliptic.P256(), h.PublicKey().Curve, "signer %d device key is on %s, want P-256", i, h.PublicKey().Curve.Params().Name)
 	}
+}
+
+// TestPrepareDeviceAuthSignedElsewhere covers a device key that signs outside
+// this package: the Sig_structure PrepareDeviceAuth hands out is signed by the
+// caller, and the finished DeviceSignature verifies.
+func TestPrepareDeviceAuthSignedElsewhere(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	issuer, err := NewTestIssuer()
+	require.NoError(t, err)
+	docType, namespace := "eu.europa.ec.av.1", "eu.europa.ec.av.1"
+	credential, err := issuer.Issue(docType, namespace, map[string]any{"age_over_18": true}, &key.PublicKey)
+	require.NoError(t, err)
+	presented, err := SelectiveDisclose(credential, namespace, []string{"age_over_18"})
+	require.NoError(t, err)
+
+	transcript := SessionTranscript{
+		DeviceEngagementBytes: []byte("test-engagement"),
+		EReaderKeyBytes:       []byte("test-reader-key"),
+		Handover:              "test-handover",
+	}
+	toBeSigned, finish, err := PrepareDeviceAuth(&key.PublicKey, docType, transcript)
+	require.NoError(t, err)
+
+	digest := sha256.Sum256(toBeSigned)
+	r, s, err := ecdsa.Sign(rand.Reader, key, digest[:])
+	require.NoError(t, err)
+	sig := make([]byte, 64)
+	r.FillBytes(sig[:32])
+	s.FillBytes(sig[32:])
+	deviceAuthBytes, err := finish(sig)
+	require.NoError(t, err)
+
+	result := NewVerifier([]*x509.Certificate{issuer.IACACert()}).VerifyWithDeviceAuth(presented, namespace, docType, transcript, deviceAuthBytes)
+	require.True(t, result.Valid && result.DeviceAuthValid, "valid=%v deviceAuth=%v err=%q", result.Valid, result.DeviceAuthValid, result.Error)
 }

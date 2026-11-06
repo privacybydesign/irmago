@@ -31,8 +31,9 @@ type VcdmStore interface {
 	GetBatchByHashAndFormat(hash string, format models.CredentialFormat) (*models.VcdmBatch, error)
 
 	// GetUnusedInstance returns one instance of the batch that has not been
-	// presented. Returns ErrNotFound when every instance is used.
-	GetUnusedInstance(batchID datatypes.UUID) (*models.VcdmBatchInstance, error)
+	// presented, skipping the instances in excluding. Returns ErrNotFound when
+	// every instance is used or excluded.
+	GetUnusedInstance(batchID datatypes.UUID, excluding ...datatypes.UUID) (*models.VcdmBatchInstance, error)
 
 	// MarkInstanceUsed sets Used on the instance and decrements the parent
 	// batch's RemainingCount, in one transaction. Returns ErrNotFound if the
@@ -46,6 +47,12 @@ type VcdmStore interface {
 	// DeleteBatchByHashAndFormat deletes the batch with the given content hash
 	// and securing format, the same way. Returns ErrNotFound if none matches.
 	DeleteBatchByHashAndFormat(hash string, format models.CredentialFormat) error
+
+	// KeyIDsByBatchHashAndFormat returns the IDs of the keys the instances of
+	// the batch with the given content hash and securing format are bound to,
+	// so they can be removed where they live before the batch is. Returns
+	// ErrNotFound if no batch matches.
+	KeyIDsByBatchHashAndFormat(hash string, format models.CredentialFormat) ([]datatypes.UUID, error)
 
 	// A VCDM credential names its status by an IETF status_list reference, by
 	// W3C Bitstring Status List entries, or both; an instance is listed with
@@ -109,16 +116,19 @@ func (s *vcdmStore) GetBatchByHashAndFormat(hash string, format models.Credentia
 	return &batch, nil
 }
 
-func (s *vcdmStore) GetUnusedInstance(batchID datatypes.UUID) (*models.VcdmBatchInstance, error) {
+func (s *vcdmStore) GetUnusedInstance(batchID datatypes.UUID, excluding ...datatypes.UUID) (*models.VcdmBatchInstance, error) {
 	if batchID.IsNil() {
 		return nil, fmt.Errorf("batchID is required")
 	}
 	var instance models.VcdmBatchInstance
-	err := s.db.
+	query := s.db.
 		Preload("HolderBindingKey").
 		Preload("HolderBindingKey.ECDSA").
-		Where("vcdm_batch_id = ? AND used = ?", batchID, false).
-		First(&instance).Error
+		Where("vcdm_batch_id = ? AND used = ?", batchID, false)
+	if len(excluding) > 0 {
+		query = query.Where("id NOT IN ?", excluding)
+	}
+	err := query.First(&instance).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
@@ -178,6 +188,20 @@ func deleteVcdmBatch(tx *gorm.DB, batchID datatypes.UUID) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// KeyIDsByBatchHashAndFormat returns the IDs of the holder binding keys the
+// instances of the batch with the given hash and format are bound to.
+func (s *vcdmStore) KeyIDsByBatchHashAndFormat(hash string, format models.CredentialFormat) ([]datatypes.UUID, error) {
+	batch, err := s.GetBatchByHashAndFormat(hash, format)
+	if err != nil {
+		return nil, err
+	}
+	var ids []datatypes.UUID
+	err = s.db.Model(&models.HolderBindingKey{}).
+		Where("vcdm_batch_instance_id IN (SELECT id FROM vcdm_batch_instances WHERE vcdm_batch_id = ?)", batch.ID).
+		Pluck("id", &ids).Error
+	return ids, err
 }
 
 func (s *vcdmStore) DeleteBatchByHashAndFormat(hash string, format models.CredentialFormat) error {
