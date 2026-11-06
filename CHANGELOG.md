@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- Usage reporting no longer skips an interval without sessions. The interval stays open, so the reports of a run cover its time without holes, and is sent as an empty report after at most an hour (or the configured interval, if longer). Reports carry this heartbeat as the new optional `heartbeat_seconds` field, so the Yivi Portal can tell a quiet server from one that stopped reporting and show the gap. The report schema stays 1: a Portal that does not know the field ignores it.
 - The container image of a release is now tagged without the `v` prefix (`ghcr.io/privacybydesign/yivi:X.Y.Z` instead of `:vX.Y.Z`), and images are no longer tagged with the commit SHA. `:edge`, `:latest` and the tags of earlier releases stay as they are. Images are only pushed after passing a vulnerability scan.
 ### Fixed
 - The IRMA server no longer parses and validates an issuer private key from disk for every credential in an issuance session. For non-demo schemes this validation includes safe prime checks, which made starting and completing issuance sessions with many credentials exceed the server's 4 second request timeout on CPU-limited deployments, resulting in a `503 Service Unavailable`. Parsed keys are now cached per file and reused as long as the file's modification time and size are unchanged, so keys added, replaced or removed on disk are still picked up without a restart.
