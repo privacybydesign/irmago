@@ -788,6 +788,34 @@ func issueMdocViaPythonIssuer(
 ) {
 	t.Helper()
 
+	session := redeemMdocOfferViaPythonIssuer(t, c, sessionId, sessionHandler, credentialConfigId, data)
+	require.False(t, session.Status == clientmodels.Status_Error && session.Error != nil,
+		"issuance of %s errored: %+v", credentialConfigId, session.Error)
+	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	grantPermission(t, c, session.Id)
+
+	session = awaitSessionState(t, sessionHandler)
+	require.False(t, session.Status == clientmodels.Status_Error && session.Error != nil,
+		"issuance of %s errored after permission: %+v", credentialConfigId, session.Error)
+	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_Success)
+}
+
+// redeemMdocOfferViaPythonIssuer has the issuer mint an offer and the wallet
+// redeem it with its transaction code, and returns the session state that
+// follows: the permission request when the wallet accepted the credential, an
+// error when it refused it.
+func redeemMdocOfferViaPythonIssuer(
+	t *testing.T,
+	c *client.Client,
+	sessionId int,
+	sessionHandler *MockSessionHandler,
+	credentialConfigId string,
+	data map[string]any,
+) clientmodels.SessionState {
+	t.Helper()
+
 	status, body := postAvMdocOfferRequest(
 		t,
 		map[string]any{
@@ -833,18 +861,7 @@ func issueMdocViaPythonIssuer(
 		},
 	)
 
-	session = awaitSessionState(t, sessionHandler)
-	require.False(t, session.Status == clientmodels.Status_Error && session.Error != nil,
-		"issuance of %s errored: %+v", credentialConfigId, session.Error)
-	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
-	require.Len(t, session.OfferedCredentials, 1)
-
-	grantPermission(t, c, session.Id)
-
-	session = awaitSessionState(t, sessionHandler)
-	require.False(t, session.Status == clientmodels.Status_Error && session.Error != nil,
-		"issuance of %s errored after permission: %+v", credentialConfigId, session.Error)
-	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_Success)
+	return awaitSessionState(t, sessionHandler)
 }
 
 // ----------------------------------------------------------------------------

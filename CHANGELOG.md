@@ -6,6 +6,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-03
+### Added
+- SD-JWT-secured W3C VCDM 2.0 credentials (VC-JOSE-COSE §3.2), under the `vc+sd-jwt` format id and JWS `typ`. `dc+sd-jwt` stays IETF SD-JWT VC only: a VCDM credential or configuration under it is refused.
+  - **Issuance (OpenID4VCI)**
+    - The signer must be the issuer. A credential signed with an `x5c` chain must name its `issuer` in the leaf certificate, as `iss` must for SD-JWT VC. A credential signed with a DID key gets its key from the `iss` DID or, without `iss`, from the DID of an absolute `kid` (VC-JOSE-COSE §4.2), and that DID must be the credential's `issuer`.
+    - The credential's `type` and `@context` must include every value the configuration's `credential_definition` declares, as for mso_mdoc's docType, so an issuer cannot deliver another credential than the one offered. It may carry more.
+    - A credential is refused when a property a verifier needs to validate it is selectively disclosable, or holds anything that is: `@context`, `type`, `issuer`, `validFrom`, `validUntil`, `credentialStatus`, `credentialSchema` and `relatedResource`. VC-JOSE-COSE §3.2.1 says they should not be, and OpenID4VP §6.4 does not let the wallet disclose them unasked.
+    - The credential's types are expanded with its `@context` at issuance, for DCQL `type_values` and to recognise an Open Badges credential: from the bundled VCDM 2.0 base context and Open Badges 3.0 contexts (3.0.2 and 3.0.3), and any other context fetched over HTTPS, so a disclosure contacts no context host. A credential whose contexts cannot be fetched is refused before the user is asked to accept it.
+    - Like SD-JWT VC, the wallet checks and records the credential's own validity, the JWT `iat`, `nbf` and `exp`. The document's `validFrom` and `validUntil`, the validity of the data, are left for the verifier to judge; they stand in for the wallet's dates only when the JWT has no such claim.
+  - **Storage and display**
+    - A verified credential is stored in its own tables (`vcdm_batches`, `vcdm_batch_instances`), next to the SD-JWT VC and mso_mdoc ones, keyed by its `@context`+`type` identity, with claim paths rooted at `credentialSubject`.
+    - The credential's own `name` and its issuer's `name` are shown over the issuer metadata's display names, as an SD-JWT VC's type metadata is, on the issuance screen, in the credential list, on the disclosure screen and in the log. The metadata's name is shown when the credential has none, and the type identity when neither names it.
+    - The credential's own `image` (in an Open Badges credential without one, its achievement's image) and its issuer's `image` are its credential and issuer logos, shown over the metadata's on the same screens. An image is a URL, a data URI or an Open Badges `Image` object. It is downloaded into the logo caches like the metadata's logos, before the permission screen within the ten seconds the claim images have, and the logo backfill tries it again when it is missing; the metadata's logo shows while it is not downloaded.
+  - **Status**
+    - Both mechanisms a VCDM credential can name are checked: the W3C Bitstring Status List (`credentialStatus`) and the IETF Token Status List (`status.status_list`, which is what veramo issues).
+    - As for SD-JWT VC, issuance refuses a credential whose status is not valid or cannot be verified, the status refresh sweep keeps the status up to date and tells the app when it changes, and a revoked credential is shown as revoked in the credential list, on the disclosure screen and in the log.
+    - A Bitstring status list may be secured as `vc+jwt` or, as W3C recommends for an issuer of `vc+sd-jwt` credentials, as `vc+sd-jwt`. It is only believed when it verifies, its `id`, when it has one, is the URL it was fetched from, and it comes from the credential's own issuer: its `issuer` is the credential's `issuer`, a JWT `iss` matches it, and an `x5c` signing certificate names it.
+    - Refresh and message entries are ignored, since they carry no revocation state.
+    - As for SD-JWT VC and mso_mdoc, a batch is refused when its instances share a status entry or only some of them carry one. This is checked before a re-issuance replaces the credential the wallet already holds.
+  - **Presentation (OpenID4VP)**
+    - A `vc+sd-jwt` DCQL query is answered with a VCDM 2.0 Verifiable Presentation (`typ` `vp+jwt`) that envelopes the SD-JWT as an `EnvelopedVerifiableCredential`. When holder binding is required, the presentation is signed with the holder key from the credential's `cnf` and carries `aud` (the verifier's `client_id`) and `nonce`; that signature is the holder proof, so the enveloped SD-JWT has no KB-JWT. Without holder binding the SD-JWT is sent as is, as OpenID4VP 1.0 Appendix B.1 requires for W3C credentials.
+    - A query can select a credential by its fully expanded types with `type_values` (OpenID4VP Appendix B.1.1): its `type` with its `@context` applied, so `VerifiableCredential` is matched as `https://www.w3.org/2018/credentials#VerifiableCredential`. When a query sets both `type_values` and `vct_values`, both must match, because verifier authorization only reads `vct_values`.
+    - A VCDM credential is never offered for a `dc+sd-jwt` query.
+    - A query may also ask for a selectively disclosable claim outside `credentialSubject`, such as the credential's own `name`; the disclosure screen then shows it and the wallet sends it.
+    - When a Yivi certificate authorizes the verifier, claim paths are authorized without their `credentialSubject` root, which is not an attribute. A claim outside `credentialSubject` is authorized by its own name, so an attribute of the same name in `credentialSubject` covers it too. A path that asks for the whole subject needs `credentialSubject` itself (or `*`) in the authorized set.
+- Revocation of mso_mdoc credentials through the IETF Token Status List, which so far only worked for SD-JWT VCs ([#725](https://github.com/privacybydesign/irmago/issues/725)).
+  - An mdoc's MSO can now carry a `status.status_list` reference.
+  - As for SD-JWT VC, issuance refuses an mdoc whose status is not valid or cannot be verified, the status refresh sweep keeps each mdoc's status up to date, and a revoked mdoc is shown as revoked in the credential list, on the disclosure screen and in the log.
+- Status List Tokens can now be CWT-encoded as well as JWT-encoded; the wallet accepts either, for both formats. A CWT token is only believed when its x5chain verifies against the trusted issuers.
+- `CredentialDescriptor` has a new optional `format` field: the format a credential is offered in over OpenID4VCI, or requested in over OpenID4VP when the wallet does not hold it yet (`mso_mdoc`, `dc+sd-jwt` or `vc+sd-jwt`). Clients can use it to read the attributes' claim paths, which start with a namespace for `mso_mdoc`. Descriptors from the IRMA credential store and from IRMA sessions, which are not tied to one format, leave it out ([privacybydesign/irmamobile#790](https://github.com/privacybydesign/irmamobile/issues/790))
+- Claims that are images are shown as pictures, on the issuance screen, in the credential list, on the disclosure screen and in the log ([#779](https://github.com/privacybydesign/irmago/issues/779)).
+  - A `data:image/…` claim of an SD-JWT VC or SD-JWT-secured VCDM credential is shown as the image it holds.
+  - In an Open Badges 3.0 credential, the `id` of an `Image` object (`type` "Image" with an `id`) is shown as the image it points to; the object's other fields stay text. A credential is an Open Badges credential when its types, with its `@context` applied, include the Open Badges `OpenBadgeCredential` (or its other name, `AchievementCredential`); the term alone does not count.
+  - An image behind a URL in the credential's `credentialSubject` is downloaded before the permission screen into the credential logo cache, which it shares with the credential logos: cached by URL, downloaded when missing, not removed with the credential. At most ten images are shown per credential, within ten seconds of downloading per issuance; an image that does not fit or does not download stays its URL. The logo backfill, which runs at client start and on a locale change, tries a missing image again. An image elsewhere in the credential is not downloaded as a claim image: only the `credentialSubject` is shown as the credential's attributes. The credential's own image and its issuer's are its logos.
+  - Only how the claim is shown changes: what is disclosed and sent is the claim itself, the data URI or the URL. The log keeps the picture after the credential is deleted.
+- `AttributeValue` has a new optional `mime_type` field with the type of a `base64_image` value, recognised from the image itself: `image/png`, `image/jpeg`, `image/gif`, `image/webp` or `image/svg+xml`. It is set for claim images, mdoc portraits and IRMA photos alike, so clients can pick the renderer an SVG needs ([#779](https://github.com/privacybydesign/irmago/issues/779)).
+- Usage reporting to the Yivi Portal. The `irma server` counts IRMA disclosure and signing sessions that reach a final status, per day, requestor, credential type and outcome (`done`, `cancelled`, `failed`, `timeout`), and sends those counts every 5 minutes as reports signed with an ES256 account key. No attribute values, session tokens or other personal data are sent. Create the key with `yivi irma server usage keygen`, register its public key with your organisation in the Yivi Portal, and set `--usage-reporting-state-dir` or `--usage-reporting-account-key-file`. Counts are kept in memory; the state dir also keeps unsent reports across restarts, so no database or Redis is needed. A Portal that is down, or a key that is not (yet) registered, never stops the server: reports wait and are retried. The keyshare and MyYivi servers do not report. Issuance sessions are only counted with `--usage-reporting-count-issuance`.
+
+### Changed
+- OpenID4VCI issuance now refuses a batch whose instances are not instances of one credential. The wallet shows and logs a batch as one credential but sends a different instance each time, so an instance with other values would show the user one thing and send the verifier another.
+  - Instances may differ in their holder binding key, their digests and salts, their signature, their status list entry, and in what an issuer stamps on each one separately: `jti`, `iat`, the VCDM credential `id` and the mdoc signing time.
+  - Everything the wallet shows must be equal: the claims, the VCDM `credentialSubject.id` included, and the validity window (`exp`, `nbf`, VCDM `validFrom`/`validUntil`, mdoc `validFrom`/`validUntil`).
+- The `vc+sd-jwt` format id now identifies SD-JWT-secured W3C VCDM and no longer maps to legacy IETF SD-JWT VC, so the `vc+sd-jwt` JWS `typ` also stops verifying as an SD-JWT VC.
+  - An issuer that still offers an SD-JWT VC under `vc+sd-jwt`, as OpenID4VCI drafts up to 13 did, or signs one with that `typ`, is refused, and a verifier's `vc+sd-jwt` query no longer finds SD-JWT VCs.
+  - SD-JWT VC draft 13 recommends accepting the old `typ` for a transitional period; the wallet does not, since `vc+sd-jwt` cannot mean both.
+- Revocation works the same way for every credential format.
+  - The status refresh sweep checks every instance of a batch, still fetching each status list once, and stores the batch's worst status on all of its instances, so one revoked instance revokes the batch.
+  - An instance whose list cannot be read counts with its stored status, so a failure never clears a revocation.
+  - The credential list, the disclosure screen and the log all read that stored status. SD-JWT VC and mso_mdoc disclosure no longer read the status list cache, so they show the status as of the last sweep, like the credential list.
+- Credential, issuer and verifier logos are downloaded with the limits claim images have ([#779](https://github.com/privacybydesign/irmago/issues/779)).
+  - Only over HTTPS. Plain HTTP is accepted only in developer mode, for issuer and credential logos, and now by the logo backfill too, which did not follow developer mode; a verifier logo over plain HTTP is not downloaded.
+  - A logo larger than 2 MB, or that is no PNG, JPEG, GIF, WebP or SVG image, is left out, as a logo that fails to download already was. The type is recognised from the image, not taken from the `Content-Type` header.
+
+### Fixed
+- **Verifying credentials**
+  - An SD-JWT VC that makes `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity` or `status` selectively disclosable is now refused, as SD-JWT VC requires. These claims were only checked when the issuer signed them in plain, so a disclosed `exp` or `status` went unchecked. An SD-JWT-secured VCDM credential may disclose its JWT `iss`, `iat`, `nbf` and `exp`; they are then checked as if signed in plain.
+  - An SD-JWT credential whose `_sd_alg` is a truncated or short digest (`sha-256-128` down to `sha-256-32`, and `sha3-224`) is now refused. Such digests are unfit for security use or weaker than the credential's ES256 signature (RFC 9901 §9.4); the wallet accepts `sha-256`, `sha-384`, `sha-512`, `sha3-256`, `sha3-384` and `sha3-512`.
+  - An SD-JWT credential that lists the same digest twice is now refused, also when no disclosure matches it, as RFC 9901 requires. A repeated digest used to be noticed only when a disclosure matched it.
+  - An SD-JWT credential with a selectively disclosable claim inside a selectively disclosable array element, or inside an array nested in an array, is now accepted. The wallet used to refuse it with "one or more disclosures were not referenced", because it did not look for disclosures in those places.
+  - An SD-JWT credential with an empty `_sd` array is now accepted, as RFC 9901 allows. The wallet used to refuse it with "when the _sd field is present it may not be empty".
+  - A JWT whose `typ` header is written as a full media type (`application/dc+sd-jwt`) or in other capitals (`DC+SD-JWT`) is now accepted, as RFC 7515 requires. The wallet compared the value literally and refused such credentials, status lists, key binding JWTs and authorization requests.
+  - An SD-JWT VC whose `status.status_list` has a fractional `idx` or an empty `uri` is now refused, as it already was for SD-JWT-secured VCDM. The index used to be truncated and the empty URI accepted.
+- **Disclosing credentials**
+  - Disclosing a claim that is an object, such as an Open Badges `Image`, now sends the values inside it that the issuer made selectively disclosable on their own, as OpenID4VP §7.1 requires: a path to an object selects it with everything under it. The wallet used to send only the object's own disclosure.
+  - Disclosing an element of an SD-JWT array that also holds decoy digests now sends the element the verifier asked for. The wallet counted the decoys when it looked up an array index, so a decoy before the element shifted it: the disclosure screen showed nothing for the claim and the wallet sent no disclosure, or the next element's.
+  - The disclosure screen and the log now read a batch credential's values from the copy that is sent, not from the copy the batch was stored from.
+- **Storing credentials**
+  - A re-issued credential, of any format, now replaces the stored one in a single transaction. The old batch used to be deleted before the new one was stored, so a re-issuance that failed to store lost the credential the user already had.
+  - Removing all storage now also deletes holder binding keys minted for an issuance that never completed. They are bound to no credential, so deleting the credentials did not reach them.
+  - The holder binding keys minted for a credential that is then refused, by the issuer or by its verification, are now deleted right away. They used to stay until all storage was removed.
+  - The SD-JWT VC claims `vct#integrity`, `jti` and `aud` are no longer shown as attributes in the credential list, on the issuance screen, or on the disclosure screen and log. They are protocol claims, not user data. They also no longer count towards a credential's duplicate check: `jti` changes on every issuance and `vct#integrity` whenever the issuer republishes its type metadata, so a renewal could be stored as a second copy instead of replacing the first. On startup, the wallet recomputes stored hashes. Copies that now turn out to be the same credential are merged: the one with the latest `iat` is kept and the others are deleted, as a renewal would do ([#772](https://github.com/privacybydesign/irmago/issues/772))
+
+## [1.4.3] - 2026-10-21
+### Fixed
+- Update Go toolchain to fix eMudhra CA compromise.
+- Pin Docker images to Go 1.27.3 to fix the eMudhra CA compromise and make builds reproducible.
+
 ## [1.4.2] - 2026-10-16
 ### Added
 - `AttributeValue` has a new optional `display_hint` field with the attribute type's display hint from the scheme, unchanged (e.g. `yesno`, `portraitPhoto`, `currency:EUR`). Clients can use it to render values for hints irmago doesn't interpret itself, starting with `currency:<ISO 4217 code>` for amounts stored as a plain decimal such as `12.50`. Values of attribute types without a display hint leave it out ([#752](https://github.com/privacybydesign/irmago/issues/752))
@@ -892,7 +969,9 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
-[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/privacybydesign/irmago/compare/v1.4.3...v1.5.0
+[1.4.3]: https://github.com/privacybydesign/irmago/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/privacybydesign/irmago/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/privacybydesign/irmago/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/privacybydesign/irmago/compare/v1.3.1...v1.4.0
@@ -945,4 +1024,3 @@ This release contains several large new features. In particular, the shoulder su
 [0.5.0-rc.1]: https://github.com/privacybydesign/irmago/compare/v0.4.1...v0.5.0-rc.1
 [0.4.1]: https://github.com/privacybydesign/irmago/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/privacybydesign/irmago/tree/v0.4.0
-

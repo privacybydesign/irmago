@@ -3,6 +3,7 @@ package sdjwtvc
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"testing"
 	"time"
 
@@ -78,9 +79,33 @@ func Test_HolderVerificationProcessor_IssuerSignedJwt_WithKeyBindingJwt_Fails(t 
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 
 	holderVerifier := NewHolderVerificationProcessor(context)
+	_, err := holderVerifier.ParseAndVerifySdJwtVc(createTestSdJwtVcKb(t, newWorkingSdJwtVcKbTestConfig()))
+
+	require.ErrorContains(t, err, "holder should not receive one from the issuer")
+}
+
+// vc+sd-jwt was the SD-JWT VC typ until November 2024 and now means an
+// SD-JWT-secured W3C VCDM credential, so an SD-JWT VC signed with it is
+// refused, although draft-ietf-oauth-sd-jwt-vc-13 §3.2.1 recommends accepting
+// it for a transitional period.
+// RFC 7515 §4.1.9: the typ is a media type, so the application/ form and any
+// capitalization of dc+sd-jwt are accepted.
+func Test_HolderVerificationProcessor_TypComparedAsMediaType(t *testing.T) {
+	for _, typ := range []string{"application/dc+sd-jwt", "DC+SD-JWT"} {
+		t.Run(typ, func(t *testing.T) {
+			noErrorTestCaseHolder(t, newWorkingSdJwtVcTestConfig().withTypHeader(typ), "typ "+typ)
+		})
+	}
+	errorTestCaseHolder(t, newWorkingSdJwtVcTestConfig().withTypHeader("application/vc+sd-jwt"), "invalid 'typ' header")
+}
+
+func Test_HolderVerificationProcessor_LegacyVcSdJwtTyp_Fails(t *testing.T) {
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	holderVerifier := NewHolderVerificationProcessor(context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_VcTypHeader_WithKbJwt))
 
-	require.Error(t, err, "failed to parse JWT: jwt.Parse: failed to parse token: jws.Verify: key provider 0 failed: invalid 'typ' header: jwt")
+	require.ErrorContains(t, err, "invalid 'typ' header: vc+sd-jwt")
 }
 
 func Test_HolderVerificationProcessor_IssuerSignedJwt_WithInvalidTypHeader_Fails(t *testing.T) {
@@ -400,16 +425,54 @@ func Test_HolderVerificationProcessor_VerificationIsBeforeNotBefore_Fails(t *tes
 	require.Error(t, err)
 }
 
-func Test_HolderVerificationProcessor_EmptyButNotMissingSdField_Fails(t *testing.T) {
+// SD-JWT VC keeps iss, nbf, exp, cnf, vct, vct#integrity and status out of the
+// Disclosures (draft-ietf-oauth-sd-jwt-vc-13 §3.2.2.2); a credential that
+// discloses one is rejected.
+func Test_HolderVerificationProcessor_DisclosedNonDisclosableClaim_Fails(t *testing.T) {
+	for _, tc := range []struct {
+		key   string
+		value any
+	}{
+		{"exp", int64(1945394126)},
+		{"nbf", int64(50)},
+		{"status", map[string]any{"status_list": map[string]any{"idx": 0, "uri": "https://issuer.example/status"}}},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			disclosure, err := sdjwt.NewDisclosureContent(tc.key, tc.value)
+			require.NoError(t, err)
+			disclosures := []sdjwt.DisclosureContent{disclosure}
+			config := newWorkingSdJwtVcTestConfig().
+				withExpiryTime(nil).
+				withNotBefore(nil).
+				withSdClaims(disclosures, iana.SHA256).
+				withDisclosures(disclosures)
+			errorTestCaseHolder(t, config, fmt.Sprintf("claim %q is selectively disclosable", tc.key))
+		})
+	}
+}
+
+// SD-JWT VC has the issuer leave out an empty _sd, but an empty array discloses
+// nothing, so the wallet accepts it (RFC 9901 §4.2.4.1 allows it).
+func Test_HolderVerificationProcessor_EmptyButNotMissingSdField_Succeeds(t *testing.T) {
 	emptyNotMissingSdField := newWorkingSdJwtVcTestConfig().
 		withSdClaims([]sdjwt.DisclosureContent{}, iana.SHA256).
 		withDisclosures([]sdjwt.DisclosureContent{})
-	errorTestCaseHolder(t, emptyNotMissingSdField, "failed to parse sd field: when the _sd field is present it may not be empty")
+	noErrorTestCaseHolder(t, emptyNotMissingSdField, "an empty _sd array is accepted")
 }
 
 func Test_HolderVerificationProcessor_UnsupportedSdAlg_Fails(t *testing.T) {
 	wrongSdAlgField := newWorkingSdJwtVcTestConfig().withSdAlg("SHA-null")
 	errorTestCaseHolder(t, wrongSdAlgField, "unsupported _sd_alg: SHA-null")
+}
+
+func Test_HolderVerificationProcessor_TruncatedSdAlg_Fails(t *testing.T) {
+	disclosures, err := sdjwt.MultipleNewDisclosureContents(map[string]string{"email": "test@gmail.com"})
+	require.NoError(t, err)
+	truncated := newWorkingSdJwtVcTestConfig().
+		withSdAlg(iana.SHA256_64).
+		withSdClaims(disclosures, iana.SHA256_64).
+		withDisclosures(disclosures)
+	errorTestCaseHolder(t, truncated, "unsupported _sd_alg: sha-256-64")
 }
 
 func Test_HolderVerificationProcessor_ValidSdJwtVc_NoDisclosures_NoKbJwt_Succeeds(t *testing.T) {
@@ -440,6 +503,24 @@ func Test_HolderVerificationProcessor_StatusClaim_RoundtripsThroughPayload(t *te
 	require.NotNil(t, verified.IssuerSignedJwtPayload.Status.StatusList)
 	require.Equal(t, "https://issuer.example/sl/1", verified.IssuerSignedJwtPayload.Status.StatusList.URI)
 	require.Equal(t, uint64(42), verified.IssuerSignedJwtPayload.Status.StatusList.Index)
+}
+
+// The status claim is read by the same parser as for SD-JWT-secured VCDM, so
+// both formats accept and refuse the same claims.
+func Test_HolderVerificationProcessor_StatusClaim_Malformed_Rejected(t *testing.T) {
+	for name, statusList := range map[string]map[string]any{
+		"fractional idx": {"idx": 1.5, "uri": "https://issuer.example/sl/1"},
+		"empty uri":      {"idx": 1, "uri": ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			config := newWorkingSdJwtVcTestConfig().withRawStatusClaim(map[string]any{"status_list": statusList})
+			sdjwtvc := createTestSdJwtVc(t, config)
+			context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+			_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+			require.ErrorContains(t, err, "failed to parse status claim")
+		})
+	}
 }
 
 func Test_HolderVerificationProcessor_StatusClaim_AbsentLeavesPayloadStatusNil(t *testing.T) {

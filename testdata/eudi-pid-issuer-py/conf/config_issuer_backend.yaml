@@ -8,17 +8,35 @@
 # - The "FC" (form-based) country variant is used so the pre-auth flow does
 #   not depend on an external eIDAS provider.
 # - PID-SD-JWT and the age-verification mdoc (doctype eu.europa.ec.av.1) are
-#   enabled; the other mdoc variants are not.
+#   enabled for the dynamic flow. The pre-authorized flow the tests use does
+#   not consult supported_credential_ids, so PID and mDL mdocs issue too.
+# - Revocation is enabled; see the revocation block for why that only matters
+#   while the mdoc status list tests run.
 
 service_url: "https://localhost:8443/eudi-pid-issuer-py"
 
 wallet_tester_url: "https://localhost:8443/eudi-pid-issuer-py"
 
+# With revocation enabled the issuer asks take_url for a status list entry
+# while it signs each credential, and embeds whatever JSON comes back as the
+# credential's `status` (the MSO's for an mdoc, the SD-JWT's claims otherwise).
+# It skips the AV pseudo-country itself (app/formatter_func.py).
+#
+# take_url points at the tls_proxy, which forwards to a status list server
+# that the mdoc status list tests start inside the Go test process
+# (internal/sessiontest/helper_mdoc_status_list_test.go). While no such test
+# is running, nginx answers 502, and the issuer then issues without a status,
+# so every other test gets the same credentials it always did. The issuer
+# cannot be pointed at the test process directly: it crashes on a refused
+# connection instead of issuing without status.
+#
+# set_url is only used by the issuer's own revocation web flow, which these
+# tests do not use: they flip status bits in the test server directly.
 revocation:
-  take_url: "https://localhost:8443/eudi-pid-issuer-py/token_status_list/take"
-  set_url: "https://localhost:8443/eudi-pid-issuer-py/token_status_list/set"
+  take_url: "https://localhost:8443/mdoc-status-list/take"
+  set_url: "https://localhost:8443/mdoc-status-list/set"
   api_key: "test-revocation-key"
-  enabled: false
+  enabled: true
 
 frontend:
   default: "default"

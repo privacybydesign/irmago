@@ -88,7 +88,7 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 		requestorInfo.Organization.LegalName = map[string]string{"en": *authRequest.ClientMetadata.ClientName}
 
 		if authRequest.ClientMetadata.LogoUri != nil {
-			logoData, mimeType, err := helpers.DownloadRemoteImage(context.Background(), common.HTTPClient, *authRequest.ClientMetadata.LogoUri)
+			logoData, mimeType, err := helpers.DownloadRemoteImage(context.Background(), common.HTTPClient, *authRequest.ClientMetadata.LogoUri, false)
 			if err != nil {
 				// If the logo download fails, we log a warning but continue without the logo
 				eudi.Logger.Warnf("failed to download verifier logo from %q: %v", *authRequest.ClientMetadata.LogoUri, err)
@@ -118,7 +118,7 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 		if !ok {
 			return nil, errors.New("auth request JWT needs to contain 'typ' in header, but doesn't")
 		}
-		if typ != AuthRequestJwtTyp {
+		if !eudi_jwt.TypMatches(typ, AuthRequestJwtTyp) {
 			return nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", AuthRequestJwtTyp, typ)
 		}
 

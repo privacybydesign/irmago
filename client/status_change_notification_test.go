@@ -49,6 +49,7 @@ func newClientForStatusRefresh(t *testing.T, signer *statuslist.TestStatusListSi
 
 	c.revocationService = services.NewRevocationService(
 		newStatusChecker(signer),
+		nil,
 		db.NewSdJwtVcStore(c.eudiStorage.Db()),
 	)
 
@@ -147,7 +148,7 @@ func TestRefreshStatusesNotifiesOnStatusChange(t *testing.T) {
 	require.Zero(t, handler.CredentialsChangedCount(), "re-confirming a status must not wake the app")
 
 	// The issuer revokes the credential.
-	srv.Serve(t, signer, statuslist.TestStatusListOpts{
+	srv.ServeJWT(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{7: 1}, // Invalid
@@ -213,7 +214,7 @@ func TestRefreshStatusesNotifiesOnChangeCommittedBeforeCancellation(t *testing.T
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	c.revocationService = services.NewRevocationService(newStatusChecker(signer), &cancellingStore{
+	c.revocationService = services.NewRevocationService(newStatusChecker(signer), nil, &cancellingStore{
 		SdJwtVcStore: db.NewSdJwtVcStore(c.eudiStorage.Db()),
 		cancel:       cancel,
 	})

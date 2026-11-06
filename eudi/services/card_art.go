@@ -30,7 +30,7 @@ import (
 //
 // Background images and SVG templates go through the logo pipeline: downloaded
 // at the same points (offer, after issuance, the locale backfill sweep), cached
-// in the credentials LogoManager, and resolved per locale with the same
+// in the credentials ImageManager, and resolved per locale with the same
 // fallback. Unlike logos they are capped in size, MIME-checked, verified
 // against their uri#integrity when the metadata gives one, and — for templates
 // — sanitised before they are written, so the cache only ever holds content
@@ -138,26 +138,26 @@ func hasColors(d metadata.CredentialDisplay) bool {
 // FetchCardArtIfMissing downloads and caches the background image and SVG
 // templates that resolve for the locale, skipping what is already cached.
 // Returns the number of assets newly cached. Failures are logged and skipped.
-func FetchCardArtIfMissing(ctx context.Context, manager filesystem.LogoManager, httpClient *http.Client, displays metadata.CredentialDisplays, locale string) int {
+func FetchCardArtIfMissing(ctx context.Context, manager filesystem.ImageManager, fetcher ImageFetcher, displays metadata.CredentialDisplays, locale string) int {
 	if manager == nil {
 		return 0
 	}
 	added := 0
 	if resolved := displaysByLanguage(displays, locale, hasBackgroundImage); len(resolved) > 0 {
-		added += fetchBackgroundImageIfMissing(ctx, manager, httpClient, *resolved[0].BackgroundImage)
+		added += fetchBackgroundImageIfMissing(ctx, manager, fetcher, *resolved[0].BackgroundImage)
 	}
 	if resolved := displaysByLanguage(displays, locale, hasSvgTemplates); len(resolved) > 0 {
 		for _, ref := range resolved[0].SvgTemplates {
 			if ctx.Err() != nil {
 				return added
 			}
-			added += fetchSvgTemplateIfMissing(ctx, manager, httpClient, ref)
+			added += fetchSvgTemplateIfMissing(ctx, manager, fetcher, ref)
 		}
 	}
 	return added
 }
 
-func fetchBackgroundImageIfMissing(ctx context.Context, manager filesystem.LogoManager, httpClient *http.Client, img metadata.RemoteImage) int {
+func fetchBackgroundImageIfMissing(ctx context.Context, manager filesystem.ImageManager, fetcher ImageFetcher, img metadata.RemoteImage) int {
 	if img.Uri == "" {
 		return 0
 	}
@@ -165,7 +165,7 @@ func fetchBackgroundImageIfMissing(ctx context.Context, manager filesystem.LogoM
 	if exists, err := manager.Exists(key); err == nil && exists {
 		return 0
 	}
-	data, mimeType, err := downloadCardAsset(ctx, httpClient, img.Uri, img.Integrity, maxBackgroundImageSize)
+	data, mimeType, err := downloadCardAsset(ctx, fetcher, img.Uri, img.Integrity, maxBackgroundImageSize)
 	if err != nil {
 		eudi.Logger.Warnf("failed to download background image: %v", err)
 		return 0
@@ -182,7 +182,7 @@ func fetchBackgroundImageIfMissing(ctx context.Context, manager filesystem.LogoM
 	return 1
 }
 
-func fetchSvgTemplateIfMissing(ctx context.Context, manager filesystem.LogoManager, httpClient *http.Client, ref metadata.SvgTemplateRef) int {
+func fetchSvgTemplateIfMissing(ctx context.Context, manager filesystem.ImageManager, fetcher ImageFetcher, ref metadata.SvgTemplateRef) int {
 	if ref.Uri == "" {
 		return 0
 	}
@@ -190,7 +190,7 @@ func fetchSvgTemplateIfMissing(ctx context.Context, manager filesystem.LogoManag
 	if exists, err := manager.Exists(key); err == nil && exists {
 		return 0
 	}
-	data, mimeType, err := downloadCardAsset(ctx, httpClient, ref.Uri, ref.Integrity, maxSvgTemplateBytes)
+	data, mimeType, err := downloadCardAsset(ctx, fetcher, ref.Uri, ref.Integrity, maxSvgTemplateBytes)
 	if err != nil {
 		eudi.Logger.Warnf("failed to download svg template: %v", err)
 		return 0
@@ -211,14 +211,18 @@ func fetchSvgTemplateIfMissing(ctx context.Context, manager filesystem.LogoManag
 	return 1
 }
 
-// downloadCardAsset downloads uri with a size cap and, when integrity is
+// downloadCardAsset downloads uri as any image (https, a recognised type, at
+// most helpers.MaxImageSize), caps it at maxBytes and, when integrity is
 // non-empty, verifies the raw bytes against it. An absent integrity is
 // accepted: the asset is still size-capped, type-checked and (for templates)
-// sanitised.
-func downloadCardAsset(ctx context.Context, httpClient *http.Client, uri, integrity string, maxBytes int64) ([]byte, string, error) {
-	data, mimeType, err := helpers.DownloadRemoteAsset(ctx, httpClient, uri, maxBytes)
+// sanitised. The MIME type returned is the one recognised from the content.
+func downloadCardAsset(ctx context.Context, fetcher ImageFetcher, uri, integrity string, maxBytes int64) ([]byte, string, error) {
+	data, mimeType, err := helpers.DownloadRemoteImage(ctx, fetcher.HTTPClient, uri, fetcher.AllowInsecureHTTP)
 	if err != nil {
 		return nil, "", err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, "", fmt.Errorf("asset %s exceeds %d bytes", uri, maxBytes)
 	}
 	if integrity != "" {
 		if err := typemetadata.VerifyIntegrity(data, integrity); err != nil {
@@ -269,7 +273,7 @@ func bitmapMimeType(contentType string, data []byte) (string, bool) {
 
 // LoadResolvedLogoWithKey is LoadResolvedLogo that also returns the key of the
 // logo it loaded (the cache key the logo tint is memoised under).
-func LoadResolvedLogoWithKey(manager filesystem.LogoManager, uris clientmodels.TranslatedString, locale string) (*clientmodels.Image, string) {
+func LoadResolvedLogoWithKey(manager filesystem.ImageManager, uris clientmodels.TranslatedString, locale string) (*clientmodels.Image, string) {
 	if key := clientmodels.Resolve(uris, locale); key != "" {
 		if img := eudi.LoadLogoImage(manager, key); img != nil {
 			return img, key
@@ -305,7 +309,7 @@ func LogoTint(key string, logo *clientmodels.Image) string {
 // colours, the cached background image and SVG templates, and the tint of the
 // already-loaded logo (logoKey is the key LoadResolvedLogoWithKey returned).
 // Returns nil when there is nothing to show.
-func BuildCredentialDisplay(manager filesystem.LogoManager, displays metadata.CredentialDisplays, locale string, logo *clientmodels.Image, logoKey string) *clientmodels.CredentialDisplay {
+func BuildCredentialDisplay(manager filesystem.ImageManager, displays metadata.CredentialDisplays, locale string, logo *clientmodels.Image, logoKey string) *clientmodels.CredentialDisplay {
 	out := &clientmodels.CredentialDisplay{LogoTint: LogoTint(logoKey, logo)}
 
 	// Colours resolve as a pair, from one entry, so a text colour is never
@@ -336,7 +340,7 @@ func BuildCredentialDisplay(manager filesystem.LogoManager, displays metadata.Cr
 	return out
 }
 
-func loadSvgTemplates(manager filesystem.LogoManager, refs []metadata.SvgTemplateRef) []clientmodels.SvgCardTemplate {
+func loadSvgTemplates(manager filesystem.ImageManager, refs []metadata.SvgTemplateRef) []clientmodels.SvgCardTemplate {
 	var out []clientmodels.SvgCardTemplate
 	for _, ref := range refs {
 		key := svgTemplateCacheKey(ref)

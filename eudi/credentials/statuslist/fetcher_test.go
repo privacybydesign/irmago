@@ -16,19 +16,19 @@ func Test_FetchStatusListToken_SendsAcceptHeader(t *testing.T) {
 	var gotAccept string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAccept = r.Header.Get("Accept")
-		w.Header().Set("Content-Type", StatusListTokenContentType)
+		w.Header().Set("Content-Type", StatusListTokenJWTContentType)
 		_, _ = w.Write([]byte("body"))
 	}))
 	defer srv.Close()
 
 	_, err := fetchStatusListToken(context.Background(), VerificationContext{}, srv.URL)
 	require.NoError(t, err)
-	require.Equal(t, StatusListTokenContentType, gotAccept)
+	require.Equal(t, StatusListTokenJWTContentType+", "+StatusListTokenCWTContentType, gotAccept)
 }
 
 func Test_FetchStatusListToken_ReadsBodyAndCacheControl(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", StatusListTokenContentType)
+		w.Header().Set("Content-Type", StatusListTokenJWTContentType)
 		w.Header().Set("Cache-Control", "max-age=300, public")
 		_, _ = w.Write([]byte("body-bytes"))
 	}))
@@ -36,7 +36,7 @@ func Test_FetchStatusListToken_ReadsBodyAndCacheControl(t *testing.T) {
 
 	res, err := fetchStatusListToken(context.Background(), VerificationContext{}, srv.URL)
 	require.NoError(t, err)
-	require.Equal(t, []byte("body-bytes"), res.rawJwt)
+	require.Equal(t, []byte("body-bytes"), res.rawToken)
 	require.Equal(t, 300*time.Second, res.httpMaxAge)
 }
 
@@ -54,7 +54,7 @@ func Test_FetchStatusListToken_RejectsWrongContentType(t *testing.T) {
 
 func Test_FetchStatusListToken_AcceptsContentTypeWithParameters(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", StatusListTokenContentType+"; charset=utf-8")
+		w.Header().Set("Content-Type", StatusListTokenJWTContentType+"; charset=utf-8")
 		_, _ = w.Write([]byte("body"))
 	}))
 	defer srv.Close()
@@ -65,7 +65,7 @@ func Test_FetchStatusListToken_AcceptsContentTypeWithParameters(t *testing.T) {
 
 func Test_FetchStatusListToken_RejectsNon2xx(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", StatusListTokenContentType)
+		w.Header().Set("Content-Type", StatusListTokenJWTContentType)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
@@ -77,7 +77,7 @@ func Test_FetchStatusListToken_RejectsNon2xx(t *testing.T) {
 func Test_FetchStatusListToken_BodySizeCap_ReturnsErrFetch(t *testing.T) {
 	big := strings.Repeat("X", 10000)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", StatusListTokenContentType)
+		w.Header().Set("Content-Type", StatusListTokenJWTContentType)
 		_, _ = w.Write([]byte(big))
 	}))
 	defer srv.Close()
@@ -91,7 +91,7 @@ func Test_FetchStatusListToken_TimeoutHonoured(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-release
-		w.Header().Set("Content-Type", StatusListTokenContentType)
+		w.Header().Set("Content-Type", StatusListTokenJWTContentType)
 		_, _ = w.Write([]byte("late"))
 	}))
 	defer srv.Close()
@@ -103,7 +103,7 @@ func Test_FetchStatusListToken_TimeoutHonoured(t *testing.T) {
 
 func Test_FetchStatusListToken_ConcurrentFetches_AllSucceed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", StatusListTokenContentType)
+		w.Header().Set("Content-Type", StatusListTokenJWTContentType)
 		_, _ = w.Write([]byte("body"))
 	}))
 	defer srv.Close()

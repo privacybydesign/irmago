@@ -3,6 +3,7 @@ package db
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
@@ -18,8 +19,10 @@ import (
 // silent under-preload the SD-JWT store's withBatchDisplayPreloads guards
 // against cannot happen.
 type MdocStore interface {
-	// StoreBatch inserts an MdocBatch and all its instances atomically.
-	// batch.Instances must be non-empty.
+	// StoreBatch inserts an MdocBatch and all its instances, replacing any batch
+	// with the same hash, in one transaction: a re-issuance that fails to store
+	// leaves the batch it would have replaced in place. batch.Instances must be
+	// non-empty.
 	StoreBatch(batch *models.MdocBatch) error
 
 	// ListBatches returns every stored batch, without instances.
@@ -50,6 +53,11 @@ type MdocStore interface {
 	// DeleteBatchByHash deletes the batch with the given content hash, with the
 	// same cascade. Returns ErrNotFound if none matches.
 	DeleteBatchByHash(hash string) error
+
+	// CredentialStatusStore is embedded so RevocationService can treat this
+	// store's instances the same way it treats SdJwtVcStore's — see
+	// credential_status_store.go.
+	CredentialStatusStore
 }
 
 type mdocStore struct {
@@ -68,7 +76,18 @@ func (s *mdocStore) StoreBatch(batch *models.MdocBatch) error {
 	if len(batch.Instances) == 0 {
 		return fmt.Errorf("batch must contain at least one instance")
 	}
-	return s.db.Create(batch).Error
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var existing []datatypes.UUID
+		if err := tx.Model(&models.MdocBatch{}).Where("hash = ?", batch.Hash).Pluck("id", &existing).Error; err != nil {
+			return err
+		}
+		for _, id := range existing {
+			if err := deleteMdocBatch(tx, id); err != nil {
+				return fmt.Errorf("failed to delete the batch this one replaces: %w", err)
+			}
+		}
+		return tx.Create(batch).Error
+	})
 }
 
 func (s *mdocStore) ListBatches() ([]*models.MdocBatch, error) {
@@ -146,7 +165,13 @@ func (s *mdocStore) DeleteBatch(batchID datatypes.UUID) error {
 	if batchID.IsNil() {
 		return fmt.Errorf("batchID is required")
 	}
-	res := s.db.Delete(&models.MdocBatch{}, "id = ?", batchID)
+	return deleteMdocBatch(s.db, batchID)
+}
+
+// deleteMdocBatch deletes a batch within tx; the cascade removes its instances
+// and their device keys. Returns ErrNotFound if no batch has that id.
+func deleteMdocBatch(tx *gorm.DB, batchID datatypes.UUID) error {
+	res := tx.Delete(&models.MdocBatch{}, "id = ?", batchID)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -162,4 +187,16 @@ func (s *mdocStore) DeleteBatchByHash(hash string) error {
 		return err
 	}
 	return s.DeleteBatch(batch.ID)
+}
+
+func (s *mdocStore) ListInstancesWithStatusReference() ([]CredentialStatusInstance, error) {
+	return mdocStatusTables.listInstancesWithStatusReference(s.db)
+}
+
+func (s *mdocStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error) {
+	return mdocStatusTables.listStatusReferencedInstanceStatuses(s.db)
+}
+
+func (s *mdocStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
+	return mdocStatusTables.updateInstanceStatus(s.db, instanceID, status, checkedAt)
 }

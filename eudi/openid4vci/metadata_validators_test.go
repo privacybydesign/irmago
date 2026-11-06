@@ -1206,6 +1206,77 @@ func TestGetSupportedCredentialSigningAlgorithm_Success(t *testing.T) {
 	}
 }
 
+// The `vc+sd-jwt` format id denotes an SD-JWT-secured W3C VCDM credential
+// (#678/#683): a VCDM-shaped credential_definition is required and a `vct` is
+// not allowed.
+func TestValidateCredentialConfiguration_SdJwtVcdm(t *testing.T) {
+	vcdmDefinition := &metadata.W3CCredentialDefinition{
+		Context: []string{"https://www.w3.org/ns/credentials/v2"},
+		Type:    []string{"VerifiableCredential", "ExampleCredential"},
+	}
+
+	tests := []struct {
+		name        string
+		config      metadata.CredentialConfiguration
+		expectedErr string
+	}{
+		{
+			name: "valid VCDM configuration",
+			config: metadata.CredentialConfiguration{
+				Format:               metadata.CredentialFormatIdentifier_SdJwtVcdm,
+				CredentialDefinition: vcdmDefinition,
+			},
+		},
+		{
+			name: "credential_definition without @context is valid",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVcdm,
+				CredentialDefinition: &metadata.W3CCredentialDefinition{
+					Type: []string{"VerifiableCredential", "ExampleCredential"},
+				},
+			},
+		},
+		{
+			name: "vct is not allowed",
+			config: metadata.CredentialConfiguration{
+				Format:                   metadata.CredentialFormatIdentifier_SdJwtVcdm,
+				CredentialDefinition:     vcdmDefinition,
+				VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
+			},
+			expectedErr: "'vct' is not allowed for SD-JWT-secured VCDM credential format",
+		},
+		{
+			name: "credential_definition is required",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVcdm,
+			},
+			expectedErr: "missing 'credential_definition' for SD-JWT-secured VCDM credential format",
+		},
+		{
+			name: "type must include VerifiableCredential",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVcdm,
+				CredentialDefinition: &metadata.W3CCredentialDefinition{
+					Type: []string{"ExampleCredential"},
+				},
+			},
+			expectedErr: `'credential_definition.type' must include "VerifiableCredential" for SD-JWT-secured VCDM credential format`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validator := CredentialConfigurationValidator{}
+			err := validator.Verify(&tt.config)
+			if tt.expectedErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, tt.expectedErr)
+			}
+		})
+	}
+}
+
 // TestValidateAndGetSupportedFeatures_EudiReferenceAgeVerificationMdoc runs the
 // validator against the credential configuration the EUDI reference issuer
 // actually serves for the AV Blueprint's Proof of Age attestation, copied
@@ -1296,6 +1367,64 @@ func TestGetSupportedCredentialSigningAlgorithm_Failure(t *testing.T) {
 			require.Equal(t, tt.wantErr, err)
 		})
 	}
+}
+
+// A `dc+sd-jwt` configuration is IETF SD-JWT VC only: it needs a `vct`, and a
+// VCDM credential_definition does not stand in for one.
+func TestValidateCredentialConfiguration_DcSdJwtRequiresVct(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      metadata.CredentialConfiguration
+		expectedErr string
+	}{
+		{
+			name: "vct is accepted",
+			config: metadata.CredentialConfiguration{
+				Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
+				VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
+			},
+		},
+		{
+			name: "VCDM credential_definition without vct is rejected",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
+				CredentialDefinition: &metadata.W3CCredentialDefinition{
+					Type: []string{"VerifiableCredential", "ExampleCredential"},
+				},
+			},
+			expectedErr: "missing 'vct' field for SD-JWT VC credential format",
+		},
+		{
+			name: "neither vct nor credential_definition is rejected",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
+			},
+			expectedErr: "missing 'vct' field for SD-JWT VC credential format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validator := CredentialConfigurationValidator{}
+			err := validator.Verify(&tt.config)
+			if tt.expectedErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, tt.expectedErr)
+			}
+		})
+	}
+}
+
+func TestValidateSupportedFeatures_SdJwtVcdmIsSupported(t *testing.T) {
+	validator := CredentialConfigurationValidator{}
+	_, err := validator.ValidateAndGetSupportedFeatures(&metadata.CredentialConfiguration{
+		Format: metadata.CredentialFormatIdentifier_SdJwtVcdm,
+		CredentialDefinition: &metadata.W3CCredentialDefinition{
+			Type: []string{"VerifiableCredential", "ExampleCredential"},
+		},
+	})
+	require.NoError(t, err)
 }
 
 // ES256K's availability depends on the jwx_es256k build tag (see eudi_jwt.SupportedSignatureAlgorithms).

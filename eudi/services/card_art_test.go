@@ -49,7 +49,7 @@ type cardAsset struct {
 func newCardArtServer(t *testing.T, assets map[string]cardAsset) (*httptest.Server, map[string]int) {
 	t.Helper()
 	requests := map[string]int{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests[r.URL.Path]++
 		a, ok := assets[r.URL.Path]
 		if !ok {
@@ -69,8 +69,8 @@ func newCardArtServer(t *testing.T, assets map[string]cardAsset) (*httptest.Serv
 
 func strPtr(s string) *string { return &s }
 
-func newCardArtManager(t *testing.T) filesystem.LogoManager {
-	return filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()).Credentials().LogoManager()
+func newCardArtManager(t *testing.T) filesystem.ImageManager {
+	return filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()).Credentials().ImageManager()
 }
 
 func TestFetchCardArt_SanitisesVerifiesAndLoads(t *testing.T) {
@@ -91,8 +91,8 @@ func TestFetchCardArt_SanitisesVerifiesAndLoads(t *testing.T) {
 	}}
 	manager := newCardArtManager(t)
 
-	require.Equal(t, 2, FetchCardArtIfMissing(context.Background(), manager, srv.Client(), displays, "en"))
-	require.Equal(t, 0, FetchCardArtIfMissing(context.Background(), manager, srv.Client(), displays, "en"), "warm cache")
+	require.Equal(t, 2, FetchCardArtIfMissing(context.Background(), manager, ImageFetcher{HTTPClient: srv.Client()}, displays, "en"))
+	require.Equal(t, 0, FetchCardArtIfMissing(context.Background(), manager, ImageFetcher{HTTPClient: srv.Client()}, displays, "en"), "warm cache")
 	require.Equal(t, map[string]int{"/card.svg": 1, "/bg.png": 1}, requests)
 
 	got := BuildCredentialDisplay(manager, displays, "en", nil, "")
@@ -126,7 +126,7 @@ func TestFetchCardArt_RejectsBadAssets(t *testing.T) {
 	})
 	manager := newCardArtManager(t)
 	fetch := func(d metadata.CredentialDisplay) int {
-		return FetchCardArtIfMissing(context.Background(), manager, srv.Client(), metadata.CredentialDisplays{d}, "en")
+		return FetchCardArtIfMissing(context.Background(), manager, ImageFetcher{HTTPClient: srv.Client()}, metadata.CredentialDisplays{d}, "en")
 	}
 	template := func(path, integrity string) metadata.CredentialDisplay {
 		return metadata.CredentialDisplay{SvgTemplates: []metadata.SvgTemplateRef{{Uri: srv.URL + path, Integrity: integrity}}}
@@ -176,7 +176,7 @@ func TestBuildCredentialDisplay_LocaleFallback(t *testing.T) {
 	manager := newCardArtManager(t)
 
 	// Only the nl template resolves for nl, so only it is fetched.
-	require.Equal(t, 1, FetchCardArtIfMissing(context.Background(), manager, srv.Client(), displays, "nl"))
+	require.Equal(t, 1, FetchCardArtIfMissing(context.Background(), manager, ImageFetcher{HTTPClient: srv.Client()}, displays, "nl"))
 	nl := BuildCredentialDisplay(manager, displays, "nl", nil, "")
 	require.Contains(t, nl.SvgTemplates[0].Svg, ">nl<")
 	require.Equal(t, "#111111", nl.BackgroundColor, "colours fall back across locales")
@@ -184,7 +184,7 @@ func TestBuildCredentialDisplay_LocaleFallback(t *testing.T) {
 	// en is not cached yet: the cached nl template stands in until it is.
 	en := BuildCredentialDisplay(manager, displays, "en", nil, "")
 	require.Contains(t, en.SvgTemplates[0].Svg, ">nl<")
-	require.Equal(t, 1, FetchCardArtIfMissing(context.Background(), manager, srv.Client(), displays, "en"))
+	require.Equal(t, 1, FetchCardArtIfMissing(context.Background(), manager, ImageFetcher{HTTPClient: srv.Client()}, displays, "en"))
 	en = BuildCredentialDisplay(manager, displays, "en", nil, "")
 	require.Contains(t, en.SvgTemplates[0].Svg, ">en<")
 

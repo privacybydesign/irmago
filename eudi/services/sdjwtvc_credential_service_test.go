@@ -410,7 +410,7 @@ func TestGetCredentialMetadataList_CredentialLogoOnNonFirstDisplay(t *testing.T)
 		{Name: "Mijn Credential", Locale: datatypes.NullString{V: "nl", Valid: true}, LogoURI: logoURL},
 	}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	require.NoError(t, fileStorageMock.Credentials().LogoManager().Save(logoURL, []byte("PNGDATA"), "image/png"))
+	require.NoError(t, fileStorageMock.Credentials().ImageManager().Save(logoURL, []byte("PNGDATA"), "image/png"))
 
 	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	svc := newServiceWithMocks(mock, fileStorageMock)
@@ -433,7 +433,7 @@ func TestGetCredentialMetadataList_IssuerLogoOnNonFirstDisplay(t *testing.T) {
 		{Name: "Test Issuer NL", Locale: datatypes.NullString{V: "nl", Valid: true}, LogoURI: datatypes.NullString{V: logoURL, Valid: true}},
 	}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	require.NoError(t, fileStorageMock.Issuers().LogoManager().Save(logoURL, []byte("ISSUERPNG"), "image/png"))
+	require.NoError(t, fileStorageMock.Issuers().ImageManager().Save(logoURL, []byte("ISSUERPNG"), "image/png"))
 
 	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
 	svc := newServiceWithMocks(mock, fileStorageMock)
@@ -457,7 +457,7 @@ func TestGetCredentialMetadataList_MapsCardArt(t *testing.T) {
 	batch.CredentialMetadata.Claims[0].SvgId = datatypes.NullString{V: "family_name", Valid: true}
 
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	require.NoError(t, fileStorageMock.Credentials().LogoManager().Save(svgTemplateCacheKey(ref), []byte(`<svg>{{family_name}}</svg>`), "image/svg+xml"))
+	require.NoError(t, fileStorageMock.Credentials().ImageManager().Save(svgTemplateCacheKey(ref), []byte(`<svg>{{family_name}}</svg>`), "image/svg+xml"))
 
 	svc := newServiceWithMocks(&mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}, fileStorageMock)
 	result, err := svc.List()
@@ -836,6 +836,23 @@ func TestVerifyAndStoreIssuedCredentials_StoreError_Propagated(t *testing.T) {
 	)
 
 	require.Error(t, err)
+}
+
+// A re-issuance replaces the stored batch with the same hash, but the store
+// does that in the transaction that stores the new batch. The service must not
+// delete it first: if storing then fails, the user has lost the credential.
+func TestVerifyAndStoreIssuedCredentials_StoreError_KeepsTheStoredCredential(t *testing.T) {
+	mock := &mockCredentialStore{
+		storeBatchErr: errors.New("storage failure"),
+		existing:      &models.SdJwtVcBatch{ID: datatypes.NewUUIDv4()},
+	}
+	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
+
+	err := svc.Store(wrapSdJwtVcs(vc), "config-id", newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc), false, nil)
+
+	require.Error(t, err)
+	assert.Empty(t, mock.deletedBatches, "the service must leave replacing the stored batch to the store")
 }
 
 func TestVerifyAndStoreIssuedCredentials_FullMetadata_ClaimsConverted(t *testing.T) {
@@ -1371,6 +1388,9 @@ type mockCredentialStore struct {
 	statusRefs      []db.BatchInstanceStatus
 	statusRefsErr   error
 	updatedHashes   []updatedHash
+	// existing is what GetBatchByHash finds, whatever the hash.
+	existing       *models.SdJwtVcBatch
+	deletedBatches []datatypes.UUID
 }
 
 // updatedHash records an UpdateBatchHash call, so a test can assert which batches
@@ -1393,6 +1413,9 @@ func (m *mockCredentialStore) GetCredentialBatchList() ([]*models.SdJwtVcBatch, 
 }
 
 func (m *mockCredentialStore) GetBatchByHash(hash string) (*models.SdJwtVcBatch, error) {
+	if m.existing != nil {
+		return m.existing, nil
+	}
 	return nil, db.ErrNotFound
 }
 
@@ -1405,6 +1428,7 @@ func (m *mockCredentialStore) MarkInstanceUsed(instanceID datatypes.UUID) error 
 }
 
 func (m *mockCredentialStore) DeleteBatch(batchID datatypes.UUID) error {
+	m.deletedBatches = append(m.deletedBatches, batchID)
 	return nil
 }
 
@@ -1440,7 +1464,12 @@ type linkRecord struct {
 	InstanceID datatypes.UUID
 }
 
-func (m *mockHolderBindingKeyStore) LinkToInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
+func (m *mockHolderBindingKeyStore) LinkToSdJwtVcInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
+	m.linkedKeys = append(m.linkedKeys, linkRecord{KeyID: keyID, InstanceID: instanceID})
+	return nil
+}
+
+func (m *mockHolderBindingKeyStore) LinkToVcdmInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
 	m.linkedKeys = append(m.linkedKeys, linkRecord{KeyID: keyID, InstanceID: instanceID})
 	return nil
 }
@@ -1469,7 +1498,7 @@ func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesys
 		fileStorage:           fileStorageMock,
 		currentLocale:         clientmodels.NewCurrentLocale("en"),
 		// BatchRevocation reads the same mock store; no live checker needed.
-		revocation: NewRevocationService(nil, storeMock),
+		revocation: NewRevocationService(nil, nil, storeMock),
 	}
 }
 
@@ -1600,4 +1629,69 @@ func newStorageBatch() *models.SdJwtVcBatch {
 			{RawCredential: []byte("raw-token")},
 		},
 	}
+}
+
+// Issue #772: vct#integrity is SD-JWT VC protocol metadata (a hash of the type
+// metadata document), not user data, so it must not show up as an attribute.
+// The same goes for the registered JWT claims jti and aud, which
+// sdjwtvc.StandardClaims also misses.
+func TestGetCredentialMetadataList_HidesProtocolClaims(t *testing.T) {
+	for _, claim := range []string{"vct#integrity", "jti", "aud"} {
+		t.Run(claim, func(t *testing.T) {
+			batch := newStorageBatch()
+			batch.ProcessedSdJwtPayload = datatypes.JSON(fmt.Sprintf(`{"family_name":"Smith","%s":"protocol-value"}`, claim))
+			mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
+			svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+
+			result, err := svc.List()
+
+			require.NoError(t, err)
+			require.Len(t, result, 1)
+
+			paths := []string{}
+			for _, a := range result[0].Attributes {
+				paths = append(paths, clientmodels.ClaimPathKey(a.ClaimPath))
+			}
+
+			assert.Equal(t, []string{clientmodels.ClaimPathKey([]any{"family_name"})}, paths)
+		})
+	}
+}
+
+// Issue #772, dedup side: these claims change between issuances with the same
+// claim values. vct#integrity changes when the issuer republishes its type
+// metadata, jti is unique per token. A renewal must still hash the same, or
+// the wallet keeps both copies instead of replacing the old one.
+func TestHashForSdJwtVc_IgnoresProtocolClaims(t *testing.T) {
+	for _, claim := range []string{"vct#integrity", "jti", "aud"} {
+		t.Run(claim, func(t *testing.T) {
+			before := fmt.Appendf(nil, `{"given_name":"Alice","%s":"first"}`, claim)
+			after := fmt.Appendf(nil, `{"given_name":"Alice","%s":"second"}`, claim)
+
+			h1, err := hashForSdJwtVc("https://vct.example.com/Cred", testHashIssuer, before)
+			require.NoError(t, err)
+			h2, err := hashForSdJwtVc("https://vct.example.com/Cred", testHashIssuer, after)
+			require.NoError(t, err)
+			assert.Equal(t, h1, h2, "a new %s must not make it a different credential", claim)
+		})
+	}
+}
+
+// A data:image/ claim is listed as a picture, under its own path.
+func TestGetCredentialMetadataList_DataURIClaimIsAnImage(t *testing.T) {
+	batch := newStorageBatch()
+	batch.ProcessedSdJwtPayload = datatypes.JSON(`{"given_name": "Alice", "photo": "` + testImageDataURI + `"}`)
+	mock := &mockCredentialStore{batchListResult: []*models.SdJwtVcBatch{batch}}
+	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+
+	result, err := svc.List()
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	byPath := map[string]clientmodels.Attribute{}
+	for _, a := range result[0].Attributes {
+		byPath[clientmodels.ClaimPathKey(a.ClaimPath)] = a
+	}
+	requireImage(t, byPath[clientmodels.ClaimPathKey([]any{"photo"})].Value, testPNGBase64, clientmodels.MimeTypePNG)
+	requireText(t, byPath[clientmodels.ClaimPathKey([]any{"given_name"})].Value, "Alice")
 }

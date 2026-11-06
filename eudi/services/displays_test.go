@@ -45,7 +45,7 @@ func TestResolveLogoIndependentOfText(t *testing.T) {
 
 func TestLoadResolvedLogo_FallsBackToCachedLogoWhilePreferredIsMissing(t *testing.T) {
 	fs := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	manager := fs.Credentials().LogoManager()
+	manager := fs.Credentials().ImageManager()
 	require.NoError(t, manager.Save("https://logos.example.com/en.png", []byte("en-logo"), ""))
 
 	uris := clientmodels.TranslatedString{
@@ -64,7 +64,7 @@ func TestLoadResolvedLogo_FallsBackToCachedLogoWhilePreferredIsMissing(t *testin
 
 func TestLoadResolvedLogo_NoLogosCached_ReturnsNil(t *testing.T) {
 	fs := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	manager := fs.Credentials().LogoManager()
+	manager := fs.Credentials().ImageManager()
 
 	img := LoadResolvedLogo(manager, clientmodels.TranslatedString{"en": "https://logos.example.com/en.png"}, "en")
 

@@ -9,8 +9,9 @@ import (
 )
 
 // MigrateCredentialHashes recomputes the deduplication hash of every stored
-// SD-JWT VC batch, rewriting the rows whose hash was computed before the issuer
-// became part of it.
+// SD-JWT VC batch, rewriting the rows whose hash was computed under an older
+// definition: before the issuer became part of it, or before vct#integrity,
+// jti and aud were stripped as standard claims.
 //
 // Without this, a wallet that already holds credentials would stop recognising
 // them: a re-issuance computes the new-style hash, finds no stored batch under
@@ -26,22 +27,28 @@ import (
 // Idempotent: a second run recomputes the same values and writes nothing, so it
 // is safe to call on every startup, which is how it is wired.
 //
-// The activity log refers to cards by this hash, so the log entries of a
-// rewritten batch are pointed at its new hash too, before the batch itself:
-// interrupted in between, the next run still finds the batch under its old
-// hash and finishes both. logs may be nil when there is no log to keep up.
+// The activity log refers to cards by this hash, so the log entries of every
+// batch in a group are pointed at the group's hash first, the deleted
+// duplicates' too: interrupted after that, the next run still finds the batches
+// under their old hashes and finishes. logs may be nil when there is no log to
+// keep up.
 //
-// Collision is not a risk. The new hash covers strictly more input than the old
-// one, so it can only tell apart batches the old one conflated — and the old one
-// conflated none, since Hash is a unique index and two colliding rows could
-// never both have existed.
+// Collisions are expected. Stripping more standard claims makes the hash cover
+// less input, so batches the old hash told apart can now share one. They are
+// exactly the duplicates the old hash let in: the same credential, renewed,
+// but stored again because a per-issuance claim such as jti differed. Hash is a
+// unique index, so only one of them can keep it. The newest one (latest iat)
+// wins and the others are deleted, which is what a renewal does on a hash
+// match anyway.
 func MigrateCredentialHashes(store db.SdJwtVcStore, logs db.EudiLogStore) error {
 	batches, err := store.GetCredentialBatchList()
 	if err != nil {
 		return fmt.Errorf("credential hash migration: failed to list batches: %w", err)
 	}
 
-	migrated := 0
+	// Group by recomputed hash, in list order so the run is deterministic.
+	var hashes []string
+	byHash := map[string][]*models.SdJwtVcBatch{}
 	for _, batch := range batches {
 		want, err := recomputeBatchHash(batch)
 		if err != nil {
@@ -52,24 +59,66 @@ func MigrateCredentialHashes(store db.SdJwtVcStore, logs db.EudiLogStore) error 
 			eudi.Logger.Warnf("credential hash migration: skipping batch %s: %v", batch.ID, err)
 			continue
 		}
-		if want == batch.Hash {
-			continue
+		if _, seen := byHash[want]; !seen {
+			hashes = append(hashes, want)
 		}
+		byHash[want] = append(byHash[want], batch)
+	}
+
+	migrated, deleted := 0, 0
+	for _, want := range hashes {
+		group := byHash[want]
+		keep := newestBatch(group)
+
+		// The log follows the card: entries of a deleted duplicate are the
+		// kept batch's history from now on.
 		if logs != nil {
-			if err := logs.UpdateCredentialHash(nil, batch.Hash, want); err != nil {
-				return fmt.Errorf("credential hash migration: failed to update log entries of batch %s: %w", batch.ID, err)
+			for _, batch := range group {
+				if batch.Hash == want {
+					continue
+				}
+				if err := logs.UpdateCredentialHash(nil, batch.Hash, want); err != nil {
+					return fmt.Errorf("credential hash migration: failed to update log entries of batch %s: %w", batch.ID, err)
+				}
 			}
 		}
-		if err := store.UpdateBatchHash(batch.ID, want); err != nil {
-			return fmt.Errorf("credential hash migration: failed to update batch %s: %w", batch.ID, err)
+
+		// Delete the duplicates first: one of them may hold the hash the kept
+		// batch is about to take.
+		for _, batch := range group {
+			if batch == keep {
+				continue
+			}
+			if err := store.DeleteBatch(batch.ID); err != nil {
+				return fmt.Errorf("credential hash migration: failed to delete duplicate batch %s: %w", batch.ID, err)
+			}
+			deleted++
+		}
+
+		if want == keep.Hash {
+			continue
+		}
+		if err := store.UpdateBatchHash(keep.ID, want); err != nil {
+			return fmt.Errorf("credential hash migration: failed to update batch %s: %w", keep.ID, err)
 		}
 		migrated++
 	}
 
-	if migrated > 0 {
-		eudi.Logger.Infof("credential hash migration: rewrote %d of %d credential hashes to include the issuer", migrated, len(batches))
+	if migrated > 0 || deleted > 0 {
+		eudi.Logger.Infof("credential hash migration: rewrote %d hashes and deleted %d duplicates, of %d batches", migrated, deleted, len(batches))
 	}
 	return nil
+}
+
+// newestBatch returns the batch with the latest iat, the first one on a tie.
+func newestBatch(group []*models.SdJwtVcBatch) *models.SdJwtVcBatch {
+	newest := group[0]
+	for _, batch := range group[1:] {
+		if batch.IssuedAt.V.After(newest.IssuedAt.V) {
+			newest = batch
+		}
+	}
+	return newest
 }
 
 // recomputeBatchHash computes what a stored batch's hash would be today, with

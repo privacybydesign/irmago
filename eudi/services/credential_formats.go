@@ -7,6 +7,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -79,7 +81,8 @@ type CredentialFormats map[models.CredentialFormat]CredentialFormatSupport
 // NewCredentialFormats builds the registry for every format this wallet
 // supports, from the ingredients the formats share: the database the stores
 // live in, the file storage that holds logos, the issuer trust configuration,
-// the SD-JWT holder verifier, the revocation service, and the current locale.
+// the SD-JWT VC and SD-JWT-secured VCDM holder verifiers, the revocation
+// service, and the current locale.
 //
 // Derived in one place on purpose. A registry assembled at the call site can
 // be wired inconsistently or lose an entry in a merge with no compile error,
@@ -95,14 +98,23 @@ type CredentialFormats map[models.CredentialFormat]CredentialFormatSupport
 func NewCredentialFormats(
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+	vcdmHolderVerifier *vcdmsdjwt.HolderVerificationProcessor,
+	statusChecker *statuslist.Checker,
 	d *gorm.DB,
 	fs filesystem.FileSystemStorage,
 	revocation *RevocationService,
 	currentLocale *clientmodels.CurrentLocale,
 ) CredentialFormats {
 	sdJwtVcStore := db.NewSdJwtVcStore(d)
+	vcdmStore := db.NewVcdmStore(d)
 	mdocStore := db.NewMdocStore(d)
 	mdocKeys := db.NewMdocDeviceKeyStore(d)
+
+	// statusChecker is the one RevocationService's background sweep uses, so a
+	// revoked document is refused at parse time rather than merely flagged
+	// later — the same fail-closed guarantee sdjwtvc's holder verifier gives.
+	mdocVerifier := mdoc.NewVerifierFromTrustSource(&config.Issuers)
+	mdocVerifier.SetStatusChecker(statusChecker)
 
 	return CredentialFormats{
 		models.CredentialFormatSdJwtVc: {
@@ -110,10 +122,15 @@ func NewCredentialFormats(
 			Keys:   NewHolderBindingKeyService(d),
 			Store:  NewSdJwtVcCredentialService(sdJwtVcStore, db.NewHolderBindingKeyStore(d), fs, revocation, currentLocale),
 		},
+		models.CredentialFormatSdJwtVcdm: {
+			Parser: NewSdJwtVcdmCredentialFormatParser(vcdmHolderVerifier),
+			Keys:   NewHolderBindingKeyService(d),
+			Store:  NewSdJwtVcdmCredentialService(vcdmStore, db.NewHolderBindingKeyStore(d), fs, revocation, currentLocale),
+		},
 		models.CredentialFormatMsoMdoc: {
-			Parser: NewMdocCredentialFormatParser(mdoc.NewVerifierFromTrustSource(&config.Issuers)),
+			Parser: NewMdocCredentialFormatParser(mdocVerifier),
 			Keys:   NewMdocKeyService(mdocKeys),
-			Store:  NewMdocCredentialService(mdocStore, mdocKeys, fs, currentLocale),
+			Store:  NewMdocCredentialService(mdocStore, mdocKeys, fs, revocation, currentLocale),
 		},
 	}
 }
@@ -126,6 +143,7 @@ func NewCredentialFormats(
 func NewCredentialDisplaySources(d *gorm.DB) []CredentialDisplaySource {
 	return []CredentialDisplaySource{
 		newSdJwtVcDisplaySource(db.NewSdJwtVcStore(d)),
+		newSdJwtVcdmDisplaySource(db.NewVcdmStore(d)),
 		newMdocDisplaySource(db.NewMdocStore(d)),
 	}
 }

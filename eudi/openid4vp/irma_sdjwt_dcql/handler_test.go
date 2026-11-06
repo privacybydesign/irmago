@@ -691,7 +691,7 @@ func createTestDcqlHandler(t *testing.T) (*dcql.DcqlHandler, *irmaclient.InMemor
 	require.NoError(t, err)
 	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 	return dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{
-		irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(storage, conf, keyBinder, nil),
+		irma_sdjwt_dcql.New(storage, conf, keyBinder, nil),
 	}), storage
 }
 

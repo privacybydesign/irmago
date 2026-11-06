@@ -128,6 +128,10 @@ type AttributeValue struct {
 	ImagePath   *string `json:"image_path,omitempty"`
 	Base64Image *string `json:"base64_image,omitempty"`
 
+	// MimeType is the type of a base64_image, so the app can pick a renderer
+	// (an SVG needs another one than a bitmap). Omitted when not recognised.
+	MimeType *string `json:"mime_type,omitempty"`
+
 	// DisplayHint is the attribute type's display hint from the scheme, e.g.
 	// "yesno" or "currency:EUR", so clients can decide how to render the value.
 	// Omitted when the attribute type has no display hint.
@@ -408,6 +412,10 @@ type CredentialDescriptor struct {
 	// (ShouldBeSingleton): issuing a new one replaces the old one. False for
 	// types without a scheme entry.
 	IsSingleton bool `json:"is_singleton"`
+
+	// Format tells the app how to read the claim paths: an mso_mdoc's start
+	// with a namespace. Empty when not tied to one format, as for IRMA.
+	Format CredentialFormat `json:"format,omitempty"`
 }
 
 // CredentialStoreItem is a credential descriptor with FAQ information.

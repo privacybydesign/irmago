@@ -1,12 +1,9 @@
 package sdjwt
 
 import (
-	"crypto"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -60,172 +57,24 @@ type CnfField struct {
 	Kid *string `json:"kid,omitempty"`
 }
 
-type KeyBindingStorage interface {
-	StorePrivateKeys(keys []*ecdsa.PrivateKey) error
-	GetAndRemovePrivateKey(pubKey jwk.Key) (*ecdsa.PrivateKey, error)
-	// Takes in a list of pub keys for which it should delete the corresponding private keys
-	RemovePrivateKeys(pubKeys []jwk.Key) error
-	// Removes all holder binding private keys
-	RemoveAllPrivateKeys() error
-}
-
-func NewInMemoryKeyBindingStorage() KeyBindingStorage {
-	return &InMemoryKeyBindingStorage{
-		keys: map[string]*ecdsa.PrivateKey{},
-	}
-}
-
-type InMemoryKeyBindingStorage struct {
-	keys map[string]*ecdsa.PrivateKey
-}
-
-func (s *InMemoryKeyBindingStorage) StorePrivateKeys(keys []*ecdsa.PrivateKey) error {
-	for _, privKey := range keys {
-		privJwk, err := jwk.Import[jwk.Key](privKey)
-		if err != nil {
-			return fmt.Errorf("failed to convert ecdsa priv key to jwk: %v", err)
+// DuplicateConfirmation returns the index of the first confirmation that names
+// the same holder key as another one, or -1 when every key is distinct. Nil
+// confirmations are skipped. Each one-time-use copy in a batch must be bound
+// to its own key, or presentations of the copies can be linked.
+func DuplicateConfirmation(cnfs []*CnfField) int {
+	for i, cnf := range cnfs {
+		if cnf == nil {
+			continue
 		}
-
-		pubJwk, err := privJwk.PublicKey()
-		if err != nil {
-			return fmt.Errorf("failed to obtain pub key from jwk: %v", err)
-		}
-
-		thumbprint, err := pubJwk.Thumbprint(crypto.SHA256)
-		if err != nil {
-			return fmt.Errorf("failed to create thumbprint of jwk pub key: %v", err)
-		}
-
-		s.keys[string(thumbprint)] = privKey
-	}
-	return nil
-}
-
-func (s *InMemoryKeyBindingStorage) GetAndRemovePrivateKey(pubKey jwk.Key) (*ecdsa.PrivateKey, error) {
-	thumbprint, err := pubKey.Thumbprint(crypto.SHA256)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create thumbprint for holder pub key: %v", err)
-	}
-
-	privKey, ok := s.keys[string(thumbprint)]
-	if !ok {
-		return nil, fmt.Errorf("failed to find private key for holder pub key")
-	}
-
-	delete(s.keys, string(thumbprint))
-	return privKey, nil
-}
-
-func (s *InMemoryKeyBindingStorage) RemovePrivateKeys(pubKeys []jwk.Key) error {
-	for _, pk := range pubKeys {
-		_, err := s.GetAndRemovePrivateKey(pk)
-		if err != nil {
-			return err
+		for _, other := range cnfs[i+1:] {
+			if other != nil &&
+				((cnf.Jwk != nil && other.Jwk != nil && jwk.Equal(*other.Jwk, *cnf.Jwk)) ||
+					(cnf.Kid != nil && other.Kid != nil && *other.Kid == *cnf.Kid)) {
+				return i
+			}
 		}
 	}
-	return nil
-}
-
-func (s *InMemoryKeyBindingStorage) RemoveAllPrivateKeys() error {
-	s.keys = map[string]*ecdsa.PrivateKey{}
-	return nil
-}
-
-// KeyBinder is an interface for creating a key binding jwt from a hash.
-// Can be used to move creating the kbjwt to a server.
-type KeyBinder interface {
-	// Creates a batch of key pairs and returns the pub keys.
-	// These pub keys should be passed in when calling `CreateKeyBindingJwt()`.
-	CreateKeyPairs(num uint) ([]jwk.Key, error)
-	// Creates a batch of key pairs and returns the proofs using the provided ProofBuilder.
-	// Takes in the hash over the issuer signed JWT and the selected disclosures
-	CreateKeyBindingJwt(hash string, holderPubKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error)
-	// Takes in a list of pub keys for which it should delete the corresponding private keys
-	RemovePrivateKeys(pubKeys []jwk.Key) error
-	// Removes all holder binding private keys
-	RemoveAllPrivateKeys() error
-}
-
-type DefaultKeyBinder struct {
-	clock   jwt.Clock
-	storage KeyBindingStorage
-}
-
-func NewDefaultKeyBinder(storage KeyBindingStorage) KeyBinder {
-	return &DefaultKeyBinder{
-		clock:   systemClock{},
-		storage: storage,
-	}
-}
-
-func NewDefaultKeyBinderWithInMemoryStorage() KeyBinder {
-	return NewDefaultKeyBinder(NewInMemoryKeyBindingStorage())
-}
-
-// CreateKeyPairs will be deprecated in favor of CreateKeyPairsWithProofs when SD-JWT VC issuance over IRMA protocol is removed.
-func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
-	result := make([]jwk.Key, num)
-	privKeys := make([]*ecdsa.PrivateKey, num)
-
-	for i := range num {
-		privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate ecdsa private key: %v", err)
-		}
-		privKeys[i] = privKey
-
-		privJwk, err := jwk.Import[jwk.Key](privKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert ecdsa priv key to jwk: %v", err)
-		}
-
-		pubJwk, err := privJwk.PublicKey()
-		if err != nil {
-			return nil, fmt.Errorf("failed to obtain pub key from priv key jwk: %v", err)
-		}
-		result[i] = pubJwk
-	}
-
-	err := c.storage.StorePrivateKeys(privKeys)
-	if err != nil {
-		return nil, fmt.Errorf("failed to storage private keys: %v", err)
-	}
-
-	return result, nil
-}
-
-func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error) {
-	payload := KeyBindingJwtPayload{
-		IssuerSignedJwtHash: hash,
-		Nonce:               nonce,
-		IssuedAt:            c.clock.Now().Unix(),
-		Audience:            audience,
-	}
-	json, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-	customHeaders := map[string]any{
-		"typ": KbJwtTyp,
-	}
-
-	privKey, err := c.storage.GetAndRemovePrivateKey(holderKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve private key: %v", err)
-	}
-
-	jwtCreator := NewJwtCreator(privKey)
-
-	jwt, err := jwtCreator.CreateSignedJwt(customHeaders, string(json))
-	return KeyBindingJwt(jwt), err
-}
-
-func (c *DefaultKeyBinder) RemovePrivateKeys(pubKeys []jwk.Key) error {
-	return c.storage.RemovePrivateKeys(pubKeys)
-}
-
-func (c *DefaultKeyBinder) RemoveAllPrivateKeys() error {
-	return c.storage.RemoveAllPrivateKeys()
+	return -1
 }
 
 func CreateKbJwt(sdJwt SdJwt, creator KeyBinder, nonce string, audience string) (KeyBindingJwt, error) {
@@ -239,7 +88,25 @@ func CreateKbJwt(sdJwt SdJwt, creator KeyBinder, nonce string, audience string) 
 		return "", err
 	}
 
-	return creator.CreateKeyBindingJwt(hash, holderKey, nonce, audience)
+	// The binder adds iat.
+	payload := map[string]any{
+		"sd_hash": hash,
+		"nonce":   nonce,
+		"aud":     audience,
+	}
+	kbjwt, err := creator.CreateHolderSignedJwt(holderKey, map[string]any{"typ": KbJwtTyp}, payload)
+	return KeyBindingJwt(kbjwt), err
+}
+
+// WithIssuedAt returns a copy of claims with iat set to now, for a KeyBinder
+// implementation to stamp the time of signing.
+func WithIssuedAt(claims map[string]any, now time.Time) map[string]any {
+	stamped := maps.Clone(claims)
+	if stamped == nil {
+		stamped = map[string]any{}
+	}
+	stamped[jwt.IssuedAtKey] = now.Unix()
+	return stamped
 }
 
 func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwt) (iana.HashingAlgorithm, jwk.Key, error) {

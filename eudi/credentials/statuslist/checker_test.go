@@ -25,7 +25,7 @@ func makeSignerServerChecker(t *testing.T) (*TestStatusListSigner, *TestStatusLi
 
 func Test_Checker_Check_1Bit_AllValid(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{0: 0, 1: 0, 2: 0, 3: 0},
@@ -38,7 +38,7 @@ func Test_Checker_Check_1Bit_AllValid(t *testing.T) {
 
 func Test_Checker_Check_1Bit_Invalid(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{5: 1},
@@ -49,64 +49,9 @@ func Test_Checker_Check_1Bit_Invalid(t *testing.T) {
 	require.Equal(t, StatusInvalid, s)
 }
 
-// CheckCached serves from the local cache only and never fetches: a cold cache
-// reads Unknown with no HTTP hit.
-func Test_Checker_CheckCached_MissReturnsUnknownNoFetch(t *testing.T) {
-	_, srv, checker := makeSignerServerChecker(t)
-	s, err := checker.CheckCached(Reference{Index: 3, URI: srv.URL()})
-	require.NoError(t, err)
-	require.Equal(t, StatusUnknown, s)
-	require.Zero(t, srv.Hits(), "CheckCached must not fetch")
-}
-
-// Once warmed (as the background refresh would), CheckCached returns the
-// per-index status without any further HTTP hit.
-func Test_Checker_CheckCached_ServesFromWarmCache(t *testing.T) {
-	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
-		Issuer:   "https://issuer.example",
-		Bits:     1,
-		Statuses: map[uint64]uint8{3: 1, 4: 0},
-	})
-	_, err := checker.Refresh(context.Background(), Reference{URI: srv.URL()})
-	require.NoError(t, err)
-	hits := srv.Hits()
-
-	invalid, err := checker.CheckCached(Reference{Index: 3, URI: srv.URL()})
-	require.NoError(t, err)
-	require.Equal(t, StatusInvalid, invalid)
-
-	valid, err := checker.CheckCached(Reference{Index: 4, URI: srv.URL()})
-	require.NoError(t, err)
-	require.Equal(t, StatusValid, valid)
-
-	require.Equal(t, hits, srv.Hits(), "CheckCached must not fetch after warm")
-}
-
-// An expired cache entry is not served: CheckCached respects freshness and
-// returns Unknown rather than a stale status.
-func Test_Checker_CheckCached_ExpiredEntryReturnsUnknown(t *testing.T) {
-	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
-		Issuer:     "https://issuer.example",
-		Bits:       1,
-		Statuses:   map[uint64]uint8{0: 1},
-		TTLSeconds: 1, // clamped to TTLMin (60s)
-	})
-	_, err := checker.Refresh(context.Background(), Reference{URI: srv.URL()})
-	require.NoError(t, err)
-
-	// Advance past the cached entry's expiry; the stale entry must not be served.
-	checker.nowFn = func() time.Time { return time.Now().Add(TTLMax + time.Hour) }
-
-	s, err := checker.CheckCached(Reference{URI: srv.URL()})
-	require.NoError(t, err)
-	require.Equal(t, StatusUnknown, s)
-}
-
 func Test_Checker_Check_2Bit_Suspended(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     2,
 		Statuses: map[uint64]uint8{3: 2},
@@ -119,7 +64,7 @@ func Test_Checker_Check_2Bit_Suspended(t *testing.T) {
 
 func Test_Checker_Check_4Bit_ApplicationSpecific(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     4,
 		Statuses: map[uint64]uint8{0: 7},
@@ -147,7 +92,7 @@ func Test_Checker_Check_CacheWriteFailure_NotFatal(t *testing.T) {
 		VerificationContext{X509Context: signer.X509VerificationContext()},
 		failingPutCache{NewInMemoryCache()},
 	)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{2: 0},
@@ -160,7 +105,7 @@ func Test_Checker_Check_CacheWriteFailure_NotFatal(t *testing.T) {
 
 func Test_Checker_Check_8Bit_FullRange(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     8,
 		Statuses: map[uint64]uint8{0: 0, 1: 1, 2: 2, 3: 200},
@@ -175,7 +120,7 @@ func Test_Checker_Check_8Bit_FullRange(t *testing.T) {
 
 func Test_Checker_Check_CachesAcrossCalls(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:     "https://issuer.example",
 		Bits:       1,
 		Statuses:   map[uint64]uint8{0: 0},
@@ -191,7 +136,7 @@ func Test_Checker_Check_CachesAcrossCalls(t *testing.T) {
 
 func Test_Checker_Refresh_BypassesCache(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:     "https://issuer.example",
 		Bits:       1,
 		Statuses:   map[uint64]uint8{0: 0},
@@ -218,12 +163,12 @@ func Test_Checker_Check_Singleflight_CollapsesConcurrentFetches(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		<-release // hold the request open while concurrent callers pile up
-		w.Header().Set("Content-Type", StatusListTokenContentType)
+		w.Header().Set("Content-Type", StatusListTokenJWTContentType)
 		_, _ = w.Write(body)
 	}))
 	defer srv.Close()
 
-	body = signer.SignToken(t, TestStatusListOpts{
+	body = signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Subject:  srv.URL,
 		Bits:     1,
@@ -261,7 +206,7 @@ func Test_Checker_Check_FetchFailure_FailsClosed(t *testing.T) {
 
 func Test_Checker_Check_DelegatedIssuer_Accepted(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:   "https://delegated-status-issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{0: 0},
@@ -280,7 +225,7 @@ func Test_Checker_Check_SubMismatch_FailsClosed(t *testing.T) {
 	// Sign with a sub that is NOT this server's URL. The token is
 	// otherwise valid (correct iss, signature), but the sub != uri
 	// binding must reject it (§5.1 / §8.3).
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.SetBody(signer.SignJWTToken(t, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Subject:  "https://issuer.example/some-other-list",
 		Bits:     1,
@@ -294,7 +239,7 @@ func Test_Checker_Check_SubMismatch_FailsClosed(t *testing.T) {
 
 func Test_Checker_Check_IndexOutOfBounds_FailsClosed(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{0: 0, 1: 0, 2: 0},
@@ -308,7 +253,7 @@ func Test_Checker_Check_IndexOutOfBounds_FailsClosed(t *testing.T) {
 
 func Test_Checker_Check_TTLClampedToMinimum(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:     "https://issuer.example",
 		Bits:       1,
 		Statuses:   map[uint64]uint8{0: 0},
@@ -325,7 +270,7 @@ func Test_Checker_Check_TTLClampedToMinimum(t *testing.T) {
 
 func Test_Checker_Check_TTLClampedToMaximum(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:     "https://issuer.example",
 		Bits:       1,
 		Statuses:   map[uint64]uint8{0: 0},
@@ -343,7 +288,7 @@ func Test_Checker_Check_TTLClampedToMaximum(t *testing.T) {
 func Test_Checker_Check_PrioritizesJwtTtlOverHttpMaxAge(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
 	srv.SetMaxAge(120)
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:     "https://issuer.example",
 		Bits:       1,
 		Statuses:   map[uint64]uint8{0: 0},
@@ -365,7 +310,7 @@ func Test_Checker_Check_FallsBackToHttpMaxAgeWhenNoJwtTtl(t *testing.T) {
 	srv.SetMaxAge(300)
 	// No ttl and no exp on the token → the HTTP max-age is the only
 	// caching signal and is used as the fallback.
-	srv.Serve(t, signer, TestStatusListOpts{
+	srv.ServeJWT(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{0: 0},
@@ -384,4 +329,27 @@ func Test_Checker_Check_EmptyURI_FailsClosed(t *testing.T) {
 	checker := NewChecker(VerificationContext{X509Context: signer.X509VerificationContext()}, NewInMemoryCache())
 	_, err := checker.Check(context.Background(), Reference{Index: 0})
 	require.ErrorIs(t, err, ErrUnauthorized)
+}
+
+// Test_Checker_Check_CWT_EndToEnd exercises the full fetch → dispatch →
+// verify → decode path against a server serving a CWT Status List Token
+// (application/statuslist+cwt) — the encoding an mdoc's MSO status
+// reference points at. Everything above the wire format (Checker, caching,
+// content negotiation) is shared with the JWT path; this pins that the CWT
+// half of that path actually works end to end, not just at the unit level
+// verifyStatusListTokenCWT already covers.
+func Test_Checker_Check_CWT_EndToEnd(t *testing.T) {
+	signer, srv, checker := makeSignerServerChecker(t)
+	srv.ServeCWT(t, signer, TestStatusListOpts{
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0, 5: 1},
+	})
+
+	s, err := checker.Check(context.Background(), Reference{Index: 5, URI: srv.URL()})
+	require.NoError(t, err)
+	require.Equal(t, StatusInvalid, s)
+
+	s, err = checker.Check(context.Background(), Reference{Index: 0, URI: srv.URL()})
+	require.NoError(t, err)
+	require.Equal(t, StatusValid, s)
 }

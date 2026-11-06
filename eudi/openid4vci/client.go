@@ -16,6 +16,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/services"
 )
@@ -31,6 +33,11 @@ type Client struct {
 	httpClient     *http.Client
 	currentSession *session
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
+
+	// vcdmHolderVerifier verifies received SD-JWT-secured VCDM credentials. The
+	// registry's parsers hold it; the client keeps it to apply
+	// SetAllowInsecureHttp.
+	vcdmHolderVerifier *vcdmsdjwt.HolderVerificationProcessor
 
 	// formats is the per-format registry: how each credential format is
 	// verified, which keys it is bound to, and where it is stored. Sessions look
@@ -53,6 +60,7 @@ type Client struct {
 func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+	vcdmHolderVerifier *vcdmsdjwt.HolderVerificationProcessor,
 	formats services.CredentialFormats,
 	currentLocale *clientmodels.CurrentLocale,
 ) (*Client, error) {
@@ -68,11 +76,12 @@ func NewClient(httpClient *http.Client,
 		}
 	}
 	return &Client{
-		httpClient:     httpClient,
-		Configuration:  config,
-		holderVerifier: holderVerifier,
-		formats:        formats,
-		currentLocale:  currentLocale,
+		httpClient:         httpClient,
+		Configuration:      config,
+		holderVerifier:     holderVerifier,
+		vcdmHolderVerifier: vcdmHolderVerifier,
+		formats:            formats,
+		currentLocale:      currentLocale,
 	}, nil
 }
 
@@ -83,6 +92,7 @@ func NewClient(httpClient *http.Client,
 func (client *Client) SetAllowInsecureHttp(allow bool) {
 	client.allowInsecureHttp = allow
 	client.holderVerifier.SetAllowInsecureDidWeb(allow)
+	client.vcdmHolderVerifier.SetAllowInsecureDidWeb(allow)
 }
 
 // NewSession starts an OpenID4VCI issuance session. `redirectUri` is the OAuth
@@ -381,6 +391,7 @@ func (client *Client) convertToCredentialInfoList(
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
 			if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
+				config.Format != metadata.CredentialFormatIdentifier_SdJwtVcdm &&
 				config.Format != metadata.CredentialFormatIdentifier_MsoMdoc {
 				continue
 			}
@@ -394,22 +405,38 @@ func (client *Client) convertToCredentialInfoList(
 			displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
 			name := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale)
 
-			credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
+			credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().ImageManager()
 			image := services.LoadResolvedLogo(credentialLogoManager,
 				metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale)
 
 			result = append(result, &clientmodels.CredentialDescriptor{
-				CredentialId: config.VerifiableCredentialType,
+				CredentialId: credentialConfigurationTypeIdentity(config),
 				Name:         name,
 				Issuer: clientmodels.TrustedParty{
 					Name: issuerName,
 				},
 				Attributes: convertClaimsToAttributes(config.CredentialMetadata.Claims, locale),
 				Image:      image,
+				Format:     clientmodels.CredentialFormat(config.Format),
 			})
 		}
 	}
 	return result, nil
+}
+
+// credentialConfigurationTypeIdentity returns the credential type identity a
+// configuration advertises: the `vct` for an IETF SD-JWT VC, or the
+// @context+type composite for an SD-JWT-secured VCDM credential. This is
+// display-only: after issuance the verified credential's own type claims are
+// authoritative (see buildOfferedCredentials).
+func credentialConfigurationTypeIdentity(config metadata.CredentialConfiguration) string {
+	if config.VerifiableCredentialType != "" {
+		return config.VerifiableCredentialType
+	}
+	if config.CredentialDefinition != nil {
+		return vcdm.TypeIdentity(config.CredentialDefinition.Context, config.CredentialDefinition.Type)
+	}
+	return ""
 }
 
 func convertClaimsToAttributes(claims []metadata.ClaimsDescription, locale string) []clientmodels.Attribute {
@@ -430,7 +457,7 @@ func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.C
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
 	displays := metadata.ToTranslateableList(credentialIssuerMetadata.Display)
 
-	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
+	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().ImageManager()
 	issuerImage := services.LoadResolvedLogo(issuerLogoManager,
 		metadata.LogoURIsByLanguage(credentialIssuerMetadata.Display), locale)
 
@@ -514,8 +541,8 @@ func (client *Client) resolveCredentialMetadataFromVct(
 		if !ok {
 			continue
 		}
-		if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
-			config.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy {
+		// VCT type metadata only exists for the IETF SD-JWT VC data model.
+		if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc {
 			continue
 		}
 		// vct can legally be a non-URL string identifier; if so, there's
@@ -549,7 +576,8 @@ func (client *Client) downloadLogos(
 	locale string,
 ) {
 	fs := client.Configuration.Storage.FileSystem()
-	services.FetchLogoIfMissing(ctx, fs.Issuers().LogoManager(), client.httpClient,
+	fetcher := services.ImageFetcher{HTTPClient: client.httpClient, AllowInsecureHTTP: client.allowInsecureHttp}
+	fetcher.FetchIfMissing(ctx, fs.Issuers().ImageManager(),
 		clientmodels.Resolve(metadata.LogoURIsByLanguage(issuerMetadata.Display), locale))
 
 	for _, configID := range offer.CredentialConfigurationIds {
@@ -557,9 +585,9 @@ func (client *Client) downloadLogos(
 		if !ok || config.CredentialMetadata == nil {
 			continue
 		}
-		services.FetchLogoIfMissing(ctx, fs.Credentials().LogoManager(), client.httpClient,
+		fetcher.FetchIfMissing(ctx, fs.Credentials().ImageManager(),
 			clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale))
-		services.FetchCardArtIfMissing(ctx, fs.Credentials().LogoManager(), client.httpClient,
+		services.FetchCardArtIfMissing(ctx, fs.Credentials().ImageManager(), fetcher,
 			config.CredentialMetadata.Display, locale)
 	}
 }

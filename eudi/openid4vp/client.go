@@ -411,7 +411,7 @@ func (client *Client) verifySignedAuthorizationRequest(authRequestJwt string) (
 	// into its on-disk filename, so the prefix and its colon need no
 	// escaping here.
 	if requestorId != "" && requestorSchemeData.Organization.Logo != nil {
-		err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().Save(
+		err = client.Configuration.Storage.FileSystem().Verifiers().ImageManager().Save(
 			requestorId,
 			requestorSchemeData.Organization.Logo.Data,
 			requestorSchemeData.Organization.Logo.MimeType,

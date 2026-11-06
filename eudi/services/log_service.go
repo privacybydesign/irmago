@@ -93,9 +93,9 @@ type LogAttributeTexts struct {
 type eudiLogService struct {
 	store               db.EudiLogStore
 	displaySources      []CredentialDisplaySource
-	credLogoManager     filesystem.LogoManager
-	issuerLogoManager   filesystem.LogoManager
-	verifierLogoManager filesystem.LogoManager
+	credLogoManager     filesystem.ImageManager
+	issuerLogoManager   filesystem.ImageManager
+	verifierLogoManager filesystem.ImageManager
 	locale              string
 }
 
@@ -103,9 +103,9 @@ func NewEudiLogService(s storage.Storage, locale string) EudiLogService {
 	return &eudiLogService{
 		store:               db.NewEudiLogStore(s.Db()),
 		displaySources:      NewCredentialDisplaySources(s.Db()),
-		credLogoManager:     s.FileSystem().Credentials().LogoManager(),
-		issuerLogoManager:   s.FileSystem().Issuers().LogoManager(),
-		verifierLogoManager: s.FileSystem().Verifiers().LogoManager(),
+		credLogoManager:     s.FileSystem().Credentials().ImageManager(),
+		issuerLogoManager:   s.FileSystem().Issuers().ImageManager(),
+		verifierLogoManager: s.FileSystem().Verifiers().ImageManager(),
 		locale:              locale,
 	}
 }
@@ -658,7 +658,7 @@ func decodeStoredText(raw []byte, locale string) string {
 // saveLogoFromBase64 persists a base64-encoded image to the given logo manager
 // under the provided logical key. The manager hashes the key internally; no
 // filename is returned because the read path resolves the same key on demand.
-func saveLogoFromBase64(manager filesystem.LogoManager, key string, image *clientmodels.Image) {
+func saveLogoFromBase64(manager filesystem.ImageManager, key string, image *clientmodels.Image) {
 	if image == nil || image.Base64 == "" || key == "" || manager == nil {
 		return
 	}

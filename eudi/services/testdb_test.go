@@ -33,6 +33,8 @@ func newTestHolderDB(t *testing.T) *gorm.DB {
 		&models.ClaimDisplay{},
 		&models.SdJwtVcBatch{},
 		&models.SdJwtVcBatchInstance{},
+		&models.VcdmBatch{},
+		&models.VcdmBatchInstance{},
 		&models.StatusListCacheEntry{},
 		&models.EudiLogEntry{},
 		&models.EudiLogCredential{},

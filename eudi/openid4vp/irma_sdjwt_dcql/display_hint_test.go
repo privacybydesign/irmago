@@ -35,3 +35,13 @@ func TestBuildAttributeValue_NoDisplayHint(t *testing.T) {
 	val := buildAttributeValue("", &amount)
 	assert.Nil(t, val.DisplayHint)
 }
+
+// A photo gets the MIME type of the image it holds, so the app can pick a
+// renderer.
+func TestBuildAttributeValue_PhotoMimeType(t *testing.T) {
+	png := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+	val := buildAttributeValue("portraitPhoto", &png)
+	assert.Equal(t, clientmodels.AttributeType_Base64Image, val.Type)
+	require.NotNil(t, val.MimeType)
+	assert.Equal(t, clientmodels.MimeTypePNG, *val.MimeType)
+}

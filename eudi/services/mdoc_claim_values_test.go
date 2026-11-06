@@ -124,6 +124,8 @@ func TestPromoteMdocDataURIs(t *testing.T) {
 	require.Equal(t, clientmodels.AttributeType_Base64Image, attrs[0].Value.Type)
 	require.Equal(t, testPortraitBase64, *attrs[0].Value.Base64Image, "the image payload, without the data URI prefix")
 	require.Nil(t, attrs[0].Value.String)
+	require.NotNil(t, attrs[0].Value.MimeType)
+	require.Equal(t, clientmodels.MimeTypePNG, *attrs[0].Value.MimeType)
 
 	require.Equal(t, clientmodels.AttributeType_String, attrs[1].Value.Type)
 	require.Equal(t, "AQID", *attrs[1].Value.String, "bytes the app cannot draw show as the bare base64 text they showed before")
@@ -134,6 +136,21 @@ func TestPromoteMdocDataURIs(t *testing.T) {
 	require.Equal(t, clientmodels.AttributeType_Base64Image, attrs[3].RequestedValue.Type, "requested values are promoted too")
 
 	require.Nil(t, attrs[4].Value, "a section header stays a header")
+}
+
+// The MIME type the app is told comes from the image, not from the data URI.
+func TestPromoteMdocDataURIs_MimeTypeFromTheImage(t *testing.T) {
+	attrs := []clientmodels.Attribute{
+		{ClaimPath: []any{"ns", "portrait"}, Value: strPtrValue("data:image/jpeg;base64," + testPortraitBase64)},
+		{ClaimPath: []any{"ns", "signature"}, Value: strPtrValue("data:image/jpeg;base64,AQID")},
+	}
+
+	PromoteMdocDataURIs(attrs)
+
+	require.NotNil(t, attrs[0].Value.MimeType)
+	require.Equal(t, clientmodels.MimeTypePNG, *attrs[0].Value.MimeType, "a PNG labelled as JPEG is a PNG")
+	require.Equal(t, clientmodels.AttributeType_Base64Image, attrs[1].Value.Type)
+	require.Nil(t, attrs[1].Value.MimeType, "bytes that are no recognised image get no MIME type")
 }
 
 func TestMdocElementRefFromPath(t *testing.T) {
@@ -227,7 +244,7 @@ func strPtrValue(s string) *clientmodels.AttributeValue {
 	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &s}
 }
 
-// ========== BuildMdocAttributesFromResolvedClaims ==========
+// ========== buildMdocAttributesFromResolvedClaims ==========
 
 func TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames(t *testing.T) {
 	claims := []metadata.ClaimsDescription{
@@ -255,7 +272,7 @@ func TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames(t *
 		},
 	}
 
-	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "en")
+	attrs := buildMdocAttributesFromResolvedClaims(claims, resolved, "en")
 
 	require.Len(t, attrs, 2)
 
@@ -282,7 +299,7 @@ func TestBuildMdocAttributesFromResolvedClaims_NoMetadataStillEmitsValues(t *tes
 		},
 	}
 
-	attrs := BuildMdocAttributesFromResolvedClaims(nil, resolved, "en")
+	attrs := buildMdocAttributesFromResolvedClaims(nil, resolved, "en")
 
 	require.Len(t, attrs, 2)
 
@@ -313,7 +330,7 @@ func TestBuildMdocAttributesFromResolvedClaims_DerivesUnadvertisedAgeOver(t *tes
 		},
 	}
 
-	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "en")
+	attrs := buildMdocAttributesFromResolvedClaims(claims, resolved, "en")
 
 	require.Len(t, attrs, 2)
 
@@ -341,7 +358,7 @@ func TestBuildMdocAttributesFromResolvedClaims_PublishedBareElementNameWins(t *t
 		"eu.europa.ec.av.1": {"age_over_18": true},
 	}
 
-	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved, "nl")
+	attrs := buildMdocAttributesFromResolvedClaims(claims, resolved, "nl")
 
 	require.Len(t, attrs, 1)
 	require.Nil(t, attrs[0].DisplayName, "a bare-element publication is not overridden by the derived English name")

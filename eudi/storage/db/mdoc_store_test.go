@@ -84,10 +84,12 @@ func TestMdocSchema_TablesAndConstraints(t *testing.T) {
 	require.False(t, hasFormat, "an mdoc table needs no format discriminator: the table is the format")
 }
 
+// StoreBatch replaces a batch with the same hash, so the constraint is checked
+// with plain inserts.
 func TestMdocSchema_HashIsUnique(t *testing.T) {
-	store := NewMdocStore(newMdocTestDB(t))
-	require.NoError(t, store.StoreBatch(newMdocBatch("same", 1)))
-	require.Error(t, store.StoreBatch(newMdocBatch("same", 1)))
+	d := newMdocTestDB(t)
+	require.NoError(t, d.Create(newMdocBatch("same", 1)).Error)
+	require.Error(t, d.Create(newMdocBatch("same", 1)).Error)
 }
 
 func TestMdocSchema_ThumbprintIsUnique(t *testing.T) {
@@ -283,6 +285,82 @@ func TestMdocStore_DeleteBatch_CascadesToInstancesAndDeviceKeys(t *testing.T) {
 	require.Error(t, store.DeleteBatch(datatypes.UUID{}))
 }
 
+// --- Token Status List columns ---
+
+func TestMdocStore_StatusListColumnsDefaultToNil(t *testing.T) {
+	store := NewMdocStore(newMdocTestDB(t))
+	b := newMdocBatch("h-no-status", 1)
+	require.NoError(t, store.StoreBatch(b))
+
+	got, err := store.GetUnusedInstance(b.ID)
+	require.NoError(t, err)
+	require.Nil(t, got.StatusListURI)
+	require.Nil(t, got.StatusListIdx)
+	require.Equal(t, uint8(0), got.LastKnownStatus)
+	require.Nil(t, got.LastStatusCheckAt)
+}
+
+func TestMdocStore_ListInstancesWithStatusReference(t *testing.T) {
+	store := NewMdocStore(newMdocTestDB(t))
+
+	uri := "https://issuer.example/sl/1"
+	idx := uint64(7)
+	withStatus := newMdocBatch("h-with-status", 1)
+	withStatus.Instances[0].StatusListURI = &uri
+	withStatus.Instances[0].StatusListIdx = &idx
+	withStatus.Instances[0].LastKnownStatus = 1 // StatusValid
+	require.NoError(t, store.StoreBatch(withStatus))
+
+	// A batch without a status reference must be excluded.
+	require.NoError(t, store.StoreBatch(newMdocBatch("h-no-status", 1)))
+
+	got, err := store.ListInstancesWithStatusReference()
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, withStatus.Instances[0].ID, got[0].InstanceID)
+	require.Equal(t, withStatus.ID, got[0].BatchID)
+	require.Equal(t, &uri, got[0].StatusListURI)
+	require.Equal(t, &idx, got[0].StatusListIdx)
+	require.Equal(t, uint8(1), got[0].LastKnownStatus)
+}
+
+func TestMdocStore_ListStatusReferencedInstanceStatuses(t *testing.T) {
+	store := NewMdocStore(newMdocTestDB(t))
+
+	uri := "https://issuer.example/sl/1"
+	idx := uint64(3)
+	withStatus := newMdocBatch("h-with-status", 1)
+	withStatus.Instances[0].StatusListURI = &uri
+	withStatus.Instances[0].StatusListIdx = &idx
+	withStatus.Instances[0].LastKnownStatus = 2 // StatusInvalid
+	require.NoError(t, store.StoreBatch(withStatus))
+
+	require.NoError(t, store.StoreBatch(newMdocBatch("h-no-status", 1)))
+
+	got, err := store.ListStatusReferencedInstanceStatuses()
+	require.NoError(t, err)
+	require.Equal(t, []BatchInstanceStatus{{Hash: "h-with-status", LastKnownStatus: 2}}, got)
+}
+
+func TestMdocStore_UpdateInstanceStatus(t *testing.T) {
+	store := NewMdocStore(newMdocTestDB(t))
+
+	require.Error(t, store.UpdateInstanceStatus(datatypes.UUID{}, 1, time.Now()))
+	require.ErrorIs(t, store.UpdateInstanceStatus(datatypes.NewUUIDv4(), 1, time.Now()), ErrNotFound)
+
+	b := newMdocBatch("h", 1)
+	require.NoError(t, store.StoreBatch(b))
+
+	checked := time.Now().UTC().Truncate(time.Second)
+	require.NoError(t, store.UpdateInstanceStatus(b.Instances[0].ID, 2, checked))
+
+	got, err := store.GetUnusedInstance(b.ID)
+	require.NoError(t, err)
+	require.Equal(t, uint8(2), got.LastKnownStatus)
+	require.NotNil(t, got.LastStatusCheckAt)
+	require.WithinDuration(t, checked, got.LastStatusCheckAt.UTC(), time.Second)
+}
+
 // --- MdocDeviceKeyStore ---
 
 func TestMdocDeviceKeyStore_Validation(t *testing.T) {
@@ -341,4 +419,36 @@ func TestMdocDeviceKeyStore_StoreGetLinkDelete(t *testing.T) {
 	var n int64
 	require.NoError(t, d.Model(&models.MdocDeviceKey{}).Count(&n).Error)
 	require.Zero(t, n)
+}
+
+func TestMdocStore_StoreBatchReplacesTheSameCredential(t *testing.T) {
+	store := NewMdocStore(newMdocTestDB(t))
+	require.NoError(t, store.StoreBatch(newMdocBatch("hash-a", 1)))
+	require.NoError(t, store.StoreBatch(newMdocBatch("hash-b", 1)))
+
+	reissued := newMdocBatch("hash-a", 1)
+	require.NoError(t, store.StoreBatch(reissued))
+
+	batches, err := store.ListBatches()
+	require.NoError(t, err)
+	require.Len(t, batches, 2, "the re-issuance replaces the batch with its hash, and only that one")
+	stored, err := store.GetBatchByHash("hash-a")
+	require.NoError(t, err)
+	require.Equal(t, reissued.ID, stored.ID)
+}
+
+// The batch a re-issuance replaces is deleted in the transaction that stores
+// the new one, so a failed store rolls the delete back.
+func TestMdocStore_FailedReplacementKeepsTheStoredCredential(t *testing.T) {
+	store := NewMdocStore(newMdocTestDB(t))
+	original := newMdocBatch("hash-a", 1)
+	require.NoError(t, store.StoreBatch(original))
+
+	broken := newMdocBatch("hash-a", 1)
+	broken.Instances[0].IssuerSigned = nil // refused by the instance's own validation
+	require.Error(t, store.StoreBatch(broken))
+
+	stored, err := store.GetBatchByHash("hash-a")
+	require.NoError(t, err, "the stored credential must survive a replacement that failed")
+	require.Equal(t, original.ID, stored.ID)
 }
