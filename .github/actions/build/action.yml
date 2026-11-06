@@ -17,13 +17,17 @@ runs:
   using: composite
   steps:
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
       with:
         go-version-file: go.mod
 
     - name: Determine artifact output filename
       id: artifact-name-generator
-      run: echo "artifact-name=yivi-${{ inputs.os }}-${{ inputs.arch }}${{ inputs.os == 'windows' && '.exe' || '' }}" >> $GITHUB_OUTPUT
+      env:
+        OS: ${{ inputs.os }}
+        ARCH: ${{ inputs.arch }}
+        EXT: ${{ inputs.os == 'windows' && '.exe' || '' }}
+      run: echo "artifact-name=yivi-${OS}-${ARCH}${EXT}" >> $GITHUB_OUTPUT
       shell: bash
 
     - name: Build

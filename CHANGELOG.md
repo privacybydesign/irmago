@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - `POST /email/link` in `myirmaserver` lets the app link an email address to its keyshare account with one disclosure session, without a MyYivi login. The session asks for the keyshare attribute and an email attribute together, and when it has finished the email address is linked to the keyshare user, as `/email/add` does. At most 1000 of these sessions can wait to finish at a time ([#744](https://github.com/privacybydesign/irmago/issues/744))
-
+### Changed
+- The container image of a release is now tagged without the `v` prefix (`ghcr.io/privacybydesign/yivi:X.Y.Z` instead of `:vX.Y.Z`), and images are no longer tagged with the commit SHA. `:edge`, `:latest` and the tags of earlier releases stay as they are. Images are only pushed after passing a vulnerability scan.
 ### Fixed
 - The IRMA server no longer parses and validates an issuer private key from disk for every credential in an issuance session. For non-demo schemes this validation includes safe prime checks, which made starting and completing issuance sessions with many credentials exceed the server's 4 second request timeout on CPU-limited deployments, resulting in a `503 Service Unavailable`. Parsed keys are now cached per file and reused as long as the file's modification time and size are unchanged, so keys added, replaced or removed on disk are still picked up without a restart.
+- The error for a private key whose filename has a different counter than the key itself now shows that counter instead of a memory address
 
 ## [1.5.0] - 2026-11-03
 ### Added
