@@ -81,3 +81,48 @@ func testPublicKey(t *testing.T, alg jwa.KeyAlgorithm, use, kid string) jwk.Key 
 	require.NoError(t, err)
 	return publicKey
 }
+
+// A key encryption algorithm outside the wallet's allow-list, such as RSA1_5, is
+// skipped like a signing key: the verifier must not be able to steer the wallet
+// to it by publishing it first.
+func TestSelectResponseEncryptionKeySkipsUnsupportedKeyEncryptionAlgorithms(t *testing.T) {
+	jwks := jwk.NewSet()
+	require.NoError(t, jwks.AddKey(testPublicKey(t, jwa.RSA1_5(), "enc", "rsa1_5")))
+	require.NoError(t, jwks.AddKey(testPublicKey(t, jwa.ECDH_ES(), "enc", "enc-1")))
+
+	key, _, err := selectResponseEncryptionKey(jwks)
+	require.NoError(t, err)
+
+	kid, ok := key.KeyID()
+	require.True(t, ok)
+	assert.Equal(t, "enc-1", kid, "the RSA1_5 key listed first must be skipped")
+}
+
+func TestSelectResponseEncryptionKeyWithOnlyUnsupportedKeyEncryptionAlgorithms(t *testing.T) {
+	jwks := jwk.NewSet()
+	require.NoError(t, jwks.AddKey(testPublicKey(t, jwa.RSA1_5(), "enc", "rsa1_5")))
+	require.NoError(t, jwks.AddKey(testPublicKey(t, jwa.A128KW(), "enc", "a128kw")))
+
+	_, _, err := selectResponseEncryptionKey(jwks)
+	require.ErrorContains(t, err, "no usable response encryption key")
+}
+
+func TestEncryptJweRefusesUnsupportedKeyEncryptionAlgorithm(t *testing.T) {
+	key := testPublicKey(t, jwa.RSA1_5(), "enc", "rsa1_5")
+
+	_, err := encryptJwe(map[string]any{"vp_token": "presented"}, key, nil)
+	require.ErrorContains(t, err, "is not supported")
+}
+
+func TestPickEncryptionAlgorithm(t *testing.T) {
+	alg, err := pickEncryptionAlgorithm(nil)
+	require.NoError(t, err)
+	assert.Equal(t, jwa.A128GCM(), alg, "A128GCM is the OpenID4VP default")
+
+	alg, err = pickEncryptionAlgorithm([]string{"A128CBC-HS256-legacy", "A256GCM"})
+	require.NoError(t, err)
+	assert.Equal(t, jwa.A256GCM(), alg, "an unknown enc value is skipped")
+
+	_, err = pickEncryptionAlgorithm([]string{"A128CBC-HS256-legacy"})
+	require.ErrorContains(t, err, "no supported encryption algorithm")
+}

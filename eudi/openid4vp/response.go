@@ -12,6 +12,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwe"
 	"github.com/lestrrat-go/jwx/v4/jwk"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
@@ -126,7 +127,8 @@ func createEncryptedResponse(queryResponses []dcql.QueryResponse, extraMembers m
 // publishes more than one usable key.
 //
 // The selection mirrors encryptJwe's own requirements — a key needs an alg, and
-// that alg has to be one jwe.Encrypt accepts — and takes the first such key.
+// that alg has to be a key encryption algorithm on the wallet's allow-list
+// (eudi_jwt.SupportedKeyEncryptionAlgorithm) — and takes the first such key.
 func selectResponseEncryptionKey(keys jwk.Set) (jwk.Key, []byte, error) {
 	for i := range keys.Len() {
 		key, ok := keys.Key(i)
@@ -139,8 +141,9 @@ func selectResponseEncryptionKey(keys jwk.Set) (jwk.Key, []byte, error) {
 		}
 		// A verifier may publish its signing keys in the same jwks. Encrypting to
 		// one fails outright now that there is no fallback, so skip anything whose
-		// alg is not a key-encryption algorithm.
-		if _, ok := keyAlg.(jwa.KeyEncryptionAlgorithm); !ok {
+		// alg is not a key-encryption algorithm. Key encryption algorithms the
+		// wallet does not accept, such as RSA1_5, are skipped the same way.
+		if _, ok := eudi_jwt.SupportedKeyEncryptionAlgorithm(keyAlg); !ok {
 			continue
 		}
 		thumbprint, err := key.Thumbprint(crypto.SHA256)
@@ -168,9 +171,13 @@ func encryptJwe(payload map[string]any, key jwk.Key, encSupported []string) (str
 		return "", fmt.Errorf("no supported encryption algorithm: %v", err)
 	}
 
-	keyAlg, ok := key.Algorithm()
+	alg, ok := key.Algorithm()
 	if !ok {
 		return "", fmt.Errorf("response encryption key has no alg")
+	}
+	keyAlg, ok := eudi_jwt.SupportedKeyEncryptionAlgorithm(alg)
+	if !ok {
+		return "", fmt.Errorf("response encryption key alg %s is not supported", alg)
 	}
 
 	h := jwe.NewHeaders()
@@ -198,7 +205,7 @@ func pickEncryptionAlgorithm(options []string) (jwa.ContentEncryptionAlgorithm, 
 
 	// we'll just pick the first algorithm we support
 	for _, opt := range options {
-		alg, ok := jwa.LookupContentEncryptionAlgorithm(opt)
+		alg, ok := eudi_jwt.LookupSupportedContentEncryptionAlgorithm(opt)
 		if ok {
 			return alg, nil
 		}

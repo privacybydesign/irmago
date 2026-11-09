@@ -300,6 +300,19 @@ func Test_openid4vciSession_configureIssuerSettings_credentialRequestEncryption(
 	noUsageJwks := jwk.NewSet()
 	require.NoError(t, noUsageJwks.AddKey(keyWithoutUsage))
 
+	// An encryption key whose alg is not on the wallet's allow-list
+	rsa15Key, err := jwk.Import[jwk.Key](ecPrivateKey)
+	require.NoError(t, err)
+	require.NoError(t, rsa15Key.Set(jwk.AlgorithmKey, jwa.RSA1_5()))
+	require.NoError(t, rsa15Key.Set(jwk.KeyUsageKey, "enc"))
+
+	rsa15Jwks := jwk.NewSet()
+	require.NoError(t, rsa15Jwks.AddKey(rsa15Key))
+
+	rsa15ThenEncJwks := jwk.NewSet()
+	require.NoError(t, rsa15ThenEncJwks.AddKey(rsa15Key))
+	require.NoError(t, rsa15ThenEncJwks.AddKey(encKey))
+
 	tests := []struct {
 		name            string
 		encryption      *metadata.CredentialRequestEncryption
@@ -347,6 +360,24 @@ func Test_openid4vciSession_configureIssuerSettings_credentialRequestEncryption(
 			},
 			expectErr: "no suitable key found in jwks for credential request encryption",
 		},
+		{
+			name: "encryption required but only an RSA1_5 key in JWKS",
+			encryption: &metadata.CredentialRequestEncryption{
+				Jwks:               rsa15Jwks,
+				EncValuesSupported: []string{"A128GCM"},
+				EncryptionRequired: true,
+			},
+			expectErr: "no suitable key found in jwks for credential request encryption",
+		},
+		{
+			name: "encryption required, RSA1_5 key listed first is skipped",
+			encryption: &metadata.CredentialRequestEncryption{
+				Jwks:               rsa15ThenEncJwks,
+				EncValuesSupported: []string{"A128GCM"},
+				EncryptionRequired: true,
+			},
+			expectEncrypted: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -386,6 +417,8 @@ func Test_openid4vciSession_configureIssuerSettings_credentialRequestEncryption(
 				require.NotNil(t, s.issuerSettings.credentialRequestEncryptionKey)
 				require.NotNil(t, s.issuerSettings.credentialRequestContentEncryptionAlg)
 				require.Equal(t, jwa.A128GCM(), *s.issuerSettings.credentialRequestContentEncryptionAlg)
+				keyAlg, _ := (*s.issuerSettings.credentialRequestEncryptionKey).Algorithm()
+				require.Equal(t, jwa.ECDH_ES(), keyAlg)
 			}
 		})
 	}
@@ -560,6 +593,8 @@ func Test_openid4vciSession_obtainCredential_sendsEncryptedRequest(t *testing.T)
 
 	sess.issuerSettings.useCredentialRequestEncryption = true
 	sess.issuerSettings.credentialRequestEncryptionKey = &pubKey
+	contentEncryptionAlg := jwa.A128CBC_HS256()
+	sess.issuerSettings.credentialRequestContentEncryptionAlg = &contentEncryptionAlg
 
 	_, err = sess.obtainCredential("credential-config-1", nil, "test-token")
 	// The 400 from the server causes this error — encryption itself must not have failed
@@ -571,6 +606,14 @@ func Test_openid4vciSession_obtainCredential_sendsEncryptedRequest(t *testing.T)
 	// JWE compact serialization has exactly 5 dot-separated parts
 	parts := strings.Split(strings.TrimSpace(string(receivedBody)), ".")
 	require.Len(t, parts, 5, "expected JWE compact serialization (5 dot-separated parts)")
+
+	// The request is encrypted with the content encryption algorithm chosen from the
+	// issuer's enc_values_supported, not with jwx's default
+	msg, err := jwe.Parse(receivedBody)
+	require.NoError(t, err)
+	enc, ok := msg.ProtectedHeaders().ContentEncryption()
+	require.True(t, ok)
+	require.Equal(t, jwa.A128CBC_HS256(), enc)
 
 	// Decrypt and verify the payload contains the correct credential configuration ID
 	decrypted, err := jwe.Decrypt(receivedBody, jwe.WithKey(jwa.ECDH_ES(), jwkPrivKey))
