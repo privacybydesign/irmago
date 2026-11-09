@@ -392,7 +392,9 @@ func RequestorServerPermissionsConfiguration() *requestorserver.Configuration {
 	irmaServerConf.URL = requestorServerURL + "/irma"
 	conf.DisableRequestorAuthentication = false
 	conf.Production = true
-	conf.UsageReporting = &usage.Settings{Disabled: true}
+	// "localhost" is a Trusted Verifier in the test-requestors scheme, which may not disable usage
+	// reporting; these tests do not need it, so they count nothing.
+	conf.UsageCounter = usage.NoopCounter{}
 	conf.DisableTLS = true
 	conf.AllowUnsignedCallbacks = true
 	conf.Permissions = requestorserver.Permissions{}

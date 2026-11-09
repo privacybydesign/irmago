@@ -6,7 +6,8 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 )
 
-// ReportSchema is the version of the report format sent to the Portal.
+// ReportSchema is the version of the report format sent to the Portal. Fields added in a way an
+// older Portal can ignore, such as the host of a row, do not change it.
 const ReportSchema = 1
 
 // Report is one sealed interval of counts. Reports of one run are numbered from 1 by Sequence,
@@ -35,6 +36,7 @@ type Period struct {
 type DisclosureCount struct {
 	Day            string      `json:"day"`
 	Requestor      string      `json:"requestor"`
+	Host           string      `json:"host,omitempty"`
 	Action         irma.Action `json:"action"`
 	CredentialType string      `json:"credential_type"`
 	Outcome        Outcome     `json:"outcome"`
@@ -45,6 +47,7 @@ type DisclosureCount struct {
 type SessionCount struct {
 	Day       string      `json:"day"`
 	Requestor string      `json:"requestor"`
+	Host      string      `json:"host,omitempty"`
 	Action    irma.Action `json:"action"`
 	Outcome   Outcome     `json:"outcome"`
 	Count     int64       `json:"count"`

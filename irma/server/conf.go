@@ -8,9 +8,12 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -105,8 +108,13 @@ type Configuration struct {
 
 	// UsageReporting configures reporting session counts to the Yivi Portal. In production mode it
 	// is enabled once an account key is configured (a state dir or key file), unless explicitly
-	// disabled; outside production mode only when a portal URL is set.
+	// disabled; outside production mode only when a portal URL is set. A production server of a
+	// Trusted Verifier must report: it may not disable reporting or leave it unconfigured.
 	UsageReporting *usage.Settings `json:"usage_reporting,omitempty" mapstructure:"usage_reporting"`
+	// SessionHosts are the hosts, other than the host of URL, that session requests may put in the
+	// QR. The requestor server sets them from the host_perms of its requestors, so that usage
+	// reporting knows which Trusted Verifiers this server serves.
+	SessionHosts []string `json:"-"`
 	// UsageCounter receives every session that reaches a final status. It is set up by Check()
 	// from UsageReporting.
 	UsageCounter usage.Counter `json:"-"`
@@ -240,7 +248,17 @@ func (conf *Configuration) verifyUsageReporting() error {
 	if settings == nil {
 		settings = &usage.Settings{}
 	}
+	// Trusted Verifiers are invoiced from their usage reports, so in production mode they must
+	// report. Other servers may.
+	var trusted map[string]irma.RequestorIdentifier
+	if conf.Production {
+		trusted = conf.trustedVerifiers()
+	}
 	if settings.Disabled {
+		if len(trusted) > 0 {
+			return errors.Errorf("usage reporting to the Yivi Portal cannot be disabled on a server of a Trusted Verifier: %s",
+				describeTrustedVerifiers(trusted))
+		}
 		if conf.Production {
 			conf.Logger.Warn("Usage reporting to the Yivi Portal is disabled. This is only meant for internal Yivi services.")
 		}
@@ -252,10 +270,15 @@ func (conf *Configuration) verifyUsageReporting() error {
 		return nil
 	}
 	if settings.StateDir == "" && settings.AccountKeyFile == "" && settings.PortalURL == "" {
-		// Not configured at all: keep the behaviour of earlier versions, so an upgrade never
-		// stops a production server from starting.
+		if len(trusted) > 0 {
+			return errors.Errorf("usage reporting to the Yivi Portal is required on a server of a Trusted Verifier: %s. "+
+				"Set a usage reporting state dir or account key file and register the key in the Yivi Portal",
+				describeTrustedVerifiers(trusted))
+		}
+		// Not a Trusted Verifier and not configured: keep the behaviour of earlier versions, so an
+		// upgrade never stops such a server from starting.
 		conf.Logger.Warn("Usage reporting to the Yivi Portal is not configured. Set a usage reporting state dir " +
-			"or account key file and register the key in the Yivi Portal; this will become required in a future version.")
+			"or account key file and register the key in the Yivi Portal.")
 		conf.UsageCounter = usage.NoopCounter{}
 		return nil
 	}
@@ -369,6 +392,11 @@ func (conf *Configuration) verifyIrmaConf() error {
 			return err
 		}
 	}
+	// Usage reporting is required for Trusted Verifiers, so a production server needs their scheme
+	// to tell whether it is one. A caller that provides its own counter decides that itself.
+	if conf.Production && !conf.DisableSchemesUpdate && conf.UsageCounter == nil {
+		conf.installProductionRequestorScheme()
+	}
 	if conf.SchemesUpdateInterval == 0 {
 		conf.SchemesUpdateInterval = 60
 	}
@@ -379,6 +407,70 @@ func (conf *Configuration) verifyIrmaConf() error {
 	}
 
 	return nil
+}
+
+// installProductionRequestorScheme installs the requestor scheme of the Trusted Verifiers if it is
+// missing. A failure is only logged: the server then counts none of its hosts as a Trusted Verifier.
+func (conf *Configuration) installProductionRequestorScheme() {
+	for _, scheme := range conf.IrmaConfiguration.RequestorSchemes {
+		if scheme.URL == irma.ProductionRequestorScheme.URL {
+			return
+		}
+	}
+	conf.Logger.WithField("url", irma.ProductionRequestorScheme.URL).Info("Downloading the requestor scheme of the Trusted Verifiers")
+	pointer := irma.ProductionRequestorScheme
+	if err := conf.IrmaConfiguration.InstallScheme(pointer.URL, pointer.Publickey); err != nil {
+		conf.Logger.WithError(err).Warn("Could not download the requestor scheme of the Trusted Verifiers; " +
+			"usage reporting is not required until it is installed")
+	}
+}
+
+// trustedVerifiers returns the Trusted Verifiers this server serves, by hostname: requestors of a
+// non-demo requestor scheme whose hostname is the host of URL or one of SessionHosts. The Yivi app
+// shows these requestors by name, and their usage is invoiced from the usage reports.
+func (conf *Configuration) trustedVerifiers() map[string]irma.RequestorIdentifier {
+	found := map[string]irma.RequestorIdentifier{}
+	if conf.IrmaConfiguration == nil {
+		return found
+	}
+
+	hosts := make([]string, 0, len(conf.SessionHosts)+1)
+	if u, err := url.Parse(conf.URL); err == nil && u.Hostname() != "" {
+		hosts = append(hosts, u.Hostname())
+	}
+	for _, host := range conf.SessionHosts {
+		// A pattern such as "*" would make this server look like every Trusted Verifier at once,
+		// so only literal hosts are matched.
+		if strings.ContainsAny(host, `*?[\`) {
+			continue
+		}
+		if hostname, _, err := net.SplitHostPort(host); err == nil {
+			host = hostname
+		}
+		hosts = append(hosts, host)
+	}
+
+	now := irma.Timestamp(time.Now())
+	for _, host := range hosts {
+		info := conf.IrmaConfiguration.Requestors[host]
+		if info == nil || (info.ValidUntil != nil && !info.ValidUntil.After(now)) {
+			continue
+		}
+		if scheme := conf.IrmaConfiguration.RequestorSchemes[info.Scheme]; scheme == nil || scheme.Demo {
+			continue
+		}
+		found[host] = info.ID
+	}
+	return found
+}
+
+func describeTrustedVerifiers(verifiers map[string]irma.RequestorIdentifier) string {
+	described := make([]string, 0, len(verifiers))
+	for host, id := range verifiers {
+		described = append(described, fmt.Sprintf("%s (%s)", host, id))
+	}
+	sort.Strings(described)
+	return strings.Join(described, ", ")
 }
 
 func (conf *Configuration) verifyPrivateKeys() error {

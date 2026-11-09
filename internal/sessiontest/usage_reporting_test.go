@@ -78,16 +78,17 @@ func TestUsageReporting(t *testing.T) {
 			require.NotEmpty(t, reports)
 			require.True(t, reports[len(reports)-1].Final)
 
+			// Every row carries the host the app connected to: the host of the server's URL.
 			disclosures, sessions := sumUsage(reports)
 			require.Equal(t, map[usage.DisclosureCount]int64{
-				{Action: irma.ActionDisclosing, CredentialType: studentCard, Outcome: usage.OutcomeDone}:      2,
-				{Action: irma.ActionSigning, CredentialType: studentCard, Outcome: usage.OutcomeDone}:         1,
-				{Action: irma.ActionDisclosing, CredentialType: studentCard, Outcome: usage.OutcomeCancelled}: 1,
+				{Host: "localhost", Action: irma.ActionDisclosing, CredentialType: studentCard, Outcome: usage.OutcomeDone}:      2,
+				{Host: "localhost", Action: irma.ActionSigning, CredentialType: studentCard, Outcome: usage.OutcomeDone}:         1,
+				{Host: "localhost", Action: irma.ActionDisclosing, CredentialType: studentCard, Outcome: usage.OutcomeCancelled}: 1,
 			}, disclosures)
 			require.Equal(t, map[usage.SessionCount]int64{
-				{Action: irma.ActionDisclosing, Outcome: usage.OutcomeDone}:      2,
-				{Action: irma.ActionSigning, Outcome: usage.OutcomeDone}:         1,
-				{Action: irma.ActionDisclosing, Outcome: usage.OutcomeCancelled}: 1,
+				{Host: "localhost", Action: irma.ActionDisclosing, Outcome: usage.OutcomeDone}:      2,
+				{Host: "localhost", Action: irma.ActionSigning, Outcome: usage.OutcomeDone}:         1,
+				{Host: "localhost", Action: irma.ActionDisclosing, Outcome: usage.OutcomeCancelled}: 1,
 			}, sessions)
 		})
 	}
@@ -105,19 +106,29 @@ func TestUsageReportingPerRequestor(t *testing.T) {
 
 	disclosures, _ := sumUsage(portal.Reports())
 	require.Equal(t, map[usage.DisclosureCount]int64{
-		{Requestor: "requestor1", Action: irma.ActionDisclosing,
+		{Requestor: "requestor1", Host: "localhost", Action: irma.ActionDisclosing,
 			CredentialType: studentID.CredentialTypeIdentifier().String(), Outcome: usage.OutcomeDone}: 1,
 	}, disclosures)
 }
 
 func TestUsageReportingOffByDefault(t *testing.T) {
-	// Outside production mode, and in production mode without any usage reporting configuration,
-	// the server behaves as before: nothing is counted or sent.
+	// Outside production mode, and in production mode without any usage reporting configuration
+	// on a server that is no Trusted Verifier, the server behaves as before: nothing is counted
+	// or sent. ("localhost" is a Trusted Verifier in the test-requestors scheme.)
 	for _, production := range []bool{false, true} {
 		conf := RequestorServerConfiguration()
 		conf.Production = production
+		conf.URL = "http://irma.example.com/irma"
 		conf.DisableTLS = true
 		require.NoError(t, conf.Check())
 		require.IsType(t, usage.NoopCounter{}, conf.UsageCounter)
 	}
+}
+
+func TestUsageReportingRequiredForTrustedVerifier(t *testing.T) {
+	// The server's URL has the hostname of test-requestors.test-requestor, so in production mode
+	// it must report.
+	conf := RequestorServerConfiguration()
+	conf.Production = true
+	require.ErrorContains(t, conf.Check(), "required on a server of a Trusted Verifier")
 }

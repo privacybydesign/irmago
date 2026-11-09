@@ -196,3 +196,31 @@ func TestReporterRejectsIntervalOutOfRange(t *testing.T) {
 		reporter.Stop()
 	}
 }
+
+func TestReporterCountsPerHost(t *testing.T) {
+	portal := usagetest.NewPortal(t)
+	settings := newSettings(t, portal)
+	register(t, portal, settings)
+
+	reporter, err := usage.New(settings, logrus.New())
+	require.NoError(t, err)
+
+	// One server can run sessions under the hostnames of several Trusted Verifiers; the Portal
+	// tells them apart by the host of each row.
+	day := time.Now().UTC().Format(time.DateOnly)
+	for _, host := range []string{"irma.example.com", "irma.example.org", "irma.example.org"} {
+		reporter.Record(usage.Event{Requestor: "webshop", Host: host, Action: irma.ActionDisclosing,
+			Outcome: usage.OutcomeDone, CredentialTypes: []irma.CredentialTypeIdentifier{email}})
+	}
+	reporter.Stop()
+
+	report := portal.Reports()[0]
+	require.Equal(t, []usage.SessionCount{
+		{Day: day, Requestor: "webshop", Host: "irma.example.com", Action: irma.ActionDisclosing, Outcome: usage.OutcomeDone, Count: 1},
+		{Day: day, Requestor: "webshop", Host: "irma.example.org", Action: irma.ActionDisclosing, Outcome: usage.OutcomeDone, Count: 2},
+	}, report.Sessions)
+	require.Equal(t, []usage.DisclosureCount{
+		{Day: day, Requestor: "webshop", Host: "irma.example.com", Action: irma.ActionDisclosing, CredentialType: email.String(), Outcome: usage.OutcomeDone, Count: 1},
+		{Day: day, Requestor: "webshop", Host: "irma.example.org", Action: irma.ActionDisclosing, CredentialType: email.String(), Outcome: usage.OutcomeDone, Count: 2},
+	}, report.Disclosures)
+}
