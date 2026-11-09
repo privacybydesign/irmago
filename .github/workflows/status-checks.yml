@@ -167,6 +167,22 @@ jobs:
       image-name: ghcr.io/privacybydesign/yivi
       push-image: false
 
+  # CodeQL static analysis of the Go code and of the workflow files. The weekly
+  # scheduled run re-analyses with the latest queries.
+  codeql:
+    uses: privacybydesign/github-workflows/.github/workflows/codeql.yml@v1
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      languages: '["go", "actions"]'
+      # eudi/storage/db/sqlcipher links SQLCipher through cgo, so the Go build that
+      # CodeQL traces needs the library, which autobuild would not install.
+      go-build-command: |
+        sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
+        go build ./...
+
   dependency-review:
     if: github.event_name == 'pull_request'
     uses: privacybydesign/github-workflows/.github/workflows/dependency-review.yml@v1
@@ -189,6 +205,7 @@ jobs:
       - integration-test-clientside
       - integration-test-serverside
       - docker
+      - codeql
       - dependency-review
       - workflow-lint
     runs-on: ubuntu-latest
