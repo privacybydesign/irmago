@@ -41,16 +41,6 @@ func (p *S256CodeChallengeProvider) GenerateCodeChallenge(verifier string) CodeC
 	}
 }
 
-type PlainCodeChallengeProvider struct{}
-
-func (p *PlainCodeChallengeProvider) GenerateCodeChallenge(verifier string) CodeChallenge {
-	// The code challenge is the same as the code verifier for the "plain" method. See https://datatracker.ietf.org/doc/html/rfc7636#section-4.3
-	return CodeChallenge{
-		method:    "plain",
-		challenge: verifier,
-	}
-}
-
 func GenerateVerifier(byteSize uint) (string, error) {
 	// PKCE code verifier should be a high-entropy cryptographic random string with a minimum length of 43 characters and a maximum length of 128 characters. See https://datatracker.ietf.org/doc/html/rfc7636#section-4.1
 	if byteSize*2 < minVerifierSizeChars {

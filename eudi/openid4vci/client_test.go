@@ -582,3 +582,76 @@ func createCredentialInfoAndVerifiedSdJwtVc(
 
 	return &info, verifiedSdJwtVc, nil
 }
+
+// The wallet always uses PKCE with S256 in the authorization code flow, also when
+// the authorization server does not advertise code_challenge_methods_supported,
+// and refuses an authorization server that only offers "plain".
+func TestNewSessionAuthorizationCodeFlowAlwaysUsesPkceS256(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		// methods is the code_challenge_methods_supported member of the
+		// authorization server metadata, or "" to leave it out.
+		methods   string
+		expectErr string
+	}{
+		{name: "S256 advertised", methods: `["S256"]`},
+		{name: "nothing advertised", methods: ""},
+		{name: "only plain advertised", methods: `["plain"]`, expectErr: "does not support PKCE with S256"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			storage, client := createOpenID4VCiClientForTesting(t)
+			defer storage.Close()
+
+			methodsMember := ""
+			if tt.methods != "" {
+				methodsMember = `, "code_challenge_methods_supported": ` + tt.methods
+			}
+
+			var issuerBaseUrl string
+			issuerTestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case strings.HasPrefix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(testdata.GetWellKnownConfigurationUrl(issuerBaseUrl)))
+				case r.URL.Path == "/.well-known/oauth-authorization-server":
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(fmt.Appendf(nil, `{
+						"issuer": %q,
+						"authorization_endpoint": "%s/authorize",
+						"token_endpoint": "%s/token",
+						"response_types_supported": ["code"],
+						"grant_types_supported": ["authorization_code"]%s
+					}`, issuerBaseUrl, issuerBaseUrl, issuerBaseUrl, methodsMember))
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer issuerTestServer.Close()
+			issuerBaseUrl = issuerTestServer.URL
+
+			offer := fmt.Sprintf(
+				`{"credential_issuer":"%s/b0ce4f83-1946-4037-b13c-641191fd3214","credential_configuration_ids":["employee-badge"]}`,
+				issuerBaseUrl,
+			)
+
+			handler := newFailureRecordingHandler(t)
+			client.NewSession(1, "openid-credential-offer://?credential_offer="+url.QueryEscape(offer), "https://open.yivi.app/-/auth-callback", handler)
+
+			select {
+			case received := <-handler.authCodeRequestChannel:
+				require.Empty(t, tt.expectErr, "the session started the authorization code flow instead of failing")
+				parameters := url.Values(received.request.AuthorizationParameters)
+				require.Equal(t, "S256", parameters.Get("code_challenge_method"))
+				require.NotEmpty(t, parameters.Get("code_challenge"))
+
+				received.callback(false, nil)
+				require.Contains(t, handler.awaitFailure(t).WrappedError, "cancelled or denied by user")
+			case failure := <-handler.failures:
+				require.NotEmpty(t, tt.expectErr, "session failed: %v", failure.WrappedError)
+				require.Contains(t, failure.WrappedError, tt.expectErr)
+			case <-time.After(30 * time.Second):
+				t.Fatal("session neither started the authorization code flow nor failed")
+			}
+		})
+	}
+}
