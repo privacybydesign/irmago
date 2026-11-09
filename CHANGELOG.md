@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - The IRMA server no longer parses and validates an issuer private key from disk for every credential in an issuance session. For non-demo schemes this validation includes safe prime checks, which made starting and completing issuance sessions with many credentials exceed the server's 4 second request timeout on CPU-limited deployments, resulting in a `503 Service Unavailable`. Parsed keys are now cached per file and reused as long as the file's modification time and size are unchanged, so keys added, replaced or removed on disk are still picked up without a restart.
 - The error for a private key whose filename has a different counter than the key itself now shows that counter instead of a memory address
+- Usage reporting now sends its reports to `https://api.yivi.app/usage/v1/directory` by default. The default in 1.5.0, `https://portal.yivi.app/usage/v1/directory`, serves the Portal's web app instead of its API, so a server on 1.5.0 that does not set `--usage-reporting-portal-url` never delivers a report.
 
 ## [1.5.0] - 2026-11-03
 ### Added
