@@ -16,6 +16,8 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 )
@@ -61,10 +63,23 @@ func (c *Connector) Connect(_ context.Context) (driver.Conn, error) {
 	conn := &sqlcipherConn{handle: handle}
 
 	if len(c.key) > 0 {
+		if err := conn.requireSQLCipher4(); err != nil {
+			C.sqlite3_close(handle)
+			return nil, err
+		}
 		pragma := fmt.Sprintf("PRAGMA key = \"x'%x'\"", c.key)
 		if err := conn.exec(pragma); err != nil {
 			C.sqlite3_close(handle)
 			return nil, fmt.Errorf("PRAGMA key: %w", err)
+		}
+		// Pin the encryption parameters, so they do not depend on the defaults of
+		// the SQLCipher build the app happens to be linked against. They have to
+		// be set after the key and before the first read.
+		for _, pragma := range cipherParameterPragmas {
+			if err := conn.exec(pragma); err != nil {
+				C.sqlite3_close(handle)
+				return nil, fmt.Errorf("%s: %w", pragma, err)
+			}
 		}
 		// Verify the key is correct by reading the database header.
 		// SQLCipher defers decryption until the first real read.
@@ -82,6 +97,56 @@ func (c *Connector) Connect(_ context.Context) (driver.Conn, error) {
 
 func (c *Connector) Driver() driver.Driver {
 	return &sqlcipherDriver{}
+}
+
+// cipherParameterPragmas pin the SQLCipher 4 encryption parameters: AES-256-CBC
+// pages of 4096 bytes with an HMAC-SHA512 per page, and PBKDF2-HMAC-SHA512 for
+// key derivation. cipher_compatibility = 4 already sets all of them; the others
+// repeat the values so the parameters are visible here and not only in the
+// SQLCipher documentation.
+//
+// These are SQLCipher 4's defaults, so a database created by an earlier version
+// of this driver, which relied on them, opens unchanged (see
+// TestSQLCipher_OpensDatabaseWrittenBeforeParameterPinning). What pinning
+// prevents is a build linked against another SQLCipher silently creating or
+// expecting a database with other parameters.
+//
+// The key is a raw 32-byte key, so SQLCipher uses it as the encryption key
+// directly; kdf_iter only applies to passphrases. The KDF algorithm still
+// matters, because it derives the HMAC key from the encryption key.
+var cipherParameterPragmas = []string{
+	"PRAGMA cipher_compatibility = 4",
+	"PRAGMA cipher_page_size = 4096",
+	"PRAGMA kdf_iter = 256000",
+	"PRAGMA cipher_hmac_algorithm = HMAC_SHA512",
+	"PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512",
+}
+
+// minimumSQLCipherMajorVersion is the oldest SQLCipher whose parameters
+// cipherParameterPragmas can pin: SQLCipher 3 ignores cipher_compatibility,
+// cipher_hmac_algorithm and cipher_kdf_algorithm, as SQLite ignores every
+// unknown pragma.
+const minimumSQLCipherMajorVersion = 4
+
+// requireSQLCipher4 refuses a library that cannot encrypt as this driver
+// expects. A plain SQLite library ignores PRAGMA key and would store the
+// database unencrypted; SQLCipher 3 would silently ignore the pinned parameters.
+func (c *sqlcipherConn) requireSQLCipher4() error {
+	version, err := c.queryString("PRAGMA cipher_version")
+	if err != nil {
+		return fmt.Errorf("PRAGMA cipher_version: %w", err)
+	}
+	if version == "" {
+		return fmt.Errorf("the linked SQLite library has no SQLCipher encryption support")
+	}
+	major, err := strconv.Atoi(strings.SplitN(version, ".", 2)[0])
+	if err != nil {
+		return fmt.Errorf("cannot parse SQLCipher version %q: %w", version, err)
+	}
+	if major < minimumSQLCipherMajorVersion {
+		return fmt.Errorf("SQLCipher %s is linked, but at least version %d is required", version, minimumSQLCipherMajorVersion)
+	}
+	return nil
 }
 
 // --- driver.Conn ---
@@ -117,6 +182,32 @@ func (c *sqlcipherConn) Begin() (driver.Tx, error) {
 		return nil, err
 	}
 	return &sqlcipherTx{conn: c}, nil
+}
+
+// queryString runs a statement and returns the first column of its first row as
+// text, or "" when it returns no row.
+func (c *sqlcipherConn) queryString(query string) (string, error) {
+	cSQL := C.CString(query)
+	defer C.free(unsafe.Pointer(cSQL))
+
+	var stmt *C.sqlite3_stmt
+	if rc := C.sqlite3_prepare_v2(c.handle, cSQL, -1, &stmt, nil); rc != C.SQLITE_OK {
+		return "", fmt.Errorf("prepare: %s", C.GoString(C.sqlite3_errmsg(c.handle)))
+	}
+	defer C.sqlite3_finalize(stmt)
+
+	switch rc := C.sqlite3_step(stmt); rc {
+	case C.SQLITE_ROW:
+		text := C.sqlite3_column_text(stmt, 0)
+		if text == nil {
+			return "", nil
+		}
+		return C.GoString((*C.char)(unsafe.Pointer(text))), nil
+	case C.SQLITE_DONE:
+		return "", nil
+	default:
+		return "", fmt.Errorf("step: %s", C.GoString(C.sqlite3_errmsg(c.handle)))
+	}
 }
 
 func (c *sqlcipherConn) exec(sql string) error {
