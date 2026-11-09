@@ -112,23 +112,13 @@ func TestUsageReportingPerRequestor(t *testing.T) {
 }
 
 func TestUsageReportingOffByDefault(t *testing.T) {
-	// Outside production mode, and in production mode without any usage reporting configuration
-	// on a server that is no Trusted Verifier, the server behaves as before: nothing is counted
-	// or sent. ("localhost" is a Trusted Verifier in the test-requestors scheme.)
+	// Outside production mode, and in production mode without any usage reporting configuration,
+	// the server behaves as before: nothing is counted or sent.
 	for _, production := range []bool{false, true} {
 		conf := RequestorServerConfiguration()
 		conf.Production = production
-		conf.URL = "http://irma.example.com/irma"
 		conf.DisableTLS = true
 		require.NoError(t, conf.Check())
 		require.IsType(t, usage.NoopCounter{}, conf.UsageCounter)
 	}
-}
-
-func TestUsageReportingRequiredForTrustedVerifier(t *testing.T) {
-	// The server's URL has the hostname of test-requestors.test-requestor, so in production mode
-	// it must report.
-	conf := RequestorServerConfiguration()
-	conf.Production = true
-	require.ErrorContains(t, conf.Check(), "required on a server of a Trusted Verifier")
 }

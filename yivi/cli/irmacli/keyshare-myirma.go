@@ -5,7 +5,6 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/privacybydesign/irmago/irma/server/keyshare/myirmaserver"
-	"github.com/privacybydesign/irmago/irma/server/usage"
 	"github.com/privacybydesign/irmago/yivi/cli/internal/clihelpers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -124,10 +123,8 @@ func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, err
 	if err != nil {
 		return nil, err
 	}
-	// Keyshare and MyYivi servers are Yivi's own services, so they do not report usage. They
-	// provide their own counter instead of disabling reporting, because their hostnames are in the
-	// production requestor scheme and a Trusted Verifier may not disable it.
-	irmaServerConf.UsageCounter = usage.NoopCounter{}
+	// Keyshare and MyYivi servers are Yivi's own services, so they do not report usage.
+	irmaServerConf.UsageReporting.Disabled = true
 
 	// And build the configuration
 	conf := &myirmaserver.Configuration{

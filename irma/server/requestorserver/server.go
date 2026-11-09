@@ -141,14 +141,6 @@ func (s *Server) Stop() {
 }
 
 func New(config *Configuration) (*Server, error) {
-	// Sessions may use the hosts the requestors are allowed to request; usage reporting needs them
-	// to know which Trusted Verifiers this server serves.
-	var hosts []string
-	for _, requestor := range config.Requestors {
-		hosts = append(hosts, requestor.Hosts...)
-	}
-	config.Configuration.SessionHosts = hosts
-
 	irmaserv, err := irmaserver.New(config.Configuration)
 	if err != nil {
 		return nil, err

@@ -43,16 +43,6 @@ dpBeCqpDwf+Grrw9ReODb6nwlsPJ/c/gqLnc+Y3sKOAJ2bFGI+jHBSsglg==
 	},
 }
 
-// ProductionRequestorScheme is the requestor scheme of the Trusted Verifiers: the requestors the
-// Yivi app shows by name, recognised by the hostname of the server it connects to.
-var ProductionRequestorScheme = SchemePointer{
-	URL: "https://schemes.yivi.app/pbdf-requestors",
-	Publickey: []byte(`-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEpzOEsy32D2i4Bcl9CShOndU7ksKQ
-SiWLiBHnXmm+ytWm9hW08z/YzYEI5ZmRvCta0NmXL6Oodh0Qzpjwkn8uWw==
------END PUBLIC KEY-----`),
-}
-
 type (
 	// SchemePointer points to a remote IRMA scheme, containing information to download the scheme,
 	// including its (pinned) public key.
