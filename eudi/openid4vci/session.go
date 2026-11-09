@@ -699,9 +699,10 @@ func (s *session) configureIssuerSettings() error {
 		if requestEncryption.EncryptionRequired {
 			s.issuerSettings.useCredentialRequestEncryption = true
 
-			// Determine which encryption algorithm to use
+			// Determine which encryption algorithm to use: the first one the issuer
+			// supports that is on the wallet's allow-list.
 			for _, algName := range requestEncryption.EncValuesSupported {
-				if alg, ok := jwa.LookupContentEncryptionAlgorithm(algName); ok {
+				if alg, ok := eudi_jwt.LookupSupportedContentEncryptionAlgorithm(algName); ok {
 					s.issuerSettings.credentialRequestContentEncryptionAlg = &alg
 					break
 				}
@@ -710,15 +711,23 @@ func (s *session) configureIssuerSettings() error {
 				return fmt.Errorf("no supported encryption algorithm found for credential request encryption")
 			}
 
-			// Get a key from the JWKS to use for encryption
+			// Get a key from the JWKS to use for encryption: the first encryption key
+			// whose alg is a key encryption algorithm on the wallet's allow-list.
 			for i := 0; i < requestEncryption.Jwks.Len(); i++ {
 				if key, found := requestEncryption.Jwks.Key(i); found {
 					keyUsage, keyUsagePresent := key.KeyUsage()
-
-					if keyUsagePresent && keyUsage == "enc" {
-						s.issuerSettings.credentialRequestEncryptionKey = &key
-						break
+					if !keyUsagePresent || keyUsage != "enc" {
+						continue
 					}
+					keyAlg, keyAlgPresent := key.Algorithm()
+					if !keyAlgPresent {
+						continue
+					}
+					if _, ok := eudi_jwt.SupportedKeyEncryptionAlgorithm(keyAlg); !ok {
+						continue
+					}
+					s.issuerSettings.credentialRequestEncryptionKey = &key
+					break
 				}
 			}
 			if s.issuerSettings.credentialRequestEncryptionKey == nil {
@@ -888,8 +897,20 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	if s.issuerSettings.useCredentialRequestEncryption {
 		contentType = "application/jwt"
 
-		alg, _ := (*s.issuerSettings.credentialRequestEncryptionKey).Algorithm()
-		key, _ := (*s.issuerSettings.credentialRequestEncryptionKey).PublicKey()
+		encryptionKey := *s.issuerSettings.credentialRequestEncryptionKey
+		keyAlgName, _ := encryptionKey.Algorithm()
+		alg, ok := eudi_jwt.SupportedKeyEncryptionAlgorithm(keyAlgName)
+		if !ok {
+			return nil, fmt.Errorf("credential request encryption key alg %v is not supported", keyAlgName)
+		}
+		key, err := encryptionKey.PublicKey()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get the public credential request encryption key: %v", err)
+		}
+		encryptOptions := []jwt.EncryptOption{jwt.WithEncryptOption(jwe.WithKey(alg, key))}
+		if encAlg := s.issuerSettings.credentialRequestContentEncryptionAlg; encAlg != nil {
+			encryptOptions = append(encryptOptions, jwt.WithEncryptOption(jwe.WithContentEncryption(*encAlg)))
+		}
 
 		token, err := jwt.NewBuilder().
 			Claim("credential_configuration_id", request.CredentialConfigurationId).
@@ -901,7 +922,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		}
 
 		encryptedToken, err := jwt.NewSerializer().
-			Encrypt(jwt.WithEncryptOption(jwe.WithKey(alg, key))).
+			Encrypt(encryptOptions...).
 			Serialize(token)
 
 		requestBody = encryptedToken
