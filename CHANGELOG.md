@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- A release carries a `SHA256SUMS` file for its `yivi` binaries, and a signed build provenance attestation per binary. Check a download with `sha256sum --check --ignore-missing SHA256SUMS` and `gh attestation verify <binary> --repo privacybydesign/irmago`.
 ### Changed
 - The container image of a release is now tagged without the `v` prefix (`ghcr.io/privacybydesign/yivi:X.Y.Z` instead of `:vX.Y.Z`), and images are no longer tagged with the commit SHA. `:edge`, `:latest` and the tags of earlier releases stay as they are. Images are only pushed after passing a vulnerability scan.
 ### Fixed
