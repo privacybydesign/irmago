@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - The IRMA server no longer parses and validates an issuer private key from disk for every credential in an issuance session. For non-demo schemes this validation includes safe prime checks, which made starting and completing issuance sessions with many credentials exceed the server's 4 second request timeout on CPU-limited deployments, resulting in a `503 Service Unavailable`. Parsed keys are now cached per file and reused as long as the file's modification time and size are unchanged, so keys added, replaced or removed on disk are still picked up without a restart.
 - The error for a private key whose filename has a different counter than the key itself now shows that counter instead of a memory address
+### Security
+- The EUDI SQLCipher database pins its encryption parameters (`cipher_compatibility = 4`: 4096-byte pages, HMAC-SHA512, PBKDF2-HMAC-SHA512) instead of relying on the defaults of the linked SQLCipher. These are SQLCipher 4's defaults, so existing databases open unchanged. An encrypted database is no longer opened when the linked library is plain SQLite, which ignores the key and would store the database unencrypted, or SQLCipher 3, which ignores the pinned parameters.
 
 ## [1.5.0] - 2026-11-03
 ### Added
