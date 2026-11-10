@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Usage reports carry, per row, the `host` the Yivi app connected to: the host a session request asked for, or else the host of the server's URL. The Yivi Portal can thus tell per hostname whether a Trusted Verifier's usage is reported, also when one server runs sessions under the hostnames of several Trusted Verifiers. The field is optional and the report schema stays 1, so a Portal that does not know it ignores it.
 - A release carries a `SHA256SUMS` file for its `yivi` binaries, and a signed build provenance attestation per binary. Check a download with `sha256sum --check --ignore-missing SHA256SUMS` and `gh attestation verify <binary> --repo privacybydesign/irmago`.
 ### Changed
 - Usage reporting no longer skips an interval without sessions. The interval stays open, so the reports of a run cover its time without holes, and is sent as an empty report after at most an hour (or the configured interval, if longer). Reports carry this heartbeat as the new optional `heartbeat_seconds` field, so the Yivi Portal can tell a quiet server from one that stopped reporting and show the gap. The report schema stays 1: a Portal that does not know the field ignores it.

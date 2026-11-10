@@ -305,7 +305,7 @@ func (s *memorySessionStore) deleteExpired() {
 		// A session that expired without anyone reading it afterwards never had its timeout
 		// saved, so it is counted here, from the status that was last saved.
 		if s.conf.UsageCounter != nil && !session.Status.Finished() {
-			s.conf.UsageCounter.Record(session.usageEvent(irma.ServerStatusTimeout))
+			s.conf.UsageCounter.Record(session.usageEvent(s.conf, irma.ServerStatusTimeout))
 		}
 		session.Unlock()
 		delete(s.client, clientToken)
