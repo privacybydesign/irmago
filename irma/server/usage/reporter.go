@@ -22,12 +22,16 @@ import (
 
 const (
 	// DefaultPortalURL is the usage directory of the Yivi Portal.
-	DefaultPortalURL = "https://portal.yivi.app/usage/v1/directory"
+	DefaultPortalURL = "https://api.yivi.app/usage/v1/directory"
 	// DefaultInterval is how often the open counts are sealed into a report.
 	DefaultInterval = 5 * time.Minute
 	// MinInterval and MaxInterval bound the configurable interval.
 	MinInterval = time.Minute
 	MaxInterval = 6 * time.Hour
+	// DefaultHeartbeat is how long an interval without sessions stays open before it is sealed
+	// as an empty report anyway, so the Portal can tell a quiet server from one that stopped
+	// reporting. An interval longer than this is used as the heartbeat instead.
+	DefaultHeartbeat = time.Hour
 
 	// maxOutbox caps the reports waiting to be sent: one week at the default interval.
 	// When it is full, counts keep accumulating in the open interval instead.
@@ -42,8 +46,12 @@ const (
 	outboxDirName      = "outbox"
 )
 
-// minInterval is MinInterval, lowered by tests so they need not wait a minute per report.
-var minInterval = MinInterval
+var (
+	// minInterval is MinInterval, lowered by tests so they need not wait a minute per report.
+	minInterval = MinInterval
+	// defaultHeartbeat is DefaultHeartbeat, lowered by tests so they need not wait an hour.
+	defaultHeartbeat = DefaultHeartbeat
+)
 
 // Settings configures usage reporting.
 type Settings struct {
@@ -73,6 +81,8 @@ type Reporter struct {
 	client   *portalClient
 	tally    *tally
 	runID    string
+	// heartbeat is the longest an interval stays open without being sealed.
+	heartbeat time.Duration
 
 	// Only touched by the reporting goroutine, and by Stop after that goroutine has ended.
 	sequence    uint64
@@ -120,6 +130,7 @@ func New(settings Settings, logger *logrus.Logger) (*Reporter, error) {
 		client:      newPortalClient(settings.PortalURL, key),
 		tally:       newTally(),
 		runID:       randomID(),
+		heartbeat:   max(settings.Interval, defaultHeartbeat),
 		periodStart: time.Now().UTC(),
 		stop:        make(chan struct{}),
 		done:        make(chan struct{}),
@@ -202,10 +213,10 @@ func (r *Reporter) seal(now time.Time, final bool) {
 	if full && !final {
 		return
 	}
-	// An empty interval is skipped, except for the final report that tells the Portal this run
-	// ended cleanly.
-	if r.tally.empty() && !final {
-		r.periodStart = now
+	// An empty interval stays open, so the reports of a run cover its time without holes. It is
+	// sealed once it reaches the heartbeat, and as the final report that tells the Portal this
+	// run ended cleanly.
+	if r.tally.empty() && !final && now.Sub(r.periodStart) < r.heartbeat {
 		return
 	}
 
@@ -219,6 +230,7 @@ func (r *Reporter) seal(now time.Time, final bool) {
 		Sequence:       r.sequence,
 		Final:          final,
 		IrmagoVersion:  irmago.Version,
+		Heartbeat:      int64(r.heartbeat / time.Second),
 		Period:         Period{From: r.periodStart, To: now},
 		Disclosures:    disclosures,
 		Sessions:       sessions,

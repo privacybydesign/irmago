@@ -154,6 +154,13 @@ In case you want to use `v0.12.6` or lower, then you should build it yourself.
 You can find pre-compiled binaries of the `yivi` command line tool on the [GitHub release page](https://github.com/privacybydesign/irmago/releases).
 We recommend you to use the [latest release](https://github.com/privacybydesign/irmago/releases/latest).
 
+To check that a downloaded binary is the one our release workflow built, compare it with the `SHA256SUMS` file on the release and verify its build provenance attestation with the [GitHub CLI](https://cli.github.com/):
+
+    sha256sum --check --ignore-missing SHA256SUMS
+    gh attestation verify yivi-linux-amd64 --repo privacybydesign/irmago
+
+Releases before the one that introduced these have neither.
+
 ## Running the unit tests
 
 Some of the unit tests connect to locally running external services, namely PostgreSQL, MySQL, Microsoft SQL Server and an SMTP server running at port 1025. These need to be up and running before these tests can be executed. This can be done using `docker-compose`.

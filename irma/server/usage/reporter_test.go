@@ -196,3 +196,77 @@ func TestReporterRejectsIntervalOutOfRange(t *testing.T) {
 		reporter.Stop()
 	}
 }
+
+func TestReporterCountsPerHost(t *testing.T) {
+	portal := usagetest.NewPortal(t)
+	settings := newSettings(t, portal)
+	register(t, portal, settings)
+
+	reporter, err := usage.New(settings, logrus.New())
+	require.NoError(t, err)
+
+	// One server can run sessions under the hostnames of several Trusted Verifiers; the Portal
+	// tells them apart by the host of each row.
+	day := time.Now().UTC().Format(time.DateOnly)
+	for _, host := range []string{"irma.example.com", "irma.example.org", "irma.example.org"} {
+		reporter.Record(usage.Event{Requestor: "webshop", Host: host, Action: irma.ActionDisclosing,
+			Outcome: usage.OutcomeDone, CredentialTypes: []irma.CredentialTypeIdentifier{email}})
+	}
+	reporter.Stop()
+
+	report := portal.Reports()[0]
+	require.Equal(t, []usage.SessionCount{
+		{Day: day, Requestor: "webshop", Host: "irma.example.com", Action: irma.ActionDisclosing, Outcome: usage.OutcomeDone, Count: 1},
+		{Day: day, Requestor: "webshop", Host: "irma.example.org", Action: irma.ActionDisclosing, Outcome: usage.OutcomeDone, Count: 2},
+	}, report.Sessions)
+	require.Equal(t, []usage.DisclosureCount{
+		{Day: day, Requestor: "webshop", Host: "irma.example.com", Action: irma.ActionDisclosing, CredentialType: email.String(), Outcome: usage.OutcomeDone, Count: 1},
+		{Day: day, Requestor: "webshop", Host: "irma.example.org", Action: irma.ActionDisclosing, CredentialType: email.String(), Outcome: usage.OutcomeDone, Count: 2},
+	}, report.Disclosures)
+}
+
+func TestReporterSendsHeartbeatWithoutSessions(t *testing.T) {
+	portal := usagetest.NewPortal(t)
+	settings := newSettings(t, portal)
+	usage.SetHeartbeat(t, 2*time.Second)
+	register(t, portal, settings)
+
+	reporter, err := usage.New(settings, logrus.New())
+	require.NoError(t, err)
+
+	// Without sessions, an interval stays open until the heartbeat seals it as an empty report.
+	require.Eventually(t, func() bool { return len(portal.Reports()) == 1 }, 15*time.Second, 100*time.Millisecond)
+	heartbeat := portal.Reports()[0]
+	require.Empty(t, heartbeat.Sessions)
+	require.Empty(t, heartbeat.Disclosures)
+	require.False(t, heartbeat.Final)
+	require.Equal(t, int64(2), heartbeat.Heartbeat)
+	require.GreaterOrEqual(t, heartbeat.Period.To.Sub(heartbeat.Period.From), 2*time.Second)
+
+	reporter.Record(usage.Event{Requestor: "webshop", Action: irma.ActionDisclosing, Outcome: usage.OutcomeDone,
+		CredentialTypes: []irma.CredentialTypeIdentifier{email}})
+	require.Eventually(t, func() bool { return len(portal.Reports()) == 2 }, 15*time.Second, 100*time.Millisecond)
+	reporter.Stop()
+
+	// The periods of a run follow each other without holes.
+	reports := portal.Reports()
+	require.Len(t, reports, 3)
+	for i := 1; i < len(reports); i++ {
+		require.Equal(t, uint64(i+1), reports[i].Sequence)
+		require.True(t, reports[i].Period.From.Equal(reports[i-1].Period.To), "report %d", i+1)
+	}
+	require.Len(t, reports[1].Sessions, 1)
+	require.True(t, reports[2].Final)
+}
+
+func TestHeartbeatIsAtLeastTheInterval(t *testing.T) {
+	portal := usagetest.NewPortal(t)
+	settings := newSettings(t, portal)
+	usage.SetHeartbeat(t, time.Millisecond)
+	register(t, portal, settings)
+
+	reporter, err := usage.New(settings, logrus.New())
+	require.NoError(t, err)
+	reporter.Stop()
+	require.Equal(t, int64(1), portal.Reports()[0].Heartbeat)
+}
