@@ -120,17 +120,16 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		return nil, err
 	}
 
-	// Generate the code_challenge from the code_verifier, using a method supported by the AS (if any)
-	var pkce *pkceParameters
-	challengeProvider := s.issuerSettings.authorizationServerMetadata.GetCodeChallengeProvider()
-	if challengeProvider != nil {
-		codeVerifier := oauth2.GenerateDefaultSizeVerifier()
-		codeChallenge := challengeProvider.GenerateCodeChallenge(codeVerifier)
-
-		pkce = &pkceParameters{
-			CodeVerifier:  codeVerifier,
-			CodeChallenge: codeChallenge,
-		}
+	// Always use PKCE with S256 (see GetCodeChallengeProvider), whether or not the
+	// authorization server advertises it.
+	challengeProvider, err := s.issuerSettings.authorizationServerMetadata.GetCodeChallengeProvider()
+	if err != nil {
+		return nil, err
+	}
+	codeVerifier := oauth2.GenerateDefaultSizeVerifier()
+	pkce := &pkceParameters{
+		CodeVerifier:  codeVerifier,
+		CodeChallenge: challengeProvider.GenerateCodeChallenge(codeVerifier),
 	}
 
 	// ClientIds for testing:  how do we differentiate between them?

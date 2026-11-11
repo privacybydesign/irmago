@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strings"
 	"time"
@@ -64,14 +66,15 @@ func recordUsage(conf *server.Configuration, before irma.ServerStatus, after *se
 	if conf.UsageCounter == nil || before.Finished() || !after.Status.Finished() {
 		return
 	}
-	conf.UsageCounter.Record(after.usageEvent(after.Status))
+	conf.UsageCounter.Record(after.usageEvent(conf, after.Status))
 }
 
 // usageEvent describes the session as one that ended with the given status.
-func (session *sessionData) usageEvent(status irma.ServerStatus) usage.Event {
+func (session *sessionData) usageEvent(conf *server.Configuration, status irma.ServerStatus) usage.Event {
 	e := usage.Event{
 		Time:      time.Now(),
 		Requestor: session.Requestor,
+		Host:      session.host(conf),
 		Action:    session.Action,
 	}
 	switch {
@@ -126,6 +129,25 @@ func (session *sessionData) usageEvent(status irma.ServerStatus) usage.Event {
 		}
 	}
 	return e
+}
+
+// host returns the hostname the Yivi app connected to for this session: the host the session
+// request asked for, or else the host of the server's URL. The requestor scheme recognises a
+// Trusted Verifier by this hostname.
+func (session *sessionData) host(conf *server.Configuration) string {
+	host := ""
+	if session.Rrequest != nil && session.Rrequest.SessionRequest() != nil {
+		host = session.Rrequest.SessionRequest().Base().Host
+	}
+	if host == "" {
+		if u, err := url.Parse(conf.URL); err == nil {
+			host = u.Host
+		}
+	}
+	if hostname, _, err := net.SplitHostPort(host); err == nil {
+		host = hostname
+	}
+	return host
 }
 
 func (session *sessionData) doResultCallback(conf *server.Configuration) {

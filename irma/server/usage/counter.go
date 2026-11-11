@@ -26,8 +26,11 @@ const (
 type Event struct {
 	Time      time.Time
 	Requestor string
-	Action    irma.Action
-	Outcome   Outcome
+	// Host is the hostname the Yivi app connected to. The Portal uses it to tell which Trusted
+	// Verifier in the requestor scheme a session belongs to.
+	Host    string
+	Action  irma.Action
+	Outcome Outcome
 	// CredentialTypes are the credential types the session disclosed (outcome done) or
 	// requested (other outcomes), without duplicates.
 	CredentialTypes []irma.CredentialTypeIdentifier
@@ -47,6 +50,7 @@ func (NoopCounter) Record(Event) {}
 type sessionKey struct {
 	Day       string
 	Requestor string
+	Host      string
 	Action    irma.Action
 	Outcome   Outcome
 }
@@ -54,6 +58,7 @@ type sessionKey struct {
 type disclosureKey struct {
 	Day            string
 	Requestor      string
+	Host           string
 	Action         irma.Action
 	CredentialType irma.CredentialTypeIdentifier
 	Outcome        Outcome
@@ -77,9 +82,9 @@ func (t *tally) record(e Event) {
 	day := e.Time.UTC().Format(time.DateOnly)
 	t.Lock()
 	defer t.Unlock()
-	t.sessions[sessionKey{day, e.Requestor, e.Action, e.Outcome}]++
+	t.sessions[sessionKey{day, e.Requestor, e.Host, e.Action, e.Outcome}]++
 	for _, ct := range e.CredentialTypes {
-		t.disclosures[disclosureKey{day, e.Requestor, e.Action, ct, e.Outcome}]++
+		t.disclosures[disclosureKey{day, e.Requestor, e.Host, e.Action, ct, e.Outcome}]++
 	}
 }
 
@@ -99,13 +104,13 @@ func (t *tally) take() ([]DisclosureCount, []SessionCount) {
 	sessionRows := make([]SessionCount, 0, len(sessions))
 	for k, n := range sessions {
 		sessionRows = append(sessionRows, SessionCount{
-			Day: k.Day, Requestor: k.Requestor, Action: k.Action, Outcome: k.Outcome, Count: n,
+			Day: k.Day, Requestor: k.Requestor, Host: k.Host, Action: k.Action, Outcome: k.Outcome, Count: n,
 		})
 	}
 	disclosureRows := make([]DisclosureCount, 0, len(disclosures))
 	for k, n := range disclosures {
 		disclosureRows = append(disclosureRows, DisclosureCount{
-			Day: k.Day, Requestor: k.Requestor, Action: k.Action, CredentialType: k.CredentialType.String(),
+			Day: k.Day, Requestor: k.Requestor, Host: k.Host, Action: k.Action, CredentialType: k.CredentialType.String(),
 			Outcome: k.Outcome, Count: n,
 		})
 	}
@@ -113,12 +118,13 @@ func (t *tally) take() ([]DisclosureCount, []SessionCount) {
 	// Sorted output keeps reports deterministic, which makes them easier to read and test.
 	sort.Slice(sessionRows, func(i, j int) bool {
 		a, b := sessionRows[i], sessionRows[j]
-		return a.Day+a.Requestor+string(a.Action)+string(a.Outcome) < b.Day+b.Requestor+string(b.Action)+string(b.Outcome)
+		return a.Day+a.Requestor+a.Host+string(a.Action)+string(a.Outcome) <
+			b.Day+b.Requestor+b.Host+string(b.Action)+string(b.Outcome)
 	})
 	sort.Slice(disclosureRows, func(i, j int) bool {
 		a, b := disclosureRows[i], disclosureRows[j]
-		return a.Day+a.Requestor+string(a.Action)+a.CredentialType+string(a.Outcome) <
-			b.Day+b.Requestor+string(b.Action)+b.CredentialType+string(b.Outcome)
+		return a.Day+a.Requestor+a.Host+string(a.Action)+a.CredentialType+string(a.Outcome) <
+			b.Day+b.Requestor+b.Host+string(b.Action)+b.CredentialType+string(b.Outcome)
 	})
 	return disclosureRows, sessionRows
 }

@@ -165,14 +165,23 @@ func (as *AuthorizationServerMetadata) SupportsGrantType(grantType string) bool 
 	return slices.Contains(as.GrantTypesSupported, grantType)
 }
 
-func (as *AuthorizationServerMetadata) GetCodeChallengeProvider() CodeChallengeProvider {
-	if slices.Contains(as.CodeChallengeMethodsSupported, "S256") {
-		return &S256CodeChallengeProvider{}
-	} else if slices.Contains(as.CodeChallengeMethodsSupported, "plain") {
-		return &PlainCodeChallengeProvider{}
-	} else {
-		return nil
+// GetCodeChallengeProvider returns the PKCE method the wallet uses with this
+// authorization server, which is always S256. OpenID4VCI 1.0 (with HAIP) and RFC
+// 9700 §2.1.1 require a wallet to use PKCE, and RFC 9700 §2.1.1 rules out "plain",
+// which protects nothing once the authorization request is seen.
+//
+// An authorization server that advertises code_challenge_methods_supported without
+// S256, for example only "plain", is refused. One that advertises no methods still
+// gets S256: RFC 8414 makes the field optional, and an authorization server that
+// does not support PKCE ignores the parameters.
+func (as *AuthorizationServerMetadata) GetCodeChallengeProvider() (CodeChallengeProvider, error) {
+	if len(as.CodeChallengeMethodsSupported) > 0 && !slices.Contains(as.CodeChallengeMethodsSupported, "S256") {
+		return nil, fmt.Errorf(
+			"authorization server does not support PKCE with S256, only %v",
+			as.CodeChallengeMethodsSupported,
+		)
 	}
+	return &S256CodeChallengeProvider{}, nil
 }
 
 func GetOAuthMetadataUrlFromAuthorizationServer(authorizationServer string) (string, error) {
