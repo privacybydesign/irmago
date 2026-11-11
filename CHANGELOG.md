@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An encrypted OpenID4VCI credential request is now encrypted with the content encryption algorithm chosen from the issuer's `enc_values_supported`. It was chosen but not passed on, so jwx's default was used.
 - The EUDI SQLCipher database pins its encryption parameters (`cipher_compatibility = 4`: 4096-byte pages, HMAC-SHA512, PBKDF2-HMAC-SHA512) instead of relying on the defaults of the linked SQLCipher. These are SQLCipher 4's defaults, so existing databases open unchanged. An encrypted database is no longer opened when the linked library is plain SQLite, which ignores the key and would store the database unencrypted, or SQLCipher 3, which ignores the pinned parameters.
 
+### Internal
+- Status checks run CodeQL (security-extended queries) on the Go code and the workflow files, through the organisation's shared workflow, and the weekly run re-analyses with the latest queries
+
 ## [1.5.0] - 2026-11-03
 ### Added
 - SD-JWT-secured W3C VCDM 2.0 credentials (VC-JOSE-COSE §3.2), under the `vc+sd-jwt` format id and JWS `typ`. `dc+sd-jwt` stays IETF SD-JWT VC only: a VCDM credential or configuration under it is refused.
