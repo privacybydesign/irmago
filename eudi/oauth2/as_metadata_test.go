@@ -3,6 +3,8 @@ package oauth2
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAuthorizationServerMetadata_SupportsGrantType(t *testing.T) {
@@ -148,4 +150,32 @@ func TestAuthorizationServerMetadata_UnmarshalJSON(t *testing.T) {
 			t.Error("expected an error for a jwks member holding an unparseable key")
 		}
 	})
+}
+
+func TestGetCodeChallengeProvider(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		methods   []string
+		expectErr bool
+	}{
+		{name: "S256 advertised", methods: []string{"S256"}},
+		{name: "plain and S256 advertised", methods: []string{"plain", "S256"}},
+		{name: "nothing advertised", methods: nil},
+		{name: "only plain advertised", methods: []string{"plain"}, expectErr: true},
+		{name: "only an unknown method advertised", methods: []string{"S512"}, expectErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			as := &AuthorizationServerMetadata{CodeChallengeMethodsSupported: tt.methods}
+
+			provider, err := as.GetCodeChallengeProvider()
+
+			if tt.expectErr {
+				require.ErrorContains(t, err, "does not support PKCE with S256")
+				return
+			}
+			require.NoError(t, err)
+			challenge := provider.GenerateCodeChallenge(GenerateDefaultSizeVerifier())
+			require.Equal(t, "S256", challenge.GetCodeChallengeMethod())
+		})
+	}
 }
