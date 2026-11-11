@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.6.0] - 2026-11-11
 ### Added
 - Usage reports carry, per row, the `host` the Yivi app connected to: the host a session request asked for, or else the host of the server's URL. The Yivi Portal can thus tell per hostname whether a Trusted Verifier's usage is reported, also when one server runs sessions under the hostnames of several Trusted Verifiers. The field is optional and the report schema stays 1, so a Portal that does not know it ignores it.
 - A release carries a `SHA256SUMS` file for its `yivi` binaries, and a signed build provenance attestation per binary. Check a download with `sha256sum --check --ignore-missing SHA256SUMS` and `gh attestation verify <binary> --repo privacybydesign/irmago`.
@@ -988,7 +990,8 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
-[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/privacybydesign/irmago/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/privacybydesign/irmago/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/privacybydesign/irmago/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/privacybydesign/irmago/compare/v1.4.1...v1.4.2
