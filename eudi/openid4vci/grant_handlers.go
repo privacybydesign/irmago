@@ -67,6 +67,11 @@ func (r *authTokenResponse) GetRefreshToken() *string {
 
 type AuthorizationCodeFlowHandler struct {
 	httpClient *http.Client
+
+	// attestation, when set, authenticates PAR with a client attestation for
+	// the authorization server asIssuer.
+	attestation *sessionAttestation
+	asIssuer    string
 }
 
 type pkceParameters struct {
@@ -123,7 +128,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	// Auth0: 'FiEH7ZmdnrDphzAjvdk9scynlm0A1XV9',
 	// Keycloak: 'eudiw'
 	//clientId := "eudiw" // TODO: replace with Client Attestation once we have that, and fetch the client_id from the AS metadata instead of hardcoding it here
-	clientId := YiviClientId
+	clientId := s.clientID()
 
 	// Build the authorization request parameters
 	state := s.generatePseudoRandomOpenIdState()
@@ -211,8 +216,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	}
 
 	// Exchange of code for token and return token response
-	return h.doTokenRequest(s.issuerSettings.authorizationServerMetadata.TokenEndpoint,
-		code, pkce, scopes, authDetails, s.redirectUri)
+	return h.doTokenRequest(s, code, pkce, s.redirectUri)
 }
 
 // verifyAuthorizationState checks that the state returned by the authorization server matches
@@ -305,6 +309,11 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 	}
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if h.attestation != nil {
+		if err := h.attestation.addClientAttestation(req, h.asIssuer); err != nil {
+			return nil, err
+		}
+	}
 	response, err := h.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute Pushed Authorization Request: %v", err)
@@ -345,37 +354,23 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 }
 
 func (h *AuthorizationCodeFlowHandler) doTokenRequest(
-	tokenEndpoint string,
+	s *session,
 	code string,
 	pkce *pkceParameters,
-	scopes []string,
-	authDetails *string,
 	redirectUri string,
 ) (AccessTokenResponse, error) {
 	payload := url.Values{}
 
 	payload.Add("grant_type", "authorization_code")
 	payload.Add("code", code)
-	payload.Add("client_id", YiviClientId)
+	payload.Add("client_id", s.clientID())
 	payload.Add("redirect_uri", redirectUri)
 
 	if pkce != nil {
 		payload.Add("code_verifier", pkce.CodeVerifier)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, tokenEndpoint, bytes.NewBufferString(payload.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request for Token Request: %v", err)
-	}
-
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := h.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute Token Request: %v", err)
-	}
-	defer response.Body.Close()
-
-	return handleTokenResponse(response)
+	return s.sendTokenRequest(h.httpClient, payload)
 }
 
 type PreAuthorizedCodeFlowHandler struct {
@@ -484,23 +479,62 @@ func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, grant *PreAuth
 		values.Add("tx_code", *transactionCode)
 	}
 
-	// Initiate request
-	req, err := http.NewRequest(http.MethodPost, s.issuerSettings.authorizationServerMetadata.TokenEndpoint, bytes.NewBufferString(values.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request for Token Request: %v", err)
+	if s.attestation != nil {
+		values.Add("client_id", s.clientID())
 	}
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := s.httpClient.Do(req)
+	return s.sendTokenRequest(s.httpClient, values)
+}
+
+// sendTokenRequest posts values to the token endpoint. When the session presents
+// a wallet attestation, the request carries it and a DPoP proof of its key.
+func (s *session) sendTokenRequest(httpClient *http.Client, values url.Values) (AccessTokenResponse, error) {
+	asMetadata := s.issuerSettings.authorizationServerMetadata
+	newReq := func() (*http.Request, error) {
+		req, err := http.NewRequest(http.MethodPost, asMetadata.TokenEndpoint, strings.NewReader(values.Encode()))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request for Token Request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if s.attestation != nil {
+			if err := s.attestation.addClientAttestation(req, asMetadata.Issuer); err != nil {
+				return nil, err
+			}
+			if err := s.attestation.addDPoP(req, ""); err != nil {
+				return nil, err
+			}
+		}
+		return req, nil
+	}
+
+	if s.attestation == nil {
+		req, err := newReq()
+		if err != nil {
+			return nil, err
+		}
+		response, err := httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute Token Request: %v", err)
+		}
+		defer response.Body.Close()
+		return handleTokenResponse(response, false)
+	}
+
+	response, _, err := s.attestation.postWithDPoPRetry(httpClient, newReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute Token Request: %v", err)
 	}
-	defer response.Body.Close()
-
-	return handleTokenResponse(response)
+	token, err := handleTokenResponse(response, true)
+	if err != nil {
+		return nil, err
+	}
+	s.attestation.dpopBoundToken = strings.EqualFold(token.token.TokenType, dpopTokenType)
+	return token, nil
 }
 
-func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
+// handleTokenResponse parses a token response. dpop says the request carried a
+// DPoP proof, so a DPoP-bound token is acceptable.
+func handleTokenResponse(response *http.Response, dpop bool) (*authTokenResponse, error) {
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read Token Response body: %v", err)
@@ -534,7 +568,8 @@ func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 	if tokenResponse.AccessToken == "" {
 		return nil, fmt.Errorf("token response did not contain an access token")
 	}
-	if strings.ToLower(tokenResponse.TokenType) != "bearer" {
+	tokenType := strings.ToLower(tokenResponse.TokenType)
+	if tokenType != "bearer" && (!dpop || tokenType != strings.ToLower(dpopTokenType)) {
 		return nil, fmt.Errorf("token response did not contain a valid token type: %q", tokenResponse.TokenType)
 	}
 

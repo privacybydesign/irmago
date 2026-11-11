@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- OpenID4VCI wallet attestations, opt-in through `Client.SetWalletAttester`. A wallet that sets a `WalletAttester` authenticates at PAR and token with a client attestation (`OAuth-Client-Attestation` and a fresh `OAuth-Client-Attestation-PoP`, `client_id` set to its `sub`), binds the access token with DPoP under the attestation key (retrying once on `use_dpop_nonce`), and puts a key attestation in the `key_attestation` header of each `jwt` proof. It then also accepts issuers that publish `key_attestations_required`, and asks for one credential instance per request. Without an attester, or when it returns no client attestation for a session, nothing changes. `JwtProofBuilder.WithKeyAttestation` adds the header for both `Build` and `BuildWithES256Signer`.
 - Usage reports carry, per row, the `host` the Yivi app connected to: the host a session request asked for, or else the host of the server's URL. The Yivi Portal can thus tell per hostname whether a Trusted Verifier's usage is reported, also when one server runs sessions under the hostnames of several Trusted Verifiers. The field is optional and the report schema stays 1, so a Portal that does not know it ignores it.
 - A release carries a `SHA256SUMS` file for its `yivi` binaries, and a signed build provenance attestation per binary. Check a download with `sha256sum --check --ignore-missing SHA256SUMS` and `gh attestation verify <binary> --repo privacybydesign/irmago`.
 ### Changed

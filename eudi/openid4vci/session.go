@@ -70,6 +70,9 @@ type session struct {
 	redirectUri string
 
 	issuerSettings openid4vciSessionIssuerSettings
+
+	// attestation is set when the wallet presents a wallet attestation.
+	attestation *sessionAttestation
 }
 
 // openid4vciSessionIssuerSettings contains all settings related to the Credential Issuer and Credential Offer that are required to perform the session, extracted from the Credential Offer and Credential Issuer metadata
@@ -153,7 +156,9 @@ func (s *session) perform() {
 	switch s.issuerSettings.grantType.GetGrantType() {
 	case GrantType_AuthorizationCode:
 		grantHandler = &AuthorizationCodeFlowHandler{
-			httpClient: s.httpClient,
+			httpClient:  s.httpClient,
+			attestation: s.attestation,
+			asIssuer:    s.issuerSettings.authorizationServerMetadata.Issuer,
 		}
 	case GrantType_PreAuthorizedCode:
 		grantHandler = &PreAuthorizedCodeFlowHandler{}
@@ -773,7 +778,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		return nil, fmt.Errorf("credential configuration %q not found in issuer metadata", credentialConfigurationId)
 	}
 
-	credentialConfigurationValidator := CredentialConfigurationValidator{}
+	credentialConfigurationValidator := CredentialConfigurationValidator{keyAttestations: s.attestation != nil}
 	credentialRequestPreferences, err := credentialConfigurationValidator.ValidateAndGetSupportedFeatures(&credentialConfig)
 	if err != nil {
 		return nil, fmt.Errorf("credential configuration %q is not supported: %v", credentialConfigurationId, err)
@@ -797,14 +802,19 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	obtained := false
 	if requireCryptographicKeyBinding {
 		num := uint(1)
-		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
+		// With a wallet attestation, one proof per request: a key attestation
+		// is per key, and WE BUILD CS-05 refuses batches.
+		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil && s.attestation == nil {
 			num = batchInstancesToRequest(s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize)
 		}
 
 		// The issuer should be equal to the client ID registered with the authorization server
 		// TODO: omit the issuer, in case the access token being used, was obtained via Pre-Authorized Code flow
-		issuer := YiviClientId
+		issuer := s.clientID()
 		proofBuilder := proofs.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, credentialRequestPreferences.proofSigningAlg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
+		if s.attestation != nil {
+			proofBuilder.WithKeyAttestation(s.attestation.keyAttester(cNonce))
+		}
 
 		var proofs []string
 		var err error
@@ -879,15 +889,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		requestBody = jsonRequest
 	}
 
-	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewBuffer(requestBody))
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Content-Type", contentType)
-
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.sendCredentialRequest(requestBody, contentType, accessToken)
 	if err != nil {
 		return nil, err
 	}
@@ -1132,6 +1134,34 @@ func requireMandatoryMdocElements(config *metadata.CredentialConfiguration, pars
 		)
 	}
 	return nil
+}
+
+// sendCredentialRequest posts a credential request. A DPoP-bound access token
+// goes with a DPoP proof, retried once when the issuer asks for a DPoP nonce.
+func (s *session) sendCredentialRequest(body []byte, contentType string, accessToken string) (*http.Response, error) {
+	dpop := s.attestation != nil && s.attestation.dpopBoundToken
+	newReq := func() (*http.Request, error) {
+		req, err := http.NewRequest(http.MethodPost, s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", contentType)
+		if !dpop {
+			req.Header.Set("Authorization", "Bearer "+accessToken)
+			return req, nil
+		}
+		req.Header.Set("Authorization", dpopTokenType+" "+accessToken)
+		return req, s.attestation.addDPoP(req, accessToken)
+	}
+	if !dpop {
+		req, err := newReq()
+		if err != nil {
+			return nil, err
+		}
+		return s.httpClient.Do(req)
+	}
+	resp, _, err := s.attestation.postWithDPoPRetry(s.httpClient, newReq)
+	return resp, err
 }
 
 // requestNonce requests a fresh nonce from the issuer's nonce endpoint

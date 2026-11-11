@@ -21,7 +21,11 @@ import (
 type CredentialIssuerMetadataValidator struct {
 	allowInsecureHttp bool
 }
-type CredentialConfigurationValidator struct{}
+type CredentialConfigurationValidator struct {
+	// keyAttestations is set when the wallet can attest its keys, so issuers
+	// that require key attestations are supported.
+	keyAttestations bool
+}
 type CredentialMetadataValidator struct{}
 type CredentialIssuerDisplaysValidator struct{}
 type CredentialDisplaysValidator struct{}
@@ -243,8 +247,7 @@ func (v *CredentialConfigurationValidator) ValidateAndGetSupportedFeatures(c *me
 			// 	supportedAlgs := supported-algs(jwtProofType.ProofSigningAlgValuesSupported)
 			// }
 
-			// We don't support key attestations, for now
-			if jwtProofType.KeyAttestationsRequired != nil {
+			if jwtProofType.KeyAttestationsRequired != nil && !v.keyAttestations {
 				return nil, fmt.Errorf("unsupported 'key_attestations_required' in 'proof_types_supported' for JWT proof type")
 			}
 		}

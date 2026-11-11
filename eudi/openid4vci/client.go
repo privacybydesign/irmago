@@ -51,6 +51,8 @@ type Client struct {
 
 	// Allow non-HTTPS for testing purposes
 	allowInsecureHttp bool
+
+	walletAttester WalletAttester
 }
 
 // NewClient builds an OpenID4VCI client over the given per-format registry.
@@ -182,7 +184,15 @@ func (client *Client) handleCredentialOffer(
 		return fmt.Errorf("failed to convert credential info list: %v", err)
 	}
 
+	var attestation *sessionAttestation
+	if client.walletAttester != nil {
+		if attestation, err = newSessionAttestation(client.walletAttester, credentialIssuerMetadata.CredentialIssuer); err != nil {
+			return err
+		}
+	}
+
 	client.currentSession = &session{
+		attestation:                attestation,
 		id:                         sessionId,
 		credentialOffer:            credentialOffer,
 		credentialIssuerMetadata:   credentialIssuerMetadata,

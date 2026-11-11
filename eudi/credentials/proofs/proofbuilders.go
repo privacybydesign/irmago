@@ -22,6 +22,8 @@ type ES256SignFunc func(signingInput []byte) (sig []byte, err error)
 
 type CryptographicBindingMethod string
 
+const keyAttestationHeader = "key_attestation"
+
 const (
 	CryptographicBindingMethod_JWK     CryptographicBindingMethod = "jwk"
 	CryptographicBindingMethod_DID_KEY CryptographicBindingMethod = "did:key"
@@ -43,6 +45,30 @@ type JwtProofBuilder struct {
 	alg      jwa.SignatureAlgorithm
 	clock    jwt.Clock
 	method   CryptographicBindingMethod
+
+	keyAttester KeyAttester
+}
+
+// KeyAttester returns a key attestation JWT for the key a proof is signed with,
+// or "" when it has none.
+type KeyAttester func(key *ecdsa.PublicKey) (string, error)
+
+// WithKeyAttestation puts the key attestation attester returns in the
+// key_attestation header of every proof (OpenID4VCI Appendix D.1).
+func (b *JwtProofBuilder) WithKeyAttestation(attester KeyAttester) *JwtProofBuilder {
+	b.keyAttester = attester
+	return b
+}
+
+func (b *JwtProofBuilder) keyAttestation(key *ecdsa.PublicKey) (string, error) {
+	if b.keyAttester == nil {
+		return "", nil
+	}
+	ka, err := b.keyAttester(key)
+	if err != nil {
+		return "", fmt.Errorf("failed to obtain key attestation: %w", err)
+	}
+	return ka, nil
 }
 
 func NewJwtProofBuilder(issuer string, audience string, alg jwa.SignatureAlgorithm, nonce *string, clock jwt.Clock, method CryptographicBindingMethod) *JwtProofBuilder {
@@ -126,6 +152,16 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (any, error) {
 		return nil, fmt.Errorf("unsupported cryptographic binding method: %s", b.method)
 	}
 
+	ka, err := b.keyAttestation(&privKey.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+	if ka != "" {
+		if err := headers.Set(keyAttestationHeader, ka); err != nil {
+			return nil, fmt.Errorf("failed to set key attestation header: %v", err)
+		}
+	}
+
 	serializedJwt, err := jwt.Sign(proofPayload, jwt.WithKey(b.alg, privJwk, jws.WithProtectedHeaders(headers)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign proof jwt: %v", err)
@@ -178,6 +214,14 @@ func (b *JwtProofBuilder) BuildWithES256Signer(pub *ecdsa.PublicKey, sign ES256S
 		header["kid"] = did.AssertionMethod[0]
 	default:
 		return "", fmt.Errorf("unsupported cryptographic binding method: %s", b.method)
+	}
+
+	ka, err := b.keyAttestation(pub)
+	if err != nil {
+		return "", err
+	}
+	if ka != "" {
+		header[keyAttestationHeader] = ka
 	}
 
 	// Payload — aud flattened to a single string, matching Build's FlattenAudience.
