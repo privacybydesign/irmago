@@ -1,6 +1,7 @@
 package openid4vp
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -55,7 +56,7 @@ func unsignedSessionUrl(responseUri string, overrides map[string]string) string 
 func newUrlSessionClient(validator VerifierValidator) (*Client, *mockDcqlHandler) {
 	handler := &mockDcqlHandler{}
 	return &Client{
-		dcqlHandler:       dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{handler}),
+		dcqlHandler:       dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{handler}, nil),
 		verifierValidator: validator,
 	}, handler
 }
@@ -116,7 +117,7 @@ func TestNewSession_UnsignedQueryString_CompletesSession(t *testing.T) {
 	client, dcqlHandler := newUrlSessionClient(nil)
 	handler := newGrantingHandler()
 
-	client.NewSession(unsignedSessionUrl(collector.uri(), nil), handler)
+	client.NewSession(context.Background(), unsignedSessionUrl(collector.uri(), nil), handler)
 
 	require.Equal(t, "managed to complete openid4vp session", awaitOn(t, handler.successCh, "success"))
 
@@ -137,7 +138,7 @@ func TestNewSession_UnsignedQueryString_ShowsAnUnverifiedRequestor(t *testing.T)
 	client, _ := newUrlSessionClient(nil)
 	handler := newGrantingHandler()
 
-	client.NewSession(unsignedSessionUrl(collector.uri(), nil), handler)
+	client.NewSession(context.Background(), unsignedSessionUrl(collector.uri(), nil), handler)
 
 	requestor := awaitOn(t, handler.requestorCh, "a permission request")
 	require.False(t, requestor.Verified, "an unsigned request authenticates nobody")
@@ -157,7 +158,7 @@ func TestNewSession_UnsignedQueryString_ResponseUriMismatch_ReportsFailure(t *te
 	client, _ := newUrlSessionClient(nil)
 	handler := newGrantingHandler()
 
-	client.NewSession(unsignedSessionUrl(collector.uri(), map[string]string{
+	client.NewSession(context.Background(), unsignedSessionUrl(collector.uri(), map[string]string{
 		"response_uri": "https://elsewhere.example.com/response",
 	}), handler)
 
@@ -174,7 +175,7 @@ func TestNewSession_UnsignedQueryString_OmittedResponseUri_IsTakenFromClientId(t
 	client, _ := newUrlSessionClient(nil)
 	handler := newGrantingHandler()
 
-	client.NewSession(unsignedSessionUrl(collector.uri(), map[string]string{"response_uri": ""}), handler)
+	client.NewSession(context.Background(), unsignedSessionUrl(collector.uri(), map[string]string{"response_uri": ""}), handler)
 
 	require.Equal(t, "managed to complete openid4vp session", awaitOn(t, handler.successCh, "success"))
 	posted := awaitOn(t, collector.posted, "the authorization response")
@@ -197,7 +198,7 @@ func TestNewSession_UnsignedQueryString_RejectsSignedOnlyClientIdPrefix(t *testi
 			client, _ := newUrlSessionClient(nil)
 			handler := newGrantingHandler()
 
-			client.NewSession(unsignedSessionUrl(collector.uri(), map[string]string{
+			client.NewSession(context.Background(), unsignedSessionUrl(collector.uri(), map[string]string{
 				"client_id": string(prefix) + "verifier.example.com",
 			}), handler)
 
@@ -227,7 +228,7 @@ func TestNewSession_RejectsUnanswerableResponseMode(t *testing.T) {
 			client, _ := newUrlSessionClient(nil)
 			handler := newGrantingHandler()
 
-			client.NewSession(unsignedSessionUrl(collector.uri(), map[string]string{
+			client.NewSession(context.Background(), unsignedSessionUrl(collector.uri(), map[string]string{
 				"response_mode": test.responseMode,
 			}), handler)
 
@@ -249,7 +250,7 @@ func TestNewSession_UnsignedQueryString_RejectsDcApiResponseMode(t *testing.T) {
 			handler := newGrantingHandler()
 			handler.dcApiCh = make(chan string, 1)
 
-			client.NewSession(unsignedSessionUrl(collector.uri(), map[string]string{
+			client.NewSession(context.Background(), unsignedSessionUrl(collector.uri(), map[string]string{
 				"response_mode": string(mode),
 			}), handler)
 
@@ -267,7 +268,7 @@ func TestNewSession_UnsignedQueryString_MalformedDcqlQuery_ReportsFailure(t *tes
 	client, _ := newUrlSessionClient(nil)
 	handler := newGrantingHandler()
 
-	client.NewSession(unsignedSessionUrl(collector.uri(), map[string]string{
+	client.NewSession(context.Background(), unsignedSessionUrl(collector.uri(), map[string]string{
 		"dcql_query": "{not json",
 	}), handler)
 
@@ -301,7 +302,7 @@ func TestNewSession_InlineRequestObject_IsVerifiedAndAnswered(t *testing.T) {
 
 	query := url.Values{}
 	query.Set("request", "eyJhbGciOiJFUzI1NiJ9.e30.signature")
-	client.NewSession("openid4vp://?"+query.Encode(), handler)
+	client.NewSession(context.Background(), "openid4vp://?"+query.Encode(), handler)
 
 	require.Equal(t, "managed to complete openid4vp session", awaitOn(t, handler.successCh, "success"))
 	require.Equal(t, signed.ClientId, dcqlHandler.preparedForAudience)
@@ -323,7 +324,7 @@ func TestNewSession_InlineRequestObject_ClientIdMismatch_ReportsFailure(t *testi
 	query := url.Values{}
 	query.Set("request", "eyJhbGciOiJFUzI1NiJ9.e30.signature")
 	query.Set("client_id", "x509_san_dns:someone.else.example.com")
-	client.NewSession("openid4vp://?"+query.Encode(), handler)
+	client.NewSession(context.Background(), "openid4vp://?"+query.Encode(), handler)
 
 	err := awaitOn(t, handler.failureCh, "a failure callback")
 	require.Contains(t, err.WrappedError, "but the signed request names")
@@ -338,7 +339,7 @@ func TestNewSession_RequestAndRequestUri_ReportsFailure(t *testing.T) {
 	query := url.Values{}
 	query.Set("request", "eyJhbGciOiJFUzI1NiJ9.e30.signature")
 	query.Set("request_uri", "https://rp.example.com/request")
-	client.NewSession("openid4vp://?"+query.Encode(), handler)
+	client.NewSession(context.Background(), "openid4vp://?"+query.Encode(), handler)
 
 	err := awaitOn(t, handler.failureCh, "a failure callback")
 	require.Contains(t, err.WrappedError, "request and request_uri must not both be present")

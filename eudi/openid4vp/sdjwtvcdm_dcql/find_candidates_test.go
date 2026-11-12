@@ -6,8 +6,15 @@ package sdjwtvcdm_dcql
 // type-check locally but run in CI.
 
 import (
+	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -18,9 +25,11 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
+	"github.com/privacybydesign/irmago/eudi/holdersigning"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcqltest"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -36,38 +45,83 @@ import (
 const academicVcdmType = "https://www.w3.org/ns/credentials/v2 https://eduwallet.nl/context/academic/v1 VerifiableCredential AcademicBaseCredential"
 
 // newTestHandler builds the real VCDM handler over an in-memory store. FindCandidates
-// needs no key binder or revocation checker, so both are nil.
+// needs no holder keys or revocation checker, so those are nil.
 func newTestHandler(t *testing.T) (*Handler, db.VcdmStore) {
 	t.Helper()
 	ts := sdjwt_dcqltest.NewTestStorage(t)
 	store := db.NewVcdmStore(ts.Db())
-	h := New(ts, store, nil, clientmodels.NewCurrentLocale("en"), nil)
+	h := New(ts, store, nil, nil, clientmodels.NewCurrentLocale("en"), nil)
 	return h, store
 }
 
-// newTestHandlerWithKeyBinder builds the real VCDM handler with an in-memory key
-// binder, for disclosures that sign a Verifiable Presentation.
-func newTestHandlerWithKeyBinder(t *testing.T) (*Handler, db.VcdmStore, sdjwt.KeyBinder) {
+// softwareHolderKeys mints software holder keys and resolves them for the
+// handler, as the wallet's holder key service does for keys it stores.
+type softwareHolderKeys struct {
+	keys map[string]*ecdsa.PrivateKey
+}
+
+func (k *softwareHolderKeys) mint(t *testing.T) jwk.Key {
+	t.Helper()
+	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	public, err := jwk.Import[jwk.Key](private.Public())
+	require.NoError(t, err)
+	k.keys[thumbprint(t, public)] = private
+	return public
+}
+
+func (k *softwareHolderKeys) ResolveHolderKey(public jwk.Key) (holdersigning.Key, error) {
+	private, ok := k.keys[thumbprint(nil, public)]
+	if !ok {
+		return holdersigning.Key{}, errors.New("no such holder key")
+	}
+	return holdersigning.Software(private), nil
+}
+
+func thumbprint(t *testing.T, key jwk.Key) string {
+	sum, err := key.Thumbprint(crypto.SHA256)
+	if t != nil {
+		require.NoError(t, err)
+	}
+	return hex.EncodeToString(sum)
+}
+
+// newTestHandlerWithHolderKeys builds the real VCDM handler with software
+// holder keys, for disclosures that sign a Verifiable Presentation.
+func newTestHandlerWithHolderKeys(t *testing.T) (*Handler, db.VcdmStore, *softwareHolderKeys) {
 	t.Helper()
 	ts := sdjwt_dcqltest.NewTestStorage(t)
 	store := db.NewVcdmStore(ts.Db())
-	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
-	h := New(ts, store, keyBinder, clientmodels.NewCurrentLocale("en"), nil)
-	return h, store, keyBinder
+	holderKeys := &softwareHolderKeys{keys: map[string]*ecdsa.PrivateKey{}}
+	h := New(ts, store, holderKeys, nil, clientmodels.NewCurrentLocale("en"), nil)
+	return h, store, holderKeys
+}
+
+// prepareSigned runs the handler's two-phase PrepareDisclosure to the end,
+// signing with the software holder keys.
+func prepareSigned(h *Handler, selections []dcql.DisclosureSelection, nonce, audience string) (*dcql.PreparedDisclosure, error) {
+	pending, err := h.PrepareDisclosure(selections, nonce, audience)
+	if err != nil {
+		return nil, err
+	}
+	signatures, err := services.NewHolderSigner(nil).Sign(context.Background(), pending.Signatures)
+	if err != nil {
+		return nil, err
+	}
+	return pending.Complete(signatures)
 }
 
 // issueHolderBoundAcademicCredential issues the academic test credential bound
-// to a fresh holder key of keyBinder, and returns it with that key.
-func issueHolderBoundAcademicCredential(t *testing.T, keyBinder sdjwt.KeyBinder) (string, jwk.Key) {
+// to a fresh holder key of holderKeys, and returns it with that key.
+func issueHolderBoundAcademicCredential(t *testing.T, holderKeys *softwareHolderKeys) (string, jwk.Key) {
 	t.Helper()
-	holderKeys, err := keyBinder.CreateKeyPairs(1)
-	require.NoError(t, err)
-	cnf, err := sdjwt.HolderKeyClaim(holderKeys[0])
+	holderKey := holderKeys.mint(t)
+	cnf, err := sdjwt.HolderKeyClaim(holderKey)
 	require.NoError(t, err)
 
 	claims := vcdmsdjwt.AcademicBaseCredentialClaims(t)
 	claims[len(claims)-1] = cnf
-	return string(vcdmsdjwt.IssueTestSdJwtVcdm(t, claims)), holderKeys[0]
+	return string(vcdmsdjwt.IssueTestSdJwtVcdm(t, claims)), holderKey
 }
 
 func newTestBatch(hash, credType string, payload map[string]any) *models.VcdmBatch {
@@ -119,7 +173,7 @@ func TestVcdmFindCandidates_MatchesCompositeTypeAndSubjectClaims(t *testing.T) {
 
 func TestVcdmFindCandidates_ExcludesSdJwtVcBatch(t *testing.T) {
 	ts := sdjwt_dcqltest.NewTestStorage(t)
-	h := New(ts, db.NewVcdmStore(ts.Db()), nil, clientmodels.NewCurrentLocale("en"), nil)
+	h := New(ts, db.NewVcdmStore(ts.Db()), nil, nil, clientmodels.NewCurrentLocale("en"), nil)
 
 	// A dc+sd-jwt (SD-JWT VC) batch lives in the SD-JWT VC table and must not be
 	// served for a vc+sd-jwt query.
@@ -373,14 +427,14 @@ func givenNameSelection(hash string) []dcql.DisclosureSelection {
 }
 
 func TestVcdmPrepareDisclosure_RoundTrip(t *testing.T) {
-	h, store, keyBinder := newTestHandlerWithKeyBinder(t)
+	h, store, holderKeys := newTestHandlerWithHolderKeys(t)
 
 	batch := newTestBatch("hash-vcdm-present", academicVcdmType, academicPayload(t))
-	raw, holderKey := issueHolderBoundAcademicCredential(t, keyBinder)
+	raw, holderKey := issueHolderBoundAcademicCredential(t, holderKeys)
 	batch.Instances[0].RawCredential = []byte(raw)
 	require.NoError(t, store.StoreBatch(batch))
 
-	result, err := h.PrepareDisclosure(givenNameSelection("hash-vcdm-present"), "nonce-1", "verifier-1")
+	result, err := prepareSigned(h, givenNameSelection("hash-vcdm-present"), "nonce-1", "verifier-1")
 	require.NoError(t, err)
 	require.Len(t, result.QueryResponses, 1)
 	require.Len(t, result.QueryResponses[0].Credentials, 1)
@@ -418,17 +472,17 @@ func TestVcdmPrepareDisclosure_RoundTrip(t *testing.T) {
 }
 
 func TestVcdmPrepareDisclosure_WithoutHolderBindingSendsTheSdJwt(t *testing.T) {
-	h, store, keyBinder := newTestHandlerWithKeyBinder(t)
+	h, store, holderKeys := newTestHandlerWithHolderKeys(t)
 
 	batch := newTestBatch("hash-vcdm-unbound", academicVcdmType, academicPayload(t))
-	raw, _ := issueHolderBoundAcademicCredential(t, keyBinder)
+	raw, _ := issueHolderBoundAcademicCredential(t, holderKeys)
 	batch.Instances[0].RawCredential = []byte(raw)
 	require.NoError(t, store.StoreBatch(batch))
 
 	selections := givenNameSelection("hash-vcdm-unbound")
 	selections[0].RequireHolderBinding = false
 
-	result, err := h.PrepareDisclosure(selections, "nonce-1", "verifier-1")
+	result, err := prepareSigned(h, selections, "nonce-1", "verifier-1")
 	require.NoError(t, err)
 	require.Len(t, result.QueryResponses, 1)
 	require.Len(t, result.QueryResponses[0].Credentials, 1)
@@ -481,7 +535,7 @@ func TestVcdmFindCandidates_RequestedClaimOutsideSubjectIsShownAndSent(t *testin
 	for i, a := range shown {
 		paths[i] = a.ClaimPath
 	}
-	prepared, err := h.PrepareDisclosure([]dcql.DisclosureSelection{{
+	prepared, err := prepareSigned(h, []dcql.DisclosureSelection{{
 		QueryId: "q1", CredentialHash: "hash-vcdm-name", ClaimPaths: paths,
 	}}, "nonce-1", "verifier-1")
 	require.NoError(t, err)
@@ -493,13 +547,13 @@ func TestVcdmFindCandidates_RequestedClaimOutsideSubjectIsShownAndSent(t *testin
 }
 
 func TestVcdmPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
-	h, store, keyBinder := newTestHandlerWithKeyBinder(t)
+	h, store, holderKeys := newTestHandlerWithHolderKeys(t)
 
 	batch := newTestBatch("hash-vcdm-batch2", academicVcdmType, academicPayload(t))
 	batch.BatchSize = 2
 	batch.RemainingCount = 2
-	rawA, keyA := issueHolderBoundAcademicCredential(t, keyBinder)
-	rawB, keyB := issueHolderBoundAcademicCredential(t, keyBinder)
+	rawA, keyA := issueHolderBoundAcademicCredential(t, holderKeys)
+	rawB, keyB := issueHolderBoundAcademicCredential(t, holderKeys)
 	batch.Instances = []models.VcdmBatchInstance{
 		{RawCredential: []byte(rawA)},
 		{RawCredential: []byte(rawB)},
@@ -510,7 +564,7 @@ func TestVcdmPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	// own holder key, and uses it up.
 	sentWith := map[string]bool{}
 	for i, wantRemaining := range []uint{1, 0} {
-		result, err := h.PrepareDisclosure(givenNameSelection("hash-vcdm-batch2"), "nonce", "verifier")
+		result, err := prepareSigned(h, givenNameSelection("hash-vcdm-batch2"), "nonce", "verifier")
 		require.NoError(t, err, "disclosure %d", i+1)
 		presentation := []byte(result.QueryResponses[0].Credentials[0])
 		for name, key := range map[string]jwk.Key{"a": keyA, "b": keyB} {
@@ -525,7 +579,7 @@ func TestVcdmPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
 	}
 	assert.Equal(t, map[string]bool{"a": true, "b": true}, sentWith, "each instance should be sent once")
 
-	_, err := h.PrepareDisclosure(givenNameSelection("hash-vcdm-batch2"), "nonce", "verifier")
+	_, err := prepareSigned(h, givenNameSelection("hash-vcdm-batch2"), "nonce", "verifier")
 	require.Error(t, err, "a batch of two with both instances used should fail")
 }
 
@@ -600,12 +654,10 @@ const testPhotoBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR
 const testPhotoDataURI = "data:image/png;base64," + testPhotoBase64
 
 // issueHolderBoundPhotoCredential issues the academic test credential with a
-// selectively disclosable photo, bound to a fresh holder key of keyBinder.
-func issueHolderBoundPhotoCredential(t *testing.T, keyBinder sdjwt.KeyBinder) string {
+// selectively disclosable photo, bound to a fresh holder key of holderKeys.
+func issueHolderBoundPhotoCredential(t *testing.T, holderKeys *softwareHolderKeys) string {
 	t.Helper()
-	holderKeys, err := keyBinder.CreateKeyPairs(1)
-	require.NoError(t, err)
-	cnf, err := sdjwt.HolderKeyClaim(holderKeys[0])
+	cnf, err := sdjwt.HolderKeyClaim(holderKeys.mint(t))
 	require.NoError(t, err)
 
 	claims := vcdmsdjwt.AcademicBaseCredentialClaims(t)
@@ -648,10 +700,10 @@ func requirePhotoImage(t *testing.T, attrs []clientmodels.Attribute) {
 }
 
 func TestVcdmClaimImage_DisclosureScreenAndLog(t *testing.T) {
-	h, store, keyBinder := newTestHandlerWithKeyBinder(t)
+	h, store, holderKeys := newTestHandlerWithHolderKeys(t)
 
 	batch := newTestBatch("hash-vcdm-photo", academicVcdmType, photoPayload(t))
-	batch.Instances[0].RawCredential = []byte(issueHolderBoundPhotoCredential(t, keyBinder))
+	batch.Instances[0].RawCredential = []byte(issueHolderBoundPhotoCredential(t, holderKeys))
 	require.NoError(t, store.StoreBatch(batch))
 
 	result, err := h.FindCandidates(parseDcqlQuery(t, `{
@@ -664,7 +716,7 @@ func TestVcdmClaimImage_DisclosureScreenAndLog(t *testing.T) {
 	require.Len(t, result.OwnedCandidates, 1)
 	requirePhotoImage(t, result.OwnedCandidates[0].Attributes)
 
-	prepared, err := h.PrepareDisclosure([]dcql.DisclosureSelection{{
+	prepared, err := prepareSigned(h, []dcql.DisclosureSelection{{
 		QueryId:              "q1",
 		CredentialHash:       "hash-vcdm-photo",
 		ClaimPaths:           [][]any{{"credentialSubject", "photo"}},
@@ -695,12 +747,10 @@ func storeBadgeWithSeparateImageDisclosures(t *testing.T, hash string) (*Handler
 	t.Helper()
 	ts := sdjwt_dcqltest.NewTestStorage(t)
 	store := db.NewVcdmStore(ts.Db())
-	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
-	h := New(ts, store, keyBinder, clientmodels.NewCurrentLocale("en"), nil)
+	holderKeys := &softwareHolderKeys{keys: map[string]*ecdsa.PrivateKey{}}
+	h := New(ts, store, holderKeys, nil, clientmodels.NewCurrentLocale("en"), nil)
 
-	holderKeys, err := keyBinder.CreateKeyPairs(1)
-	require.NoError(t, err)
-	cnf, err := sdjwt.HolderKeyClaim(holderKeys[0])
+	cnf, err := sdjwt.HolderKeyClaim(holderKeys.mint(t))
 	require.NoError(t, err)
 	claims := vcdmsdjwt.AcademicBaseCredentialClaims(t)
 	for i, claim := range claims {
@@ -759,7 +809,7 @@ func TestVcdmClaimImage_CachedOpenBadgesImageOnlyItsIdRequested(t *testing.T) {
 	require.Len(t, result.OwnedCandidates, 1)
 	requireBadgeImage(result.OwnedCandidates[0].Attributes)
 
-	prepared, err := h.PrepareDisclosure([]dcql.DisclosureSelection{{
+	prepared, err := prepareSigned(h, []dcql.DisclosureSelection{{
 		QueryId:              "q1",
 		CredentialHash:       "hash-vcdm-badge",
 		ClaimPaths:           [][]any{idPath},
@@ -784,8 +834,8 @@ func TestVcdmClaimImage_CachedOpenBadgesImageOnlyItsIdRequested(t *testing.T) {
 func TestVcdmDocumentDisplay_DisclosureScreenAndLog(t *testing.T) {
 	ts := sdjwt_dcqltest.NewTestStorage(t)
 	store := db.NewVcdmStore(ts.Db())
-	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
-	h := New(ts, store, keyBinder, clientmodels.NewCurrentLocale("en"), nil)
+	holderKeys := &softwareHolderKeys{keys: map[string]*ecdsa.PrivateKey{}}
+	h := New(ts, store, holderKeys, nil, clientmodels.NewCurrentLocale("en"), nil)
 
 	payload := academicPayload(t)
 	payload["name"] = "Alumni card"
@@ -798,7 +848,7 @@ func TestVcdmDocumentDisplay_DisclosureScreenAndLog(t *testing.T) {
 	batch := newTestBatch("hash-vcdm-display", academicVcdmType, payload)
 	batch.IssuerDisplay = datatypes.JSON(`[{"name": "Metadata Issuer", "locale": "en", "logo": {"uri": "https://metadata.example/issuer.png"}}]`)
 	batch.CredentialMetadata = datatypes.JSON(`{"display": [{"name": "Metadata Card", "locale": "en", "logo": {"uri": "https://metadata.example/card.png"}}]}`)
-	raw, _ := issueHolderBoundAcademicCredential(t, keyBinder)
+	raw, _ := issueHolderBoundAcademicCredential(t, holderKeys)
 	batch.Instances[0].RawCredential = []byte(raw)
 	require.NoError(t, store.StoreBatch(batch))
 
@@ -840,7 +890,7 @@ func TestVcdmDocumentDisplay_DisclosureScreenAndLog(t *testing.T) {
 	requireLogo(c.Image, "document card")
 	requireLogo(c.Issuer.Image, "document issuer")
 
-	prepared, err := h.PrepareDisclosure(givenNameSelection("hash-vcdm-display"), "nonce-1", "verifier-1")
+	prepared, err := prepareSigned(h, givenNameSelection("hash-vcdm-display"), "nonce-1", "verifier-1")
 	require.NoError(t, err)
 	require.Len(t, prepared.CredentialLogs, 1)
 	log := prepared.CredentialLogs[0]

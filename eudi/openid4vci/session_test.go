@@ -1,6 +1,7 @@
 package openid4vci
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -30,6 +31,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
+	"github.com/privacybydesign/irmago/walletprovider"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 )
@@ -1344,7 +1346,7 @@ type recordingKeyBinder struct {
 	removed []datatypes.UUID
 }
 
-func (b *recordingKeyBinder) CreateKeyPairsWithProofs(num uint, _ proofs.ProofBuilder) ([]models.PublicHolderBindingKey, []string, error) {
+func (b *recordingKeyBinder) CreateKeyPairsWithProofs(_ context.Context, num uint, _ proofs.ProofBuilder, _ *services.KeyAttestationOptions) ([]models.PublicHolderBindingKey, []string, error) {
 	keys := make([]models.PublicHolderBindingKey, num)
 	proofsOut := make([]string, num)
 	for i := range keys {
@@ -1353,6 +1355,10 @@ func (b *recordingKeyBinder) CreateKeyPairsWithProofs(num uint, _ proofs.ProofBu
 		proofsOut[i] = "proof"
 	}
 	return keys, proofsOut, nil
+}
+
+func (b *recordingKeyBinder) KeyProtection(context.Context) (walletprovider.KeyProtection, bool) {
+	return walletprovider.KeyProtection{}, false
 }
 
 func (b *recordingKeyBinder) RemoveKeys(ids []datatypes.UUID) error {

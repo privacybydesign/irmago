@@ -79,6 +79,25 @@ func (i *TestClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifie
 		i.T.Fatal(err)
 	}
 }
+func (i *TestClientHandler) WalletUnitActivated() {}
+
+func (i *TestClientHandler) ChangePinRecoveryRequired() {
+	err := errors.New("pin change recovery required")
+	select {
+	case i.C <- err: //nop
+	default:
+		i.T.Fatal(err)
+	}
+}
+
+func (i *TestClientHandler) WalletUnitActivationPending(err error) {
+	select {
+	case i.C <- err: //nop
+	default:
+		i.T.Fatal(err)
+	}
+}
+
 func (i *TestClientHandler) ReportError(err error) {
 	select {
 	case i.C <- err: //nop

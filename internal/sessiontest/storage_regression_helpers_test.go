@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/holdersigning"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -152,7 +153,7 @@ func requireStoredMdocDeviceKeysSign(t *testing.T, version string, want, spent i
 	require.NoError(t, eudiStorage.Db().Where("mdoc_batch_id = ?", batch.ID).Find(&instances).Error)
 	require.Len(t, instances, want)
 
-	binder := services.NewMdocDeviceKeyBinder(db.NewMdocDeviceKeyStore(eudiStorage.Db()))
+	resolver := services.NewMdocDeviceKeyResolver(db.NewMdocDeviceKeyStore(eudiStorage.Db()))
 	verifier := stdmdoc.NewVerifierWithClock([]*x509.Certificate{eudiPidIssuerPyCACert(t)},
 		batch.ValidFrom.Add(batch.ValidUntil.Sub(batch.ValidFrom)/2))
 	transcript := stdmdoc.SessionTranscript{Handover: []any{"storage regression", version}}
@@ -166,9 +167,13 @@ func requireStoredMdocDeviceKeysSign(t *testing.T, version string, want, spent i
 		require.NoError(t, stdmdoc.Unmarshal(instance.IssuerSigned, &doc))
 		deviceKey, err := stdmdoc.DeviceKeyFromIssuerAuth(doc.IssuerSigned.IssuerAuth)
 		require.NoError(t, err)
-		signer, err := binder.SignerForDeviceKey(deviceKey)
+		key, err := resolver.ResolveDeviceKey(deviceKey)
 		require.NoError(t, err, "instance %s: no stored device key for its MSO", instance.ID)
-		deviceAuth, err := signer.SignDeviceAuth(batch.DocType, transcript)
+		toBeSigned, finish, err := stdmdoc.PrepareDeviceAuth(deviceKey, batch.DocType, transcript)
+		require.NoError(t, err)
+		sig, err := holdersigning.SignSoftware(key, toBeSigned)
+		require.NoError(t, err, "instance %s: stored device key is not a software key", instance.ID)
+		deviceAuth, err := finish(sig)
 		require.NoError(t, err)
 		presented, err := stdmdoc.AttachDeviceSigned(&doc, deviceAuth)
 		require.NoError(t, err)

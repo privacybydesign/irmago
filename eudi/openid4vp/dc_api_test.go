@@ -1,6 +1,7 @@
 package openid4vp
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -71,14 +72,17 @@ func (h *mockDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 	}, nil
 }
 
-func (h *mockDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
+func (h *mockDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PendingDisclosure, error) {
 	h.preparedForAudience = audience
 	h.preparedForNonce = nonce
-	return &dcql.PreparedDisclosure{
+	prepared := &dcql.PreparedDisclosure{
 		QueryResponses: []dcql.QueryResponse{{
 			QueryId:     selections[0].QueryId,
 			Credentials: []string{"presented~sd~jwt"},
 		}},
+	}
+	return &dcql.PendingDisclosure{
+		Complete: func([][]byte) (*dcql.PreparedDisclosure, error) { return prepared, nil },
 	}, nil
 }
 
@@ -195,7 +199,7 @@ func signedAuthRequest(expectedOrigins []string) *AuthorizationRequest {
 // ========================================================================
 
 func TestParseDcApiRequest_Unsigned_Succeeds(t *testing.T) {
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil, nil)}
 
 	request, requestor, err := client.parseDcApiRequest(&DcApiRequest{
 		Protocol: DcApiProtocolUnsigned,
@@ -217,7 +221,7 @@ func TestParseDcApiRequest_Unsigned_Succeeds(t *testing.T) {
 // must not be able to name the verifier: a caller that picks its own display
 // name could hide a phishing origin behind a trusted one.
 func TestParseDcApiRequest_Unsigned_IgnoresClientName(t *testing.T) {
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil, nil)}
 
 	_, requestor, err := client.parseDcApiRequest(&DcApiRequest{
 		Protocol: DcApiProtocolUnsigned,
@@ -235,7 +239,7 @@ func TestParseDcApiRequest_Unsigned_IgnoresClientName(t *testing.T) {
 // client_metadata itself must survive, because the jwks it carries is what a
 // dc_api.jwt response is encrypted to.
 func TestParseDcApiRequest_Unsigned_KeepsClientMetadata(t *testing.T) {
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil, nil)}
 
 	request, _, err := client.parseDcApiRequest(&DcApiRequest{
 		Protocol: DcApiProtocolUnsigned,
@@ -253,7 +257,7 @@ func TestParseDcApiRequest_Unsigned_KeepsClientMetadata(t *testing.T) {
 // Appendix A.2: the wallet MUST ignore client_id and expected_origins in an
 // unsigned request, because the verifier authenticated neither.
 func TestParseDcApiRequest_Unsigned_IgnoresClientIdAndExpectedOrigins(t *testing.T) {
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil, nil)}
 
 	request, _, err := client.parseDcApiRequest(&DcApiRequest{
 		Protocol: DcApiProtocolUnsigned,
@@ -272,7 +276,7 @@ func TestParseDcApiRequest_Unsigned_IgnoresClientIdAndExpectedOrigins(t *testing
 // response_uri and redirect_uri are not supported over the DC API, so they must
 // never survive parsing into the code that transmits the response.
 func TestParseDcApiRequest_Unsigned_ClearsResponseAndRedirectUri(t *testing.T) {
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil, nil)}
 
 	request, _, err := client.parseDcApiRequest(&DcApiRequest{
 		Protocol: DcApiProtocolUnsigned,
@@ -331,7 +335,7 @@ func TestParseDcApiRequest_Unsigned_Rejects(t *testing.T) {
 		},
 	}
 
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil, nil)}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -388,7 +392,7 @@ func TestParseDcApiRequest_RejectsMalformedEnvelope(t *testing.T) {
 		},
 	}
 
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil, nil)}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -400,7 +404,7 @@ func TestParseDcApiRequest_RejectsMalformedEnvelope(t *testing.T) {
 
 func TestParseDcApiRequest_Signed_Succeeds(t *testing.T) {
 	client := &Client{
-		dcqlHandler:       dcql.NewDcqlHandler(nil),
+		dcqlHandler:       dcql.NewDcqlHandler(nil, nil),
 		verifierValidator: &mockVerifierValidator{request: signedAuthRequest([]string{testOrigin})},
 	}
 
@@ -419,7 +423,7 @@ func TestParseDcApiRequest_Signed_Succeeds(t *testing.T) {
 // reported is not among the signed expected_origins, to detect request replay.
 func TestParseDcApiRequest_Signed_RejectsOriginMismatch(t *testing.T) {
 	client := &Client{
-		dcqlHandler:       dcql.NewDcqlHandler(nil),
+		dcqlHandler:       dcql.NewDcqlHandler(nil, nil),
 		verifierValidator: &mockVerifierValidator{request: signedAuthRequest([]string{"https://other.example.com"})},
 	}
 
@@ -434,7 +438,7 @@ func TestParseDcApiRequest_Signed_RejectsOriginMismatch(t *testing.T) {
 
 func TestParseDcApiRequest_Signed_RejectsMissingExpectedOrigins(t *testing.T) {
 	client := &Client{
-		dcqlHandler:       dcql.NewDcqlHandler(nil),
+		dcqlHandler:       dcql.NewDcqlHandler(nil, nil),
 		verifierValidator: &mockVerifierValidator{request: signedAuthRequest(nil)},
 	}
 
@@ -449,7 +453,7 @@ func TestParseDcApiRequest_Signed_RejectsMissingExpectedOrigins(t *testing.T) {
 
 func TestParseDcApiRequest_Signed_ReportsVerificationFailure(t *testing.T) {
 	client := &Client{
-		dcqlHandler:       dcql.NewDcqlHandler(nil),
+		dcqlHandler:       dcql.NewDcqlHandler(nil, nil),
 		verifierValidator: &mockVerifierValidator{err: fmt.Errorf("bad signature")},
 	}
 
@@ -618,7 +622,7 @@ func testEncryptionKeys(t *testing.T) (jwk.Key, jwk.Set) {
 
 func TestNewDcApiSession_ReturnsResponseThroughThePlatform(t *testing.T) {
 	dcqlHandler := &mockDcqlHandler{}
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{dcqlHandler})}
+	client := &Client{dcqlHandler: dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{dcqlHandler}, nil)}
 
 	handler := &testHandler{
 		failureCh: make(chan *clientmodels.SessionError, 1),
@@ -630,7 +634,7 @@ func TestNewDcApiSession_ReturnsResponseThroughThePlatform(t *testing.T) {
 		}},
 	}
 
-	client.NewDcApiSession(&DcApiRequest{
+	client.NewDcApiSession(context.Background(), &DcApiRequest{
 		Protocol: DcApiProtocolUnsigned,
 		Origin:   testOrigin,
 		Data:     unsignedRequestData(t, nil),
@@ -662,7 +666,7 @@ func TestNewDcApiSession_ReturnsResponseThroughThePlatform(t *testing.T) {
 func TestNewDcApiSession_SignedRequestStillBindsToTheOrigin(t *testing.T) {
 	dcqlHandler := &mockDcqlHandler{}
 	client := &Client{
-		dcqlHandler:       dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{dcqlHandler}),
+		dcqlHandler:       dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{dcqlHandler}, nil),
 		verifierValidator: &mockVerifierValidator{request: signedAuthRequest([]string{testOrigin})},
 	}
 
@@ -675,7 +679,7 @@ func TestNewDcApiSession_SignedRequestStillBindsToTheOrigin(t *testing.T) {
 		}},
 	}
 
-	client.NewDcApiSession(&DcApiRequest{
+	client.NewDcApiSession(context.Background(), &DcApiRequest{
 		Protocol: DcApiProtocolSigned,
 		Origin:   testOrigin,
 		Data:     signedRequestData(t),
@@ -697,7 +701,7 @@ func TestNewDcApiSession_SignedRequestStillBindsToTheOrigin(t *testing.T) {
 // Whether the dismissal arrives before or after the permission window opens, the
 // session ends up cancelled exactly once.
 func TestNewDcApiSession_DismisserIsBoundToItsOwnSession(t *testing.T) {
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{&mockDcqlHandler{}})}
+	client := &Client{dcqlHandler: dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{&mockDcqlHandler{}}, nil)}
 
 	// grant stays nil: the session parks awaiting the answer the dismissal delivers.
 	handler := &testHandler{
@@ -705,7 +709,7 @@ func TestNewDcApiSession_DismisserIsBoundToItsOwnSession(t *testing.T) {
 		cancelledCh: make(chan struct{}, 1),
 	}
 
-	dismisser := client.NewDcApiSession(&DcApiRequest{
+	dismisser := client.NewDcApiSession(context.Background(), &DcApiRequest{
 		Protocol: DcApiProtocolUnsigned,
 		Origin:   testOrigin,
 		Data:     unsignedRequestData(t, nil),
@@ -726,7 +730,7 @@ func TestNewDcApiSession_ReportsFailureForAnInvalidRequest(t *testing.T) {
 	client := newTestClient()
 	handler := &testHandler{failureCh: make(chan *clientmodels.SessionError, 1)}
 
-	client.NewDcApiSession(&DcApiRequest{
+	client.NewDcApiSession(context.Background(), &DcApiRequest{
 		Protocol: DcApiProtocolUnsigned,
 		Origin:   testOrigin,
 		Data:     unsignedRequestData(t, map[string]any{"response_mode": "direct_post"}),
@@ -762,7 +766,7 @@ func TestNewSession_RejectsDcApiResponseModeFromARequestUri(t *testing.T) {
 			// tests above use, so the session would run all the way to a response if
 			// the response mode were not rejected.
 			client := &Client{
-				dcqlHandler:       dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{&mockDcqlHandler{}}),
+				dcqlHandler:       dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{&mockDcqlHandler{}}, nil),
 				verifierValidator: &mockVerifierValidator{request: request},
 			}
 			handler := &testHandler{
@@ -775,7 +779,7 @@ func TestNewSession_RejectsDcApiResponseModeFromARequestUri(t *testing.T) {
 				}},
 			}
 
-			client.NewSession(fmt.Sprintf("openid4vp://?request_uri=%s", server.URL), handler)
+			client.NewSession(context.Background(), fmt.Sprintf("openid4vp://?request_uri=%s", server.URL), handler)
 
 			err := awaitOn(t, handler.failureCh, "a failure callback")
 			require.Contains(t, err.WrappedError, fmt.Sprintf("response_mode %s is only valid for a session started over the digital credentials api", mode))
@@ -808,7 +812,7 @@ func TestParseDcApiRequest_Unsigned_DisplayNameDistinguishesOrigins(t *testing.T
 
 	for _, test := range tests {
 		t.Run(test.origin, func(t *testing.T) {
-			client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+			client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil, nil)}
 
 			_, requestor, err := client.parseDcApiRequest(&DcApiRequest{
 				Protocol: DcApiProtocolUnsigned,
