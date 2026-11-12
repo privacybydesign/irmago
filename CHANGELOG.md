@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Internal
 - Status checks run CodeQL (security-extended queries) on the Go code and the workflow files, through the organisation's shared workflow, and the weekly run re-analyses with the latest queries
 
+### Security
+- Sanitize user-controlled strings before writing them to log entries to prevent log injection, including serialized session and revocation requests, request bodies and HTTP header values
+- Record only which HTTP headers were present in request logs (allowlisted headers as `<present>`, all others as `[redacted]`) without ever logging a header value, preventing credentials and PII from leaking into logs
+- Fix email header injection by neutralizing CR/LF in recipient addresses written to the SMTP `To:` header and using the parsed addresses as the SMTP envelope recipients
+- Reject issuer identifiers that would escape the private key ring folder, preventing path traversal through the credential type in a session or revocation request
+
 ## [1.5.0] - 2026-11-03
 ### Added
 - SD-JWT-secured W3C VCDM 2.0 credentials (VC-JOSE-COSE §3.2), under the `vc+sd-jwt` format id and JWS `typ`. `dc+sd-jwt` stays IETF SD-JWT VC only: a VCDM credential or configuration under it is refused.

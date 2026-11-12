@@ -556,7 +556,7 @@ func (s *Server) revoke(w http.ResponseWriter, requestor string, request *irma.R
 	allowed, reason := s.conf.CanRevoke(requestor, request.CredentialType)
 	if !allowed {
 		s.conf.Logger.WithFields(logrus.Fields{"requestor": common.SanitizeForLog(requestor), "message": common.SanitizeForLog(reason)}).
-			Warn("Requestor not authorized to revoke credential; full request: ", server.ToJson(request))
+			Warn("Requestor not authorized to revoke credential; full request: ", common.SanitizeForLog(server.ToJson(request)))
 		server.WriteError(w, server.ErrorUnauthorized, reason)
 		return
 	}
