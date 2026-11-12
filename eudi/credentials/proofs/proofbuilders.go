@@ -49,12 +49,10 @@ type JwtProofBuilder struct {
 	keyAttester KeyAttester
 }
 
-// KeyAttester returns a key attestation JWT for the key a proof is signed with,
-// or "" when it has none.
+// KeyAttester returns a key attestation JWT for key, or "" when it has none.
 type KeyAttester func(key *ecdsa.PublicKey) (string, error)
 
-// WithKeyAttestation puts the key attestation attester returns in the
-// key_attestation header of every proof (OpenID4VCI Appendix D.1).
+// WithKeyAttestation sets the key_attestation proof header (OpenID4VCI Appendix D.1).
 func (b *JwtProofBuilder) WithKeyAttestation(attester KeyAttester) *JwtProofBuilder {
 	b.keyAttester = attester
 	return b

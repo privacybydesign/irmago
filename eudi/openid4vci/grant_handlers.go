@@ -24,6 +24,14 @@ const maxTxCodeAttempts = 3
 
 const YiviClientId = "yivi-wallet"
 
+// clientID is YiviClientId, or the attestation's sub when the wallet has an attester.
+func (s *session) clientID() string {
+	if s.attestation != nil {
+		return s.attestation.client.ClientID
+	}
+	return YiviClientId
+}
+
 type GrantHandler interface {
 	HandleGrant(s *session) (AccessTokenResponse, error)
 }
@@ -68,8 +76,6 @@ func (r *authTokenResponse) GetRefreshToken() *string {
 type AuthorizationCodeFlowHandler struct {
 	httpClient *http.Client
 
-	// attestation, when set, authenticates PAR with a client attestation for
-	// the authorization server asIssuer.
 	attestation *sessionAttestation
 	asIssuer    string
 }
@@ -127,7 +133,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	// Entra: '65d1d280-0f23-4763-bf41-ea4c17cde792'
 	// Auth0: 'FiEH7ZmdnrDphzAjvdk9scynlm0A1XV9',
 	// Keycloak: 'eudiw'
-	//clientId := "eudiw" // TODO: replace with Client Attestation once we have that, and fetch the client_id from the AS metadata instead of hardcoding it here
+	//clientId := "eudiw" // TODO: fetch the client_id from the AS metadata instead of hardcoding YiviClientId
 	clientId := s.clientID()
 
 	// Build the authorization request parameters
@@ -486,8 +492,6 @@ func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, grant *PreAuth
 	return s.sendTokenRequest(s.httpClient, values)
 }
 
-// sendTokenRequest posts values to the token endpoint. When the session presents
-// a wallet attestation, the request carries it and a DPoP proof of its key.
 func (s *session) sendTokenRequest(httpClient *http.Client, values url.Values) (AccessTokenResponse, error) {
 	asMetadata := s.issuerSettings.authorizationServerMetadata
 	newReq := func() (*http.Request, error) {
@@ -532,8 +536,7 @@ func (s *session) sendTokenRequest(httpClient *http.Client, values url.Values) (
 	return token, nil
 }
 
-// handleTokenResponse parses a token response. dpop says the request carried a
-// DPoP proof, so a DPoP-bound token is acceptable.
+// dpop allows a DPoP-bound token type.
 func handleTokenResponse(response *http.Response, dpop bool) (*authTokenResponse, error) {
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {

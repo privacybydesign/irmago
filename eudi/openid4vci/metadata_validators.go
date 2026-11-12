@@ -22,8 +22,6 @@ type CredentialIssuerMetadataValidator struct {
 	allowInsecureHttp bool
 }
 type CredentialConfigurationValidator struct {
-	// keyAttestations is set when the wallet can attest its keys, so issuers
-	// that require key attestations are supported.
 	keyAttestations bool
 }
 type CredentialMetadataValidator struct{}

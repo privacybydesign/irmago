@@ -32,59 +32,43 @@ const (
 	useDPoPNonceError          = "use_dpop_nonce"
 )
 
-// WalletAttester supplies the wallet (unit) attestation a wallet presents to a
-// Credential Issuer: a client attestation for OAuth 2.0 Attestation-Based Client
-// Authentication at PAR and token, and key attestations for the `jwt` proofs.
-// A client without one sends neither, uses no DPoP, and keeps rejecting issuers
-// that require key attestations.
+// WalletAttester supplies the client attestation (PAR and token) and the key
+// attestations (`jwt` proofs) a wallet presents to a Credential Issuer.
 type WalletAttester interface {
-	// ClientAttestation returns a fresh client attestation for one issuance
-	// session with credentialIssuer. It is used for that session only. A nil
-	// attestation runs the session as if the client had no attester.
+	// ClientAttestation is used for one session; nil runs it without attestation.
 	ClientAttestation(credentialIssuer string) (*ClientAttestation, error)
 
-	// KeyAttestation returns a key attestation JWT attesting key, for the
-	// key_attestation header of the proof that key signs. An empty string means
-	// the key cannot be attested and the proof goes without.
+	// KeyAttestation returns "" when key cannot be attested.
 	KeyAttestation(credentialIssuer string, key *ecdsa.PublicKey, nonce *string) (string, error)
 }
 
-// ClientAttestation is a client attestation JWT plus access to its `cnf` key,
-// which signs the attestation PoP and the DPoP proofs. The key can live outside
-// this process.
+// ClientAttestation is a client attestation JWT and its `cnf` key, which signs
+// the attestation PoP and DPoP proofs.
 type ClientAttestation struct {
-	// JWT is the oauth-client-attestation+jwt.
 	JWT string
-	// ClientID is the attestation's `sub`, sent as client_id.
+	// ClientID is the attestation's `sub`.
 	ClientID string
-	// Key is the public `cnf` key of the attestation.
-	Key *ecdsa.PublicKey
-	// Sign signs with the private half of Key.
+	Key      *ecdsa.PublicKey
+	// Sign signs with Key's private half, which can live outside this process.
 	Sign proofs.ES256SignFunc
 }
 
-// SetWalletAttester makes every following session present wallet attestations.
-// Sessions snapshot it when they start.
+// SetWalletAttester applies to sessions started after it.
 func (client *Client) SetWalletAttester(attester WalletAttester) {
 	client.walletAttester = attester
 }
 
-// sessionAttestation is the attestation state of one session.
 type sessionAttestation struct {
 	attester         WalletAttester
 	client           *ClientAttestation
 	credentialIssuer string
 
-	// dpopBoundToken is set when the access token is DPoP-bound, so resource
-	// requests send it as a DPoP token with a proof.
 	dpopBoundToken bool
 
 	mu         sync.Mutex
 	dpopNonces map[string]string // endpoint -> last DPoP-Nonce it sent
 }
 
-// newSessionAttestation returns nil when the attester has no attestation for
-// this session.
 func newSessionAttestation(attester WalletAttester, credentialIssuer string) (*sessionAttestation, error) {
 	ca, err := attester.ClientAttestation(credentialIssuer)
 	if err != nil {
@@ -104,16 +88,7 @@ func newSessionAttestation(attester WalletAttester, credentialIssuer string) (*s
 	}, nil
 }
 
-// clientID is the client_id the session authenticates as.
-func (s *session) clientID() string {
-	if s.attestation != nil {
-		return s.attestation.client.ClientID
-	}
-	return YiviClientId
-}
-
-// addClientAttestation sets the client attestation and a fresh PoP for audience
-// (the authorization server's issuer identifier).
+// audience is the authorization server's issuer identifier.
 func (a *sessionAttestation) addClientAttestation(req *http.Request, audience string) error {
 	pop, err := a.signJWT(clientAttestationPoPTyp, nil, map[string]any{
 		"iss": a.client.ClientID,
@@ -129,7 +104,6 @@ func (a *sessionAttestation) addClientAttestation(req *http.Request, audience st
 	return nil
 }
 
-// addDPoP sets a DPoP proof for req, bound to accessToken when not empty.
 func (a *sessionAttestation) addDPoP(req *http.Request, accessToken string) error {
 	htu := dpopHTU(req.URL)
 	claims := map[string]any{
@@ -163,8 +137,6 @@ func (a *sessionAttestation) dpopNonce(htu string) string {
 	return a.dpopNonces[htu]
 }
 
-// rememberDPoPNonce keeps the DPoP-Nonce resp carries, and reports whether it
-// sent one.
 func (a *sessionAttestation) rememberDPoPNonce(req *http.Request, resp *http.Response) bool {
 	nonce := resp.Header.Get(dpopNonceHeader)
 	if nonce == "" {
@@ -195,16 +167,13 @@ func (a *sessionAttestation) signJWT(typ string, extraHeader, claims map[string]
 	return input + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
-// keyAttester returns the key attestation hook for the session's proofs.
 func (a *sessionAttestation) keyAttester(nonce *string) func(*ecdsa.PublicKey) (string, error) {
 	return func(key *ecdsa.PublicKey) (string, error) {
 		return a.attester.KeyAttestation(a.credentialIssuer, key, nonce)
 	}
 }
 
-// postWithDPoPRetry sends the request newReq builds and, when the server asks
-// for a DPoP nonce it did not get yet, sends a rebuilt request once more. The
-// returned body is already read.
+// postWithDPoPRetry retries once when the server asks for a DPoP nonce.
 func (a *sessionAttestation) postWithDPoPRetry(httpClient *http.Client, newReq func() (*http.Request, error)) (*http.Response, []byte, error) {
 	for attempt := 0; ; attempt++ {
 		req, err := newReq()
@@ -229,9 +198,7 @@ func (a *sessionAttestation) postWithDPoPRetry(httpClient *http.Client, newReq f
 	}
 }
 
-// asksForDPoPNonce reports a use_dpop_nonce error: in the JSON body of an
-// authorization server response, or in the WWW-Authenticate challenge of a
-// resource server response (RFC 9449 §8 and §9).
+// RFC 9449 §8 (JSON body) and §9 (WWW-Authenticate).
 func asksForDPoPNonce(resp *http.Response, body []byte) bool {
 	switch resp.StatusCode {
 	case http.StatusBadRequest:
@@ -255,7 +222,7 @@ func asksForDPoPNonce(resp *http.Response, body []byte) bool {
 	return false
 }
 
-// dpopHTU is the request URI without query and fragment (RFC 9449 §4.2).
+// RFC 9449 §4.2: without query and fragment.
 func dpopHTU(u *url.URL) string {
 	c := *u
 	c.RawQuery, c.Fragment, c.RawFragment = "", "", ""

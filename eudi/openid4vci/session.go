@@ -71,7 +71,6 @@ type session struct {
 
 	issuerSettings openid4vciSessionIssuerSettings
 
-	// attestation is set when the wallet presents a wallet attestation.
 	attestation *sessionAttestation
 }
 
@@ -802,8 +801,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	obtained := false
 	if requireCryptographicKeyBinding {
 		num := uint(1)
-		// With a wallet attestation, one proof per request: a key attestation
-		// is per key, and WE BUILD CS-05 refuses batches.
+		// Key attestations are per key, and WE BUILD CS-05 refuses batches.
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil && s.attestation == nil {
 			num = batchInstancesToRequest(s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize)
 		}
@@ -1136,8 +1134,6 @@ func requireMandatoryMdocElements(config *metadata.CredentialConfiguration, pars
 	return nil
 }
 
-// sendCredentialRequest posts a credential request. A DPoP-bound access token
-// goes with a DPoP proof, retried once when the issuer asks for a DPoP nonce.
 func (s *session) sendCredentialRequest(body []byte, contentType string, accessToken string) (*http.Response, error) {
 	dpop := s.attestation != nil && s.attestation.dpopBoundToken
 	newReq := func() (*http.Request, error) {
