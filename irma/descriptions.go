@@ -643,7 +643,25 @@ func (ct *CredentialType) attributeTypeIdentifiers(indices []int) (ids []string)
 	return
 }
 
+// RandomBlindAttributeNames returns the identifiers of this credential type's random blind
+// attributes. It reads each attribute's RandomBlind flag directly, so the identifiers are
+// correct regardless of the attribute's position in the credential type.
 func (ct *CredentialType) RandomBlindAttributeNames() []string {
+	names := []string{}
+	for _, at := range ct.AttributeTypes {
+		if at.RandomBlind {
+			names = append(names, at.ID)
+		}
+	}
+	return names
+}
+
+// RandomBlindAttributeNamesLegacy reproduces the pre-2.9 behaviour of RandomBlindAttributeNames:
+// it matched the metadata-offset indices from RandomBlindAttributeIndices against the 0-based
+// AttributeTypes slice, and was therefore off by one (reporting the neighbouring attribute's
+// identifier, or none at all). It is kept only to stay wire-compatible with clients and servers
+// that negotiate a protocol version below 2.9. Remove once support for those versions is dropped.
+func (ct *CredentialType) RandomBlindAttributeNamesLegacy() []string {
 	return ct.attributeTypeIdentifiers(ct.RandomBlindAttributeIndices())
 }
 

@@ -93,13 +93,36 @@ func (session *sessionData) handleGetClientRequest(min, max *irma.ProtocolVersio
 		if err != nil {
 			return nil, session.fail(server.ErrorRevocation, err.Error(), conf)
 		}
+		downgradeRandomBlindNames(request, session.Version, conf)
 		return request, nil
 	}
 	info, err := session.getClientRequest()
 	if err != nil {
 		return nil, session.fail(server.ErrorRevocation, err.Error(), conf)
 	}
+	downgradeRandomBlindNames(info.Request, session.Version, conf)
 	return info, nil
+}
+
+// downgradeRandomBlindNames rewrites the random blind attribute identifiers of an issuance request
+// about to be sent to a client to the historical (legacy, off-by-one) form when the negotiated
+// protocol version is below 2.9. Clients on those versions expect the historical identifiers, so
+// this keeps their pre-session consistency check matching. It must be given a request that is safe
+// to mutate (getRequest returns a copy), so the corrected identifiers on the stored request are
+// left intact for server-side logging. See irma.CredentialType.RandomBlindAttributeNames[Legacy].
+func downgradeRandomBlindNames(request irma.SessionRequest, version *irma.ProtocolVersion, conf *server.Configuration) {
+	if version == nil || !version.Below(2, 9) {
+		return
+	}
+	issuanceRequest, ok := request.(*irma.IssuanceRequest)
+	if !ok {
+		return
+	}
+	for _, cred := range issuanceRequest.Credentials {
+		if credtype := conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID]; credtype != nil {
+			cred.RandomBlindAttributeTypeIDs = credtype.RandomBlindAttributeNamesLegacy()
+		}
+	}
 }
 
 func (session *sessionData) handleGetStatus() (irma.ServerStatus, *irma.RemoteError) {
@@ -464,6 +487,7 @@ func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		rerr = session.fail(server.ErrorRevocation, err.Error(), s.conf)
 	}
+	downgradeRandomBlindNames(request, session.Version, s.conf)
 
 	server.WriteResponse(w, request, rerr)
 }
