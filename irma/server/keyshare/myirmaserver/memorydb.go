@@ -171,6 +171,9 @@ func (db *memoryDB) addEmail(_ context.Context, id int64, email string) error {
 	defer db.Unlock()
 	for username, user := range db.userData {
 		if user.id == id {
+			if slices.Contains(user.email, email) {
+				return nil
+			}
 			user.email = append(user.email, email)
 			db.userData[username] = user
 			return nil
