@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -177,9 +178,7 @@ func (a *sessionAttestation) rememberDPoPNonce(req *http.Request, resp *http.Res
 
 func (a *sessionAttestation) signJWT(typ string, extraHeader, claims map[string]any) (string, error) {
 	header := map[string]any{"alg": "ES256", "typ": typ}
-	for k, v := range extraHeader {
-		header[k] = v
-	}
+	maps.Copy(header, extraHeader)
 	hdr, err := json.Marshal(header)
 	if err != nil {
 		return "", err
