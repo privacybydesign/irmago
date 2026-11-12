@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.6.0] - 2026-11-11
 ### Added
 - Usage reports carry, per row, the `host` the Yivi app connected to: the host a session request asked for, or else the host of the server's URL. The Yivi Portal can thus tell per hostname whether a Trusted Verifier's usage is reported, also when one server runs sessions under the hostnames of several Trusted Verifiers. The field is optional and the report schema stays 1, so a Portal that does not know it ignores it.
 - A release carries a `SHA256SUMS` file for its `yivi` binaries, and a signed build provenance attestation per binary. Check a download with `sha256sum --check --ignore-missing SHA256SUMS` and `gh attestation verify <binary> --repo privacybydesign/irmago`.
@@ -16,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The error for a private key whose filename has a different counter than the key itself now shows that counter instead of a memory address
 - Usage reporting now sends its reports to `https://api.yivi.app/usage/v1/directory` by default. The default in 1.5.0, `https://portal.yivi.app/usage/v1/directory`, serves the Portal's web app instead of its API, so a server on 1.5.0 that does not set `--usage-reporting-portal-url` never delivers a report.
 ### Security
+- Go is updated to 1.27.4 (`go.mod` and the Docker images), which fixes "HTTP/1 server crash due to MaxBytesReader header race in net/http" ([GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859))
 - The wallet only encrypts with JWE algorithms on an explicit allow-list, in OpenID4VP authorization responses (`direct_post.jwt`, `dc_api.jwt`) and OpenID4VCI credential requests. Key management: `ECDH-ES`, `ECDH-ES+A128KW`/`A192KW`/`A256KW` and `RSA-OAEP-256`/`384`/`512`; a verifier or issuer key with any other `alg`, such as `RSA1_5`, `RSA-OAEP` (SHA-1), a symmetric or password-based algorithm or HPKE, is skipped. Content encryption: the AES-GCM and AES-CBC-HMAC algorithms of RFC 7518. Previously any algorithm jwx implements was used.
 - An encrypted OpenID4VCI credential request is now encrypted with the content encryption algorithm chosen from the issuer's `enc_values_supported`. It was chosen but not passed on, so jwx's default was used.
 - The EUDI SQLCipher database pins its encryption parameters (`cipher_compatibility = 4`: 4096-byte pages, HMAC-SHA512, PBKDF2-HMAC-SHA512) instead of relying on the defaults of the linked SQLCipher. These are SQLCipher 4's defaults, so existing databases open unchanged. An encrypted database is no longer opened when the linked library is plain SQLite, which ignores the key and would store the database unencrypted, or SQLCipher 3, which ignores the pinned parameters.
@@ -987,7 +990,8 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
-[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/privacybydesign/irmago/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/privacybydesign/irmago/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/privacybydesign/irmago/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/privacybydesign/irmago/compare/v1.4.1...v1.4.2
