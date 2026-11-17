@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Update Go dependencies to their latest releases, among them `github.com/lestrrat-go/jwx/v4` 4.4.0 → 4.6.0, `github.com/go-chi/chi/v5` 5.3.0 → 5.5.0, `github.com/sirupsen/logrus` 1.9.4 → 1.10.2, `go.etcd.io/bbolt` 1.4.3 → 1.5.0 and `golang.org/x/crypto` 0.55.0 → 0.57.0
 
 ## [1.6.0] - 2026-11-11
 ### Added
