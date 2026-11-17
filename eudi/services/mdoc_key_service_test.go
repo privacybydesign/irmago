@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -38,9 +39,9 @@ func TestMdocKeyService_StoresThumbprintForEveryBindingMethod(t *testing.T) {
 		t.Run(string(method), func(t *testing.T) {
 			d := newTestHolderDB(t)
 			keys := db.NewMdocDeviceKeyStore(d)
-			svc := NewMdocKeyService(keys)
+			svc := NewMdocKeyService(keys, nil)
 
-			identifiers, proofStrings, err := svc.CreateKeyPairsWithProofs(3, testProofBuilder(method))
+			identifiers, proofStrings, err := svc.CreateKeyPairsWithProofs(context.Background(), 3, testProofBuilder(method), nil)
 			require.NoError(t, err)
 			require.Len(t, identifiers, 3)
 			require.Len(t, proofStrings, 3)
@@ -64,9 +65,9 @@ func TestMdocKeyService_StoresThumbprintForEveryBindingMethod(t *testing.T) {
 func TestMdocKeyService_RemoveKeys(t *testing.T) {
 	d := newTestHolderDB(t)
 	keys := db.NewMdocDeviceKeyStore(d)
-	svc := NewMdocKeyService(keys)
+	svc := NewMdocKeyService(keys, nil)
 
-	identifiers, _, err := svc.CreateKeyPairsWithProofs(2, testProofBuilder(proofs.CryptographicBindingMethod_JWK))
+	identifiers, _, err := svc.CreateKeyPairsWithProofs(context.Background(), 2, testProofBuilder(proofs.CryptographicBindingMethod_JWK), nil)
 	require.NoError(t, err)
 
 	require.NoError(t, svc.RemoveKeys([]datatypes.UUID{identifiers[0].ID}))

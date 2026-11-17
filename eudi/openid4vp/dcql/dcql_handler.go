@@ -1,9 +1,11 @@
 package dcql
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/holdersigning"
 )
 
 // DcqlHandler orchestrates the handling of a complete DCQL query by delegating
@@ -12,11 +14,14 @@ import (
 // disclosure plan building.
 type DcqlHandler struct {
 	credentialQueryHandlers []DcqlCredentialQueryHandler
+	signer                  holdersigning.Signer
 }
 
 // NewDcqlHandler creates a new DcqlHandler with the given credential query handlers.
-func NewDcqlHandler(handlers []DcqlCredentialQueryHandler) *DcqlHandler {
-	return &DcqlHandler{credentialQueryHandlers: handlers}
+// NewDcqlHandler dispatches to the handlers per format, and signs the holder
+// binding proofs of every disclosure through signer.
+func NewDcqlHandler(handlers []DcqlCredentialQueryHandler, signer holdersigning.Signer) *DcqlHandler {
+	return &DcqlHandler{credentialQueryHandlers: handlers, signer: signer}
 }
 
 // DcqlResult contains the results of processing a full DCQL query.
@@ -135,13 +140,75 @@ func (h *DcqlHandler) BuildDisclosurePlan(
 
 // PrepareDisclosure prepares the selected credentials for the VP token by delegating
 // to the appropriate handlers based on the credential query.
+// PrepareDisclosure prepares every selection with the handler of its format,
+// and makes the holder binding signatures of all of them in one call to the
+// signer. ctx is the disclosure session's, which the signer may need to ask the
+// user something before it signs.
 func (h *DcqlHandler) PrepareDisclosure(
+	ctx context.Context,
 	query DcqlQuery,
 	selections []DisclosureSelection,
 	nonce string,
 	audience string,
 	binding ResponseBinding,
 ) (*PreparedDisclosure, error) {
+	grouped, err := h.groupSelections(query, selections, binding)
+	if err != nil {
+		return nil, err
+	}
+
+	pending := make([]*PendingDisclosure, len(grouped))
+	var requests []holdersigning.Request
+	for i, group := range grouped {
+		pending[i], err = group.handler.PrepareDisclosure(group.selections, nonce, audience)
+		if err != nil {
+			return nil, fmt.Errorf("failed to prepare disclosure: %w", err)
+		}
+		requests = append(requests, pending[i].Signatures...)
+	}
+
+	var signatures [][]byte
+	if len(requests) > 0 {
+		if h.signer == nil {
+			return nil, fmt.Errorf("disclosure needs %d holder binding signatures, but there is no signer", len(requests))
+		}
+		signatures, err = h.signer.Sign(ctx, requests)
+		if err != nil {
+			return nil, fmt.Errorf("failed to sign disclosure: %w", err)
+		}
+		if len(signatures) != len(requests) {
+			return nil, fmt.Errorf("signer made %d signatures, want %d", len(signatures), len(requests))
+		}
+	}
+
+	result := &PreparedDisclosure{}
+	for _, p := range pending {
+		n := len(p.Signatures)
+		prepared, err := p.Complete(signatures[:n])
+		if err != nil {
+			return nil, fmt.Errorf("failed to prepare disclosure: %w", err)
+		}
+		signatures = signatures[n:]
+		result.QueryResponses = append(result.QueryResponses, prepared.QueryResponses...)
+		result.CredentialLogs = append(result.CredentialLogs, prepared.CredentialLogs...)
+	}
+
+	return result, nil
+}
+
+type handlerSelections struct {
+	handler    DcqlCredentialQueryHandler
+	selections []DisclosureSelection
+}
+
+// groupSelections completes each selection with what its credential query and
+// the session say about it, and groups the selections by the handler of their
+// format, in handler order.
+func (h *DcqlHandler) groupSelections(
+	query DcqlQuery,
+	selections []DisclosureSelection,
+	binding ResponseBinding,
+) ([]handlerSelections, error) {
 	// Build a map from queryId -> CredentialQuery
 	queryById := make(map[string]CredentialQuery, len(query.Credentials))
 	for _, cq := range query.Credentials {
@@ -149,8 +216,7 @@ func (h *DcqlHandler) PrepareDisclosure(
 	}
 
 	// Group selections by handler
-	type handlerIndex int
-	selectionsByHandler := make(map[handlerIndex][]DisclosureSelection)
+	selectionsByHandler := make(map[int][]DisclosureSelection)
 	for _, sel := range selections {
 		credQuery, ok := queryById[sel.QueryId]
 		if !ok {
@@ -173,24 +239,18 @@ func (h *DcqlHandler) PrepareDisclosure(
 		// Use the first matching handler
 		for i, handler := range h.credentialQueryHandlers {
 			if handler.CanHandleCredentialQuery(credQuery) {
-				selectionsByHandler[handlerIndex(i)] = append(selectionsByHandler[handlerIndex(i)], sel)
+				selectionsByHandler[i] = append(selectionsByHandler[i], sel)
 				break
 			}
 		}
 	}
 
-	result := &PreparedDisclosure{}
-
-	for idx, sels := range selectionsByHandler {
-		handler := h.credentialQueryHandlers[idx]
-		prepared, err := handler.PrepareDisclosure(sels, nonce, audience)
-		if err != nil {
-			return nil, fmt.Errorf("failed to prepare disclosure: %w", err)
+	var result []handlerSelections
+	for i, handler := range h.credentialQueryHandlers {
+		if sels, ok := selectionsByHandler[i]; ok {
+			result = append(result, handlerSelections{handler: handler, selections: sels})
 		}
-		result.QueryResponses = append(result.QueryResponses, prepared.QueryResponses...)
-		result.CredentialLogs = append(result.CredentialLogs, prepared.CredentialLogs...)
 	}
-
 	return result, nil
 }
 

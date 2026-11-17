@@ -1,7 +1,8 @@
 {
     "version": "3.0",
     "token_endpoint_auth_methods_supported": [
-        "public"
+        "public",
+        "attest_jwt_client_auth"
     ],
     "claims_parameter_supported": true,
     "request_parameter_supported": true,
@@ -85,5 +86,11 @@
     "token_endpoint": "https://localhost:8443/eudi-pid-issuer-py/oidc/token",
     "userinfo_endpoint": "https://localhost:8443/eudi-pid-issuer-py/oidc/userinfo",
     "end_session_endpoint": "https://localhost:8443/eudi-pid-issuer-py/oidc/session",
-    "pushed_authorization_request_endpoint": "https://localhost:8443/eudi-pid-issuer-py/oidc/pushed_authorization"
+    "pushed_authorization_request_endpoint": "https://localhost:8443/eudi-pid-issuer-py/oidc/pushed_authorization",
+    "dpop_signing_alg_values_supported": [
+        "ES256"
+    ],
+    "client_attestation_pop_signing_alg_values_supported": [
+        "ES256"
+    ]
 }

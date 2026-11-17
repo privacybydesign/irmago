@@ -14,6 +14,28 @@ type PublicHolderBindingKey struct {
 	PublicKeyThumbprint *string
 }
 
+// KeyBackend is where a holder key's private half lives (CONTEXT.md, "Key
+// backend").
+type KeyBackend string
+
+const (
+	// KeyBackendSoftware: generated on the device and kept in this database.
+	KeyBackendSoftware KeyBackend = "software"
+	// KeyBackendWalletProvider: in the wallet provider's HSM; this database
+	// keeps only the provider's reference to it.
+	KeyBackendWalletProvider KeyBackend = "wallet-provider"
+)
+
+// providerKeyRef is what a key row with the given backend and private key
+// bytes holds as the wallet provider's reference: its PrivateKey for a
+// provider key, "" for a software key.
+func providerKeyRef(backend KeyBackend, privateKey []byte) string {
+	if backend != KeyBackendWalletProvider {
+		return ""
+	}
+	return string(privateKey)
+}
+
 type KeyAlgorithm string
 
 const (
@@ -45,7 +67,13 @@ type HolderBindingKey struct {
 	PublicKeyThumbprint datatypes.NullString `gorm:"uniqueIndex"`
 	DidUrl              datatypes.NullString `gorm:"uniqueIndex"`
 
-	// Private key bytes, preferably PKCS#8.
+	// KeyBackend says where the private key lives, and so what PrivateKey
+	// holds: PKCS#8 bytes for a software key, the wallet provider's key
+	// reference for a key in its HSM. Fixed when the key is created.
+	KeyBackend KeyBackend `gorm:"type:text;not null;default:'software'"`
+
+	// Private key bytes, preferably PKCS#8, or the wallet provider's reference
+	// to the key; see KeyBackend.
 	PrivateKey []byte `gorm:"type:bytea;not null"`
 
 	// One-to-one algorithm-specific metadata.
@@ -54,6 +82,12 @@ type HolderBindingKey struct {
 
 	// Date/time of creation (UTC)
 	CreatedAt time.Time
+}
+
+// ProviderKeyRef returns the wallet provider's reference to the key, or ""
+// for a software key.
+func (k *HolderBindingKey) ProviderKeyRef() string {
+	return providerKeyRef(k.KeyBackend, k.PrivateKey)
 }
 
 // IsBound reports whether the key is linked to a credential instance of either
@@ -69,6 +103,9 @@ func (k *HolderBindingKey) BeforeCreate(tx *gorm.DB) error {
 	}
 
 	k.CreatedAt = time.Now().UTC()
+	if k.KeyBackend == "" {
+		k.KeyBackend = KeyBackendSoftware
+	}
 	k.NormalizeChildren()
 
 	return k.validate()

@@ -1,14 +1,15 @@
 package services
 
 import (
+	"context"
 	"crypto"
-	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/walletprovider"
 	"gorm.io/datatypes"
 )
 
@@ -24,17 +25,26 @@ import (
 // carried in its kid is not stored; it is not needed to find the key again.
 type MdocKeyService struct {
 	store db.MdocDeviceKeyStore
+
+	// provider plays the same part as on holderBindingKeyService.
+	provider walletprovider.WalletProvider
 }
 
-// NewMdocKeyService returns the storage-backed mdoc device key minter.
-func NewMdocKeyService(store db.MdocDeviceKeyStore) *MdocKeyService {
-	return &MdocKeyService{store: store}
+// NewMdocKeyService returns the storage-backed mdoc device key minter. With a
+// wallet provider (non-nil provider) it mints keys in the provider's HSM,
+// otherwise in software.
+func NewMdocKeyService(store db.MdocDeviceKeyStore, provider walletprovider.WalletProvider) *MdocKeyService {
+	return &MdocKeyService{store: store, provider: provider}
 }
 
 var _ HolderKeyBinder = (*MdocKeyService)(nil)
 
-func (s *MdocKeyService) CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) ([]models.PublicHolderBindingKey, []string, error) {
-	keys, proofStrings, err := generateProofKeys(num, proofBuilder)
+func (s *MdocKeyService) KeyProtection(ctx context.Context) (walletprovider.KeyProtection, bool) {
+	return providerKeyProtection(ctx, s.provider)
+}
+
+func (s *MdocKeyService) CreateKeyPairsWithProofs(ctx context.Context, num uint, proofBuilder proofs.ProofBuilder, attest *KeyAttestationOptions) ([]models.PublicHolderBindingKey, []string, error) {
+	keys, proofStrings, err := mintProofKeys(ctx, s.provider, num, proofBuilder, attest)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -42,9 +52,9 @@ func (s *MdocKeyService) CreateKeyPairsWithProofs(num uint, proofBuilder proofs.
 	stored := make([]models.MdocDeviceKey, len(keys))
 	thumbprints := make([]string, len(keys))
 	for i, key := range keys {
-		privKeyBytes, err := x509.MarshalPKCS8PrivateKey(key.privKey)
+		privKeyBytes, err := key.privateKeyBytes()
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal device key to PKCS#8: %w", err)
+			return nil, nil, fmt.Errorf("failed to encode device key: %w", err)
 		}
 		thumbprintBytes, err := key.jwkPubKey.Thumbprint(crypto.SHA256)
 		if err != nil {
@@ -53,8 +63,9 @@ func (s *MdocKeyService) CreateKeyPairsWithProofs(num uint, proofBuilder proofs.
 		thumbprints[i] = hex.EncodeToString(thumbprintBytes)
 		stored[i] = models.MdocDeviceKey{
 			PublicKeyThumbprint: thumbprints[i],
+			KeyBackend:          key.backend(),
 			PrivateKey:          privKeyBytes,
-			Curve:               key.privKey.Curve.Params().Name,
+			Curve:               key.pub.Curve.Params().Name,
 		}
 	}
 
@@ -72,6 +83,22 @@ func (s *MdocKeyService) CreateKeyPairsWithProofs(num uint, proofBuilder proofs.
 	return identifiers, proofStrings, nil
 }
 
+// RemoveKeys deletes the device keys with the given ids, telling the wallet
+// provider to delete the ones in its HSM; see holderBindingKeyService.RemoveKeys.
 func (s *MdocKeyService) RemoveKeys(ids []datatypes.UUID) error {
-	return s.store.DeleteKeys(ids)
+	keys, err := s.store.GetByIDs(ids)
+	if err != nil {
+		return err
+	}
+	var refs []string
+	for _, key := range keys {
+		if ref := key.ProviderKeyRef(); ref != "" {
+			refs = append(refs, ref)
+		}
+	}
+	providerErr := removeProviderKeys(s.provider, refs)
+	if err := s.store.DeleteKeys(ids); err != nil {
+		return err
+	}
+	return providerErr
 }

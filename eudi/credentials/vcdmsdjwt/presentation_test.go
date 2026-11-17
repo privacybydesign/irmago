@@ -1,6 +1,10 @@
 package vcdmsdjwt
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -9,6 +13,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+	"github.com/privacybydesign/irmago/eudi/holdersigning"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +29,14 @@ func issueHolderBoundSdJwtVcdm(t *testing.T, keyBinder sdjwt.KeyBinder) (sdjwt.S
 	t.Helper()
 	holderKeys, err := keyBinder.CreateKeyPairs(1)
 	require.NoError(t, err)
-	cnf, err := sdjwt.HolderKeyClaim(holderKeys[0])
+	return issueSdJwtVcdmBoundTo(t, holderKeys[0]), holderKeys[0]
+}
+
+// issueSdJwtVcdmBoundTo issues a VCDM credential bound to holderKey, with only
+// given_name disclosed.
+func issueSdJwtVcdmBoundTo(t *testing.T, holderKey jwk.Key) sdjwt.SdJwt {
+	t.Helper()
+	cnf, err := sdjwt.HolderKeyClaim(holderKey)
 	require.NoError(t, err)
 
 	claims := vcdmClaims(t, "2024-01-01T00:00:00Z", "2034-01-01T00:00:00Z")
@@ -38,7 +50,7 @@ func issueHolderBoundSdJwtVcdm(t *testing.T, keyBinder sdjwt.KeyBinder) (sdjwt.S
 
 	selected, err := sdjwt.CreatePresentation(sdjwt.SdJwt(full), [][]any{{vcdm.CredentialSubjectKey, "given_name"}})
 	require.NoError(t, err)
-	return selected, holderKeys[0]
+	return selected
 }
 
 // requireEnvelopes asserts the Verifiable Presentation payload envelopes
@@ -107,4 +119,34 @@ func TestCreateEnvelopedPresentation_HolderBindingWithoutCnfFails(t *testing.T) 
 
 	_, err = CreateEnvelopedPresentation(sdjwt.SdJwt(unbound), keyBinder, presentationNonce, presentationAudience)
 	require.ErrorContains(t, err, "holder key")
+}
+
+// The signing input is signed outside this package, as the wallet does with a
+// holder key it cannot hand over: the signature over it makes the same
+// presentation CreateEnvelopedPresentation does.
+func TestEnvelopedPresentationSigningInput_SignedExternally(t *testing.T) {
+	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	holderKey, err := jwk.Import[jwk.Key](private.Public())
+	require.NoError(t, err)
+	selected := issueSdJwtVcdmBoundTo(t, holderKey)
+
+	const issuedAt = int64(1750000000)
+	input, err := EnvelopedPresentationSigningInput(selected, holderKey, "ES256", presentationNonce, presentationAudience, issuedAt)
+	require.NoError(t, err)
+	signature, err := holdersigning.SignSoftware(holdersigning.Software(private), input)
+	require.NoError(t, err)
+	presentation := string(input) + "." + base64.RawURLEncoding.EncodeToString(signature)
+
+	_, err = jws.Verify([]byte(presentation), jws.WithKey(jwa.ES256(), holderKey))
+	require.NoError(t, err, "presentation must verify with the holder key from cnf")
+
+	header, vp, err := sdjwt.DecodeJwtWithoutCheckingSignature(presentation)
+	require.NoError(t, err)
+	require.Equal(t, PresentationTyp, header["typ"])
+	require.Equal(t, "vp", header["cty"])
+	require.Equal(t, "ES256", header["alg"])
+	require.NotNil(t, header["jwk"])
+	require.EqualValues(t, issuedAt, vp["iat"])
+	requireEnvelopes(t, vp, selected)
 }

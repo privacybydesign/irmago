@@ -1,6 +1,11 @@
 package services
 
 import (
+	"context"
+
+	"github.com/privacybydesign/irmago/walletprovider"
+
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
@@ -17,10 +22,75 @@ import (
 //
 // The returned publicKeyIdentifiers are what the format's store matches each
 // issued credential against to link it to its stored key.
+//
+// ctx is the issuance session's: a binder that has to ask the user something
+// before it can mint keys (a wallet provider's PIN) finds the means to in it.
+//
+// With attest non-nil the keys come with a key attestation (KA) over them, as
+// the issuer requires: carried in every proof's key_attestation header, or,
+// with attest.AsProof, as the one proof itself. Only keys a wallet provider
+// holds can be attested.
 type HolderKeyBinder interface {
-	CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofsOut []string, err error)
+	CreateKeyPairsWithProofs(ctx context.Context, num uint, proofBuilder proofs.ProofBuilder, attest *KeyAttestationOptions) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofsOut []string, err error)
 
-	// RemoveKeys deletes previously created keys by their storage IDs. Used to
-	// roll back generated keys when an issuance session fails.
+	// KeyProtection reports how the keys this binder would mint now are
+	// protected, as their key attestation would claim; false when they could
+	// not be attested (software keys, or a wallet unit that is not active).
+	// It asks nobody, so it can be checked before the user is asked anything.
+	KeyProtection(ctx context.Context) (walletprovider.KeyProtection, bool)
+
+	KeyRemover
+}
+
+// KeyRemover removes holder keys the wallet has no further use for, by their
+// storage IDs, from wherever they are held: the wallet's own storage or a
+// wallet provider's HSM. That is a failed issuance's keys, a deleted
+// credential's, and that of a batch instance a disclosure used up.
+type KeyRemover interface {
 	RemoveKeys(ids []datatypes.UUID) error
+}
+
+// RemoveUsedKey removes the holder key id of a batch instance a disclosure
+// just used up, which will never be presented again, when keys is not nil.
+// The caller keeps the key of a batch's last instance.
+// Best effort: a key that could not be removed is only logged, and never fails
+// the disclosure.
+func RemoveUsedKey(keys KeyRemover, id datatypes.UUID) {
+	if keys == nil {
+		return
+	}
+	if err := keys.RemoveKeys([]datatypes.UUID{id}); err != nil {
+		eudi.Logger.Warnf("failed to remove the holder key of a used credential instance: %v", err)
+	}
+}
+
+// KeyAttestationOptions asks CreateKeyPairsWithProofs for a key attestation
+// over the keys it mints.
+type KeyAttestationOptions struct {
+	// Nonce is the issuer's c_nonce, empty without a nonce endpoint.
+	Nonce string
+	// AsProof sends the key attestation as the proof (the attestation proof
+	// type, OpenID4VCI 1.0 Appendix F.3): the keys then sign nothing.
+	// Otherwise one jwt proof, signed by the first attested key, carries it in
+	// its key_attestation header. One, not one per key: an issuer issues a
+	// credential for every key in attested_keys (Appendix F.1), so a proof per
+	// key would have it issue the whole batch once for every proof, as the EUDI
+	// reference issuer does.
+	AsProof bool
+}
+
+// providerKeyProtection is KeyProtection for binders that mint in provider,
+// which may be nil.
+func providerKeyProtection(ctx context.Context, provider walletprovider.WalletProvider) (walletprovider.KeyProtection, bool) {
+	if provider == nil {
+		return walletprovider.KeyProtection{}, false
+	}
+	if state, err := provider.State(ctx); err != nil || state != walletprovider.StateActive {
+		return walletprovider.KeyProtection{}, false
+	}
+	protection, err := provider.KeyProtection(ctx)
+	if err != nil {
+		return walletprovider.KeyProtection{}, false
+	}
+	return protection, true
 }

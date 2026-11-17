@@ -16,12 +16,18 @@ type openid4vciSessionAdapter struct {
 }
 
 func (a *openid4vciSessionAdapter) Failure(err *clientmodels.SessionError) {
+	if a.session.endedByWalletUnit {
+		return
+	}
 	a.session.State.Status = clientmodels.Status_Error
 	a.session.State.Error = err
 	a.session.finish()
 }
 
 func (a *openid4vciSessionAdapter) Cancelled() {
+	if a.session.endedByWalletUnit {
+		return
+	}
 	a.session.State.Status = clientmodels.Status_Dismissed
 	a.session.finish()
 }

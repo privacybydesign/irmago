@@ -57,6 +57,10 @@ type Instance struct {
 	ID            datatypes.UUID
 	RawCredential []byte
 
+	// HolderKeyID is the ID of the holder key the instance is bound to, nil
+	// when there is none.
+	HolderKeyID *datatypes.UUID
+
 	// Revoked and RevocationSupported are resolved by the store adapter, since
 	// the status mechanism differs per data model.
 	Revoked             bool
@@ -67,8 +71,12 @@ type Instance struct {
 // copy, spend it.
 type BatchStore interface {
 	ListBatches() ([]*Batch, error)
-	GetUnusedInstance(batchID datatypes.UUID) (*Instance, error)
+	// GetUnusedInstance returns an unused copy of the batch, other than the
+	// ones in excluding.
+	GetUnusedInstance(batchID datatypes.UUID, excluding ...datatypes.UUID) (*Instance, error)
 	MarkInstanceUsed(instanceID datatypes.UUID) error
+	// RemainingCount reads how many unused copies the batch has now.
+	RemainingCount(batch *Batch) (uint, error)
 }
 
 // RevocationChecker applies the revocation policy to an instance's stored
@@ -118,14 +126,15 @@ func (s *sdJwtVcBatchStore) ListBatches() ([]*Batch, error) {
 	return result, nil
 }
 
-func (s *sdJwtVcBatchStore) GetUnusedInstance(batchID datatypes.UUID) (*Instance, error) {
-	instance, err := s.store.GetUnusedInstance(batchID)
+func (s *sdJwtVcBatchStore) GetUnusedInstance(batchID datatypes.UUID, excluding ...datatypes.UUID) (*Instance, error) {
+	instance, err := s.store.GetUnusedInstance(batchID, excluding...)
 	if err != nil {
 		return nil, err
 	}
 	return &Instance{
 		ID:                  instance.ID,
 		RawCredential:       instance.RawCredential,
+		HolderKeyID:         holderKeyID(instance.HolderBindingKey),
 		Revoked:             s.revocation != nil && s.revocation.IsStoredStatusRevoked(instance.LastKnownStatus),
 		RevocationSupported: instance.StatusListURI != nil,
 	}, nil
@@ -133,6 +142,14 @@ func (s *sdJwtVcBatchStore) GetUnusedInstance(batchID datatypes.UUID) (*Instance
 
 func (s *sdJwtVcBatchStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 	return s.store.MarkInstanceUsed(instanceID)
+}
+
+func (s *sdJwtVcBatchStore) RemainingCount(batch *Batch) (uint, error) {
+	stored, err := s.store.GetBatchByHash(batch.Hash)
+	if err != nil {
+		return 0, err
+	}
+	return stored.RemainingCount, nil
 }
 
 // NewVcdmBatchStore adapts the SD-JWT-secured VCDM store. revocation determines
@@ -180,14 +197,15 @@ func (s *vcdmBatchStore) ListBatches() ([]*Batch, error) {
 	return result, nil
 }
 
-func (s *vcdmBatchStore) GetUnusedInstance(batchID datatypes.UUID) (*Instance, error) {
-	instance, err := s.store.GetUnusedInstance(batchID)
+func (s *vcdmBatchStore) GetUnusedInstance(batchID datatypes.UUID, excluding ...datatypes.UUID) (*Instance, error) {
+	instance, err := s.store.GetUnusedInstance(batchID, excluding...)
 	if err != nil {
 		return nil, err
 	}
 	return &Instance{
 		ID:                  instance.ID,
 		RawCredential:       instance.RawCredential,
+		HolderKeyID:         holderKeyID(instance.HolderBindingKey),
 		Revoked:             s.revocation != nil && s.revocation.IsStoredStatusRevoked(instance.LastKnownStatus),
 		RevocationSupported: instance.HasStatusReference(),
 	}, nil
@@ -195,6 +213,21 @@ func (s *vcdmBatchStore) GetUnusedInstance(batchID datatypes.UUID) (*Instance, e
 
 func (s *vcdmBatchStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 	return s.store.MarkInstanceUsed(instanceID)
+}
+
+func (s *vcdmBatchStore) RemainingCount(batch *Batch) (uint, error) {
+	stored, err := s.store.GetBatchByHashAndFormat(batch.Hash, batch.Format)
+	if err != nil {
+		return 0, err
+	}
+	return stored.RemainingCount, nil
+}
+
+func holderKeyID(key *models.HolderBindingKey) *datatypes.UUID {
+	if key == nil {
+		return nil
+	}
+	return &key.ID
 }
 
 // isBatchValid returns false if the credential batch is expired or not yet

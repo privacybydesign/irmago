@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"fmt"
+	"io"
 
 	cose "github.com/veraison/go-cose"
 )
@@ -23,7 +24,7 @@ import (
 //
 // SoftwareDeviceSigner is what the wallet uses in production today: the device
 // private key lives in this process, read from storage on demand. It is reached
-// through services.NewMdocDeviceKeyBinder and mdoc_dcql, not only from tests.
+// through services.NewMdocDeviceKeyResolver and mdoc_dcql, not only from tests.
 //
 // The interface exists for what replaces it: an implementation backed by
 // StrongBox, TrustZone or the Secure Enclave satisfies the same two methods
@@ -150,13 +151,49 @@ func (h *SoftwareDeviceSigner) PublicKey() *ecdsa.PublicKey {
 // Called at every presentation — never reused
 // SessionTranscript ties this signature to a specific verifier + session — defeats replay
 func (h *SoftwareDeviceSigner) SignDeviceAuth(docType string, transcript SessionTranscript) ([]byte, error) {
+	toBeSigned, finish, err := PrepareDeviceAuth(h.pub, docType, transcript)
+	if err != nil {
+		return nil, err
+	}
+
+	// Sign with the device key — a completely separate key pair from the issuer's
+	// DS key. go-cose takes a crypto.Signer, so a hardware-backed signer needs
+	// nothing extra here.
+	algorithm, err := deviceAuthAlgorithmFor(h.pub.Curve)
+	if err != nil {
+		return nil, err
+	}
+	signer, err := cose.NewSigner(algorithm, h.signer)
+	if err != nil {
+		return nil, fmt.Errorf("create device signer: %w", err)
+	}
+	sig, err := signer.Sign(rand.Reader, toBeSigned)
+	if err != nil {
+		return nil, fmt.Errorf("sign deviceAuth: %w", err)
+	}
+	return finish(sig)
+}
+
+// PrepareDeviceAuth builds a fresh DeviceAuthentication for this session, bound
+// to the device key pub, up to its signature: it returns the COSE Sig_structure
+// the device key must sign, and finish, which turns that signature (raw r||s,
+// as COSE carries it) into the DeviceSignature bytes to present.
+//
+// The split lets something other than an in-process key sign — a wallet
+// provider's HSM, all presentations of one disclosure in one call — without
+// this package knowing what. SignDeviceAuth is the two steps back to back.
+func PrepareDeviceAuth(pub *ecdsa.PublicKey, docType string, transcript SessionTranscript) (toBeSigned []byte, finish func(sig []byte) ([]byte, error), err error) {
+	if pub == nil {
+		return nil, nil, fmt.Errorf("device key is nil")
+	}
+
 	// deviceNameSpaces = Tag24(empty map). This signer asserts nothing of its own:
 	// everything it presents is issuer-signed. A holder-asserted element would
 	// need the issuer to have authorized this device key for it in the MSO's
 	// keyAuthorizations — see checkDeviceSignedNameSpaces on the verifying side.
 	emptyNS, err := tag24Wrap(map[string]any{})
 	if err != nil {
-		return nil, fmt.Errorf("encode empty nameSpaces: %w", err)
+		return nil, nil, fmt.Errorf("encode empty nameSpaces: %w", err)
 	}
 
 	// DeviceAuthentication is a CBOR array (not map):
@@ -176,20 +213,14 @@ func (h *SoftwareDeviceSigner) SignDeviceAuth(docType string, transcript Session
 	// not just the deviceNameSpaces element inside it.
 	payload, err := tag24Wrap(deviceAuth)
 	if err != nil {
-		return nil, fmt.Errorf("wrap deviceAuthentication: %w", err)
+		return nil, nil, fmt.Errorf("wrap deviceAuthentication: %w", err)
 	}
 
-	// Sign with the device key — a completely separate key pair from the issuer's
-	// DS key. The algorithm follows the key's curve per 9.1.3.6 rather than being
-	// fixed at ES256; see deviceAuthAlgorithmFor. go-cose takes a crypto.Signer,
-	// so a hardware-backed signer needs nothing extra here.
-	algorithm, err := deviceAuthAlgorithmFor(h.pub.Curve)
+	// The algorithm follows the key's curve per 9.1.3.6 rather than being fixed
+	// at ES256; see deviceAuthAlgorithmFor.
+	algorithm, err := deviceAuthAlgorithmFor(pub.Curve)
 	if err != nil {
-		return nil, err
-	}
-	signer, err := cose.NewSigner(algorithm, h.signer)
-	if err != nil {
-		return nil, fmt.Errorf("create device signer: %w", err)
+		return nil, nil, err
 	}
 
 	// Untagged, for the reason given in issuer.go: ISO 18013-5's
@@ -200,20 +231,41 @@ func (h *SoftwareDeviceSigner) SignDeviceAuth(docType string, transcript Session
 	// unprotected headers intentionally empty — no cert in deviceAuth
 	// trust comes from deviceKey being embedded in the already-trusted MSO
 
-	if err := msg.Sign(rand.Reader, nil, signer); err != nil {
-		return nil, fmt.Errorf("sign deviceAuth: %w", err)
+	// go-cose computes the Sig_structure only while signing, so sign once with
+	// a signer that records it; finish puts the real signature in its place.
+	capture := &sigStructureCapture{algorithm: algorithm}
+	if err := msg.Sign(rand.Reader, nil, capture); err != nil {
+		return nil, nil, fmt.Errorf("build deviceAuth: %w", err)
 	}
 
-	// Detach the payload before transmitting: the AV Blueprint spec's own
-	// worked example (Annex A §A.11) shows deviceSignature's payload as
-	// `null`, not the actual DeviceAuthentication bytes — the verifier has
-	// every input already (its own session transcript, the docType it
-	// requested, and the deviceNameSpaces transmitted alongside this
-	// signature) and reconstructs this structure itself rather than
-	// receiving it explicitly. The signature above was computed over the
-	// real payload bytes and remains valid; clearing msg.Payload now only
-	// affects what's serialized for transmission, not what was signed.
-	msg.Payload = nil
+	finish = func(sig []byte) ([]byte, error) {
+		msg.Signature = sig
 
-	return msg.MarshalCBOR()
+		// Detach the payload before transmitting: the AV Blueprint spec's own
+		// worked example (Annex A §A.11) shows deviceSignature's payload as
+		// `null`, not the actual DeviceAuthentication bytes — the verifier has
+		// every input already (its own session transcript, the docType it
+		// requested, and the deviceNameSpaces transmitted alongside this
+		// signature) and reconstructs this structure itself rather than
+		// receiving it explicitly. The signature was computed over the real
+		// payload bytes and remains valid; clearing msg.Payload only affects
+		// what's serialized for transmission, not what was signed.
+		msg.Payload = nil
+		return msg.MarshalCBOR()
+	}
+	return capture.toBeSigned, finish, nil
+}
+
+// sigStructureCapture is a cose.Signer that signs nothing: it records the
+// Sig_structure go-cose hands it, for PrepareDeviceAuth to return.
+type sigStructureCapture struct {
+	algorithm  cose.Algorithm
+	toBeSigned []byte
+}
+
+func (c *sigStructureCapture) Algorithm() cose.Algorithm { return c.algorithm }
+
+func (c *sigStructureCapture) Sign(_ io.Reader, content []byte) ([]byte, error) {
+	c.toBeSigned = append([]byte(nil), content...)
+	return []byte{}, nil
 }

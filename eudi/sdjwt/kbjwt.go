@@ -1,6 +1,7 @@
 package sdjwt
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -107,6 +108,48 @@ func WithIssuedAt(claims map[string]any, now time.Time) map[string]any {
 	}
 	stamped[jwt.IssuedAtKey] = now.Unix()
 	return stamped
+}
+
+// KeyBindingTarget returns what a key binding JWT over sdJwt (the SD-JWT with
+// the disclosures it presents) is made of that the SD-JWT itself decides: the
+// sd_hash it must carry, and the holder key it must be signed with.
+func KeyBindingTarget(sdJwt SdJwt) (hash string, holderKey jwk.Key, err error) {
+	alg, holderKey, err := ExtractHashingAlgorithmAndHolderPubKey(sdJwt)
+	if err != nil {
+		return "", nil, err
+	}
+	hash, err = iana.CreateUrlEncodedHash(alg, string(sdJwt))
+	if err != nil {
+		return "", nil, err
+	}
+	return hash, holderKey, nil
+}
+
+// KeyBindingJwtSigningInput returns the JWS signing input of a key binding JWT
+// ("base64url(header).base64url(payload)"), for a signer outside this package
+// to sign with alg. AssembleKeyBindingJwt turns the signature into the JWT.
+func KeyBindingJwtSigningInput(alg string, hash string, nonce string, audience string, issuedAt int64) ([]byte, error) {
+	header, err := json.Marshal(map[string]any{"typ": KbJwtTyp, "alg": alg})
+	if err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(KeyBindingJwtPayload{
+		IssuerSignedJwtHash: hash,
+		Nonce:               nonce,
+		IssuedAt:            issuedAt,
+		Audience:            audience,
+	})
+	if err != nil {
+		return nil, err
+	}
+	enc := base64.RawURLEncoding
+	return []byte(enc.EncodeToString(header) + "." + enc.EncodeToString(payload)), nil
+}
+
+// AssembleKeyBindingJwt appends a raw signature to a key binding JWT signing
+// input.
+func AssembleKeyBindingJwt(signingInput []byte, sig []byte) KeyBindingJwt {
+	return KeyBindingJwt(string(signingInput) + "." + base64.RawURLEncoding.EncodeToString(sig))
 }
 
 func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwt) (iana.HashingAlgorithm, jwk.Key, error) {

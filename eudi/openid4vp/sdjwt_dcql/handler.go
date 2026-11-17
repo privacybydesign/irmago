@@ -15,14 +15,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/holdersigning"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"gorm.io/datatypes"
 )
 
 // isHttpVct reports whether vct is an absolute http(s) URL that the type
@@ -50,11 +53,11 @@ type Profile struct {
 	// any key that is not a JWT/SD-JWT standard claim. VCDM: only credentialSubject
 	// — @context/type/issuer/validFrom/validUntil/cnf/… are envelope, not user data.
 	IsUserDataKey func(key string) bool
-	// Present adds the holder proof to an SD-JWT holding only the selected
-	// disclosures, giving the vp_token entry; it is called only when holder
-	// binding is required. SD-JWT VC: PresentWithKbJwt. VCDM: a Verifiable
-	// Presentation enveloping the SD-JWT.
-	Present func(selected sdjwt.SdJwt, keyBinder sdjwt.KeyBinder, nonce string, audience string) (string, error)
+	// Prove makes the holder proof of an SD-JWT holding only the selected
+	// disclosures up to its signature; it is called only when holder binding is
+	// required. SD-JWT VC: ProveWithKbJwt. VCDM: a Verifiable Presentation
+	// enveloping the SD-JWT.
+	Prove func(in ProofInput) (*HolderProof, error)
 	// MatchesTypeValues reports whether a batch satisfies DCQL type_values
 	// (OpenID4VP §B.1.1, W3C VCDM only). Nil means no batch ever does.
 	MatchesTypeValues func(batch *Batch, typeValues [][]string) bool
@@ -63,23 +66,63 @@ type Profile struct {
 	Document func(batch *Batch) services.CredentialDocument
 }
 
-// PresentWithKbJwt is the SD-JWT VC Present: the selected SD-JWT with a KB-JWT
+// HolderKeys resolves the holder key a credential's cnf binds it to, to the
+// key its holder proof is signed with. Whatever holds that key, the engine
+// only ever sees a holdersigning.Key, and signs through the disclosure's
+// holdersigning.Signer.
+type HolderKeys interface {
+	ResolveHolderKey(holderKey jwk.Key) (holdersigning.Key, error)
+}
+
+// HolderProof is a holder proof made up to its signature: the JWS signing
+// input the holder key signs, and the vp_token entry once it has.
+type HolderProof struct {
+	SigningInput []byte
+	Assemble     func(signature []byte) string
+}
+
+// ProofInput is what a holder proof is made of: the SD-JWT holding only the
+// selected disclosures, the holder key it is bound to, and the JWS alg and
+// time of the signature to come.
+type ProofInput struct {
+	Selected  sdjwt.SdJwt
+	HolderKey jwk.Key
+	Alg       string
+	Nonce     string
+	Audience  string
+	IssuedAt  int64
+}
+
+// ProveWithKbJwt is the SD-JWT VC Prove: the selected SD-JWT with a KB-JWT
 // over nonce and audience appended.
-func PresentWithKbJwt(selected sdjwt.SdJwt, keyBinder sdjwt.KeyBinder, nonce string, audience string) (string, error) {
-	kbjwt, err := sdjwt.CreateKbJwt(selected, keyBinder, nonce, audience)
+func ProveWithKbJwt(in ProofInput) (*HolderProof, error) {
+	hash, _, err := sdjwt.KeyBindingTarget(in.Selected)
 	if err != nil {
-		return "", fmt.Errorf("failed to create kbjwt: %w", err)
+		return nil, fmt.Errorf("failed to create kbjwt: %w", err)
 	}
-	return string(sdjwt.AddKeyBindingJwt(selected, kbjwt)), nil
+	signingInput, err := sdjwt.KeyBindingJwtSigningInput(in.Alg, hash, in.Nonce, in.Audience, in.IssuedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kbjwt: %w", err)
+	}
+	return &HolderProof{
+		SigningInput: signingInput,
+		Assemble: func(signature []byte) string {
+			kbjwt := sdjwt.AssembleKeyBindingJwt(signingInput, signature)
+			return string(sdjwt.AddKeyBindingJwt(in.Selected, kbjwt))
+		},
+	}, nil
 }
 
 // Engine is the data-model-agnostic SD-JWT DCQL query engine. A per-format
 // handler embeds an *Engine (gaining FindCandidates and PrepareDisclosure) and
 // adds its own CanHandleCredentialQuery. Construct it with NewEngine.
 type Engine struct {
-	storage       storage.Storage
-	batches       BatchStore
-	keyBinder     sdjwt.KeyBinder
+	storage    storage.Storage
+	batches    BatchStore
+	holderKeys HolderKeys
+	// usedKeys removes the holder key of an instance a disclosure uses up.
+	// Nil keeps it.
+	usedKeys      services.KeyRemover
 	vctFetcher    typemetadata.VctFetcher
 	issuerFetcher typemetadata.IssuerFetcher
 	currentLocale *clientmodels.CurrentLocale
@@ -92,24 +135,27 @@ type Engine struct {
 // credentials through batches (NewSdJwtVcBatchStore, NewVcdmBatchStore).
 // vctFetcher and issuerFetcher
 // describe credentials the wallet has never seen (the "obtainable descriptor"
-// path); pass nil to disable that path — VCDM does. keyBinder is the KB-JWT signer
-// used when a presentation requires holder binding; pass
-// sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db()))
-// for the default software, storage-backed signer, or a WSCA/HSM-backed one to
-// keep the holder private key out of process.
+// path); pass nil to disable that path — VCDM does.
+//
+// holderKeys resolves the key a presentation's holder proof is signed with,
+// and usedKeys removes the key of an instance a disclosure used up; pass
+// services.NewHolderBindingKeyService for both, which covers software keys and
+// keys in a wallet provider's HSM alike.
 func NewEngine(
 	profile Profile,
 	eudiStorage storage.Storage,
 	batches BatchStore,
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
-	keyBinder sdjwt.KeyBinder,
+	holderKeys HolderKeys,
+	usedKeys services.KeyRemover,
 	currentLocale *clientmodels.CurrentLocale,
 ) *Engine {
 	return &Engine{
 		storage:       eudiStorage,
 		batches:       batches,
-		keyBinder:     keyBinder,
+		holderKeys:    holderKeys,
+		usedKeys:      usedKeys,
 		vctFetcher:    vctFetcher,
 		issuerFetcher: issuerFetcher,
 		currentLocale: currentLocale,
@@ -414,9 +460,7 @@ func (h *Engine) batchMatchesTypeConstraint(batch *Batch, typeValues [][]string,
 	return true // §6.1: empty meta matches any credential of the format
 }
 
-func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
-	result := &dcql.PreparedDisclosure{}
-
+func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PendingDisclosure, error) {
 	// Load all batches with full metadata so buildLogCredential can resolve display names.
 	allBatches, err := h.batches.ListBatches()
 	if err != nil {
@@ -427,16 +471,32 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 		batchByHash[b.Hash] = b
 	}
 
+	// One pending presentation per selection; those with holder binding
+	// become whole once their holder proof is signed.
+	type pendingPresentation struct {
+		sel      dcql.DisclosureSelection
+		batch    *Batch
+		instance *Instance
+		selected sdjwt.SdJwt
+		proof    *HolderProof // nil without holder binding
+	}
+	var pending []pendingPresentation
+	var requests []holdersigning.Request
+	picked := map[datatypes.UUID][]datatypes.UUID{}
+
 	for _, sel := range selections {
 		batch, ok := batchByHash[sel.CredentialHash]
 		if !ok {
 			return nil, fmt.Errorf("batch not found for hash %s", sel.CredentialHash)
 		}
 
-		instance, err := h.batches.GetUnusedInstance(batch.ID)
+		// Instances are only marked used once the disclosure is signed, so a
+		// batch selected twice has to be kept from handing out one instance twice.
+		instance, err := h.batches.GetUnusedInstance(batch.ID, picked[batch.ID]...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
 		}
+		picked[batch.ID] = append(picked[batch.ID], instance.ID)
 
 		rawSdJwt := sdjwt.SdJwt(instance.RawCredential)
 		claimPaths := sel.ClaimPaths
@@ -446,31 +506,73 @@ func (h *Engine) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce 
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
 
-		presentation := string(selected)
+		p := pendingPresentation{sel: sel, batch: batch, instance: instance, selected: selected}
 		if sel.RequireHolderBinding {
-			presentation, err = h.profile.Present(selected, h.keyBinder, nonce, audience)
+			_, holderPubKey, err := sdjwt.ExtractHashingAlgorithmAndHolderPubKey(selected)
 			if err != nil {
 				return nil, err
 			}
-		}
-
-		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
-			QueryId:     sel.QueryId,
-			Credentials: []string{presentation},
-		})
-
-		// Only mark the instance as used when the original batch had multiple instances.
-		// A batch of 1 keeps its single instance reusable.
-		if batch.BatchSize > 1 {
-			if err := h.batches.MarkInstanceUsed(instance.ID); err != nil {
-				return nil, fmt.Errorf("failed to mark instance as used: %w", err)
+			key, err := h.holderKeys.ResolveHolderKey(holderPubKey)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve holder key: %w", err)
 			}
+			alg, err := key.JwsAlgorithm()
+			if err != nil {
+				return nil, fmt.Errorf("failed to create holder proof: %w", err)
+			}
+			p.proof, err = h.profile.Prove(ProofInput{
+				Selected:  selected,
+				HolderKey: holderPubKey,
+				Alg:       alg,
+				Nonce:     nonce,
+				Audience:  audience,
+				IssuedAt:  time.Now().Unix(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			requests = append(requests, holdersigning.Request{Key: key, Input: p.proof.SigningInput})
 		}
-
-		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, instance, claimPaths))
+		pending = append(pending, p)
 	}
 
-	return result, nil
+	complete := func(signatures [][]byte) (*dcql.PreparedDisclosure, error) {
+		result := &dcql.PreparedDisclosure{}
+		for _, p := range pending {
+			presentation := string(p.selected)
+			if p.proof != nil {
+				presentation = p.proof.Assemble(signatures[0])
+				signatures = signatures[1:]
+			}
+
+			result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
+				QueryId:     p.sel.QueryId,
+				Credentials: []string{presentation},
+			})
+
+			// Only mark the instance as used when the original batch had multiple instances.
+			// A batch of 1 keeps its single instance reusable. A used instance is never
+			// presented again, so its holder key goes, unless it was the batch's last:
+			// the wallet keeps a key for every credential it holds (ARF 3.0, WIAM_21).
+			// The count is read after the marking, as another disclosure may have
+			// used an instance meanwhile; when it cannot be read, the key stays.
+			if p.batch.BatchSize > 1 {
+				if err := h.batches.MarkInstanceUsed(p.instance.ID); err != nil {
+					return nil, fmt.Errorf("failed to mark instance as used: %w", err)
+				}
+				if p.instance.HolderKeyID != nil {
+					if remaining, err := h.batches.RemainingCount(p.batch); err == nil && remaining > 0 {
+						services.RemoveUsedKey(h.usedKeys, *p.instance.HolderKeyID)
+					}
+				}
+			}
+
+			result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(p.batch, p.instance, p.sel.ClaimPaths))
+		}
+		return result, nil
+	}
+
+	return &dcql.PendingDisclosure{Signatures: requests, Complete: complete}, nil
 }
 
 // parseBatchAttributes builds the disclosure-plan attribute list for a batch
