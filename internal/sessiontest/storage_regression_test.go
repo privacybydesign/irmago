@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/stretchr/testify/require"
 )
 
@@ -187,7 +189,7 @@ func TestClientStorageRegressionV1_4_0(t *testing.T) {
 	remaining := mdoc.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_MsoMdoc)]
 	require.NotNil(t, remaining, "a batched mdoc credential must carry a remaining count")
 	require.Equal(t, uint(29), *remaining)
-	requireStoredMdocDeviceKeysSign(t, "v1.4.0", 30, 1)
+	requireStoredMdocDeviceKeysSign(t, "v1.4.0", avDocType, 30, 1)
 
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -261,4 +263,164 @@ func storedAvLogCredential() expectedLogCredential {
 	expected.IssuanceDate = new(avMdocIssuanceDate)
 	expected.ExpiryDate = new(avMdocExpiryDate)
 	return expected
+}
+
+// TestClientStorageRegressionV1_5_0 checks the first snapshot that holds
+// SD-JWT-secured VCDM credentials. New in it:
+//
+//   - VCDM credentials in their own tables (vcdm_batches, vcdm_batch_instances),
+//     with their holder binding keys in the table they share with SD-JWT VC.
+//   - A VCDM credential stored as revoked through a W3C Bitstring Status List.
+//   - An Open Badges credential whose claim images are stored next to the logos,
+//     and whose type was expanded from a context the wallet can no longer fetch.
+//   - VCDM issuance, disclosure and removal log entries.
+//   - An mdoc with a Token Status List reference on every instance, stored as
+//     revoked, and its Status List Token cached as a CWT.
+//
+// The database was written before 1.6.0 pinned the SQLCipher parameters, so
+// loading it also covers that upgrade.
+func TestClientStorageRegressionV1_5_0(t *testing.T) {
+	c, sessionHandler, irmaServer := setupStorageRegressionClient(t, "v1.5.0")
+
+	creds, _, err := c.GetCredentials()
+	require.NoError(t, err)
+	requireIrmaCredentials(t, creds, "Bar")
+	requireTestCredential(t, creds, veramoIssuerURL)
+	requireOrganizationCredential(t, creds, veramoIssuerURL)
+	statusList := requireRevokedStatusListCredential(t, creds)
+
+	mdoc := findMdocCredentialByDocType(t, creds, avDocType)
+	require.False(t, mdoc.Revoked)
+	remaining := mdoc.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_MsoMdoc)]
+	require.NotNil(t, remaining)
+	require.Equal(t, uint(29), *remaining)
+	requireStoredMdocDeviceKeysSign(t, "v1.5.0", avDocType, 30, 1)
+
+	// The PID mdoc: every instance names its own Token Status List entry, served
+	// as a CWT. The generator revoked them all and refreshed. The status list
+	// server is not running now, so both flags come from storage.
+	pid := findMdocCredentialByDocType(t, creds, pidMdocDocType)
+	require.True(t, pid.RevocationSupported, "a stored status reference must read back as revocation-supporting")
+	require.True(t, pid.Revoked, "the stored revoked status must read back as revoked")
+	pidRemaining := pid.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_MsoMdoc)]
+	require.NotNil(t, pidRemaining)
+	requireStoredMdocStatusReferences(t, "v1.5.0", pidMdocDocType, int(*pidRemaining), statuslist.StatusInvalid)
+	requireStoredMdocDeviceKeysSign(t, "v1.5.0", pidMdocDocType, int(*pidRemaining), 0)
+
+	// The VCDM credentials: Vera's, and the revoked status-list one. Both
+	// share a type identity; their email tells them apart.
+	vera := requireStoredVcdmCredential(t, creds, "vera@example.com")
+	requireVcdmTestAttrs(t, vera.Attributes, "Vera", "Modell", "vera@example.com")
+	require.False(t, vera.Revoked)
+	require.False(t, vera.RevocationSupported, "Vera's credential names no status")
+
+	vcdmStatusList := requireStoredVcdmCredential(t, creds, vcdmStatusListEmail)
+	requireVcdmTestAttrs(t, vcdmStatusList.Attributes, "Vera", "StatusList", vcdmStatusListEmail)
+	require.True(t, vcdmStatusList.RevocationSupported,
+		"a stored Bitstring Status List entry must read back as revocation-supporting")
+	require.True(t, vcdmStatusList.Revoked, "the stored revoked status must read back as revoked")
+
+	// The Open Badge's claim images come from the image store: the server
+	// that served them at issuance is not running.
+	badge := findCredentialById(creds, openBadgeCredentialId)
+	require.NotNil(t, badge, "expected the Open Badges credential")
+	require.Equal(t, openBadgeCredentialName, badge.Name)
+	requireOpenBadgeImages(t, badge.Attributes)
+
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	requireLogSummary(t, logs, logSummary{total: 32, openID4VPDisclosures: 7, irmaDisclosures: 4, newestRemovals: 4})
+	requireOpenID4VCIIssuances(t, logs, map[string]int{
+		"https://localhost:8443/vct/test":         3,
+		"https://localhost:8443/vct/organization": 1,
+		"https://localhost:8443/vct/statuslist":   1,
+		avDocType:                                 1,
+		pidMdocDocType:                            1,
+		vcdmCredentialId:                          3,
+		openBadgeCredentialId:                     1,
+	})
+	requireMultiCredentialDisclosureLog(t, logs)
+	requireSnapshotSignatureLog(t, logs)
+	requireRemovals(t, logs, map[string]int{
+		"https://localhost:8443/vct/test": 2,
+		"irma-demo.RU.studentCard":        1,
+		vcdmCredentialId:                  1,
+	})
+	requireEudiDisclosureLog(t, logs)
+
+	// The VCDM disclosure log. Its issuer logo is stored; it cannot be
+	// fetched again.
+	veraLogged := newestDisclosureLogCredential(t, c, vcdmCredentialId)
+	requireAttrsInOrder(t, veraLogged.Attributes,
+		vcdmTestExpectedAttrs("Vera", "Modell", "vera@example.com", vcdmHolderDid(t, vera.Attributes))...)
+	requireValidImage(t, veraLogged.Issuer.Image, "VCDM disclosure log issuer")
+
+	// The Open Badge disclosure log keeps its pictures. Its issuer image is
+	// only checked to load: a log entry stores it under the issuer id, which
+	// Vera's credential shares, so the later VCDM removal log replaced the
+	// badge's own issuer image with the issuer metadata's logo.
+	badgeLogged := newestDisclosureLogCredential(t, c, openBadgeCredentialId)
+	requireOpenBadgeImages(t, badgeLogged.Attributes)
+	require.NotNil(t, badgeLogged.Image)
+	require.NotNil(t, badgeLogged.Image.MimeType)
+	require.Equal(t, clientmodels.MimeTypeSVG, *badgeLogged.Image.MimeType, "the badge's own image")
+	requireValidImage(t, badgeLogged.Issuer.Image, "Open Badge disclosure log issuer")
+
+	// A DCQL type_values query still finds the Open Badge. Its types were
+	// expanded at issuance from a context that cannot be fetched now, so this
+	// reads the stored expanded types. The plan is all this needs; dismiss it.
+	session := awaitDisclosurePermission(t, c, 30, sessionHandler, vcdmDcqlQuery(
+		`"meta": {"type_values": [["`+vcdmVerifiableCredentialIri+`", "`+vcdm.OpenBadgeCredentialType+`"]]}`,
+		[]any{"credentialSubject", "photo"},
+	))
+	options := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
+	require.Len(t, options, 1, "the stored Open Badge should be the only candidate")
+	require.Equal(t, openBadgeCredentialId, options[0].Credentials[0].CredentialId)
+	userInteraction(t, c, clientmodels.SessionUserInteraction{SessionId: session.Id, Type: clientmodels.UI_DismissSession})
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Dismissed, session.Status)
+
+	// Vera's credential is still disclosable: the verifier checks the
+	// presentation's signature, made with the stored holder binding key.
+	discloseVcdmToVeramo(t, c, sessionHandler, 31, vcdmDcqlQuery(
+		`"meta": {"type_values": [["`+vcdmVerifiableCredentialIri+`", "`+vcdmCredentialType+`"]]}`,
+		[]any{"credentialSubject", "email"},
+	), func(cred *clientmodels.SelectableCredentialInstance) bool {
+		return vcdmSubjectValue(cred.Attributes, "email") == "vera@example.com"
+	})
+
+	// The fresh sessions below expect to disclose the credentials they issue
+	// themselves; these stored ones would be second candidates.
+	require.NoError(t, c.RemoveCredentialsByHash(statusList.CredentialInstanceIds))
+	require.NoError(t, c.RemoveCredentialsByHash(mdoc.CredentialInstanceIds))
+
+	assertStoredTestCredentialDisclosable(t, c, sessionHandler)
+	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
+}
+
+// openBadgeCredentialId is the @context+type identity the Open Badges test
+// credential is stored under.
+const openBadgeCredentialId = "https://www.w3.org/ns/credentials/v2 " + claimImagesPublicURL +
+	"/context.json VerifiableCredential OpenBadgeCredential"
+
+// requireStoredVcdmCredential returns the one stored TestVcdmCredential whose
+// credentialSubject.email is email, after checking what all of them share.
+func requireStoredVcdmCredential(t *testing.T, creds []*clientmodels.Credential, email string) *clientmodels.Credential {
+	t.Helper()
+	var found *clientmodels.Credential
+	for _, cred := range creds {
+		if cred.CredentialId == vcdmCredentialId && vcdmSubjectValue(cred.Attributes, "email") == email {
+			require.Nil(t, found, "more than one VCDM credential with email %s", email)
+			found = cred
+		}
+	}
+	require.NotNil(t, found, "expected the VCDM credential with email %s", email)
+	require.Equal(t, vcdmCredentialName, found.Name)
+	require.Equal(t, veramoIssuerURL, found.Issuer.Id)
+	require.Equal(t, "Test Issuer", found.Issuer.Name)
+	require.True(t, found.Issuer.Verified)
+	require.Contains(t, found.CredentialInstanceIds, clientmodels.CredentialFormat(clientmodels.Format_SdJwtVcdm))
+	require.NotNil(t, found.IssuanceDate)
+	require.Nil(t, found.ExpiryDate, "veramo issues the VCDM test credential without validUntil")
+	return found
 }

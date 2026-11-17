@@ -5,6 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Update Go dependencies to their latest releases, among them `github.com/lestrrat-go/jwx/v4` 4.4.0 → 4.6.0, `github.com/go-chi/chi/v5` 5.3.0 → 5.5.0, `github.com/sirupsen/logrus` 1.9.4 → 1.10.2, `go.etcd.io/bbolt` 1.4.3 → 1.5.0 and `golang.org/x/crypto` 0.55.0 → 0.57.0
+
+### Internal
+- Storage regression snapshot for v1.5.0 (`testdata/storage_regression/v1.5.0/`), verified by `TestClientStorageRegressionV1_5_0`. It is the first snapshot that holds SD-JWT-secured VCDM credentials: the fixture generator now issues a VCDM credential, a VCDM credential revoked through a Bitstring Status List, and an Open Badges credential with claim images, discloses two of them to the veramo verifier and removes a fourth. It also issues a PID mdoc with a Token Status List entry per instance, served as a CWT, and revokes it, so the snapshot holds mdoc status references and a cached CWT Status List Token; the test checks both in the stored database. The test discloses the stored VCDM credential again, so its stored holder key is checked, and finds the Open Badge by a `type_values` query whose context can no longer be fetched. The shared check that a reloaded client still works now also issues and discloses a fresh VCDM credential, for every snapshot version.
+
+## [1.6.0] - 2026-11-11
 ### Added
 - A wallet can bind its OpenID4VC credentials to keys held by a wallet provider (an HSM-backed service implementing Split-ECDSA) instead of to software keys. The provider is supplied to `client.New` as the factory in `Config.WalletProvider`; the app gives the provider the wallet unit's possession key itself when it builds that factory. Without one nothing changes. The contract lives in the new `walletprovider` package, which imports only the standard library so a provider can implement it without importing irmago (ADR 0010): the provider offers activation, a PIN-gated `Unlock` returning a handle that generates holder keys and signs in batches, key removal and revocation, and the wallet offers it a key-value store in its encrypted database. The OpenID4VC protocols do not know whether there is a provider: they mint and sign through the holder key seams they always use, and a provider is reached behind them. With one, an OpenID4VCI issuance asks for the PIN when it first mints keys, after the user agreed to it (activating the wallet unit with that PIN if it never was), and mints the whole batch in the provider and signs its proofs in one call; an OpenID4VP disclosure, over a URL or the Digital Credentials API, asks for the PIN once, after consent and only when a selected credential is bound to provider keys, and signs every key binding JWT and mdoc `DeviceAuth` of the presentation in one call. The PIN is asked with the same `request_pin` session status, `remaining_pin_attempts` and `pin_blocked_time_seconds` the keyshare server uses, and answered with `UI_EnteredPin`. Each holder key records its key backend (`software` or `wallet-provider`), so a wallet holds credentials of both kinds side by side.
 - A wallet provider must check the PIN in `Unlock`, so a wrong or blocked PIN is reported where the user typed it; where it checks the PIN on every operation, the unlocked wallet unit keeps the PIN-derived material until `Close`. A `PinBlockedError` with a zero `Duration` is a permanent block (the WSCA's, after 10 consecutive wrong PINs; before that it blocks temporarily like the keyshare server); the session then reports `pin_blocked_time_seconds` 0.
@@ -38,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The error for a private key whose filename has a different counter than the key itself now shows that counter instead of a memory address
 - Usage reporting now sends its reports to `https://api.yivi.app/usage/v1/directory` by default. The default in 1.5.0, `https://portal.yivi.app/usage/v1/directory`, serves the Portal's web app instead of its API, so a server on 1.5.0 that does not set `--usage-reporting-portal-url` never delivers a report.
 ### Security
+- Go is updated to 1.27.4 (`go.mod` and the Docker images), which fixes "HTTP/1 server crash due to MaxBytesReader header race in net/http" ([GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859))
 - The wallet only encrypts with JWE algorithms on an explicit allow-list, in OpenID4VP authorization responses (`direct_post.jwt`, `dc_api.jwt`) and OpenID4VCI credential requests. Key management: `ECDH-ES`, `ECDH-ES+A128KW`/`A192KW`/`A256KW` and `RSA-OAEP-256`/`384`/`512`; a verifier or issuer key with any other `alg`, such as `RSA1_5`, `RSA-OAEP` (SHA-1), a symmetric or password-based algorithm or HPKE, is skipped. Content encryption: the AES-GCM and AES-CBC-HMAC algorithms of RFC 7518. Previously any algorithm jwx implements was used.
 - An encrypted OpenID4VCI credential request is now encrypted with the content encryption algorithm chosen from the issuer's `enc_values_supported`. It was chosen but not passed on, so jwx's default was used.
 - The EUDI SQLCipher database pins its encryption parameters (`cipher_compatibility = 4`: 4096-byte pages, HMAC-SHA512, PBKDF2-HMAC-SHA512) instead of relying on the defaults of the linked SQLCipher. These are SQLCipher 4's defaults, so existing databases open unchanged. An encrypted database is no longer opened when the linked library is plain SQLite, which ignores the key and would store the database unencrypted, or SQLCipher 3, which ignores the pinned parameters.
@@ -1010,7 +1018,8 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
-[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/privacybydesign/irmago/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/privacybydesign/irmago/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/privacybydesign/irmago/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/privacybydesign/irmago/compare/v1.4.1...v1.4.2

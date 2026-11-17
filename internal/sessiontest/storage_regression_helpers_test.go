@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/holdersigning"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -123,7 +124,7 @@ func requireRevokedStatusListCredential(t *testing.T, creds []*clientmodels.Cred
 }
 
 // requireStoredMdocDeviceKeysSign checks that every instance of the stored
-// age-verification mdoc can still sign with its stored device key, and that the
+// mdoc of docType can still sign with its stored device key, and that the
 // signature verifies against the device key its MSO was issued for. This is
 // what a disclosure of the stored mdoc would depend on, checked without one:
 // the MSO expires 90 days after the snapshot was made, and a verifier would
@@ -135,16 +136,11 @@ func requireRevokedStatusListCredential(t *testing.T, creds []*clientmodels.Cred
 // PrepareDisclosure path in mdoc_dcql), so the wallet under test is not
 // touched. want is the number of instances the snapshot stored and spent is
 // how many of them a disclosure used.
-func requireStoredMdocDeviceKeysSign(t *testing.T, version string, want, spent int) {
+func requireStoredMdocDeviceKeysSign(t *testing.T, version, docType string, want, spent int) {
 	t.Helper()
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, storage.DbFilename)
-	copyIfExists(t, filepath.Join(snapshotDir(t, version), "eudi_client_db"), dbPath)
-	eudiStorage, err := sqlcipherstorage.New(testAESKey(), dbPath, dir)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = eudiStorage.Close() })
+	eudiStorage := openSnapshotEudiStorage(t, version)
 
-	batches, err := db.NewMdocStore(eudiStorage.Db()).GetBatchesByDocType(avDocType)
+	batches, err := db.NewMdocStore(eudiStorage.Db()).GetBatchesByDocType(docType)
 	require.NoError(t, err)
 	require.Len(t, batches, 1)
 	batch := batches[0]
@@ -178,11 +174,64 @@ func requireStoredMdocDeviceKeysSign(t *testing.T, version string, want, spent i
 		presented, err := stdmdoc.AttachDeviceSigned(&doc, deviceAuth)
 		require.NoError(t, err)
 
-		result := verifier.VerifyWithDeviceAuth(presented, avDocType, batch.DocType, transcript, deviceAuth)
+		result := verifier.VerifyWithDeviceAuth(presented, docType, batch.DocType, transcript, deviceAuth)
 		require.True(t, result.Valid, "instance %s: %s", instance.ID, result.Error)
 		require.True(t, result.DeviceAuthValid, "instance %s: device signature did not verify", instance.ID)
 	}
 	require.Equal(t, spent, used)
+}
+
+// openSnapshotEudiStorage opens a copy of a snapshot's EUDI database, so a
+// check can read what is stored without going through the wallet under test.
+func openSnapshotEudiStorage(t *testing.T, version string) storage.Storage {
+	t.Helper()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, storage.DbFilename)
+	copyIfExists(t, filepath.Join(snapshotDir(t, version), "eudi_client_db"), dbPath)
+	eudiStorage, err := sqlcipherstorage.New(testAESKey(), dbPath, dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = eudiStorage.Close() })
+	return eudiStorage
+}
+
+// requireStoredMdocStatusReferences checks that every instance of the stored
+// mdoc of docType kept its Token Status List reference and the status the
+// wallet last read for it, and that the Status List Token cached for it is a
+// CWT. A cached token's encoding is not stored: the wallet tells a CWT from a
+// JWT by its first byte, as checked here. The token itself is not decoded:
+// it expired long ago, and the checker would fetch it again rather than read
+// a stale cache entry.
+func requireStoredMdocStatusReferences(t *testing.T, version, docType string, want int, status statuslist.Status) {
+	t.Helper()
+	eudiStorage := openSnapshotEudiStorage(t, version)
+
+	batches, err := db.NewMdocStore(eudiStorage.Db()).GetBatchesByDocType(docType)
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+
+	var instances []models.MdocBatchInstance
+	require.NoError(t, eudiStorage.Db().Where("mdoc_batch_id = ?", batches[0].ID).Find(&instances).Error)
+	require.Len(t, instances, want)
+
+	uris := map[string]bool{}
+	indices := map[uint64]bool{}
+	for _, instance := range instances {
+		require.NotNil(t, instance.StatusListURI, "instance %s: no status list URI", instance.ID)
+		require.NotNil(t, instance.StatusListIdx, "instance %s: no status list index", instance.ID)
+		require.Equal(t, status, statuslist.Status(instance.LastKnownStatus), "instance %s: last known status", instance.ID)
+		require.NotNil(t, instance.LastStatusCheckAt, "instance %s: never checked", instance.ID)
+		uris[*instance.StatusListURI] = true
+		indices[*instance.StatusListIdx] = true
+	}
+	require.Len(t, indices, want, "every instance has its own status list entry")
+
+	for uri := range uris {
+		var entry models.StatusListCacheEntry
+		require.NoError(t, eudiStorage.Db().Where("uri = ?", uri).First(&entry).Error,
+			"expected a cached Status List Token for %s", uri)
+		require.NotEmpty(t, entry.RawToken)
+		require.GreaterOrEqual(t, entry.RawToken[0], byte(0x80), "the cached token for %s should be a CWT", uri)
+	}
 }
 
 // requireEudiCredentialMeta checks the metadata common to the snapshots'
@@ -408,6 +457,7 @@ func assertLoadedClientUsable(t *testing.T, c *client.Client, sessionHandler *Mo
 	assertFreshOpenID4VCISessionsWork(t, c, sessionHandler)
 	assertStatusListSessionsWork(t, c, sessionHandler)
 	assertFreshMdocSessionsWork(t, c, sessionHandler)
+	assertFreshVcdmSessionsWork(t, c, sessionHandler)
 }
 
 // assertFreshIrmaSessionsWork runs non-keyshare and keyshare disclosures and an
@@ -549,6 +599,21 @@ func assertFreshMdocSessionsWork(t *testing.T, c *client.Client, sessionHandler 
 	t.Helper()
 	issueAvMdocViaPythonIssuer(t, c, 10, sessionHandler)
 	discloseAvMdocOnce(t, c, sessionHandler, 11)
+}
+
+// assertFreshVcdmSessionsWork issues an SD-JWT-secured VCDM credential from
+// veramo and discloses it to the veramo verifier. For a snapshot from before
+// v1.5.0, this is the first VCDM credential its database holds.
+func assertFreshVcdmSessionsWork(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler) {
+	t.Helper()
+	issueCredentialViaOpenID4VCI(t, c, 12, sessionHandler, vcdmCredentialConfigId,
+		`{"given_name": "Reload", "family_name": "Check", "email": "reload-vcdm@example.com"}`)
+	discloseVcdmToVeramo(t, c, sessionHandler, 13, vcdmDcqlQuery(
+		`"meta": {"type_values": [["`+vcdmVerifiableCredentialIri+`", "`+vcdmCredentialType+`"]]}`,
+		[]any{"credentialSubject", "email"},
+	), func(cred *clientmodels.SelectableCredentialInstance) bool {
+		return vcdmSubjectValue(cred.Attributes, "email") == "reload-vcdm@example.com"
+	})
 }
 
 // discloseViaVeramoOpenID4VP runs a full OpenID4VP disclosure against the
