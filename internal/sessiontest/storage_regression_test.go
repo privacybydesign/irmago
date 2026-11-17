@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/stretchr/testify/require"
 )
@@ -188,7 +189,7 @@ func TestClientStorageRegressionV1_4_0(t *testing.T) {
 	remaining := mdoc.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_MsoMdoc)]
 	require.NotNil(t, remaining, "a batched mdoc credential must carry a remaining count")
 	require.Equal(t, uint(29), *remaining)
-	requireStoredMdocDeviceKeysSign(t, "v1.4.0", 30, 1)
+	requireStoredMdocDeviceKeysSign(t, "v1.4.0", avDocType, 30, 1)
 
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -273,6 +274,8 @@ func storedAvLogCredential() expectedLogCredential {
 //   - An Open Badges credential whose claim images are stored next to the logos,
 //     and whose type was expanded from a context the wallet can no longer fetch.
 //   - VCDM issuance, disclosure and removal log entries.
+//   - An mdoc with a Token Status List reference on every instance, stored as
+//     revoked, and its Status List Token cached as a CWT.
 //
 // The database was written before 1.6.0 pinned the SQLCipher parameters, so
 // loading it also covers that upgrade.
@@ -291,7 +294,18 @@ func TestClientStorageRegressionV1_5_0(t *testing.T) {
 	remaining := mdoc.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_MsoMdoc)]
 	require.NotNil(t, remaining)
 	require.Equal(t, uint(29), *remaining)
-	requireStoredMdocDeviceKeysSign(t, "v1.5.0", 30, 1)
+	requireStoredMdocDeviceKeysSign(t, "v1.5.0", avDocType, 30, 1)
+
+	// The PID mdoc: every instance names its own Token Status List entry, served
+	// as a CWT. The generator revoked them all and refreshed. The status list
+	// server is not running now, so both flags come from storage.
+	pid := findMdocCredentialByDocType(t, creds, pidMdocDocType)
+	require.True(t, pid.RevocationSupported, "a stored status reference must read back as revocation-supporting")
+	require.True(t, pid.Revoked, "the stored revoked status must read back as revoked")
+	pidRemaining := pid.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_MsoMdoc)]
+	require.NotNil(t, pidRemaining)
+	requireStoredMdocStatusReferences(t, "v1.5.0", pidMdocDocType, int(*pidRemaining), statuslist.StatusInvalid)
+	requireStoredMdocDeviceKeysSign(t, "v1.5.0", pidMdocDocType, int(*pidRemaining), 0)
 
 	// The VCDM credentials: Vera's, and the revoked status-list one. Both
 	// share a type identity; their email tells them apart.
@@ -315,12 +329,13 @@ func TestClientStorageRegressionV1_5_0(t *testing.T) {
 
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
-	requireLogSummary(t, logs, logSummary{total: 31, openID4VPDisclosures: 7, irmaDisclosures: 4, newestRemovals: 4})
+	requireLogSummary(t, logs, logSummary{total: 32, openID4VPDisclosures: 7, irmaDisclosures: 4, newestRemovals: 4})
 	requireOpenID4VCIIssuances(t, logs, map[string]int{
 		"https://localhost:8443/vct/test":         3,
 		"https://localhost:8443/vct/organization": 1,
 		"https://localhost:8443/vct/statuslist":   1,
 		avDocType:                                 1,
+		pidMdocDocType:                            1,
 		vcdmCredentialId:                          3,
 		openBadgeCredentialId:                     1,
 	})

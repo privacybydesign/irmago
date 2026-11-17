@@ -43,6 +43,9 @@ import (
 //     verifier; StatusListCredentialVcdm, revoked through its Bitstring Status List and then
 //     refreshed; an Open Badges credential with claim images, disclosed once; and a spare
 //     TestCredentialVcdm, removed.
+//   - mdoc status: 1x PID mdoc (docType eu.europa.ec.eudi.pid.1) from the Python PID issuer, with
+//     a Token Status List entry per instance served as a CWT by an in-test server, revoked there
+//     and then refreshed.
 //   - Removals, as the final actions: irma-demo.RU.studentCard, 2 spare https://localhost:8443/vct/test
 //     and the spare VCDM credential.
 //
@@ -56,7 +59,9 @@ import (
 //     LastKnownStatus of INVALID, alongside a cached Status List Token; plus one
 //     eu.europa.ec.av.1 mdoc batch with one instance spent by the disclosure; plus three VCDM
 //     batches: Vera's (disclosed once), the revoked status-list one, and the Open Badge,
-//     whose claim images are stored next to the logos.
+//     whose claim images are stored next to the logos; and the revoked eu.europa.ec.eudi.pid.1
+//     mdoc batch, its instances carrying status.status_list references, alongside a cached CWT
+//     Status List Token.
 //   - Activity logs (merged from both stores): all four types — issuance, disclosure, signature,
 //     removal — returned newest-first, ending with the four removals.
 func TestGenerateClientStorageForRegressionTests(t *testing.T) {
@@ -161,6 +166,17 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 
 	// 3k. Issue a spare VCDM credential, removed at the end.
 	issueCredentialViaOpenID4VCI(t, c, 24, sessionHandler, vcdmCredentialConfigId, vcdmSpareClaims)
+
+	// 3l. Issue a PID mdoc with a Token Status List entry per instance, served
+	// as a CWT, and revoke it. The snapshot then holds mdoc instances with a
+	// status reference and a revoked LastKnownStatus, and a cached CWT Status
+	// List Token. The status list server only hands entries to the PID, so the
+	// age-verification mdoc above has none.
+	mdocStatusList := startMdocStatusListServer(t, mdocStatusListCWT, nil)
+	issueMdocViaPythonIssuer(t, c, 27, sessionHandler, pidMdocConfigId, pidMdocIssuanceData())
+	require.Positive(t, mdocStatusList.entriesHandedOut(), "the issuer should have asked for status list entries")
+	mdocStatusList.setAll(statusListEntryRevoked)
+	require.NoError(t, c.RefreshStatuses(context.Background()))
 
 	// Verify credentials are present
 	creds, _, err := c.GetCredentials()
@@ -290,6 +306,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 		"https://localhost:8443/vct/organization": true, // keep the deeply nested credential
 		"https://localhost:8443/vct/statuslist":   true, // keep the revoked status-list credential
 		eudiPidIssuerPyAvDocType:                  true, // keep the mdoc
+		pidMdocDocType:                            true, // keep the revoked PID mdoc
 	}
 	creds, _, err = c.GetCredentials()
 	require.NoError(t, err)
