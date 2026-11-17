@@ -8,7 +8,9 @@ import (
 	"time"
 
 	rootpkg "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server/keyshare/keyshareserver"
@@ -37,7 +39,12 @@ import (
 //     revoked at the issuer and then refreshed, so it is stored as revoked.
 //   - mdoc: 1x age-verification mdoc (docType eu.europa.ec.av.1) issued over OpenID4VCI by
 //     the Python PID issuer, then disclosed once over OpenID4VP to the EUDI reference verifier.
-//   - Removals, as the final actions: irma-demo.RU.studentCard + 2 spare https://localhost:8443/vct/test.
+//   - VCDM (vc+sd-jwt, from veramo): TestCredentialVcdm (Vera), disclosed once to the veramo
+//     verifier; StatusListCredentialVcdm, revoked through its Bitstring Status List and then
+//     refreshed; an Open Badges credential with claim images, disclosed once; and a spare
+//     TestCredentialVcdm, removed.
+//   - Removals, as the final actions: irma-demo.RU.studentCard, 2 spare https://localhost:8443/vct/test
+//     and the spare VCDM credential.
 //
 // Resulting database state:
 //   - bbolt (bbolt_client_db): irma-demo.MijnOverheid.fullName, irma-demo.MijnOverheid.singleton
@@ -47,9 +54,11 @@ import (
 //     https://localhost:8443/vct/organization and one https://localhost:8443/vct/statuslist
 //     batch remaining; the status-list batch carries a status.status_list reference with a
 //     LastKnownStatus of INVALID, alongside a cached Status List Token; plus one
-//     eu.europa.ec.av.1 mdoc batch with one instance spent by the disclosure.
+//     eu.europa.ec.av.1 mdoc batch with one instance spent by the disclosure; plus three VCDM
+//     batches: Vera's (disclosed once), the revoked status-list one, and the Open Badge,
+//     whose claim images are stored next to the logos.
 //   - Activity logs (merged from both stores): all four types — issuance, disclosure, signature,
-//     removal — returned newest-first, ending with the three removals.
+//     removal — returned newest-first, ending with the four removals.
 func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	if os.Getenv("GENERATE_STORAGE") == "" {
 		t.Skip("GENERATE_STORAGE not set, skipping storage generation")
@@ -130,6 +139,28 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	// snapshot holds an mso_mdoc batch: per-instance device keys, the issuer
 	// signed MSO, and the issuer's display metadata.
 	issueAvMdocViaPythonIssuer(t, c, 19, sessionHandler)
+
+	// 3h. Issue an SD-JWT-secured VCDM credential, so the snapshot holds a
+	// vcdm_batches row, its instance, and its holder binding key in the table
+	// VCDM shares with SD-JWT VC. It is a single instance: veramo gives every
+	// copy in a batch its own credentialSubject.id, and v1.5.0 refuses such a
+	// batch.
+	issueCredentialViaOpenID4VCI(t, c, 21, sessionHandler, vcdmCredentialConfigId, vcdmTestClaims)
+
+	// 3i. Issue a VCDM credential with a Bitstring Status List entry and revoke
+	// it, so the snapshot carries bitstring_status_entries and a revoked
+	// LastKnownStatus on a VCDM instance.
+	issueVcdmStatusListCredential(t, c, sessionHandler, 22)
+	revokeCredentialsViaVeramo(t, vcdmStatusListRecordType, vcdmStatusListEmail)
+	require.NoError(t, c.RefreshStatuses(context.Background()))
+
+	// 3j. Issue an Open Badges credential with claim images, so the snapshot
+	// holds stored claim images next to the logos.
+	startClaimImagesServer(t)
+	issueOpenBadgeForSnapshot(t, c, 23, sessionHandler)
+
+	// 3k. Issue a spare VCDM credential, removed at the end.
+	issueCredentialViaOpenID4VCI(t, c, 24, sessionHandler, vcdmCredentialConfigId, vcdmSpareClaims)
 
 	// Verify credentials are present
 	creds, _, err := c.GetCredentials()
@@ -226,6 +257,29 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	// batch instance and writes an mdoc disclosure log.
 	discloseAvMdocOnce(t, c, sessionHandler, 20)
 
+	// 7h. Disclose the VCDM credential to the veramo verifier as a vp+jwt,
+	// which spends one instance and writes a VCDM disclosure log. The query
+	// also matches the status-list and spare VCDM credentials; pick Vera's.
+	discloseVcdmToVeramo(t, c, sessionHandler, 25, vcdmDcqlQuery(
+		`"meta": {"type_values": [["`+vcdmVerifiableCredentialIri+`", "`+vcdmCredentialType+`"]]}`,
+		[]any{"credentialSubject", "given_name"},
+		[]any{"credentialSubject", "email"},
+	), func(cred *clientmodels.SelectableCredentialInstance) bool {
+		return vcdmSubjectValue(cred.Attributes, "email") == "vera@example.com"
+	})
+
+	// 7i. Disclose the Open Badges credential, so a disclosure log holds claim
+	// images. A log entry's images cannot be fetched again, so this is what
+	// shows whether stored claim images still load.
+	discloseVcdmToVeramo(t, c, sessionHandler, 26, vcdmDcqlQuery("",
+		[]any{"credentialSubject", "photo"},
+		[]any{"credentialSubject", "achievement"},
+		[]any{"credentialSubject", "logo"},
+		[]any{"credentialSubject", "broken"},
+	), func(cred *clientmodels.SelectableCredentialInstance) bool {
+		return cred.Name == openBadgeCredentialName
+	})
+
 	// 8. Remove several credentials as the final actions, so the newest activity
 	// logs are an ordered run of removals. Keep the credentials the regression
 	// test asserts on: fullName, singleton, email, and one OpenID4VCI credential.
@@ -250,10 +304,18 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 		if cred.CredentialId == "https://localhost:8443/vct/test" && credentialAttrValue(cred, "given_name") == "Test" {
 			continue
 		}
+		// Keep Vera's VCDM credential, the revoked status-list one and the Open
+		// Badge; remove only the spare VCDM credential.
+		if cred.Name == openBadgeCredentialName {
+			continue
+		}
+		if cred.CredentialId == vcdmCredentialId && vcdmSubjectValue(cred.Attributes, "email") != vcdmSpareEmail {
+			continue
+		}
 		require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
 		removals++
 	}
-	require.Equal(t, 3, removals, "expected exactly 3 credential removals")
+	require.Equal(t, 4, removals, "expected exactly 4 credential removals")
 
 	// Log final state
 	logs, err := c.LoadNewestLogs(100)
@@ -302,4 +364,103 @@ func credentialAttrValue(cred *clientmodels.Credential, key string) string {
 		}
 	}
 	return ""
+}
+
+// The spare VCDM credential, issued only to be removed: its removal log is the
+// snapshot's VCDM removal entry.
+const vcdmSpareEmail = "spare-vcdm@example.com"
+
+var vcdmSpareClaims = `{
+	"given_name": "Spare",
+	"family_name": "Modell",
+	"email": "` + vcdmSpareEmail + `"
+}`
+
+// vcdmSubjectValue returns the string value of credentialSubject.<key>, or ""
+// if absent.
+func vcdmSubjectValue(attrs []clientmodels.Attribute, key string) string {
+	for _, a := range attrs {
+		if len(a.ClaimPath) == 2 && a.ClaimPath[0] == "credentialSubject" && a.ClaimPath[1] == key &&
+			a.Value != nil && a.Value.String != nil {
+			return *a.Value.String
+		}
+	}
+	return ""
+}
+
+// issueOpenBadgeForSnapshot issues the Open Badges test credential, with the
+// same claims and images as testOpenBadgesClaimImages, so the regression test
+// can check them with requireOpenBadgeImages. startClaimImagesServer must be
+// running: the wallet downloads the images and the context at issuance.
+func issueOpenBadgeForSnapshot(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler) {
+	t.Helper()
+	offer := postOffer(t, preAuthIssuerURL, preAuthAdminToken, fmt.Sprintf(`{
+		"credentials": [%q],
+		"grants": {
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+				"pre-authorized_code": "generate"
+			}
+		},
+		"credentialDataSupplierInput": {},
+		"credential": {
+			"@context": [%q, %q],
+			"image": {"id": %q, "type": "Image"},
+			"issuer": {"image": %q},
+			"credentialSubject": {
+				"photo": %q,
+				"achievement": {
+					"name": "Schildertechnieken",
+					"image": {"id": %q, "type": "Image"}
+				},
+				"logo": {"id": %q, "type": "Image"},
+				"broken": {"id": %q, "type": "Image"}
+			}
+		}
+	}`, openBadgeCredentialConfigId, vcdm.ContextV2, openBadgeContextURL,
+		logoImageURL, logoImageURL,
+		photoDataURI, badgeImageURL, logoImageURL, missingImageURL))
+	startOpenID4VCISession(t, c, sessionId, offer.URI)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	grantPermission(t, c, session.Id)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_Success)
+}
+
+// discloseVcdmToVeramo runs one vc+sd-jwt disclosure to the veramo verifier,
+// disclosing the owned option whose credential pick accepts, and checks that
+// the verifier accepted the presentation.
+func discloseVcdmToVeramo(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, sessionId int,
+	dcql string, pick func(*clientmodels.SelectableCredentialInstance) bool) {
+	t.Helper()
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcql)
+	startOpenID4VPDisclosureSession(t, c, sessionId, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, sessionId, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1)
+	var chosen *clientmodels.DisclosureBundle
+	for _, option := range session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions {
+		if pick(option.Credentials[0]) {
+			require.Nil(t, chosen, "more than one owned option matches")
+			chosen = option
+		}
+	}
+	require.NotNil(t, chosen, "no owned option matches")
+	grantPermission(t, c, session.Id, makeDisclosureChoice(chosen))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, sessionId, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Equal(t, "RESPONSE_RECEIVED", result.Status)
+	requireNoVeramoVcdmErrors(t, result)
 }

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Update Go dependencies to their latest releases, among them `github.com/lestrrat-go/jwx/v4` 4.4.0 → 4.6.0, `github.com/go-chi/chi/v5` 5.3.0 → 5.5.0, `github.com/sirupsen/logrus` 1.9.4 → 1.10.2, `go.etcd.io/bbolt` 1.4.3 → 1.5.0 and `golang.org/x/crypto` 0.55.0 → 0.57.0
 
+### Internal
+- Storage regression snapshot for v1.5.0 (`testdata/storage_regression/v1.5.0/`), verified by `TestClientStorageRegressionV1_5_0`. It is the first snapshot that holds SD-JWT-secured VCDM credentials: the fixture generator now issues a VCDM credential, a VCDM credential revoked through a Bitstring Status List, and an Open Badges credential with claim images, discloses two of them to the veramo verifier and removes a fourth. The test discloses the stored VCDM credential again, so its stored holder key is checked, and finds the Open Badge by a `type_values` query whose context can no longer be fetched. The shared check that a reloaded client still works now also issues and discloses a fresh VCDM credential, for every snapshot version.
+
 ## [1.6.0] - 2026-11-11
 ### Added
 - Usage reports carry, per row, the `host` the Yivi app connected to: the host a session request asked for, or else the host of the server's URL. The Yivi Portal can thus tell per hostname whether a Trusted Verifier's usage is reported, also when one server runs sessions under the hostnames of several Trusted Verifiers. The field is optional and the report schema stays 1, so a Portal that does not know it ignores it.

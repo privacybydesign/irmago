@@ -403,6 +403,7 @@ func assertLoadedClientUsable(t *testing.T, c *client.Client, sessionHandler *Mo
 	assertFreshOpenID4VCISessionsWork(t, c, sessionHandler)
 	assertStatusListSessionsWork(t, c, sessionHandler)
 	assertFreshMdocSessionsWork(t, c, sessionHandler)
+	assertFreshVcdmSessionsWork(t, c, sessionHandler)
 }
 
 // assertFreshIrmaSessionsWork runs non-keyshare and keyshare disclosures and an
@@ -544,6 +545,21 @@ func assertFreshMdocSessionsWork(t *testing.T, c *client.Client, sessionHandler 
 	t.Helper()
 	issueAvMdocViaPythonIssuer(t, c, 10, sessionHandler)
 	discloseAvMdocOnce(t, c, sessionHandler, 11)
+}
+
+// assertFreshVcdmSessionsWork issues an SD-JWT-secured VCDM credential from
+// veramo and discloses it to the veramo verifier. For a snapshot from before
+// v1.5.0, this is the first VCDM credential its database holds.
+func assertFreshVcdmSessionsWork(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler) {
+	t.Helper()
+	issueCredentialViaOpenID4VCI(t, c, 12, sessionHandler, vcdmCredentialConfigId,
+		`{"given_name": "Reload", "family_name": "Check", "email": "reload-vcdm@example.com"}`)
+	discloseVcdmToVeramo(t, c, sessionHandler, 13, vcdmDcqlQuery(
+		`"meta": {"type_values": [["`+vcdmVerifiableCredentialIri+`", "`+vcdmCredentialType+`"]]}`,
+		[]any{"credentialSubject", "email"},
+	), func(cred *clientmodels.SelectableCredentialInstance) bool {
+		return vcdmSubjectValue(cred.Attributes, "email") == "reload-vcdm@example.com"
+	})
 }
 
 // discloseViaVeramoOpenID4VP runs a full OpenID4VP disclosure against the
