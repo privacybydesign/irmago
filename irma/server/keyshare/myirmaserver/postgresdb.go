@@ -64,7 +64,7 @@ func (db *postgresDB) verifyEmailToken(ctx context.Context, token string) (int64
 		[]any{&id, &email},
 		token, time.Now().Unix())
 	if err == sql.ErrNoRows {
-		server.Logger.Info("Unknown email verification token")
+		server.LoggerEntry.Info("Unknown email verification token")
 		return 0, errTokenNotFound
 	}
 	if err != nil {

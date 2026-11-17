@@ -200,11 +200,11 @@ func (conf *Configuration) CanRevoke(requestor string, cred irma.CredentialTypeI
 func (conf *Configuration) initialize() error {
 	if conf.DisableRequestorAuthentication {
 		authenticators = map[AuthenticationMethod]Authenticator{AuthenticationMethodNone: NilAuthenticator{}}
-		conf.Logger.Warn("Authentication of incoming session requests disabled: anyone who can reach this server can use it")
+		conf.LoggerEntry.Warn("Authentication of incoming session requests disabled: anyone who can reach this server can use it")
 		havekeys := conf.HavePrivateKeys()
 		if len(conf.Permissions.Issuing) > 0 && havekeys {
 			if conf.separateClientServer() || !conf.Production {
-				conf.Logger.Warn("Issuance enabled and private keys installed: anyone who can reach this server can use it to issue attributes")
+				conf.LoggerEntry.Warn("Issuance enabled and private keys installed: anyone who can reach this server can use it to issue attributes")
 			} else {
 				return errors.New("If issuing is enabled in production mode, requestor authentication must be enabled, or client_listen_addr and client_port must be used")
 			}
@@ -310,11 +310,11 @@ func (conf *Configuration) initialize() error {
 	}
 
 	if conf.URL != "" && !strings.HasSuffix(conf.URL, conf.ApiPrefix+"irma/") {
-		conf.Logger.Warnf("Are the URL and API-prefix set correctly?: %s does not end with %s.", conf.URL, conf.ApiPrefix+"irma/")
+		conf.LoggerEntry.Warnf("Are the URL and API-prefix set correctly?: %s does not end with %s.", conf.URL, conf.ApiPrefix+"irma/")
 	}
 
 	if len(conf.StaticSessions) != 0 && conf.JwtRSAPrivateKey == nil {
-		conf.Logger.Warn("Static sessions enabled and no JWT private key installed. Ensure that POSTs to the callback URLs of static sessions are trustworthy by keeping the callback URLs secret and by using HTTPS.")
+		conf.LoggerEntry.Warn("Static sessions enabled and no JWT private key installed. Ensure that POSTs to the callback URLs of static sessions are trustworthy by keeping the callback URLs secret and by using HTTPS.")
 	}
 
 	return nil
