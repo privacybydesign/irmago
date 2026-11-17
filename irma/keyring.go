@@ -123,6 +123,18 @@ func (*PrivateKeyRingFolder) parseFilename(filename string) (*IssuerIdentifier, 
 	return &issuerid, &c, nil
 }
 
+// resolvePath joins filename onto the key ring folder, rejecting any filename
+// that is absolute or escapes p.path via "..". Private key filenames are derived
+// from an issuer identifier (scheme.issuer[.counter].xml) that can be attacker
+// controlled through the credential type in a session or revocation request, so
+// the identifier must resolve to a single file inside p.path and never elsewhere.
+func (p *PrivateKeyRingFolder) resolvePath(filename string) (string, error) {
+	if !filepath.IsLocal(filename) {
+		return "", errors.Errorf("refusing to access private key file outside the key ring: %q", filename)
+	}
+	return filepath.Join(p.path, filename), nil
+}
+
 func (p *PrivateKeyRingFolder) readFile(filename string, id IssuerIdentifier) (*gabikeys.PrivateKey, error) {
 	scheme := p.conf.SchemeManagers[id.SchemeManagerIdentifier()]
 	if scheme == nil {
@@ -234,11 +246,18 @@ func (p *PrivateKeyRingFolder) Latest(id IssuerIdentifier) (*gabikeys.PrivateKey
 }
 
 func (p *PrivateKeyRingFolder) Iterate(id IssuerIdentifier, f func(sk *gabikeys.PrivateKey) error) error {
-	files, err := filepath.Glob(filepath.Join(p.path, fmt.Sprintf("%s.*.xml", id.String())))
+	globPattern, err := p.resolvePath(fmt.Sprintf("%s.*.xml", id.String()))
 	if err != nil {
 		return err
 	}
-	fileWithoutCounter := filepath.Join(p.path, fmt.Sprintf("%s.xml", id.String()))
+	files, err := filepath.Glob(globPattern)
+	if err != nil {
+		return err
+	}
+	fileWithoutCounter, err := p.resolvePath(fmt.Sprintf("%s.xml", id.String()))
+	if err != nil {
+		return err
+	}
 	exists, err := common.PathExists(fileWithoutCounter)
 	if err != nil {
 		return err
