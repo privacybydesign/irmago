@@ -95,6 +95,10 @@ func buildPlanFromCredentialSets(
 				if _, done := listed[queryId]; done {
 					continue
 				}
+				// Of an incomplete option, only what it is missing can be obtained.
+				if len(planned.owned) == 0 && len(queryResults[queryId].OwnedCandidates) > 0 {
+					continue
+				}
 				listed[queryId] = struct{}{}
 				obtainable = append(obtainable, queryResults[queryId].ObtainableDescriptors...)
 			}

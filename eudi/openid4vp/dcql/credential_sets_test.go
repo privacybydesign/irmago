@@ -209,7 +209,12 @@ func TestBuildPlanFromCredentialSetsWithMultiQueryOptions(t *testing.T) {
 
 	t.Run("an incomplete option does not hide a complete one", func(t *testing.T) {
 		queryResults := map[string]*CredentialQueryResult{
-			"pid":      {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{owned("pid", "pid-hash", "family_name")}},
+			// Handlers give an owned query a descriptor too, so the plan must
+			// leave it out of an incomplete option itself.
+			"pid": {
+				OwnedCandidates:       []*clientmodels.SelectableCredentialInstance{owned("pid", "pid-hash", "family_name")},
+				ObtainableDescriptors: []*clientmodels.CredentialDescriptor{{CredentialId: "pid"}},
+			},
 			"eec":      {ObtainableDescriptors: []*clientmodels.CredentialDescriptor{{CredentialId: "eec"}}},
 			"passport": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{owned("passport", "passport-hash", "document_number")}},
 		}
