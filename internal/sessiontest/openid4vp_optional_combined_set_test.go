@@ -156,8 +156,8 @@ func testOptionalCombinedSetSkipped(t *testing.T) {
 	requireVerifierReceivedClaims(t, result, "email-cred",
 		claim([]any{"email"}, "required@example.com"),
 	)
-	require.NotContains(t, result.Result.Credentials, "test-credential", "a skipped pair must not reach the verifier")
-	require.NotContains(t, result.Result.Credentials, vcdmQueryId, "a skipped pair must not reach the verifier")
+	requireVerifierReceivedNothingFor(t, result, "test-credential")
+	requireVerifierReceivedNothingFor(t, result, vcdmQueryId)
 }
 
 // The wallet holds the VCDM credential but not the test SD-JWT VC, so the
@@ -204,8 +204,7 @@ func testOptionalCombinedSetPartlyOwned(t *testing.T) {
 	requireVerifierReceivedClaims(t, result, "email-cred",
 		claim([]any{"email"}, "required@example.com"),
 	)
-	require.NotContains(t, result.Result.Credentials, vcdmQueryId,
-		"half of an unanswered pair must not reach the verifier")
+	requireVerifierReceivedNothingFor(t, result, vcdmQueryId)
 }
 
 // A request whose only set is the optional pair, skipped: like any skipped

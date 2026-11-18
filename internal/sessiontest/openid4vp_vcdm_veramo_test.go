@@ -3,6 +3,8 @@ package sessiontest
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -270,13 +272,31 @@ var veramoVcdmErrorCodes = map[string]struct{}{
 	"INVALID_STATE":        {},
 }
 
-func requireNoVeramoVcdmErrors(t *testing.T, result veramoCheckResult) {
+// requireNoVeramoVcdmErrors fails on any verifier error, except errors about the
+// queries in unanswered. The verifier validates every query in the request,
+// including ones the wallet rightly left out of vp_token (OpenID4VP 1.0 § 8.1),
+// and reports "expects array of JWT tokens" for each of those.
+func requireNoVeramoVcdmErrors(t *testing.T, result veramoCheckResult, unanswered ...string) {
 	t.Helper()
 	require.NotNil(t, result.Result, "verifier result should not be nil")
 	for _, msg := range result.Result.Messages {
+		if slices.ContainsFunc(unanswered, func(queryId string) bool {
+			return strings.HasPrefix(msg.Message, queryId+": ")
+		}) {
+			continue
+		}
 		_, isError := veramoVcdmErrorCodes[msg.Code]
 		require.False(t, isError, "verifier rejected the presentation: %s: %s", msg.Code, msg.Message)
 	}
+}
+
+// requireVerifierReceivedNothingFor asserts the verifier got no credential for
+// the given query. The verifier lists every query of the request in its result,
+// with an empty list for a query the wallet left out, so the key is always there.
+func requireVerifierReceivedNothingFor(t *testing.T, result veramoCheckResult, queryId string) {
+	t.Helper()
+	require.NotNil(t, result.Result, "verifier result should not be nil")
+	require.Empty(t, result.Result.Credentials[queryId], "query %q must not be answered", queryId)
 }
 
 // requireNoOwnedVcdmOption asserts the wallet offers no stored VCDM credential
@@ -450,7 +470,7 @@ func testSkippedOptionalSetNextToCombinedRequiredSet(t *testing.T) {
 
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Equal(t, "RESPONSE_RECEIVED", result.Status)
-	requireNoVeramoVcdmErrors(t, result)
+	requireNoVeramoVcdmErrors(t, result, "email-cred")
 	requireVerifierReceivedClaims(t, result, "test-credential",
 		claim([]any{"email"}, "test@example.com"),
 	)
@@ -460,6 +480,5 @@ func testSkippedOptionalSetNextToCombinedRequiredSet(t *testing.T) {
 		claim([]any{"email"}, "vera@example.com"),
 		claim([]any{"id"}, holderDid),
 	)
-	require.NotContains(t, result.Result.Credentials, "email-cred",
-		"a skipped optional set must not reach the verifier")
+	requireVerifierReceivedNothingFor(t, result, "email-cred")
 }
