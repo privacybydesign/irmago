@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- An OpenID4VP request whose DCQL `credential_sets` option names several credential queries, such as `"options": [["pid", "enrolment"]]`, no longer fails with "not supported at the moment". Such an option asks for those credentials together (OpenID4VP 1.0 § 6.2): the wallet offers a bundle per combination of the credentials it holds, and when the option is incomplete, asks to obtain only the credentials it is missing. An incomplete option in an optional set never forces issuance. Two queries of one option that ask the same claims of the same credential type are refused with a clear error rather than answered under one query id.
+
 ### Changed
 - Update Go dependencies to their latest releases, among them `github.com/lestrrat-go/jwx/v4` 4.4.0 → 4.6.0, `github.com/go-chi/chi/v5` 5.3.0 → 5.5.0, `github.com/sirupsen/logrus` 1.9.4 → 1.10.2, `go.etcd.io/bbolt` 1.4.3 → 1.5.0 and `golang.org/x/crypto` 0.55.0 → 0.57.0
 

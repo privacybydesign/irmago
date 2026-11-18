@@ -29,7 +29,8 @@ func TestDcqlCandidateSelection(t *testing.T) {
 	t.Run("credential set two options same purpose", testCredentialSetTwoOptionsSamePurpose)
 	t.Run("credential set two options multiple claims single candidate each", testCredentialSetTwoOptionsMultipleClaimsSingleCandidateEach)
 	t.Run("credential set two options multiple claims multiple candidates", testCredentialSetTwoOptionsMultipleClaimsMultipleCandidates)
-	t.Run("multiple credential queries in option is unsupported", testMultipleCredentialQueriesInOptionIsUnsupported)
+	t.Run("multiple credential queries in option are one bundle", testMultipleCredentialQueriesInOptionAreOneBundle)
+	t.Run("multiple credential queries in option issue only what is missing", testMultipleCredentialQueriesInOptionIssueOnlyWhatIsMissing)
 	t.Run("invalid format returns error", testInvalidFormatReturnsError)
 	t.Run("satisfiable predefined value", testSatisfiablePredefinedValue)
 	t.Run("unsatisfiable predefined value", testUnsatisfiablePredefinedValue)
@@ -335,35 +336,56 @@ func testCredentialSetTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T) {
 	requireSatisfiable(t, plan, expectPickOne{owned: 3, obtainable: 2})
 }
 
-func testMultipleCredentialQueriesInOptionIsUnsupported(t *testing.T) {
+// multiQueryOptionQuery asks for an email and a login credential, together, as
+// one credential set option.
+const multiQueryOptionQuery = `{
+	"credentials": [
+		{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [{ "path": ["email"] }]
+		},
+		{
+			"id": "q2",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.mijnirma"] },
+			"claims": [{ "path": ["email"] }]
+		}
+	],
+	"credential_sets": [
+		{ "options": [["q1", "q2"]] }
+	]
+}`
+
+func testMultipleCredentialQueriesInOptionAreOneBundle(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	emailInfo := storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com", "domain": "t.com"})
+	loginInfo := storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "c@t.com"})
+
+	plan := buildPlan(t, h, multiQueryOptionQuery)
+
+	require.Nil(t, plan.IssueDuringDisclosure)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	owned := plan.DisclosureChoicesOverview[0].OwnedOptions
+	require.Len(t, owned, 1, "both credentials answer the option together")
+	require.Len(t, owned[0].Credentials, 2)
+	assert.Equal(t, emailInfo.Hash, owned[0].Credentials[0].Hash)
+	assert.Equal(t, loginInfo.Hash, owned[0].Credentials[1].Hash)
+}
+
+func testMultipleCredentialQueriesInOptionIssueOnlyWhatIsMissing(t *testing.T) {
 	h, s := createTestDcqlHandler(t)
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com", "domain": "t.com"})
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [
-			{
-				"id": "q1",
-				"format": "dc+sd-jwt",
-				"meta": { "vct_values": ["test.test.email"] },
-				"claims": [{ "path": ["email"] }]
-			},
-			{
-				"id": "q2",
-				"format": "dc+sd-jwt",
-				"meta": { "vct_values": ["test.test.mijnirma"] },
-				"claims": [{ "path": ["email"] }]
-			}
-		],
-		"credential_sets": [
-			{ "options": [["q1", "q2"]] }
-		]
-	}`)
+	plan := buildPlan(t, h, multiQueryOptionQuery)
 
-	result, err := h.FindCandidates(query)
-	require.NoError(t, err)
-	_, _, err = h.BuildDisclosurePlan(query, result, nil, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not supported")
+	require.NotNil(t, plan.IssueDuringDisclosure)
+	require.Len(t, plan.IssueDuringDisclosure.Steps, 1)
+	options := plan.IssueDuringDisclosure.Steps[0].Options
+	require.Len(t, options, 1)
+	require.Len(t, options[0].Credentials, 1, "the email credential the user holds is not asked for again")
+	assert.Equal(t, "test.test.mijnirma", options[0].Credentials[0].CredentialId)
 }
 
 func testInvalidFormatReturnsError(t *testing.T) {

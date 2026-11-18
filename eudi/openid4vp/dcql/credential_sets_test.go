@@ -405,3 +405,67 @@ func TestBuildPlanFromSeveralCredentialSets(t *testing.T) {
 		assert.Equal(t, []string{"eec"}, descriptorIds(step.Options[0]))
 	})
 }
+
+// Without `multiple`, a query is answered by exactly one presentation
+// (OpenID4VP 1.0 § 8.1). When two queries of one option accept the same
+// credential type and ask the same claims, the app's choice cannot say which
+// card answers which query, and both would land under the first. The wallet
+// must refuse that rather than send a response the verifier rejects.
+func TestPrepareDisclosureRefusesTwoPresentationsForOneQuery(t *testing.T) {
+	query := DcqlQuery{Credentials: []CredentialQuery{
+		{Id: "email1", Format: "fake"},
+		{Id: "email2", Format: "fake"},
+		{Id: "emails", Format: "fake", Multiple: true},
+	}}
+	handler := NewDcqlHandler([]DcqlCredentialQueryHandler{fakeQueryHandler{}})
+
+	t.Run("two presentations for a single query are refused", func(t *testing.T) {
+		_, err := handler.PrepareDisclosure(query, []DisclosureSelection{
+			{QueryId: "email1", CredentialHash: "h1"},
+			{QueryId: "email1", CredentialHash: "h2"},
+		}, "nonce", "aud", ResponseBinding{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "email1")
+	})
+
+	t.Run("one presentation per query is fine", func(t *testing.T) {
+		prepared, err := handler.PrepareDisclosure(query, []DisclosureSelection{
+			{QueryId: "email1", CredentialHash: "h1"},
+			{QueryId: "email2", CredentialHash: "h2"},
+		}, "nonce", "aud", ResponseBinding{})
+		require.NoError(t, err)
+		assert.Len(t, prepared.QueryResponses, 2)
+	})
+
+	t.Run("several presentations for a multiple query are fine", func(t *testing.T) {
+		prepared, err := handler.PrepareDisclosure(query, []DisclosureSelection{
+			{QueryId: "emails", CredentialHash: "h1"},
+			{QueryId: "emails", CredentialHash: "h2"},
+		}, "nonce", "aud", ResponseBinding{})
+		require.NoError(t, err)
+		assert.Len(t, prepared.QueryResponses, 2)
+	})
+}
+
+// fakeQueryHandler answers every query of format "fake" with one presentation
+// per selection.
+type fakeQueryHandler struct{}
+
+func (fakeQueryHandler) CanHandleCredentialQuery(query CredentialQuery) bool {
+	return query.Format == "fake"
+}
+
+func (fakeQueryHandler) FindCandidates(CredentialQuery) (*CredentialQueryResult, error) {
+	return &CredentialQueryResult{}, nil
+}
+
+func (fakeQueryHandler) PrepareDisclosure(selections []DisclosureSelection, _, _ string) (*PreparedDisclosure, error) {
+	prepared := &PreparedDisclosure{}
+	for _, selection := range selections {
+		prepared.QueryResponses = append(prepared.QueryResponses, QueryResponse{
+			QueryId:     selection.QueryId,
+			Credentials: []string{selection.CredentialHash},
+		})
+	}
+	return prepared, nil
+}
