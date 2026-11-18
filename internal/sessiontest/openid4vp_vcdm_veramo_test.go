@@ -27,6 +27,9 @@ func testSessionHandlerForOpenID4VPVcdm(t *testing.T) {
 	t.Run("type_values mismatch offers no VCDM candidate", testVcdmTypeValuesMismatchOffersNoCandidate)
 	t.Run("dc+sd-jwt query does not offer VCDM credential", testDcSdJwtQueryDoesNotOfferVcdmCredential)
 	t.Run("VCDM and SD-JWT VC disclosed in one request", testVcdmAndSdJwtVcInOneRequest)
+	t.Run("VCDM and SD-JWT VC required together by one credential set option", testVcdmAndSdJwtVcInOneCredentialSetOption)
+	t.Run("skipped optional set next to a combined required set", testSkippedOptionalSetNextToCombinedRequiredSet)
+	t.Run("optional combined set", testSessionHandlerForOpenID4VPOptionalCombinedSet)
 }
 
 func testDiscloseVcdmToVeramoVerifier(t *testing.T) {
@@ -289,4 +292,174 @@ func requireNoOwnedVcdmOption(t *testing.T, session clientmodels.SessionState) {
 			}
 		}
 	}
+}
+
+// testVcdmAndSdJwtVcInOneCredentialSetOption is the shape eduwallet's exam
+// check-in sends: an SD-JWT VC and a VCDM credential, required together by one
+// credential set option (`"options": [[a, b]]`). The wallet offers them as a
+// single bundle, and the verifier receives each under its own query id.
+func testVcdmAndSdJwtVcInOneCredentialSetOption(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, vcdmCredentialConfigId, vcdmTestClaims)
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "TestCredentialSdJwt", `{
+		"given_name": "Test",
+		"family_name": "User",
+		"email": "test@example.com"
+	}`)
+	holderDid := vcdmHolderDid(t, requireSingleVcdmCredential(t, c).Attributes)
+
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "test-credential",
+					"format": "dc+sd-jwt",
+					"meta": {"vct_values": ["https://localhost:8443/vct/test"]},
+					"claims": [
+						{ "path": ["email"] }
+					]
+				},
+				{
+					"id": "`+vcdmQueryId+`",
+					"format": "vc+sd-jwt",
+					"meta": {"type_values": [["`+vcdmVerifiableCredentialIri+`", "`+vcdmCredentialType+`"]]},
+					"claims": [
+						{ "path": ["credentialSubject", "given_name"] }
+					]
+				}
+			],
+			"credential_sets": [
+				{ "required": true, "options": [["test-credential", "`+vcdmQueryId+`"]] }
+			]
+		}
+	}`)
+	startOpenID4VPDisclosureSession(t, c, 3, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	require.NotNil(t, session.DisclosurePlan)
+	require.Nil(t, session.DisclosurePlan.IssueDuringDisclosure)
+	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1, "one credential set is one choice")
+
+	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.Len(t, pickOne.OwnedOptions, 1)
+	bundle := pickOne.OwnedOptions[0]
+	require.Len(t, bundle.Credentials, 2, "both credentials answer the option together")
+	require.Equal(t, "https://localhost:8443/vct/test", bundle.Credentials[0].CredentialId)
+
+	grantPermission(t, c, session.Id, makeDisclosureChoice(bundle))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Equal(t, "RESPONSE_RECEIVED", result.Status)
+	requireNoVeramoVcdmErrors(t, result)
+	requireVerifierReceivedClaims(t, result, "test-credential",
+		claim([]any{"email"}, "test@example.com"),
+	)
+	requireVerifierReceivedClaims(t, result, vcdmQueryId,
+		claim([]any{"given_name"}, "Vera"),
+		claim([]any{"family_name"}, "Modell"),
+		claim([]any{"email"}, "vera@example.com"),
+		claim([]any{"id"}, holderDid),
+	)
+}
+
+// testSkippedOptionalSetNextToCombinedRequiredSet asks for an SD-JWT VC and a
+// VCDM credential together (one required set, one option naming both), and an
+// email credential in an optional set. The user shares the pair and skips the
+// email: the verifier receives the pair under their own query ids and nothing
+// for the email query.
+func testSkippedOptionalSetNextToCombinedRequiredSet(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, vcdmCredentialConfigId, vcdmTestClaims)
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "TestCredentialSdJwt", `{
+		"given_name": "Test",
+		"family_name": "User",
+		"email": "test@example.com"
+	}`)
+	issueCredentialViaOpenID4VCI(t, c, 3, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "skip@example.com",
+		"domain": "example.com"
+	}`)
+	holderDid := vcdmHolderDid(t, requireSingleVcdmCredential(t, c).Attributes)
+
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "test-credential",
+					"format": "dc+sd-jwt",
+					"meta": {"vct_values": ["https://localhost:8443/vct/test"]},
+					"claims": [
+						{ "path": ["email"] }
+					]
+				},
+				{
+					"id": "`+vcdmQueryId+`",
+					"format": "vc+sd-jwt",
+					"meta": {"type_values": [["`+vcdmVerifiableCredentialIri+`", "`+vcdmCredentialType+`"]]},
+					"claims": [
+						{ "path": ["credentialSubject", "given_name"] }
+					]
+				},
+				{
+					"id": "email-cred",
+					"format": "dc+sd-jwt",
+					"meta": {"vct_values": ["https://localhost:8443/vct/email"]},
+					"claims": [
+						{ "path": ["email"] }
+					]
+				}
+			],
+			"credential_sets": [
+				{ "options": [["test-credential", "`+vcdmQueryId+`"]] },
+				{ "options": [["email-cred"]], "required": false }
+			]
+		}
+	}`)
+	startOpenID4VPDisclosureSession(t, c, 4, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 4, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	require.NotNil(t, session.DisclosurePlan)
+	require.Nil(t, session.DisclosurePlan.IssueDuringDisclosure)
+	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 2)
+
+	combined := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.False(t, combined.Optional)
+	require.Len(t, combined.OwnedOptions, 1)
+	require.Len(t, combined.OwnedOptions[0].Credentials, 2)
+
+	optional := session.DisclosurePlan.DisclosureChoicesOverview[1]
+	require.True(t, optional.Optional)
+	require.Len(t, optional.OwnedOptions, 1, "the email credential is offered, the user skips it")
+
+	grantPermission(t, c, session.Id,
+		makeDisclosureChoice(combined.OwnedOptions[0]),
+		clientmodels.DisclosureDisconSelection{},
+	)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 4, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Equal(t, "RESPONSE_RECEIVED", result.Status)
+	requireNoVeramoVcdmErrors(t, result)
+	requireVerifierReceivedClaims(t, result, "test-credential",
+		claim([]any{"email"}, "test@example.com"),
+	)
+	requireVerifierReceivedClaims(t, result, vcdmQueryId,
+		claim([]any{"given_name"}, "Vera"),
+		claim([]any{"family_name"}, "Modell"),
+		claim([]any{"email"}, "vera@example.com"),
+		claim([]any{"id"}, holderDid),
+	)
+	require.NotContains(t, result.Result.Credentials, "email-cred",
+		"a skipped optional set must not reach the verifier")
 }

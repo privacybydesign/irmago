@@ -92,20 +92,6 @@ func TestBuildPlanFromCredentialSets(t *testing.T) {
 		assert.True(t, plan.DisclosureChoicesOverview[0].Optional)
 	})
 
-	t.Run("multi-query options not supported", func(t *testing.T) {
-		queryResults := map[string]*CredentialQueryResult{
-			"q1": {},
-			"q2": {},
-		}
-		credSets := []CredentialSetQuery{
-			{Options: [][]string{{"q1", "q2"}}},
-		}
-
-		_, _, err := buildPlanFromCredentialSets(queryResults, credSets, nil, nil)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not supported")
-	})
-
 	t.Run("empty option array returns error instead of panicking", func(t *testing.T) {
 		credSets := []CredentialSetQuery{
 			{Options: [][]string{{}}},

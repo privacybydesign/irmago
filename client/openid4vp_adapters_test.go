@@ -55,3 +55,25 @@ func TestDisclosureChoicesSkipsAnOptionalPickOne(t *testing.T) {
 		})
 	}
 }
+
+// A bundle answering a multi-query credential set option comes back as one
+// choice holding several credentials. Each must be presented under the query it
+// answers, not all under the first.
+func TestDisclosureChoicesSplitsABundleAcrossItsQueries(t *testing.T) {
+	queryIds := []dcql.ChoiceQueryIds{{
+		{Hash: "pid-hash", QueryId: "PID", PathKeys: map[string]struct{}{clientmodels.ClaimPathKey([]any{"family_name"}): {}}},
+		{Hash: "eec-hash", QueryId: "EEC", PathKeys: map[string]struct{}{clientmodels.ClaimPathKey([]any{"credentialSubject", "code"}): {}}},
+	}}
+	choice := clientmodels.DisclosureDisconSelection{Credentials: []clientmodels.SelectedCredential{
+		{CredentialId: "pid", CredentialHash: "pid-hash", AttributePaths: [][]any{{"family_name"}}},
+		{CredentialId: "eec", CredentialHash: "eec-hash", AttributePaths: [][]any{{"credentialSubject", "code"}}},
+	}}
+
+	selections := disclosureChoicesToOpenID4VPSelections([]clientmodels.DisclosureDisconSelection{choice}, queryIds)
+
+	require.Len(t, selections, 2)
+	require.Equal(t, "PID", selections[0].QueryId)
+	require.Equal(t, "pid-hash", selections[0].CredentialHash)
+	require.Equal(t, "EEC", selections[1].QueryId)
+	require.Equal(t, "eec-hash", selections[1].CredentialHash)
+}
