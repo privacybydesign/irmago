@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Requestors in a requestor scheme can state where end users reach their support: the optional fields `support_email` and `support_url` in `requestors.json`, on `RequestorInfo` as `SupportEmail` and `SupportURL`. They are part of the `Configuration` the Yivi app receives, so it can put a user through to the organisation instead of to Yivi support. The values are not validated when parsing, so a mistake in one of them cannot disable the scheme. Earlier versions ignore the fields
+
 ### Changed
 - Update Go dependencies to their latest releases, among them `github.com/lestrrat-go/jwx/v4` 4.4.0 → 4.6.0, `github.com/go-chi/chi/v5` 5.3.0 → 5.5.0, `github.com/sirupsen/logrus` 1.9.4 → 1.10.2, `go.etcd.io/bbolt` 1.4.3 → 1.5.0 and `golang.org/x/crypto` 0.55.0 → 0.57.0
 

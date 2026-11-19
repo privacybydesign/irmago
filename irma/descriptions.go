@@ -148,6 +148,12 @@ type RequestorInfo struct {
 	Unverified bool                                   `json:"unverified"`
 	Languages  []string                               `json:"languages"`
 	Wizards    map[IssueWizardIdentifier]*IssueWizard `json:"wizards"`
+	// SupportEmail is the address at which the requestor's own support can be
+	// reached by end users, as opposed to an address for Yivi or for
+	// integrators. Optional.
+	SupportEmail string `json:"support_email,omitempty"`
+	// SupportURL is the requestor's support page for end users. Optional.
+	SupportURL string `json:"support_url,omitempty"`
 }
 
 // RequestorChunk is a number of verified requestors stored together. The RequestorScheme can consist of multiple such chunks
