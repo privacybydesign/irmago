@@ -82,19 +82,18 @@ func TestRequestorSupportContact(t *testing.T) {
 	require.Empty(t, without.SupportEmail)
 	require.Empty(t, without.SupportURL)
 
-	// The Yivi app receives the Configuration as JSON: the fields are in it
-	// for a requestor that has them, and left out for one that has not.
-	bts, err := json.Marshal(conf)
+	// The Yivi app receives the Configuration as JSON, with these requestors
+	// in it: the fields are there for a requestor that has them, and left out
+	// for one that has not.
+	bts, err := json.Marshal(conf.Requestors)
 	require.NoError(t, err)
-	var forApp struct {
-		Requestors map[string]map[string]any
-	}
+	var forApp map[string]map[string]any
 	require.NoError(t, json.Unmarshal(bts, &forApp))
-	require.Equal(t, "support@example.com", forApp.Requestors["example.com"]["support_email"])
-	require.Equal(t, "https://example.com/support", forApp.Requestors["example.com"]["support_url"])
-	require.Contains(t, forApp.Requestors, "localhost")
-	require.NotContains(t, forApp.Requestors["localhost"], "support_email")
-	require.NotContains(t, forApp.Requestors["localhost"], "support_url")
+	require.Equal(t, "support@example.com", forApp["example.com"]["support_email"])
+	require.Equal(t, "https://example.com/support", forApp["example.com"]["support_url"])
+	require.Contains(t, forApp, "localhost")
+	require.NotContains(t, forApp["localhost"], "support_email")
+	require.NotContains(t, forApp["localhost"], "support_url")
 }
 
 func TestUpdateConfiguration(t *testing.T) {
