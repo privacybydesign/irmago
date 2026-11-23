@@ -217,11 +217,25 @@ func (h *DcqlHandler) groupSelections(
 
 	// Group selections by handler
 	selectionsByHandler := make(map[int][]DisclosureSelection)
+	answered := make(map[string]struct{}, len(selections))
 	for _, sel := range selections {
 		credQuery, ok := queryById[sel.QueryId]
 		if !ok {
 			return nil, fmt.Errorf("unknown query id %q in selection", sel.QueryId)
 		}
+		// Without `multiple`, a query takes exactly one presentation (OpenID4VP
+		// 1.0 § 8.1). A second one means the choice could not be mapped back onto
+		// distinct queries: two queries of one credential set option that ask the
+		// same claims of the same credential type. Sending it would leave the
+		// other query unanswered, so the verifier would reject the response.
+		if _, again := answered[sel.QueryId]; again && !credQuery.Multiple {
+			return nil, fmt.Errorf(
+				"credential query %q would be answered by more than one presentation, but it does not allow multiple; "+
+					"two queries of one credential set option that ask the same claims of the same credential type are not supported yet",
+				sel.QueryId,
+			)
+		}
+		answered[sel.QueryId] = struct{}{}
 		// Propagate the holder binding requirement from the credential query.
 		sel.RequireHolderBinding = credQuery.NeedsHolderBinding()
 		sel.Claims = credQuery.Claims
