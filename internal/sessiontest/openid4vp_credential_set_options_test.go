@@ -215,15 +215,23 @@ const (
 )
 
 type credentialSetScenario struct {
-	name     string
-	holds    []*credentialFixture
-	request  []credentialSetQuery
-	choose   []setChoice // one per credential set, in request order
+	name    string
+	holds   []*credentialFixture
+	request []credentialSetQuery
+	choose  []setChoice // one per credential set, in request order
+	// receives is what the verifier must receive. For a set the user shares,
+	// it also says which copies to share, when the wallet holds several.
 	receives []*credentialFixture
 }
 
 func runCredentialSetScenario(t *testing.T, s credentialSetScenario) {
 	require.Len(t, s.choose, len(s.request), "a scenario picks once per credential set")
+	for i, held := range s.holds {
+		for _, other := range s.holds[:i] {
+			require.False(t, held.credentialId == other.credentialId && held.shownAs.Value == other.shownAs.Value,
+				"two held copies of %s both show %q, so they cannot be told apart", held.credentialId, held.shownAs.Value)
+		}
+	}
 
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
@@ -295,15 +303,12 @@ func (s credentialSetScenario) requireOffered(t *testing.T, plan *clientmodels.D
 // credentials, each under its own query id.
 func (s credentialSetScenario) requireReceived(t *testing.T, c *client.Client, result veramoCheckResult) {
 	t.Helper()
+	require.Equal(t, "RESPONSE_RECEIVED", result.Status)
+	require.NotNil(t, result.Result, "verifier result should not be nil")
 	if len(s.receives) == 0 {
-		require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
-		if result.Result != nil {
-			require.Empty(t, result.Result.Credentials)
-		}
+		require.Empty(t, result.Result.Credentials, "nothing may reach the verifier")
 		return
 	}
-
-	require.Equal(t, "RESPONSE_RECEIVED", result.Status)
 
 	// The verifier checks every query of the request, not just the ones in
 	// vp_token. A query the wallet rightly leaves out (§ 8.1) shows up in its
@@ -318,6 +323,9 @@ func (s credentialSetScenario) requireReceived(t *testing.T, c *client.Client, r
 	requireNoVeramoVcdmErrors(t, result, unanswered...)
 
 	for _, cred := range s.receives {
+		// requireVerifierReceivedClaims reads only the first presentation of a
+		// query, so a second copy sent alongside it would go unnoticed.
+		require.Len(t, result.Result.Credentials[cred.queryId], 1, "query %q takes one presentation", cred.queryId)
 		requireVerifierReceivedClaims(t, result, cred.queryId, cred.disclosed(t, c)...)
 	}
 }

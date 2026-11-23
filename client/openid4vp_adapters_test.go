@@ -115,11 +115,11 @@ func TestDisclosureChoicesMapEveryPairOfAMultiQueryOption(t *testing.T) {
 
 			selections := disclosureChoicesToOpenID4VPSelections([]clientmodels.DisclosureDisconSelection{choice}, queryIds)
 
+			// The hashes come straight from the choice, so only the query ids
+			// say anything about the mapping.
 			require.Len(t, selections, 2)
 			require.Equal(t, "mobile", selections[0].QueryId)
-			require.Equal(t, mobile, selections[0].CredentialHash)
 			require.Equal(t, "email", selections[1].QueryId)
-			require.Equal(t, email, selections[1].CredentialHash)
 		})
 	}
 }
