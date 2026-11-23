@@ -141,6 +141,8 @@
         ],
         "name": {
             "en": "Example domain", "nl": "Voorbeeld domeinnaam"
-        }
+        },
+        "support_email": "support@example.com",
+        "support_url": "https://example.com/support"
     }
 ]

@@ -61,6 +61,41 @@ func TestConfigurationAutocopy(t *testing.T) {
 	require.Contains(t, conf.Requestors, "localhost")
 }
 
+func TestRequestorSupportContact(t *testing.T) {
+	// In the updated test-requestors scheme the requestor of example.com has
+	// a support address and support page, and the one of localhost has not.
+	conf, err := NewConfiguration(
+		filepath.Join("..", "testdata", "irma_configuration_updated"),
+		ConfigurationOptions{ReadOnly: true},
+	)
+	require.NoError(t, err)
+	require.NoError(t, conf.ParseFolder())
+	require.Empty(t, conf.DisabledRequestorSchemes)
+
+	require.Contains(t, conf.Requestors, "example.com")
+	with := conf.Requestors["example.com"]
+	require.Equal(t, "support@example.com", with.SupportEmail)
+	require.Equal(t, "https://example.com/support", with.SupportURL)
+
+	require.Contains(t, conf.Requestors, "localhost")
+	without := conf.Requestors["localhost"]
+	require.Empty(t, without.SupportEmail)
+	require.Empty(t, without.SupportURL)
+
+	// The Yivi app receives the Configuration as JSON, with these requestors
+	// in it: the fields are there for a requestor that has them, and left out
+	// for one that has not.
+	bts, err := json.Marshal(conf.Requestors)
+	require.NoError(t, err)
+	var forApp map[string]map[string]any
+	require.NoError(t, json.Unmarshal(bts, &forApp))
+	require.Equal(t, "support@example.com", forApp["example.com"]["support_email"])
+	require.Equal(t, "https://example.com/support", forApp["example.com"]["support_url"])
+	require.Contains(t, forApp, "localhost")
+	require.NotContains(t, forApp["localhost"], "support_email")
+	require.NotContains(t, forApp["localhost"], "support_url")
+}
+
 func TestUpdateConfiguration(t *testing.T) {
 	storage := test.SetupTestStorage(t)
 	test.StartSchemeManagerHttpServer()
@@ -95,6 +130,7 @@ func TestUpdateConfiguration(t *testing.T) {
 	require.Contains(t, conf.Requestors, "localhost")
 	require.NotNil(t, conf.Requestors["localhost"].LogoPath)
 	logoPath := *conf.Requestors["localhost"].LogoPath
+	require.NotContains(t, conf.Requestors, "example.com")
 
 	updated = newIrmaIdentifierSet()
 	requestorschemeid := NewRequestorSchemeIdentifier("test-requestors")
@@ -107,6 +143,13 @@ func TestUpdateConfiguration(t *testing.T) {
 	require.Contains(t, conf.Requestors, "localhost")
 	require.NotNil(t, conf.Requestors["localhost"].LogoPath)
 	require.Equal(t, *conf.Requestors["localhost"].LogoPath, logoPath)
+
+	// The update added a requestor with a support address
+	require.Contains(t, conf.Requestors, "example.com")
+	require.Equal(t, "support@example.com", conf.Requestors["example.com"].SupportEmail)
+	require.Equal(t, "https://example.com/support", conf.Requestors["example.com"].SupportURL)
+	require.Empty(t, conf.Requestors["localhost"].SupportEmail)
+	require.Empty(t, conf.Requestors["localhost"].SupportURL)
 }
 
 func TestParseInvalidIrmaConfiguration(t *testing.T) {
