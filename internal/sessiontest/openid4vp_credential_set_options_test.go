@@ -63,6 +63,15 @@ var credentialSetScenarios = []credentialSetScenario{
 		choose:   []setChoice{skip},
 		receives: nil,
 	},
+	{
+		// Two copies of each credential make four pairs. The user shares a pair
+		// that is not the first one offered, and exactly that pair arrives.
+		name:     "a required pair with two copies of each, the second phone and first email shared",
+		holds:    []*credentialFixture{phoneSdJwt, otherPhoneSdJwt, emailSdJwt, otherEmailSdJwt},
+		request:  []credentialSetQuery{required(phoneSdJwt, emailSdJwt)},
+		choose:   []setChoice{share},
+		receives: []*credentialFixture{otherPhoneSdJwt, emailSdJwt},
+	},
 }
 
 func testOpenID4VPCredentialSetOptions(t *testing.T) {
@@ -73,9 +82,10 @@ func testOpenID4VPCredentialSetOptions(t *testing.T) {
 	}
 }
 
-// credentialFixture is test data for one credential: how the issuer issues it,
-// the DCQL credential query that asks for it, and the claims that query
-// discloses.
+// credentialFixture is test data for one stored credential: how the issuer
+// issues it, the DCQL credential query that asks for it, and the claims that
+// query discloses. Two copies of one credential share the query but differ in
+// their claims.
 type credentialFixture struct {
 	queryId string
 	// credentialId is the id the wallet shows for the credential, owned or
@@ -84,6 +94,9 @@ type credentialFixture struct {
 	configId     string
 	issuedClaims string
 	query        string
+	// shownAs is a claim the wallet shows for this credential, with a value
+	// that tells it apart from other copies.
+	shownAs expectedClaim
 	// disclosed is what the verifier receives for the query. It takes the
 	// client because a VCDM credential discloses its holder DID, which is only
 	// known after issuance.
@@ -101,25 +114,55 @@ var testSdJwt = &credentialFixture{
 		"meta": {"vct_values": ["https://localhost:8443/vct/test"]},
 		"claims": [{"path": ["email"]}]
 	}`,
+	shownAs: claim([]any{"email"}, "test@example.com"),
 	disclosed: func(*testing.T, *client.Client) []expectedClaim {
 		return []expectedClaim{claim([]any{"email"}, "test@example.com")}
 	},
 }
 
-var emailSdJwt = &credentialFixture{
-	queryId:      "email",
-	credentialId: "https://localhost:8443/vct/email",
-	configId:     "EmailCredentialSdJwt",
-	issuedClaims: `{"email": "email@example.com", "domain": "example.com"}`,
-	query: `{
-		"id": "email",
-		"format": "dc+sd-jwt",
-		"meta": {"vct_values": ["https://localhost:8443/vct/email"]},
-		"claims": [{"path": ["email"]}]
-	}`,
-	disclosed: func(*testing.T, *client.Client) []expectedClaim {
-		return []expectedClaim{claim([]any{"email"}, "email@example.com")}
-	},
+var (
+	emailSdJwt      = emailSdJwtWith("email@example.com")
+	otherEmailSdJwt = emailSdJwtWith("other@example.com")
+	phoneSdJwt      = phoneSdJwtWith("+31600000001")
+	otherPhoneSdJwt = phoneSdJwtWith("+31600000002")
+)
+
+func emailSdJwtWith(address string) *credentialFixture {
+	return &credentialFixture{
+		queryId:      "email",
+		credentialId: "https://localhost:8443/vct/email",
+		configId:     "EmailCredentialSdJwt",
+		issuedClaims: `{"email": "` + address + `", "domain": "example.com"}`,
+		query: `{
+			"id": "email",
+			"format": "dc+sd-jwt",
+			"meta": {"vct_values": ["https://localhost:8443/vct/email"]},
+			"claims": [{"path": ["email"]}]
+		}`,
+		shownAs: claim([]any{"email"}, address),
+		disclosed: func(*testing.T, *client.Client) []expectedClaim {
+			return []expectedClaim{claim([]any{"email"}, address)}
+		},
+	}
+}
+
+func phoneSdJwtWith(number string) *credentialFixture {
+	return &credentialFixture{
+		queryId:      "phone",
+		credentialId: "https://localhost:8443/vct/phone",
+		configId:     "PhoneCredentialSdJwt",
+		issuedClaims: `{"phone_number": "` + number + `"}`,
+		query: `{
+			"id": "phone",
+			"format": "dc+sd-jwt",
+			"meta": {"vct_values": ["https://localhost:8443/vct/phone"]},
+			"claims": [{"path": ["phone_number"]}]
+		}`,
+		shownAs: claim([]any{"phone_number"}, number),
+		disclosed: func(*testing.T, *client.Client) []expectedClaim {
+			return []expectedClaim{claim([]any{"phone_number"}, number)}
+		},
+	}
 }
 
 // testVcdm is the VCDM credential. Veramo issues every vc+sd-jwt claim in the
@@ -136,6 +179,7 @@ var testVcdm = &credentialFixture{
 		"meta": {"type_values": [["` + vcdmVerifiableCredentialIri + `", "` + vcdmCredentialType + `"]]},
 		"claims": [{"path": ["credentialSubject", "given_name"]}]
 	}`,
+	shownAs: claim([]any{"credentialSubject", "given_name"}, "Vera"),
 	disclosed: func(t *testing.T, c *client.Client) []expectedClaim {
 		return []expectedClaim{
 			claim([]any{"given_name"}, "Vera"),
@@ -161,8 +205,8 @@ func optional(creds ...*credentialFixture) credentialSetQuery {
 	return credentialSetQuery{optional: true, option: creds}
 }
 
-// setChoice is what the user picks for one credential set: share the one
-// bundle the wallet offers, or skip the set.
+// setChoice is what the user picks for one credential set: share the bundle
+// made of the credentials the scenario receives, or skip the set.
 type setChoice bool
 
 const (
@@ -201,7 +245,7 @@ func runCredentialSetScenario(t *testing.T, s credentialSetScenario) {
 	choices := make([]clientmodels.DisclosureDisconSelection, len(s.choose))
 	for i, choice := range s.choose {
 		if choice == share {
-			choices[i] = makeDisclosureChoice(session.DisclosurePlan.DisclosureChoicesOverview[i].OwnedOptions[0])
+			choices[i] = makeDisclosureChoice(s.bundleToShare(t, i, session.DisclosurePlan.DisclosureChoicesOverview[i]))
 		}
 	}
 	grantPermission(t, c, session.Id, choices...)
@@ -212,9 +256,10 @@ func runCredentialSetScenario(t *testing.T, s credentialSetScenario) {
 	s.requireReceived(t, c, checkVeramoVerifierOfferStatus(t, verifier.State))
 }
 
-// requireOffered checks the plan offers each credential set as one choice: a
-// complete set as one bundle of its credentials in the option's order, and an
-// incomplete set with no bundle and only its missing credentials to obtain.
+// requireOffered checks the plan offers each credential set as one choice. A
+// complete set offers one bundle per combination of the held copies, each in
+// the option's order. An incomplete set offers no bundle, and only its missing
+// credentials to obtain.
 func (s credentialSetScenario) requireOffered(t *testing.T, plan *clientmodels.DisclosurePlan) {
 	t.Helper()
 	require.NotNil(t, plan)
@@ -227,12 +272,12 @@ func (s credentialSetScenario) requireOffered(t *testing.T, plan *clientmodels.D
 
 		missing := s.missingFrom(set)
 		if len(missing) == 0 {
-			require.Len(t, offered.OwnedOptions, 1, "credential set %d is offered as one bundle", i)
-			var bundleIds []string
-			for _, cred := range offered.OwnedOptions[0].Credentials {
-				bundleIds = append(bundleIds, cred.CredentialId)
+			var offeredBundles [][]*credentialFixture
+			for _, bundle := range offered.OwnedOptions {
+				offeredBundles = append(offeredBundles, s.heldCopies(t, bundle))
 			}
-			require.Equal(t, credentialIds(set.option), bundleIds, "credential set %d", i)
+			require.ElementsMatch(t, s.combinationsOf(set), offeredBundles,
+				"credential set %d offers a bundle per combination of held copies", i)
 			continue
 		}
 
@@ -265,7 +310,7 @@ func (s credentialSetScenario) requireReceived(t *testing.T, c *client.Client, r
 	// result with no credentials and an "expects array of JWT tokens" error.
 	var unanswered []string
 	for _, cred := range s.requested() {
-		if !slices.Contains(s.receives, cred) {
+		if len(copiesFor(s.receives, cred)) == 0 {
 			unanswered = append(unanswered, cred.queryId)
 			require.Empty(t, result.Result.Credentials[cred.queryId], "query %q must not be answered", cred.queryId)
 		}
@@ -305,12 +350,13 @@ func (s credentialSetScenario) dcqlQuery(t *testing.T) string {
 	return string(query)
 }
 
-// requested lists each credential the request names once, in request order.
+// requested lists each credential query the request names once, in request
+// order.
 func (s credentialSetScenario) requested() []*credentialFixture {
 	var creds []*credentialFixture
 	for _, set := range s.request {
 		for _, cred := range set.option {
-			if !slices.Contains(creds, cred) {
+			if len(copiesFor(creds, cred)) == 0 {
 				creds = append(creds, cred)
 			}
 		}
@@ -321,11 +367,79 @@ func (s credentialSetScenario) requested() []*credentialFixture {
 func (s credentialSetScenario) missingFrom(set credentialSetQuery) []*credentialFixture {
 	var missing []*credentialFixture
 	for _, cred := range set.option {
-		if !slices.Contains(s.holds, cred) {
+		if len(copiesFor(s.holds, cred)) == 0 {
 			missing = append(missing, cred)
 		}
 	}
 	return missing
+}
+
+// combinationsOf lists every bundle of held copies that answers the set's
+// option: one copy per query, in the option's order.
+func (s credentialSetScenario) combinationsOf(set credentialSetQuery) [][]*credentialFixture {
+	combinations := [][]*credentialFixture{{}}
+	for _, cred := range set.option {
+		var next [][]*credentialFixture
+		for _, prefix := range combinations {
+			for _, held := range copiesFor(s.holds, cred) {
+				next = append(next, append(slices.Clone(prefix), held))
+			}
+		}
+		combinations = next
+	}
+	return combinations
+}
+
+// bundleToShare is the offered bundle made of the copies the scenario receives
+// for set i.
+func (s credentialSetScenario) bundleToShare(t *testing.T, i int, offered clientmodels.DisclosurePickOne) *clientmodels.DisclosureBundle {
+	t.Helper()
+	var wanted []*credentialFixture
+	for _, cred := range s.request[i].option {
+		received := copiesFor(s.receives, cred)
+		require.Len(t, received, 1, "a shared set receives one copy of query %q", cred.queryId)
+		wanted = append(wanted, received[0])
+	}
+	for _, bundle := range offered.OwnedOptions {
+		if slices.Equal(s.heldCopies(t, bundle), wanted) {
+			return bundle
+		}
+	}
+	require.FailNow(t, "no offered bundle holds the credentials to share", "credential set %d", i)
+	return nil
+}
+
+// heldCopies says which held copy each credential of an offered bundle is.
+func (s credentialSetScenario) heldCopies(t *testing.T, bundle *clientmodels.DisclosureBundle) []*credentialFixture {
+	t.Helper()
+	copies := make([]*credentialFixture, 0, len(bundle.Credentials))
+	for _, offered := range bundle.Credentials {
+		i := slices.IndexFunc(s.holds, func(held *credentialFixture) bool {
+			return held.credentialId == offered.CredentialId && shows(offered, held.shownAs)
+		})
+		require.NotEqual(t, -1, i, "offered credential %s is none of the held copies", offered.CredentialId)
+		copies = append(copies, s.holds[i])
+	}
+	return copies
+}
+
+// shows reports whether the offered credential shows the given claim value.
+func shows(offered *clientmodels.SelectableCredentialInstance, c expectedClaim) bool {
+	return slices.ContainsFunc(offered.Attributes, func(attr clientmodels.Attribute) bool {
+		return clientmodels.ClaimPathKey(attr.ClaimPath) == clientmodels.ClaimPathKey(c.Path) &&
+			attr.Value != nil && attr.Value.String != nil && *attr.Value.String == c.Value
+	})
+}
+
+// copiesFor lists the credentials in creds that answer the same query as cred.
+func copiesFor(creds []*credentialFixture, cred *credentialFixture) []*credentialFixture {
+	var copies []*credentialFixture
+	for _, c := range creds {
+		if c.queryId == cred.queryId {
+			copies = append(copies, c)
+		}
+	}
+	return copies
 }
 
 func credentialIds(creds []*credentialFixture) []string {
