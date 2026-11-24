@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.6.1] - 2026-11-24
 ### Added
 - Requestors in a requestor scheme can state where end users reach their support: the optional fields `support_email` and `support_url` in `requestors.json`, on `RequestorInfo` as `SupportEmail` and `SupportURL`. They are part of the `Configuration` the Yivi app receives, so it can put a user through to the organisation instead of to Yivi support. The values are not validated when parsing, so a mistake in one of them cannot disable the scheme. Earlier versions ignore the fields
 
@@ -1001,7 +1003,8 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
-[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/privacybydesign/irmago/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/privacybydesign/irmago/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/privacybydesign/irmago/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/privacybydesign/irmago/compare/v1.4.2...v1.4.3
