@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `client.Client.GetDigitalCredentialsRegistry` returns the credentials a website can ask the wallet for through the W3C Digital Credentials API, as `clientmodels.DigitalCredentialsRegistryEntry`, for the app to register with the platform. It lists the credential types of the installed schemes as `dc+sd-jwt` (those of demo schemes only in developer mode), and the SD-JWT VC, `mso_mdoc` and SD-JWT-secured VCDM credentials the wallet holds, one entry per format and type. Entries carry the type, display texts in the current locale, a logo and the claim paths, never a claim value. The Yivi app built this list itself from the IRMA scheme, which left out every credential obtained over OpenID4VCI
 
 ## [1.6.1] - 2026-11-24
 ### Added
