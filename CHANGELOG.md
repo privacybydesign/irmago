@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Update Go dependencies: `github.com/go-co-op/gocron/v2` 2.23.0 → 2.23.1, `golang.org/x/crypto` 0.57.0 → 0.59.0, `golang.org/x/sync` 0.23.0 → 0.25.0, `golang.org/x/term` 0.46.0 → 0.48.0 and `golang.org/x/text` 0.42.0 → 0.44.0
 
 ## [1.6.1] - 2026-11-24
 ### Added
