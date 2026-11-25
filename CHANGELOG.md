@@ -5,8 +5,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.6.1] - 2026-11-24
+### Added
+- Requestors in a requestor scheme can state where end users reach their support: the optional fields `support_email` and `support_url` in `requestors.json`, on `RequestorInfo` as `SupportEmail` and `SupportURL`. They are part of the `Configuration` the Yivi app receives, so it can put a user through to the organisation instead of to Yivi support. The values are not validated when parsing, so a mistake in one of them cannot disable the scheme. Earlier versions ignore the fields
+
 ### Changed
 - Update Go dependencies to their latest releases, among them `github.com/lestrrat-go/jwx/v4` 4.4.0 → 4.6.0, `github.com/go-chi/chi/v5` 5.3.0 → 5.5.0, `github.com/sirupsen/logrus` 1.9.4 → 1.10.2, `go.etcd.io/bbolt` 1.4.3 → 1.5.0 and `golang.org/x/crypto` 0.55.0 → 0.57.0
+
+### Fixed
+- An OpenID4VP request whose DCQL `credential_sets` option names several credential queries, such as `"options": [["pid", "enrolment"]]`, no longer fails with "not supported at the moment". Such an option asks for those credentials together (OpenID4VP 1.0 § 6.2): the wallet offers a bundle per combination of the credentials it holds, and when the option is incomplete, asks to obtain only the credentials it is missing. An incomplete option in an optional set never forces issuance. Two queries of one option that ask the same claims of the same credential type are refused with a clear error rather than answered under one query id.
 
 ### Internal
 - Storage regression snapshot for v1.5.0 (`testdata/storage_regression/v1.5.0/`), verified by `TestClientStorageRegressionV1_5_0`. It is the first snapshot that holds SD-JWT-secured VCDM credentials: the fixture generator now issues a VCDM credential, a VCDM credential revoked through a Bitstring Status List, and an Open Badges credential with claim images, discloses two of them to the veramo verifier and removes a fourth. It also issues a PID mdoc with a Token Status List entry per instance, served as a CWT, and revokes it, so the snapshot holds mdoc status references and a cached CWT Status List Token; the test checks both in the stored database. The test discloses the stored VCDM credential again, so its stored holder key is checked, and finds the Open Badge by a `type_values` query whose context can no longer be fetched. The shared check that a reloaded client still works now also issues and discloses a fresh VCDM credential, for every snapshot version.
@@ -995,7 +1003,8 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
-[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/privacybydesign/irmago/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/privacybydesign/irmago/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/privacybydesign/irmago/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/privacybydesign/irmago/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/privacybydesign/irmago/compare/v1.4.2...v1.4.3
