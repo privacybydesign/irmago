@@ -20,7 +20,8 @@ import (
 //     credential type identifier as vct. They are listed whether or not the
 //     wallet holds them: a user who is asked for one they do not have is taken
 //     through obtaining it, as in any other disclosure. Demo schemes are only
-//     listed in developer mode.
+//     listed in developer mode, and a scheme's keyshare enrollment credential
+//     never is: the wallet does not show it (see filterOutKeyshareCredentials).
 //   - The credentials the wallet obtained over OpenID4VCI (SD-JWT VC, mso_mdoc
 //     and SD-JWT-secured VCDM), one entry per format and type. No scheme
 //     describes these, so only what the wallet holds can be listed. The types
@@ -77,6 +78,12 @@ func schemeDigitalCredentialsRegistryEntries(
 		}
 		scheme := conf.SchemeManagers[credType.SchemeManagerIdentifier()]
 		if scheme == nil || (scheme.Demo && !includeDemoSchemes) {
+			continue
+		}
+		// The wallet never shows its keyshare enrollment credential, so a
+		// website must not be able to ask for it either.
+		if scheme.KeyshareAttribute != "" &&
+			irma.NewAttributeTypeIdentifier(scheme.KeyshareAttribute).CredentialTypeIdentifier() == id {
 			continue
 		}
 

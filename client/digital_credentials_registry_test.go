@@ -14,6 +14,15 @@ func registryTestConfiguration() *irma.Configuration {
 	scheme := func(id string, demo bool) *irma.SchemeManager {
 		return &irma.SchemeManager{ID: id, Demo: demo}
 	}
+	pbdf := scheme("pbdf", false)
+	pbdf.KeyshareAttribute = "pbdf.sidn-pbdf.irma.pseudonym"
+	keyshare := &irma.CredentialType{
+		ID:              "irma",
+		SchemeManagerID: "pbdf",
+		IssuerID:        "sidn-pbdf",
+		Name:            irma.TranslatedString{"en": "Yivi app login"},
+		AttributeTypes:  []*irma.AttributeType{{ID: "pseudonym", Name: irma.TranslatedString{"en": "Username"}}},
+	}
 	displayIndex := 0
 	email := &irma.CredentialType{
 		ID:              "email",
@@ -51,7 +60,7 @@ func registryTestConfiguration() *irma.Configuration {
 
 	return &irma.Configuration{
 		SchemeManagers: map[irma.SchemeManagerIdentifier]*irma.SchemeManager{
-			irma.NewSchemeManagerIdentifier("pbdf"):      scheme("pbdf", false),
+			irma.NewSchemeManagerIdentifier("pbdf"):      pbdf,
 			irma.NewSchemeManagerIdentifier("irma-demo"): scheme("irma-demo", true),
 		},
 		Issuers: map[irma.IssuerIdentifier]*irma.Issuer{
@@ -68,6 +77,7 @@ func registryTestConfiguration() *irma.Configuration {
 		},
 		CredentialTypes: map[irma.CredentialTypeIdentifier]*irma.CredentialType{
 			email.Identifier():          email,
+			keyshare.Identifier():       keyshare,
 			revocationOnly.Identifier(): revocationOnly,
 			orphan.Identifier():         orphan,
 			demo.Identifier():           demo,
@@ -116,8 +126,10 @@ func TestSchemeDigitalCredentialsRegistryEntries_CredentialType(t *testing.T) {
 	}, entry.Claims)
 }
 
-// A type with nothing to disclose is left out, a type whose issuer is unknown
-// is kept without an issuer name, and demo schemes only show in developer mode.
+// A type with nothing to disclose is left out, and so is the scheme's keyshare
+// enrollment credential, which the wallet never shows. A type whose issuer is
+// unknown is kept without an issuer name, and demo schemes only show in
+// developer mode.
 func TestSchemeDigitalCredentialsRegistryEntries_Selection(t *testing.T) {
 	conf := registryTestConfiguration()
 

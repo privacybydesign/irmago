@@ -106,6 +106,17 @@ func TestDigitalCredentialsRegistryOfStoredWallet(t *testing.T) {
 	}
 	require.Positive(t, schemeEntries)
 
+	// The keyshare enrollment credential is not registered: the wallet never
+	// shows it, so a website must not be able to ask for it.
+	for _, scheme := range c.GetIrmaConfiguration().SchemeManagers {
+		if scheme.KeyshareAttribute == "" {
+			continue
+		}
+		keyshareType := irma.NewAttributeTypeIdentifier(scheme.KeyshareAttribute).CredentialTypeIdentifier().String()
+		require.NotContains(t, ids, string(clientmodels.Format_SdJwtVc)+":"+keyshareType)
+	}
+	require.NotContains(t, ids, "dc+sd-jwt:test.test.mijnirma")
+
 	// What is registered is stored by the platform, outside the wallet: no
 	// attribute value may be in it.
 	encoded := mustMarshal(t, entries)
