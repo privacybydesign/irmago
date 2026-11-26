@@ -27,6 +27,7 @@ func TestNewCredentialFormatsRegistersEveryFormat(t *testing.T) {
 		filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()),
 		NewRevocationService(nil, nil, nil),
 		clientmodels.NewCurrentLocale("en"),
+		nil,
 	)
 
 	for _, format := range []models.CredentialFormat{models.CredentialFormatSdJwtVc, models.CredentialFormatSdJwtVcdm, models.CredentialFormatMsoMdoc} {

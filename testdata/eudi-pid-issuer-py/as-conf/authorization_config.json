@@ -130,7 +130,8 @@
               "public",
               "wallet_attestation",
               "dpop"
-            ]
+            ],
+            "trusted_attesters_path": "/etc/issuer_config/trusted-attesters"
           }
         },
         "userinfo": {
@@ -150,7 +151,8 @@
               "public",
               "wallet_attestation",
               "dpop"
-            ]
+            ],
+            "trusted_attesters_path": "/etc/issuer_config/trusted-attesters"
           }
         }
       },

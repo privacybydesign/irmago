@@ -1,6 +1,7 @@
 package dcql
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -64,7 +65,7 @@ func TestEduwalletExamCheckInQueryBuildsOneBundleOfBoth(t *testing.T) {
 		"EEC": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{owned("eec", "eec-hash", "code")}},
 	}}
 
-	plan, _, err := NewDcqlHandler(nil).BuildDisclosurePlan(query, result, nil, nil)
+	plan, _, err := NewDcqlHandler(nil, nil).BuildDisclosurePlan(query, result, nil, nil)
 	require.NoError(t, err)
 
 	require.Len(t, plan.DisclosureChoicesOverview, 1, "one credential set is one choice")
@@ -422,10 +423,10 @@ func TestPrepareDisclosureRefusesTwoPresentationsForOneQuery(t *testing.T) {
 		{Id: "email2", Format: "fake"},
 		{Id: "emails", Format: "fake", Multiple: true},
 	}}
-	handler := NewDcqlHandler([]DcqlCredentialQueryHandler{fakeQueryHandler{}})
+	handler := NewDcqlHandler([]DcqlCredentialQueryHandler{fakeQueryHandler{}}, nil)
 
 	t.Run("two presentations for a single query are refused", func(t *testing.T) {
-		_, err := handler.PrepareDisclosure(query, []DisclosureSelection{
+		_, err := handler.PrepareDisclosure(context.Background(), query, []DisclosureSelection{
 			{QueryId: "email1", CredentialHash: "h1"},
 			{QueryId: "email1", CredentialHash: "h2"},
 		}, "nonce", "aud", ResponseBinding{})
@@ -434,7 +435,7 @@ func TestPrepareDisclosureRefusesTwoPresentationsForOneQuery(t *testing.T) {
 	})
 
 	t.Run("one presentation per query is fine", func(t *testing.T) {
-		prepared, err := handler.PrepareDisclosure(query, []DisclosureSelection{
+		prepared, err := handler.PrepareDisclosure(context.Background(), query, []DisclosureSelection{
 			{QueryId: "email1", CredentialHash: "h1"},
 			{QueryId: "email2", CredentialHash: "h2"},
 		}, "nonce", "aud", ResponseBinding{})
@@ -443,7 +444,7 @@ func TestPrepareDisclosureRefusesTwoPresentationsForOneQuery(t *testing.T) {
 	})
 
 	t.Run("several presentations for a multiple query are fine", func(t *testing.T) {
-		prepared, err := handler.PrepareDisclosure(query, []DisclosureSelection{
+		prepared, err := handler.PrepareDisclosure(context.Background(), query, []DisclosureSelection{
 			{QueryId: "emails", CredentialHash: "h1"},
 			{QueryId: "emails", CredentialHash: "h2"},
 		}, "nonce", "aud", ResponseBinding{})
@@ -464,7 +465,7 @@ func (fakeQueryHandler) FindCandidates(CredentialQuery) (*CredentialQueryResult,
 	return &CredentialQueryResult{}, nil
 }
 
-func (fakeQueryHandler) PrepareDisclosure(selections []DisclosureSelection, _, _ string) (*PreparedDisclosure, error) {
+func (fakeQueryHandler) PrepareDisclosure(selections []DisclosureSelection, _, _ string) (*PendingDisclosure, error) {
 	prepared := &PreparedDisclosure{}
 	for _, selection := range selections {
 		prepared.QueryResponses = append(prepared.QueryResponses, QueryResponse{
@@ -472,5 +473,7 @@ func (fakeQueryHandler) PrepareDisclosure(selections []DisclosureSelection, _, _
 			Credentials: []string{selection.CredentialHash},
 		})
 	}
-	return prepared, nil
+	return &PendingDisclosure{Complete: func([][]byte) (*PreparedDisclosure, error) {
+		return prepared, nil
+	}}, nil
 }

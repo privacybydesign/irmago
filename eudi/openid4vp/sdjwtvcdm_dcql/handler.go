@@ -6,14 +6,15 @@
 package sdjwtvcdm_dcql
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
 	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwt_dcql"
-	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -29,12 +30,11 @@ type Handler struct {
 
 var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 
-// New creates the VCDM handler over the VCDM store. keyBinder is
-// the same holder key signer the SD-JWT VC handler uses — the holder private key
-// was linked to the instance at VCDM receipt. With holder binding, a disclosed
-// credential is enveloped in a Verifiable Presentation signed with the holder
-// key from its cnf, instead of carrying a KB-JWT; without it, the SD-JWT is sent
-// as is.
+// New creates the VCDM handler over the VCDM store. holderKeys and usedKeys are
+// the same ones the SD-JWT VC handler uses — the holder private key was linked
+// to the instance at VCDM receipt. With holder binding, a disclosed credential
+// is enveloped in a Verifiable Presentation signed with the holder key from its
+// cnf, instead of carrying a KB-JWT; without it, the SD-JWT is sent as is.
 //
 // The SD-JWT VC type-metadata fetchers do not apply to VCDM (a verifier targets
 // a VCDM credential by its composite @context+type identity, not a fetchable
@@ -47,7 +47,8 @@ var _ dcql.DcqlCredentialQueryHandler = (*Handler)(nil)
 func New(
 	eudiStorage storage.Storage,
 	credentialStore db.VcdmStore,
-	keyBinder sdjwt.KeyBinder,
+	holderKeys sdjwt_dcql.HolderKeys,
+	usedKeys services.KeyRemover,
 	currentLocale *clientmodels.CurrentLocale,
 	revocation sdjwt_dcql.RevocationChecker,
 ) *Handler {
@@ -57,11 +58,24 @@ func New(
 		IsUserDataKey: func(key string) bool {
 			return key == vcdm.CredentialSubjectKey
 		},
-		Present:           vcdmsdjwt.CreateEnvelopedPresentation,
+		Prove:             proveEnvelopedPresentation,
 		MatchesTypeValues: matchesTypeValues,
 		Document:          document,
 	}
-	return &Handler{sdjwt_dcql.NewEngine(profile, eudiStorage, sdjwt_dcql.NewVcdmBatchStore(credentialStore, revocation), nil, nil, keyBinder, currentLocale)}
+	return &Handler{sdjwt_dcql.NewEngine(profile, eudiStorage, sdjwt_dcql.NewVcdmBatchStore(credentialStore, revocation), nil, nil, holderKeys, usedKeys, currentLocale)}
+}
+
+// proveEnvelopedPresentation makes the Verifiable Presentation that envelopes
+// the selected SD-JWT, up to the holder key's signature over it.
+func proveEnvelopedPresentation(in sdjwt_dcql.ProofInput) (*sdjwt_dcql.HolderProof, error) {
+	signingInput, err := vcdmsdjwt.EnvelopedPresentationSigningInput(in.Selected, in.HolderKey, in.Alg, in.Nonce, in.Audience, in.IssuedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create verifiable presentation: %w", err)
+	}
+	return &sdjwt_dcql.HolderProof{
+		SigningInput: signingInput,
+		Assemble:     func(signature []byte) string { return proofs.AssembleCompactJws(signingInput, signature) },
+	}, nil
 }
 
 // CanHandleCredentialQuery claims every vc+sd-jwt query. Unlike SD-JWT VC there
