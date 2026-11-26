@@ -223,7 +223,7 @@ func testOpenID4VP_MdocAv_CredentialSetChoice(t *testing.T) {
 	)
 
 	approvedRequestor := session.Requestor
-	chosen := ownedOptionWithAttr(t, session.DisclosurePlan.DisclosureChoicesOverview[0], avSecondElement)
+	chosen := ownedOptionWithAttr(t, pickOnes(session.DisclosurePlan)[0], avSecondElement)
 	grantPermission(t, c, 2, makeDisclosureChoice(chosen))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -371,11 +371,11 @@ func testOpenID4VP_MdocAv_SkippedOptionalCredentialSet(t *testing.T) {
 
 	// The required choice takes its owned option; the optional one selects no
 	// credential at all, which is how the app declines it.
-	pickOnes := session.DisclosurePlan.DisclosureChoicesOverview
+	pickOnes := pickOnes(session.DisclosurePlan)
 	require.Len(t, pickOnes, 2, "the request has one required and one optional credential set")
 	grantPermission(t, c, 2,
 		makeDisclosureChoice(pickOnes[0].OwnedOptions[0]),
-		clientmodels.DisclosureDisconSelection{Credentials: []clientmodels.SelectedCredential{}},
+		skipChoice(),
 	)
 
 	session = awaitSessionState(t, sessionHandler)
@@ -497,7 +497,7 @@ func testOpenID4VP_MdocAv_TwoCandidates(t *testing.T) {
 		},
 	)
 
-	options := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
+	options := pickOnes(session.DisclosurePlan)[0].OwnedOptions
 	first, second := options[0].Credentials[0], options[1].Credentials[0]
 	require.NotEqual(t, first.Hash, second.Hash, "two credentials must be two options, not one shown twice")
 
@@ -526,7 +526,7 @@ func testOpenID4VP_MdocAv_TwoCandidates(t *testing.T) {
 	)
 
 	remainingAfter := map[string]uint{}
-	for _, bundle := range again.ClientSession.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions {
+	for _, bundle := range pickOnes(again.ClientSession.DisclosurePlan)[0].OwnedOptions {
 		cred := bundle.Credentials[0]
 		remainingAfter[cred.Hash] = *cred.BatchInstanceCountRemaining
 	}
@@ -593,7 +593,7 @@ func testOpenID4VP_MdocAv_MultiplePresentations(t *testing.T) {
 	)
 
 	// Both bundles in one selection: that is what the multiple flag permits.
-	grantAllOwnedOptions(t, c, 3, session.DisclosurePlan.DisclosureChoicesOverview[0])
+	grantAllOwnedOptions(t, c, 3, pickOnes(session.DisclosurePlan)[0])
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -804,8 +804,8 @@ func grantFirstOwnedOptions(
 ) {
 	t.Helper()
 
-	var choices []clientmodels.DisclosureDisconSelection
-	for _, pickOne := range session.DisclosurePlan.DisclosureChoicesOverview {
+	var choices []clientmodels.ChoiceSelection
+	for _, pickOne := range pickOnes(session.DisclosurePlan) {
 		require.NotEmpty(t, pickOne.OwnedOptions, "every choice should have an owned option")
 		choices = append(choices, makeDisclosureChoice(pickOne.OwnedOptions[0]))
 	}
@@ -817,25 +817,29 @@ func grantAllOwnedOptions(
 	t *testing.T,
 	c *client.Client,
 	sessionId int,
-	pickOne clientmodels.DisclosurePickOne,
+	pickOne pickOne,
 ) {
 	t.Helper()
 
+	// A multiple slot: every card it offers, in one selection.
 	var selected []clientmodels.SelectedCredential
 	for _, bundle := range pickOne.OwnedOptions {
-		selected = append(selected, makeDisclosureChoice(bundle).Credentials...)
+		selected = append(selected, makeDisclosureChoice(bundle).Slots[0].Credentials...)
 	}
 
-	grantPermission(t, c, sessionId, clientmodels.DisclosureDisconSelection{Credentials: selected})
+	grantPermission(t, c, sessionId, clientmodels.ChoiceSelection{
+		Option: 0,
+		Slots:  []clientmodels.SlotSelection{{SlotId: pickOne.OwnedOptions[0].slotIds[0], Credentials: selected}},
+	})
 }
 
 // ownedOptionWithAttr returns the owned option that would disclose the given
 // element, for the shapes where the user picks by content.
 func ownedOptionWithAttr(
 	t *testing.T,
-	pickOne clientmodels.DisclosurePickOne,
+	pickOne pickOne,
 	element string,
-) *clientmodels.DisclosureBundle {
+) *bundle {
 	t.Helper()
 
 	for _, bundle := range pickOne.OwnedOptions {

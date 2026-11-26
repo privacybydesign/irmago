@@ -384,8 +384,8 @@ func startDcApiSession(
 func grantDcApiDisclosure(t *testing.T, c *client.Client, sessionId int, session clientmodels.SessionState) {
 	t.Helper()
 	require.NotNil(t, session.DisclosurePlan, "session must carry a disclosure plan to grant")
-	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview, "disclosure plan must offer a choice")
-	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.NotEmpty(t, pickOnes(session.DisclosurePlan), "disclosure plan must offer a choice")
+	choice := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, sessionId, makeDisclosureChoice(choice))
 }
 

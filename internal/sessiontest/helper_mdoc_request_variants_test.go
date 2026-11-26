@@ -196,7 +196,7 @@ func requireMdocAvResponseRefused(t *testing.T, testCase mdocAvRefusalCase) {
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, 2, makeDisclosureChoice(choice))
 
 	requireMdocViolationRefused(t, awaitSessionState(t, sessionHandler))
@@ -380,7 +380,7 @@ func requireMdocAvQueryYieldsNothingToDisclose(t *testing.T, docType, format str
 	// wallet found a credential for a query nothing it holds can answer.
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.NotNil(t, session.DisclosurePlan)
-	require.Empty(t, session.DisclosurePlan.DisclosureChoicesOverview,
+	require.Empty(t, pickOnes(session.DisclosurePlan),
 		"the wallet holds nothing that satisfies this query and must offer nothing to disclose")
 }
 

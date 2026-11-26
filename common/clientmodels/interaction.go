@@ -28,10 +28,8 @@ type SessionUserInteraction struct {
 type SessionPermissionInteractionPayload struct {
 	// Whether or not the user agreed to sharing, signing or disclosing
 	Granted bool `json:"granted"`
-	// The list of discons for each outer con
-	DisclosureChoices []DisclosureDisconSelection `json:"disclosure_choices"`
 	// The answer per slot: one entry per DisclosurePlan.Choices, in the same
-	// order. Replaces DisclosureChoices.
+	// order. Empty when the plan has no choices (or there is no plan).
 	Choices []ChoiceSelection `json:"choices"`
 }
 
@@ -59,11 +57,6 @@ type SelectedCredential struct {
 	CredentialHash string `json:"credential_hash"`
 	// List of claim path pointers to the attributes the user will share
 	AttributePaths [][]any `json:"attribute_paths"`
-}
-
-// DisclosureDisconSelection is the list of selected credentials for a disjunction.
-type DisclosureDisconSelection struct {
-	Credentials []SelectedCredential `json:"credentials"`
 }
 
 // PinInteractionPayload is the payload for a PIN entry interaction.

@@ -99,7 +99,7 @@ func TestQueryNamedByNoSetIsLeftOut(t *testing.T) {
 // The lists of the plan are never null on the wire, also when empty.
 func TestChoicesMarshalWithoutNulls(t *testing.T) {
 	query := DcqlQuery{Credentials: []CredentialQuery{{Id: "email", Format: "fake"}}}
-	plan, _, err := NewDcqlHandler(nil).BuildDisclosurePlan(query, &DcqlResult{QueryResults: map[string]*CredentialQueryResult{
+	plan, err := NewDcqlHandler(nil).BuildDisclosurePlan(query, &DcqlResult{QueryResults: map[string]*CredentialQueryResult{
 		"email": {},
 	}}, nil, nil)
 	require.NoError(t, err)
@@ -122,50 +122,33 @@ func TestChoicesMarshalWithoutNulls(t *testing.T) {
 	assert.JSONEq(t, `{}`, string(wire.IssuedCredentialIds))
 }
 
-// BuildDisclosurePlan sends both shapes while the app moves over: the slots
-// hold every candidate, the pick-one lists only those they always held.
-func TestBuildDisclosurePlanFillsChoicesNextToThePickOnes(t *testing.T) {
-	expired := usable("email", "e-expired", "email")
-	expired.Usable = false
-	expired.UnusableReason = clientmodels.UnusableReason_Expired
+// Unusable cards are candidates too, after the usable ones; a query whose
+// only card is used up is a slot with that card, unusable, and what to add.
+func TestBuildDisclosurePlanKeepsUnusableCards(t *testing.T) {
 	query := DcqlQuery{Credentials: []CredentialQuery{{Id: "email", Format: "fake"}}}
-	results := map[string]*CredentialQueryResult{
-		"email": {OwnedCandidates: cands(expired, usable("email", "e-valid", "email"))},
+	unusable := func(hash string, reason clientmodels.UnusableReason) *clientmodels.SelectableCredentialInstance {
+		c := usable("email", hash, "email")
+		c.Usable = false
+		c.UnusableReason = reason
+		return c
 	}
 
-	plan, _, err := NewDcqlHandler(nil).BuildDisclosurePlan(query, &DcqlResult{QueryResults: results}, nil, nil)
+	plan, err := NewDcqlHandler(nil).BuildDisclosurePlan(query, &DcqlResult{QueryResults: map[string]*CredentialQueryResult{
+		"email": {OwnedCandidates: cands(unusable("e-expired", clientmodels.UnusableReason_Expired), usable("email", "e-valid", "email"))},
+	}}, nil, nil)
 	require.NoError(t, err)
-
 	assert.Equal(t, [][]string{{"e-valid", "e-expired"}}, slotHashes(plan.Choices[0].Options[0]))
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1, "the pick-one never offered an expired card")
-	assert.Equal(t, "e-valid", plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0].Hash)
-	assert.NotNil(t, plan.IssuedCredentialIds)
 
-	t.Run("issued credentials are tracked on the plan too", func(t *testing.T) {
-		missing := map[string]*CredentialQueryResult{
-			"email": {ObtainableDescriptors: []*clientmodels.CredentialDescriptor{{CredentialId: "email"}}},
-		}
-		first, _, err := NewDcqlHandler(nil).BuildDisclosurePlan(query, &DcqlResult{QueryResults: missing}, nil, nil)
-		require.NoError(t, err)
-		assert.Empty(t, first.IssuedCredentialIds)
-
-		issued := map[string]*CredentialQueryResult{"email": {OwnedCandidates: cands(usable("email", "e-new", "email"))}}
-		plan, _, err := NewDcqlHandler(nil).BuildDisclosurePlan(query, &DcqlResult{QueryResults: issued}, first, nil)
-		require.NoError(t, err)
-		assert.Contains(t, plan.IssuedCredentialIds, "email")
-	})
-
-	t.Run("only used-up cards still fail the request, as before", func(t *testing.T) {
-		usedUp := usable("email", "e-used", "email")
-		usedUp.Usable = false
-		usedUp.UnusableReason = clientmodels.UnusableReason_UsedUp
-		_, _, err := NewDcqlHandler(nil).BuildDisclosurePlan(query, &DcqlResult{QueryResults: map[string]*CredentialQueryResult{
-			"email": {OwnedCandidates: cands(usedUp)},
-		}}, nil, nil)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "exhausted")
-	})
+	plan, err = NewDcqlHandler(nil).BuildDisclosurePlan(query, &DcqlResult{QueryResults: map[string]*CredentialQueryResult{
+		"email": {
+			OwnedCandidates:       cands(unusable("e-used", clientmodels.UnusableReason_UsedUp)),
+			ObtainableDescriptors: []*clientmodels.CredentialDescriptor{{CredentialId: "email"}},
+		},
+	}}, nil, nil)
+	require.NoError(t, err, "a used-up card no longer fails the request")
+	slot := plan.Choices[0].Options[0].Slots[0]
+	assert.Equal(t, clientmodels.UnusableReason_UsedUp, slot.Candidates[0].UnusableReason)
+	assert.Equal(t, []string{"email"}, descriptorIdsOf(slot.Obtainable))
 }
 
 // A malformed credential_sets is refused before any plan is built, with an

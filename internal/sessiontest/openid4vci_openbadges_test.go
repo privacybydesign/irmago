@@ -165,7 +165,7 @@ func testOpenBadgesClaimImages(t *testing.T) {
 	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	option := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	option := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	requireOpenBadgeImages(t, option.Credentials[0].Attributes)
 	requireDocumentLogos(t, option.Credentials[0].Image, option.Credentials[0].Issuer)
 

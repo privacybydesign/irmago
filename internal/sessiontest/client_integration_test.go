@@ -82,7 +82,7 @@ func testIrmaDiscloseKeyshareAttribute(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	emailBundle := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	emailBundle := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	require.Len(t, emailBundle.Credentials, 1)
 	emailCred := emailBundle.Credentials[0]
 	var wantEmail string
@@ -319,10 +319,9 @@ func performCombinedIssuanceAndDisclosureSession(t *testing.T, c *client.Client,
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	// Both fullName.familyname and singleton.BSN belong to one discon. Under
-	// the bundle model the single inner con yields one OwnedOption (bundle)
-	// holding both credential instances together.
-	overview := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	// Both fullName.familyname and singleton.BSN belong to one con: one option
+	// with a slot per credential type, answered together.
+	overview := pickOnes(session.DisclosurePlan)[0]
 	require.Len(t, overview.OwnedOptions, 1)
 	bundle := overview.OwnedOptions[0]
 	require.Len(t, bundle.Credentials, 2)
@@ -338,12 +337,7 @@ func performCombinedIssuanceAndDisclosureSession(t *testing.T, c *client.Client,
 	require.NotNil(t, fullNameCred)
 	require.NotNil(t, singletonCred)
 
-	grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{
-		Credentials: []clientmodels.SelectedCredential{
-			{CredentialId: fullNameCred.CredentialId, CredentialHash: fullNameCred.Hash, AttributePaths: [][]any{{"familyname"}}},
-			{CredentialId: singletonCred.CredentialId, CredentialHash: singletonCred.Hash, AttributePaths: [][]any{{"BSN"}}},
-		},
-	})
+	grantPermission(t, c, session.Id, makeDisclosureChoice(bundle))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status)
@@ -388,7 +382,7 @@ func performCompletelyOptionalDisclosure(t *testing.T, c *client.Client, session
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	// Grant permission with an empty selection for the one optional discon.
-	grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{})
+	grantPermission(t, c, session.Id, skipChoice())
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status)
@@ -1155,7 +1149,7 @@ func discloseOverOpenID4VP(t *testing.T, c *client.Client, sessionId int, sessio
 	sessionState := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, sessionState.Status)
 
-	emailCred := sessionState.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	emailCred := pickOnes(sessionState.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, sessionState.Id, makeDisclosureChoice(emailCred))
 
 	sessionState = awaitSessionState(t, sessionHandler)
@@ -1197,7 +1191,7 @@ func performIrmaDisclosureSession(t *testing.T, c *client.Client, sessionId int,
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	emailCred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1218,7 +1212,7 @@ func performIrmaSignatureSession(t *testing.T, c *client.Client, sessionId int, 
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	emailCred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred))
 
 	session = awaitSessionState(t, sessionHandler)

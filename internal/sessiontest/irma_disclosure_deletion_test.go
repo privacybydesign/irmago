@@ -48,7 +48,7 @@ func testDisclosureKeepsSelectionAfterDeletingAnotherCredential(
 	require.Equal(t, clientmodels.Protocol_Irma, session.Protocol)
 	requireSessionState(t, session, 4, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	owned := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
+	owned := pickOnes(session.DisclosurePlan)[0].OwnedOptions
 	require.Len(t, owned, 2, "the two remaining email instances should be offered for disclosure")
 
 	// The user picks "third@example.com" — an instance whose positional counter
@@ -87,9 +87,9 @@ func createEmailIssuanceRequestWithValue(email string) *irma.IssuanceRequest {
 
 // bundleForEmail returns the single-credential owned bundle whose email
 // attribute equals the given address.
-func bundleForEmail(t *testing.T, bundles []*clientmodels.DisclosureBundle, email string) *clientmodels.DisclosureBundle {
+func bundleForEmail(t *testing.T, bundles []*bundle, email string) *bundle {
 	t.Helper()
-	idx := slices.IndexFunc(bundles, func(b *clientmodels.DisclosureBundle) bool {
+	idx := slices.IndexFunc(bundles, func(b *bundle) bool {
 		for _, cred := range b.Credentials {
 			for _, attr := range cred.Attributes {
 				if attr.Value != nil && attr.Value.String != nil && *attr.Value.String == email {

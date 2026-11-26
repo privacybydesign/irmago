@@ -66,7 +66,7 @@ func testDiscloseVcdmToVeramoVerifier(t *testing.T) {
 		}},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -98,10 +98,10 @@ func testVcdmQueryWithoutMetaMatches(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.NotNil(t, session.DisclosurePlan)
-	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1)
-	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+	require.Len(t, pickOnes(session.DisclosurePlan), 1)
+	require.Len(t, pickOnes(session.DisclosurePlan)[0].OwnedOptions, 1)
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	require.Equal(t, vcdmCredentialId, cred.Credentials[0].CredentialId)
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
@@ -194,10 +194,10 @@ func testVcdmAndSdJwtVcInOneRequest(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.NotNil(t, session.DisclosurePlan)
-	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 2)
+	require.Len(t, pickOnes(session.DisclosurePlan), 2)
 
-	var choices []clientmodels.DisclosureDisconSelection
-	for _, pickOne := range session.DisclosurePlan.DisclosureChoicesOverview {
+	var choices []clientmodels.ChoiceSelection
+	for _, pickOne := range pickOnes(session.DisclosurePlan) {
 		require.Len(t, pickOne.OwnedOptions, 1)
 		choices = append(choices, makeDisclosureChoice(pickOne.OwnedOptions[0]))
 	}
@@ -293,7 +293,7 @@ func requireNoOwnedVcdmOption(t *testing.T, session clientmodels.SessionState) {
 	t.Helper()
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 	require.NotNil(t, session.DisclosurePlan)
-	for _, pickOne := range session.DisclosurePlan.DisclosureChoicesOverview {
+	for _, pickOne := range pickOnes(session.DisclosurePlan) {
 		for _, bundle := range pickOne.OwnedOptions {
 			for _, cred := range bundle.Credentials {
 				require.NotEqual(t, vcdmCredentialId, cred.CredentialId, "VCDM credential should not be offered")

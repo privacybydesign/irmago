@@ -475,7 +475,7 @@ func testEudiPidPythonIssuerDisclosesAvMdoc(t *testing.T) {
 		"disclosure errored: %+v", disclosureSession.Error)
 	requireSessionState(t, disclosureSession, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	chosen := disclosureSession.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	chosen := pickOnes(disclosureSession.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, disclosureSession.Id, makeDisclosureChoice(chosen))
 
 	disclosureSession = awaitSessionState(t, sessionHandler)
@@ -935,7 +935,7 @@ func discloseAvMdocOnce(t *testing.T, c *client.Client, sessionHandler *MockSess
 		"disclosure errored: %+v", session.Error)
 	requireSessionState(t, session, sessionId, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	chosen := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	chosen := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(chosen))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1031,7 +1031,7 @@ func testEudiPidPythonIssuerRejectsUnsatisfiedValuesConstraint(t *testing.T) {
 	}
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.NotNil(t, session.DisclosurePlan)
-	for _, choice := range session.DisclosurePlan.DisclosureChoicesOverview {
+	for _, choice := range pickOnes(session.DisclosurePlan) {
 		require.Empty(t, choice.OwnedOptions,
 			"the wallet offered a credential whose age_over_18 is true for a query constrained to false")
 	}
@@ -1058,7 +1058,7 @@ func discloseAvMdocAndDecode(
 		"disclosure errored: %+v", session.Error)
 	requireSessionState(t, session, sessionId, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	chosen := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	chosen := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(chosen))
 
 	session = awaitSessionState(t, sessionHandler)

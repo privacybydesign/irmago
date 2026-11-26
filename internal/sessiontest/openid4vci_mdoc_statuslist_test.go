@@ -42,7 +42,7 @@ func testSessionHandlerForOpenID4VCIMdocStatusList(t *testing.T) {
 	t.Run("issuance/a status list signed by an untrusted key refuses the credential", testMdocStatusListIssuanceRefusesUntrustedList)
 	t.Run("refresh/a revocation found by the sweep notifies the app", testMdocStatusListRevocationNotifiesApp)
 	t.Run("refresh/a JWT status list works for an mdoc too", testMdocStatusListJwtList)
-	t.Run("disclosure/a revoked credential is offered as revoked and logged as revoked", testMdocStatusListRevokedDisclosure)
+	t.Run("disclosure/a revoked credential is offered as revoked and cannot be shared", testMdocStatusListRevokedDisclosure)
 }
 
 // testMdocStatusListWithoutStatus issues an mDL while the server is up. The
@@ -154,9 +154,9 @@ func testMdocStatusListJwtList(t *testing.T) {
 }
 
 // testMdocStatusListRevokedDisclosure revokes an issued PID and then asks for
-// it. As for SD-JWT VCs, the wallet does not hide a revoked credential: it
-// offers it marked revoked, leaves the choice to the user, and records in the
-// log that what was shared had been revoked.
+// it. As for SD-JWT VCs, the wallet does not hide a revoked credential: it is
+// the slot's candidate, marked revoked and unusable, and an answer naming it is
+// refused, so nothing is shared or logged.
 func testMdocStatusListRevokedDisclosure(t *testing.T) {
 	statusList := startMdocStatusListServer(t, mdocStatusListCWT, nil)
 
@@ -185,26 +185,7 @@ func testMdocStatusListRevokedDisclosure(t *testing.T) {
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1)
-	owned := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
-	require.NotEmpty(t, owned, "a revoked credential is still offered")
-	requirePlanCredentialDetails(t, owned[0].Credentials[0], expectedPlanCredential{
-		Revoked:             new(true),
-		RevocationSupported: new(true),
-	}, "revoked PID")
-
-	grantFirstOwnedOptions(t, c, 2, session)
-	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
-
-	disclosureLog := requireSingleDisclosureLog(t, c)
-	require.Len(t, disclosureLog.Credentials, 1)
-	requireLogCredential(t, disclosureLog.Credentials[0], expectedLogCredential{
-		CredentialId:        pidMdocDocType,
-		Formats:             []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc},
-		Revoked:             new(true),
-		RevocationSupported: new(true),
-	}, "revoked PID entry")
+	requireRevokedCandidateRefused(t, c, sessionHandler, session, pidMdocDocType)
 }
 
 // ----------------------------------------------------------------------------

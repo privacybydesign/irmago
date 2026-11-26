@@ -57,9 +57,9 @@ func testSatisfiableSingleCredentialSingleOption(t *testing.T) {
 		}]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials, 1)
-	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0]
+	requireSatisfiable(t, plan, expectChoice{cards: 1, obtainable: 0})
+	require.Len(t, firstCard(t, plan.Choices[0]).Credentials, 1)
+	cred := firstCard(t, plan.Choices[0]).Credentials[0]
 	assert.Equal(t, "test.test.email", cred.CredentialId)
 	assert.Equal(t, []any{"email"}, cred.Attributes[0].ClaimPath)
 }
@@ -78,8 +78,8 @@ func testSatisfiableSingleCredentialMultipleInstances(t *testing.T) {
 		}]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 1})
-	hashes := ownedHashes(plan.DisclosureChoicesOverview[0])
+	requireSatisfiable(t, plan, expectChoice{cards: 2, obtainable: 0})
+	hashes := ownedHashes(plan.Choices[0])
 	assert.Contains(t, hashes, info1.Hash)
 	assert.Contains(t, hashes, info2.Hash)
 }
@@ -97,7 +97,7 @@ func testUnsatisfiableSingleCredential(t *testing.T) {
 	}`)
 
 	requireUnsatisfiable(t, plan, 1)
-	assert.Equal(t, "test.test.email", plan.IssueDuringDisclosure.Steps[0].Options[0].Credentials[0].CredentialId)
+	assert.Equal(t, "test.test.email", firstMissing(t, plan).CredentialId)
 }
 
 func testSatisfiableMultipleCredentialsSingleOptionEach(t *testing.T) {
@@ -123,8 +123,8 @@ func testSatisfiableMultipleCredentialsSingleOptionEach(t *testing.T) {
 	}`)
 
 	requireSatisfiable(t, plan,
-		expectPickOne{owned: 1, obtainable: 1},
-		expectPickOne{owned: 1, obtainable: 1},
+		expectChoice{cards: 1, obtainable: 0},
+		expectChoice{cards: 1, obtainable: 0},
 	)
 }
 
@@ -150,7 +150,7 @@ func testUnsatisfiableMultipleCredentialsOneAvailable(t *testing.T) {
 	}`)
 
 	requireUnsatisfiable(t, plan, 1)
-	assert.Equal(t, "test.test.email", plan.IssueDuringDisclosure.Steps[0].Options[0].Credentials[0].CredentialId)
+	assert.Equal(t, "test.test.email", firstMissing(t, plan).CredentialId)
 }
 
 func testUnsatisfiableMultipleCredentialsNoneAvailable(t *testing.T) {
@@ -192,9 +192,9 @@ func testSatisfiableMultipleAttributes(t *testing.T) {
 		}]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials, 1)
-	assert.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0].Attributes, 2)
+	requireSatisfiable(t, plan, expectChoice{cards: 1, obtainable: 0})
+	require.Len(t, firstCard(t, plan.Choices[0]).Credentials, 1)
+	assert.Len(t, firstCard(t, plan.Choices[0]).Credentials[0].Attributes, 2)
 }
 
 func testUnsatisfiablePartialAttributes(t *testing.T) {
@@ -243,8 +243,8 @@ func testCredentialSetsAllRequiredDifferentPurpose(t *testing.T) {
 	}`)
 
 	requireSatisfiable(t, plan,
-		expectPickOne{owned: 1, obtainable: 1},
-		expectPickOne{owned: 1, obtainable: 1},
+		expectChoice{cards: 1, obtainable: 0},
+		expectChoice{cards: 1, obtainable: 0},
 	)
 }
 
@@ -273,7 +273,7 @@ func testCredentialSetTwoOptionsSamePurpose(t *testing.T) {
 		]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 2})
+	requireSatisfiable(t, plan, expectChoice{cards: 2, obtainable: 0})
 }
 
 func testCredentialSetTwoOptionsMultipleClaimsSingleCandidateEach(t *testing.T) {
@@ -301,8 +301,8 @@ func testCredentialSetTwoOptionsMultipleClaimsSingleCandidateEach(t *testing.T) 
 		]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 2})
-	byHash := ownedByHash(plan.DisclosureChoicesOverview[0])
+	requireSatisfiable(t, plan, expectChoice{cards: 2, obtainable: 0})
+	byHash := ownedByHash(plan.Choices[0])
 	assert.Len(t, byHash[emailInfo.Hash].Attributes, 2)
 	assert.Len(t, byHash[loginInfo.Hash].Attributes, 1)
 }
@@ -333,7 +333,7 @@ func testCredentialSetTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T) {
 		]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 3, obtainable: 2})
+	requireSatisfiable(t, plan, expectChoice{cards: 3, obtainable: 0})
 }
 
 func testMultipleCredentialQueriesInOptionAreSlots(t *testing.T) {
@@ -362,7 +362,7 @@ func testMultipleCredentialQueriesInOptionAreSlots(t *testing.T) {
 
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
-	plan, _, err := h.BuildDisclosurePlan(query, result, nil, nil)
+	plan, err := h.BuildDisclosurePlan(query, result, nil, nil)
 	require.NoError(t, err, "an option naming two queries is answered per slot")
 	require.Len(t, plan.Choices, 1)
 	require.Len(t, plan.Choices[0].Options, 1)
@@ -370,7 +370,6 @@ func testMultipleCredentialQueriesInOptionAreSlots(t *testing.T) {
 	require.Len(t, slots, 2)
 	assert.Equal(t, "q1", slots[0].Id)
 	assert.Equal(t, "q2", slots[1].Id)
-	assert.Empty(t, plan.DisclosureChoicesOverview, "the pick-one lists cannot express it and stay empty")
 }
 
 func testInvalidFormatReturnsError(t *testing.T) {
@@ -404,9 +403,9 @@ func testSatisfiablePredefinedValue(t *testing.T) {
 		}]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials, 1)
-	assert.NotNil(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0].Attributes[0].RequestedValue)
+	requireSatisfiable(t, plan, expectChoice{cards: 1, obtainable: 0})
+	require.Len(t, firstCard(t, plan.Choices[0]).Credentials, 1)
+	assert.NotNil(t, firstCard(t, plan.Choices[0]).Credentials[0].Attributes[0].RequestedValue)
 }
 
 func testUnsatisfiablePredefinedValue(t *testing.T) {
@@ -443,7 +442,7 @@ func testMultipleAllowedValuesSingleMatch(t *testing.T) {
 		}]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
+	requireSatisfiable(t, plan, expectChoice{cards: 1, obtainable: 0})
 }
 
 func testMultipleAllowedValuesMultipleMatches(t *testing.T) {
@@ -463,7 +462,7 @@ func testMultipleAllowedValuesMultipleMatches(t *testing.T) {
 		}]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 1})
+	requireSatisfiable(t, plan, expectChoice{cards: 2, obtainable: 0})
 }
 
 func testClaimSetsOneOptionSatisfiable(t *testing.T) {
@@ -484,8 +483,8 @@ func testClaimSetsOneOptionSatisfiable(t *testing.T) {
 		}]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
-	bundle := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	requireSatisfiable(t, plan, expectChoice{cards: 1, obtainable: 0})
+	bundle := firstCard(t, plan.Choices[0])
 	require.Len(t, bundle.Credentials, 1)
 	owned := bundle.Credentials[0]
 	assert.Equal(t, infoGmail.Hash, owned.Hash)
@@ -511,8 +510,8 @@ func testClaimSetsBothSatisfiablePicksFirst(t *testing.T) {
 		}]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
-	bundle := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	requireSatisfiable(t, plan, expectChoice{cards: 1, obtainable: 0})
+	bundle := firstCard(t, plan.Choices[0])
 	require.Len(t, bundle.Credentials, 1)
 	owned := bundle.Credentials[0]
 	assert.Equal(t, infoGmail.Hash, owned.Hash)
@@ -538,8 +537,8 @@ func testClaimSetsBothSatisfiableByDifferentInstances(t *testing.T) {
 		}]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 1})
-	byHash := ownedByHash(plan.DisclosureChoicesOverview[0])
+	requireSatisfiable(t, plan, expectChoice{cards: 2, obtainable: 0})
+	byHash := ownedByHash(plan.Choices[0])
 
 	gmail := byHash[infoGmail.Hash]
 	require.Len(t, gmail.Attributes, 1)
@@ -595,7 +594,7 @@ func testNonRequiredCredentialSet(t *testing.T) {
 		]
 	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 3, obtainable: 2, optional: true})
+	requireSatisfiable(t, plan, expectChoice{cards: 3, obtainable: 0, optional: true})
 }
 
 func testEmptyClaimPathDoesNotPanic(t *testing.T) {
@@ -620,65 +619,134 @@ func testEmptyClaimPathDoesNotPanic(t *testing.T) {
 // Test helpers
 // ========================================================================
 
-type expectPickOne struct {
-	owned      int
-	obtainable int
-	optional   bool
-}
-
 func buildPlan(t *testing.T, h *dcql.DcqlHandler, rawQuery string) *clientmodels.DisclosurePlan {
 	t.Helper()
 	query := parseDcqlQuery(t, rawQuery)
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
-	plan, _, err := h.BuildDisclosurePlan(query, result, nil, nil)
+	plan, err := h.BuildDisclosurePlan(query, result, nil, nil)
 	require.NoError(t, err)
 	return plan
 }
 
-func requireSatisfiable(t *testing.T, plan *clientmodels.DisclosurePlan, expected ...expectPickOne) {
-	t.Helper()
-	assert.Nil(t, plan.IssueDuringDisclosure)
-	require.Len(t, plan.DisclosureChoicesOverview, len(expected))
-	for i, exp := range expected {
-		po := plan.DisclosureChoicesOverview[i]
-		assert.Equal(t, exp.optional, po.Optional, "pickOne[%d].Optional", i)
-		assert.Len(t, po.OwnedOptions, exp.owned, "pickOne[%d].OwnedOptions", i)
-		assert.Len(t, po.ObtainableOptions, exp.obtainable, "pickOne[%d].ObtainableOptions", i)
-	}
+// expectChoice is what one choice of the plan holds: the usable cards of all
+// its options together, and the descriptors its slots offer to add. The test
+// scheme's types have no issue URL, so a slot with a usable card offers none.
+type expectChoice struct {
+	cards      int
+	obtainable int
+	optional   bool
 }
 
-func requireUnsatisfiable(t *testing.T, plan *clientmodels.DisclosurePlan, stepOptionCounts ...int) {
-	t.Helper()
-	// The choices are there too, but a required one has nothing owned yet:
-	// the app shows it as an empty spot.
-	require.NotEmpty(t, plan.DisclosureChoicesOverview)
-	assert.True(t, slices.ContainsFunc(plan.DisclosureChoicesOverview, func(p clientmodels.DisclosurePickOne) bool {
-		return !p.Optional && len(p.OwnedOptions) == 0
-	}), "a required choice has no owned options")
-	require.NotNil(t, plan.IssueDuringDisclosure)
-	require.Len(t, plan.IssueDuringDisclosure.Steps, len(stepOptionCounts))
-	for i, count := range stepOptionCounts {
-		assert.Len(t, plan.IssueDuringDisclosure.Steps[i].Options, count, "step[%d].Options", i)
-	}
-}
-
-func ownedHashes(po clientmodels.DisclosurePickOne) []string {
-	hashes := make([]string, 0, len(po.OwnedOptions))
-	for _, b := range po.OwnedOptions {
-		for _, o := range b.Credentials {
-			hashes = append(hashes, o.Hash)
+// cards lists the usable candidates of all of a choice's options.
+func cards(choice clientmodels.DisclosureChoice) []*clientmodels.SelectableCredentialInstance {
+	var out []*clientmodels.SelectableCredentialInstance
+	for _, option := range choice.Options {
+		for _, slot := range option.Slots {
+			for _, c := range slot.Candidates {
+				if c.Usable {
+					out = append(out, c)
+				}
+			}
 		}
+	}
+	return out
+}
+
+func obtainable(choice clientmodels.DisclosureChoice) []*clientmodels.CredentialDescriptor {
+	var out []*clientmodels.CredentialDescriptor
+	for _, option := range choice.Options {
+		for _, slot := range option.Slots {
+			out = append(out, slot.Obtainable...)
+		}
+	}
+	return out
+}
+
+// complete reports whether every slot of the option has a usable card.
+func complete(option clientmodels.DisclosureOption) bool {
+	for _, slot := range option.Slots {
+		if !slices.ContainsFunc(slot.Candidates, func(c *clientmodels.SelectableCredentialInstance) bool { return c.Usable }) {
+			return false
+		}
+	}
+	return true
+}
+
+// unsatisfied lists the required choices that no option can answer yet.
+func unsatisfied(plan *clientmodels.DisclosurePlan) []clientmodels.DisclosureChoice {
+	var out []clientmodels.DisclosureChoice
+	for _, choice := range plan.Choices {
+		if !choice.Optional && !slices.ContainsFunc(choice.Options, complete) {
+			out = append(out, choice)
+		}
+	}
+	return out
+}
+
+func requireSatisfiable(t *testing.T, plan *clientmodels.DisclosurePlan, expected ...expectChoice) {
+	t.Helper()
+	assert.Empty(t, unsatisfied(plan))
+	require.Len(t, plan.Choices, len(expected))
+	for i, exp := range expected {
+		choice := plan.Choices[i]
+		assert.Equal(t, exp.optional, choice.Optional, "choice[%d].Optional", i)
+		assert.Len(t, cards(choice), exp.cards, "choice[%d] cards", i)
+		assert.Len(t, obtainable(choice), exp.obtainable, "choice[%d] obtainable", i)
+	}
+}
+
+// requireUnsatisfiable checks that the required choices that cannot be
+// answered yet have the given numbers of options.
+func requireUnsatisfiable(t *testing.T, plan *clientmodels.DisclosurePlan, optionCounts ...int) {
+	t.Helper()
+	missing := unsatisfied(plan)
+	require.Len(t, missing, len(optionCounts))
+	for i, count := range optionCounts {
+		assert.Len(t, missing[i].Options, count, "unsatisfied choice[%d].Options", i)
+	}
+}
+
+// firstMissing is the first descriptor offered for a slot without a usable
+// card in the first unsatisfied choice.
+func firstMissing(t *testing.T, plan *clientmodels.DisclosurePlan) *clientmodels.CredentialDescriptor {
+	t.Helper()
+	missing := unsatisfied(plan)
+	require.NotEmpty(t, missing)
+	for _, slot := range missing[0].Options[0].Slots {
+		if !slices.ContainsFunc(slot.Candidates, func(c *clientmodels.SelectableCredentialInstance) bool { return c.Usable }) {
+			require.NotEmpty(t, slot.Obtainable)
+			return slot.Obtainable[0]
+		}
+	}
+	require.FailNow(t, "no slot without a card")
+	return nil
+}
+
+type cardBundle struct {
+	Credentials []*clientmodels.SelectableCredentialInstance
+}
+
+// firstCard is the first usable card of a choice, as a one-card bundle.
+func firstCard(t *testing.T, choice clientmodels.DisclosureChoice) cardBundle {
+	t.Helper()
+	all := cards(choice)
+	require.NotEmpty(t, all)
+	return cardBundle{Credentials: all[:1]}
+}
+
+func ownedHashes(choice clientmodels.DisclosureChoice) []string {
+	var hashes []string
+	for _, c := range cards(choice) {
+		hashes = append(hashes, c.Hash)
 	}
 	return hashes
 }
 
-func ownedByHash(po clientmodels.DisclosurePickOne) map[string]*clientmodels.SelectableCredentialInstance {
+func ownedByHash(choice clientmodels.DisclosureChoice) map[string]*clientmodels.SelectableCredentialInstance {
 	m := make(map[string]*clientmodels.SelectableCredentialInstance)
-	for _, b := range po.OwnedOptions {
-		for _, o := range b.Credentials {
-			m[o.Hash] = o
-		}
+	for _, c := range cards(choice) {
+		m[c.Hash] = c
 	}
 	return m
 }

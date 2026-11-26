@@ -139,7 +139,7 @@ func testEudiPidPythonIssuerDisclosesToEudiKotlinVerifier(t *testing.T) {
 	}
 	requireSessionState(t, disclosureSession, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	chosen := disclosureSession.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	chosen := pickOnes(disclosureSession.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, disclosureSession.Id, makeDisclosureChoice(chosen))
 
 	disclosureSession = awaitSessionState(t, sessionHandler)

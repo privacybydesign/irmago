@@ -126,7 +126,6 @@ func (h *testHandler) RequestVerificationPermission(
 	_ *clientmodels.DisclosurePlan,
 	requestor *clientmodels.TrustedParty,
 	_ ResponseMode,
-	_ []dcql.ChoiceQueryIds,
 	callback PermissionHandler,
 ) {
 	if h.requestorCh != nil {

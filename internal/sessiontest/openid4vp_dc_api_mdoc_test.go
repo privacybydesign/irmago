@@ -137,7 +137,7 @@ func testDcApiMdocMultiplePresentations(t *testing.T) {
 	})
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	pickOne := pickOnes(session.DisclosurePlan)[0]
 	require.True(t, pickOne.Multiple, "the plan must carry the multiple flag")
 	require.Len(t, pickOne.OwnedOptions, 2, "both credentials should be offered")
 
@@ -273,10 +273,10 @@ func testDcApiMdocSkippedOptionalSet(t *testing.T) {
 		Data:     unsignedDcApiRequestData(t, string(openid4vp.ResponseMode_DcApi), dcql, nil),
 	})
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	require.True(t, session.DisclosurePlan.DisclosureChoicesOverview[0].Optional,
+	require.True(t, pickOnes(session.DisclosurePlan)[0].Optional,
 		"the only choice must be marked optional")
 
-	grantPermission(t, c, 2, clientmodels.DisclosureDisconSelection{})
+	grantPermission(t, c, 2, skipChoice())
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 	require.NotEmpty(t, session.DcApiResponse, "the wallet must still return a DC API response")

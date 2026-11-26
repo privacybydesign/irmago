@@ -306,7 +306,7 @@ func testOpenID4VP_PidMdoc_IntegerValueConstraint(t *testing.T) {
 			session := testSession.ClientSession
 			if session.Status != clientmodels.Status_Error {
 				requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-				for _, choice := range session.DisclosurePlan.DisclosureChoicesOverview {
+				for _, choice := range pickOnes(session.DisclosurePlan) {
 					require.Empty(
 						t,
 						choice.OwnedOptions,
@@ -358,7 +358,7 @@ func testOpenID4VP_PidMdlMdoc_Dates(t *testing.T) {
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 2)
+	require.Len(t, pickOnes(session.DisclosurePlan), 2)
 
 	approvedRequestor := session.Requestor
 	plan := session.DisclosurePlan
@@ -441,7 +441,7 @@ func testOpenID4VP_PidMdlMdoc_StructuredValues(t *testing.T) {
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 2)
+	require.Len(t, pickOnes(session.DisclosurePlan), 2)
 
 	approvedRequestor := session.Requestor
 	plan := session.DisclosurePlan
@@ -700,7 +700,7 @@ func testOpenID4VP_PidMdlMdoc_CredentialSetChoice(t *testing.T) {
 	)
 
 	approvedRequestor := session.Requestor
-	chosen := ownedOptionWithCredentialId(t, session.DisclosurePlan.DisclosureChoicesOverview[0], mdlDocType)
+	chosen := ownedOptionWithCredentialId(t, pickOnes(session.DisclosurePlan)[0], mdlDocType)
 	grantPermission(t, c, 3, makeDisclosureChoice(chosen))
 
 	session = awaitSessionState(t, sessionHandler)

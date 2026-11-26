@@ -251,17 +251,10 @@ func requireRequestorInfo(t *testing.T, session clientmodels.SessionState) {
 	require.True(t, session.Requestor.Verified)
 }
 
-// grantPermission sends a permission granted interaction with optional disclosure choices
-func grantPermission(t *testing.T, c *client.Client, sessionId int, choices ...clientmodels.DisclosureDisconSelection) {
+// grantPermission grants permission with an answer per choice of the plan
+func grantPermission(t *testing.T, c *client.Client, sessionId int, choices ...clientmodels.ChoiceSelection) {
 	t.Helper()
-	userInteraction(t, c, clientmodels.SessionUserInteraction{
-		SessionId: sessionId,
-		Type:      clientmodels.UI_Permission,
-		Payload: clientmodels.SessionPermissionInteractionPayload{
-			Granted:           true,
-			DisclosureChoices: choices,
-		},
-	})
+	grantAnswer(t, c, sessionId, choices...)
 }
 
 // grantAnswer grants permission with an answer per slot (the plan's Choices).
@@ -691,43 +684,6 @@ func requireIrmaServerResult(t *testing.T, irmaServer *IrmaServer, token irma.Re
 			require.Equal(t, exp.Value, *actual.RawValue, "disjunction %d attribute %d value mismatch", i, j)
 		}
 	}
-}
-
-// singleCredBundles wraps each credential as a single-credential bundle.
-// Use for test fixtures whose discons are single-cred-per-con (the common
-// case) — that's most existing fixtures.
-func singleCredBundles(creds ...*clientmodels.SelectableCredentialInstance) []*clientmodels.DisclosureBundle {
-	if len(creds) == 0 {
-		return nil
-	}
-	out := make([]*clientmodels.DisclosureBundle, len(creds))
-	for i, c := range creds {
-		out[i] = &clientmodels.DisclosureBundle{
-			Credentials: []*clientmodels.SelectableCredentialInstance{c},
-		}
-	}
-	return out
-}
-
-// makeDisclosureChoice creates a DisclosureDisconSelection that discloses all
-// attributes of every credential in the given bundle.
-func makeDisclosureChoice(bundle *clientmodels.DisclosureBundle) clientmodels.DisclosureDisconSelection {
-	creds := make([]clientmodels.SelectedCredential, 0, len(bundle.Credentials))
-	for _, option := range bundle.Credentials {
-		var paths [][]any
-		for _, attr := range option.Attributes {
-			if attr.Value == nil {
-				continue // skip section headers
-			}
-			paths = append(paths, attr.ClaimPath)
-		}
-		creds = append(creds, clientmodels.SelectedCredential{
-			CredentialId:   option.CredentialId,
-			CredentialHash: option.Hash,
-			AttributePaths: paths,
-		})
-	}
-	return clientmodels.DisclosureDisconSelection{Credentials: creds}
 }
 
 const (

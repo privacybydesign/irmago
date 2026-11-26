@@ -26,10 +26,8 @@ type Handler interface {
 	// that delivered the request through the Digital Credentials API. It is only
 	// called for sessions started with NewDcApiSession, and always before Success.
 	DeliverDcApiResponse(response string)
-	// queryIds runs parallel to disclosurePlan.DisclosureChoicesOverview, one
-	// entry per pick-one, naming the DCQL query each of that pick-one's
-	// candidates answers. The UI hands it back position by position when it
-	// reports the user's choices.
+	// The UI answers per slot of disclosurePlan; a slot's id is the DCQL query
+	// id the selection is for.
 	//
 	// responseMode is how the response will travel to the verifier, for the
 	// wallet's technical details.
@@ -37,7 +35,6 @@ type Handler interface {
 		disclosurePlan *clientmodels.DisclosurePlan,
 		requestor *clientmodels.TrustedParty,
 		responseMode ResponseMode,
-		queryIds []dcql.ChoiceQueryIds,
 		callback PermissionHandler,
 	)
 }
@@ -475,8 +472,6 @@ type openid4vpSession struct {
 	origin     string
 	lastPlan   *clientmodels.DisclosurePlan
 	lastResult *dcql.DcqlResult
-	// lastQueryIds runs parallel to lastPlan's choices; see Handler.
-	lastQueryIds []dcql.ChoiceQueryIds
 	// preExistingHashes tracks owned credential hashes at session start,
 	// used to detect newly issued credentials for WrongCredentialIssued.
 	preExistingHashes map[string]struct{}
@@ -552,7 +547,6 @@ func (session *openid4vpSession) requestPermission() error {
 		plan,
 		session.requestor,
 		session.request.ResponseMode,
-		session.lastQueryIds,
 		func(proceed bool, selections []dcql.DisclosureSelection) {
 			if proceed {
 				session.answer(&permissionResponse{selections: selections})
@@ -564,8 +558,7 @@ func (session *openid4vpSession) requestPermission() error {
 	return nil
 }
 
-// buildDisclosurePlan builds a DisclosurePlan by delegating to the DcqlHandler,
-// and records the per-choice query ids that go with it.
+// buildDisclosurePlan builds a DisclosurePlan by delegating to the DcqlHandler.
 func (session *openid4vpSession) buildDisclosurePlan() (*clientmodels.DisclosurePlan, error) {
 	result, err := session.dcqlHandler.FindCandidates(session.request.DcqlQuery)
 	if err != nil {
@@ -578,13 +571,12 @@ func (session *openid4vpSession) buildDisclosurePlan() (*clientmodels.Disclosure
 		session.preExistingHashes = dcql.CollectOwnedHashes(result.QueryResults)
 	}
 
-	plan, queryIds, err := session.dcqlHandler.BuildDisclosurePlan(
+	plan, err := session.dcqlHandler.BuildDisclosurePlan(
 		session.request.DcqlQuery, result, session.lastPlan, session.preExistingHashes,
 	)
 	if err != nil {
 		return nil, err
 	}
-	session.lastQueryIds = queryIds
 	return plan, nil
 }
 

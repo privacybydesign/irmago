@@ -43,7 +43,7 @@ import (
 func testSessionHandlerForOpenID4VCIStatusList(t *testing.T) {
 	t.Run("issuance accepts a valid status and refresh runs", testOpenID4VCIStatusListIssuanceAcceptsValid)
 	t.Run("revoked credential is surfaced in the disclosure plan", testOpenID4VPStatusListRevokedSurfacedInPlan)
-	t.Run("a revoked credential is recorded as revoked in the disclosure log", testOpenID4VPStatusListRevokedRecordedInLog)
+	t.Run("a revoked credential cannot be shared, so nothing is logged", testOpenID4VPStatusListRevokedRecordedInLog)
 	t.Run("revocation found by the sweep notifies the app", testOpenID4VCIStatusListRevocationNotifiesApp)
 }
 
@@ -190,13 +190,15 @@ func testOpenID4VPStatusListRevokedSurfacedInPlan(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	// IRMA parity: the wallet does not refuse a revoked credential outright. It
-	// offers it in the plan with Revoked=true so the frontend can decide what to
-	// do; the verifier's own status check is the backstop.
-	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview, "expected a disclosure choice")
-	owned := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
-	require.NotEmpty(t, owned, "revoked instance still expected in the plan")
-	require.NotEmpty(t, owned[0].Credentials, "bundle must hold the credential instance")
+	// The wallet shows a revoked credential rather than hiding it: it is the
+	// slot's candidate with Revoked=true, marked unusable with reason revoked,
+	// so the frontend can offer to add it again.
+	require.NotEmpty(t, session.DisclosurePlan.Choices, "expected a disclosure choice")
+	slot := session.DisclosurePlan.Choices[0].Options[0].Slots[0]
+	require.Len(t, slot.Candidates, 1, "revoked instance still expected in the plan")
+	require.False(t, slot.Candidates[0].Usable, "a revoked card cannot be shared")
+	require.Equal(t, clientmodels.UnusableReason_Revoked, slot.Candidates[0].UnusableReason)
+	owned := []*bundle{{Credentials: slot.Candidates}}
 	require.True(t, owned[0].Credentials[0].Revoked,
 		"revoked instance must be surfaced to the frontend with Revoked=true")
 }
@@ -220,13 +222,8 @@ const statusListDisclosureDcql = `{
 }`
 
 // testOpenID4VPStatusListRevokedRecordedInLog follows the plan test above through
-// to the activity log.
-//
-// The permission screen says the credential is revoked and that its status can be
-// checked at all, and the user discloses anyway, as IRMA parity allows. The log
-// entry has to carry the same two facts: it is the only record the user has
-// afterwards of having shared a credential the issuer had already withdrawn, and
-// an entry that reads as a clean disclosure would hide that.
+// to the answer: the revoked card is offered, but as unusable, and an answer
+// naming it is refused, so nothing reaches the verifier or the activity log.
 func testOpenID4VPStatusListRevokedRecordedInLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
@@ -241,26 +238,7 @@ func testOpenID4VPStatusListRevokedRecordedInLog(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	owned := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
-	require.NotEmpty(t, owned, "revoked instance still expected in the plan")
-	requirePlanCredentialDetails(t, owned[0].Credentials[0], expectedPlanCredential{
-		Revoked:             new(true),
-		RevocationSupported: new(true),
-	}, "revoked candidate")
-
-	grantPermission(t, c, 2, makeDisclosureChoice(owned[0]))
-
-	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
-
-	disclosureLog := requireSingleDisclosureLog(t, c)
-	require.Len(t, disclosureLog.Credentials, 1)
-	requireLogCredential(t, disclosureLog.Credentials[0], expectedLogCredential{
-		CredentialId:        statusListCredentialVct,
-		Formats:             []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
-		Revoked:             new(true),
-		RevocationSupported: new(true),
-	}, "revoked entry")
+	requireRevokedCandidateRefused(t, c, sessionHandler, session, statusListCredentialVct)
 }
 
 // revokeStatusListCredentialViaVeramo revokes every issued status-list
@@ -320,4 +298,31 @@ func revokeCredentialsViaVeramo(t *testing.T, recordType string, email string) {
 		revoked++
 	}
 	require.Positive(t, revoked, "expected to revoke at least one status-list credential for %s", email)
+}
+
+// requireRevokedCandidateRefused checks that a revoked card is offered in the
+// plan but cannot be shared: it is the slot's candidate with usable false and
+// reason revoked, an answer naming it is refused, and nothing is logged.
+func requireRevokedCandidateRefused(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, session clientmodels.SessionState, credentialId string) {
+	t.Helper()
+	require.NotEmpty(t, session.DisclosurePlan.Choices, "expected a disclosure choice")
+	slot := session.DisclosurePlan.Choices[0].Options[0].Slots[0]
+	require.Len(t, slot.Candidates, 1, "revoked instance still expected in the plan")
+	revoked := slot.Candidates[0]
+	require.Equal(t, credentialId, revoked.CredentialId)
+	require.False(t, revoked.Usable)
+	require.Equal(t, clientmodels.UnusableReason_Revoked, revoked.UnusableReason)
+
+	err := c.HandleUserInteraction(clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_Permission,
+		Payload: clientmodels.SessionPermissionInteractionPayload{Granted: true, Choices: []clientmodels.ChoiceSelection{{
+			Option: 0,
+			Slots:  []clientmodels.SlotSelection{{SlotId: slot.Id, Credentials: []clientmodels.SelectedCredential{selectWhole(revoked)}}},
+		}}},
+	})
+	require.Error(t, err, "a revoked card cannot be shared")
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Error, session.Status)
+	requireNoDisclosureLog(t, c)
 }

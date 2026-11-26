@@ -56,8 +56,8 @@ func testMultiSingletonInnerConProducesBundle(
 	// The single inner con yields exactly one DisclosureBundle holding both
 	// credentials together — the user can't "pick one" between them.
 	require.NotNil(t, session.DisclosurePlan)
-	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1)
-	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.Len(t, pickOnes(session.DisclosurePlan), 1)
+	pickOne := pickOnes(session.DisclosurePlan)[0]
 	require.Len(t, pickOne.OwnedOptions, 1,
 		"single inner con requiring two singletons should produce ONE bundle, not multiple options")
 	bundle := pickOne.OwnedOptions[0]
@@ -110,10 +110,10 @@ func testIssuanceStepEmitsMultiCredBundle(
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	require.NotNil(t, session.DisclosurePlan)
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
-	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
+	require.NotNil(t, issuance(session.DisclosurePlan))
+	require.Len(t, issuance(session.DisclosurePlan).Steps, 1)
 
-	step := session.DisclosurePlan.IssueDuringDisclosure.Steps[0]
+	step := issuance(session.DisclosurePlan).Steps[0]
 	require.Len(t, step.Options, 1, "single inner con → single bundle option")
 
 	bundle := step.Options[0]
@@ -152,7 +152,7 @@ func testMultiCredBundleIssuanceFlow(
 	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure,
+	require.NotNil(t, issuance(session.DisclosurePlan),
 		"wallet is empty, so issuance is required")
 
 	disclosureSessionId := session.Id
@@ -167,21 +167,21 @@ func testMultiCredBundleIssuanceFlow(
 	}))
 	session = awaitSessionState(t, sessionHandler) // disclosure re-eval
 	require.Equal(t, disclosureSessionId, session.Id)
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure,
+	require.NotNil(t, issuance(session.DisclosurePlan),
 		"single bundle member issued → bundle still incomplete → issuance still required")
 	require.Equal(t,
 		map[string]struct{}{
 			"irma-demo.MijnOverheid.singleton": {},
 		},
-		session.DisclosurePlan.IssueDuringDisclosure.IssuedCredentialIds,
+		issuance(session.DisclosurePlan).IssuedCredentialIds,
 		"partial progress should be surfaced: singleton satisfies its descriptor, stempas does not",
 	)
 	// The choices are there while the bundle is incomplete, but the bundle is
 	// not owned yet: there is nothing to pick, only something to obtain.
-	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1)
-	require.Empty(t, session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions,
+	require.Len(t, pickOnes(session.DisclosurePlan), 1)
+	require.Empty(t, pickOnes(session.DisclosurePlan)[0].OwnedOptions,
 		"an incomplete bundle must not be offered as a choice")
-	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview[0].ObtainableOptions)
+	require.NotEmpty(t, pickOnes(session.DisclosurePlan)[0].ObtainableOptions)
 	_ = awaitSessionState(t, sessionHandler) // finished issuance session
 
 	// Issue the second credential of the bundle.
@@ -196,18 +196,18 @@ func testMultiCredBundleIssuanceFlow(
 	// Both creds issued: IssueDuringDisclosure remains populated with the full
 	// IssuedCredentialIds (so the UI can show "all required data added"), and
 	// DisclosureChoicesOverview is now surfaced.
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
+	require.NotNil(t, issuance(session.DisclosurePlan))
 	require.Equal(t,
 		map[string]struct{}{
 			"irma-demo.MijnOverheid.singleton": {},
 			"irma-demo.stemmen.stempas":        {},
 		},
-		session.DisclosurePlan.IssueDuringDisclosure.IssuedCredentialIds,
+		issuance(session.DisclosurePlan).IssuedCredentialIds,
 	)
-	require.NotNil(t, session.DisclosurePlan.DisclosureChoicesOverview)
-	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1)
+	require.NotNil(t, pickOnes(session.DisclosurePlan))
+	require.Len(t, pickOnes(session.DisclosurePlan), 1)
 
-	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	pickOne := pickOnes(session.DisclosurePlan)[0]
 	require.Len(t, pickOne.OwnedOptions, 1, "single con → single bundle in OwnedOptions")
 	disclosureBundle := pickOne.OwnedOptions[0]
 	require.Len(t, disclosureBundle.Credentials, 2,
@@ -253,9 +253,9 @@ func testMultipleIssuanceBundleOptions(
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
-	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
-	step := session.DisclosurePlan.IssueDuringDisclosure.Steps[0]
+	require.NotNil(t, issuance(session.DisclosurePlan))
+	require.Len(t, issuance(session.DisclosurePlan).Steps, 1)
+	step := issuance(session.DisclosurePlan).Steps[0]
 	require.Len(t, step.Options, 2,
 		"two inner cons → two bundle options")
 	for i, b := range step.Options {
@@ -280,12 +280,13 @@ func testMultipleIssuanceBundleOptions(
 	require.True(t, bundleBCredIds["irma-demo.MijnOverheid.fullName"])
 }
 
-// testOptionalPartlyOwnedConIsObtainableBundle asks, optionally, for a con
-// of two singletons of which the wallet holds one, or for the other one on
-// its own. Neither con can be disclosed yet, so there are no owned options,
-// and no issuance steps (the discon is optional); each con becomes an
-// ObtainableBundle with the part that is owned and the type that is missing.
-func testOptionalPartlyOwnedConIsObtainableBundle(
+// testOptionalPartlyOwnedConIsAnOptionWithAnEmptySlot asks, optionally, for a
+// con of two singletons of which the wallet holds one, or for the other one on
+// its own. Neither con can be disclosed yet, so no option is complete, and
+// nothing has to be added first (the discon is optional); each con is an
+// option with the owned type's slot holding its card and the missing type's
+// slot offering it.
+func testOptionalPartlyOwnedConIsAnOptionWithAnEmptySlot(
 	t *testing.T,
 	irmaServer *IrmaServer,
 	c *client.Client,
@@ -317,26 +318,34 @@ func testOptionalPartlyOwnedConIsObtainableBundle(
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	require.NotNil(t, session.DisclosurePlan)
-	require.Nil(t, session.DisclosurePlan.IssueDuringDisclosure)
-	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1)
-	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.Nil(t, issuance(session.DisclosurePlan))
+	require.Len(t, pickOnes(session.DisclosurePlan), 1)
+	pickOne := pickOnes(session.DisclosurePlan)[0]
 	require.True(t, pickOne.Optional)
 	require.Empty(t, pickOne.OwnedOptions)
 	require.Len(t, pickOne.ObtainableOptions, 1)
 	require.Equal(t, "irma-demo.MijnOverheid.singleton", pickOne.ObtainableOptions[0].CredentialId)
 
-	require.Len(t, pickOne.ObtainableBundles, 2)
-	both := pickOne.ObtainableBundles[0]
-	require.Len(t, both.Owned, 1)
-	require.Equal(t, "irma-demo.stemmen.stempas", both.Owned[0].CredentialId)
-	require.NotEmpty(t, both.Owned[0].Hash)
-	require.Len(t, both.Owned[0].Attributes, 1)
-	require.Equal(t, []any{"election"}, both.Owned[0].Attributes[0].ClaimPath)
-	require.Len(t, both.Missing, 1)
-	require.Equal(t, "irma-demo.MijnOverheid.singleton", both.Missing[0].CredentialId)
+	// In slots: each con is an option, each type of it a slot. The owned part
+	// is the slot with its card, the missing type a slot without a card.
+	options := session.DisclosurePlan.Choices[0].Options
+	require.Len(t, options, 2)
+	both := options[0].Slots
+	require.Len(t, both, 2)
+	require.Equal(t, "0:irma-demo.MijnOverheid.singleton", both[0].Id)
+	require.Empty(t, both[0].Candidates)
+	require.Len(t, both[0].Obtainable, 1)
+	require.Equal(t, "irma-demo.MijnOverheid.singleton", both[0].Obtainable[0].CredentialId)
+	require.Equal(t, "0:irma-demo.stemmen.stempas", both[1].Id)
+	require.Len(t, both[1].Candidates, 1)
+	require.Equal(t, "irma-demo.stemmen.stempas", both[1].Candidates[0].CredentialId)
+	require.NotEmpty(t, both[1].Candidates[0].Hash)
+	require.Len(t, both[1].Candidates[0].Attributes, 1)
+	require.Equal(t, []any{"election"}, both[1].Candidates[0].Attributes[0].ClaimPath)
 
-	alone := pickOne.ObtainableBundles[1]
-	require.Empty(t, alone.Owned)
-	require.Len(t, alone.Missing, 1)
-	require.Equal(t, "irma-demo.MijnOverheid.singleton", alone.Missing[0].CredentialId)
+	alone := options[1].Slots
+	require.Len(t, alone, 1)
+	require.Empty(t, alone[0].Candidates)
+	require.Len(t, alone[0].Obtainable, 1)
+	require.Equal(t, "irma-demo.MijnOverheid.singleton", alone[0].Obtainable[0].CredentialId)
 }

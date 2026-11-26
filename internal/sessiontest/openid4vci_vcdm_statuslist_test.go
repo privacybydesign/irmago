@@ -44,7 +44,7 @@ func testSessionHandlerForOpenID4VCIVcdmStatusList(t *testing.T) {
 	t.Run("issued credential supports revocation and refresh runs", testOpenID4VCIVcdmStatusListRevocationSupported)
 	t.Run("revocation found by the sweep notifies the app", testOpenID4VCIVcdmStatusListRevocationNotifiesApp)
 	t.Run("revoked credential is surfaced in the disclosure plan", testOpenID4VPVcdmStatusListRevokedSurfacedInPlan)
-	t.Run("a revoked credential is recorded as revoked in the disclosure log", testOpenID4VPVcdmStatusListRevokedRecordedInLog)
+	t.Run("a revoked credential cannot be shared, so nothing is logged", testOpenID4VPVcdmStatusListRevokedRecordedInLog)
 }
 
 func issueVcdmStatusListCredential(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, sessionId int) {
@@ -109,12 +109,14 @@ func testOpenID4VPVcdmStatusListRevokedSurfacedInPlan(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	// As for SD-JWT VC, the wallet offers a revoked credential and leaves the
-	// decision to the frontend.
-	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview, "expected a disclosure choice")
-	owned := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
-	require.NotEmpty(t, owned, "revoked instance still expected in the plan")
-	require.NotEmpty(t, owned[0].Credentials, "bundle must hold the credential instance")
+	// As for SD-JWT VC, the wallet shows a revoked credential as an unusable
+	// candidate.
+	require.NotEmpty(t, session.DisclosurePlan.Choices, "expected a disclosure choice")
+	slot := session.DisclosurePlan.Choices[0].Options[0].Slots[0]
+	require.Len(t, slot.Candidates, 1, "revoked instance still expected in the plan")
+	require.False(t, slot.Candidates[0].Usable, "a revoked card cannot be shared")
+	require.Equal(t, clientmodels.UnusableReason_Revoked, slot.Candidates[0].UnusableReason)
+	owned := []*bundle{{Credentials: slot.Candidates}}
 	requirePlanCredentialDetails(t, owned[0].Credentials[0], expectedPlanCredential{
 		Revoked:             new(true),
 		RevocationSupported: new(true),
@@ -135,20 +137,5 @@ func testOpenID4VPVcdmStatusListRevokedRecordedInLog(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	owned := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
-	require.NotEmpty(t, owned, "revoked instance still expected in the plan")
-
-	grantPermission(t, c, 2, makeDisclosureChoice(owned[0]))
-
-	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
-
-	disclosureLog := requireSingleDisclosureLog(t, c)
-	require.Len(t, disclosureLog.Credentials, 1)
-	requireLogCredential(t, disclosureLog.Credentials[0], expectedLogCredential{
-		CredentialId:        vcdmCredentialId,
-		Formats:             []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVcdm},
-		Revoked:             new(true),
-		RevocationSupported: new(true),
-	}, "revoked VCDM entry")
+	requireRevokedCandidateRefused(t, c, sessionHandler, session, vcdmCredentialId)
 }

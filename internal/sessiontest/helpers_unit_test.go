@@ -373,7 +373,7 @@ func testCredMatchesExpected(t *testing.T) {
 func testRequireDisclosurePlan(t *testing.T) {
 	t.Run("nil choices asserts nil overview", func(t *testing.T) {
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: nil,
+			Choices: nil,
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: nil,
@@ -383,25 +383,23 @@ func testRequireDisclosurePlan(t *testing.T) {
 	t.Run("issuance steps", func(t *testing.T) {
 		dn := "Email"
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
-				Steps: []clientmodels.IssuanceStep{
-					{Options: []*clientmodels.IssuanceBundle{
-						{Credentials: []*clientmodels.CredentialDescriptor{
-							{
-								CredentialId: "test.email",
-								Name:         "Email Cred",
-								Attributes: []clientmodels.Attribute{
-									{
-										ClaimPath:      []any{"email"},
-										DisplayName:    &dn,
-										RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-									},
+			Choices: stepChoices([]issuanceStep{
+				{Options: []*issuanceBundle{
+					{Credentials: []*clientmodels.CredentialDescriptor{
+						{
+							CredentialId: "test.email",
+							Name:         "Email Cred",
+							Attributes: []clientmodels.Attribute{
+								{
+									ClaimPath:      []any{"email"},
+									DisplayName:    &dn,
+									RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								},
 							},
-						}},
+						},
 					}},
-				},
-			},
+				}},
+			}),
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			IssuanceSteps: []expectedIssuanceStep{
@@ -425,9 +423,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 
 	t.Run("issued credential ids", func(t *testing.T) {
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
-				IssuedCredentialIds: map[string]struct{}{"test.email": {}},
-			},
+			IssuedCredentialIds: map[string]struct{}{"test.email": {}},
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			IssuedCredentialIds: map[string]struct{}{"test.email": {}},
@@ -437,9 +433,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 
 	t.Run("wrong credential issued nil", func(t *testing.T) {
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
-				WrongCredentialIssued: nil,
-			},
+			WrongCredentialIssued: nil,
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			WrongCredentialIssuedNil: true,
@@ -450,15 +444,13 @@ func testRequireDisclosurePlan(t *testing.T) {
 	t.Run("wrong credential issued", func(t *testing.T) {
 		dn := "University"
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
-				WrongCredentialIssued: &clientmodels.Credential{
-					CredentialId: "test.studentCard",
-					Attributes: []clientmodels.Attribute{
-						{
-							ClaimPath:   []any{"university"},
-							DisplayName: &dn,
-							Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("Wrong Uni")},
-						},
+			WrongCredentialIssued: &clientmodels.Credential{
+				CredentialId: "test.studentCard",
+				Attributes: []clientmodels.Attribute{
+					{
+						ClaimPath:   []any{"university"},
+						DisplayName: &dn,
+						Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("Wrong Uni")},
 					},
 				},
 			},
@@ -481,7 +473,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 	t.Run("owned options matched", func(t *testing.T) {
 		dn := "Email"
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
+			Choices: choicesOf([]pickOne{
 				{
 					OwnedOptions: singleCredBundles(
 						&clientmodels.SelectableCredentialInstance{
@@ -497,7 +489,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 						},
 					),
 				},
-			},
+			}),
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: []expectedPickOneChoice{
@@ -519,7 +511,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 	t.Run("obtainable options matched", func(t *testing.T) {
 		dn := "Email"
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
+			Choices: choicesOf([]pickOne{
 				{
 					ObtainableOptions: []*clientmodels.CredentialDescriptor{
 						{
@@ -535,7 +527,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 						},
 					},
 				},
-			},
+			}),
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: []expectedPickOneChoice{
@@ -560,9 +552,9 @@ func testRequireDisclosurePlan(t *testing.T) {
 
 	t.Run("optional choice flag", func(t *testing.T) {
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
+			Choices: choicesOf([]pickOne{
 				{Optional: true},
-			},
+			}),
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: []expectedPickOneChoice{
@@ -574,7 +566,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 	t.Run("multiple owned options finds correct match", func(t *testing.T) {
 		dn := "University"
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
+			Choices: choicesOf([]pickOne{
 				{
 					OwnedOptions: singleCredBundles(
 						&clientmodels.SelectableCredentialInstance{
@@ -593,7 +585,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 						},
 					),
 				},
-			},
+			}),
 		}
 		// Expect the Delft credential — credMatchesExpected should find it even though Amsterdam comes first.
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
@@ -620,20 +612,11 @@ func testRequireDisclosurePlan(t *testing.T) {
 		})
 	})
 
+	// A required choice that can be answered and one that still misses a card.
 	t.Run("full plan with issuance and choices", func(t *testing.T) {
 		dn := "Email"
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
-				Steps: []clientmodels.IssuanceStep{
-					{Options: []*clientmodels.IssuanceBundle{
-						{Credentials: []*clientmodels.CredentialDescriptor{
-							{CredentialId: "test.email"},
-						}},
-					}},
-				},
-				IssuedCredentialIds: map[string]struct{}{"test.email": {}},
-			},
-			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
+			Choices: append(choicesOf([]pickOne{
 				{
 					OwnedOptions: singleCredBundles(
 						&clientmodels.SelectableCredentialInstance{
@@ -647,11 +630,18 @@ func testRequireDisclosurePlan(t *testing.T) {
 						{CredentialId: "test.email"},
 					},
 				},
-			},
+			}), stepChoices([]issuanceStep{
+				{Options: []*issuanceBundle{
+					{Credentials: []*clientmodels.CredentialDescriptor{
+						{CredentialId: "test.phone"},
+					}},
+				}},
+			})...),
+			IssuedCredentialIds: map[string]struct{}{"test.email": {}},
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			IssuanceSteps: []expectedIssuanceStep{
-				{Options: []expectedCredentialDescriptor{{CredentialId: "test.email"}}},
+				{Options: []expectedCredentialDescriptor{{CredentialId: "test.phone"}}},
 			},
 			IssuedCredentialIds: map[string]struct{}{"test.email": {}},
 			Choices: []expectedPickOneChoice{
@@ -666,6 +656,11 @@ func testRequireDisclosurePlan(t *testing.T) {
 					},
 					Obtainable: []expectedCredentialDescriptor{
 						{CredentialId: "test.email"},
+					},
+				},
+				{
+					Obtainable: []expectedCredentialDescriptor{
+						{CredentialId: "test.phone"},
 					},
 				},
 			},
@@ -936,14 +931,14 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "expected nil choices but actual has choices", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{{}},
+			Choices: choicesOf([]pickOne{{}}),
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{Choices: nil})
 	})
 
 	shouldFail(t, "expected choices but actual is nil", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: nil,
+			Choices: nil,
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: []expectedPickOneChoice{{}},
@@ -952,7 +947,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "choice count mismatch", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{{}, {}},
+			Choices: choicesOf([]pickOne{{}, {}}),
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: []expectedPickOneChoice{{}},
@@ -962,7 +957,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 	shouldFail(t, "owned option count mismatch", func(t testingT) {
 		dn := "Email"
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
+			Choices: choicesOf([]pickOne{
 				{
 					OwnedOptions: singleCredBundles(
 						&clientmodels.SelectableCredentialInstance{
@@ -973,7 +968,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 						},
 					),
 				},
-			},
+			}),
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: []expectedPickOneChoice{
@@ -990,7 +985,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 	shouldFail(t, "no owned option matches expected", func(t testingT) {
 		dn := "Email"
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
+			Choices: choicesOf([]pickOne{
 				{
 					OwnedOptions: singleCredBundles(
 						&clientmodels.SelectableCredentialInstance{
@@ -1001,7 +996,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 						},
 					),
 				},
-			},
+			}),
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: []expectedPickOneChoice{
@@ -1016,13 +1011,13 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "obtainable option count mismatch", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
+			Choices: choicesOf([]pickOne{
 				{
 					ObtainableOptions: []*clientmodels.CredentialDescriptor{
 						{CredentialId: "test.email"},
 					},
 				},
-			},
+			}),
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: []expectedPickOneChoice{
@@ -1038,9 +1033,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "issuance step count mismatch", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
-				Steps: []clientmodels.IssuanceStep{{}, {}},
-			},
+			Choices: stepChoices([]issuanceStep{{}, {}}),
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			IssuanceSteps: []expectedIssuanceStep{{}},
@@ -1050,9 +1043,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "issued credential ids mismatch", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
-				IssuedCredentialIds: map[string]struct{}{"test.email": {}},
-			},
+			IssuedCredentialIds: map[string]struct{}{"test.email": {}},
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			IssuedCredentialIds: map[string]struct{}{"test.phone": {}},
@@ -1062,9 +1053,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "wrong credential expected nil but is non-nil", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
-				WrongCredentialIssued: &clientmodels.Credential{CredentialId: "test.email"},
-			},
+			WrongCredentialIssued: &clientmodels.Credential{CredentialId: "test.email"},
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			WrongCredentialIssuedNil: true,
@@ -1074,9 +1063,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "wrong credential expected non-nil but is nil", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
-				WrongCredentialIssued: nil,
-			},
+			WrongCredentialIssued: nil,
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			WrongCredentialIssued: &expectedCredentialDescriptor{CredentialId: "test.email"},
@@ -1086,9 +1073,9 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "optional flag mismatch", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
+			Choices: choicesOf([]pickOne{
 				{Optional: false},
-			},
+			}),
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: []expectedPickOneChoice{
@@ -1099,13 +1086,13 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "obtainable credential id mismatch", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
+			Choices: choicesOf([]pickOne{
 				{
 					ObtainableOptions: []*clientmodels.CredentialDescriptor{
 						{CredentialId: "test.email"},
 					},
 				},
-			},
+			}),
 		}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: []expectedPickOneChoice{

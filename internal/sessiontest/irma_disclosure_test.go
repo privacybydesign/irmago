@@ -49,7 +49,7 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 
 	runSessionTest(t,
 		"optional partly owned con is an obtainable bundle",
-		testOptionalPartlyOwnedConIsObtainableBundle,
+		testOptionalPartlyOwnedConIsAnOptionWithAnEmptySlot,
 	)
 
 	runSessionTest(t,
@@ -256,25 +256,7 @@ func testDisclosureWithPredefinedValues(
 	plan = session.DisclosurePlan
 
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps: []expectedIssuanceStep{
-			{Options: []expectedCredentialDescriptor{
-				{
-					CredentialId: "irma-demo.RU.studentCard",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"studentID"},
-							DisplayName:    new("Student number"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-						{
-							Path:           []any{"university"},
-							DisplayName:    new("University"),
-							RequestedValue: strVal("Universiteit Utrecht"),
-						},
-					},
-				},
-			}},
-		},
+		NoIssuanceSteps:          true, // the choice can be answered now
 		IssuedCredentialIds:      map[string]struct{}{"irma-demo.RU.studentCard": {}},
 		WrongCredentialIssuedNil: true,
 		Choices: []expectedPickOneChoice{
@@ -308,25 +290,13 @@ func testDisclosureWithPredefinedValues(
 						IssuerName:   new("Demo Radboud University Nijmegen"),
 						Attributes: []expectedAttr{
 							{
-								Path:        []any{"level"},
-								DisplayName: new("Type"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
 								Path:           []any{"studentID"},
 								DisplayName:    new("Student number"),
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"studentCardNumber"},
-								DisplayName: new("Student card number"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
 								DisplayName:    new("University"),
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: strVal("Universiteit Utrecht"),
 							},
 						},
@@ -336,7 +306,7 @@ func testDisclosureWithPredefinedValues(
 		},
 	})
 
-	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(plan)[0].OwnedOptions[0]
 	grantPermission(t, c, 1, makeDisclosureChoice(choice))
 
 	// make sure the previous issuance session is finished
@@ -498,7 +468,7 @@ func testDisclosureTrustedPartyLogoPaths(
 
 	// Disclosure plan credential issuers should have logos
 	require.NotNil(t, session.DisclosurePlan)
-	for _, choice := range session.DisclosurePlan.DisclosureChoicesOverview {
+	for _, choice := range pickOnes(session.DisclosurePlan) {
 		for _, bundle := range choice.OwnedOptions {
 			for _, opt := range bundle.Credentials {
 				require.NotNil(t, opt.Issuer.Image, "issuer Image for %s should not be nil", opt.CredentialId)
@@ -577,25 +547,7 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 	plan = session.DisclosurePlan
 
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps: []expectedIssuanceStep{
-			{Options: []expectedCredentialDescriptor{
-				{
-					CredentialId: "irma-demo.MijnOverheid.fullName",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"firstnames"},
-							DisplayName:    new("First names"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-						{
-							Path:           []any{"familyname"},
-							DisplayName:    new("Family name"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-					},
-				},
-			}},
-		},
+		NoIssuanceSteps:     true, // the choice can be answered now
 		IssuedCredentialIds: map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
 		// there's two choices, one of which is optional
 		Choices: []expectedPickOneChoice{
@@ -609,23 +561,11 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 								Path:           []any{"level"},
 								DisplayName:    new("Type"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"studentID"},
-								DisplayName: new("Student number"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"studentCardNumber"},
-								DisplayName: new("Student card number"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
 								DisplayName:    new("University"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 						},
 					},
@@ -657,7 +597,7 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 		},
 	})
 
-	required := plan.DisclosureChoicesOverview[1]
+	required := pickOnes(plan)[1]
 
 	// finish the issuance session
 	session = awaitSessionState(t, sessionHandler)
@@ -667,7 +607,7 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 	// for the first option we don't select anything since it's optional
 	choice := required.OwnedOptions[0]
 	grantPermission(t, c, 1,
-		clientmodels.DisclosureDisconSelection{}, // empty for optional
+		skipChoice(), // empty for optional
 		makeDisclosureChoice(choice),
 	)
 
@@ -775,19 +715,8 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		// The email choice can be answered now; only the other one still misses a card.
 		IssuanceSteps: []expectedIssuanceStep{
-			{Options: []expectedCredentialDescriptor{
-				{
-					CredentialId: "test.test.email",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"email"},
-							DisplayName:    new("Email address"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-					},
-				},
-			}},
 			{Options: []expectedCredentialDescriptor{
 				{
 					CredentialId: "irma-demo.RU.studentCard",
@@ -836,52 +765,7 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 
 	// both credentials have now been issued, which means the request is satisfiable
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps: []expectedIssuanceStep{
-			{Options: []expectedCredentialDescriptor{
-				{
-					CredentialId: "test.test.email",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"email"},
-							DisplayName:    new("Email address"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-					},
-				},
-			}},
-			{Options: []expectedCredentialDescriptor{
-				{
-					CredentialId: "irma-demo.RU.studentCard",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"level"},
-							DisplayName:    new("Type"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-						{
-							Path:           []any{"university"},
-							DisplayName:    new("University"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-					},
-				},
-				{
-					CredentialId: "irma-demo.MijnOverheid.fullName",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"firstnames"},
-							DisplayName:    new("First names"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-						{
-							Path:           []any{"familyname"},
-							DisplayName:    new("Family name"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-					},
-				},
-			}},
-		},
+		NoIssuanceSteps:     true, // both choices can be answered now
 		IssuedCredentialIds: map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}, "test.test.email": {}},
 		Choices: []expectedPickOneChoice{
 			{
@@ -936,8 +820,8 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 	// finish second issuance request
 	_ = awaitSessionState(t, sessionHandler)
 
-	email := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	overheid := plan.DisclosureChoicesOverview[1].OwnedOptions[0]
+	email := pickOnes(plan)[0].OwnedOptions[0]
+	overheid := pickOnes(plan)[1].OwnedOptions[0]
 
 	grantPermission(t, c, 1,
 		makeDisclosureChoice(email),
@@ -1143,23 +1027,11 @@ func testWrongCredentialIssuedDuringDisclosure(
 							{
 								Path:           []any{"level"},
 								DisplayName:    new("Type"),
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"studentID"},
-								DisplayName: new("Student number"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"studentCardNumber"},
-								DisplayName: new("Student card number"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
 								DisplayName:    new("University"),
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: strVal("Radboud University"),
 							},
 						},
@@ -1174,7 +1046,7 @@ func testWrongCredentialIssuedDuringDisclosure(
 	requireSessionState(t, session, 4, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// Grant permission and complete
-	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(plan)[0].OwnedOptions[0]
 	grantPermission(t, c, 1, makeDisclosureChoice(choice))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1352,23 +1224,11 @@ func testPreExistingWrongCredentialNotReported(
 							{
 								Path:           []any{"level"},
 								DisplayName:    new("Type"),
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"studentID"},
-								DisplayName: new("Student number"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"studentCardNumber"},
-								DisplayName: new("Student card number"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
 								DisplayName:    new("University"),
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: strVal("Radboud University"),
 							},
 						},
@@ -1382,7 +1242,7 @@ func testPreExistingWrongCredentialNotReported(
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 4, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
-	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(plan)[0].OwnedOptions[0]
 	grantPermission(t, c, 2, makeDisclosureChoice(choice))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1472,23 +1332,11 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 								Path:           []any{"level"},
 								DisplayName:    new("Type"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"studentID"},
-								DisplayName: new("Student number"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"studentCardNumber"},
-								DisplayName: new("Student card number"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
 								DisplayName:    new("University"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 						},
 					},
@@ -1499,7 +1347,6 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 								Path:           []any{"email"},
 								DisplayName:    new("Email address"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 						},
 					},
@@ -1508,9 +1355,9 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 		},
 	})
 
-	studentCard := plan.DisclosureChoicesOverview[0].OwnedOptions[slices.IndexFunc(
-		plan.DisclosureChoicesOverview[0].OwnedOptions,
-		func(b *clientmodels.DisclosureBundle) bool {
+	studentCard := pickOnes(plan)[0].OwnedOptions[slices.IndexFunc(
+		pickOnes(plan)[0].OwnedOptions,
+		func(b *bundle) bool {
 			return len(b.Credentials) > 0 && b.Credentials[0].CredentialId == "irma-demo.RU.studentCard"
 		},
 	)]
@@ -1596,9 +1443,9 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 		},
 	})
 
-	emailOption := plan.DisclosureChoicesOverview[0].OwnedOptions[slices.IndexFunc(
-		plan.DisclosureChoicesOverview[0].OwnedOptions,
-		func(b *clientmodels.DisclosureBundle) bool {
+	emailOption := pickOnes(plan)[0].OwnedOptions[slices.IndexFunc(
+		pickOnes(plan)[0].OwnedOptions,
+		func(b *bundle) bool {
 			return len(b.Credentials) > 0 && b.Credentials[0].CredentialId == "test.test.email"
 		},
 	)]
@@ -1677,45 +1524,12 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 	// disclosure session updated
 	session = awaitSessionState(t, sessionHandler)
 
-	// the user should now have no steps left because the step index is 1
-	// but the previous step should still be available for UX purposes
+	// the choice can be answered with the new student card: nothing is left
+	// to add
 	plan = session.DisclosurePlan
 
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps: []expectedIssuanceStep{
-			{Options: []expectedCredentialDescriptor{
-				{
-					CredentialId: "irma-demo.RU.studentCard",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"level"},
-							DisplayName:    new("Type"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-						{
-							Path:           []any{"university"},
-							DisplayName:    new("University"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-					},
-				},
-				{
-					CredentialId: "irma-demo.MijnOverheid.fullName",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"firstnames"},
-							DisplayName:    new("First names"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-						{
-							Path:           []any{"familyname"},
-							DisplayName:    new("Family name"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-					},
-				},
-			}},
-		},
+		NoIssuanceSteps:     true, // the choice can be answered now
 		IssuedCredentialIds: map[string]struct{}{"irma-demo.RU.studentCard": {}},
 		// the disclosure choices overview should allow the user to add new versions of student card
 		// and issue the MijnOverheid credential; only one obtained option should be available
@@ -1750,23 +1564,11 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 								Path:           []any{"level"},
 								DisplayName:    new("Type"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"studentID"},
-								DisplayName: new("Student number"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"studentCardNumber"},
-								DisplayName: new("Student card number"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
 								DisplayName:    new("University"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 						},
 					},
@@ -1777,23 +1579,11 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 								Path:           []any{"firstnames"},
 								DisplayName:    new("First names"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"firstname"},
-								DisplayName: new("First name"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"familyname"},
 								DisplayName:    new("Family name"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							},
-							{
-								Path:        []any{"prefix"},
-								DisplayName: new("Prefix"),
-								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 						},
 					},
@@ -1886,25 +1676,7 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 
 	// no more credentials left to issue (but the list of issuance steps should still be available)
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps: []expectedIssuanceStep{
-			{Options: []expectedCredentialDescriptor{
-				{
-					CredentialId: "irma-demo.MijnOverheid.fullName",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"firstname"},
-							DisplayName:    new("First name"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-						{
-							Path:           []any{"familyname"},
-							DisplayName:    new("Family name"),
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						},
-					},
-				},
-			}},
-		},
+		NoIssuanceSteps:     true, // the choice can be answered now
 		IssuedCredentialIds: map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
 		// the disclosure options should contain the option;
 		// no new version of this is obtainable because it's a singleton
@@ -2087,7 +1859,6 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 								Path:           []any{"email"},
 								DisplayName:    new("Email address"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 						},
 					},
@@ -2096,7 +1867,7 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 		},
 	})
 
-	emailCred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	emailCred := pickOnes(plan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2277,8 +2048,8 @@ func testDutchIrmaDisclosure(
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
-	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.NotEmpty(t, pickOnes(session.DisclosurePlan))
+	pickOne := pickOnes(session.DisclosurePlan)[0]
 	require.NotEmpty(t, pickOne.OwnedOptions)
 	owned := pickOne.OwnedOptions[0].Credentials[0]
 	require.Equal(t, "Demo E-mailadres", owned.Name)
@@ -2327,8 +2098,8 @@ func testIrmaDisclosureAfterLocaleSwitch(
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
-	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.NotEmpty(t, pickOnes(session.DisclosurePlan))
+	pickOne := pickOnes(session.DisclosurePlan)[0]
 	require.NotEmpty(t, pickOne.OwnedOptions)
 	owned := pickOne.OwnedOptions[0].Credentials[0]
 	require.Equal(t, "Demo E-mailadres", owned.Name,

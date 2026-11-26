@@ -4,7 +4,6 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 )
 
@@ -50,7 +49,6 @@ func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 	disclosurePlan *clientmodels.DisclosurePlan,
 	requestor *clientmodels.TrustedParty,
 	responseMode openid4vp.ResponseMode,
-	queryIds []dcql.ChoiceQueryIds,
 	callback openid4vp.PermissionHandler,
 ) {
 	a.session.State.Status = clientmodels.Status_RequestPermission
@@ -60,148 +58,16 @@ func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 	if requestor != nil {
 		a.session.State.Requestor = *requestor
 	}
-	// Detect WrongCredentialIssued if issuance-during-disclosure is active
-	if disclosurePlan.IssueDuringDisclosure != nil {
-		detectWrongCredentialIssued(a.session, disclosurePlan)
-		disclosurePlan.WrongCredentialIssued = disclosurePlan.IssueDuringDisclosure.WrongCredentialIssued
+	// Which issued card does not fit is only known here, where the wallet's
+	// credentials are; the cards held when the request arrived count as not
+	// issued for it.
+	if allCreds, _, err := a.session.client.GetCredentials(); err == nil {
+		a.session.snapshotPreExistingCredentials(allCreds)
+		disclosurePlan.WrongCredentialIssued = detectWrongCredentialIssued(
+			disclosurePlan, a.session.State.DisclosurePlan, allCreds, a.session.preExistingCredentialHashes)
 	}
 
 	a.session.State.DisclosurePlan = disclosurePlan
 	a.session.openid4vpPermissionHandler = callback
-	a.session.openid4vpQueryIds = queryIds
 	a.session.dispatchState()
-}
-
-// disclosureChoicesToOpenID4VPSelections converts UI disclosure choices to OpenID4VP selections.
-//
-// The choices arrive in the order of the plan's pick-ones, one entry each, so a
-// choice's position is what narrows down which DCQL query it answers, and the
-// selected credential and its paths pick the candidate within that choice. A
-// credential hash alone cannot do it: one credential can answer several queries,
-// and looking the query up by hash across the whole request routed every
-// presentation to whichever query was seen last.
-func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDisconSelection, queryIds []dcql.ChoiceQueryIds) []dcql.DisclosureSelection {
-	var selections []dcql.DisclosureSelection
-	for i, discon := range choices {
-		// A choice with no matching entry leaves the query id empty, which
-		// PrepareDisclosure reports as an unknown query rather than guessing.
-		var choiceQueryIds dcql.ChoiceQueryIds
-		if i < len(queryIds) {
-			choiceQueryIds = queryIds[i]
-		}
-		for _, cred := range discon.Credentials {
-			claimPaths := make([][]any, 0, len(cred.AttributePaths))
-			for _, path := range cred.AttributePaths {
-				if len(path) > 0 {
-					claimPaths = append(claimPaths, path)
-				}
-			}
-			queryId := choiceQueryIds.QueryIdFor(cred.CredentialHash, cred.AttributePaths)
-			selections = append(selections, dcql.DisclosureSelection{
-				QueryId:        queryId,
-				CredentialHash: cred.CredentialHash,
-				ClaimPaths:     claimPaths,
-			})
-		}
-	}
-	return selections
-}
-
-// detectWrongCredentialIssued checks if any newly issued credential matches a required
-// type but has wrong attribute values. Uses the client's full credential list.
-func detectWrongCredentialIssued(s *session, plan *clientmodels.DisclosurePlan) {
-	if plan.IssueDuringDisclosure == nil {
-		return
-	}
-
-	allCreds, _, err := s.client.GetCredentials()
-	if err != nil {
-		return
-	}
-
-	s.snapshotPreExistingCredentials(allCreds)
-
-	var previousWrongHash string
-	if plan.IssueDuringDisclosure.WrongCredentialIssued != nil {
-		previousWrongHash = plan.IssueDuringDisclosure.WrongCredentialIssued.Hash
-	}
-
-	for _, step := range plan.IssueDuringDisclosure.Steps {
-		stepSatisfied := false
-		var wrongForStep *clientmodels.Credential
-
-		for _, bundle := range step.Options {
-			for _, desc := range bundle.Credentials {
-				for _, cred := range allCreds {
-					if cred.CredentialId != desc.CredentialId {
-						continue
-					}
-					_, preExisting := s.preExistingCredentialHashes[cred.Hash]
-					if preExisting {
-						continue
-					}
-					// This credential is new and matches the type. Check if values match.
-					wrong := checkWrongCredential(cred, desc)
-					if wrong != nil {
-						if cred.Hash != previousWrongHash {
-							wrongForStep = wrong
-						}
-					} else {
-						stepSatisfied = true
-					}
-				}
-			}
-		}
-
-		// Only report wrong credential if the step is not satisfied by a correct one
-		if !stepSatisfied && wrongForStep != nil {
-			plan.IssueDuringDisclosure.WrongCredentialIssued = wrongForStep
-			return
-		}
-	}
-}
-
-// checkWrongCredential returns a Credential with only the mismatched attributes if
-// the credential's values don't satisfy the requested values.
-func checkWrongCredential(cred *clientmodels.Credential, option *clientmodels.CredentialDescriptor) *clientmodels.Credential {
-	ok, _ := SatisfiesRequestedAttributes(cred.Attributes, option.Attributes)
-	if ok {
-		return nil
-	}
-
-	// Build a credential with only the mismatched attributes
-	var mismatched []clientmodels.Attribute
-	requestedByID := make(map[string]*clientmodels.Attribute)
-	for i := range option.Attributes {
-		requestedByID[clientmodels.ClaimPathKey(option.Attributes[i].ClaimPath)] = &option.Attributes[i]
-	}
-
-	for _, attr := range cred.Attributes {
-		req, ok := requestedByID[clientmodels.ClaimPathKey(attr.ClaimPath)]
-		if !ok || req.RequestedValue == nil || !req.RequestedValue.HasValue() {
-			continue
-		}
-		satisfied, _ := SatisfiesRequestedAttributes([]clientmodels.Attribute{attr}, []clientmodels.Attribute{*req})
-		if !satisfied {
-			mismatched = append(mismatched, clientmodels.Attribute{
-				ClaimPath:       attr.ClaimPath,
-				DisplayName:     attr.DisplayName,
-				Description:     attr.Description,
-				Value:           attr.Value,
-				RequestedValue:  req.RequestedValue,
-				RequestedValues: req.RequestedValues,
-			})
-		}
-	}
-
-	if len(mismatched) == 0 {
-		return nil
-	}
-
-	return &clientmodels.Credential{
-		CredentialId: cred.CredentialId,
-		Hash:         cred.Hash,
-		Attributes:   mismatched,
-		IsSingleton:  cred.IsSingleton,
-	}
 }

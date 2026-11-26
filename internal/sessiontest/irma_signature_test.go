@@ -59,9 +59,9 @@ func testSignatureRequest(
 
 	require.Empty(t, session.OfferedCredentials)
 	plan := session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDisclosure.Steps, 1)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.Empty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
+	require.Len(t, issuance(plan).Steps, 1)
+	require.Len(t, pickOnes(plan), 1)
+	require.Empty(t, pickOnes(plan)[0].OwnedOptions)
 
 	issue(t, irmaServer, c, sessionHandler, 2, createEmailIssuanceRequest())
 
@@ -72,10 +72,10 @@ func testSignatureRequest(
 
 	require.Empty(t, session.OfferedCredentials)
 	plan = session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDisclosure.Steps, 1)
-	require.NotNil(t, plan.DisclosureChoicesOverview)
+	require.Empty(t, issuance(plan).Steps, "the choice can be answered now, nothing is left to add")
+	require.NotNil(t, pickOnes(plan))
 
-	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(plan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(choice))
 
 	// finish email issuance session

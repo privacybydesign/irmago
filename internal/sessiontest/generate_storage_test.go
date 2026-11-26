@@ -167,8 +167,8 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	c.NewSession(14, startSameDeviceIrmaSessionAtServer(t, irmaServer, multiReq))
 	multiSession := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, multiSession.Status)
-	var multiChoices []clientmodels.DisclosureDisconSelection
-	for _, slot := range multiSession.DisclosurePlan.DisclosureChoicesOverview {
+	var multiChoices []clientmodels.ChoiceSelection
+	for _, slot := range pickOnes(multiSession.DisclosurePlan) {
 		multiChoices = append(multiChoices, makeDisclosureChoice(slot.OwnedOptions[0]))
 	}
 	grantPermission(t, c, multiSession.Id, multiChoices...)
@@ -194,7 +194,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	startOpenID4VPDisclosureSession(t, c, 15, veramoSession.RequestUri)
 	eudiVpSession := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, eudiVpSession.Status)
-	grantPermission(t, c, eudiVpSession.Id, makeDisclosureChoice(eudiVpSession.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]))
+	grantPermission(t, c, eudiVpSession.Id, makeDisclosureChoice(pickOnes(eudiVpSession.DisclosurePlan)[0].OwnedOptions[0]))
 	eudiVpSession = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, eudiVpSession.Status)
 
@@ -218,7 +218,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	startOpenID4VPDisclosureSession(t, c, 17, orgVeramoSession.RequestUri)
 	orgVpSession := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, orgVpSession.Status)
-	grantPermission(t, c, orgVpSession.Id, makeDisclosureChoice(orgVpSession.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]))
+	grantPermission(t, c, orgVpSession.Id, makeDisclosureChoice(pickOnes(orgVpSession.DisclosurePlan)[0].OwnedOptions[0]))
 	orgVpSession = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, orgVpSession.Status)
 

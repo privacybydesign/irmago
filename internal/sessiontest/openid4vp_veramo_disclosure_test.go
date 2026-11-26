@@ -66,7 +66,7 @@ func testSessionHandlerForOpenID4VPWithSdJwtVcs(t *testing.T) {
 	t.Run("disclose without holder binding", testDiscloseWithoutHolderBinding)
 	t.Run("verifier display name", testVerifierDisplayName)
 	t.Run("batch of one credential remains usable after disclosure", testBatchOfOneCredentialRemainsUsableAfterDisclosure)
-	t.Run("batch of two credential is exhausted after two disclosures", testBatchOfTwoCredentialExhaustedAfterTwoDisclosures)
+	t.Run("batch of two credential is used up after two disclosures", testBatchOfTwoCredentialExhaustedAfterTwoDisclosures)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
 	t.Run("veramo verifier requesting irma credential fails", testVeramoVerifierRequestingIrmaCredentialFails)
 	t.Run("veramo verifier requesting missing credential surfaces it", testVeramoVerifierRequestingMissingCredentialSurfacesIt)
@@ -161,7 +161,7 @@ func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -327,7 +327,7 @@ func testPayloadOnlyClaimAcrossLifecycle(t *testing.T) {
 		},
 	})
 
-	chosen := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	chosen := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(chosen))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -423,7 +423,7 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -527,7 +527,7 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 	})
 
 	// Pick the first option (whichever it is) and disclose.
-	chosen := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	chosen := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	require.Len(t, chosen.Credentials, 1)
 	chosenCred := chosen.Credentials[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(chosen))
@@ -638,8 +638,8 @@ func testMultipleRequiredCredentials(t *testing.T) {
 		},
 	})
 
-	choices := make([]clientmodels.DisclosureDisconSelection, 2)
-	for i, pickOne := range session.DisclosurePlan.DisclosureChoicesOverview {
+	choices := make([]clientmodels.ChoiceSelection, 2)
+	for i, pickOne := range pickOnes(session.DisclosurePlan) {
 		cred := pickOne.OwnedOptions[0]
 		choices[i] = makeDisclosureChoice(cred)
 	}
@@ -748,12 +748,12 @@ func testOptionalCredential(t *testing.T) {
 		},
 	})
 
-	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	emailCred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 
 	// Grant permission with the required email credential; skip the optional phone with an empty selection.
 	grantPermission(t, c, session.Id,
 		makeDisclosureChoice(emailCred),
-		clientmodels.DisclosureDisconSelection{},
+		skipChoice(),
 	)
 
 	session = awaitSessionState(t, sessionHandler)
@@ -806,7 +806,7 @@ func testEmptyOptionalDisclosure(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	// Skip the single optional pickOne by passing an empty selection.
-	grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{})
+	grantPermission(t, c, session.Id, skipChoice())
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -906,7 +906,7 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 		},
 	})
 
-	matchingCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	matchingCred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(matchingCred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -997,7 +997,7 @@ func testDiscloseNestedClaims(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1088,7 +1088,7 @@ func testDiscloseCredentialWithArrayValues(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1178,7 +1178,7 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1266,7 +1266,7 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1350,7 +1350,7 @@ func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1634,8 +1634,8 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 	})
 
 	// Grant permission for both required credentials.
-	choices := make([]clientmodels.DisclosureDisconSelection, 2)
-	for i, pickOne := range session.DisclosurePlan.DisclosureChoicesOverview {
+	choices := make([]clientmodels.ChoiceSelection, 2)
+	for i, pickOne := range pickOnes(session.DisclosurePlan) {
 		cred := pickOne.OwnedOptions[0]
 		choices[i] = makeDisclosureChoice(cred)
 	}
@@ -1760,7 +1760,7 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1841,7 +1841,7 @@ func testClaimSetsPicksFirstSatisfiableSet(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1923,7 +1923,7 @@ func testMultipleVctValuesMatchesAcrossTypes(t *testing.T) {
 		},
 	})
 
-	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	emailCred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2042,7 +2042,7 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 		},
 	})
 
-	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(plan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2132,9 +2132,9 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 		},
 	})
 
-	pickOne := plan.DisclosureChoicesOverview[0]
+	pickOne := pickOnes(plan)[0]
 
-	// Select BOTH bundles (this is the key difference from single-select).
+	// Select BOTH cards for the one multiple slot (this is the key difference from single-select).
 	var selectedCreds []clientmodels.SelectedCredential
 	for _, bundle := range pickOne.OwnedOptions {
 		for _, opt := range bundle.Credentials {
@@ -2150,8 +2150,12 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 		}
 	}
 
-	grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{
-		Credentials: selectedCreds,
+	grantPermission(t, c, session.Id, clientmodels.ChoiceSelection{
+		Option: 0,
+		Slots: []clientmodels.SlotSelection{{
+			SlotId:      pickOne.OwnedOptions[0].slotIds[0],
+			Credentials: selectedCreds,
+		}},
 	})
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2236,7 +2240,7 @@ func testNoClaimsRequestedSharesOnlyNonSdClaims(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2316,7 +2320,7 @@ func testDuplicateClaimsIgnored(t *testing.T) {
 	})
 
 	// Disclose and verify the session completes.
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2410,7 +2414,7 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 	})
 
 	// Disclose and verify success.
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2464,8 +2468,8 @@ func testDiscloseWithoutHolderBinding(t *testing.T) {
 
 	plan := session.DisclosurePlan
 	require.NotNil(t, plan)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
+	require.Len(t, pickOnes(plan), 1)
+	require.NotEmpty(t, pickOnes(plan)[0].OwnedOptions)
 
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
@@ -2488,7 +2492,7 @@ func testDiscloseWithoutHolderBinding(t *testing.T) {
 		},
 	})
 
-	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(plan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2555,7 +2559,7 @@ func testVerifierDisplayName(t *testing.T) {
 	require.False(t, session.Requestor.Verified,
 		"DID-based verifier should not be marked as verified (not verified by Yivi)")
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2606,7 +2610,7 @@ func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	bundle := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	bundle := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	require.Len(t, bundle.Credentials, 1)
 	require.Nil(t, bundle.Credentials[0].BatchInstanceCountRemaining,
 		"batch-of-1 credential should have nil remaining in disclosure plan")
@@ -2632,7 +2636,7 @@ func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status,
 		"batch-of-1 credential should still be available for a second disclosure")
 
-	bundle = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	bundle = pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	require.Len(t, bundle.Credentials, 1)
 	require.Nil(t, bundle.Credentials[0].BatchInstanceCountRemaining,
 		"batch-of-1 credential should still have nil remaining after first disclosure")
@@ -2682,7 +2686,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	bundle := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	bundle := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	require.Len(t, bundle.Credentials, 1)
 	require.NotNil(t, bundle.Credentials[0].BatchInstanceCountRemaining,
 		"batch-of-2 credential should have non-nil remaining in disclosure plan")
@@ -2709,7 +2713,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	bundle = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	bundle = pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	require.Len(t, bundle.Credentials, 1)
 	require.NotNil(t, bundle.Credentials[0].BatchInstanceCountRemaining,
 		"batch-of-2 credential should have non-nil remaining after first disclosure")
@@ -2726,18 +2730,31 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 		claim([]any{"email"}, "batch2@example.com"),
 	)
 
-	// Step 4: Third disclosure — all instances exhausted, should fail.
-	// Design decision: when all batch instances are exhausted, the session reports an
-	// error rather than showing a permission request with empty owned options. This is
-	// because the credential type is known but unusable, which is a hard failure rather
-	// than a "missing credential" scenario where issuance could help.
+	// Step 4: Third disclosure — all instances used. The card is still shown,
+	// as a candidate that cannot be shared (used up), so the user sees why and
+	// can add it again; an answer naming it is refused.
 	veramoSession3 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 	startOpenID4VPDisclosureSession(t, c, 4, veramoSession3.RequestUri)
 
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, clientmodels.Status_Error, session.Status,
-		"third disclosure should fail because all batch instances are exhausted")
-	require.NotNil(t, session.Error, "session should contain an error when batch is exhausted")
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
+	slot := session.DisclosurePlan.Choices[0].Options[0].Slots[0]
+	require.Len(t, slot.Candidates, 1)
+	usedUp := slot.Candidates[0]
+	require.False(t, usedUp.Usable)
+	require.Equal(t, clientmodels.UnusableReason_UsedUp, usedUp.UnusableReason)
+
+	err := c.HandleUserInteraction(clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_Permission,
+		Payload: clientmodels.SessionPermissionInteractionPayload{Granted: true, Choices: []clientmodels.ChoiceSelection{{
+			Option: 0,
+			Slots:  []clientmodels.SlotSelection{{SlotId: slot.Id, Credentials: []clientmodels.SelectedCredential{selectWhole(usedUp)}}},
+		}}},
+	})
+	require.Error(t, err, "a used-up card cannot be shared")
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Error, session.Status)
 }
 
 // different trust model, the session should result in an error.
@@ -2848,23 +2865,13 @@ func testVeramoVerifierRequestingIrmaCredentialFails(t *testing.T) {
 						},
 					},
 				},
-				Obtainable: []expectedCredentialDescriptor{
-					{
-						CredentialId: "test.test.email",
-						Attributes: []expectedAttr{
-							{
-								Path:        []any{"email"},
-								DisplayName: new("Email address"),
-							},
-						},
-					},
-				},
+				// The type has no issue URL: nothing to add next to a usable card.
 			},
 		},
 	})
 
 	// Grant permission to disclose the IRMA credential to the veramo verifier.
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2931,11 +2938,11 @@ func testVeramoVerifierRequestingMissingCredentialSurfacesIt(t *testing.T) {
 	// The choice is there, but empty: the credential is still to be issued
 	// (including the "issuance" of an unobtainable credential).
 	requireNothingToShareYet(t, session.DisclosurePlan)
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
-	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
+	require.NotNil(t, issuance(session.DisclosurePlan))
+	require.Len(t, issuance(session.DisclosurePlan).Steps, 1)
+	require.Len(t, issuance(session.DisclosurePlan).Steps[0].Options, 1)
 
-	bundle := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
+	bundle := issuance(session.DisclosurePlan).Steps[0].Options[0]
 	require.Len(t, bundle.Credentials, 1, "DCQL maps each query to a single-credential bundle")
 	option := bundle.Credentials[0]
 	require.Equal(t, "https://localhost:8443/vct/email", option.CredentialId)
@@ -2977,11 +2984,11 @@ func testVeramoVerifierRequestingUnknownVctUsesUrlOnlyFallback(t *testing.T) {
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 	require.NotNil(t, session.DisclosurePlan)
 	requireNothingToShareYet(t, session.DisclosurePlan)
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
-	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
+	require.NotNil(t, issuance(session.DisclosurePlan))
+	require.Len(t, issuance(session.DisclosurePlan).Steps, 1)
+	require.Len(t, issuance(session.DisclosurePlan).Steps[0].Options, 1)
 
-	bundle := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
+	bundle := issuance(session.DisclosurePlan).Steps[0].Options[0]
 	require.Len(t, bundle.Credentials, 1, "DCQL maps each query to a single-credential bundle")
 	option := bundle.Credentials[0]
 	require.Equal(t, "https://localhost:8443/vct/does-not-exist-anywhere", option.CredentialId)
@@ -3027,11 +3034,11 @@ func testVeramoVerifierMultiVctFirstMissingSecondMatched(t *testing.T) {
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 	require.NotNil(t, session.DisclosurePlan)
 	requireNothingToShareYet(t, session.DisclosurePlan)
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
-	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
+	require.NotNil(t, issuance(session.DisclosurePlan))
+	require.Len(t, issuance(session.DisclosurePlan).Steps, 1)
+	require.Len(t, issuance(session.DisclosurePlan).Steps[0].Options, 1)
 
-	bundle := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
+	bundle := issuance(session.DisclosurePlan).Steps[0].Options[0]
 	require.Len(t, bundle.Credentials, 1, "DCQL maps each query to a single-credential bundle")
 	option := bundle.Credentials[0]
 	require.Equal(t, "https://localhost:8443/vct/email", option.CredentialId,
@@ -3087,11 +3094,11 @@ func testVeramoVerifierRequestingUnsupportedClaimOnOwnedCredentialSurfacesIt(t *
 	// the choice is empty because the only path forward is an unsatisfiable
 	// issuance step.
 	requireNothingToShareYet(t, session.DisclosurePlan)
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
-	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
+	require.NotNil(t, issuance(session.DisclosurePlan))
+	require.Len(t, issuance(session.DisclosurePlan).Steps, 1)
+	require.Len(t, issuance(session.DisclosurePlan).Steps[0].Options, 1)
 
-	bundle := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
+	bundle := issuance(session.DisclosurePlan).Steps[0].Options[0]
 	require.Len(t, bundle.Credentials, 1, "DCQL maps each query to a single-credential bundle")
 	option := bundle.Credentials[0]
 	require.Equal(t, "https://localhost:8443/vct/email", option.CredentialId)
@@ -3259,7 +3266,7 @@ func testDiscloseDeeplyNestedOrganizationCredential(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -3431,7 +3438,7 @@ func testDiscloseSpecificNestedArrayElement(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -3591,7 +3598,7 @@ func testDiscloseNestedArrayWithNullPath(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -3707,7 +3714,7 @@ func testDiscloseSingleDeepLeafShowsAncestry(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -3815,7 +3822,7 @@ func testDiscloseSiblingLeavesShareAncestry(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -3942,7 +3949,7 @@ func testDiscloseLeafWithSingleWildcard(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -4095,7 +4102,7 @@ func testDiscloseNullThenFixedIndexLogsOnlySelected(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -4241,7 +4248,7 @@ func testDiscloseLeafWithDoubleWildcard(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -4322,7 +4329,7 @@ func testDiscloseShallowLeafShowsSingleHeader(t *testing.T) {
 		},
 	})
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -4576,8 +4583,12 @@ func getVeramoVerifierOfferStatus(t *testing.T, state string) veramoCheckResult 
 
 // expectedDisclosurePlan describes the complete expected disclosure plan.
 type expectedDisclosurePlan struct {
-	// Expected issuance steps. Nil to skip check.
+	// Expected issuance steps: what required choices that cannot be answered
+	// yet offer to add. Nil to skip check.
 	IssuanceSteps []expectedIssuanceStep
+	// If true, assert that every required choice can be answered: nothing is
+	// left to add.
+	NoIssuanceSteps bool
 	// Expected issued credential ids. Nil to skip check.
 	IssuedCredentialIds map[string]struct{}
 	// Expected wrong credential issued. Nil to skip check entirely.
@@ -4649,13 +4660,15 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 	t.Helper()
 	require.NotNil(t, plan)
 
-	// --- Issuance steps ---
+	// --- Issuance steps: what required choices that cannot be answered yet
+	// offer to add ---
 	if expected.IssuanceSteps != nil {
-		require.NotNil(t, plan.IssueDuringDisclosure, "plan should have IssueDuringDisclosure")
-		require.Len(t, plan.IssueDuringDisclosure.Steps, len(expected.IssuanceSteps),
+		view := issuance(plan)
+		require.NotNil(t, view, "plan should have something to add")
+		require.Len(t, view.Steps, len(expected.IssuanceSteps),
 			"issuance step count mismatch")
 		for i, expStep := range expected.IssuanceSteps {
-			actualStep := plan.IssueDuringDisclosure.Steps[i]
+			actualStep := view.Steps[i]
 			require.Len(t, actualStep.Options, len(expStep.Options),
 				"issuance step %d option count mismatch", i)
 			for j, expOpt := range expStep.Options {
@@ -4668,24 +4681,25 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 		}
 	}
 
+	if expected.NoIssuanceSteps {
+		if view := issuance(plan); view != nil {
+			require.Empty(t, view.Steps, "every required choice can be answered, nothing is left to add")
+		}
+	}
+
 	// --- Issued credential ids ---
 	if expected.IssuedCredentialIds != nil {
-		require.NotNil(t, plan.IssueDuringDisclosure, "plan should have IssueDuringDisclosure")
-		require.Equal(t, expected.IssuedCredentialIds, plan.IssueDuringDisclosure.IssuedCredentialIds,
+		require.Equal(t, expected.IssuedCredentialIds, plan.IssuedCredentialIds,
 			"issued credential ids mismatch")
 	}
 
 	// --- Wrong credential issued ---
 	if expected.WrongCredentialIssuedNil {
-		require.NotNil(t, plan.IssueDuringDisclosure, "plan should have IssueDuringDisclosure")
-		require.Nil(t, plan.IssueDuringDisclosure.WrongCredentialIssued,
-			"wrong credential issued should be nil")
+		require.Nil(t, plan.WrongCredentialIssued, "wrong credential issued should be nil")
 	}
 	if expected.WrongCredentialIssued != nil {
-		require.NotNil(t, plan.IssueDuringDisclosure, "plan should have IssueDuringDisclosure")
-		require.NotNil(t, plan.IssueDuringDisclosure.WrongCredentialIssued,
-			"wrong credential issued should not be nil")
-		wrong := plan.IssueDuringDisclosure.WrongCredentialIssued
+		require.NotNil(t, plan.WrongCredentialIssued, "wrong credential issued should not be nil")
+		wrong := plan.WrongCredentialIssued
 		if expected.WrongCredentialIssued.CredentialId != "" {
 			require.Equal(t, expected.WrongCredentialIssued.CredentialId, wrong.CredentialId,
 				"wrong credential id mismatch")
@@ -4701,11 +4715,11 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 		return
 	}
 
-	require.Len(t, plan.DisclosureChoicesOverview, len(expected.Choices),
+	require.Len(t, pickOnes(plan), len(expected.Choices),
 		"disclosure choice count mismatch")
 
 	for i, expChoice := range expected.Choices {
-		pickOne := plan.DisclosureChoicesOverview[i]
+		pickOne := pickOnes(plan)[i]
 		require.Equal(t, expChoice.Optional, pickOne.Optional,
 			"choice %d Optional mismatch", i)
 		require.Equal(t, expChoice.Multiple, pickOne.Multiple,
@@ -5040,8 +5054,8 @@ func testDutchOpenID4VPEudiDisclosure(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
-	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.NotEmpty(t, pickOnes(session.DisclosurePlan))
+	pickOne := pickOnes(session.DisclosurePlan)[0]
 	require.NotEmpty(t, pickOne.OwnedOptions)
 	owned := pickOne.OwnedOptions[0].Credentials[0]
 	require.Equal(t, "Test Credential (SD-JWT)", owned.Name,
@@ -5080,8 +5094,8 @@ func testOpenID4VPEudiDisclosureAfterLocaleSwitch(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
-	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.NotEmpty(t, pickOnes(session.DisclosurePlan))
+	pickOne := pickOnes(session.DisclosurePlan)[0]
 	require.NotEmpty(t, pickOne.OwnedOptions)
 	owned := pickOne.OwnedOptions[0].Credentials[0]
 	require.Equal(t, "Test Credential (SD-JWT)", owned.Name,
@@ -5119,16 +5133,17 @@ func testOpenID4VPEudiDisclosureAfterLocaleSwitch(t *testing.T) {
 
 // requireNothingToShareYet checks the plan of a request that needs a card
 // issued first: the choices are there from the start (the app shows the whole
-// request at once), but a required one has no owned options yet, so there is
-// nothing it can be filled with. Without issuance steps there are no choices.
+// request at once), but a required one has no usable card yet, so there is
+// nothing it can be filled with. Without anything to add there are no choices.
 func requireNothingToShareYet(t testingT, plan *clientmodels.DisclosurePlan) {
 	t.Helper()
 	require.NotNil(t, plan)
-	if plan.IssueDuringDisclosure == nil {
-		require.Nil(t, plan.DisclosureChoicesOverview, "disclosure choices should be nil")
+	view := issuance(plan)
+	if view == nil || len(view.Steps) == 0 {
+		require.Empty(t, plan.Choices, "disclosure choices should be empty")
 		return
 	}
-	empty := slices.ContainsFunc(plan.DisclosureChoicesOverview, func(p clientmodels.DisclosurePickOne) bool {
+	empty := slices.ContainsFunc(pickOnes(plan), func(p pickOne) bool {
 		return !p.Optional && len(p.OwnedOptions) == 0
 	})
 	require.True(t, empty, "a required choice should have no owned options while a card is missing")

@@ -174,7 +174,7 @@ func TestIrmaChoices(t *testing.T) {
 // never null on the wire.
 func TestCreateDisclosurePlanFillsChoices(t *testing.T) {
 	conf := loadTestIrmaConfiguration(t)
-	plan, err := createDisclosurePlan(nil, conf, nil, nil, []irmaclient.DisconSlots{
+	plan, err := createDisclosurePlan(nil, conf, nil, []irmaclient.DisconSlots{
 		discon(con(slot(fullName, reqs("familyname"), nil, false))),
 	}, nil, "en")
 	require.NoError(t, err)

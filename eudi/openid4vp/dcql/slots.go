@@ -163,38 +163,3 @@ func RequestedValues(claim Claim) []clientmodels.AttributeValue {
 	}
 	return values
 }
-
-// legacyQueryResults is what the pick-one plan (DisclosureChoicesOverview and
-// IssueDuringDisclosure) is built from until it is removed: the handlers now
-// return expired and used-up cards as unusable candidates for the slots, which
-// the pick-one plan never offered. A query whose only cards are used up fails
-// the request, as it did before.
-func legacyQueryResults(queryResults map[string]*CredentialQueryResult) (map[string]*CredentialQueryResult, error) {
-	legacy := make(map[string]*CredentialQueryResult, len(queryResults))
-	for id, result := range queryResults {
-		kept := make([]*clientmodels.SelectableCredentialInstance, 0, len(result.OwnedCandidates))
-		usedUp := false
-		for _, c := range result.OwnedCandidates {
-			switch {
-			case c.Usable, c.UnusableReason == clientmodels.UnusableReason_Revoked:
-				kept = append(kept, c)
-			case c.UnusableReason == clientmodels.UnusableReason_UsedUp:
-				usedUp = true
-			}
-		}
-		if usedUp && len(kept) == 0 {
-			return nil, fmt.Errorf("credential query '%s': all credential instances for the requested type are exhausted", id)
-		}
-		descriptors := result.ObtainableDescriptors
-		if len(kept) > 0 && !slices.ContainsFunc(kept, func(c *clientmodels.SelectableCredentialInstance) bool { return c.Usable }) {
-			// Only revoked cards: the SD-JWT and mdoc handlers now add their
-			// descriptor without an issue URL here, which they used to add only
-			// when nothing was owned at all.
-			descriptors = slices.DeleteFunc(slices.Clone(descriptors), func(d *clientmodels.CredentialDescriptor) bool {
-				return d.IssueURL == nil
-			})
-		}
-		legacy[id] = &CredentialQueryResult{OwnedCandidates: kept, ObtainableDescriptors: descriptors}
-	}
-	return legacy, nil
-}

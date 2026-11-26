@@ -68,7 +68,6 @@ func (h *spyHandler) RequestVerificationPermission(
 	_ *clientmodels.DisclosurePlan,
 	_ *clientmodels.TrustedParty,
 	_ ResponseMode,
-	_ []dcql.ChoiceQueryIds,
 	callback PermissionHandler,
 ) {
 	h.requests.Add(1)

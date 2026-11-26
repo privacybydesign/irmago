@@ -86,7 +86,9 @@ func answerToIrmaChoice(answer []clientmodels.ChoiceSelection, condiscon irma.At
 			}
 			attrs = append(attrs, &irma.AttributeIdentifier{Type: request.Type, CredentialHash: hash})
 		}
-		result.Attributes = append(result.Attributes, attrs)
+		// Built in the con's order already; kept as the guard that the
+		// verifier, which matches by position, gets that order.
+		result.Attributes = append(result.Attributes, sortAttrsToMatchRequestCon(attrs, condiscon[disconIndex]))
 	}
 	return result, nil
 }

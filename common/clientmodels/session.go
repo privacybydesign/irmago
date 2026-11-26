@@ -134,22 +134,16 @@ type SessionError struct {
 	Stack        string       `json:"stack"`
 }
 
-// DisclosurePlan describes how the user can satisfy a disclosure request.
+// DisclosurePlan describes a disclosure request as choices → options → slots
+// → candidates, and what was issued for it while it waited.
 type DisclosurePlan struct {
-	// What to show during issuance during disclosure.
-	// If nil then no issuances are required before a valid choice can be made.
-	IssueDuringDisclosure *IssueDuringDisclosure `json:"issue_during_disclosure"`
-	// What the user can pick for disclosure. This should never be nil.
-	DisclosureChoicesOverview []DisclosurePickOne `json:"disclosure_choices_overview"`
-
-	// The request as choices → options → slots → candidates: one choice per
-	// credential set (DCQL), per query without sets (DCQL) or per discon (IRMA),
-	// in the order of the request. Never nil once a plan is built.
-	//
-	// It replaces DisclosureChoicesOverview and IssueDuringDisclosure: what is
-	// still missing follows from the slots without a usable candidate.
+	// One choice per credential set (DCQL), per query without sets (DCQL) or
+	// per discon (IRMA), in the order of the request. Never nil once a plan is
+	// built. What is still missing follows from the slots without a usable
+	// candidate.
 	Choices []DisclosureChoice `json:"choices"`
-	// Ids of the credential types issued since this request was first shown.
+	// Ids of the credential types issued since this request was first shown
+	// that the request can use.
 	IssuedCredentialIds map[string]struct{} `json:"issued_credential_ids"`
 	// Set when a card was issued for this request but does not satisfy it.
 	WrongCredentialIssued *Credential `json:"wrong_credential_issued"`
@@ -189,70 +183,4 @@ type DisclosureSlot struct {
 	// attributes. A descriptor without an IssueURL says what is asked for while
 	// nothing can be added. Empty when there is nothing to show.
 	Obtainable []*CredentialDescriptor `json:"obtainable"`
-}
-
-// DisclosurePickOne is a disjunction where the user needs to pick one or more bundles.
-type DisclosurePickOne struct {
-	// If true, the user can skip this because it isn't required
-	Optional bool `json:"optional"`
-	// If true, the user can select multiple bundles (OpenID4VP "multiple" flag)
-	Multiple bool `json:"multiple"`
-	// The user can pick one (or more, if Multiple) of these without having to issue.
-	// Each bundle satisfies exactly one inner con of the discon; selecting a bundle
-	// means disclosing every credential inside it together.
-	OwnedOptions []*DisclosureBundle `json:"owned_options"`
-	// The user can issue one of these and then use it
-	ObtainableOptions []*CredentialDescriptor `json:"obtainable_options"`
-	// One per inner con that the user cannot satisfy yet: what of it is in the
-	// wallet already and which credential types are still missing. Unlike
-	// ObtainableOptions this keeps the credentials of one con together, so a
-	// frontend can show "Passport + Address" as one option, with the address
-	// it already has. Nil when every con is fully owned. IRMA only for now:
-	// DCQL credential sets have a single query per option.
-	ObtainableBundles []*ObtainableBundle `json:"obtainable_bundles"`
-}
-
-// ObtainableBundle is one inner con of a discon that cannot be disclosed yet:
-// the credentials of it that the user owns (each with only this con's
-// attributes, as in a DisclosureBundle) and the credential types to obtain.
-type ObtainableBundle struct {
-	Owned   []*SelectableCredentialInstance `json:"owned"`
-	Missing []*CredentialDescriptor         `json:"missing"`
-}
-
-// DisclosureBundle is a set of owned credential instances that together satisfy
-// one inner con of a discon. For most disclosure requests this contains exactly
-// one credential. Cons that require multiple singletons (or one non-singleton
-// plus singletons) produce bundles with multiple credentials.
-type DisclosureBundle struct {
-	// The credentials the user discloses together when this bundle is picked.
-	// Each credential's Attributes list holds only the attrs from THIS con that
-	// come from THIS instance — never a cross-con union.
-	Credentials []*SelectableCredentialInstance `json:"credentials"`
-}
-
-// IssuanceStep is one step in the issuance wizard during disclosure flow.
-// Each option is a bundle of credentials that together satisfy one inner con
-// of the unsatisfied discon. The user picks one bundle and must issue every
-// credential in it.
-type IssuanceStep struct {
-	Options []*IssuanceBundle `json:"options"`
-}
-
-// IssuanceBundle is a set of credential descriptors that together satisfy one
-// inner con of an issuance-during-disclosure discon. For most requests this
-// contains exactly one descriptor; cons spanning multiple credential types
-// produce bundles with multiple descriptors.
-type IssuanceBundle struct {
-	Credentials []*CredentialDescriptor `json:"credentials"`
-}
-
-// IssueDuringDisclosure describes issuance steps needed during a disclosure flow.
-type IssueDuringDisclosure struct {
-	// The steps to fulfill before we can continue the disclosure
-	Steps []IssuanceStep `json:"steps"`
-	// The set of credential ids that have been issued during this session
-	IssuedCredentialIds map[string]struct{} `json:"issued_credential_ids"`
-	// The last credential that was issued with the correct type but with wrong attribute values
-	WrongCredentialIssued *Credential `json:"wrong_credential_issued"`
 }

@@ -105,13 +105,7 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 
 	plan = session.DisclosurePlan
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps: []expectedIssuanceStep{
-			{
-				Options: []expectedCredentialDescriptor{
-					{CredentialId: "test.test.email"},
-				},
-			},
-		},
+		NoIssuanceSteps: true, // the choice can be answered now
 		Choices: []expectedPickOneChoice{
 			{
 				Owned: []expectedPlanCredential{{
@@ -136,23 +130,12 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 					Revoked:             new(false),
 					RevocationSupported: new(false),
 				}},
-				Obtainable: []expectedCredentialDescriptor{
-					{
-						CredentialId: "test.test.email",
-						Name:         new("Demo Email address"),
-						Attributes: []expectedAttr{
-							{
-								Path:        []any{"email"},
-								DisplayName: new("Email address"),
-							},
-						},
-					},
-				},
+				// The email type has no issue URL: nothing to add next to the owned card.
 			},
 		},
 	})
 
-	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(plan)[0].OwnedOptions[0]
 	grantPermission(t, c, 1, makeDisclosureChoice(choice))
 
 	// expect end for issuance session
@@ -221,14 +204,7 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 
 	plan = session.DisclosurePlan
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps: []expectedIssuanceStep{
-			{
-				Options: []expectedCredentialDescriptor{
-					{CredentialId: "test.test.email"},
-					{CredentialId: "irma-demo.RU.studentCard"},
-				},
-			},
-		},
+		NoIssuanceSteps:     true, // the choice can be answered now
 		IssuedCredentialIds: map[string]struct{}{"test.test.email": {}},
 		Choices: []expectedPickOneChoice{
 			{
@@ -246,16 +222,6 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 					},
 				}},
 				Obtainable: []expectedCredentialDescriptor{
-					{
-						CredentialId: "test.test.email",
-						Name:         new("Demo Email address"),
-						Attributes: []expectedAttr{
-							{
-								Path:        []any{"email"},
-								DisplayName: new("Email address"),
-							},
-						},
-					},
 					{
 						CredentialId: "irma-demo.RU.studentCard",
 						Name:         new("Demo Student Card"),
@@ -275,7 +241,7 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 		},
 	})
 
-	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(plan)[0].OwnedOptions[0]
 	grantPermission(t, c, 1, makeDisclosureChoice(choice))
 
 	// expect end for issuance session
@@ -477,28 +443,13 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 						},
 					},
 				}},
-				Obtainable: []expectedCredentialDescriptor{
-					{
-						CredentialId: "irma-demo.MijnOverheid.fullName",
-						Name:         new("Demo Name"),
-						Attributes: []expectedAttr{
-							{
-								Path:        []any{"firstname"},
-								DisplayName: new("First name"),
-							},
-							{
-								Path:        []any{"familyname"},
-								DisplayName: new("Family name"),
-							},
-						},
-					},
-				},
+				// fullName has no issue URL: nothing to add next to the owned card.
 			},
 		},
 	})
 
-	firstChoice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	secondChoice := plan.DisclosureChoicesOverview[1].OwnedOptions[0]
+	firstChoice := pickOnes(plan)[0].OwnedOptions[0]
+	secondChoice := pickOnes(plan)[1].OwnedOptions[0]
 
 	// give permission to disclose
 	grantPermission(t, c, session.Id,
@@ -621,7 +572,7 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 		},
 	})
 
-	requiredChoice := plan.DisclosureChoicesOverview[0]
+	requiredChoice := pickOnes(plan)[0]
 
 	// issuance session ended
 	session = awaitSessionState(t, sessionHandler)
@@ -631,7 +582,7 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 	sc := requiredChoice.OwnedOptions[0]
 	grantPermission(t, c, 1,
 		makeDisclosureChoice(sc),
-		clientmodels.DisclosureDisconSelection{},
+		skipChoice(),
 	)
 
 	session = awaitSessionState(t, sessionHandler)
@@ -798,7 +749,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	requireSessionState(t, session, 3, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// grant permission to disclose the credential with the correct value
-	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(plan)[0].OwnedOptions[0]
 	grantPermission(t, c, 1,
 		makeDisclosureChoice(choice),
 	)
@@ -1000,28 +951,13 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 						},
 					},
 				}},
-				Obtainable: []expectedCredentialDescriptor{
-					{
-						CredentialId: "irma-demo.MijnOverheid.fullName",
-						Name:         new("Demo Name"),
-						Attributes: []expectedAttr{
-							{
-								Path:        []any{"firstname"},
-								DisplayName: new("First name"),
-							},
-							{
-								Path:        []any{"familyname"},
-								DisplayName: new("Family name"),
-							},
-						},
-					},
-				},
+				// fullName has no issue URL: nothing to add next to the owned card.
 			},
 		},
 	})
 
-	firstChoice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	secondChoice := plan.DisclosureChoicesOverview[1].OwnedOptions[0]
+	firstChoice := pickOnes(plan)[0].OwnedOptions[0]
+	secondChoice := pickOnes(plan)[1].OwnedOptions[0]
 
 	// give permission to disclose
 	grantPermission(t, c, session.Id,
@@ -1159,7 +1095,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 	requireSessionState(t, session, 2, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// the first satisfied claim_set (university + level) is offered for disclosure
-	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(plan)[0].OwnedOptions[0]
 
 	grantPermission(t, c, 1,
 		makeDisclosureChoice(choice),
@@ -1219,10 +1155,10 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 	requireSessionState(t, session, 4, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	plan := session.DisclosurePlan
-	require.NotNil(t, plan.DisclosureChoicesOverview)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.NotNil(t, pickOnes(plan))
+	require.Len(t, pickOnes(plan), 1)
 
-	pick := plan.DisclosureChoicesOverview[0]
+	pick := pickOnes(plan)[0]
 	require.Len(t, pick.OwnedOptions, 3, "should have 3 owned credential instances")
 
 	// studentCard's schema sets DisplayIndex (level=0, studentID=1,
@@ -1260,7 +1196,7 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 	}
 
 	// Disclose the Amsterdam credential specifically and verify the result with hardcoded values.
-	var chosen *clientmodels.DisclosureBundle
+	var chosen *bundle
 	for _, bundle := range pick.OwnedOptions {
 		opt := bundle.Credentials[0]
 		if uni := findAttr(opt.Attributes, "university"); uni != nil && *uni.Value.String == "University of Amsterdam" {
@@ -1460,8 +1396,8 @@ func testDutchOpenID4VPIrmaSdJwtDisclosure(
 	session = testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
-	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.NotEmpty(t, pickOnes(session.DisclosurePlan))
+	pickOne := pickOnes(session.DisclosurePlan)[0]
 	require.NotEmpty(t, pickOne.OwnedOptions)
 	owned := pickOne.OwnedOptions[0].Credentials[0]
 	require.Equal(t, "Demo E-mailadres", owned.Name)
@@ -1501,8 +1437,8 @@ func testDutchOpenID4VPIrmaSdJwtDisclosureAfterLocaleSwitch(
 	session = testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
-	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.NotEmpty(t, pickOnes(session.DisclosurePlan))
+	pickOne := pickOnes(session.DisclosurePlan)[0]
 	require.NotEmpty(t, pickOne.OwnedOptions)
 	owned := pickOne.OwnedOptions[0].Credentials[0]
 	require.Equal(t, "Demo E-mailadres", owned.Name,

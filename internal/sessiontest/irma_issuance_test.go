@@ -165,14 +165,14 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 
 	require.Len(t, session.OfferedCredentials, 1)
 	plan := session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDisclosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDisclosure.Steps[0].Options, 2)
-	require.Empty(t, plan.IssueDuringDisclosure.IssuedCredentialIds)
+	require.Len(t, issuance(plan).Steps, 1)
+	require.Len(t, issuance(plan).Steps[0].Options, 2)
+	require.Empty(t, issuance(plan).IssuedCredentialIds)
 	// The request is shown at once: the missing card is a pick-one with only
 	// obtainable options.
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.Empty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
-	require.Len(t, plan.DisclosureChoicesOverview[0].ObtainableOptions, 2)
+	require.Len(t, pickOnes(plan), 1)
+	require.Empty(t, pickOnes(plan)[0].OwnedOptions)
+	require.Len(t, pickOnes(plan)[0].ObtainableOptions, 2)
 
 	// issue MijnOverheid
 	issue(t, irmaServer, c, sessionHandler, 2, createMijnOverheidIssuanceRequest())
@@ -183,14 +183,13 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 
 	require.Len(t, session.OfferedCredentials, 1)
 	plan = session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDisclosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDisclosure.Steps[0].Options, 2)
+	require.Empty(t, issuance(plan).Steps, "the choice can be answered now, nothing is left to add")
 	require.Equal(t,
 		map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
-		plan.IssueDuringDisclosure.IssuedCredentialIds,
+		issuance(plan).IssuedCredentialIds,
 	)
 
-	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(plan)[0].OwnedOptions[0]
 
 	// give permission to disclose the MijnOverheid credential
 	grantPermission(t, c, session.Id,
@@ -349,11 +348,11 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 
 	// The owned option shows only the requested attribute (election)
 	plan := session.DisclosurePlan
-	require.NotNil(t, plan.DisclosureChoicesOverview)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials, 1)
-	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0]
+	require.NotNil(t, pickOnes(plan))
+	require.Len(t, pickOnes(plan), 1)
+	require.Len(t, pickOnes(plan)[0].OwnedOptions, 1)
+	require.Len(t, pickOnes(plan)[0].OwnedOptions[0].Credentials, 1)
+	owned := pickOnes(plan)[0].OwnedOptions[0].Credentials[0]
 	require.Equal(t, "irma-demo.stemmen.stempas", owned.CredentialId)
 	requireAttrsInOrder(t, owned.Attributes, expectedAttr{
 		Path:        []any{"election"},
@@ -376,11 +375,11 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 
 	// The random blind attribute should appear as an owned option when requested
 	plan = session.DisclosurePlan
-	require.NotNil(t, plan.DisclosureChoicesOverview)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials, 1)
-	owned = plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0]
+	require.NotNil(t, pickOnes(plan))
+	require.Len(t, pickOnes(plan), 1)
+	require.Len(t, pickOnes(plan)[0].OwnedOptions, 1)
+	require.Len(t, pickOnes(plan)[0].OwnedOptions[0].Credentials, 1)
+	owned = pickOnes(plan)[0].OwnedOptions[0].Credentials[0]
 	require.Equal(t, "irma-demo.stemmen.stempas", owned.CredentialId)
 	require.Len(t, owned.Attributes, 1)
 	_, votingnumberFound := attributeMap(owned.Attributes)[pk("votingnumber")]
@@ -412,7 +411,7 @@ func testTrustedPartyLogoPathsInLogs(
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	for _, ownedCred := range choice.Credentials {
 		require.True(t, ownedCred.Issuer.Verified,
 			"owned disclosure credential %s should have a verified issuer", ownedCred.CredentialId)
@@ -583,25 +582,33 @@ func testRevocationAttributesExcludedFromCredentials(
 	require.Equal(t, 2, session.Id)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	// During disclosure permission, the owned option should show revocation status
-	// and should not include the revocation attribute
+	// During disclosure permission, the card is the slot's candidate, shown as
+	// revoked and unusable, without the revocation attribute
 	disclosurePlan := session.DisclosurePlan
-	require.NotNil(t, disclosurePlan.DisclosureChoicesOverview)
-	bundle := disclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	require.Len(t, bundle.Credentials, 1)
-	cred := bundle.Credentials[0]
+	require.NotEmpty(t, disclosurePlan.Choices)
+	slot := disclosurePlan.Choices[0].Options[0].Slots[0]
+	require.Len(t, slot.Candidates, 1)
+	cred := slot.Candidates[0]
 	require.Equal(t, "irma-demo.MijnOverheid.root", cred.CredentialId)
-	require.True(t, cred.Revoked, "owned option should show credential as revoked during disclosure permission")
+	require.True(t, cred.Revoked, "the candidate should show the credential as revoked during disclosure permission")
+	require.False(t, cred.Usable)
+	require.Equal(t, clientmodels.UnusableReason_Revoked, cred.UnusableReason)
 	requireAttrsInOrder(t, cred.Attributes, expectedAttr{
 		Path:        []any{"BSN"},
 		DisplayName: new("BSN"),
 		Value:       strVal("299792458"),
 	})
 
-	// Grant permission — the client will attempt to construct a proof and discover the revocation
-	grantPermission(t, c, 2, makeDisclosureChoice(bundle))
-
-	// The session should fail because the credential is revoked
+	// An answer naming the revoked card is refused, and the session ends in an error
+	err = c.HandleUserInteraction(clientmodels.SessionUserInteraction{
+		SessionId: 2,
+		Type:      clientmodels.UI_Permission,
+		Payload: clientmodels.SessionPermissionInteractionPayload{Granted: true, Choices: []clientmodels.ChoiceSelection{{
+			Option: 0,
+			Slots:  []clientmodels.SlotSelection{{SlotId: slot.Id, Credentials: []clientmodels.SelectedCredential{selectWhole(cred)}}},
+		}}},
+	})
+	require.Error(t, err)
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, 2, session.Id)
 	require.Equal(t, clientmodels.Status_Error, session.Status)

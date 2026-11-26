@@ -468,7 +468,7 @@ func assertStoredTestCredentialDisclosable(t *testing.T, c *client.Client, sessi
 			]
 		}
 	}`)
-	options := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
+	options := pickOnes(session.DisclosurePlan)[0].OwnedOptions
 	require.Len(t, options, 1, "the stored credential should be the only candidate")
 	require.Len(t, options[0].Credentials, 1)
 	requireAttrsInOrder(t, options[0].Credentials[0].Attributes,
@@ -532,9 +532,13 @@ func assertStatusListSessionsWork(t *testing.T, c *client.Client, sessionHandler
 	require.NoError(t, c.RefreshStatuses(context.Background()))
 
 	revoked := awaitDisclosurePermission(t, c, 9, sessionHandler, statusListDcql)
-	revokedCred := revoked.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0]
+	slot := revoked.DisclosurePlan.Choices[0].Options[0].Slots[0]
+	require.Len(t, slot.Candidates, 1)
+	revokedCred := slot.Candidates[0]
 	require.True(t, revokedCred.Revoked,
 		"a revoked status-list credential must be surfaced as Revoked on the disclosure plan")
+	require.Equal(t, clientmodels.UnusableReason_Revoked, revokedCred.UnusableReason,
+		"and as a candidate that cannot be shared")
 }
 
 // assertFreshMdocSessionsWork issues an age-verification mdoc from the Python
@@ -552,7 +556,7 @@ func assertFreshMdocSessionsWork(t *testing.T, c *client.Client, sessionHandler 
 func discloseViaVeramoOpenID4VP(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, dcql string) clientmodels.SessionState {
 	t.Helper()
 	session := awaitDisclosurePermission(t, c, sessionId, sessionHandler, dcql)
-	grantPermission(t, c, session.Id, makeDisclosureChoice(session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]))
 	return awaitSessionState(t, sessionHandler)
 }
 
@@ -607,7 +611,7 @@ func performIrmaDisclosure(t *testing.T, c *client.Client, sessionId int, sessio
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	options := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
+	options := pickOnes(session.DisclosurePlan)[0].OwnedOptions
 	require.Len(t, options, 1, "expected exactly one candidate credential")
 	grantPermission(t, c, session.Id, makeDisclosureChoice(options[0]))
 

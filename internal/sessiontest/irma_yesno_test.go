@@ -112,10 +112,10 @@ func TestYesnoAttributeBecomesBoolean(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	require.NotNil(t, session.DisclosurePlan)
-	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1)
-	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+	require.Len(t, pickOnes(session.DisclosurePlan), 1)
+	require.Len(t, pickOnes(session.DisclosurePlan)[0].OwnedOptions, 1)
 
-	bundle := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	bundle := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	require.Len(t, bundle.Credentials, 1)
 	owned := bundle.Credentials[0]
 	require.Equal(t, "test.test.personalData", owned.CredentialId)

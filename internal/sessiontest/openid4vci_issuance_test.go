@@ -1088,7 +1088,7 @@ func testOpenID4VCIPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 	disclosureSession := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, disclosureSession, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	cred2 := disclosureSession.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred2 := pickOnes(disclosureSession.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, disclosureSession.Id, makeDisclosureChoice(cred2))
 
 	disclosureSession = awaitSessionState(t, sessionHandler)

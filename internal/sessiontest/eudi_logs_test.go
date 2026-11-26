@@ -151,7 +151,7 @@ func testOpenID4VPDisclosureCreatesLog(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -346,7 +346,7 @@ func testOpenID4VPDisclosureLogHasIssuerNameAndImage(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -431,7 +431,7 @@ func testOpenID4VPEmptyDisclosureCreatesLog(t *testing.T) {
 		session := awaitSessionState(t, sessionHandler)
 		requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-		grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{})
+		grantPermission(t, c, session.Id, skipChoice())
 
 		session = awaitSessionState(t, sessionHandler)
 		requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -449,7 +449,7 @@ func testOpenID4VPEmptyDisclosureCreatesLog(t *testing.T) {
 		session := awaitSessionState(t, sessionHandler)
 		requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-		grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{})
+		grantPermission(t, c, session.Id, skipChoice())
 
 		session = awaitSessionState(t, sessionHandler)
 		requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -906,10 +906,10 @@ func testComplexDisclosureLogOnlyContainsSharedSubset(t *testing.T) {
 
 	// Grant permission for both credentials, selecting the attributes shown in the plan.
 	plan := session.DisclosurePlan
-	require.Len(t, plan.DisclosureChoicesOverview, 2)
+	require.Len(t, pickOnes(plan), 2)
 
-	var choices []clientmodels.DisclosureDisconSelection
-	for _, pickOne := range plan.DisclosureChoicesOverview {
+	var choices []clientmodels.ChoiceSelection
+	for _, pickOne := range pickOnes(plan) {
 		require.NotEmpty(t, pickOne.OwnedOptions)
 		choices = append(choices, makeDisclosureChoice(pickOne.OwnedOptions[0]))
 	}
@@ -1111,7 +1111,7 @@ func testIrmaAndEudiLogsMergedChronologically(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)

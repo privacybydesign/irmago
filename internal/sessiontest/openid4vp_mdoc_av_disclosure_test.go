@@ -286,7 +286,7 @@ func testOpenID4VP_MdocAv_VpTokenReplay(t *testing.T) {
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	grantPermission(t, c, 2, makeDisclosureChoice(session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]))
+	grantPermission(t, c, 2, makeDisclosureChoice(pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]))
 	requireSessionState(t, awaitSessionState(t, sessionHandler), 2,
 		clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
@@ -332,7 +332,7 @@ func testOpenID4VP_MdocAv_DoubleSubmission(t *testing.T) {
 
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-	grantPermission(t, c, 2, makeDisclosureChoice(session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]))
+	grantPermission(t, c, 2, makeDisclosureChoice(pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]))
 	requireSessionState(t, awaitSessionState(t, sessionHandler), 2,
 		clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
@@ -917,7 +917,7 @@ func testOpenID4VP_MdocAv_AudienceNotValidated(t *testing.T) {
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, 2, makeDisclosureChoice(choice))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1029,7 +1029,7 @@ func testOpenID4VP_MdocAv_ControlMintedUnmodified(t *testing.T) {
 	session := testSession.ClientSession
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 	grantPermission(t, c, 2, makeDisclosureChoice(choice))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1183,7 +1183,7 @@ func testOpenID4VP_MdocAv_DisclosureUnderUnpublishedLocale(t *testing.T) {
 		},
 	})
 
-	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 
 	approvedRequestor := session.Requestor
 	require.True(t, approvedRequestor.Verified,
@@ -1302,7 +1302,7 @@ func runMdocAvDisclosure(t *testing.T, verifierHost string) {
 	require.Equal(t, avIssuerDisplayName, avMdocIssuerName(t, c),
 		"the credential list and the permission screen must name the issuer identically")
 
-	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := pickOnes(session.DisclosurePlan)[0].OwnedOptions[0]
 
 	// Kept for the log assertion below, which checks the entry is filed under the
 	// verifier the permission screen actually named.

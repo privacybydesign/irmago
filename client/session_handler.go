@@ -5,13 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"sync"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
@@ -28,16 +26,14 @@ type session struct {
 	preAuthorizedCodeHandler    openid4vci.TokenPermissionHandler
 	openid4vciPermissionHandler openid4vci.PermissionHandler
 	openid4vpPermissionHandler  openid4vp.PermissionHandler
-	openid4vpQueryIds           []dcql.ChoiceQueryIds // per plan pick-one: credential hash → DCQL query id
 	// Hashes of credentials that already existed when the disclosure plan was first created.
 	// Used to exclude pre-existing credentials from WrongCredentialIssued detection.
 	preExistingCredentialHashes map[string]struct{}
 	// Terminal state finish last dispatched, so a repeat of it can be dropped.
 	dispatched clientmodels.SessionStatus
 	// IRMA disclosure/signature request we're currently asking the user to satisfy.
-	// Held so choicesToAnswer can re-sort the user's selected AttributePaths back into
-	// the order the request asked for (the IRMA proof verifier matches j-th disclosed
-	// against j-th requested by position).
+	// The answer is built from its cons (answerToIrmaChoice): the IRMA proof
+	// verifier matches the j-th disclosed against the j-th requested attribute.
 	irmaDiscloseRequest irma.AttributeConDisCon
 	// IRMA: the follow-up of a chained session that succeeded, waiting for
 	// UI_ContinueNextSession or UI_DismissSession.
@@ -61,6 +57,10 @@ func (s *session) snapshotPreExistingCredentials(credentials []*clientmodels.Cre
 	s.preExistingCredentialHashes = make(map[string]struct{}, len(credentials))
 	for _, c := range credentials {
 		s.preExistingCredentialHashes[c.Hash] = struct{}{}
+		// A slot's candidates carry the hash of the instance per format.
+		for _, hash := range c.CredentialInstanceIds {
+			s.preExistingCredentialHashes[hash] = struct{}{}
+		}
 	}
 }
 
@@ -255,216 +255,6 @@ func findCredential(credentials []*clientmodels.Credential, hash string) *client
 	return nil
 }
 
-func createIssuanceSteps(
-	irmaConfig *irma.Configuration,
-	credentials []*clientmodels.Credential,
-	candidates [][]irmaclient.DisclosureCandidates,
-	locale string,
-) ([]clientmodels.IssuanceStep, error) {
-	// for each disjunction that is not satisfiable we need to give the user the option to select
-	// from any of the options (inner cons) beloning to that disjunction
-	unsatisfiedDisjunctionIndices := []int{}
-	result := []clientmodels.IssuanceStep{}
-
-	for i, discon := range candidates {
-		disconSatisfied := false
-		for _, con := range discon {
-			conSatisfied := true
-			for _, attr := range con {
-				if findCredential(credentials, attr.CredentialHash) == nil {
-					conSatisfied = false
-				}
-			}
-			if conSatisfied {
-				disconSatisfied = true
-			}
-		}
-		if !disconSatisfied {
-			unsatisfiedDisjunctionIndices = append(unsatisfiedDisjunctionIndices, i)
-		}
-	}
-
-	for _, i := range unsatisfiedDisjunctionIndices {
-		discon := candidates[i]
-		options := []*clientmodels.IssuanceBundle{}
-		for _, con := range discon {
-			bundle, err := createIssuanceBundle(irmaConfig, con, locale)
-			if err != nil {
-				return nil, err
-			}
-			options = append(options, bundle)
-		}
-		result = append(result, clientmodels.IssuanceStep{
-			Options: options,
-		})
-	}
-
-	return result, nil
-}
-
-// createDisclosureChoicesOverview turns the IRMA-layer candidate sets into a
-// frontend-facing DisclosurePickOne per discon. Each inner con (a single
-// satisfying combination of attributes) produces exactly one DisclosureBundle
-// in OwnedOptions, holding the SelectableCredentialInstances — with only that
-// con's attrs on each — that together satisfy the con. A con that cannot be
-// fully satisfied with owned credentials does NOT emit a bundle; its missing
-// credential types feed ObtainableOptions instead (deduplicated by credential
-// id across the discon), and the con as a whole becomes an ObtainableBundle:
-// its owned part and its missing types (one per distinct combination of
-// credential types).
-func createDisclosureChoicesOverview(
-	irmaConfig *irma.Configuration,
-	credentials []*clientmodels.Credential,
-	candidates [][]irmaclient.DisclosureCandidates,
-	locale string,
-) ([]clientmodels.DisclosurePickOne, error) {
-	result := []clientmodels.DisclosurePickOne{}
-
-	for _, discon := range candidates {
-		choice := clientmodels.DisclosurePickOne{}
-
-		// Obtainable templates dedupe by credentialId across the whole discon.
-		choiceTemplates := map[string]*clientmodels.CredentialDescriptor{}
-		// Obtainable bundles dedupe by the credential types they consist of: a
-		// con that is partly owned comes once per owned instance otherwise.
-		seenBundles := map[string]struct{}{}
-
-		for _, con := range discon {
-			// An empty inner con means the discon is satisfiable by disclosing nothing.
-			if len(con) == 0 {
-				choice.Optional = true
-				continue
-			}
-
-			// Per-con bundle build. Track instances by hash so attrs from the
-			// same credential within one con get merged onto one instance.
-			perCon := map[string]*clientmodels.SelectableCredentialInstance{}
-			perConOrder := []string{}
-			fullyOwned := true
-			missingIDs := []string{}
-
-			for _, attr := range con {
-				hash := attr.AttributeIdentifier.CredentialHash
-
-				if hash == "" {
-					fullyOwned = false
-					t := attr.CredentialIdentifier().Type
-					id := t.String()
-
-					if _, ok := choiceTemplates[id]; !ok {
-						descriptor, err := getCredentialDescriptor(irmaConfig, t, locale)
-						if err != nil {
-							return nil, err
-						}
-						choiceTemplates[id] = descriptor
-						choice.ObtainableOptions = append(choice.ObtainableOptions, descriptor)
-					}
-					if !slices.Contains(missingIDs, id) {
-						missingIDs = append(missingIDs, id)
-					}
-
-					attrName := attr.AttributeIdentifier.Type.Name()
-					for i := range choiceTemplates[id].Attributes {
-						if clientmodels.ClaimPathKey(choiceTemplates[id].Attributes[i].ClaimPath) == clientmodels.ClaimPathKey([]any{attrName}) {
-							requestedValue := &clientmodels.AttributeValue{
-								Type: clientmodels.AttributeType_String,
-							}
-							if attr.Value != nil {
-								if v, ok := attr.Value["en"]; ok {
-									requestedValue.String = &v
-								} else if v, ok := attr.Value[""]; ok {
-									requestedValue.String = &v
-								}
-							}
-							choiceTemplates[id].Attributes[i].RequestedValue = requestedValue
-							break
-						}
-					}
-					continue
-				}
-
-				orig := findCredential(credentials, hash)
-				if orig == nil {
-					return nil, fmt.Errorf("failed to find credential for hash: %v", hash)
-				}
-
-				f, ok := perCon[hash]
-				if !ok {
-					cp := *orig
-					f = &cp
-					f.Attributes = []clientmodels.Attribute{}
-					perCon[hash] = f
-					perConOrder = append(perConOrder, hash)
-				}
-
-				attrID := attr.AttributeIdentifier
-				val, ok := lookupAttrValue(orig, attrID)
-				if !ok {
-					return nil, fmt.Errorf("credential %s does not contain attribute %v", hash, attrID)
-				}
-
-				if attr.Value != nil {
-					requestedValue := &clientmodels.AttributeValue{
-						Type: clientmodels.AttributeType_String,
-					}
-					if v, ok := attr.Value["en"]; ok {
-						requestedValue.String = &v
-					} else if v, ok := attr.Value[""]; ok {
-						requestedValue.String = &v
-					}
-					val.RequestedValue = requestedValue
-				}
-
-				f.Attributes = append(f.Attributes, val)
-			}
-
-			// Reorder each credential's attrs to match the credential type's
-			// declared display order. The wire order from the verifier's
-			// request can be arbitrary; frontends rely on Attributes being in
-			// schema order for consistent rendering.
-			for _, f := range perCon {
-				credType, ok := irmaConfig.CredentialTypes[irma.NewCredentialTypeIdentifier(f.CredentialId)]
-				if !ok {
-					continue
-				}
-				f.Attributes = sortAttributesBySchema(f.Attributes, credType)
-			}
-
-			if !fullyOwned {
-				bundle := &clientmodels.ObtainableBundle{}
-				key := []string{}
-				for _, hash := range perConOrder {
-					bundle.Owned = append(bundle.Owned, perCon[hash])
-					key = append(key, perCon[hash].CredentialId)
-				}
-				for _, id := range missingIDs {
-					bundle.Missing = append(bundle.Missing, choiceTemplates[id])
-					key = append(key, "missing:"+id)
-				}
-				k := strings.Join(key, "+")
-				if _, seen := seenBundles[k]; !seen {
-					seenBundles[k] = struct{}{}
-					choice.ObtainableBundles = append(choice.ObtainableBundles, bundle)
-				}
-				continue
-			}
-			if len(perConOrder) == 0 {
-				continue
-			}
-
-			bundle := &clientmodels.DisclosureBundle{}
-			for _, hash := range perConOrder {
-				bundle.Credentials = append(bundle.Credentials, perCon[hash])
-			}
-			choice.OwnedOptions = append(choice.OwnedOptions, bundle)
-		}
-
-		result = append(result, choice)
-	}
-
-	return result, nil
-}
-
 // sortAttributesBySchema returns attrs reordered to follow credType's declared
 // display order. Precedence matches sortedAttributeTypes: DisplayIndex first
 // when every type has one, else XML-position Index. Attributes whose first
@@ -502,84 +292,6 @@ func sortAttributesBySchema(
 		return posOf(a) - posOf(b)
 	})
 	return out
-}
-
-// returns the list of issued credential ids compared to the steps,
-// the most recently issued credential with the right type but wrong attribute values
-// (only for unsatisfied steps), and whether the steps are satisfied.
-// preExistingHashes contains hashes of credentials that existed before the disclosure session,
-// which are excluded from wrong credential detection.
-// previousWrongHash is the hash of the wrong credential from the previous plan update,
-// used to prefer a newer wrong credential when issuance dates are equal.
-func getIssuedSinceOriginalPlan(
-	steps []clientmodels.IssuanceStep,
-	allCredentials []*clientmodels.Credential,
-	preExistingHashes map[string]struct{},
-	previousWrongHash string,
-) (issued map[string]struct{}, lastWrongCredential *clientmodels.Credential, satisfied bool) {
-	issued = map[string]struct{}{}
-	numSatisfiedSteps := 0
-
-	for _, step := range steps {
-		stepSatisfied := false
-		for _, bundle := range step.Options {
-			bundleSatisfied := true
-			for _, desc := range bundle.Credentials {
-				descSatisfied := false
-				for _, c := range allCredentials {
-					if c.CredentialId != desc.CredentialId {
-						continue
-					}
-					// now check if it satisfies the values specified in the previous issuance step
-					attsStatisfied, _ := SatisfiesRequestedAttributes(c.Attributes, desc.Attributes)
-					if attsStatisfied {
-						descSatisfied = true
-						// Surface per-descriptor satisfaction eagerly (independent of
-						// whether the whole bundle is satisfied). The frontend uses
-						// this to render per-card progress within a multi-credential
-						// bundle. Both session-issued and pre-existing satisfying
-						// credentials count — from the user's perspective both end
-						// up as "this credential is part of the disclosure and is
-						// already in your wallet."
-						issued[desc.CredentialId] = struct{}{}
-						break
-					}
-					// Skip credentials that existed before the disclosure session started;
-					// only credentials issued during this session should be reported as wrong.
-					if _, preExisting := preExistingHashes[c.Hash]; preExisting {
-						continue
-					}
-					// A credential with the right type exists but has wrong attribute values.
-					// Keep the most recently issued one so the frontend can show it.
-					// When issuance dates are equal, prefer a credential that differs from the
-					// previously reported wrong credential, as it is more likely to be newly issued.
-					if lastWrongCredential == nil || (c.IssuanceDate != nil && lastWrongCredential.IssuanceDate != nil && *c.IssuanceDate > *lastWrongCredential.IssuanceDate) {
-						lastWrongCredential = filterCredentialToMismatchedAttributes(c, desc.Attributes)
-					} else if c.IssuanceDate != nil && lastWrongCredential.IssuanceDate != nil && *c.IssuanceDate == *lastWrongCredential.IssuanceDate &&
-						lastWrongCredential.Hash == previousWrongHash && c.Hash != previousWrongHash {
-						lastWrongCredential = filterCredentialToMismatchedAttributes(c, desc.Attributes)
-					}
-				}
-				if !descSatisfied {
-					bundleSatisfied = false
-					// Keep scanning so we still surface wrong-cred state for the
-					// remaining descriptors in this bundle.
-				}
-			}
-			if bundleSatisfied {
-				stepSatisfied = true
-				break
-			}
-		}
-		if stepSatisfied {
-			numSatisfiedSteps += 1
-			// Clear the wrong credential if this step is now satisfied
-			lastWrongCredential = nil
-		}
-	}
-
-	satisfied = numSatisfiedSteps == len(steps)
-	return
 }
 
 // filterCredentialToMismatchedAttributes returns a copy of the credential containing only
@@ -620,71 +332,27 @@ func filterCredentialToMismatchedAttributes(cred *clientmodels.Credential, reque
 	return &result
 }
 
+// createDisclosurePlan builds the plan for an IRMA request from what the wallet
+// holds per slot (irmaclient.SlotCandidates). oldDisclosurePlan is the plan last
+// sent for this request, nil the first time; with the cards held when the
+// request arrived it says what was issued for it since, and which issued card
+// does not fit.
 func createDisclosurePlan(
 	oldDisclosurePlan *clientmodels.DisclosurePlan,
 	irmaConfig *irma.Configuration,
 	credentials []*clientmodels.Credential,
-	candidates [][]irmaclient.DisclosureCandidates,
 	slots []irmaclient.DisconSlots,
 	preExistingCredentialHashes map[string]struct{},
 	locale string,
 ) (*clientmodels.DisclosurePlan, error) {
-	newPlan := &clientmodels.DisclosurePlan{}
-	// there's no plan yet, so make a new one
-	if oldDisclosurePlan == nil {
-		issuanceSteps, err := createIssuanceSteps(irmaConfig, credentials, candidates, locale)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create issuance steps: %w", err)
-		}
-
-		// the current disclosure flow is not satisfyable without issuance
-		if len(issuanceSteps) != 0 {
-			newPlan.IssueDuringDisclosure = &clientmodels.IssueDuringDisclosure{
-				IssuedCredentialIds: map[string]struct{}{},
-				Steps:               issuanceSteps,
-			}
-		}
-	} else if lastIssuancePlan := oldDisclosurePlan.IssueDuringDisclosure; lastIssuancePlan != nil {
-		// update the existing issuance plan with what was issued since
-		var previousWrongHash string
-		if lastIssuancePlan.WrongCredentialIssued != nil {
-			previousWrongHash = lastIssuancePlan.WrongCredentialIssued.Hash
-		}
-		issued, lastWrongCredential, _ := getIssuedSinceOriginalPlan(
-			lastIssuancePlan.Steps, credentials, preExistingCredentialHashes, previousWrongHash,
-		)
-		newPlan.IssueDuringDisclosure = &clientmodels.IssueDuringDisclosure{
-			Steps:                 lastIssuancePlan.Steps,
-			IssuedCredentialIds:   issued,
-			WrongCredentialIssued: lastWrongCredential,
-		}
-	}
-
-	// The choices are there from the start, also while cards are still
-	// missing: a pick-one that cannot be filled yet has no owned options, only
-	// obtainable ones, so the app shows the whole request on one page with an
-	// empty spot for each missing card.
-	disclosureChoices, err := createDisclosureChoicesOverview(irmaConfig, credentials, candidates, locale)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create disclosure choices overview: %w", err)
-	}
-	newPlan.DisclosureChoicesOverview = disclosureChoices
-
-	// The same request as choices, options and slots, which replace the
-	// pick-ones above; the issuance tracking moves onto the plan with them.
 	choices, err := createIrmaChoices(irmaConfig, credentials, slots, locale)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create disclosure choices: %w", err)
 	}
-	newPlan.Choices = choices
-	newPlan.IssuedCredentialIds = map[string]struct{}{}
-	if issuance := newPlan.IssueDuringDisclosure; issuance != nil {
-		for id := range issuance.IssuedCredentialIds {
-			newPlan.IssuedCredentialIds[id] = struct{}{}
-		}
-		newPlan.WrongCredentialIssued = issuance.WrongCredentialIssued
-	}
-	return newPlan, nil
+	plan := &clientmodels.DisclosurePlan{Choices: choices}
+	clientmodels.TrackIssued(plan, oldDisclosurePlan, preExistingCredentialHashes)
+	plan.WrongCredentialIssued = detectWrongCredentialIssued(plan, oldDisclosurePlan, credentials, preExistingCredentialHashes)
+	return plan, nil
 }
 
 func lookupAttrValue(orig *clientmodels.SelectableCredentialInstance, id *irma.AttributeIdentifier) (clientmodels.Attribute, bool) {
@@ -698,40 +366,6 @@ func lookupAttrValue(orig *clientmodels.SelectableCredentialInstance, id *irma.A
 }
 
 // =====================================================================================
-
-func choicesToAnswer(choices []clientmodels.DisclosureDisconSelection, request irma.AttributeConDisCon) (*irma.DisclosureChoice, error) {
-	result := &irma.DisclosureChoice{
-		Attributes: [][]*irma.AttributeIdentifier{},
-	}
-
-	for choiceIdx, choice := range choices {
-		attrs := []*irma.AttributeIdentifier{}
-		for _, cred := range choice.Credentials {
-			for _, attr := range cred.AttributePaths {
-				attrs = append(attrs, &irma.AttributeIdentifier{
-					// this for now assumes only a single claim path item
-					Type: irma.NewAttributeTypeIdentifier(
-						fmt.Sprintf("%s.%s", cred.CredentialId, attr[0].(string)),
-					),
-					CredentialHash: cred.CredentialHash,
-				})
-			}
-		}
-		// The IRMA proof verifier matches the j-th disclosed attribute
-		// against the j-th requested attribute by position
-		// (irma.AttributeCon.Satisfy in irma/requests.go). Frontends are
-		// allowed to send AttributePaths in any order — usually display order,
-		// which createDisclosureChoicesOverview now sets to schema order.
-		// Re-sort each choice's attrs back to whichever request con they
-		// satisfy so the proof verifies.
-		if choiceIdx < len(request) {
-			attrs = sortAttrsToMatchRequestCon(attrs, request[choiceIdx])
-		}
-		result.Attributes = append(result.Attributes, attrs)
-	}
-
-	return result, nil
-}
 
 // sortAttrsToMatchRequestCon reorders attrs so that, for some con in discon
 // they fully satisfy, position matches that con's. If no con matches (the
@@ -830,25 +464,12 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 	switch userInteraction.Type {
 	case clientmodels.UI_Permission:
 		payload := userInteraction.Payload.(clientmodels.SessionPermissionInteractionPayload)
-		if payload.Choices != nil && session.openid4vciPermissionHandler == nil {
-			// The answer per slot, for the plan's Choices.
-			return session.answerPermission(payload)
-		}
-		if session.openid4vpPermissionHandler != nil {
-			// OpenID4VP flow: convert UI selections to DisclosureSelections
-			selections := disclosureChoicesToOpenID4VPSelections(payload.DisclosureChoices, session.openid4vpQueryIds)
-			session.openid4vpPermissionHandler(payload.Granted, selections)
-		} else if session.openid4vciPermissionHandler != nil {
-			// OpenID4VCI flow: no disclosure choices needed
+		if session.openid4vciPermissionHandler != nil {
+			// OpenID4VCI: an issuance offer has no disclosure to answer.
 			session.openid4vciPermissionHandler(payload.Granted)
-		} else {
-			// IRMA flow
-			choices, err := choicesToAnswer(payload.DisclosureChoices, session.irmaDiscloseRequest)
-			if err != nil {
-				return err
-			}
-			session.permissionHandler(payload.Granted, choices)
+			return nil
 		}
+		return session.answerPermission(payload)
 	case clientmodels.UI_EnteredPin:
 		payload := userInteraction.Payload.(clientmodels.PinInteractionPayload)
 		session.pinHandler(payload.Proceed, payload.Pin)

@@ -135,7 +135,7 @@ func testOpenID4VP_MixedFormat_CredentialSetChoice(t *testing.T) {
 	)
 
 	approvedRequestor := session.Requestor
-	chosen := ownedOptionWithCredentialId(t, session.DisclosurePlan.DisclosureChoicesOverview[0], avDocType)
+	chosen := ownedOptionWithCredentialId(t, pickOnes(session.DisclosurePlan)[0], avDocType)
 	grantPermission(t, c, 3, makeDisclosureChoice(chosen))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -355,9 +355,9 @@ func requireMixedDisclosureLog(t *testing.T, c *client.Client, approvedRequestor
 // id, for the shapes where the user picks between credentials.
 func ownedOptionWithCredentialId(
 	t *testing.T,
-	pickOne clientmodels.DisclosurePickOne,
+	pickOne pickOne,
 	credentialId string,
-) *clientmodels.DisclosureBundle {
+) *bundle {
 	t.Helper()
 
 	for _, bundle := range pickOne.OwnedOptions {

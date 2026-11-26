@@ -281,15 +281,6 @@ func TestPrepareDisclosureBurnsOneInstancePerPresentation(t *testing.T) {
 	require.False(t, result.OwnedCandidates[0].Usable, "an exhausted batch must not be presentable")
 	require.Equal(t, clientmodels.UnusableReason_UsedUp, result.OwnedCandidates[0].UnusableReason)
 
-	// The pick-one plan the app reads until the slots replace it still refuses
-	// the request, as FindCandidates used to.
-	_, _, err = dcql.NewDcqlHandler(nil).BuildDisclosurePlan(
-		dcql.DcqlQuery{Credentials: []dcql.CredentialQuery{query}},
-		&dcql.DcqlResult{QueryResults: map[string]*dcql.CredentialQueryResult{query.Id: result}},
-		nil, nil,
-	)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "exhausted")
 }
 
 // TestPrepareDisclosureKeepsBatchOfOneReusable is the other half: a batch of one

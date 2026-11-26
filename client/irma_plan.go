@@ -98,24 +98,9 @@ func createIrmaSlot(
 	clientmodels.SortCandidates(slot.Candidates)
 
 	if credSlot.Obtainable {
-		descriptor, err := getCredentialDescriptor(irmaConfig, credSlot.Type, locale)
+		descriptor, err := slotDescriptor(irmaConfig, credSlot, locale)
 		if err != nil {
 			return clientmodels.DisclosureSlot{}, err
-		}
-		for _, request := range credSlot.Requests {
-			if request.Type.IsCredential() {
-				continue
-			}
-			for i := range descriptor.Attributes {
-				if clientmodels.ClaimPathKey(descriptor.Attributes[i].ClaimPath) != clientmodels.ClaimPathKey([]any{request.Type.Name()}) {
-					continue
-				}
-				requested := irmaRequestedValue(request)
-				descriptor.Attributes[i].RequestedValue = &requested
-				if request.Value != nil {
-					descriptor.Attributes[i].RequestedValues = []clientmodels.AttributeValue{requested}
-				}
-			}
 		}
 		slot.Obtainable = append(slot.Obtainable, descriptor)
 	}
@@ -123,7 +108,7 @@ func createIrmaSlot(
 }
 
 // irmaRequestedValue is what an IRMA attribute request asks: a string value
-// when it requires one, else only the type, as the pick-one plan sends it.
+// when it requires one, else only the type.
 func irmaRequestedValue(request irma.AttributeRequest) clientmodels.AttributeValue {
 	value := clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}
 	if request.Value != nil {
@@ -131,4 +116,32 @@ func irmaRequestedValue(request irma.AttributeRequest) clientmodels.AttributeVal
 		value.String = &v
 	}
 	return value
+}
+
+// slotDescriptor describes the slot's credential type with only the attributes
+// the con asks of it, each with what was asked (a required value is a list of
+// one), as DCQL descriptors list only the requested claims.
+func slotDescriptor(irmaConfig *irma.Configuration, credSlot irmaclient.CredentialSlot, locale string) (*clientmodels.CredentialDescriptor, error) {
+	asked := make([]*irmaclient.DisclosureCandidate, 0, len(credSlot.Requests))
+	for _, request := range credSlot.Requests {
+		asked = append(asked, &irmaclient.DisclosureCandidate{
+			AttributeIdentifier: &irma.AttributeIdentifier{Type: request.Type},
+			Value:               irma.NewTranslatedString(request.Value),
+		})
+	}
+	if len(asked) == 0 {
+		asked = append(asked, &irmaclient.DisclosureCandidate{
+			AttributeIdentifier: &irma.AttributeIdentifier{Type: irma.NewAttributeTypeIdentifier(credSlot.Type.String())},
+		})
+	}
+	descriptor, err := createCredentialDescriptor(irmaConfig, asked, locale)
+	if err != nil {
+		return nil, err
+	}
+	for i := range descriptor.Attributes {
+		if requested := descriptor.Attributes[i].RequestedValue; requested != nil && requested.String != nil {
+			descriptor.Attributes[i].RequestedValues = []clientmodels.AttributeValue{*requested}
+		}
+	}
+	return descriptor, nil
 }
