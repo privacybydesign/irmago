@@ -3,6 +3,8 @@ package sessiontest
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -267,10 +269,19 @@ var veramoVcdmErrorCodes = map[string]struct{}{
 	"INVALID_STATE":        {},
 }
 
-func requireNoVeramoVcdmErrors(t *testing.T, result veramoCheckResult) {
+// requireNoVeramoVcdmErrors fails on any verifier error, except errors about the
+// queries in unanswered. The verifier validates every query in the request,
+// including ones the wallet rightly left out of vp_token (OpenID4VP 1.0 § 8.1),
+// and reports "expects array of JWT tokens" for each of those.
+func requireNoVeramoVcdmErrors(t *testing.T, result veramoCheckResult, unanswered ...string) {
 	t.Helper()
 	require.NotNil(t, result.Result, "verifier result should not be nil")
 	for _, msg := range result.Result.Messages {
+		if slices.ContainsFunc(unanswered, func(queryId string) bool {
+			return strings.HasPrefix(msg.Message, queryId+": ")
+		}) {
+			continue
+		}
 		_, isError := veramoVcdmErrorCodes[msg.Code]
 		require.False(t, isError, "verifier rejected the presentation: %s: %s", msg.Code, msg.Message)
 	}

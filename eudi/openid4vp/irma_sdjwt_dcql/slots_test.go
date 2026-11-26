@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -184,4 +185,43 @@ func storeTestCredWith(
 	edit(&info)
 	require.NoError(t, storage.StoreCredential(info, sdjwts))
 	return info
+}
+
+// One card may answer two slots (two queries): each gets its own presentation,
+// which spends an instance; a card with fewer instances left is refused before
+// any is spent.
+func TestPrepareDisclosureSameCardForTwoQueries(t *testing.T) {
+	setup := func(t *testing.T, instances uint) (*dcql.DcqlHandler, string) {
+		h, s := createTestDcqlHandler(t)
+		keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
+		info, sdjwts := irmaclient.CreateMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{"email": "a@a.nl"}, instances)
+		require.NoError(t, s.StoreCredential(info, sdjwts))
+		return h, info.Hash
+	}
+	// Without holder binding: the test credentials are bound to a key binder
+	// the handler does not hold.
+	query := parseDcqlQuery(t, `{"credentials": [
+		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}], "require_cryptographic_holder_binding": false},
+		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}], "require_cryptographic_holder_binding": false}
+	]}`)
+	selections := func(hash string) []dcql.DisclosureSelection {
+		return []dcql.DisclosureSelection{
+			{QueryId: "q1", CredentialHash: hash, ClaimPaths: [][]any{{"email"}}},
+			{QueryId: "q2", CredentialHash: hash, ClaimPaths: [][]any{{"email"}}},
+		}
+	}
+
+	t.Run("two instances: two presentations", func(t *testing.T) {
+		h, hash := setup(t, 2)
+		prepared, err := h.PrepareDisclosure(query, selections(hash), "nonce", "aud", dcql.ResponseBinding{})
+		require.NoError(t, err)
+		assert.Len(t, prepared.QueryResponses, 2)
+	})
+
+	t.Run("one instance: refused", func(t *testing.T) {
+		h, hash := setup(t, 1)
+		_, err := h.PrepareDisclosure(query, selections(hash), "nonce", "aud", dcql.ResponseBinding{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "has 1 uses left")
+	})
 }

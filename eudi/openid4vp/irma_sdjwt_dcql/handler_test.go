@@ -30,7 +30,7 @@ func TestDcqlCandidateSelection(t *testing.T) {
 	t.Run("credential set two options same purpose", testCredentialSetTwoOptionsSamePurpose)
 	t.Run("credential set two options multiple claims single candidate each", testCredentialSetTwoOptionsMultipleClaimsSingleCandidateEach)
 	t.Run("credential set two options multiple claims multiple candidates", testCredentialSetTwoOptionsMultipleClaimsMultipleCandidates)
-	t.Run("multiple credential queries in option is unsupported", testMultipleCredentialQueriesInOptionIsUnsupported)
+	t.Run("multiple credential queries in option are slots of one option", testMultipleCredentialQueriesInOptionAreSlots)
 	t.Run("invalid format returns error", testInvalidFormatReturnsError)
 	t.Run("satisfiable predefined value", testSatisfiablePredefinedValue)
 	t.Run("unsatisfiable predefined value", testUnsatisfiablePredefinedValue)
@@ -336,7 +336,7 @@ func testCredentialSetTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T) {
 	requireSatisfiable(t, plan, expectPickOne{owned: 3, obtainable: 2})
 }
 
-func testMultipleCredentialQueriesInOptionIsUnsupported(t *testing.T) {
+func testMultipleCredentialQueriesInOptionAreSlots(t *testing.T) {
 	h, s := createTestDcqlHandler(t)
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com", "domain": "t.com"})
 
@@ -362,9 +362,15 @@ func testMultipleCredentialQueriesInOptionIsUnsupported(t *testing.T) {
 
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
-	_, _, err = h.BuildDisclosurePlan(query, result, nil, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not supported")
+	plan, _, err := h.BuildDisclosurePlan(query, result, nil, nil)
+	require.NoError(t, err, "an option naming two queries is answered per slot")
+	require.Len(t, plan.Choices, 1)
+	require.Len(t, plan.Choices[0].Options, 1)
+	slots := plan.Choices[0].Options[0].Slots
+	require.Len(t, slots, 2)
+	assert.Equal(t, "q1", slots[0].Id)
+	assert.Equal(t, "q2", slots[1].Id)
+	assert.Empty(t, plan.DisclosureChoicesOverview, "the pick-one lists cannot express it and stay empty")
 }
 
 func testInvalidFormatReturnsError(t *testing.T) {

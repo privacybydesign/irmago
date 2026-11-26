@@ -49,6 +49,15 @@ func (a *irmaSessionAdapter) Success(result string) {
 	a.session.finish()
 }
 
+// SuccessWithNextSession reports the session as succeeded with a follow-up
+// waiting. The session stays open for the app's continue or dismiss.
+func (a *irmaSessionAdapter) SuccessWithNextSession(result string, next *irmaclient.PendingSession) {
+	a.session.pendingNext = next
+	a.session.State.Status = clientmodels.Status_Success
+	a.session.State.NextSessionPending = true
+	a.session.dispatchState()
+}
+
 func (a *irmaSessionAdapter) Cancelled() {
 	a.session.State.Status = clientmodels.Status_Dismissed
 	a.session.finish()

@@ -93,6 +93,22 @@ func (h *Handler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQu
 func (h *Handler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
+	// One card can answer several queries, each with a presentation of its
+	// own that spends an instance. Check there are enough before spending any.
+	uses := map[string]uint{}
+	for _, sel := range selections {
+		uses[sel.CredentialHash]++
+	}
+	for hash, n := range uses {
+		cred, err := h.storage.GetCredentialByHash(hash)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get credential by hash %s: %w", hash, err)
+		}
+		if n > cred.Metadata.RemainingInstanceCount {
+			return nil, fmt.Errorf("credential %s is selected %d times but has %d uses left", hash, n, cred.Metadata.RemainingInstanceCount)
+		}
+	}
+
 	for _, sel := range selections {
 		cred, err := h.storage.GetCredentialByHash(sel.CredentialHash)
 		if err != nil {

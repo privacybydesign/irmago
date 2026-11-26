@@ -39,6 +39,12 @@ type session struct {
 	// the order the request asked for (the IRMA proof verifier matches j-th disclosed
 	// against j-th requested by position).
 	irmaDiscloseRequest irma.AttributeConDisCon
+	// IRMA: the follow-up of a chained session that succeeded, waiting for
+	// UI_ContinueNextSession or UI_DismissSession.
+	pendingNext *irmaclient.PendingSession
+	// Set when an answer was refused: the session ended with an error, and the
+	// protocol's own report of being dismissed afterwards is not dispatched.
+	answerRejected bool
 }
 
 func (s *session) dispatchState() {
@@ -79,6 +85,9 @@ func (s *session) error(err error) {
 // wallet did nothing.
 func (s *session) finish() {
 	if s.dispatched == s.State.Status {
+		return
+	}
+	if s.answerRejected && s.State.Status != clientmodels.Status_Error {
 		return
 	}
 	s.dispatched = s.State.Status
@@ -768,6 +777,51 @@ func sortAttrsToMatchRequestCon(attrs []*irma.AttributeIdentifier, discon irma.A
 
 // =====================================================================================
 
+// answerPermission handles a permission given as an answer per slot. A refusal
+// needs no answer. A granted answer that does not fit the plan last sent ends
+// the session with an error, rather than sending the requestor a response it
+// would reject or leaving the session waiting.
+func (session *session) answerPermission(payload clientmodels.SessionPermissionInteractionPayload) error {
+	if !payload.Granted {
+		switch {
+		case session.openid4vpPermissionHandler != nil:
+			session.openid4vpPermissionHandler(false, nil)
+		case session.permissionHandler != nil:
+			session.permissionHandler(false, nil)
+		}
+		return nil
+	}
+
+	if err := clientmodels.ValidateAnswer(session.State.DisclosurePlan, payload.Choices); err != nil {
+		return session.rejectAnswer(err)
+	}
+	if session.openid4vpPermissionHandler != nil {
+		session.openid4vpPermissionHandler(true, answerToOpenID4VPSelections(payload.Choices))
+		return nil
+	}
+
+	choice := &irma.DisclosureChoice{Attributes: [][]*irma.AttributeIdentifier{}}
+	// A chained issuance can come without a plan; what it discloses then is
+	// the previous session's attributes, added by irmaclient.
+	if session.State.DisclosurePlan != nil {
+		var err error
+		if choice, err = answerToIrmaChoice(payload.Choices, session.irmaDiscloseRequest); err != nil {
+			return session.rejectAnswer(err)
+		}
+	}
+	session.permissionHandler(true, choice)
+	return nil
+}
+
+func (session *session) rejectAnswer(err error) error {
+	err = fmt.Errorf("answer refused: %w", err)
+	irma.Logger.Warn(err)
+	session.answerRejected = true
+	session.error(err)
+	session.dismisser.Dismiss()
+	return err
+}
+
 func (client *Client) HandleUserInteraction(userInteraction clientmodels.SessionUserInteraction) error {
 	session, ok := client.sessionManager.GetSession(userInteraction.SessionId)
 	if !ok {
@@ -776,6 +830,10 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 	switch userInteraction.Type {
 	case clientmodels.UI_Permission:
 		payload := userInteraction.Payload.(clientmodels.SessionPermissionInteractionPayload)
+		if payload.Choices != nil && session.openid4vciPermissionHandler == nil {
+			// The answer per slot, for the plan's Choices.
+			return session.answerPermission(payload)
+		}
 		if session.openid4vpPermissionHandler != nil {
 			// OpenID4VP flow: convert UI selections to DisclosureSelections
 			selections := disclosureChoicesToOpenID4VPSelections(payload.DisclosureChoices, session.openid4vpQueryIds)
@@ -794,7 +852,23 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 	case clientmodels.UI_EnteredPin:
 		payload := userInteraction.Payload.(clientmodels.PinInteractionPayload)
 		session.pinHandler(payload.Proceed, payload.Pin)
+	case clientmodels.UI_ContinueNextSession:
+		next := session.pendingNext
+		if next == nil {
+			return fmt.Errorf("session %v has no follow-up session waiting", userInteraction.SessionId)
+		}
+		session.pendingNext = nil
+		session.State.NextSessionPending = false
+		next.Start()
 	case clientmodels.UI_DismissSession:
+		if next := session.pendingNext; next != nil {
+			// The session itself is done; only its follow-up is given up.
+			session.pendingNext = nil
+			next.Drop()
+			session.State.NextSessionPending = false
+			session.finish()
+			return nil
+		}
 		session.dismisser.Dismiss()
 		// Mark dismissed regardless of protocol: OpenID4VCI's Dismiss does not report
 		// it at all, OpenID4VP's only once its goroutine unwinds. finish drops the repeat.

@@ -51,6 +51,11 @@ type SessionState struct {
 	MessageToSign string `json:"message_to_sign"`
 	// The error when this session has an error
 	Error *SessionError `json:"error,omitempty"`
+	// With Status_Success: the requestor chained a follow-up request (IRMA
+	// nextSession). This session is done (shared, logged, closed at the
+	// server); the follow-up starts only on UI_ContinueNextSession, and is
+	// dropped on UI_DismissSession.
+	NextSessionPending bool `json:"next_session_pending"`
 	// The client return url when the app should redirect to after the session, if any
 	ClientReturnUrl string `json:"client_return_url"`
 	// If this is true then the frontend should not return to the browser after the session is done

@@ -5,6 +5,9 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -186,4 +189,55 @@ func attributeAt(t *testing.T, attrs []clientmodels.Attribute, name string) clie
 	}
 	require.Failf(t, "attribute not found", "no attribute %q in %v", name, attrs)
 	return clientmodels.Attribute{}
+}
+
+// One card may answer two slots (two queries): each gets its own presentation.
+// For a batch, each presentation takes an instance of its own, so a card with
+// one use left cannot answer two slots.
+func TestPrepareDisclosure_SameCardForTwoQueries(t *testing.T) {
+	twoQueries := []dcql.DisclosureSelection{
+		{QueryId: "q1", CredentialHash: "hash-twice", ClaimPaths: [][]any{{"email"}}},
+		{QueryId: "q2", CredentialHash: "hash-twice", ClaimPaths: [][]any{{"email"}}},
+	}
+	store := func(t *testing.T, size, remaining uint) (*Engine, db.SdJwtVcStore) {
+		h, store := newTestHandler(t)
+		batch := newTestBatch("hash-twice", emailVct, map[string]any{"email": "test@gmail.com"})
+		batch.BatchSize = size
+		batch.RemainingCount = remaining
+		batch.Instances = nil
+		for i := uint(0); i < size; i++ {
+			batch.Instances = append(batch.Instances, models.SdJwtVcBatchInstance{RawCredential: []byte(validTestSdJwtVc), Used: i >= remaining})
+		}
+		require.NoError(t, store.StoreBatch(batch))
+		return h, store
+	}
+
+	t.Run("a batch of two: two presentations, two instances used", func(t *testing.T) {
+		h, store := store(t, 2, 2)
+		prepared, err := h.PrepareDisclosure(twoQueries, "nonce", "aud")
+		require.NoError(t, err)
+		require.Len(t, prepared.QueryResponses, 2)
+		assert.Equal(t, "q1", prepared.QueryResponses[0].QueryId)
+		assert.Equal(t, "q2", prepared.QueryResponses[1].QueryId)
+		reloaded, err := store.GetBatchByHash("hash-twice")
+		require.NoError(t, err)
+		assert.Equal(t, uint(0), reloaded.RemainingCount)
+	})
+
+	t.Run("a batch with one use left cannot answer both, and keeps its use", func(t *testing.T) {
+		h, store := store(t, 2, 1)
+		_, err := h.PrepareDisclosure(twoQueries, "nonce", "aud")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "has 1 uses left")
+		reloaded, err := store.GetBatchByHash("hash-twice")
+		require.NoError(t, err)
+		assert.Equal(t, uint(1), reloaded.RemainingCount, "nothing was spent on a response that is not sent")
+	})
+
+	t.Run("a reusable card answers both", func(t *testing.T) {
+		h, _ := store(t, 1, 1)
+		prepared, err := h.PrepareDisclosure(twoQueries, "nonce", "aud")
+		require.NoError(t, err)
+		assert.Len(t, prepared.QueryResponses, 2)
+	})
 }

@@ -9,6 +9,9 @@ const (
 	UI_DismissSession    UserInteractionType = "dismiss"
 	UI_AuthorizationCode UserInteractionType = "authorization_code"
 	UI_PreAuthorizedCode UserInteractionType = "pre_authorized_code"
+	// Start the follow-up of a session that succeeded with
+	// NextSessionPending. Has no payload.
+	UI_ContinueNextSession UserInteractionType = "continue_next_session"
 )
 
 // SessionUserInteraction represents a user interaction with a session.

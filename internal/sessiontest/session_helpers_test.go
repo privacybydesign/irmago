@@ -264,6 +264,55 @@ func grantPermission(t *testing.T, c *client.Client, sessionId int, choices ...c
 	})
 }
 
+// grantAnswer grants permission with an answer per slot (the plan's Choices).
+// No choices sends an empty answer, for a plan without choices.
+func grantAnswer(t *testing.T, c *client.Client, sessionId int, choices ...clientmodels.ChoiceSelection) {
+	t.Helper()
+	if choices == nil {
+		choices = []clientmodels.ChoiceSelection{}
+	}
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: sessionId,
+		Type:      clientmodels.UI_Permission,
+		Payload: clientmodels.SessionPermissionInteractionPayload{
+			Granted: true,
+			Choices: choices,
+		},
+	})
+}
+
+// firstOptionAnswer answers every choice of the plan with its first option and,
+// per slot, its first candidate (the best one) with all its attributes.
+func firstOptionAnswer(t *testing.T, plan *clientmodels.DisclosurePlan) []clientmodels.ChoiceSelection {
+	t.Helper()
+	require.NotNil(t, plan)
+	answer := make([]clientmodels.ChoiceSelection, 0, len(plan.Choices))
+	for _, choice := range plan.Choices {
+		require.NotEmpty(t, choice.Options)
+		selection := clientmodels.ChoiceSelection{Option: 0}
+		for _, slot := range choice.Options[0].Slots {
+			require.NotEmpty(t, slot.Candidates, "slot %s has no card", slot.Id)
+			candidate := slot.Candidates[0]
+			var paths [][]any
+			for _, attr := range candidate.Attributes {
+				if attr.Value != nil {
+					paths = append(paths, attr.ClaimPath)
+				}
+			}
+			selection.Slots = append(selection.Slots, clientmodels.SlotSelection{
+				SlotId: slot.Id,
+				Credentials: []clientmodels.SelectedCredential{{
+					CredentialId:   candidate.CredentialId,
+					CredentialHash: candidate.Hash,
+					AttributePaths: paths,
+				}},
+			})
+		}
+		answer = append(answer, selection)
+	}
+	return answer
+}
+
 // denyPermission sends a permission denied interaction
 func denyPermission(t *testing.T, c *client.Client, sessionId int) {
 	t.Helper()

@@ -80,3 +80,50 @@ func mdocAttribute(t *testing.T, attrs []clientmodels.Attribute, element string)
 	require.Failf(t, "attribute not found", "no element %q in %v", element, attrs)
 	return clientmodels.Attribute{}
 }
+
+// One card may answer two slots (two queries): each gets its own presentation,
+// and for a batch each takes an instance of its own.
+func TestPrepareDisclosureSameCardForTwoQueries(t *testing.T) {
+	twoQueries := func(env *testEnv) []dcql.DisclosureSelection {
+		sel := func(queryId string) dcql.DisclosureSelection {
+			return dcql.DisclosureSelection{
+				QueryId:              queryId,
+				CredentialHash:       env.hash,
+				ClaimPaths:           [][]any{{testNamespace, "age_over_18"}},
+				RequireHolderBinding: true,
+				ResponseUri:          testResponseU,
+			}
+		}
+		return []dcql.DisclosureSelection{sel("q1"), sel("q2")}
+	}
+
+	t.Run("a batch of two: two presentations, both instances used", func(t *testing.T) {
+		env := newTestEnvWithBatchSize(t, 2)
+		prepared, err := env.handler.PrepareDisclosure(twoQueries(env), testNonce, testClientId)
+		require.NoError(t, err)
+		require.Len(t, prepared.QueryResponses, 2)
+		batch, err := env.store.GetBatchByHash(env.hash)
+		require.NoError(t, err)
+		require.Equal(t, uint(0), batch.RemainingCount)
+	})
+
+	t.Run("a batch with one use left refuses both and spends nothing", func(t *testing.T) {
+		env := newTestEnvWithBatchSize(t, 2)
+		_, err := env.disclose(t)
+		require.NoError(t, err)
+
+		_, err = env.handler.PrepareDisclosure(twoQueries(env), testNonce, testClientId)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "has 1 uses left")
+		batch, err := env.store.GetBatchByHash(env.hash)
+		require.NoError(t, err)
+		require.Equal(t, uint(1), batch.RemainingCount)
+	})
+
+	t.Run("a reusable card answers both", func(t *testing.T) {
+		env := newTestEnv(t)
+		prepared, err := env.handler.PrepareDisclosure(twoQueries(env), testNonce, testClientId)
+		require.NoError(t, err)
+		require.Len(t, prepared.QueryResponses, 2)
+	})
+}

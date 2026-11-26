@@ -1,6 +1,7 @@
 package dcql
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -117,7 +118,7 @@ func (h *DcqlHandler) FindCandidates(query DcqlQuery) (*DcqlResult, error) {
 // The plan carries the request twice while the app moves over: as Choices
 // (options and slots, see buildChoices) and as the older pick-one lists, which
 // are built from the usable and revoked candidates only (legacyQueryResults)
-// and still refuse an option naming several queries.
+// and stay empty for a request with an option naming several queries.
 //
 // The second return value runs parallel to the plan's DisclosureChoicesOverview,
 // one entry per pick-one, naming the query each of that pick-one's candidates
@@ -142,6 +143,11 @@ func (h *DcqlHandler) BuildDisclosurePlan(
 		plan, queryIds, err = buildPlanFromCredentialSets(legacyResults, query.CredentialSets, previousPlan, preExistingHashes)
 	} else {
 		plan, queryIds, err = buildPlanFromCredentialQueries(query.Credentials, legacyResults, previousPlan, preExistingHashes)
+	}
+	if errors.Is(err, errMultiQueryOption) {
+		// Only the Choices can describe this request, and only an answer per
+		// slot can answer it; the pick-one fields stay empty.
+		plan, queryIds, err = &clientmodels.DisclosurePlan{}, nil, nil
 	}
 	if err != nil {
 		return nil, nil, err
@@ -180,10 +186,18 @@ func (h *DcqlHandler) PrepareDisclosure(
 	// Group selections by handler
 	type handlerIndex int
 	selectionsByHandler := make(map[handlerIndex][]DisclosureSelection)
+	presentations := make(map[string]int, len(selections))
 	for _, sel := range selections {
 		credQuery, ok := queryById[sel.QueryId]
 		if !ok {
 			return nil, fmt.Errorf("unknown query id %q in selection", sel.QueryId)
+		}
+		// Without `multiple` a query is answered by exactly one presentation
+		// (OpenID4VP 1.0 § 6.1); a second one would be a response the verifier
+		// rejects, so it is refused here.
+		presentations[sel.QueryId]++
+		if presentations[sel.QueryId] > 1 && !credQuery.Multiple {
+			return nil, fmt.Errorf("credential query %q takes one credential, but more than one was selected for it", sel.QueryId)
 		}
 		// Propagate the holder binding requirement from the credential query.
 		sel.RequireHolderBinding = credQuery.NeedsHolderBinding()

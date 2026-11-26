@@ -3,6 +3,7 @@ package sessiontest
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -55,6 +56,11 @@ func testSessionHandlerEdgeCases(t *testing.T) {
 	runSessionTest(t,
 		"chained session",
 		testChainedSession,
+	)
+
+	runSessionTest(t,
+		"chained session dismissed after the first",
+		testChainedSessionDismissed,
 	)
 }
 
@@ -305,15 +311,12 @@ func testUserCanDismissOpenID4VPSession(
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_Dismissed)
 }
 
-func testChainedSession(
-	t *testing.T,
-	_ *IrmaServer,
-	c *client.Client,
-	sessionHandler *MockSessionHandler,
-) {
+// startChainedSession starts the chain of chainedServerHandler: a disclosure
+// of a student card, an issuance of fullName from it, and a disclosure of that
+// fullName. It returns the first session's state, asking permission.
+func startChainedSession(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler) (clientmodels.SessionState, func()) {
 	buildConfig := RequestorServerAuthConfiguration()
 	requestorServer := StartRequestorServer(t, buildConfig)
-	defer requestorServer.Stop()
 
 	nextServer := StartNextRequestServer(t,
 		&buildConfig.JwtRSAPrivateKey.PublicKey,
@@ -321,77 +324,129 @@ func testChainedSession(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
 		irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
 	)
-	defer func() { _ = nextServer.Close() }()
+	stop := func() {
+		_ = nextServer.Close()
+		requestorServer.Stop()
+	}
 
 	qr, _, _, err := requestorServer.StartSession(createStudentCardIssuanceRequest(), nil, "")
 	require.NoError(t, err)
-
 	sessionJson, err := json.MarshalIndent(qr, "", "   ")
 	require.NoError(t, err)
 
 	c.NewSession(1, string(sessionJson))
 	session := awaitSessionState(t, sessionHandler)
-	require.Equal(t, 1, session.Id)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 	require.Len(t, session.OfferedCredentials, 1)
-
 	grantPermission(t, c, session.Id)
-
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+	require.False(t, session.NextSessionPending, "an unchained session has nothing pending")
 
 	// get the initial session request for the chained session
 	var request irma.ServiceProviderRequest
 	require.NoError(t, irma.NewHTTPTransport(nextSessionServerURL, false).Get("1", &request))
 	requestJson, err := json.MarshalIndent(request, "", "   ")
 	require.NoError(t, err)
-
-	// start the session at the server
 	sesPkg := startSessionAtServer(t, requestorServer, true, requestJson)
-	require.NoError(t, err)
-
 	sessionJson, err = json.MarshalIndent(sesPkg.SessionPtr, "", "   ")
 	require.NoError(t, err)
 
 	c.NewSession(2, string(sessionJson))
 	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	return session, stop
+}
 
-	require.Equal(t, 2, session.Id)
-	require.Equal(t, clientmodels.Type_Disclosure, session.Type)
+func continueNextSession(t *testing.T, c *client.Client, sessionId int) {
+	t.Helper()
+	userInteraction(t, c, clientmodels.SessionUserInteraction{SessionId: sessionId, Type: clientmodels.UI_ContinueNextSession})
+}
+
+// A chain of three: each session ends as succeeded with the next one pending,
+// and the next starts only when the app continues.
+func testChainedSession(
+	t *testing.T,
+	_ *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	session, stop := startChainedSession(t, c, sessionHandler)
+	defer stop()
+
 	require.Empty(t, session.OfferedCredentials)
+	slot := session.DisclosurePlan.Choices[0].Options[0].Slots[0]
+	require.Equal(t, "0:irma-demo.RU.studentCard", slot.Id)
+	grantAnswer(t, c, session.Id, firstOptionAnswer(t, session.DisclosurePlan)...)
 
-	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	require.Len(t, choice.Credentials, 1)
-	require.Equal(t, "irma-demo.RU.studentCard", choice.Credentials[0].CredentialId)
-
-	grantPermission(t, c, session.Id, makeDisclosureChoice(choice))
-
+	// The disclosure is done: shared, logged, closed. The issuance waits.
 	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+	require.True(t, session.NextSessionPending)
+	continueNextSession(t, c, session.Id)
 
 	// the new (chained) session is still under the same id
+	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.False(t, session.NextSessionPending)
 	require.Len(t, session.OfferedCredentials, 1)
 	require.Equal(t, "irma-demo.MijnOverheid.fullName", session.OfferedCredentials[0].CredentialId)
-
 	// it's now an issuance session without disclosures, so no disclosure plan anymore
 	require.Nil(t, session.DisclosurePlan)
+	grantAnswer(t, c, session.Id)
 
-	grantPermission(t, c, session.Id)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Issuance, clientmodels.Status_Success)
+	require.True(t, session.NextSessionPending)
+	continueNextSession(t, c, session.Id)
 
 	// should now be the last session of the chain: another disclosure session
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, 2, session.Id)
-	require.Equal(t, clientmodels.Type_Disclosure, session.Type)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.Empty(t, session.OfferedCredentials)
-
-	choice = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	require.Len(t, choice.Credentials, 1)
-	require.Equal(t, "irma-demo.MijnOverheid.fullName", choice.Credentials[0].CredentialId)
-
-	grantPermission(t, c, session.Id, makeDisclosureChoice(choice))
+	slot = session.DisclosurePlan.Choices[0].Options[0].Slots[0]
+	require.Len(t, slot.Candidates, 1)
+	require.Equal(t, "irma-demo.MijnOverheid.fullName", slot.Candidates[0].CredentialId)
+	grantAnswer(t, c, session.Id, firstOptionAnswer(t, session.DisclosurePlan)...)
 
 	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+	require.False(t, session.NextSessionPending, "the last of the chain has nothing pending")
+}
 
-	// session should now be finished
-	require.Equal(t, clientmodels.Status_Success, session.Status)
+// Dismissing instead of continuing: the first session stays done and logged,
+// the follow-up never starts.
+func testChainedSessionDismissed(
+	t *testing.T,
+	_ *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	session, stop := startChainedSession(t, c, sessionHandler)
+	defer stop()
+
+	logsBefore, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+
+	grantAnswer(t, c, session.Id, firstOptionAnswer(t, session.DisclosurePlan)...)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+	require.True(t, session.NextSessionPending)
+
+	logsAfter, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logsAfter, len(logsBefore)+1, "the disclosure is logged before the app decides")
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{SessionId: session.Id, Type: clientmodels.UI_DismissSession})
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+	require.False(t, session.NextSessionPending)
+
+	select {
+	case next := <-sessionHandler.SessionChan:
+		t.Fatalf("the follow-up started after all: %+v", next.Status)
+	case <-time.After(time.Second):
+	}
+	err = c.HandleUserInteraction(clientmodels.SessionUserInteraction{SessionId: session.Id, Type: clientmodels.UI_ContinueNextSession})
+	require.Error(t, err, "the session is gone")
 }

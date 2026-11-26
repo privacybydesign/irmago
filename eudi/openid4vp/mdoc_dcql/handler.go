@@ -219,6 +219,24 @@ func (h *Handler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQu
 func (h *Handler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, audience string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
+	// One card can answer several queries, each with a presentation of its
+	// own. A batch spends an instance per presentation, so check it has enough
+	// before spending any: failing halfway would use up instances for a
+	// response that is never sent.
+	uses := map[string]uint{}
+	for _, sel := range selections {
+		uses[sel.CredentialHash]++
+	}
+	for hash, n := range uses {
+		batch, err := h.store.GetBatchByHash(hash)
+		if err != nil {
+			return nil, fmt.Errorf("batch not found for hash %s: %w", hash, err)
+		}
+		if batch.BatchSize > 1 && n > batch.RemainingCount {
+			return nil, fmt.Errorf("credential %s is selected %d times but has %d uses left", hash, n, batch.RemainingCount)
+		}
+	}
+
 	for _, sel := range selections {
 		batch, err := h.store.GetBatchByHash(sel.CredentialHash)
 		if err != nil {

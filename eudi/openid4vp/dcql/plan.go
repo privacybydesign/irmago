@@ -1,9 +1,16 @@
 package dcql
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+)
+
+// errMultiQueryOption: the pick-one plan cannot express a credential set
+// option that names several queries. The plan's Choices can.
+var errMultiQueryOption = errors.New(
+	"credential set `options` field has inner option array that consists of multiple credential queries, which is not supported at the moment",
 )
 
 // buildPlanFromCredentialQueries builds a DisclosurePlan when no credential_sets are present.
@@ -77,9 +84,7 @@ func buildPlanFromCredentialSets(
 				)
 			}
 			if len(option) > 1 {
-				return nil, nil, fmt.Errorf(
-					"credential set `options` field has inner option array that consists of multiple credential queries, which is not supported at the moment",
-				)
+				return nil, nil, errMultiQueryOption
 			}
 
 			queryId := option[0]

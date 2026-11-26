@@ -287,3 +287,42 @@ func (h *recordingHandler) PrepareDisclosure(selections []DisclosureSelection, _
 	}
 	return prepared, nil
 }
+
+// Without `multiple`, a query is answered by exactly one presentation
+// (OpenID4VP 1.0 § 6.1). The wallet refuses to send two rather than a
+// response the verifier rejects.
+func TestPrepareDisclosureRefusesTwoPresentationsForOneQuery(t *testing.T) {
+	query := DcqlQuery{Credentials: []CredentialQuery{
+		{Id: "email1", Format: "fake"},
+		{Id: "email2", Format: "fake"},
+		{Id: "emails", Format: "fake", Multiple: true},
+	}}
+	handler := NewDcqlHandler([]DcqlCredentialQueryHandler{&recordingHandler{}})
+
+	t.Run("two presentations for a single query are refused", func(t *testing.T) {
+		_, err := handler.PrepareDisclosure(query, []DisclosureSelection{
+			{QueryId: "email1", CredentialHash: "h1"},
+			{QueryId: "email1", CredentialHash: "h2"},
+		}, "nonce", "aud", ResponseBinding{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "email1")
+	})
+
+	t.Run("one presentation per query is fine, also of the same card", func(t *testing.T) {
+		prepared, err := handler.PrepareDisclosure(query, []DisclosureSelection{
+			{QueryId: "email1", CredentialHash: "h1"},
+			{QueryId: "email2", CredentialHash: "h1"},
+		}, "nonce", "aud", ResponseBinding{})
+		require.NoError(t, err)
+		assert.Len(t, prepared.QueryResponses, 2)
+	})
+
+	t.Run("several presentations for a multiple query are fine", func(t *testing.T) {
+		prepared, err := handler.PrepareDisclosure(query, []DisclosureSelection{
+			{QueryId: "emails", CredentialHash: "h1"},
+			{QueryId: "emails", CredentialHash: "h2"},
+		}, "nonce", "aud", ResponseBinding{})
+		require.NoError(t, err)
+		assert.Len(t, prepared.QueryResponses, 2)
+	})
+}

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bwesterb/go-atum"
@@ -605,11 +606,60 @@ func (session *session) sendResponse(message any) {
 	session.finish(false)
 
 	if serverResponse != nil && serverResponse.NextSession != nil {
-		session.next = session.client.newQrSession(serverResponse.NextSession, session.Handler)
-		session.next.implicitDisclosure = session.choice.Attributes
+		nextSession := serverResponse.NextSession
+		startNext := func() {
+			session.next = session.client.newQrSession(nextSession, session.Handler)
+			session.next.implicitDisclosure = session.choice.Attributes
+		}
+		if handler, ok := session.Handler.(NextSessionHandler); ok {
+			handler.SuccessWithNextSession(string(messageJson), &PendingSession{start: startNext})
+		} else {
+			startNext()
+		}
 	} else {
 		session.Handler.Success(string(messageJson))
 	}
+}
+
+// NextSessionHandler is an optional part of a Handler. A Handler that has it
+// is told that a session succeeded and that the requestor chained a follow-up
+// session (nextSession), and decides whether and when that follow-up starts.
+// A Handler without it sees the follow-up start right away.
+type NextSessionHandler interface {
+	SuccessWithNextSession(result string, next *PendingSession)
+}
+
+// PendingSession is the follow-up of a chained session that has not started.
+// It starts at most once; Drop makes a later Start do nothing.
+type PendingSession struct {
+	mutex   sync.Mutex
+	start   func()
+	settled bool
+}
+
+// NewPendingSession is a follow-up that runs start when it is started; for
+// handlers' tests.
+func NewPendingSession(start func()) *PendingSession {
+	return &PendingSession{start: start}
+}
+
+// Start starts the follow-up session, with the same Handler and with the
+// attributes of the finished session disclosed implicitly.
+func (p *PendingSession) Start() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	if p.settled {
+		return
+	}
+	p.settled = true
+	p.start()
+}
+
+// Drop gives up the follow-up session: it never starts.
+func (p *PendingSession) Drop() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	p.settled = true
 }
 
 // Response calculation methods
