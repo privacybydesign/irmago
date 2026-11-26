@@ -33,8 +33,9 @@ func TestUsageReportingE2E(t *testing.T) {
 	studentID := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	doSession(t, getDisclosureRequest(studentID), nil, nil, requestorServer, nil, nil, nil)
 
-	// Let at least one interval pass, so a delta report is sent before the final one.
-	time.Sleep(usage.MinInterval + 5*time.Second)
+	// Let an interval boundary and the tick after it pass, so a delta report is sent before the
+	// final one.
+	time.Sleep(usage.MinInterval + 15*time.Second)
 
 	doSession(t, getDisclosureRequest(studentID), nil, nil, requestorServer, nil, nil, nil)
 	doSession(t, getSigningRequest(studentID), nil, nil, requestorServer, nil, nil, nil)
