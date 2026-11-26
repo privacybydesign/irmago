@@ -532,6 +532,14 @@ func testBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T, conf an
 	require.Truef(t, client.Configuration.ContainsAttributeType(attrID2), "AttributeType %s not found", attrID2)
 	require.True(t, client.Configuration.AttributeTypes[attrID2].RandomBlind, "AttributeType votingnumber is not of type random blind")
 
+	// RandomBlindAttributeNames reads the RandomBlind flag directly and reports the correct
+	// identifier. Its legacy counterpart reproduces the historical off-by-one result: since
+	// votingnumber is the last declared attribute, the offset index ran off the end and yielded
+	// an empty list. The protocol-version gate keeps both peers agreeing on which to use.
+	credType := client.Configuration.CredentialTypes[credID]
+	require.ElementsMatch(t, []string{"votingnumber"}, credType.RandomBlindAttributeNames())
+	require.Empty(t, credType.RandomBlindAttributeNamesLegacy())
+
 	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: credID,
