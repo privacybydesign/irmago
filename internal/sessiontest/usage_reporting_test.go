@@ -15,7 +15,7 @@ import (
 func usageReportingSettings(t *testing.T, portal *usagetest.Portal) *usage.Settings {
 	settings := &usage.Settings{
 		PortalURL:      portal.DirectoryURL(),
-		Interval:       time.Hour, // only the final report on Stop() is sent
+		Interval:       time.Hour, // usually only the final report on Stop(); sumUsage adds up any other
 		StateDir:       t.TempDir(),
 		ServerInstance: "sessiontest",
 	}

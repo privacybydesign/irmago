@@ -23,17 +23,19 @@ import (
 const (
 	// DefaultPortalURL is the usage directory of the Yivi Portal.
 	DefaultPortalURL = "https://api.yivi.app/usage/v1/directory"
-	// DefaultInterval is how often the open counts are sealed into a report.
-	DefaultInterval = 5 * time.Minute
+	// DefaultInterval is the length of the intervals whose counts are sealed into one report: a
+	// day, ending at midnight UTC. Reporting per day tells the Portal on which day sessions took
+	// place, which billing needs, but not at what time.
+	DefaultInterval = 24 * time.Hour
 	// MinInterval and MaxInterval bound the configurable interval.
 	MinInterval = time.Minute
-	MaxInterval = 6 * time.Hour
-	// DefaultHeartbeat is how long an interval without sessions stays open before it is sealed
+	MaxInterval = 24 * time.Hour
+	// DefaultHeartbeat is the longest an interval without sessions stays open before it is sealed
 	// as an empty report anyway, so the Portal can tell a quiet server from one that stopped
 	// reporting. An interval longer than this is used as the heartbeat instead.
 	DefaultHeartbeat = time.Hour
 
-	// maxOutbox caps the reports waiting to be sent: one week at the default interval.
+	// maxOutbox caps the reports waiting to be sent: a week at a five-minute interval.
 	// When it is full, counts keep accumulating in the open interval instead.
 	maxOutbox = 2016
 
@@ -59,7 +61,9 @@ type Settings struct {
 	Disabled bool `json:"disabled" mapstructure:"disabled"`
 	// PortalURL is the Portal's usage directory URL (default DefaultPortalURL).
 	PortalURL string `json:"portal_url" mapstructure:"portal_url"`
-	// Interval after which the open counts are sealed into a report (default DefaultInterval).
+	// Interval is the length of the intervals whose counts are sealed into one report (default
+	// DefaultInterval). Intervals end on multiples of it in UTC, such as midnight for a day or the
+	// whole hour for an hour.
 	Interval time.Duration `json:"interval" mapstructure:"interval"`
 	// StateDir optionally holds the account key and the reports waiting to be sent, so both
 	// survive a restart.
@@ -87,6 +91,7 @@ type Reporter struct {
 	// Only touched by the reporting goroutine, and by Stop after that goroutine has ended.
 	sequence    uint64
 	periodStart time.Time
+	lastTick    time.Time
 	kid         string
 	backoff     time.Duration
 	nextAttempt time.Time
@@ -123,6 +128,7 @@ func New(settings Settings, logger *logrus.Logger) (*Reporter, error) {
 		return nil, err
 	}
 
+	now := time.Now().UTC()
 	r := &Reporter{
 		settings:    settings,
 		logger:      logger,
@@ -131,7 +137,8 @@ func New(settings Settings, logger *logrus.Logger) (*Reporter, error) {
 		tally:       newTally(),
 		runID:       randomID(),
 		heartbeat:   max(settings.Interval, defaultHeartbeat),
-		periodStart: time.Now().UTC(),
+		periodStart: now,
+		lastTick:    now,
 		stop:        make(chan struct{}),
 		done:        make(chan struct{}),
 	}
@@ -194,14 +201,30 @@ func (r *Reporter) run() {
 		case <-r.stop:
 			return
 		case now := <-ticker.C:
-			if now.UTC().Sub(r.periodStart) >= r.settings.Interval {
-				r.seal(now.UTC(), false)
+			now = now.UTC()
+			if sealDue(r.periodStart, r.lastTick, now, r.settings.Interval, r.heartbeat, r.tally.empty()) {
+				r.seal(now, false)
 			}
+			r.lastTick = now
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			r.flush(ctx)
 			cancel()
 		}
 	}
+}
+
+// sealDue reports whether the tick at now seals the interval that opened at start, given the
+// tick before it at prev. An interval is sealed only at the first tick after an interval
+// boundary, never because a session ended: a report shows in which interval its sessions took
+// place, not when within it. An interval without sessions stays open across boundaries, so the
+// reports of a run cover its time without holes, until waiting for the next boundary would take
+// it past the heartbeat.
+func sealDue(start, prev, now time.Time, interval, heartbeat time.Duration, empty bool) bool {
+	boundary := now.Truncate(interval)
+	if !boundary.After(prev) {
+		return false
+	}
+	return !empty || boundary.Add(interval).Sub(start) > heartbeat
 }
 
 // seal turns the open counts into a report in the outbox. While the outbox is full, the counts
@@ -211,12 +234,6 @@ func (r *Reporter) seal(now time.Time, final bool) {
 	full := len(r.outbox) >= maxOutbox
 	r.mu.Unlock()
 	if full && !final {
-		return
-	}
-	// An empty interval stays open, so the reports of a run cover its time without holes. It is
-	// sealed once it reaches the heartbeat, and as the final report that tells the Portal this
-	// run ended cleanly.
-	if r.tally.empty() && !final && now.Sub(r.periodStart) < r.heartbeat {
 		return
 	}
 

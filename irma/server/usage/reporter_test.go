@@ -184,7 +184,7 @@ func TestAccountKeyIsStable(t *testing.T) {
 
 func TestReporterRejectsIntervalOutOfRange(t *testing.T) {
 	portal := usagetest.NewPortal(t)
-	for _, interval := range []time.Duration{300, 30 * time.Second, 7 * time.Hour} {
+	for _, interval := range []time.Duration{300, 30 * time.Second, 25 * time.Hour} {
 		settings := usage.Settings{PortalURL: portal.DirectoryURL(), Interval: interval, StateDir: t.TempDir()}
 		_, err := usage.New(settings, logrus.New())
 		require.Error(t, err, interval.String())
@@ -241,7 +241,6 @@ func TestReporterSendsHeartbeatWithoutSessions(t *testing.T) {
 	require.Empty(t, heartbeat.Disclosures)
 	require.False(t, heartbeat.Final)
 	require.Equal(t, int64(2), heartbeat.Heartbeat)
-	require.GreaterOrEqual(t, heartbeat.Period.To.Sub(heartbeat.Period.From), 2*time.Second)
 
 	reporter.Record(usage.Event{Requestor: "webshop", Action: irma.ActionDisclosing, Outcome: usage.OutcomeDone,
 		CredentialTypes: []irma.CredentialTypeIdentifier{email}})
@@ -269,4 +268,48 @@ func TestHeartbeatIsAtLeastTheInterval(t *testing.T) {
 	require.NoError(t, err)
 	reporter.Stop()
 	require.Equal(t, int64(1), portal.Reports()[0].Heartbeat)
+}
+
+func TestReportsAreSealedAtIntervalBoundaries(t *testing.T) {
+	at := func(s string) time.Time {
+		tm, err := time.Parse(time.TimeOnly, s)
+		require.NoError(t, err)
+		return time.Date(2026, 11, 26, tm.Hour(), tm.Minute(), tm.Second(), 0, time.UTC)
+	}
+	nextDay := func(s string) time.Time { return at(s).AddDate(0, 0, 1) }
+	day, fiveMinutes := 24*time.Hour, 5*time.Minute
+
+	for _, tt := range []struct {
+		name                string
+		start, prev, now    time.Time
+		interval, heartbeat time.Duration
+		empty, due          bool
+	}{
+		{"sessions during the day wait for midnight",
+			at("00:00:04"), at("14:23:00"), at("14:23:10"), day, day, false, false},
+		{"the first tick after midnight seals the day",
+			at("00:00:04"), at("23:59:58"), nextDay("00:00:08"), day, day, false, true},
+		{"later ticks of the new day do not",
+			nextDay("00:00:08"), nextDay("00:00:08"), nextDay("00:00:18"), day, day, false, false},
+		{"a day without sessions is sealed at midnight too",
+			at("00:00:04"), at("23:59:58"), nextDay("00:00:08"), day, day, true, true},
+		{"the first day of a run ends at midnight",
+			at("14:23:17"), at("23:59:57"), nextDay("00:00:07"), day, day, true, true},
+		{"an hour ends at the whole hour",
+			at("10:00:02"), at("10:59:55"), at("11:00:05"), time.Hour, time.Hour, false, true},
+		{"a quiet interval stays open within the heartbeat",
+			at("10:00:03"), at("10:29:58"), at("10:30:08"), fiveMinutes, time.Hour, true, false},
+		{"a session after a quiet stretch waits for the next boundary",
+			at("10:00:03"), at("10:32:03"), at("10:32:13"), fiveMinutes, time.Hour, false, false},
+		{"and is sealed at it",
+			at("10:00:03"), at("10:34:58"), at("10:35:08"), fiveMinutes, time.Hour, false, true},
+		{"a quiet interval stays open while the next boundary is within the heartbeat",
+			at("10:00:03"), at("10:54:58"), at("10:55:08"), fiveMinutes, time.Hour, true, false},
+		{"and is sealed before it would outgrow the heartbeat",
+			at("10:00:03"), at("10:59:58"), at("11:00:08"), fiveMinutes, time.Hour, true, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.due, usage.SealDue(tt.start, tt.prev, tt.now, tt.interval, tt.heartbeat, tt.empty))
+		})
+	}
 }
