@@ -176,6 +176,12 @@ func TestMemoryDBUserInfo(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: false}}, info.Emails)
 
+	// Adding an address that is already linked changes nothing.
+	assert.NoError(t, db.addEmail(context.Background(), 17, "test@example.com"))
+	info, err = db.user(context.Background(), 17)
+	assert.NoError(t, err)
+	assert.Equal(t, []userEmail{{Email: "test@example.com", DeleteInProgress: false}}, info.Emails)
+
 	err = db.addEmail(context.Background(), 20, "bla@bla.com")
 	assert.Error(t, err)
 
