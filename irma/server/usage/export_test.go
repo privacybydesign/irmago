@@ -18,3 +18,6 @@ func SetHeartbeat(t testing.TB, d time.Duration) {
 	defaultHeartbeat = d
 	t.Cleanup(func() { defaultHeartbeat = old })
 }
+
+// SealDue is sealDue, for testing when the open interval is sealed.
+var SealDue = sealDue
