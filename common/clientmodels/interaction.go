@@ -27,6 +27,25 @@ type SessionPermissionInteractionPayload struct {
 	Granted bool `json:"granted"`
 	// The list of discons for each outer con
 	DisclosureChoices []DisclosureDisconSelection `json:"disclosure_choices"`
+	// The answer per slot: one entry per DisclosurePlan.Choices, in the same
+	// order. Replaces DisclosureChoices.
+	Choices []ChoiceSelection `json:"choices"`
+}
+
+// ChoiceSelection answers one DisclosureChoice.
+type ChoiceSelection struct {
+	// Index into the choice's Options; -1 shares nothing (only valid for an
+	// optional choice).
+	Option int `json:"option"`
+	// One per slot of the chosen option, in the same order.
+	Slots []SlotSelection `json:"slots"`
+}
+
+// SlotSelection names the card(s) shared for one DisclosureSlot.
+type SlotSelection struct {
+	SlotId string `json:"slot_id"`
+	// One credential, or one or more when the slot is Multiple.
+	Credentials []SelectedCredential `json:"credentials"`
 }
 
 // SelectedCredential is a reference to a credential the user has picked for disclosure.

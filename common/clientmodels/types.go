@@ -195,8 +195,14 @@ type Attribute struct {
 	// Nil for section header attributes and unfilled requested attributes.
 	Value *AttributeValue `json:"value,omitempty"`
 
-	// The value that a verifier requested for this attribute (if any).
+	// The value that a verifier requested for this attribute (if any). The
+	// first of RequestedValues; kept until no caller reads it.
 	RequestedValue *AttributeValue `json:"requested_value,omitempty"`
+
+	// Every value the verifier allows for this attribute, in request order
+	// (DCQL `values`; one for an IRMA required value). Empty when any value
+	// will do.
+	RequestedValues []AttributeValue `json:"requested_values,omitempty"`
 
 	// IntentToRetain reports whether the verifier declared it will retain this
 	// value beyond the transaction (the OpenID4VP mso_mdoc claims parameter of
@@ -471,7 +477,28 @@ type SelectableCredentialInstance struct {
 	// (ShouldBeSingleton): issuing a new one replaces the old one. False for
 	// types without a scheme entry.
 	IsSingleton bool `json:"is_singleton"`
+
+	// Whether this card can be shared for this request, as irmago decides it
+	// (an IRMA request may accept expired cards, and revocation only counts
+	// when a non-revocation proof is asked). Frontends read this rather than
+	// deriving it from ExpiryDate or Revoked.
+	Usable bool `json:"usable"`
+	// Why the card cannot be shared; empty when Usable.
+	UnusableReason UnusableReason `json:"unusable_reason"`
 }
+
+// UnusableReason says why a candidate cannot be shared for a request.
+type UnusableReason string
+
+const (
+	UnusableReason_None    UnusableReason = ""
+	UnusableReason_Revoked UnusableReason = "revoked"
+	UnusableReason_Expired UnusableReason = "expired"
+	UnusableReason_UsedUp  UnusableReason = "used_up"
+	// IRMA: the request asks a non-revocation proof for this type and the card
+	// was issued without revocation support, so it cannot give one.
+	UnusableReason_NotRevocable UnusableReason = "not_revocable"
+)
 
 // NewTranslatedString returns a TranslatedString containing the specified string for each supported language,
 // or nil when attr is nil.

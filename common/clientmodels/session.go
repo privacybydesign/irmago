@@ -136,6 +136,54 @@ type DisclosurePlan struct {
 	IssueDuringDisclosure *IssueDuringDisclosure `json:"issue_during_disclosure"`
 	// What the user can pick for disclosure. This should never be nil.
 	DisclosureChoicesOverview []DisclosurePickOne `json:"disclosure_choices_overview"`
+
+	// The request as choices → options → slots → candidates: one choice per
+	// credential set (DCQL), per query without sets (DCQL) or per discon (IRMA),
+	// in the order of the request. Never nil once a plan is built.
+	//
+	// It replaces DisclosureChoicesOverview and IssueDuringDisclosure: what is
+	// still missing follows from the slots without a usable candidate.
+	Choices []DisclosureChoice `json:"choices"`
+	// Ids of the credential types issued since this request was first shown.
+	IssuedCredentialIds map[string]struct{} `json:"issued_credential_ids"`
+	// Set when a card was issued for this request but does not satisfy it.
+	WrongCredentialIssued *Credential `json:"wrong_credential_issued"`
+}
+
+// DisclosureChoice is one thing the requestor wants answered: an IRMA discon,
+// a DCQL credential set, or a single DCQL query when there are no sets.
+type DisclosureChoice struct {
+	// The user may answer this choice with nothing (a set with required false,
+	// or an IRMA discon holding an empty con; the empty con is not an option).
+	Optional bool `json:"optional"`
+	// The ways to answer this choice; exactly one of them is shared.
+	Options []DisclosureOption `json:"options"`
+}
+
+// DisclosureOption is one way to answer a choice: one entry of a DCQL set's
+// options, or one non-empty IRMA con. All its slots are shared together.
+type DisclosureOption struct {
+	Slots []DisclosureSlot `json:"slots"`
+}
+
+// DisclosureSlot is one credential an option needs: a DCQL credential query,
+// or one credential type of an IRMA con.
+type DisclosureSlot struct {
+	// DCQL: the query id, sent back as-is; the same query in two options or
+	// sets is one slot with one selection. IRMA: "{discon index}:{credential
+	// type id}", so the same type in two discons is two independent slots.
+	Id string `json:"id"`
+	// DCQL `multiple`: the slot takes one or more cards. Always false for IRMA.
+	Multiple bool `json:"multiple"`
+	// Cards in the app that fit, best first (SortCandidates), each with only the
+	// attributes it would share (none when only the card itself is asked for).
+	// A card that fits but cannot be used now is included with Usable false; a
+	// card whose value is not one of the allowed values is not a candidate.
+	Candidates []*SelectableCredentialInstance `json:"candidates"`
+	// What can be added for this slot, with the requested values on its
+	// attributes. A descriptor without an IssueURL says what is asked for while
+	// nothing can be added. Empty when there is nothing to show.
+	Obtainable []*CredentialDescriptor `json:"obtainable"`
 }
 
 // DisclosurePickOne is a disjunction where the user needs to pick one or more bundles.

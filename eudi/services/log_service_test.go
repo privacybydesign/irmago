@@ -513,6 +513,9 @@ func TestDecodeStoredAttributes_RoundTripsEveryAttributeField(t *testing.T) {
 		Description:    &description,
 		Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &value},
 		RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &requested},
+		RequestedValues: []clientmodels.AttributeValue{
+			{Type: clientmodels.AttributeType_String, String: &requested},
+		},
 		IntentToRetain: &intentToRetain,
 		SvgId:          "email",
 	}
