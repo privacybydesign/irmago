@@ -616,6 +616,7 @@ func createDisclosurePlan(
 	irmaConfig *irma.Configuration,
 	credentials []*clientmodels.Credential,
 	candidates [][]irmaclient.DisclosureCandidates,
+	slots []irmaclient.DisconSlots,
 	preExistingCredentialHashes map[string]struct{},
 	locale string,
 ) (*clientmodels.DisclosurePlan, error) {
@@ -659,6 +660,21 @@ func createDisclosurePlan(
 		return nil, fmt.Errorf("failed to create disclosure choices overview: %w", err)
 	}
 	newPlan.DisclosureChoicesOverview = disclosureChoices
+
+	// The same request as choices, options and slots, which replace the
+	// pick-ones above; the issuance tracking moves onto the plan with them.
+	choices, err := createIrmaChoices(irmaConfig, credentials, slots, locale)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create disclosure choices: %w", err)
+	}
+	newPlan.Choices = choices
+	newPlan.IssuedCredentialIds = map[string]struct{}{}
+	if issuance := newPlan.IssueDuringDisclosure; issuance != nil {
+		for id := range issuance.IssuedCredentialIds {
+			newPlan.IssuedCredentialIds[id] = struct{}{}
+		}
+		newPlan.WrongCredentialIssued = issuance.WrongCredentialIssued
+	}
 	return newPlan, nil
 }
 

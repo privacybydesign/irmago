@@ -103,7 +103,7 @@ func (a *irmaSessionAdapter) RequestIssuancePermission(
 		s.State.DisclosurePlan = nil
 	} else {
 		s.snapshotPreExistingCredentials(credentials)
-		newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, irmaConfig, credentials, candidates, s.preExistingCredentialHashes, s.client.locale())
+		newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, irmaConfig, credentials, candidates, s.client.irmaClient.SlotCandidates(request), s.preExistingCredentialHashes, s.client.locale())
 		if err != nil {
 			s.error(err)
 			return
@@ -150,7 +150,7 @@ func (a *irmaSessionAdapter) RequestVerificationPermission(
 	}
 
 	s.snapshotPreExistingCredentials(creds)
-	newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, creds, candidates, s.preExistingCredentialHashes, s.client.locale())
+	newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, creds, candidates, s.client.irmaClient.SlotCandidates(request), s.preExistingCredentialHashes, s.client.locale())
 	if err != nil {
 		s.error(err)
 		return
@@ -183,7 +183,7 @@ func (a *irmaSessionAdapter) RequestSignaturePermission(
 	}
 
 	s.snapshotPreExistingCredentials(creds)
-	newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, creds, candidates, s.preExistingCredentialHashes, s.client.locale())
+	newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, creds, candidates, s.client.irmaClient.SlotCandidates(request), s.preExistingCredentialHashes, s.client.locale())
 	if err != nil {
 		s.error(err)
 		return
