@@ -596,11 +596,12 @@ func filterCredentialToMismatchedAttributes(cred *clientmodels.Credential, reque
 		)
 		if !satisfied {
 			filtered = append(filtered, clientmodels.Attribute{
-				ClaimPath:      attr.ClaimPath,
-				DisplayName:    attr.DisplayName,
-				Description:    attr.Description,
-				Value:          attr.Value,
-				RequestedValue: req.RequestedValue,
+				ClaimPath:       attr.ClaimPath,
+				DisplayName:     attr.DisplayName,
+				Description:     attr.Description,
+				Value:           attr.Value,
+				RequestedValue:  req.RequestedValue,
+				RequestedValues: req.RequestedValues,
 			})
 		}
 	}

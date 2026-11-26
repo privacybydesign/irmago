@@ -114,6 +114,11 @@ func (h *DcqlHandler) FindCandidates(query DcqlQuery) (*DcqlResult, error) {
 // previousPlan is used to track issuance-during-disclosure state across refreshes.
 // preExistingHashes tracks which credentials existed at session start.
 //
+// The plan carries the request twice while the app moves over: as Choices
+// (options and slots, see buildChoices) and as the older pick-one lists, which
+// are built from the usable and revoked candidates only (legacyQueryResults)
+// and still refuse an option naming several queries.
+//
 // The second return value runs parallel to the plan's DisclosureChoicesOverview,
 // one entry per pick-one, naming the query each of that pick-one's candidates
 // answers. It is built here rather than in FindCandidates because this is what
@@ -127,10 +132,34 @@ func (h *DcqlHandler) BuildDisclosurePlan(
 	previousPlan *clientmodels.DisclosurePlan,
 	preExistingHashes map[string]struct{},
 ) (*clientmodels.DisclosurePlan, []ChoiceQueryIds, error) {
-	if query.CredentialSets != nil {
-		return buildPlanFromCredentialSets(result.QueryResults, query.CredentialSets, previousPlan, preExistingHashes)
+	legacyResults, err := legacyQueryResults(result.QueryResults)
+	if err != nil {
+		return nil, nil, err
 	}
-	return buildPlanFromCredentialQueries(query.Credentials, result.QueryResults, previousPlan, preExistingHashes)
+	var plan *clientmodels.DisclosurePlan
+	var queryIds []ChoiceQueryIds
+	if query.CredentialSets != nil {
+		plan, queryIds, err = buildPlanFromCredentialSets(legacyResults, query.CredentialSets, previousPlan, preExistingHashes)
+	} else {
+		plan, queryIds, err = buildPlanFromCredentialQueries(query.Credentials, legacyResults, previousPlan, preExistingHashes)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+
+	choices, err := buildChoices(query, result.QueryResults)
+	if err != nil {
+		return nil, nil, err
+	}
+	plan.Choices = choices
+	plan.IssuedCredentialIds = map[string]struct{}{}
+	if issuance := plan.IssueDuringDisclosure; issuance != nil {
+		for id := range issuance.IssuedCredentialIds {
+			plan.IssuedCredentialIds[id] = struct{}{}
+		}
+		plan.WrongCredentialIssued = issuance.WrongCredentialIssued
+	}
+	return plan, queryIds, nil
 }
 
 // PrepareDisclosure prepares the selected credentials for the VP token by delegating

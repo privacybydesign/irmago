@@ -43,8 +43,26 @@ func checkAttributeList(issues *[]string, path string, given, requested []Attrib
 			continue
 		}
 
-		checkValueSatisfies(issues, p, *g.Value, *r.RequestedValue)
+		checkRequestedValues(issues, p, *g.Value, r)
 	}
+}
+
+// checkRequestedValues checks a given value against what was requested for
+// it: any one of RequestedValues when there are several allowed values
+// (DCQL `values`), else RequestedValue.
+func checkRequestedValues(issues *[]string, path string, given AttributeValue, requested Attribute) {
+	if len(requested.RequestedValues) <= 1 {
+		checkValueSatisfies(issues, path, given, *requested.RequestedValue)
+		return
+	}
+	for _, want := range requested.RequestedValues {
+		var valueIssues []string
+		checkValueSatisfies(&valueIssues, path, given, want)
+		if len(valueIssues) == 0 {
+			return
+		}
+	}
+	*issues = append(*issues, fmt.Sprintf("value at %s is none of the %d requested values", path, len(requested.RequestedValues)))
 }
 
 func checkValueSatisfies(issues *[]string, path string, given AttributeValue, req AttributeValue) {

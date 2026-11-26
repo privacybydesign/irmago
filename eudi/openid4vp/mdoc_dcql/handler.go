@@ -8,6 +8,7 @@ import (
 	"crypto/ecdsa"
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -155,15 +156,14 @@ func (h *Handler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQu
 
 	locale := h.currentLocale.Get()
 	now := time.Now()
-	hasExhaustedBatch := false
 	for _, batch := range batches {
-		if !services.MdocBatchIsValid(batch, now) {
+		// Not valid yet: no card the user can use or renew, so left out. An
+		// expired or used-up one is offered as an unusable candidate
+		// (dcql.SetUsable), so the user sees it and can add it again.
+		if now.Before(batch.ValidFrom) {
 			continue
 		}
-		if batch.BatchSize > 1 && batch.RemainingCount == 0 {
-			hasExhaustedBatch = true
-			continue
-		}
+		usedUp := batch.BatchSize > 1 && batch.RemainingCount == 0
 
 		claims := selectClaims(query, batch.Namespaces)
 		if claims == nil {
@@ -172,10 +172,14 @@ func (h *Handler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQu
 
 		// Revocation is per instance, like in sdjwt_dcql: each copy in a
 		// batch carries its own status list entry. The copy asked about is the
-		// one PrepareDisclosure will present.
-		instance, err := h.store.GetUnusedInstance(batch.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
+		// one PrepareDisclosure will present; a used-up batch has none left.
+		revoked, revocationSupported := false, false
+		if !usedUp {
+			instance, err := h.store.GetUnusedInstance(batch.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
+			}
+			revoked, revocationSupported = h.isRevoked(instance), instance.StatusListURI != nil
 		}
 
 		signedAt := batch.SignedAt.Unix()
@@ -190,22 +194,19 @@ func (h *Handler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQu
 			ExpiryDate:                  batchExpiryUnix(batch),
 			IssuanceDate:                &signedAt,
 			Image:                       h.credentialImage(batch, locale),
-			Revoked:                     h.isRevoked(instance),
-			RevocationSupported:         instance.StatusListURI != nil,
+			Revoked:                     revoked,
+			RevocationSupported:         revocationSupported,
 		}
+		dcql.SetUsable(&candidate, now.After(batch.ValidUntil))
 
 		result.OwnedCandidates = append(result.OwnedCandidates, &candidate)
 	}
 
-	if hasExhaustedBatch && len(result.OwnedCandidates) == 0 {
-		return nil, fmt.Errorf("all credential instances for doctype %q are exhausted", docType)
-	}
-
-	// When nothing is owned, emit a URL-less descriptor from the query itself so the
+	// When nothing usable is owned, emit a URL-less descriptor from the query itself so the
 	// user sees what's being requested. Unlike sdjwt_dcql there's no standardized
 	// online discovery document for an mdoc doctype to enrich this with, so it's built
 	// purely from the DCQL query's own claim paths.
-	if len(result.OwnedCandidates) == 0 {
+	if !slices.ContainsFunc(result.OwnedCandidates, func(c *clientmodels.SelectableCredentialInstance) bool { return c.Usable }) {
 		result.ObtainableDescriptors = append(result.ObtainableDescriptors, unobtainableDescriptor(docType, query))
 	}
 
@@ -565,6 +566,7 @@ func stampRequestFacts(attrs []clientmodels.Attribute, claims []dcql.Claim, with
 		attrs[i].IntentToRetain = &intentToRetain
 		if withRequested && len(claim.Values) > 0 && attrs[i].Value != nil {
 			attrs[i].RequestedValue = attrs[i].Value
+			attrs[i].RequestedValues = dcql.RequestedValues(claim)
 		}
 	}
 	return attrs
@@ -586,14 +588,19 @@ func unobtainableDescriptor(docType string, query dcql.CredentialQuery) *clientm
 		if err != nil {
 			continue
 		}
+		// The verifier's intent to retain is known before the card is, and
+		// is shown with what is asked, as on a candidate.
+		intentToRetain := claim.IntentToRetain
 		attr := clientmodels.Attribute{
-			ClaimPath:   []any{namespace, elementIdentifier},
-			DisplayName: unobtainableClaimName(elementIdentifier),
+			ClaimPath:      []any{namespace, elementIdentifier},
+			DisplayName:    unobtainableClaimName(elementIdentifier),
+			IntentToRetain: &intentToRetain,
 		}
-		// Only the first of several acceptable values is shown, as for the other
-		// formats.
-		if len(claim.Values) > 0 {
-			attr.RequestedValue = clientmodels.NewAttributeValue(claim.Values[0])
+		// Every acceptable value, in request order; RequestedValue is the
+		// first of them, as for the other formats.
+		if values := dcql.RequestedValues(claim); len(values) > 0 {
+			attr.RequestedValue = &values[0]
+			attr.RequestedValues = values
 		}
 		attrs = append(attrs, attr)
 	}

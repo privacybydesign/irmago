@@ -57,6 +57,11 @@ func (q DcqlQuery) Validate() error {
 			return fmt.Errorf("credential set has an empty options array, so it can never be satisfied")
 		}
 		for _, option := range set.Options {
+			// An option is a list of query ids answered together; an empty one
+			// asks for nothing and cannot be told apart from a malformed set.
+			if len(option) == 0 {
+				return fmt.Errorf("credential set has an empty option, which names no credential query")
+			}
 			for _, id := range option {
 				if _, known := seen[id]; !known {
 					return fmt.Errorf("credential set references unknown credential query id %q", id)

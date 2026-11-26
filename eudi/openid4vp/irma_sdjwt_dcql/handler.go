@@ -139,6 +139,8 @@ type dcqlClaimMatch struct {
 	attributeName  string
 	attributeValue string
 	hasValue       bool
+	// The claim's allowed values, in request order.
+	requestedValues []clientmodels.AttributeValue
 }
 
 // dcqlClaimKey returns the claim's ID if set, otherwise the serialized claim path.
@@ -172,10 +174,11 @@ func getClaimMatchesForQuery(metadata irmaclient.SdJwtVcBatchMetadata, claims []
 				requestedValueString, _ := requestedValueAny.(string)
 				if attributeValueString == requestedValueString {
 					result[key] = dcqlClaimMatch{
-						claimKey:       key,
-						attributeName:  attrName,
-						attributeValue: attributeValueString,
-						hasValue:       true,
+						claimKey:        key,
+						attributeName:   attrName,
+						attributeValue:  attributeValueString,
+						hasValue:        true,
+						requestedValues: dcql.RequestedValues(claim),
 					}
 					break
 				}
@@ -213,7 +216,10 @@ func filterClaimMatchesForQuery(query dcql.CredentialQuery, matches map[string]d
 		return nil
 	}
 
-	var result []dcqlClaimMatch
+	// OpenID4VP § 6.4.1: without claims the verifier asks for the credential
+	// and no selectively disclosable claims, so every credential matches with
+	// nothing to disclose. Empty rather than nil, which means "no match".
+	result := []dcqlClaimMatch{}
 	for _, claim := range query.Claims {
 		match, ok := matches[dcqlClaimKey(claim)]
 		if !ok {
@@ -292,6 +298,8 @@ func (h *Handler) buildSelectableInstance(candidate sdJwtVcCredCandidate, query 
 		x := time.Time(*metadata.Expires).Unix()
 		model.ExpiryDate = &x
 	}
+	// Revocation is not tracked for these credentials, so Revoked stays false.
+	dcql.SetUsable(&model, dcql.ExpiredAt(model.ExpiryDate, time.Now()))
 
 	return &model, nil
 }
@@ -349,6 +357,7 @@ func (h *Handler) buildMatchedAttributes(
 				Type:   clientmodels.AttributeType_String,
 				String: &match.attributeValue,
 			}
+			attr.RequestedValues = match.requestedValues
 		}
 
 		attributes = append(attributes, attr)
@@ -463,6 +472,7 @@ func (h *Handler) buildCredentialDescriptor(credTypeId irma.CredentialTypeIdenti
 			}
 		}
 		attr.RequestedValue = requestedValue
+		attr.RequestedValues = dcql.RequestedValues(claim)
 
 		attributes = append(attributes, attr)
 	}

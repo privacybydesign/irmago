@@ -197,20 +197,20 @@ func (s *vcdmBatchStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 	return s.store.MarkInstanceUsed(instanceID)
 }
 
-// isBatchValid returns false if the credential batch is expired or not yet
-// valid. Unix epoch (time.Unix(0,0)) is treated as "not set" because the
-// storage layer has marked ExpiresAt/NotBefore as Valid even when the
-// credential states no expiry or not-before of its own, storing 0 as the
-// timestamp.
-func isBatchValid(batch *Batch, now time.Time) bool {
+// isBatchExpired reports whether the batch's validity ended before now.
+// Unix epoch (time.Unix(0,0)) is treated as "not set" because the storage
+// layer has marked ExpiresAt/NotBefore as Valid even when the credential
+// states no expiry or not-before of its own, storing 0 as the timestamp.
+func isBatchExpired(batch *Batch, now time.Time) bool {
 	epoch := time.Unix(0, 0)
-	if batch.ExpiresAt.Valid && !batch.ExpiresAt.V.Equal(epoch) && now.After(batch.ExpiresAt.V) {
-		return false
-	}
-	if batch.NotBefore.Valid && !batch.NotBefore.V.Equal(epoch) && now.Before(batch.NotBefore.V) {
-		return false
-	}
-	return true
+	return batch.ExpiresAt.Valid && !batch.ExpiresAt.V.Equal(epoch) && now.After(batch.ExpiresAt.V)
+}
+
+// isBatchNotYetValid reports whether the batch's validity starts after now,
+// with the same reading of the epoch as isBatchExpired.
+func isBatchNotYetValid(batch *Batch, now time.Time) bool {
+	epoch := time.Unix(0, 0)
+	return batch.NotBefore.Valid && !batch.NotBefore.V.Equal(epoch) && now.Before(batch.NotBefore.V)
 }
 
 // expiryUnix returns the batch's expiry as a unix timestamp, or nil if the

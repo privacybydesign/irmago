@@ -59,7 +59,9 @@ func parseDcqlQuery(t *testing.T, raw string) dcql.CredentialQuery {
 // Expired / not-yet-valid credential filtering
 // ========================================================================
 
-func TestFindCandidates_ExpiredCredentialExcluded(t *testing.T) {
+// An expired card is a candidate the user cannot share: the plan shows it as
+// unusable and offers to add it again, rather than hiding that the user has it.
+func TestFindCandidates_ExpiredCredentialIsUnusable(t *testing.T) {
 	h, store := newTestHandler(t)
 
 	batch := newTestBatch("hash-expired", "https://example.com/EmailCredential", map[string]any{
@@ -77,7 +79,9 @@ func TestFindCandidates_ExpiredCredentialExcluded(t *testing.T) {
 
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
-	assert.Empty(t, result.OwnedCandidates, "expired credential should not appear as candidate")
+	require.Len(t, result.OwnedCandidates, 1, "an expired credential is offered as an unusable candidate")
+	assert.False(t, result.OwnedCandidates[0].Usable)
+	assert.Equal(t, clientmodels.UnusableReason_Expired, result.OwnedCandidates[0].UnusableReason)
 }
 
 func TestFindCandidates_NotYetValidCredentialExcluded(t *testing.T) {
@@ -286,8 +290,15 @@ func TestFindCandidates_MixedValidAndExpired(t *testing.T) {
 
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
-	require.Len(t, result.OwnedCandidates, 1, "only the valid credential should be returned")
-	assert.Equal(t, "hash-mix-valid", result.OwnedCandidates[0].Hash)
+	require.Len(t, result.OwnedCandidates, 2, "both credentials are candidates")
+	byHash := map[string]*clientmodels.SelectableCredentialInstance{}
+	for _, c := range result.OwnedCandidates {
+		byHash[c.Hash] = c
+	}
+	assert.True(t, byHash["hash-mix-valid"].Usable, "only the valid credential is usable")
+	assert.Equal(t, clientmodels.UnusableReason_None, byHash["hash-mix-valid"].UnusableReason)
+	assert.False(t, byHash["hash-mix-expired"].Usable)
+	assert.Equal(t, clientmodels.UnusableReason_Expired, byHash["hash-mix-expired"].UnusableReason)
 }
 
 // ========================================================================

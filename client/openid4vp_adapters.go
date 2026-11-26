@@ -63,6 +63,7 @@ func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 	// Detect WrongCredentialIssued if issuance-during-disclosure is active
 	if disclosurePlan.IssueDuringDisclosure != nil {
 		detectWrongCredentialIssued(a.session, disclosurePlan)
+		disclosurePlan.WrongCredentialIssued = disclosurePlan.IssueDuringDisclosure.WrongCredentialIssued
 	}
 
 	a.session.State.DisclosurePlan = disclosurePlan
@@ -183,11 +184,12 @@ func checkWrongCredential(cred *clientmodels.Credential, option *clientmodels.Cr
 		satisfied, _ := SatisfiesRequestedAttributes([]clientmodels.Attribute{attr}, []clientmodels.Attribute{*req})
 		if !satisfied {
 			mismatched = append(mismatched, clientmodels.Attribute{
-				ClaimPath:      attr.ClaimPath,
-				DisplayName:    attr.DisplayName,
-				Description:    attr.Description,
-				Value:          attr.Value,
-				RequestedValue: req.RequestedValue,
+				ClaimPath:       attr.ClaimPath,
+				DisplayName:     attr.DisplayName,
+				Description:     attr.Description,
+				Value:           attr.Value,
+				RequestedValue:  req.RequestedValue,
+				RequestedValues: req.RequestedValues,
 			})
 		}
 	}

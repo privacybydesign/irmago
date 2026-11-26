@@ -244,8 +244,8 @@ func TestFindCandidatesSkipsCredentialMissingRequestedClaim(t *testing.T) {
 // TestPrepareDisclosureBurnsOneInstancePerPresentation covers the single-use
 // half of the batch model: each presentation consumes one instance and
 // decrements the batch's remaining count, and once they are gone
-// FindCandidates reports the batch as exhausted rather than silently offering
-// a credential that cannot be presented.
+// FindCandidates offers the batch as an unusable candidate (used up) rather
+// than as a credential that can be presented.
 func TestPrepareDisclosureBurnsOneInstancePerPresentation(t *testing.T) {
 	env := newTestEnvWithBatchSize(t, 2)
 
@@ -275,8 +275,20 @@ func TestPrepareDisclosureBurnsOneInstancePerPresentation(t *testing.T) {
 		}
 	}
 
-	_, err = env.handler.FindCandidates(query)
-	require.Error(t, err, "an exhausted batch must not be offered as a candidate")
+	result, err = env.handler.FindCandidates(query)
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+	require.False(t, result.OwnedCandidates[0].Usable, "an exhausted batch must not be presentable")
+	require.Equal(t, clientmodels.UnusableReason_UsedUp, result.OwnedCandidates[0].UnusableReason)
+
+	// The pick-one plan the app reads until the slots replace it still refuses
+	// the request, as FindCandidates used to.
+	_, _, err = dcql.NewDcqlHandler(nil).BuildDisclosurePlan(
+		dcql.DcqlQuery{Credentials: []dcql.CredentialQuery{query}},
+		&dcql.DcqlResult{QueryResults: map[string]*dcql.CredentialQueryResult{query.Id: result}},
+		nil, nil,
+	)
+	require.Error(t, err)
 	require.Contains(t, err.Error(), "exhausted")
 }
 
@@ -938,17 +950,15 @@ func newTestStorage(t *testing.T) storage.Storage {
 	return s
 }
 
-// TestFindCandidatesSkipsExpiredBatch pins that a credential whose validity
-// window has closed is not offered for disclosure.
+// TestFindCandidatesMarksExpiredBatchUnusable pins that a credential whose
+// validity window has closed is offered as a candidate the user cannot share.
 //
-// The wallet filters on the batch validity window before any claim matching, so
-// an expired credential is invisible to the verifier rather than refused at one:
-// nothing in the DeviceResponse would say why, and a verifier that checks
-// ValidityInfo itself would reject a presentation the user was told they could
-// make. What the user does see is the request -- the query is still described as
-// obtainable, so the permission screen can say what was asked for and that they
-// have nothing valid to answer it with.
-func TestFindCandidatesSkipsExpiredBatch(t *testing.T) {
+// A verifier that checks ValidityInfo itself would reject a presentation of it,
+// so it must never be presentable; but hiding it would leave the user unable to
+// see they hold the card and only need to add it again. So it is a candidate
+// with usable false and reason expired, and the query is still described as
+// obtainable, so the permission screen can say what was asked for.
+func TestFindCandidatesMarksExpiredBatchUnusable(t *testing.T) {
 	expired := time.Now().Add(-time.Hour)
 	env := newTestEnvWithExpiry(t, 1, &expired)
 
@@ -960,8 +970,10 @@ func TestFindCandidatesSkipsExpiredBatch(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Empty(t, result.OwnedCandidates,
-		"a credential whose validity window has passed must not be offered")
+	require.Len(t, result.OwnedCandidates, 1,
+		"a credential whose validity window has passed is still a candidate")
+	require.False(t, result.OwnedCandidates[0].Usable, "but one that cannot be shared")
+	require.Equal(t, clientmodels.UnusableReason_Expired, result.OwnedCandidates[0].UnusableReason)
 	require.Len(t, result.ObtainableDescriptors, 1,
 		"with nothing valid to offer, the request itself must still be described")
 }

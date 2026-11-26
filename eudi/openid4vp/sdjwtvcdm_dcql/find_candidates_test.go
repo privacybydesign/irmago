@@ -539,10 +539,13 @@ func TestVcdmFindCandidates_ValidityWindow(t *testing.T) {
 		expiresAt time.Time
 		notBefore time.Time
 		wantMatch bool
+		// For a match: whether it can be shared now. An expired card is a
+		// candidate the user cannot share; one not valid yet is no candidate.
+		wantUsable bool
 	}{
-		{"expired", time.Now().Add(-time.Hour), time.Now().Add(-48 * time.Hour), false},
-		{"not yet valid", time.Now().Add(48 * time.Hour), time.Now().Add(time.Hour), false},
-		{"valid", time.Now().Add(24 * time.Hour), time.Now().Add(-24 * time.Hour), true},
+		{"expired", time.Now().Add(-time.Hour), time.Now().Add(-48 * time.Hour), true, false},
+		{"not yet valid", time.Now().Add(48 * time.Hour), time.Now().Add(time.Hour), false, false},
+		{"valid", time.Now().Add(24 * time.Hour), time.Now().Add(-24 * time.Hour), true, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -567,6 +570,10 @@ func TestVcdmFindCandidates_ValidityWindow(t *testing.T) {
 			require.NoError(t, err)
 			if c.wantMatch {
 				require.Len(t, result.OwnedCandidates, 1)
+				assert.Equal(t, c.wantUsable, result.OwnedCandidates[0].Usable)
+				if !c.wantUsable {
+					assert.Equal(t, clientmodels.UnusableReason_Expired, result.OwnedCandidates[0].UnusableReason)
+				}
 			} else {
 				assert.Empty(t, result.OwnedCandidates)
 			}

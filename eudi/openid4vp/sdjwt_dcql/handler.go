@@ -128,23 +128,29 @@ func (h *Engine) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQue
 	locale := h.currentLocale.Get()
 	now := time.Now()
 
-	hasExhaustedBatch := false
 	for _, batch := range batches {
-		if !isBatchValid(batch, now) {
+		// A batch that is not valid yet is no card the user can use or renew,
+		// so it is left out. An expired or used-up one is offered as an
+		// unusable candidate (dcql.SetUsable): the user sees it and can add
+		// it again.
+		if isBatchNotYetValid(batch, now) {
 			continue
 		}
-		// Skip exhausted batches: when a batch was issued with multiple instances
-		// and all have been used, the credential is no longer disclosable.
-		if batch.BatchSize > 1 && batch.RemainingCount == 0 {
-			hasExhaustedBatch = true
-			continue
-		}
+		usedUp := batch.BatchSize > 1 && batch.RemainingCount == 0
 
-		instance, err := h.batches.GetUnusedInstance(batch.ID)
-		if err != nil {
-			continue
+		// A used-up batch has no unused instance: its attributes come from the
+		// batch payload, and nothing is known about the revocation of an
+		// instance that will not be presented.
+		var rawSdJwt sdjwt.SdJwt
+		var revoked, revocationSupported bool
+		if !usedUp {
+			instance, err := h.batches.GetUnusedInstance(batch.ID)
+			if err != nil {
+				continue
+			}
+			rawSdJwt = sdjwt.SdJwt(instance.RawCredential)
+			revoked, revocationSupported = instance.Revoked, instance.RevocationSupported
 		}
-		rawSdJwt := sdjwt.SdJwt(instance.RawCredential)
 		attributes, err := parseBatchAttributes(batch, query, rawSdJwt, locale, h.profile.IsUserDataKey)
 		if err != nil {
 			continue
@@ -168,31 +174,26 @@ func (h *Engine) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQue
 			Attributes:                  attributes,
 			ExpiryDate:                  expiryUnix(batch),
 			Image:                       image,
-			Revoked:                     instance.Revoked,
-			RevocationSupported:         instance.RevocationSupported,
+			Revoked:                     revoked,
+			RevocationSupported:         revocationSupported,
 		}
 
 		if batch.IssuedAt.Valid {
 			x := batch.IssuedAt.V.Unix()
 			candidate.IssuanceDate = &x
 		}
+		dcql.SetUsable(&candidate, isBatchExpired(batch, now))
 
 		result.OwnedCandidates = append(result.OwnedCandidates, &candidate)
 	}
 
-	// If matching batches exist but all are exhausted and no usable candidates
-	// remain, return an error so the session fails instead of showing an empty
-	// disclosure plan.
-	if hasExhaustedBatch && len(result.OwnedCandidates) == 0 {
-		return nil, fmt.Errorf("all credential instances for the requested type are exhausted")
-	}
-
-	// When no usable owned candidates were emitted -- either the wallet has
-	// no batches at all OR every batch was filtered out by claim matching --
+	// When no usable owned candidates were emitted -- the wallet has no
+	// batches, every batch was filtered out by claim matching, or the ones
+	// left are expired, used up or revoked --
 	// emit one descriptor with an empty IssueURL so the user sees what is
 	// being requested instead of a stuck permission prompt. See the
 	// "missing credentials" plan.
-	if len(result.OwnedCandidates) == 0 && len(query.VctValues()) > 0 && h.vctFetcher != nil {
+	if !hasUsableCandidate(result.OwnedCandidates) && len(query.VctValues()) > 0 && h.vctFetcher != nil {
 		if descriptor := h.composeUnobtainableDescriptor(query); descriptor != nil {
 			result.ObtainableDescriptors = append(result.ObtainableDescriptors, descriptor)
 		}
@@ -210,6 +211,11 @@ func (h *Engine) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQue
 // Walks query.VctValues in order; first VCT whose type-metadata fetch succeeds
 // wins. If every VCT fetch fails, returns a URL-only descriptor for the first
 // VCT (so the user still sees what was requested).
+// hasUsableCandidate reports whether any candidate can be shared now.
+func hasUsableCandidate(candidates []*clientmodels.SelectableCredentialInstance) bool {
+	return slices.ContainsFunc(candidates, func(c *clientmodels.SelectableCredentialInstance) bool { return c.Usable })
+}
+
 func (h *Engine) composeUnobtainableDescriptor(query dcql.CredentialQuery) *clientmodels.CredentialDescriptor {
 	vctValues := query.VctValues()
 	if len(vctValues) == 0 {
@@ -327,10 +333,17 @@ func queryAttributes(query dcql.CredentialQuery, vctMeta *typemetadata.VctTypeMe
 		if len(claim.Path) == 0 {
 			continue
 		}
-		attrs = append(attrs, clientmodels.Attribute{
+		attr := clientmodels.Attribute{
 			ClaimPath:   append([]any{}, claim.Path...),
 			DisplayName: clientmodels.ResolvePtr(claimDisplayFromVct(vctMeta, claim.Path), locale),
-		})
+		}
+		// The values the verifier allows, so the user sees which card would
+		// do; RequestedValue is the first of them, as for the other formats.
+		if values := dcql.RequestedValues(claim); len(values) > 0 {
+			attr.RequestedValue = &values[0]
+			attr.RequestedValues = values
+		}
+		attrs = append(attrs, attr)
 	}
 	return attrs
 }
@@ -587,13 +600,13 @@ func collectResolvedLeavesAtPaths(resolved *sdjwt.ProcessedPayload, paths [][]an
 // SD) is empty to the verifier. Walking to leaves means each per-leaf SD
 // disclosure also gets selected by collectSelectedDisclosures.
 //
-// Returns the concrete leaf paths and the set of paths (by ClaimPathKey)
-// that carry a value constraint. The constrained set includes both the
+// Returns the concrete leaf paths and the paths (by ClaimPathKey) that carry
+// a value constraint, each with the claim's allowed values. The constrained set includes both the
 // original DCQL path and any leaves expanded under it, so RequestedValue
 // stamping works for value-constrained scalars.
-func expandClaimsToConcretePaths(claims []dcql.Claim, payload *sdjwt.ProcessedPayload) ([][]any, map[string]struct{}) {
+func expandClaimsToConcretePaths(claims []dcql.Claim, payload *sdjwt.ProcessedPayload) ([][]any, map[string][]clientmodels.AttributeValue) {
 	seenPaths := make(map[string]struct{})
-	constrained := make(map[string]struct{})
+	constrained := make(map[string][]clientmodels.AttributeValue)
 	var paths [][]any
 	for _, claim := range claims {
 		key := clientmodels.ClaimPathKey(claim.Path)
@@ -601,13 +614,13 @@ func expandClaimsToConcretePaths(claims []dcql.Claim, payload *sdjwt.ProcessedPa
 			continue
 		}
 		seenPaths[key] = struct{}{}
-		hasConstraint := len(claim.Values) > 0
+		requestedValues := dcql.RequestedValues(claim)
 		for _, cp := range expandNullPaths(claim.Path, payload) {
 			leaves := descendantLeafPaths(payload, cp)
 			for _, leaf := range leaves {
 				paths = append(paths, leaf)
-				if hasConstraint {
-					constrained[clientmodels.ClaimPathKey(leaf)] = struct{}{}
+				if requestedValues != nil {
+					constrained[clientmodels.ClaimPathKey(leaf)] = requestedValues
 				}
 			}
 		}
@@ -698,7 +711,7 @@ func walkLeafPaths(value any, prefix []any, visit func([]any)) {
 // buildPairsFromLeaves turns concrete leaf paths into pathToFlatten entries,
 // stamping hasConstraint when the leaf path had a DCQL value constraint.
 // Duplicate paths are dropped.
-func buildPairsFromLeaves(leafPaths [][]any, constrainedKeys map[string]struct{}) []pathToFlatten {
+func buildPairsFromLeaves(leafPaths [][]any, constrainedKeys map[string][]clientmodels.AttributeValue) []pathToFlatten {
 	seen := make(map[string]struct{}, len(leafPaths))
 	pairs := make([]pathToFlatten, 0, len(leafPaths))
 	for _, p := range leafPaths {
@@ -707,10 +720,11 @@ func buildPairsFromLeaves(leafPaths [][]any, constrainedKeys map[string]struct{}
 			continue
 		}
 		seen[key] = struct{}{}
-		_, hasConstraint := constrainedKeys[key]
+		requestedValues, hasConstraint := constrainedKeys[key]
 		pairs = append(pairs, pathToFlatten{
-			path:          p,
-			hasConstraint: hasConstraint,
+			path:            p,
+			hasConstraint:   hasConstraint,
+			requestedValues: requestedValues,
 		})
 	}
 	return pairs
@@ -723,6 +737,9 @@ type pathToFlatten struct {
 	// hasConstraint marks this path's leaf attributes for RequestedValue
 	// (used by the UI when the verifier specified a value constraint).
 	hasConstraint bool
+	// The allowed values of the claim this path was reached by, in request
+	// order; stamped as RequestedValues next to RequestedValue.
+	requestedValues []clientmodels.AttributeValue
 }
 
 // flattenPathsForDisplay emits attributes for a list of concrete claim paths,
@@ -777,6 +794,7 @@ func flattenPathsForDisplay(
 			for i := prevLen; i < len(attrs); i++ {
 				if attrs[i].Value != nil {
 					attrs[i].RequestedValue = attrs[i].Value
+					attrs[i].RequestedValues = p.requestedValues
 				}
 			}
 		}
