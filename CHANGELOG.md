@@ -5,6 +5,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- The disclosure plan describes a request as choices, options, slots and candidates, for IRMA and for DCQL alike ([#804](https://github.com/privacybydesign/irmago/issues/804)). See `docs/disclosure-plan.md`.
+  - A choice is an IRMA discon, a DCQL credential set, or a single DCQL query when there are no sets; it can be optional. An option is an IRMA con or one entry of a set's `options`, and all its slots are shared together. A slot is one credential the option needs: a DCQL query (its id is the query id) or one credential type of an IRMA con (its id is `{discon index}:{credential type id}`).
+  - A slot lists its candidates, the cards in the wallet that fit, best first: usable before unusable, then most uses left, latest expiry, latest issuance, and hash. It also lists what can be added for it.
+  - A credential set option that names several queries is supported: each query is a slot of the option ([#803](https://github.com/privacybydesign/irmago/issues/803)). Two queries of one type in one option are two slots, so the user says which card answers which.
+  - A query with `multiple` is a slot that takes one or more cards, also inside a credential set.
+- `SelectableCredentialInstance` has `usable` and `unusable_reason` (`revoked`, `expired`, `used_up`, `not_revocable`): irmago's verdict on a card for this request. An IRMA request that accepts expired cards of a type (`skipExpiryCheck`) makes them usable, and an IRMA card without revocation support is unusable only when the request asks for a non-revocation proof.
+- `Attribute` has `requested_values`: every value a DCQL claim allows, in request order and keeping its type, or the one value an IRMA request requires. `requested_value` stays.
+- The permission answer is given per slot (`choices`: per choice the chosen option, or -1 to share nothing for an optional choice, and per slot its card or cards). An answer that does not fit the plan last sent ends the session with an error: a card that is not a usable candidate of its slot, a required choice left out, two different cards for one query named in two credential sets, or a card chosen for more slots than it has uses left.
+- A chained IRMA session (`nextSession`) first ends as succeeded with `next_session_pending`: the disclosure is sent, logged and closed. The follow-up starts when the app sends `continue_next_session`, and is dropped when the app dismisses the session, which then stays succeeded.
+
+### Changed
+- Expired and used-up cards are offered as unusable candidates instead of being left out, so the user sees that they hold the card and can add it again. A query whose only card is used up no longer fails the request.
+- A revoked SD-JWT VC, SD-JWT VCDM or mso_mdoc card is offered as an unusable candidate and can no longer be shared. It used to be shareable, and logged as revoked.
+- One card may answer two slots. Each slot gets its own presentation; for a batch, each presentation takes an instance of its own, and a card with fewer uses left than slots is refused before any instance is spent.
+- A query without `claims` gives candidates for every IRMA credential over SD-JWT of the type, which were left out. For SD-JWT VC the candidate shows the claims that are always disclosed. An mso_mdoc query without `claims` is still refused.
+- The descriptor of an mso_mdoc that can be added carries `intent_to_retain`, as candidates do.
+- The obtainable descriptor of an IRMA slot lists only the attributes the request asks of the type.
+- `issued_credential_ids` and `wrong_credential_issued` are worked out from the slots, the same way for IRMA and OpenID4VP. `wrong_credential_issued` is a card added during the request, of a type a required choice that cannot be answered yet offers, that does not hold an allowed value; a card holding any of a claim's allowed values is no longer reported as wrong.
+- A DCQL `credential_sets` entry with an empty option is refused with the request.
+
+### Removed
+- `DisclosurePlan.disclosure_choices_overview` and `issue_during_disclosure`, with `DisclosurePickOne`, `DisclosureBundle`, `ObtainableBundle`, `IssuanceStep` and `IssuanceBundle`; the plan's `choices` replace them, and `issued_credential_ids` and `wrong_credential_issued` are on the plan itself.
+- `SessionPermissionInteractionPayload.disclosure_choices` and `DisclosureDisconSelection`, replaced by `choices`.
 
 ## [1.5.0] - 2026-11-03
 ### Added
