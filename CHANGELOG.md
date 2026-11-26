@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `client.Client.GetDigitalCredentialsRegistry` returns the credentials a website can ask the wallet for through the W3C Digital Credentials API, as `clientmodels.DigitalCredentialsRegistryEntry`, for the app to register with the platform. It lists the credential types of the installed schemes as `dc+sd-jwt` (those of demo schemes only in developer mode, and never a scheme's keyshare enrollment credential), and the SD-JWT VC, `mso_mdoc` and SD-JWT-secured VCDM credentials the wallet holds, one entry per format and type. Entries carry the type, display texts in the current locale, a logo and the claim paths, never a claim value. The Yivi app built this list itself from the IRMA scheme, which left out every credential obtained over OpenID4VCI
+
 ### Changed
 - Usage reporting sends one report per day by default instead of one per 5 minutes, so the Yivi Portal learns on which day sessions took place but not at what time. Reports are now sealed only at the end of an interval, and intervals end on multiples of their length in UTC: midnight for the default of a day, the whole hour for an hour. Before, a server that had been quiet for a while sealed its report within 10 seconds of the next session, which showed the Portal almost to the second when that session ended. `--usage-reporting-interval` now accepts up to `24h` (was `6h`). Counts stay in memory until their interval is sealed: a clean stop still sends them in the final report, but a server that is killed loses up to a day of counts at the default. The Portal shows a day's usage after midnight UTC.
 
